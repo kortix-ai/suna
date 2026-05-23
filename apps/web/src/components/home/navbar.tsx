@@ -73,7 +73,7 @@ function PowerButton({ href, onClick, label = 'Launch Kortix' }: { href?: string
       <AnimatePresence>
         {hovered && (
           <motion.span
-            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] text-foreground bg-background border border-border rounded-md px-2 py-0.5 pointer-events-none z-50 shadow-sm"
+            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-foreground bg-background border border-border rounded-md px-2 py-0.5 pointer-events-none z-50 shadow-sm"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
@@ -216,7 +216,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           </ContextMenuTrigger>
           <ContextMenuContent className="w-48">
             <ContextMenuSub>
-              <ContextMenuSubTrigger className="gap-2 text-[13px]">
+              <ContextMenuSubTrigger className="gap-2 text-sm">
                 <Gem className="size-3.5 shrink-0" />
                 Download symbol
               </ContextMenuSubTrigger>
@@ -227,14 +227,14 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   { label: 'White · SVG', href: '/brandkit/Logo/Brandmark/SVG/Brandmark White.svg', file: 'kortix-symbol-white.svg' },
                   { label: 'White · PNG', href: '/brandkit/Logo/Brandmark/PNG/Brandmark White.png', file: 'kortix-symbol-white.png' },
                 ].map((d) => (
-                  <ContextMenuItem key={d.file} onClick={() => { const a = document.createElement('a'); a.href = d.href; a.download = d.file; a.click(); }} className="text-[13px] cursor-pointer">
+                  <ContextMenuItem key={d.file} onClick={() => { const a = document.createElement('a'); a.href = d.href; a.download = d.file; a.click(); }} className="text-sm cursor-pointer">
                     {d.label}
                   </ContextMenuItem>
                 ))}
               </ContextMenuSubContent>
             </ContextMenuSub>
             <ContextMenuSub>
-              <ContextMenuSubTrigger className="gap-2 text-[13px]">
+              <ContextMenuSubTrigger className="gap-2 text-sm">
                 <Type className="size-3.5 shrink-0" />
                 Download wordmark
               </ContextMenuSubTrigger>
@@ -245,7 +245,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   { label: 'White · SVG', href: '/brandkit/Logo/Wordmark/SVG/Wordmark White.svg', file: 'kortix-wordmark-white.svg' },
                   { label: 'White · PNG', href: '/brandkit/Logo/Wordmark/PNG/Wordmark White.png', file: 'kortix-wordmark-white.png' },
                 ].map((d) => (
-                  <ContextMenuItem key={d.file} onClick={() => { const a = document.createElement('a'); a.href = d.href; a.download = d.file; a.click(); }} className="text-[13px] cursor-pointer">
+                  <ContextMenuItem key={d.file} onClick={() => { const a = document.createElement('a'); a.href = d.href; a.download = d.file; a.click(); }} className="text-sm cursor-pointer">
                     {d.label}
                   </ContextMenuItem>
                 ))}
@@ -253,7 +253,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             </ContextMenuSub>
             <ContextMenuItem
               onClick={() => router.push('/design-system')}
-              className="gap-2 text-[13px] cursor-pointer"
+              className="gap-2 text-sm cursor-pointer"
             >
               <Layers className="size-3.5 shrink-0" />
               Design system
@@ -408,7 +408,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
 
               {/* Product group */}
               <motion.div variants={drawerMenuVariants} className="mt-10">
-                <div className="pb-3 text-[11px] font-mono uppercase tracking-wider text-muted-foreground">Product</div>
+                <div className="pb-3 text-xs font-mono uppercase tracking-wider text-muted-foreground">Product</div>
                 <ul className="flex flex-col">
                   {PRODUCT_ITEMS.map((item) => {
                     const Icon = item.icon;

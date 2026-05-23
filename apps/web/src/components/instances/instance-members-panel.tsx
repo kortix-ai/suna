@@ -238,7 +238,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-muted-foreground/60 text-[11px] font-semibold uppercase tracking-[0.08em]">
+    <div className="text-muted-foreground/60 text-xs font-semibold uppercase tracking-[0.08em]">
       {children}
     </div>
   );
@@ -470,7 +470,7 @@ function RoleMenuItem({
           {title}
         </div>
         {subtitle ? (
-          <div className="text-muted-foreground text-[11px] leading-snug">
+          <div className="text-muted-foreground text-xs leading-snug">
             {subtitle}
           </div>
         ) : null}
@@ -536,10 +536,10 @@ function InviteDialog({
             )}
           </div>
           <div className="text-center">
-            <DialogTitle className="text-[17px] font-semibold tracking-tight">
+            <DialogTitle className="text-base font-semibold tracking-tight">
               {emailValid ? `Invite ${displayName}` : 'Invite teammate'}
             </DialogTitle>
-            <DialogDescription className="mt-1 text-[13px]">
+            <DialogDescription className="mt-1 text-sm">
               {emailValid
                 ? "They'll get an email with a link to join."
                 : 'Add someone to collaborate on this instance.'}
@@ -559,7 +559,7 @@ function InviteDialog({
             <div className="space-y-1.5">
               <Label
                 htmlFor="invite-email"
-                className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.08em]"
+                className="text-muted-foreground text-xs font-semibold uppercase tracking-[0.08em]"
               >
                 Email address
               </Label>
@@ -571,12 +571,12 @@ function InviteDialog({
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={pending}
                 autoFocus
-                className="h-11 text-[14px]"
+                className="h-11 text-sm"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.08em]">
+              <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-[0.08em]">
                 Role
               </Label>
               <div className="grid grid-cols-2 gap-2">
@@ -597,7 +597,7 @@ function InviteDialog({
           </div>
 
           <div className="border-border/60 bg-muted/20 flex items-center justify-between gap-2 border-t px-6 py-3.5">
-            <p className="text-muted-foreground/70 text-[11px]">
+            <p className="text-muted-foreground/70 text-xs">
               If they don't have Kortix yet, we'll send a signup link.
             </p>
             <div className="flex items-center gap-2">
@@ -656,7 +656,7 @@ function RoleCard({
       )}
     >
       <div className="flex w-full items-center justify-between">
-        <span className="text-foreground text-[13px] font-semibold">
+        <span className="text-foreground text-sm font-semibold">
           {title}
         </span>
         <span
@@ -676,7 +676,7 @@ function RoleCard({
         </span>
       </div>
       {description ? (
-        <p className="text-muted-foreground text-[11px] leading-snug">
+        <p className="text-muted-foreground text-xs leading-snug">
           {description}
         </p>
       ) : null}

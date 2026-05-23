@@ -71,7 +71,7 @@ export function SpreadsheetLoader({ mode = 'max' }: SpreadsheetLoaderProps) {
           <div className="w-10 border-r flex-none bg-muted/20" />
           {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'].map(col => (
             <div key={col} className="w-24 flex-none border-r py-1.5 flex items-center justify-center">
-              <span className="text-[10px] font-semibold text-muted-foreground">{col}</span>
+              <span className="text-xs font-semibold text-muted-foreground">{col}</span>
             </div>
           ))}
           <div className="flex-1 bg-muted/10" />
@@ -81,7 +81,7 @@ export function SpreadsheetLoader({ mode = 'max' }: SpreadsheetLoaderProps) {
              {[...Array(50)].map((_, i) => (
                <div key={i} className="flex h-[28px] border-b">
                  <div className="w-10 flex-none border-r bg-muted/10 flex items-center justify-center">
-                   <span className="text-[10px] text-muted-foreground">{i + 1}</span>
+                   <span className="text-xs text-muted-foreground">{i + 1}</span>
                  </div>
                  {[...Array(11)].map((_, j) => (
                    <div key={j} className="w-24 flex-none border-r relative group">

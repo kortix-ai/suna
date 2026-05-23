@@ -180,7 +180,7 @@ export function OcSearchToolView({
         ) : (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-muted-foreground/60">
             <FolderOpen className="w-5 h-5 mb-2 opacity-50" />
-            <span className="text-[12px] tracking-tight">No results</span>
+            <span className="text-xs tracking-tight">No results</span>
           </div>
         )}
       </ToolViewBody>
@@ -224,11 +224,11 @@ function FilePathList({
             className="group w-full flex items-center gap-2.5 px-4 py-2 hover:bg-foreground/[0.025] transition-colors cursor-pointer text-left"
           >
             <FileText className="w-3.5 h-3.5 text-muted-foreground/60 group-hover:text-foreground/80 flex-shrink-0 transition-colors" />
-            <span className="text-[12.5px] font-mono font-medium text-foreground/90 flex-shrink-0">
+            <span className="text-sm font-mono font-medium text-foreground/90 flex-shrink-0">
               {name}
             </span>
             {dir && (
-              <span className="text-[11px] font-mono text-muted-foreground/50 truncate flex-1">{dir}</span>
+              <span className="text-xs font-mono text-muted-foreground/50 truncate flex-1">{dir}</span>
             )}
           </button>
         );
@@ -276,23 +276,23 @@ function GrepResultList({
                   e.stopPropagation();
                   onFileClick(group.filePath);
                 }}
-                className="text-[12.5px] font-mono font-medium text-foreground/90 hover:text-foreground/70 transition-colors flex-shrink-0 cursor-pointer"
+                className="text-sm font-mono font-medium text-foreground/90 hover:text-foreground/70 transition-colors flex-shrink-0 cursor-pointer"
                 title={dp}
               >
                 {name}
               </button>
               {dir && (
-                <span className="text-[11px] font-mono text-muted-foreground/50 truncate flex-1">
+                <span className="text-xs font-mono text-muted-foreground/50 truncate flex-1">
                   {dir}
                 </span>
               )}
-              <span className="text-[11px] tabular-nums text-muted-foreground/70 flex-shrink-0 font-mono">
+              <span className="text-xs tabular-nums text-muted-foreground/70 flex-shrink-0 font-mono">
                 {group.matches.length}
               </span>
             </div>
             {isExpanded && (
               <div className="bg-foreground/[0.015] border-t border-border/40">
-                <table className="w-full text-[11.5px] font-mono">
+                <table className="w-full text-xs font-mono">
                   <tbody>
                     {group.matches.map((m, j) => (
                       <tr key={j} className="border-b last:border-b-0 border-border/30">

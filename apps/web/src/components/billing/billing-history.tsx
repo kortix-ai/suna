@@ -161,10 +161,10 @@ export default function BillingHistory() {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Date</TableHead>
-                  <TableHead className="px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Type</TableHead>
-                  <TableHead className="px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Details</TableHead>
-                  <TableHead className="px-3 text-right text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Amount</TableHead>
+                  <TableHead className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Date</TableHead>
+                  <TableHead className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Type</TableHead>
+                  <TableHead className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Details</TableHead>
+                  <TableHead className="px-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Amount</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

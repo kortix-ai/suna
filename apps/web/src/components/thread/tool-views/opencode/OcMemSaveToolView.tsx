@@ -89,7 +89,7 @@ export function OcMemSaveToolView({
           <ToolViewIconTitle icon={Save} title="Save Memory" subtitle={config.label} />
           <Badge
             variant="outline"
-            className={cn('h-5 py-0 text-[10px] font-normal flex-shrink-0 ml-2', config.color)}
+            className={cn('h-5 py-0 text-xs font-normal flex-shrink-0 ml-2', config.color)}
           >
             <TypeIcon className="h-3 w-3 mr-1" />
             {config.label}
@@ -115,7 +115,7 @@ export function OcMemSaveToolView({
                   <Badge
                     key={tag}
                     variant="outline"
-                    className="h-5 py-0 text-[10px] font-normal bg-muted/30"
+                    className="h-5 py-0 text-xs font-normal bg-muted/30"
                   >
                     {tag}
                   </Badge>

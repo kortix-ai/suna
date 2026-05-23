@@ -94,7 +94,7 @@ export function BootOverlay({ onComplete }: BootOverlayProps) {
             initial={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.12 } }}
           >
-            <div className="font-mono text-[13px] sm:text-sm leading-relaxed">
+            <div className="font-mono text-sm sm:text-sm leading-relaxed">
               {BIOS_LINES.slice(0, visibleLines).map((line, i) => (
                 <motion.div
                   key={i}
@@ -128,7 +128,7 @@ export function BootOverlay({ onComplete }: BootOverlayProps) {
                   onClick={continueBoot}
                 >
                   <motion.span
-                    className="font-mono text-[13px] sm:text-sm text-foreground/90"
+                    className="font-mono text-sm sm:text-sm text-foreground/90"
                     animate={{ opacity: [1, 0.3] }}
                     transition={{ duration: 0.7, repeat: Infinity, repeatType: 'reverse' }}
                   >

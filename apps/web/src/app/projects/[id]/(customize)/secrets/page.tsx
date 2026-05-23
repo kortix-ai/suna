@@ -105,7 +105,7 @@ function ProjectSecretsBody({ projectId }: { projectId: string }) {
           <p className="text-xs text-muted-foreground">
             Key-value pairs injected as environment variables into every new session
             sandbox for this project. Required keys come from your{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">kortix.toml</code>
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">kortix.toml</code>
             {' '}manifest. Values are encrypted at rest.
           </p>
         </header>

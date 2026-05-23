@@ -156,7 +156,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
         <div className="overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border/60 bg-muted/20 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              <tr className="border-b border-border/60 bg-muted/20 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 <th className="px-6 py-2.5 font-medium">Name</th>
                 <th className="px-3 py-2.5 font-medium">Source</th>
                 <th className="px-3 py-2.5 font-medium">Members</th>

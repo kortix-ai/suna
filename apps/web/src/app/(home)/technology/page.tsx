@@ -28,7 +28,7 @@ const GITHUB_URL = 'https://github.com/kortix-ai/suna';
 const DEMO_URL = '/enterprise';
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
-  return <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">{children}</span>;
+  return <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{children}</span>;
 }
 
 function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
@@ -36,7 +36,7 @@ function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: stri
     <div className="rounded-2xl border border-border bg-card/40 p-5">
       <div className="flex items-center justify-center size-9 rounded-lg bg-foreground/[0.06] border border-foreground/10 text-foreground/80 mb-3.5">{icon}</div>
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-      <p className="mt-1.5 text-[13px] text-muted-foreground leading-relaxed">{desc}</p>
+      <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">{desc}</p>
     </div>
   );
 }
@@ -46,7 +46,7 @@ function MediaSlot({ label, hint, aspect = 'aspect-[4/3]' }: { label: string; hi
     <div className={cn('relative w-full overflow-hidden rounded-2xl border-2 border-dashed border-foreground/15 bg-foreground/[0.02] flex flex-col items-center justify-center text-center px-6', aspect)}>
       <div className="absolute top-3 left-3 inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-foreground/5 border border-foreground/10">
         <ImageIcon className="size-3" />
-        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">screenshot</span>
+        <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">screenshot</span>
       </div>
       <span className="text-sm font-semibold text-foreground">{label}</span>
       {hint && <span className="mt-1 text-xs text-muted-foreground max-w-md">{hint}</span>}
@@ -56,10 +56,10 @@ function MediaSlot({ label, hint, aspect = 'aspect-[4/3]' }: { label: string; hi
 
 function RepoMock() {
   return (
-    <div className="rounded-2xl border border-border/60 bg-card/20 overflow-hidden font-mono text-[11px] h-full">
+    <div className="rounded-2xl border border-border/60 bg-card/20 overflow-hidden font-mono text-xs h-full">
       <div className="px-5 py-4 border-b border-border/40 flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">acme-co · main</span>
-        <span className="text-[10px] text-muted-foreground">git-versioned</span>
+        <span className="text-xs uppercase tracking-widest text-muted-foreground font-medium">acme-co · main</span>
+        <span className="text-xs text-muted-foreground">git-versioned</span>
       </div>
       <div className="p-4 flex flex-col gap-0.5">
         {[
@@ -75,7 +75,7 @@ function RepoMock() {
           { d: 0, n: 'PERSIST/', f: false },
         ].map(({ d, n, f }, i) => (
           <div key={i} className="flex items-center gap-2 py-1 px-1 rounded hover:bg-muted/15 transition-colors" style={{ paddingLeft: `${d * 1.25 + 0.25}rem` }}>
-            <span className="text-muted-foreground text-[10px]">{f ? '·' : '▸'}</span>
+            <span className="text-muted-foreground text-xs">{f ? '·' : '▸'}</span>
             <span className="text-foreground">{n}</span>
           </div>
         ))}
@@ -87,11 +87,11 @@ function RepoMock() {
 
 function PrMock() {
   return (
-    <div className="rounded-2xl border border-border/60 bg-card/20 overflow-hidden font-mono text-[11px] h-full">
+    <div className="rounded-2xl border border-border/60 bg-card/20 overflow-hidden font-mono text-xs h-full">
       <div className="px-5 py-4 border-b border-border/40 flex items-center gap-2">
         <GitPullRequest className="size-3.5 text-emerald-500" />
         <span className="text-foreground">support-agent → main</span>
-        <span className="ml-auto text-[10px] uppercase tracking-widest text-muted-foreground">awaiting review</span>
+        <span className="ml-auto text-xs uppercase tracking-widest text-muted-foreground">awaiting review</span>
       </div>
       <div className="p-4 space-y-2">
         <div className="text-muted-foreground">Learned a new refund-policy skill from session #4821</div>
@@ -102,7 +102,7 @@ function PrMock() {
           <div className="text-emerald-500">+ template `refund-approved`.</div>
         </div>
         <div className="flex items-center gap-2 pt-1">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-foreground text-background text-[10px] font-medium"><Check className="size-3" />Approve &amp; merge</span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-foreground text-background text-xs font-medium"><Check className="size-3" />Approve &amp; merge</span>
           <span className="text-muted-foreground">main self-improves ↑</span>
         </div>
       </div>
@@ -112,10 +112,10 @@ function PrMock() {
 
 function ConfigMock() {
   return (
-    <div className="rounded-2xl border border-border/60 bg-card/20 overflow-hidden font-mono text-[11px] h-full">
+    <div className="rounded-2xl border border-border/60 bg-card/20 overflow-hidden font-mono text-xs h-full">
       <div className="px-5 py-4 border-b border-border/40 flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">kortix.toml</span>
-        <span className="text-[10px] text-muted-foreground">declarative config</span>
+        <span className="text-xs uppercase tracking-widest text-muted-foreground font-medium">kortix.toml</span>
+        <span className="text-xs text-muted-foreground">declarative config</span>
       </div>
       <div className="p-5 leading-relaxed">
         <div className="text-muted-foreground">[project]</div>
@@ -172,8 +172,8 @@ export default function Technology() {
             </Button>
           </div>
           <button onClick={handleCopy} className="group mt-5 inline-flex items-center gap-2.5 h-9 px-4 rounded-full bg-foreground/[0.03] border border-border hover:border-foreground/20 transition-colors cursor-pointer">
-            <span className="font-mono text-[11px] text-muted-foreground select-none">$</span>
-            <code className="text-[11px] font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
+            <span className="font-mono text-xs text-muted-foreground select-none">$</span>
+            <code className="text-xs font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
             <div className="pl-2.5 border-l border-border">
               {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3 text-muted-foreground group-hover:text-foreground transition-colors" />}
             </div>
@@ -213,7 +213,7 @@ export default function Technology() {
               <Eyebrow>Declarative config</Eyebrow>
               <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">Define the whole company in code.</h2>
               <p className="mt-3 text-base text-muted-foreground leading-relaxed">
-                <code className="text-foreground font-mono text-[13px]">kortix.toml</code> declares the runtime — sandbox image, cron and webhook triggers, channels, apps, connectors, and required secrets. The <code className="text-foreground font-mono text-[13px]">.opencode</code> directory holds the agents, skills, commands, tools, and models. Change a file, open a PR, ship.
+                <code className="text-foreground font-mono text-sm">kortix.toml</code> declares the runtime — sandbox image, cron and webhook triggers, channels, apps, connectors, and required secrets. The <code className="text-foreground font-mono text-sm">.opencode</code> directory holds the agents, skills, commands, tools, and models. Change a file, open a PR, ship.
               </p>
               <ul className="mt-5 space-y-2.5">
                 {['Engine- and provider-agnostic config', 'Reviewable diffs for every change', 'Reproducible from a clean clone'].map((b) => (

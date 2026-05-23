@@ -434,17 +434,17 @@ export function DriveListView({
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <FolderCog className="h-4 w-4 text-primary/60 shrink-0" />
-            <span className="text-[13px] font-medium text-foreground truncate">
+            <span className="text-sm font-medium text-foreground truncate">
               {node.name}
             </span>
             {ELEVATED_DIR_META[node.name] && (
-              <span className="text-[11px] text-muted-foreground/40 truncate hidden sm:inline">
+              <span className="text-xs text-muted-foreground/40 truncate hidden sm:inline">
                 {ELEVATED_DIR_META[node.name]}
               </span>
             )}
           </div>
-          <span className="text-[11px] text-primary/50 font-medium">System</span>
-          <span className="text-[11px] text-muted-foreground/40">—</span>
+          <span className="text-xs text-primary/50 font-medium">System</span>
+          <span className="text-xs text-muted-foreground/40">—</span>
           <span />
         </div>
       ))}

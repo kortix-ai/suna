@@ -128,7 +128,7 @@ export function OcSessionStatsToolView({
             <div className="py-2 divide-y divide-border/30">
               {/* Identity */}
               <div className="pb-2">
-                <div className="px-4 py-1 text-[10px] uppercase tracking-wider text-muted-foreground/50 font-medium">
+                <div className="px-4 py-1 text-xs uppercase tracking-wider text-muted-foreground/50 font-medium">
                   Session
                 </div>
                 <StatRow icon={MessageSquare} label="Name" value={stats.name} />
@@ -139,7 +139,7 @@ export function OcSessionStatsToolView({
 
               {/* Token usage */}
               <div className="py-2">
-                <div className="px-4 py-1 text-[10px] uppercase tracking-wider text-muted-foreground/50 font-medium">
+                <div className="px-4 py-1 text-xs uppercase tracking-wider text-muted-foreground/50 font-medium">
                   Tokens
                 </div>
                 <StatRow icon={BarChart3} label="Context Limit" value={stats.contextLimit} />
@@ -153,7 +153,7 @@ export function OcSessionStatsToolView({
 
               {/* Activity */}
               <div className="py-2">
-                <div className="px-4 py-1 text-[10px] uppercase tracking-wider text-muted-foreground/50 font-medium">
+                <div className="px-4 py-1 text-xs uppercase tracking-wider text-muted-foreground/50 font-medium">
                   Activity
                 </div>
                 <StatRow icon={MessageSquare} label="Messages" value={stats.messages} />

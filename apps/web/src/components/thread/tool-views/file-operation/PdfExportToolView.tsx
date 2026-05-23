@@ -138,10 +138,10 @@ export function PdfExportToolView({
               <div className="flex items-center gap-2.5">
                 <FileText className="w-3.5 h-3.5 text-muted-foreground/80 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[12.5px] font-medium text-foreground tracking-tight truncate">
+                  <p className="text-sm font-medium text-foreground tracking-tight truncate">
                     {fileName}
                   </p>
-                  <p className="text-[11.5px] text-muted-foreground/70">
+                  <p className="text-xs text-muted-foreground/70">
                     PDF Document
                   </p>
                 </div>

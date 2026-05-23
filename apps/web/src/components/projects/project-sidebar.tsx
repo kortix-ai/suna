@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import {
   ChevronLeft,
   ChevronDown,
@@ -22,7 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
+import { listProjectSessions, type ProjectOpenCodeSession, type ProjectSession } from '@/lib/projects-client';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
@@ -62,7 +62,7 @@ const modSymbol = isMac ? '⌘' : 'Ctrl';
 /** Hover-only keyboard hint chip used on the primary nav row. */
 function KbdHint({ mod, letter }: { mod: string; letter: string }) {
   const chip =
-    'inline-flex items-center justify-center h-4 min-w-4 px-1 rounded bg-foreground/[0.05] border border-border/40 text-[9.5px] font-medium text-muted-foreground/70 leading-none font-sans select-none';
+    'inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/40 bg-foreground/[0.05] px-1 text-xs font-medium leading-none text-muted-foreground/70 select-none';
   return (
     <span className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/menu-button:opacity-100 group-data-[collapsible=icon]:hidden">
       <kbd className={chip}>{mod}</kbd>
@@ -209,10 +209,27 @@ function shortFlyoutRelative(text: string): string {
     .replace(/\syears?/, 'y');
 }
 
+function rootOpenCodeSession(session: ProjectSession): ProjectOpenCodeSession | null {
+  const opencodeSessions = session.opencode_sessions ?? [];
+  const rootId = session.opencode_session_id;
+  if (rootId) return opencodeSessions.find((item) => item.id === rootId) ?? null;
+  return opencodeSessions.find((item) => !item.parent_id) ?? null;
+}
+
+function directSubsessions(session: ProjectSession): ProjectOpenCodeSession[] {
+  const root = rootOpenCodeSession(session);
+  if (!root) return [];
+  return (session.opencode_sessions ?? [])
+    .filter((item) => item.parent_id === root.id && !item.archived_at)
+    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
+}
+
 function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const openTab = useProjectSessionTabsStore((s) => s.openTab);
+  const activeOpenCodeSessionId = searchParams.get('oc');
 
   const { data, isLoading } = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -246,6 +263,8 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
         sessions.map((session) => {
           const href = `/projects/${projectId}/sessions/${session.session_id}`;
           const active = pathname?.startsWith(href) ?? false;
+          const root = rootOpenCodeSession(session);
+          const children = directSubsessions(session);
           const metadataName =
             typeof session.metadata?.session_name === 'string'
               ? (session.metadata.session_name as string)
@@ -253,7 +272,7 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
           const fallback = session.branch_name
             ? session.branch_name.slice(0, 14)
             : session.session_id.slice(0, 8);
-          const label = metadataName?.trim() || fallback;
+          const label = root?.title?.trim() || session.name?.trim() || metadataName?.trim() || fallback;
           const relative = (() => {
             try {
               return shortFlyoutRelative(
@@ -264,26 +283,66 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
             }
           })();
           return (
-            <button
-              key={session.session_id}
-              onClick={() => {
-                openTab(projectId, session.session_id);
-                router.push(href);
-              }}
-              className={cn(
-                'flex items-center gap-2 w-full px-3 py-1.5 text-[12px] cursor-pointer transition-colors duration-100',
-                active
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+            <div key={session.session_id}>
+              <button
+                onClick={() => {
+                  openTab(projectId, session.session_id);
+                  router.push(href);
+                }}
+                className={cn(
+                  'flex items-center gap-2 w-full px-3 py-1.5 text-sm cursor-pointer transition-colors duration-100',
+                  active && !activeOpenCodeSessionId
+                    ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                )}
+              >
+                <span className="flex-1 truncate text-left">{label}</span>
+                {children.length > 0 && (
+                  <span className="rounded-full bg-sidebar-accent/60 px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+                    {children.length}
+                  </span>
+                )}
+                {relative && (
+                  <span className="flex-shrink-0 text-xs tabular-nums text-muted-foreground/60">
+                    {relative}
+                  </span>
+                )}
+              </button>
+              {children.length > 0 && active && (
+                <div className="ml-4 border-l border-border/30 pl-1">
+                  {children.map((child) => {
+                    const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
+                    const childActive = active && activeOpenCodeSessionId === child.id;
+                    const childRelative = child.updated_at
+                      ? shortFlyoutRelative(formatDistanceToNowStrict(new Date(child.updated_at), { addSuffix: false }))
+                      : '';
+                    return (
+                      <button
+                        key={child.id}
+                        onClick={() => {
+                          openTab(projectId, session.session_id);
+                          router.push(childHref);
+                        }}
+                        className={cn(
+                          'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-xs transition-colors duration-100',
+                          childActive
+                            ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                        )}
+                      >
+                        <span className="h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />
+                        <span className="flex-1 truncate text-left">{child.title || 'Sub-session'}</span>
+                        {childRelative && (
+                          <span className="flex-shrink-0 text-xs tabular-nums text-muted-foreground/60">
+                            {childRelative}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            >
-              <span className="flex-1 truncate text-left">{label}</span>
-              {relative && (
-                <span className="flex-shrink-0 text-[9.5px] tabular-nums text-muted-foreground/60">
-                  {relative}
-                </span>
-              )}
-            </button>
+            </div>
           );
         })
       )}
@@ -483,7 +542,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <SidebarMenuButton
                   onClick={handleNewSession}
                   disabled={createSession.isPending}
-                  className="group/menu-button !text-[12.5px] font-normal [&_svg]:!size-4"
+                  className="group/menu-button !text-sm font-normal [&_svg]:!size-4"
                 >
                   {createSession.isPending ? (
                     <Loader2 className="animate-spin" />
@@ -507,7 +566,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               className="group/sessions flex min-h-0 flex-col data-[state=open]:flex-1"
             >
               <CollapsibleTrigger asChild>
-                <SidebarGroupLabel className="group/label flex h-6 cursor-pointer items-center gap-2 px-2 mt-1 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-sidebar-foreground">
+                <SidebarGroupLabel className="group/label mt-1 flex h-6 cursor-pointer items-center gap-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-sidebar-foreground">
                   <span className="flex-1 text-left">Sessions</span>
                   <ChevronDown className="size-3 transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
                 </SidebarGroupLabel>
@@ -527,7 +586,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <SidebarMenuButton
                   onClick={goCustomize}
                   isActive={isCustomizeRoute}
-                  className="!text-[12.5px] font-normal data-[active=true]:font-normal !transition-none transform-none [&_svg]:!size-4"
+                  className="!text-sm font-normal data-[active=true]:font-normal !transition-none transform-none [&_svg]:!size-4"
                 >
                   <SlidersHorizontal />
                   <span>Customize</span>

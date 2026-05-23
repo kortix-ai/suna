@@ -405,7 +405,7 @@ function PanelHeaderSwitcher({
         <TooltipTrigger asChild>
           <button
             onClick={onClose}
-            className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+            className="inline-flex items-center justify-center h-7 w-7 rounded-full text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
             aria-label="Close panel"
           >
             <X className="w-3.5 h-3.5" />
@@ -433,7 +433,7 @@ function PanelTabButton({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        'relative inline-flex items-center h-10 text-[12px] tracking-tight transition-colors cursor-pointer',
+        'relative inline-flex items-center h-10 text-xs tracking-tight transition-colors cursor-pointer',
         active
           ? 'text-foreground font-medium'
           : 'text-muted-foreground/70 hover:text-foreground/90',
@@ -457,7 +457,7 @@ function SidePanelFrame({
   children: React.ReactNode;
 }) {
   return (
-    <div className="h-full w-full flex flex-col bg-card overflow-hidden min-w-0 min-h-0 border rounded-[24px]">
+    <div className="h-full w-full flex flex-col bg-card overflow-hidden min-w-0 min-h-0 border rounded-2xl">
       {header}
       <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
     </div>

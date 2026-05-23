@@ -179,16 +179,16 @@ function SingleFile({
             e.stopPropagation();
             onOpenFile();
           }}
-          className="text-[12.5px] font-mono font-medium text-foreground/90 hover:text-foreground/70 transition-colors flex-shrink-0 cursor-pointer"
+          className="text-sm font-mono font-medium text-foreground/90 hover:text-foreground/70 transition-colors flex-shrink-0 cursor-pointer"
           title={displayPath}
         >
           {filename}
         </button>
         {dir && (
-          <span className="text-[11px] font-mono text-muted-foreground/50 truncate flex-1">{dir}</span>
+          <span className="text-xs font-mono text-muted-foreground/50 truncate flex-1">{dir}</span>
         )}
         {hasContent && (
-          <span className="text-[10.5px] text-muted-foreground/60 uppercase tracking-wider flex-shrink-0">
+          <span className="text-xs text-muted-foreground/60 uppercase tracking-wider flex-shrink-0">
             {expanded ? 'hide' : 'show'}
           </span>
         )}
@@ -229,11 +229,11 @@ function MultiFileList({
             className="group w-full flex items-center gap-2.5 px-4 py-2 hover:bg-foreground/[0.025] transition-colors cursor-pointer text-left"
           >
             <FileText className="w-3.5 h-3.5 text-muted-foreground/60 group-hover:text-foreground/80 flex-shrink-0 transition-colors" />
-            <span className="text-[12.5px] font-mono font-medium text-foreground/90 flex-shrink-0">
+            <span className="text-sm font-mono font-medium text-foreground/90 flex-shrink-0">
               {fname}
             </span>
             {dir && (
-              <span className="text-[11px] font-mono text-muted-foreground/50 truncate flex-1">
+              <span className="text-xs font-mono text-muted-foreground/50 truncate flex-1">
                 {dir}
               </span>
             )}

@@ -290,14 +290,14 @@ function AuditRow({
         </div>
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex items-baseline gap-2">
-            <code className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+            <code className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-xs text-foreground">
               {event.action}
             </code>
             <span className="truncate text-xs text-muted-foreground">
               by <strong className="font-medium text-foreground">{actorLabel}</strong>
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>{formatRelative(occurred)}</span>
             <span className="text-muted-foreground/40">·</span>
             <span title={occurred.toISOString()}>{occurred.toLocaleString()}</span>
@@ -331,10 +331,10 @@ function AuditRow({
 function DiffPane({ label, data }: { label: string; data: Record<string, unknown> | null }) {
   return (
     <div>
-      <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+      <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
-      <pre className="max-h-48 overflow-auto rounded-2xl border border-border/60 bg-background px-2.5 py-2 text-[11px] leading-relaxed text-foreground">
+      <pre className="max-h-48 overflow-auto rounded-2xl border border-border/60 bg-background px-2.5 py-2 text-xs leading-relaxed text-foreground">
         {data === null ? <span className="text-muted-foreground">— (none)</span> : JSON.stringify(data, null, 2)}
       </pre>
     </div>

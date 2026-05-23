@@ -90,7 +90,7 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
         <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
           <span className="text-xs font-medium text-foreground truncate">{filename}</span>
           {directory && (
-            <span className="text-[10px] text-muted-foreground/50 truncate hidden sm:inline">
+            <span className="text-xs text-muted-foreground/50 truncate hidden sm:inline">
               {directory}
             </span>
           )}
@@ -103,7 +103,7 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
         <DiffStat
           additions={diff.additions}
           deletions={diff.deletions}
-          className="text-[10px] whitespace-nowrap flex-shrink-0"
+          className="text-xs whitespace-nowrap flex-shrink-0"
         />
       </button>
 
@@ -154,7 +154,7 @@ function DiffSummaryBar({
       <span className="text-xs text-muted-foreground">
         {diffs.length} {diffs.length === 1 ? 'file' : 'files'} changed
       </span>
-      <div className="flex items-center gap-2 ml-auto text-[10px]">
+      <div className="flex items-center gap-2 ml-auto text-xs">
         {totals.added > 0 && (
           <span className={cn('flex items-center gap-1', STATUS_TEXT.success)}>
             <FilePlus2 className="size-3" /> {totals.added}

@@ -252,13 +252,13 @@ function RawMessage({ message, parts, formatTime }: {
             </Badge>
             <span className="text-muted-foreground">{message.id}</span>
           </div>
-          <div className="shrink-0 text-[10px] text-muted-foreground/60">
+          <div className="shrink-0 text-xs text-muted-foreground/60">
             {formatTime(message.time?.created)}
           </div>
         </div>
       </AccordionTrigger>
       <AccordionContent className="px-3 pb-2">
-        <pre className="p-3 rounded-2xl bg-muted/40 overflow-x-auto text-[11px] font-mono whitespace-pre-wrap break-all select-text max-h-[400px] overflow-y-auto">
+        <pre className="p-3 rounded-2xl bg-muted/40 overflow-x-auto text-xs font-mono whitespace-pre-wrap break-all select-text max-h-[400px] overflow-y-auto">
           {JSON.stringify({ message, parts }, null, 2)}
         </pre>
       </AccordionContent>
@@ -408,11 +408,11 @@ function SubSessionTreeNode({
           {usd.format(node.cost)}
         </span>
         {hasChildren && (
-          <span className="shrink-0 text-muted-foreground/50 text-[10px] tabular-nums">
+          <span className="shrink-0 text-muted-foreground/50 text-xs tabular-nums">
             (tree: {usd.format(totals.cost)})
           </span>
         )}
-        <span className="shrink-0 text-muted-foreground/60 text-[10px]">
+        <span className="shrink-0 text-muted-foreground/60 text-xs">
           {node.messages} msgs
         </span>
       </button>
@@ -603,7 +603,7 @@ export function SessionContextModal({
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1">
                 {breakdown.map((segment) => (
-                  <div key={segment.key} className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <div key={segment.key} className="flex items-center gap-1 text-xs text-muted-foreground">
                     <div className="size-2 rounded-sm" style={{ backgroundColor: BREAKDOWN_COLORS[segment.key] }} />
                     <div>{BREAKDOWN_LABELS[segment.key]}</div>
                     <div className="text-muted-foreground/60">{segment.percent}%</div>

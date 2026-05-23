@@ -42,7 +42,7 @@ export function MaintenancePage() {
           <KortixLogo size={32} />
 
           {/* Title - 43px */}
-          <h1 className="text-[43px] font-normal tracking-tight textforeground leading-none">
+          <h1 className="text-5xl font-normal tracking-tight textforeground leading-none">
             We'll Be Right Back
           </h1>
 

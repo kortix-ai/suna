@@ -201,7 +201,7 @@ export function UpdateDialog({
     return (
       <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background">
         {step === 'updating' && (
-          <p className="absolute bottom-10 left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground/60">
+          <p className="absolute bottom-10 left-1/2 -translate-x-1/2 text-xs text-muted-foreground/60">
             It's not recommended to refresh this tab during the update.
           </p>
         )}
@@ -216,10 +216,10 @@ export function UpdateDialog({
               className="flex flex-col items-center"
             >
               <KortixLogo size={28} variant="symbol" />
-              <p className="mt-5 text-[13px] font-medium text-foreground/90 tracking-tight">
+              <p className="mt-5 text-sm font-medium text-foreground/90 tracking-tight">
                 {activeLabel}
               </p>
-              <p className="mt-1 max-w-[340px] text-center text-[11px] text-muted-foreground/70">
+              <p className="mt-1 max-w-[340px] text-center text-xs text-muted-foreground/70">
                 {phaseMessage || 'Preparing update...'}
               </p>
               <div className="mt-8 h-[2px] w-[240px] rounded-full bg-foreground/10 overflow-hidden">
@@ -267,7 +267,7 @@ export function UpdateDialog({
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.15 }}
-                className="mt-5 text-[13px] font-medium text-foreground/90 tracking-tight"
+                className="mt-5 text-sm font-medium text-foreground/90 tracking-tight"
               >
                 Updated to <span className="tabular-nums">{formatVersion(updateResult?.currentVersion ?? latestVersion)}</span>
               </motion.p>
@@ -286,14 +286,14 @@ export function UpdateDialog({
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
                 <XCircle className="h-5 w-5 text-destructive" />
               </div>
-              <p className="mt-5 text-[13px] font-medium text-foreground/90 tracking-tight">
+              <p className="mt-5 text-sm font-medium text-foreground/90 tracking-tight">
                 Update failed
               </p>
-              <p className="mt-1 text-[11px] text-muted-foreground/70 text-center">
+              <p className="mt-1 text-xs text-muted-foreground/70 text-center">
                 {phaseMessage || 'Something went wrong.'}
               </p>
               {errorMessage && (
-                <div className="mt-5 w-full max-h-32 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-muted/30 px-3 py-2 font-mono text-[10px] text-foreground/70">
+                <div className="mt-5 w-full max-h-32 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-muted/30 px-3 py-2 font-mono text-xs text-foreground/70">
                   {errorMessage}
                 </div>
               )}

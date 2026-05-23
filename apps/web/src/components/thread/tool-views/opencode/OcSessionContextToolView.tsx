@@ -64,7 +64,7 @@ export function OcSessionContextToolView({
             title={sessionTitle || 'Session Context'}
             subtitle={modeLabel}
           />
-          <span className="inline-flex items-center text-[11px] text-muted-foreground/80 tracking-tight flex-shrink-0">
+          <span className="inline-flex items-center text-xs text-muted-foreground/80 tracking-tight flex-shrink-0">
             {modeLabel}
           </span>
         </div>
@@ -178,7 +178,7 @@ function MessagesContent({ output }: { output: string }) {
               : 'bg-card border border-border/30',
           )}
         >
-          <div className="text-[10px] font-semibold uppercase text-muted-foreground mb-1">
+          <div className="text-xs font-semibold uppercase text-muted-foreground mb-1">
             {msg.role}
           </div>
           <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
@@ -234,18 +234,18 @@ function DiffFile({ header, content }: { header: string; content: string }) {
       >
         {open ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
         <span className="text-xs font-mono truncate flex-1">{path}</span>
-        <Badge variant="outline" className="h-4 py-0 text-[0.5625rem] shrink-0">
+        <Badge variant="outline" className="h-4 py-0 text-xs shrink-0">
           {status}
         </Badge>
         <DiffStat
           additions={parseInt(additions, 10) || 0}
           deletions={parseInt(deletions, 10) || 0}
-          className="text-[10px]"
+          className="text-xs"
         />
       </button>
       {open && content && (
         <div className="border-t border-border/30 bg-muted/10 p-2 overflow-x-auto">
-          <pre className="text-[11px] font-mono whitespace-pre leading-relaxed">{content}</pre>
+          <pre className="text-xs font-mono whitespace-pre leading-relaxed">{content}</pre>
         </div>
       )}
     </div>

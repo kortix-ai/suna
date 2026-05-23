@@ -77,7 +77,7 @@ function StepIndicator({ current, steps }: { current: number; steps: StepDef[] }
           />
         ))}
       </div>
-      <p className="text-[11px] font-medium text-muted-foreground/40 uppercase tracking-wider">
+      <p className="text-xs font-medium text-muted-foreground/40 uppercase tracking-wider">
         {steps[current]?.label}
       </p>
     </div>
@@ -142,7 +142,7 @@ function ConfigureModal({
 
 function CloudBadge({ text }: { text?: string }) {
   return (
-    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium mx-auto w-fit">
+    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium mx-auto w-fit">
       <Zap className="h-3 w-3" />
       {text || 'Included with your Kortix credits'}
     </div>
@@ -228,8 +228,8 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
             <Sparkles className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div className="text-left">
-            <p className="text-[13px] font-medium text-foreground/80">Coding subscriptions</p>
-            <p className="text-[11px] text-foreground/40 leading-relaxed">
+            <p className="text-sm font-medium text-foreground/80">Coding subscriptions</p>
+            <p className="text-xs text-foreground/40 leading-relaxed">
               ChatGPT Max, Claude Pro / Code, or similar. Best value at scale — we strongly recommend this.
             </p>
           </div>
@@ -240,8 +240,8 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
             <Key className="h-3.5 w-3.5 text-foreground/40" />
           </div>
           <div className="text-left">
-            <p className="text-[13px] font-medium text-foreground/80">Your own API keys</p>
-            <p className="text-[11px] text-foreground/40 leading-relaxed">
+            <p className="text-sm font-medium text-foreground/80">Your own API keys</p>
+            <p className="text-xs text-foreground/40 leading-relaxed">
               OpenAI, Anthropic, Google, OpenRouter — bring any key you already have.
             </p>
           </div>
@@ -253,8 +253,8 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
               <CreditCard className="h-3.5 w-3.5 text-foreground/40" />
             </div>
             <div className="text-left">
-              <p className="text-[13px] font-medium text-foreground/80">Kortix credits</p>
-              <p className="text-[11px] text-foreground/40 leading-relaxed">
+              <p className="text-sm font-medium text-foreground/80">Kortix credits</p>
+              <p className="text-xs text-foreground/40 leading-relaxed">
                 Don&apos;t have a key yet? We include a few free credits to get you started.
               </p>
             </div>
@@ -317,7 +317,7 @@ function AutoTopupPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
         </p>
       </div>
 
-      <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-[12.5px] text-muted-foreground/60 leading-relaxed">
+      <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-sm text-muted-foreground/60 leading-relaxed">
         Credits are used when your agent runs on Kortix-managed models instead of your own API keys.
         Most users connect their own provider and rarely use credits.
       </div>
@@ -406,7 +406,7 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
               className="flex items-center gap-3 px-3 py-2 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]"
             >
               <ProviderLogo providerID={p.id} name={p.name} size="small" />
-              <span className="text-[13px] font-medium text-foreground/80">
+              <span className="text-sm font-medium text-foreground/80">
                 {PROVIDER_LABELS[p.id] || p.name || p.id}
               </span>
               <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 ml-auto" />
@@ -551,7 +551,7 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
             <div key={providerID} className="space-y-1">
               <div className="flex items-center gap-2 px-1 pb-1">
                 <ProviderLogo providerID={providerID} name={models[0]?.providerName} size="small" />
-                <span className="text-[11px] font-medium text-foreground/40 uppercase tracking-wider">
+                <span className="text-xs font-medium text-foreground/40 uppercase tracking-wider">
                   {PROVIDER_LABELS[providerID] || providerID}
                 </span>
               </div>
@@ -571,10 +571,10 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
                     )}
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-medium text-foreground/80 truncate">
+                      <div className="text-sm font-medium text-foreground/80 truncate">
                         {model.modelName}
                       </div>
-                      <div className="text-[11px] text-foreground/30 truncate">{model.modelID}</div>
+                      <div className="text-xs text-foreground/30 truncate">{model.modelID}</div>
                     </div>
                     {isSelected && (
                       <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -666,7 +666,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
         </div>
 
         {/* Info box */}
-        <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-[12.5px] text-muted-foreground/60 leading-relaxed">
+        <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-sm text-muted-foreground/60 leading-relaxed">
           {isCloud ? (
             <>
               All tool keys are <span className="text-foreground/80 font-medium">pre-configured</span> and
@@ -682,7 +682,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
 
         {/* Saved confirmation */}
         {saved && (
-          <div className="flex items-center justify-center gap-2 text-[12.5px] text-emerald-600 dark:text-emerald-400 font-medium">
+          <div className="flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 font-medium">
             <Check className="h-3.5 w-3.5" />
             {filled} key{filled > 1 ? 's' : ''} saved
           </div>
@@ -736,8 +736,8 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
                   </div>
                   <div className="flex-1 min-w-0 space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-medium text-foreground/80">{s.label}</span>
-                      <span className="text-[11px] text-foreground/30">{s.description}</span>
+                      <span className="text-sm font-medium text-foreground/80">{s.label}</span>
+                      <span className="text-xs text-foreground/30">{s.description}</span>
                       <a
                         href={s.url}
                         target="_blank"
@@ -908,7 +908,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
       {/* Footer — hidden on welcome step */}
       {step > 0 && (
-        <p className="absolute bottom-6 text-[11px] text-foreground/20">
+        <p className="absolute bottom-6 text-xs text-foreground/20">
           You can change all of this later in Settings.
         </p>
       )}

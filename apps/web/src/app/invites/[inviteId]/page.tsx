@@ -125,7 +125,7 @@ export default function InvitePage() {
             This invite is addressed to a different account. You're signed in
             as <span className="text-foreground/80 font-medium">{user.email}</span>.
           </StateBody>
-          <p className="text-[12px] text-foreground/30 mt-4">
+          <p className="text-xs text-foreground/30 mt-4">
             Sign out and sign back in with the address that received the invite.
           </p>
           <GhostAction onClick={() => router.replace('/projects')}>
@@ -173,16 +173,16 @@ export default function InvitePage() {
           <div className="flex items-center gap-3">
             <UserAvatar email={inviterEmail} size="lg" />
             <div className="min-w-0">
-              <div className="text-foreground/85 truncate text-[14px] font-medium">
+              <div className="text-foreground/85 truncate text-sm font-medium">
                 {inviterEmail}
               </div>
-              <div className="text-foreground/40 mt-0.5 text-[12px]">
+              <div className="text-foreground/40 mt-0.5 text-xs">
                 invited you to join a team
               </div>
             </div>
           </div>
         ) : (
-          <div className="text-foreground/50 text-[14px] leading-relaxed">
+          <div className="text-foreground/50 text-sm leading-relaxed">
             You have been invited to join a team.
           </div>
         )}
@@ -192,17 +192,17 @@ export default function InvitePage() {
             <KortixLogo size={16} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-foreground/85 truncate text-[14px] font-medium">
+            <div className="text-foreground/85 truncate text-sm font-medium">
               {targetName}
             </div>
-            <div className="text-foreground/40 mt-0.5 flex items-center gap-1 text-[11px]">
+            <div className="text-foreground/40 mt-0.5 flex items-center gap-1 text-xs">
               <Clock className="size-3" />
               {targetLabel} · expires {formatWhen(invite.expires_at)}
             </div>
           </div>
         </div>
 
-        <p className="text-foreground/35 mt-4 text-[11px] leading-relaxed">
+        <p className="text-foreground/35 mt-4 text-xs leading-relaxed">
           {`You'll join this account as ${roleLabel} and see projects the owner gives you access to.`}
         </p>
 
@@ -219,7 +219,7 @@ export default function InvitePage() {
             size="lg"
             onClick={() => declineMutation.mutate()}
             disabled={anyPending}
-            className="flex-1 text-[13px]"
+            className="flex-1 text-sm"
           >
             {declinePending ? (
               <Loader2 className="h-4 w-4 animate-spin mx-auto" />
@@ -232,7 +232,7 @@ export default function InvitePage() {
             size="lg"
             onClick={() => acceptMutation.mutate()}
             disabled={anyPending}
-            className="flex-1 text-[13px]"
+            className="flex-1 text-sm"
           >
             {acceptPending ? (
               <Loader2 className="h-4 w-4 animate-spin mx-auto" />
@@ -277,7 +277,7 @@ function InviteCard({
       <div className="flex flex-col items-center gap-5">
         <KortixLogo size={26} />
         <div className="w-full bg-background/80 dark:bg-background/75 backdrop-blur-2xl border border-foreground/[0.06] rounded-2xl px-7 py-7">
-          <p className="text-[11px] text-foreground/30 tracking-[0.2em] uppercase mb-5">
+          <p className="text-xs text-foreground/30 tracking-[0.2em] uppercase mb-5">
             {kicker}
           </p>
           {children}
@@ -289,7 +289,7 @@ function InviteCard({
 
 function StateHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h1 className="text-[28px] font-extralight tracking-tight text-foreground/85 leading-none">
+    <h1 className="text-3xl font-extralight tracking-tight text-foreground/85 leading-none">
       {children}
     </h1>
   );
@@ -297,7 +297,7 @@ function StateHeading({ children }: { children: React.ReactNode }) {
 
 function StateBody({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mt-3 text-[14px] text-foreground/50 leading-relaxed">{children}</p>
+    <p className="mt-3 text-sm text-foreground/50 leading-relaxed">{children}</p>
   );
 }
 
@@ -311,7 +311,7 @@ function GhostAction({
   return (
     <Button
       variant="ghost"
-      className="mt-6 h-10 px-4 text-[13px] text-foreground/60 hover:text-foreground/90 hover:bg-foreground/[0.05]"
+      className="mt-6 h-10 px-4 text-sm text-foreground/60 hover:text-foreground/90 hover:bg-foreground/[0.05]"
       onClick={onClick}
     >
       {children}

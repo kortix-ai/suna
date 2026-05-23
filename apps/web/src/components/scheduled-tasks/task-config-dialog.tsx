@@ -228,7 +228,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
           {step === 'source' && (
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">
                   Trigger source
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -274,7 +274,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
               {/* Source config — timezone moved to the modal footer */}
               {sourceType === 'cron' && (
                 <div className="space-y-1.5 pt-1">
-                  <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                  <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">
                     Schedule
                   </div>
                   <ScheduleBuilder value={cronExpr} onChange={setCronExpr} />
@@ -313,7 +313,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
           {/* ─── Step 2: Action Type ─────────────────────────────── */}
           {step === 'action' && (
             <div className="space-y-1.5">
-              <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+              <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">
                 Action type
               </div>
               <div className="grid grid-cols-1 gap-2">
@@ -546,9 +546,9 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                         value={newTicketAssignees}
                         onChange={(e) => setNewTicketAssignees(e.target.value)}
                         placeholder="engineer,qa"
-                        className="font-mono text-[13px]"
+                        className="font-mono text-sm"
                       />
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         Comma-separated agent slugs.
                         {projectAgents.length > 0 && (
                           <> Available: {projectAgents.map((a) => a.slug).join(', ')}</>

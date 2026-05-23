@@ -26,7 +26,7 @@ const INTEGRATIONS = [
 ];
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
-  return <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">{children}</span>;
+  return <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{children}</span>;
 }
 
 export default function Home() {
@@ -80,7 +80,7 @@ export default function Home() {
 
         {/* ═══════════════ INTEGRATIONS MARQUEE ═══════════════ */}
         <section className="border-y border-border/60 bg-muted/20 py-10">
-          <p className="mb-7 text-center text-[13px] text-muted-foreground">
+          <p className="mb-7 text-center text-sm text-muted-foreground">
             Connects to the <span className="font-medium text-foreground">3,000+ tools</span> your company already runs on
           </p>
           <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
@@ -111,7 +111,7 @@ export default function Home() {
               ].map(([stat, label]) => (
                 <div key={label} className="bg-card/40 px-6 py-8 text-center sm:py-10">
                   <div className="text-3xl font-medium tracking-tight text-foreground sm:text-4xl">{stat}</div>
-                  <div className="mt-2 text-[13px] text-muted-foreground">{label}</div>
+                  <div className="mt-2 text-sm text-muted-foreground">{label}</div>
                 </div>
               ))}
             </div>
@@ -145,7 +145,7 @@ export default function Home() {
                     {n}
                   </div>
                   <h3 className="mt-5 text-base font-semibold text-foreground">{t}</h3>
-                  <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{d}</p>
+                  <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
                 </div>
               ))}
             </div>
@@ -200,7 +200,7 @@ export default function Home() {
                       <Star className="size-3.5 fill-current text-amber-500" />
                       {formattedStars} stars on GitHub
                     </div>
-                    <div className="mt-0.5 text-[13px] text-muted-foreground">A leading open-source AI workspace.</div>
+                    <div className="mt-0.5 text-sm text-muted-foreground">A leading open-source AI workspace.</div>
                   </div>
                   <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:text-foreground" />
                 </a>
@@ -237,7 +237,7 @@ export default function Home() {
                     <Icon className="size-5 text-foreground/80" />
                   </span>
                   <h3 className="mt-4 text-base font-semibold text-foreground">{t}</h3>
-                  <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{d}</p>
+                  <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
                 </div>
               ))}
             </div>
@@ -272,7 +272,7 @@ export default function Home() {
                   <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm"><Link href={DEMO_URL}>Talk to sales</Link></Button>
                   <Button asChild size="lg" variant="ghost" className="h-12 rounded-full px-7 text-sm"><Link href="/pricing">See pricing</Link></Button>
                 </div>
-                <p className="mt-7 inline-flex items-center gap-2 text-[12px] text-muted-foreground">
+                <p className="mt-7 inline-flex items-center gap-2 text-xs text-muted-foreground">
                   <GitBranch className="size-3.5" /> Open source · SSO, RBAC &amp; on-prem · No lock-in
                 </p>
               </div>
@@ -284,7 +284,7 @@ export default function Home() {
 
         {/* ═══════════════ FLOATING CTA BAR ═══════════════ */}
         <div className={cn('fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-background/95 px-1.5 py-1.5 backdrop-blur-md transition-[transform,opacity] duration-[600ms] ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform', showFloatingCta ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-16 opacity-0')}>
-          <Link href="/technology" className="hidden h-8 items-center rounded-full px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground sm:flex">Technical</Link>
+          <Link href="/technology" className="hidden h-8 items-center rounded-full px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:flex">Technical</Link>
           <span className="hidden h-5 w-px bg-border sm:block" />
           <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="flex size-8 items-center justify-center rounded-full transition-colors hover:bg-foreground/[0.08]"><Github className="size-4" /></a>
           <Button size="sm" className="rounded-full px-5 text-xs font-medium" onClick={handleLaunch}>Get started<ArrowRight className="ml-1.5 size-3" /></Button>

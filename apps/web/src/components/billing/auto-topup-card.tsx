@@ -150,7 +150,7 @@ export function AutoTopupCard({
             <Button
               size="sm"
               variant="outline"
-              className="h-6 text-[11px] px-2 shrink-0"
+              className="h-6 text-xs px-2 shrink-0"
               onClick={() => refetchSettings()}
             >
               Retry
@@ -227,7 +227,7 @@ export function AutoTopupCard({
       )}
 
       {!enabled && (
-        <p className="text-[11px] text-muted-foreground/40">
+        <p className="text-xs text-muted-foreground/40">
           Your agent will pause when credits run out. You can enable this anytime.
         </p>
       )}

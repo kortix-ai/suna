@@ -61,7 +61,7 @@ export default function NotFound() {
           </div>
 
           {/* Title - responsive */}
-          <h1 className="text-3xl sm:text-[43px] font-normal tracking-tight text-foreground leading-tight text-center">
+          <h1 className="text-3xl sm:text-5xl font-normal tracking-tight text-foreground leading-tight text-center">
             Page not found
           </h1>
 
@@ -81,7 +81,7 @@ export default function NotFound() {
                   <span className="text-sm font-medium text-foreground">
                     404 Error
                   </span>
-                  <span className="text-[13px] text-foreground/60 font-mono">
+                  <span className="text-sm text-foreground/60 font-mono">
                     resource not available
                   </span>
                 </div>

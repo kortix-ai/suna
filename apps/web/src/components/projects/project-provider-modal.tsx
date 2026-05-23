@@ -161,11 +161,11 @@ export function ProjectProviderModal({
               <FilterBarItem
                 data-state={activeTab === 'connected' ? 'active' : 'inactive'}
                 onClick={() => switchTab('connected')}
-                className="text-[12px] data-[state=active]:shadow-none data-[state=active]:ring-0"
+                className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
               >
                 Connected
                 {connectedProviders.length > 0 && (
-                  <span className="ml-0.5 text-[10px] text-muted-foreground/40 tabular-nums">
+                  <span className="ml-0.5 text-xs text-muted-foreground/40 tabular-nums">
                     {connectedProviders.length}
                   </span>
                 )}
@@ -173,14 +173,14 @@ export function ProjectProviderModal({
               <FilterBarItem
                 data-state={activeTab === 'catalog' ? 'active' : 'inactive'}
                 onClick={() => switchTab('catalog')}
-                className="text-[12px] data-[state=active]:shadow-none data-[state=active]:ring-0"
+                className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
               >
                 Add provider
               </FilterBarItem>
               <FilterBarItem
                 data-state={activeTab === 'models' ? 'active' : 'inactive'}
                 onClick={() => switchTab('models')}
-                className="text-[12px] data-[state=active]:shadow-none data-[state=active]:ring-0"
+                className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
               >
                 Models
               </FilterBarItem>
@@ -298,7 +298,7 @@ function ConnectedTab({
     return (
       <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 px-6 text-center">
         <p className="text-xs text-muted-foreground/60">No providers connected yet</p>
-        <Button variant="outline" size="sm" className="h-7 px-3 text-[11px]" onClick={onAddProvider}>
+        <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={onAddProvider}>
           Add provider
         </Button>
       </div>
@@ -329,7 +329,7 @@ function ConnectedTab({
             <div className="truncate text-sm font-medium text-foreground">
               {PROVIDER_LABELS[provider.id] ?? provider.label}
             </div>
-            <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+            <div className="mt-0.5 truncate text-xs text-muted-foreground">
               {provider.envVars.join(' · ')} · {provider.models.length} model
               {provider.models.length === 1 ? '' : 's'}
             </div>
@@ -491,7 +491,7 @@ function CatalogTab({
           <div className="truncate text-sm font-medium text-foreground">
             Custom provider
           </div>
-          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">
             Connect any OpenAI-compatible endpoint with your own base URL
           </div>
         </div>
@@ -521,12 +521,12 @@ function CatalogTab({
               <div className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
                 {PROVIDER_LABELS[provider.id] ?? provider.label}
                 {isConnected && (
-                  <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-[9px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                     Connected
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">
                 {provider.hint}
               </div>
             </div>
@@ -582,12 +582,12 @@ function ProviderDetail({
           <div className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
             {PROVIDER_LABELS[provider.id] ?? provider.label}
             {isConnected && (
-              <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-[9px] font-medium text-emerald-600 dark:text-emerald-400">
+              <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                 Connected
               </span>
             )}
           </div>
-          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">
             {provider.envVars.join(' · ')} · {models.length} model
             {models.length === 1 ? '' : 's'}
           </div>
@@ -602,7 +602,7 @@ function ProviderDetail({
           href={provider.helpUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <ExternalLink className="h-3 w-3" />
           {helpHostname}
@@ -611,10 +611,10 @@ function ProviderDetail({
 
       <div>
         <div className="mb-1.5 flex items-center justify-between px-1">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/60">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
             Models
           </span>
-          <span className="text-[10px] text-muted-foreground/40 tabular-nums">
+          <span className="text-xs text-muted-foreground/40 tabular-nums">
             newest first
           </span>
         </div>
@@ -634,13 +634,13 @@ function ProviderDetail({
               >
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm text-foreground">{model.name}</div>
-                  <div className="mt-0.5 truncate text-[10px] text-muted-foreground/50">
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground/50">
                     {model.id}
                   </div>
                 </div>
                 {model.released && (
                   <span
-                    className="shrink-0 self-center text-[10px] tabular-nums text-muted-foreground/50"
+                    className="shrink-0 self-center text-xs tabular-nums text-muted-foreground/50"
                     title={`Released ${model.released}`}
                   >
                     {releasedAgo(model.released)}
@@ -773,7 +773,7 @@ function ApiKeyConnectForm({
           <div className="truncate text-sm font-medium text-foreground">
             {provider.label}
           </div>
-          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">
             {provider.envVars.length === 1 ? 'Stored as' : 'Stored as'}{' '}
             {provider.envVars.map((envVar, index) => (
               <span key={envVar}>
@@ -821,7 +821,7 @@ function ApiKeyConnectForm({
             href={provider.helpUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex w-fit items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
             <ExternalLink className="h-3 w-3" />
             Get credentials from {helpHostname}
@@ -852,7 +852,7 @@ function ApiKeyConnectForm({
         </Button>
       </form>
 
-      <p className="px-1 text-[11px] text-muted-foreground">
+      <p className="px-1 text-xs text-muted-foreground">
         Values are encrypted at rest (AES-256-GCM, per-project key) and injected
         into every new session sandbox as env vars. Restart any running session
         for this provider to take effect there.
@@ -985,7 +985,7 @@ function CustomProviderForm({
 
       <div className="rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3">
         <div className="text-sm font-medium text-foreground">Custom provider</div>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           Connect any OpenAI-compatible endpoint. The API key is saved as a
           project secret; the provider declaration goes in your repo&apos;s{' '}
           <code className="rounded bg-background px-1 py-0.5 font-mono">.opencode/opencode.jsonc</code>.
@@ -1130,7 +1130,7 @@ function CustomProviderSnippetView({
         <div className="text-sm font-medium text-foreground">
           {secretName ? 'API key saved' : 'Snippet ready'}
         </div>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           {secretName ? (
             <>
               Your key is stored as{' '}
@@ -1145,26 +1145,26 @@ function CustomProviderSnippetView({
 
       <div>
         <div className="mb-1.5 flex items-center justify-between px-1">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/60">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
             Add to <code className="font-mono normal-case">.opencode/opencode.jsonc</code>
           </span>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-7 gap-1.5 px-2 text-[11px]"
+            className="h-7 gap-1.5 px-2 text-xs"
             onClick={handleCopy}
           >
             <Copy className="h-3 w-3" />
             {copied ? 'Copied' : 'Copy'}
           </Button>
         </div>
-        <pre className="max-h-[280px] overflow-auto rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[11px] leading-snug text-foreground">
+        <pre className="max-h-[280px] overflow-auto rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-xs leading-snug text-foreground">
           {snippet}
         </pre>
       </div>
 
-      <p className="px-1 text-[11px] text-muted-foreground">
+      <p className="px-1 text-xs text-muted-foreground">
         Paste this into your project repo&apos;s{' '}
         <code className="rounded bg-muted px-1 py-0.5 font-mono">.opencode/opencode.jsonc</code>{' '}
         and commit. Restart any running session for the change to land in the sandbox.
@@ -1280,7 +1280,7 @@ function ModelsTab({
             <span className="text-xs font-medium text-foreground/70">
               {PROVIDER_LABELS[provider.id] ?? provider.label}
             </span>
-            <span className="ml-auto text-[10px] text-muted-foreground/40">
+            <span className="ml-auto text-xs text-muted-foreground/40">
               {models.length}
             </span>
           </div>
@@ -1295,7 +1295,7 @@ function ModelsTab({
               >
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm text-foreground">{model.name}</div>
-                  <div className="mt-0.5 truncate text-[10px] text-muted-foreground/50">
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground/50">
                     {model.id}
                   </div>
                 </div>

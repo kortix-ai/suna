@@ -197,7 +197,7 @@ interface CollapsedIconButtonProps {
 // so the sidebar reads clean by default.
 function KbdHint({ mod, letter }: { mod: string; letter: string }) {
   const chip =
-    'inline-flex items-center justify-center h-4 min-w-4 px-1 rounded bg-foreground/[0.05] border border-border/40 text-[9.5px] font-medium text-muted-foreground/70 leading-none font-sans select-none';
+    'inline-flex items-center justify-center h-4 min-w-4 px-1 rounded bg-foreground/[0.05] border border-border/40 text-xs font-medium text-muted-foreground/70 leading-none font-sans select-none';
   return (
     <span className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
       <kbd className={chip}>{mod}</kbd>
@@ -355,7 +355,7 @@ function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
                 });
               }}
               className={cn(
-                'flex items-center gap-2 w-full px-3 py-1 text-[12px] cursor-pointer transition-colors duration-100',
+                'flex items-center gap-2 w-full px-3 py-1 text-xs cursor-pointer transition-colors duration-100',
                 active
                   ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
                   : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
@@ -364,7 +364,7 @@ function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
               {!collapsed && <ThreadIcon iconName={(session as any).icon} className="flex-shrink-0" size={12} />}
               <span className="flex-1 truncate text-left">{session.title || 'Untitled'}</span>
               {pending > 0 && (
-                <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-[9.5px] font-semibold flex items-center justify-center">
+                <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-xs font-semibold flex items-center justify-center">
                   {pending}
                 </span>
               )}
@@ -461,9 +461,9 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
             Backing up sandbox
           </span>
           <span className="flex-1" />
-          <span className="text-[10px] text-muted-foreground flex-shrink-0">v{latestVersion}</span>
+          <span className="text-xs text-muted-foreground flex-shrink-0">v{latestVersion}</span>
         </div>
-        <p className="px-3 pb-2 text-[11px] text-muted-foreground leading-tight">
+        <p className="px-3 pb-2 text-xs text-muted-foreground leading-tight">
           {phaseMessage || 'You can keep using your machine. Update will continue automatically once the backup completes.'}
         </p>
         <div className="flex items-center gap-2 px-3 pb-2.5">
@@ -487,9 +487,9 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
           <Bug className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
           <span className="text-xs font-semibold text-foreground truncate min-w-0">Update failed</span>
           <span className="flex-1" />
-          <span className="text-[10px] text-muted-foreground flex-shrink-0">v{latestVersion}</span>
+          <span className="text-xs text-muted-foreground flex-shrink-0">v{latestVersion}</span>
         </div>
-        <p className="px-3 pb-2 text-[11px] text-muted-foreground leading-tight line-clamp-3">
+        <p className="px-3 pb-2 text-xs text-muted-foreground leading-tight line-clamp-3">
           {updateErrorMessage || phaseMessage || 'Something went wrong during the update.'}
         </p>
         <div className="flex items-center gap-1.5 px-2.5 pb-2.5 pt-1">
@@ -510,7 +510,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
           <span className="block text-xs font-medium text-amber-700 dark:text-amber-300 truncate">
             {phaseMessage || `Installing v${latestVersion}…`}
           </span>
-          <span className="block text-[10px] text-amber-700/70 dark:text-amber-300/70 truncate">
+          <span className="block text-xs text-amber-700/70 dark:text-amber-300/70 truncate">
             {phase} · {phaseProgress}%
           </span>
         </div>
@@ -535,7 +535,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
           {currentChannel === 'dev' ? 'New dev build' : 'New Kortix version'}
         </span>
         <span className="flex-1" />
-        <span className="text-[10px] text-muted-foreground flex-shrink-0">v{latestVersion}</span>
+        <span className="text-xs text-muted-foreground flex-shrink-0">v{latestVersion}</span>
         <button
           onClick={handleDismiss}
           className="p-0.5 rounded hover:bg-muted/80 transition-colors cursor-pointer flex-shrink-0"
@@ -554,14 +554,14 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
             return (
               <div key={i} className="flex items-start gap-1.5">
                 <Icon className={cn('h-3 w-3 mt-[1px] flex-shrink-0', color)} />
-                <span className="text-[11px] text-muted-foreground leading-tight line-clamp-1">{change.text}</span>
+                <span className="text-xs text-muted-foreground leading-tight line-clamp-1">{change.text}</span>
               </div>
             );
           })}
           {remaining > 0 && (
             <button
               onClick={navigateToChangelog}
-              className="text-[10px] text-primary/70 hover:text-primary font-medium pl-[18px] cursor-pointer transition-colors"
+              className="text-xs text-primary/70 hover:text-primary font-medium pl-[18px] cursor-pointer transition-colors"
             >
               +{remaining} more
             </button>
@@ -582,7 +582,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
             Update
           </Button>
         ) : (
-          <div className="flex-1 flex items-center justify-center gap-1.5 h-7 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+          <div className="flex-1 flex items-center justify-center gap-1.5 h-7 text-xs font-medium text-amber-600 dark:text-amber-400">
             <Loader2 className="h-3 w-3 animate-spin" />
             Updating…
           </div>
@@ -673,11 +673,11 @@ function SidebarSections() {
           <div className="px-3 flex items-center">
             <button
               onClick={() => setLegacyOpen((o) => !o)}
-              className="flex items-center gap-2.5 flex-1 px-2.5 py-1.5 rounded-lg text-[12.5px] text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer"
+              className="flex items-center gap-2.5 flex-1 px-2.5 py-1.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer"
             >
               <History className="h-3.5 w-3.5 flex-shrink-0" />
               <span className="flex-1 text-left">Previous Chats</span>
-              <span className="text-[9.5px] tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
+              <span className="text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
                 {legacyData!.total}
               </span>
               <ChevronDown className={cn(
@@ -721,7 +721,7 @@ function SidebarSections() {
           {(isMigrating || migrateAll.isPending) && migrateStatus && migrateStatus.total > 0 && (
             <div className="px-6 pb-1.5">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   Converting {migrateStatus.completed}/{migrateStatus.total}
                   {migrateStatus.failed > 0 && <span className="text-destructive"> · {migrateStatus.failed} failed</span>}
                 </span>
@@ -736,7 +736,7 @@ function SidebarSections() {
           )}
           {migrateDone && migrateStatus && (
             <div className="px-6 pb-1.5">
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
+              <span className="text-xs text-emerald-600 dark:text-emerald-400">
                 Converted {migrateStatus.completed} chats
                 {migrateStatus.failed > 0 && <span className="text-destructive"> · {migrateStatus.failed} failed</span>}
               </span>
@@ -753,7 +753,7 @@ function SidebarSections() {
                         key={thread.thread_id}
                         onClick={() => handleLegacyClick(thread.thread_id, thread.name)}
                         className={cn(
-                          'flex items-center gap-2 w-full px-3 py-1 rounded-lg text-[12px] cursor-pointer',
+                          'flex items-center gap-2 w-full px-3 py-1 rounded-lg text-xs cursor-pointer',
                           'transition-colors duration-150',
                           isActive
                             ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
@@ -1060,18 +1060,18 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
 
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-medium text-foreground">Config ignored</span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/18 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+            <span className="text-xs font-medium text-foreground">Config ignored</span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/18 bg-emerald-500/10 px-1.5 py-0.5 text-xs font-medium text-emerald-400">
               <CheckCircle2 className="h-2.5 w-2.5" />
               Runtime healthy
             </span>
           </div>
 
           <div className="space-y-1">
-            <div className="text-[11px] leading-relaxed text-muted-foreground">
+            <div className="text-xs leading-relaxed text-muted-foreground">
               {primaryProblem.message || 'An invalid config source is being ignored.'}
             </div>
-            <div className="truncate text-[10px] font-mono text-muted-foreground/80">
+            <div className="truncate text-xs font-mono text-muted-foreground/80">
               {primaryProblem.source}
             </div>
           </div>
@@ -1092,11 +1092,11 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
               Prompt
             </Button>
             {configStatus.problems.length > 1 ? (
-              <span className="text-[10px] text-muted-foreground">+{configStatus.problems.length - 1} more source{configStatus.problems.length === 2 ? '' : 's'}</span>
+              <span className="text-xs text-muted-foreground">+{configStatus.problems.length - 1} more source{configStatus.problems.length === 2 ? '' : 's'}</span>
             ) : null}
           </div>
 
-          <div className="text-[10px] text-muted-foreground/70 leading-relaxed">
+          <div className="text-xs text-muted-foreground/70 leading-relaxed">
             {taskTargetLabel
               ? `Fix task target: ${taskTargetLabel}`
               : 'Fix tasks will create a Workspace project automatically if needed.'}

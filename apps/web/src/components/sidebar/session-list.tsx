@@ -161,7 +161,7 @@ const SessionRow = memo(function SessionRow({
         <span
           className={cn(
             'flex-1 truncate',
-            isChild ? 'text-[11.5px]' : 'text-[12.5px]',
+            isChild ? 'text-xs' : 'text-sm',
             isActive && 'font-medium',
           )}
         >
@@ -176,7 +176,7 @@ const SessionRow = memo(function SessionRow({
                 type="button"
                 aria-label={isExpanded ? 'Collapse sub-sessions' : 'Expand sub-sessions'}
                 className={cn(
-                  'flex-shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] tabular-nums transition-colors cursor-pointer',
+                  'flex-shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-xs tabular-nums transition-colors cursor-pointer',
                   isExpanded
                     ? 'bg-sidebar-accent/80 text-sidebar-foreground'
                     : 'text-muted-foreground/50 hover:bg-sidebar-accent/60 hover:text-muted-foreground',
@@ -200,7 +200,7 @@ const SessionRow = memo(function SessionRow({
         {pendingCount > 0 && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-[9.5px] font-medium flex items-center justify-center">
+              <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-xs font-medium flex items-center justify-center">
                 {pendingCount}
               </span>
             </TooltipTrigger>
@@ -783,7 +783,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
           >
             <Archive className="size-3" />
             <span>Archived</span>
-            <span className="ml-auto text-[10px] tabular-nums bg-muted px-1.5 py-0.5 rounded-full">{archivedSessions.length}</span>
+            <span className="ml-auto text-xs tabular-nums bg-muted px-1.5 py-0.5 rounded-full">{archivedSessions.length}</span>
             {showArchived ? (
               <ChevronDown className="size-3" />
             ) : (

@@ -55,7 +55,7 @@ export function OcCodesearchToolView({
         ) : (
           <div className="flex flex-col items-center justify-center py-10 text-muted-foreground/60">
             <FolderOpen className="w-5 h-5 mb-2 opacity-50" />
-            <span className="text-[12px] tracking-tight">
+            <span className="text-xs tracking-tight">
               No results for &ldquo;{query}&rdquo;
             </span>
           </div>

@@ -126,7 +126,7 @@ export default function SandboxWebTerminal({
             <div className="size-2.5 rounded-full bg-yellow-500/80" />
             <div className="size-2.5 rounded-full bg-green-500/80" />
           </div>
-          <span className="text-[11px] text-zinc-500 font-mono ml-1.5">
+          <span className="text-xs text-zinc-500 font-mono ml-1.5">
             {label ?? sandboxId.slice(0, 8)}
           </span>
         </div>

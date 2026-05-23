@@ -114,7 +114,7 @@ function FileRailRow({
     <button
       onClick={onClick}
       className={cn(
-        'group flex items-center gap-2 w-full px-3 py-1.5 text-left text-[12px]',
+        'group flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs',
         'border-l-2',
         active
           ? 'border-l-primary bg-primary/[0.04]'
@@ -123,7 +123,7 @@ function FileRailRow({
     >
       {statusIconFor(file.status, 'size-3.5 shrink-0')}
       <span
-        className="flex-1 min-w-0 truncate font-mono text-[11px]"
+        className="flex-1 min-w-0 truncate font-mono text-xs"
         title={file.old_path ? `${file.old_path} → ${file.path}` : file.path}
       >
         {file.old_path && file.old_path !== file.path && (
@@ -131,7 +131,7 @@ function FileRailRow({
         )}
         {file.path}
       </span>
-      <span className="flex items-center gap-1 text-[10px] tabular-nums shrink-0">
+      <span className="flex items-center gap-1 text-xs tabular-nums shrink-0">
         {file.additions > 0 && (
           <span className="text-emerald-500">+{file.additions}</span>
         )}
@@ -176,21 +176,21 @@ function MainDiffColumn({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             {file.old_path && file.old_path !== file.path && (
-              <span className="font-mono text-[12px] text-muted-foreground/60 truncate">
+              <span className="font-mono text-xs text-muted-foreground/60 truncate">
                 {file.old_path}
               </span>
             )}
             {file.old_path && file.old_path !== file.path && (
               <span className="text-muted-foreground/40">→</span>
             )}
-            <span className="font-mono text-[13px] font-medium truncate">
+            <span className="font-mono text-sm font-medium truncate">
               {file.path}
             </span>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {statusBadgeFor(file.status)}
-          <span className="flex items-center gap-1.5 text-[11px] tabular-nums">
+          <span className="flex items-center gap-1.5 text-xs tabular-nums">
             {file.additions > 0 && (
               <span className="text-emerald-500 font-medium">+{file.additions}</span>
             )}
@@ -224,7 +224,7 @@ function MainDiffColumn({
           <div className="flex flex-col items-center justify-center gap-2 p-10 text-center">
             <GitCommitHorizontal className="h-6 w-6 text-muted-foreground/30" />
             <p className="text-xs text-muted-foreground">No textual diff</p>
-            <p className="text-[10px] text-muted-foreground/60">
+            <p className="text-xs text-muted-foreground/60">
               File may be binary or unchanged in this checkpoint.
             </p>
           </div>
@@ -419,7 +419,7 @@ export function CheckpointDetailDialog({
                 <ChevronRight className="h-4 w-4" />
               </Button>
               {shaIndex >= 0 && (
-                <span className="ml-1 text-[11px] text-muted-foreground tabular-nums">
+                <span className="ml-1 text-xs text-muted-foreground tabular-nums">
                   {shaIndex + 1} / {shaList.length}
                 </span>
               )}
@@ -442,7 +442,7 @@ export function CheckpointDetailDialog({
               {/* version chip */}
               {activeRef && (
                 <span
-                  className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground"
+                  className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-1 text-xs text-muted-foreground"
                   title={`Version: ${activeRef}`}
                 >
                   <GitBranch className="h-3 w-3" />
@@ -452,7 +452,7 @@ export function CheckpointDetailDialog({
 
               {/* author chip */}
               <span
-                className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-muted/60 pr-2 pl-0.5 py-0.5 text-[11px]"
+                className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-muted/60 pr-2 pl-0.5 py-0.5 text-xs"
                 title={`${data.author_name} <${data.author_email}>`}
               >
                 <UserAvatar
@@ -465,7 +465,7 @@ export function CheckpointDetailDialog({
 
               {/* date chip */}
               <span
-                className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground"
+                className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-1 text-xs text-muted-foreground"
                 title={formatFull(ts)}
               >
                 <Calendar className="h-3 w-3" />
@@ -476,7 +476,7 @@ export function CheckpointDetailDialog({
               <button
                 onClick={handleCopyHash}
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-full bg-muted/60 hover:bg-muted px-2 py-1 text-[11px]',
+                  'inline-flex items-center gap-1.5 rounded-full bg-muted/60 hover:bg-muted px-2 py-1 text-xs',
                   'font-mono tabular-nums transition-colors',
                 )}
                 title="Copy checkpoint id"
@@ -499,13 +499,13 @@ export function CheckpointDetailDialog({
             <div className="px-3 py-3 border-b border-border/40 shrink-0 space-y-2">
               {/* Body / message */}
               {data?.body && (
-                <pre className="text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap font-sans border-l-2 border-border/60 pl-2 max-h-[80px] overflow-auto">
+                <pre className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap font-sans border-l-2 border-border/60 pl-2 max-h-[80px] overflow-auto">
                   {data.body.trim()}
                 </pre>
               )}
               {/* Stats */}
               {data && (
-                <div className="flex items-center justify-between text-[11px]">
+                <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">
                     {data.files.length} file{data.files.length === 1 ? '' : 's'}
                   </span>
@@ -542,13 +542,13 @@ export function CheckpointDetailDialog({
               {error && !isLoading && (
                 <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
                   <AlertCircle className="h-5 w-5 text-muted-foreground/30" />
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     Failed to load checkpoint
                   </p>
                 </div>
               )}
               {data && filteredFiles.length === 0 && !isLoading && (
-                <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
+                <div className="px-3 py-6 text-center text-xs text-muted-foreground">
                   {data.files.length === 0
                     ? 'No file changes'
                     : 'No files match'}

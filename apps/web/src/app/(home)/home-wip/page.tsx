@@ -90,7 +90,7 @@ function MediaPlaceholder({
     >
       <div className="absolute top-3 left-3 inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-foreground/5 border border-foreground/10">
         {kind === 'video' ? <Play className="size-3" /> : <ImageIcon className="size-3" />}
-        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+        <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
           {kind === 'video' ? 'record' : 'screenshot'}
         </span>
       </div>
@@ -124,7 +124,7 @@ function IntegrationPill({
       ) : (
         <div className="size-4 shrink-0">{icon}</div>
       )}
-      <span className="text-[13px] font-medium text-foreground">{name}</span>
+      <span className="text-sm font-medium text-foreground">{name}</span>
     </div>
   );
 }
@@ -158,7 +158,7 @@ function DeliverableCard({
           </div>
           <span className="text-sm font-semibold text-foreground">{title}</span>
         </div>
-        <p className="text-[13px] text-muted-foreground leading-relaxed">{desc}</p>
+        <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
       </div>
     </div>
   );
@@ -203,7 +203,7 @@ function UseCase({
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-10 items-center">
       <div className="md:col-span-5">
-        <div className="text-[11px] font-mono text-muted-foreground mb-2">{n}</div>
+        <div className="text-xs font-mono text-muted-foreground mb-2">{n}</div>
         <h3 className="text-xl sm:text-2xl font-medium tracking-tight text-foreground">{title}</h3>
         <p className="mt-2.5 text-sm text-muted-foreground leading-relaxed">{desc}</p>
       </div>
@@ -264,7 +264,7 @@ export default function HomeWip() {
             style={{ opacity: heroOpacity, scale: heroScale }}
           >
             <div className="flex-1 flex flex-col items-center justify-center pt-32 px-6 pointer-events-none">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border bg-background/60 backdrop-blur-sm text-[11px] font-medium text-muted-foreground mb-6 pointer-events-auto">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border bg-background/60 backdrop-blur-sm text-xs font-medium text-muted-foreground mb-6 pointer-events-auto">
                 <span className="size-1.5 rounded-full bg-emerald-500" />
                 Open source · Self-hostable · MIT-licensed core
               </div>
@@ -289,8 +289,8 @@ export default function HomeWip() {
                 onClick={handleCopy}
                 className="group flex items-center gap-2.5 h-9 px-4 rounded-full bg-background/70 border border-border hover:bg-background/90 hover:border-foreground/20 transition-colors cursor-pointer animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200 fill-mode-both backdrop-blur-sm"
               >
-                <span className="font-mono text-[11px] text-muted-foreground select-none">$</span>
-                <code className="text-[11px] font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
+                <span className="font-mono text-xs text-muted-foreground select-none">$</span>
+                <code className="text-xs font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
                 <div className="pl-2.5 border-l border-border">
                   {copied ? (
                     <Check className="size-3 text-emerald-500" />
@@ -342,7 +342,7 @@ export default function HomeWip() {
           <section className="max-w-6xl mx-auto px-6 py-12 sm:py-16">
             <Reveal>
               <div className="max-w-2xl mb-10">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
                   /01 · Deliverables
                 </span>
                 <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
@@ -393,7 +393,7 @@ export default function HomeWip() {
                     </div>
                     <span className="text-sm font-semibold text-foreground">…and anything else</span>
                   </div>
-                  <p className="text-[13px] text-muted-foreground leading-relaxed">
+                  <p className="text-sm text-muted-foreground leading-relaxed">
                     Suna runs in a full Linux environment with internet, browser, and your tools — so the deliverable is whatever the work needs.
                   </p>
                   <Link href="/templates" className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:gap-2 transition-all">
@@ -408,7 +408,7 @@ export default function HomeWip() {
           <section className="max-w-6xl mx-auto px-6 py-12 sm:py-16 border-t border-border/50">
             <Reveal>
               <div className="max-w-2xl mb-10">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
                   /02 · Where it works
                 </span>
                 <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
@@ -480,7 +480,7 @@ export default function HomeWip() {
           <section className="max-w-6xl mx-auto px-6 py-12 sm:py-16 border-t border-border/50">
             <Reveal>
               <div className="max-w-2xl mb-12">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
                   /03 · What people hand off
                 </span>
                 <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
@@ -530,7 +530,7 @@ export default function HomeWip() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-center">
               <Reveal className="lg:col-span-5">
                 <div>
-                  <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
                     /04 · Parallel by default
                   </span>
                   <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
@@ -569,7 +569,7 @@ export default function HomeWip() {
           <section className="max-w-6xl mx-auto px-6 py-12 sm:py-16 border-t border-border/50">
             <Reveal>
               <div className="max-w-2xl mb-10">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
                   /05 · Open by default
                 </span>
                 <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
@@ -594,7 +594,7 @@ export default function HomeWip() {
                       {icon}
                     </div>
                     <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-                    <p className="mt-1.5 text-[13px] text-muted-foreground leading-relaxed">{desc}</p>
+                    <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">{desc}</p>
                   </div>
                 ))}
               </div>
@@ -610,8 +610,8 @@ export default function HomeWip() {
                   onClick={handleCopy}
                   className="group flex items-center gap-2.5 h-11 px-4 rounded-full bg-background border border-border hover:border-foreground/20 transition-colors cursor-pointer"
                 >
-                  <span className="font-mono text-[11px] text-muted-foreground select-none">$</span>
-                  <code className="text-[12px] font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
+                  <span className="font-mono text-xs text-muted-foreground select-none">$</span>
+                  <code className="text-xs font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
                   <div className="pl-2.5 ml-1 border-l border-border">
                     {copied ? (
                       <Check className="size-3.5 text-emerald-500" />
@@ -629,7 +629,7 @@ export default function HomeWip() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
               <Reveal className="lg:col-span-6">
                 <div>
-                  <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
                     /06 · For teams
                   </span>
                   <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
@@ -663,7 +663,7 @@ export default function HomeWip() {
           <section className="max-w-6xl mx-auto px-6 py-12 sm:py-16 border-t border-border/50">
             <Reveal>
               <div className="max-w-2xl mb-10">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
                   /07 · Under the hood
                 </span>
                 <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
@@ -687,7 +687,7 @@ export default function HomeWip() {
                       {icon}
                     </div>
                     <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-                    <p className="mt-1.5 text-[13px] text-muted-foreground leading-relaxed">{desc}</p>
+                    <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">{desc}</p>
                   </div>
                 ))}
               </div>
@@ -698,7 +698,7 @@ export default function HomeWip() {
           <section className="max-w-3xl mx-auto px-6 py-12 sm:py-16 border-t border-border/50">
             <Reveal>
               <div className="mb-8">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
                   /08 · FAQ
                 </span>
                 <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
@@ -776,8 +776,8 @@ export default function HomeWip() {
             onClick={handleCopy}
             className="group hidden sm:flex items-center gap-2 h-8 px-3 rounded-full hover:bg-foreground/[0.08] transition-colors cursor-pointer"
           >
-            <span className="font-mono text-[11px] text-muted-foreground select-none">$</span>
-            <code className="text-[11px] font-mono text-foreground tracking-tight">curl -fsSL kortix.com/install</code>
+            <span className="font-mono text-xs text-muted-foreground select-none">$</span>
+            <code className="text-xs font-mono text-foreground tracking-tight">curl -fsSL kortix.com/install</code>
             {copied ? (
               <Check className="size-3 text-emerald-500" />
             ) : (

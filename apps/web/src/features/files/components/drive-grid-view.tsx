@@ -186,10 +186,10 @@ function FolderCard({
                 }}
                 onBlur={confirmRename}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full text-[13px] bg-transparent border-b border-primary/50 py-0.5 outline-none"
+                className="w-full text-sm bg-transparent border-b border-primary/50 py-0.5 outline-none"
               />
             ) : (
-              <span className="text-[13px] truncate text-foreground">
+              <span className="text-sm truncate text-foreground">
                 {node.name}
               </span>
             )}
@@ -371,12 +371,12 @@ function FileCard({
                 }}
                 onBlur={confirmRename}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full text-[13px] bg-transparent border-b border-primary/50 py-0.5 outline-none"
+                className="w-full text-sm bg-transparent border-b border-primary/50 py-0.5 outline-none"
               />
             ) : (
               <div className="flex items-center gap-1.5 min-w-0 w-full">
                 {getFileIcon(node.name, { className: 'h-4 w-4 shrink-0', variant: 'monochrome' })}
-                <span className="text-[13px] truncate text-foreground">{node.name}</span>
+                <span className="text-sm truncate text-foreground">{node.name}</span>
               </div>
             )}
           </div>
@@ -516,7 +516,7 @@ export function DriveGridView({
                   )}
                 >
                   <DirIcon className="h-4.5 w-4.5 shrink-0 text-primary/70" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                     {node.name}
                   </span>
                 </div>

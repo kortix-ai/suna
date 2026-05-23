@@ -204,9 +204,9 @@ function DetailSheet({
                     {kindCfg.label} details for {item.name}
                   </SheetDescription>
                   <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                    <Badge variant="secondary" className="text-[10px]">{kindCfg.label}</Badge>
-                    <Badge variant="secondary" className="text-[10px]">{SCOPE_LABEL[item.scope]}</Badge>
-                    {item.meta && <span className="text-[10px] text-muted-foreground/50">{item.meta}</span>}
+                    <Badge variant="secondary" className="text-xs">{kindCfg.label}</Badge>
+                    <Badge variant="secondary" className="text-xs">{SCOPE_LABEL[item.scope]}</Badge>
+                    {item.meta && <span className="text-xs text-muted-foreground/50">{item.meta}</span>}
                   </div>
                 </div>
                 <Button
@@ -232,7 +232,7 @@ function DetailSheet({
               {/* Properties */}
               {rows.length > 0 && (
                 <div className="px-6 py-5">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 mb-3">Properties</p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60 mb-3">Properties</p>
                   <div className="space-y-3">
                     {rows.map((row) => (
                       <div key={row.label} className="grid grid-cols-[100px_1fr] gap-2">
@@ -252,12 +252,12 @@ function DetailSheet({
                   <div className="flex items-center justify-between px-6 py-3 border-y border-border/50 bg-muted/30">
                     <div className="flex items-center gap-2">
                       <FileText className="h-3 w-3 text-muted-foreground/50" />
-                      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">{contentLabel}</span>
+                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">{contentLabel}</span>
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 px-2 text-[10px] gap-1 text-muted-foreground hover:text-foreground"
+                      className="h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
                       onClick={() => copy(content!, 'content')}
                     >
                       {copied === 'content'
@@ -518,21 +518,21 @@ export default function WorkspacePage() {
                   <DropdownMenuItem onClick={() => openComposer('agent')}>
                     <Bot className="mr-2 h-3.5 w-3.5" />
                     Agent
-                    <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
+                    <span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
                       {kindCounts.agent}
                     </span>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openComposer('skill')}>
                     <Sparkles className="mr-2 h-3.5 w-3.5" />
                     Skill
-                    <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
+                    <span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
                       {kindCounts.skill}
                     </span>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openComposer('command')}>
                     <Terminal className="mr-2 h-3.5 w-3.5" />
                     Command
-                    <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
+                    <span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
                       {kindCounts.command}
                     </span>
                   </DropdownMenuItem>
@@ -540,7 +540,7 @@ export default function WorkspacePage() {
                   <DropdownMenuItem onClick={() => openSettings('mcp')}>
                     <Plug className="mr-2 h-3.5 w-3.5" />
                     MCP server
-                    <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
+                    <span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
                       {kindCounts.mcp}
                     </span>
                   </DropdownMenuItem>

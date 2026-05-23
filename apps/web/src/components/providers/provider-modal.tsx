@@ -120,7 +120,7 @@ function ConnectedTabBody({
         <Button
           variant="outline"
           size="sm"
-          className="h-7 px-3 text-[11px]"
+          className="h-7 px-3 text-xs"
           onClick={onAddProvider}
         >
           Add provider
@@ -281,7 +281,7 @@ function ModelsTabBody({
             <span className="text-xs font-medium text-foreground/70">
               {PROVIDER_LABELS[providerID] || list[0]?.providerName || providerID}
             </span>
-            <span className="ml-auto text-[10px] text-muted-foreground/40">
+            <span className="ml-auto text-xs text-muted-foreground/40">
               {list.length}
             </span>
           </div>
@@ -299,7 +299,7 @@ function ModelsTabBody({
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm text-foreground">{m.modelName}</div>
-                    <div className="mt-0.5 truncate text-[10px] text-muted-foreground/50">
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground/50">
                       {m.modelID}
                     </div>
                   </div>
@@ -425,11 +425,11 @@ export function ProviderModal({
               <FilterBarItem
                 data-state={activeTab === 'connected' ? 'active' : 'inactive'}
                 onClick={() => switchTab('connected')}
-                className="text-[12px] data-[state=active]:shadow-none data-[state=active]:ring-0"
+                className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
               >
                 Connected
                 {connectedProviders.length > 0 && (
-                  <span className="ml-0.5 text-[10px] text-muted-foreground/40 tabular-nums">
+                  <span className="ml-0.5 text-xs text-muted-foreground/40 tabular-nums">
                     {connectedProviders.length}
                   </span>
                 )}
@@ -437,18 +437,18 @@ export function ProviderModal({
               <FilterBarItem
                 data-state={activeTab === 'catalog' ? 'active' : 'inactive'}
                 onClick={() => switchTab('catalog')}
-                className="text-[12px] data-[state=active]:shadow-none data-[state=active]:ring-0"
+                className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
               >
                 Add provider
               </FilterBarItem>
               <FilterBarItem
                 data-state={activeTab === 'models' ? 'active' : 'inactive'}
                 onClick={() => switchTab('models')}
-                className="text-[12px] data-[state=active]:shadow-none data-[state=active]:ring-0"
+                className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
               >
                 Models
                 {hasModels && (
-                  <span className="ml-0.5 text-[10px] text-muted-foreground/40 tabular-nums">
+                  <span className="ml-0.5 text-xs text-muted-foreground/40 tabular-nums">
                     {visibleModelCount}/{models!.length}
                   </span>
                 )}

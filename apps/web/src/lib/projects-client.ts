@@ -196,6 +196,7 @@ export interface CreateProjectRepoInput {
   installation_id?: string;
   private?: boolean;
   description?: string;
+  starter_template?: 'general-knowledge-worker' | 'minimal';
 }
 
 export interface ProvisionProjectInput {
@@ -203,6 +204,7 @@ export interface ProvisionProjectInput {
   name: string;
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
+  starter_template?: 'general-knowledge-worker' | 'minimal';
 }
 
 export interface ProjectGitConnection {
@@ -1041,15 +1043,26 @@ export interface ProjectSession {
   opencode_session_id: string | null;
   /**
    * Session title, mirrored from opencode's session.title via
-   * /v1/projects/sync-opencode-titles. Backed by metadata.name in the DB.
+   * /v1/projects/sync-opencode-sessions. Backed by metadata.name in the DB.
    */
   name: string | null;
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
   metadata: Record<string, unknown>;
+  opencode_sessions: ProjectOpenCodeSession[];
   created_at: string;
   updated_at: string;
+}
+
+export interface ProjectOpenCodeSession {
+  id: string;
+  title: string | null;
+  parent_id: string | null;
+  project_id: string | null;
+  created_at: number | null;
+  updated_at: number | null;
+  archived_at: number | null;
 }
 
 export async function listProjectSessions(projectId: string) {
@@ -1122,18 +1135,23 @@ export async function restartProjectSession(
   );
 }
 
-export interface SyncOpencodeTitleEntry {
+export interface SyncOpencodeSessionEntry {
   opencode_session_id: string;
   title: string | null;
+  parent_id?: string | null;
+  project_id?: string | null;
+  created_at?: number | null;
+  updated_at?: number | null;
+  archived_at?: number | null;
 }
 
-export async function syncOpencodeSessionTitles(
-  entries: SyncOpencodeTitleEntry[],
+export async function syncOpencodeSessionData(
+  entries: SyncOpencodeSessionEntry[],
 ) {
   if (entries.length === 0) return { updated: 0 };
   return unwrap(
     await backendApi.post<{ updated: number }>(
-      `/projects/sync-opencode-titles`,
+      `/projects/sync-opencode-sessions`,
       { entries },
     ),
   );

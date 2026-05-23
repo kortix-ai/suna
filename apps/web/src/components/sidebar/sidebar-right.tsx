@@ -173,7 +173,7 @@ export function SidebarRight() {
               <div className="flex flex-col pt-3 pb-0 overflow-visible">
                 <div className="relative flex h-[32px] items-center px-3 justify-between">
                   <div className="flex items-center justify-between w-full">
-                    <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
                       Quick Actions
                     </span>
                   </div>
@@ -191,7 +191,7 @@ export function SidebarRight() {
                       <div key={subGroup ?? clusterIdx} className={clusterIdx === 0 ? 'mt-0' : 'mt-2'}>
                         {label && (
                           <div className="px-3 pb-1.5 pt-1">
-                            <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
+                            <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
                               {label}
                             </span>
                           </div>
@@ -227,7 +227,7 @@ export function SidebarRight() {
                       <div key={subGroup ?? clusterIdx} className="mt-3">
                         {label && (
                           <div className="px-3 pb-1.5 pt-1">
-                            <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
+                            <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
                               {label}
                             </span>
                           </div>
@@ -323,7 +323,7 @@ export function SidebarRight() {
             )}
           >
             {state === 'expanded' && (
-              <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
                 Quick Actions
               </span>
             )}
@@ -432,7 +432,7 @@ export function SidebarRight() {
                     <div key={subGroup ?? clusterIdx} className={clusterIdx === 0 ? 'mt-0' : 'mt-2'}>
                       {label && (
                         <div className="px-3 pb-1.5 pt-1">
-                          <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
+                          <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
                             {label}
                           </span>
                         </div>
@@ -469,7 +469,7 @@ export function SidebarRight() {
                     <div key={subGroup ?? clusterIdx} className="mt-3">
                       {label && (
                         <div className="px-3 pb-1.5 pt-1">
-                          <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
+                          <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
                             {label}
                           </span>
                         </div>

@@ -437,16 +437,16 @@ export function AdminAccessRequestsSection({ embedded = false }: { embedded?: bo
             </div>
             <div className="flex items-center gap-2"><Button variant="outline" onClick={() => router.push('/admin')}>Admin Home</Button><Button variant="outline" onClick={() => router.push('/instances')} className="gap-2"><ArrowLeft className="h-4 w-4" />Back to Instances</Button></div>
             <div className="flex gap-3">
-              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-amber-500">{summary.pending}</p><p className="text-[11px] text-muted-foreground">Pending</p></div>
-              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-green-500">{summary.approved}</p><p className="text-[11px] text-muted-foreground">Approved</p></div>
-              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-red-500">{summary.rejected}</p><p className="text-[11px] text-muted-foreground">Rejected</p></div>
+              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-amber-500">{summary.pending}</p><p className="text-xs text-muted-foreground">Pending</p></div>
+              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-green-500">{summary.approved}</p><p className="text-xs text-muted-foreground">Approved</p></div>
+              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-red-500">{summary.rejected}</p><p className="text-xs text-muted-foreground">Rejected</p></div>
             </div>
           </div>
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
-            <TabsTrigger value="pending" className="gap-1.5"><Clock className="h-3.5 w-3.5" />Pending{summary.pending > 0 && <span className="ml-1 text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded-full font-medium">{summary.pending}</span>}</TabsTrigger>
+            <TabsTrigger value="pending" className="gap-1.5"><Clock className="h-3.5 w-3.5" />Pending{summary.pending > 0 && <span className="ml-1 text-xs bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded-full font-medium">{summary.pending}</span>}</TabsTrigger>
             <TabsTrigger value="approved" className="gap-1.5"><CheckCircle className="h-3.5 w-3.5" />Approved</TabsTrigger>
             <TabsTrigger value="rejected" className="gap-1.5"><XCircle className="h-3.5 w-3.5" />Rejected</TabsTrigger>
             <TabsTrigger value="all" className="gap-1.5">All</TabsTrigger>

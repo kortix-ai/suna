@@ -376,7 +376,7 @@ export default function RoleDetailPage() {
                                 <span className="block truncate text-sm text-foreground">
                                   {a.label}
                                 </span>
-                                <code className="block truncate text-[10px] font-mono text-muted-foreground">
+                                <code className="block truncate text-xs font-mono text-muted-foreground">
                                   {a.action}
                                 </code>
                               </span>

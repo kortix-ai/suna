@@ -122,7 +122,7 @@ export function OcProjectGetToolView({
             subtitle={projectName}
           />
           {data?.id && (
-            <Badge variant="outline" className="h-6 py-0.5 bg-muted flex-shrink-0 ml-2 font-mono text-[10px]">
+            <Badge variant="outline" className="h-6 py-0.5 bg-muted flex-shrink-0 ml-2 font-mono text-xs">
               <Hash className="h-3 w-3 mr-1 opacity-70" />
               {data.id.slice(0, 12)}...
             </Badge>
@@ -159,7 +159,7 @@ export function OcProjectGetToolView({
                     {data.sessions.map((s) => (
                       <span
                         key={s.status}
-                        className="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-foreground/[0.04] text-[11px] text-foreground/85 tracking-tight"
+                        className="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-foreground/[0.04] text-xs text-foreground/85 tracking-tight"
                       >
                         {s.status === 'failed' ? (
                           <StatusDot tone="destructive" />

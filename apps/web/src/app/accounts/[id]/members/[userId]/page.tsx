@@ -357,7 +357,7 @@ function CapabilitiesCard({
       <div className="divide-y divide-border/60">
         {CAPABILITY_GROUPS.map((group) => (
           <div key={group.heading} className="px-6 py-4">
-            <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               {group.heading}
             </p>
             <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">

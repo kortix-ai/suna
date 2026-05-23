@@ -251,11 +251,11 @@ export function OcWebSearchToolView({
                         <ChevronRight className="w-3 h-3 text-muted-foreground/70 flex-shrink-0" />
                       )}
                       <Search className="w-3.5 h-3.5 text-muted-foreground/60 flex-shrink-0" />
-                      <span className="text-[12.5px] font-medium text-foreground/90 tracking-tight flex-1 truncate">
+                      <span className="text-sm font-medium text-foreground/90 tracking-tight flex-1 truncate">
                         {qr.query}
                       </span>
                       {qr.sources.length > 0 && (
-                        <span className="text-[11px] text-muted-foreground/70 tabular-nums flex-shrink-0">
+                        <span className="text-xs text-muted-foreground/70 tabular-nums flex-shrink-0">
                           {qr.sources.length}
                         </span>
                       )}
@@ -267,7 +267,7 @@ export function OcWebSearchToolView({
                       {qr.answer && (
                         <div className="space-y-1.5">
                           <ToolViewLabel>Answer</ToolViewLabel>
-                          <p className="text-[13px] leading-relaxed text-foreground/85 tracking-tight">
+                          <p className="text-sm leading-relaxed text-foreground/85 tracking-tight">
                             {qr.answer}
                           </p>
                         </div>
@@ -304,10 +304,10 @@ export function OcWebSearchToolView({
                                       )}
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                      <div className="text-[13px] font-medium tracking-tight text-foreground/90 group-hover:text-foreground/70 line-clamp-1 transition-colors">
+                                      <div className="text-sm font-medium tracking-tight text-foreground/90 group-hover:text-foreground/70 line-clamp-1 transition-colors">
                                         {src.title}
                                       </div>
-                                      <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground/60 tracking-tight">
+                                      <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground/60 tracking-tight">
                                         <span className="font-mono truncate">{domain}</span>
                                         {src.author && <span className="truncate">· {src.author}</span>}
                                         {src.publishedDate && (
@@ -315,7 +315,7 @@ export function OcWebSearchToolView({
                                         )}
                                       </div>
                                       {src.snippet && (
-                                        <p className="text-[12px] text-muted-foreground/70 leading-relaxed line-clamp-2 mt-1 tracking-tight">
+                                        <p className="text-xs text-muted-foreground/70 leading-relaxed line-clamp-2 mt-1 tracking-tight">
                                           {src.snippet.slice(0, 300)}
                                         </p>
                                       )}
@@ -335,18 +335,18 @@ export function OcWebSearchToolView({
             })}
           </div>
         ) : output && !isError ? (
-          <div className="px-4 py-3 text-[12px] text-muted-foreground/80 whitespace-pre-wrap tracking-tight">
+          <div className="px-4 py-3 text-xs text-muted-foreground/80 whitespace-pre-wrap tracking-tight">
             {output.slice(0, 2000)}
           </div>
         ) : isError ? (
-          <div className="flex items-start gap-2.5 px-4 py-6 text-[12px] text-muted-foreground/80 tracking-tight">
+          <div className="flex items-start gap-2.5 px-4 py-6 text-xs text-muted-foreground/80 tracking-tight">
             <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
             <p>{output || 'Search failed'}</p>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-10 text-muted-foreground/60">
             <Search className="w-5 h-5 mb-2 opacity-50" />
-            <p className="text-[12px] tracking-tight">No results</p>
+            <p className="text-xs tracking-tight">No results</p>
           </div>
         )}
       </ToolViewBody>

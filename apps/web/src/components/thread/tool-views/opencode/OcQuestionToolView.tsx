@@ -63,13 +63,13 @@ export function OcQuestionToolView({
             title={isAnswered ? `Asked ${questions.length} ${questions.length === 1 ? 'Question' : 'Questions'}` : 'Questions'}
           />
           {isAnswered && (
-            <Badge variant="outline" className="h-5 text-[10px] bg-muted">
+            <Badge variant="outline" className="h-5 text-xs bg-muted">
               <CheckCircle className="h-3 w-3 text-muted-foreground" />
               Answered
             </Badge>
           )}
           {isRunning && (
-            <Badge variant="outline" className="h-5 text-[10px] bg-muted">
+            <Badge variant="outline" className="h-5 text-xs bg-muted">
               <Clock className="h-3 w-3 text-muted-foreground" />
               Waiting
             </Badge>
@@ -87,12 +87,12 @@ export function OcQuestionToolView({
               return (
                 <div key={i} className="space-y-1.5">
                   {q.header && (
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       {q.header}
                     </span>
                   )}
 
-                  <p className="text-[13px] font-medium text-foreground">{q.question}</p>
+                  <p className="text-sm font-medium text-foreground">{q.question}</p>
 
                   {q.options && q.options.length > 0 && (
                     <div className="space-y-1">
@@ -119,7 +119,7 @@ export function OcQuestionToolView({
                                 {opt.label}
                               </span>
                               {opt.description && (
-                                <p className="text-[11px] text-muted-foreground">{opt.description}</p>
+                                <p className="text-xs text-muted-foreground">{opt.description}</p>
                               )}
                             </div>
                           </div>
@@ -131,7 +131,7 @@ export function OcQuestionToolView({
                   {/* Custom answer (not from options) */}
                   {hasAnswer && q.options && !q.options.some(o => answer.includes(o.label)) && (
                     <div className="px-2.5 py-1.5 rounded-2xl bg-muted">
-                      <span className="text-[10px] text-muted-foreground">Custom answer</span>
+                      <span className="text-xs text-muted-foreground">Custom answer</span>
                       <p className="text-xs text-foreground">{answer.join(', ')}</p>
                     </div>
                   )}

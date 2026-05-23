@@ -1730,7 +1730,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                               value={getMonthlyInputValue(month.monthIndex, platform, field)}
                               onChange={(e) => handleMonthlyInputChange(month.monthIndex, platform, field, e.target.value)}
                               onBlur={() => handleMonthlyInputBlur(month.monthIndex, platform, month.month, field)}
-                              className="h-6 w-16 text-[11px] text-right border-purple-300 bg-purple-50/50 dark:bg-purple-950/30"
+                              className="h-6 w-16 text-xs text-right border-purple-300 bg-purple-50/50 dark:bg-purple-950/30"
                               placeholder="—"
                             />
                           </div>
@@ -1757,7 +1757,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                               value={getMonthlyInputValue(month.monthIndex, platform, field)}
                               onChange={(e) => handleMonthlyInputChange(month.monthIndex, platform, field, e.target.value)}
                               onBlur={() => handleMonthlyInputBlur(month.monthIndex, platform, month.month, field)}
-                              className="h-6 w-16 text-[11px] text-right border-amber-400"
+                              className="h-6 w-16 text-xs text-right border-amber-400"
                               placeholder="—"
                             />
                           ) : (
@@ -2026,28 +2026,28 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <tr className="border-b bg-muted/30">
                     <th></th>
                     <th></th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Var%</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -2171,7 +2171,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           {platformIdx === 0 ? `W${week.week}` : ''}
                         </td>
                         <td className="p-2 text-muted-foreground whitespace-nowrap">
-                          <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium', platform === 'web' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400')}>
+                          <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium', platform === 'web' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400')}>
                             {platform === 'web' ? '🌐 Web' : '📱 App'}
                           </span>
                         </td>
@@ -2194,13 +2194,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                                 value={getInputValue(week.week, platform, 'views')}
                                 onChange={(e) => handleInputChange(week.week, platform, 'views', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, platform, 'views')}
-                                className="h-5 w-14 text-[10px] text-right border-amber-400"
+                                className="h-5 w-14 text-xs text-right border-amber-400"
                                 placeholder="—"
                               />
                             ) : (
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'views', autoViews)}
-                                className={cn('text-[10px] font-medium hover:underline', effectiveViews > 0 ? 'text-foreground' : 'text-muted-foreground')}
+                                className={cn('text-xs font-medium hover:underline', effectiveViews > 0 ? 'text-foreground' : 'text-muted-foreground')}
                                 title="Click to edit and override"
                               >
                                 {effectiveViews > 0 ? formatNumber(effectiveViews) : '—'}
@@ -2209,7 +2209,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           </div>
                         </td>
                         {/* % Growth */}
-                        <td className={cn('text-right p-1 text-[10px] font-medium', getGrowthColor(viewsGrowth))}>
+                        <td className={cn('text-right p-1 text-xs font-medium', getGrowthColor(viewsGrowth))}>
                           {formatGrowth(viewsGrowth)}
                         </td>
                         {/* Signups */}
@@ -2231,13 +2231,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                                 value={getInputValue(week.week, platform, 'signups')}
                                 onChange={(e) => handleInputChange(week.week, platform, 'signups', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, platform, 'signups')}
-                                className="h-5 w-14 text-[10px] text-right border-amber-400"
+                                className="h-5 w-14 text-xs text-right border-amber-400"
                                 placeholder="—"
                               />
                             ) : (
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'signups', autoSignups)}
-                                className={cn('text-[10px] font-medium hover:underline', effectiveSignups > 0 ? 'text-foreground' : 'text-muted-foreground')}
+                                className={cn('text-xs font-medium hover:underline', effectiveSignups > 0 ? 'text-foreground' : 'text-muted-foreground')}
                                 title="Click to edit and override"
                               >
                                 {effectiveSignups > 0 ? formatNumber(effectiveSignups) : '—'}
@@ -2246,11 +2246,11 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           </div>
                         </td>
                         {/* Signups Growth */}
-                        <td className={cn('text-right p-1 text-[10px] font-medium', getGrowthColor(signupsGrowth))}>
+                        <td className={cn('text-right p-1 text-xs font-medium', getGrowthColor(signupsGrowth))}>
                           {formatGrowth(signupsGrowth)}
                         </td>
                         {/* Signup Conv */}
-                        <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
+                        <td className="text-right p-1 text-xs font-medium text-muted-foreground">
                           {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
                         </td>
                         {/* New Paid */}
@@ -2272,13 +2272,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                                 value={getInputValue(week.week, platform, 'newPaid')}
                                 onChange={(e) => handleInputChange(week.week, platform, 'newPaid', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, platform, 'newPaid')}
-                                className="h-5 w-12 text-[10px] text-right border-amber-400"
+                                className="h-5 w-12 text-xs text-right border-amber-400"
                                 placeholder="—"
                               />
                             ) : (
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'newPaid', autoNewPaid || actual?.newPaid || 0)}
-                                className={cn('text-[10px] font-medium hover:underline', effectiveNewPaid > 0 ? 'text-foreground' : 'text-muted-foreground')}
+                                className={cn('text-xs font-medium hover:underline', effectiveNewPaid > 0 ? 'text-foreground' : 'text-muted-foreground')}
                                 title="Click to edit and override"
                               >
                                 {effectiveNewPaid > 0 ? formatNumber(effectiveNewPaid) : '—'}
@@ -2287,11 +2287,11 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           </div>
                         </td>
                         {/* New Paid Growth */}
-                        <td className={cn('text-right p-1 text-[10px] font-medium', getGrowthColor(newPaidGrowth))}>
+                        <td className={cn('text-right p-1 text-xs font-medium', getGrowthColor(newPaidGrowth))}>
                           {formatGrowth(newPaidGrowth)}
                         </td>
                         {/* Paid Conv */}
-                        <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
+                        <td className="text-right p-1 text-xs font-medium text-muted-foreground">
                           {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
                         </td>
                         {/* Churn */}
@@ -2312,13 +2312,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                                 value={getInputValue(week.week, platform, 'churn')}
                                 onChange={(e) => handleInputChange(week.week, platform, 'churn', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, platform, 'churn')}
-                                className="h-5 w-12 text-[10px] text-right border-amber-400"
+                                className="h-5 w-12 text-xs text-right border-amber-400"
                                 placeholder="—"
                               />
                             ) : (
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'churn', autoChurn)}
-                                className={cn('text-[10px] font-medium hover:underline', effectiveChurn > 0 ? 'text-red-500' : 'text-muted-foreground')}
+                                className={cn('text-xs font-medium hover:underline', effectiveChurn > 0 ? 'text-red-500' : 'text-muted-foreground')}
                                 title="Click to edit and override"
                               >
                                 {effectiveChurn > 0 ? formatNumber(effectiveChurn) : '—'}
@@ -2337,7 +2337,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             ? (weekChurn / monthStartSubs) * 100 
                             : null;
                           return (
-                            <td className={cn('text-right p-1 text-[10px] font-medium', churnRate !== null && churnRate > 0 ? 'text-red-500' : 'text-muted-foreground')}>
+                            <td className={cn('text-right p-1 text-xs font-medium', churnRate !== null && churnRate > 0 ? 'text-red-500' : 'text-muted-foreground')}>
                               {churnRate !== null ? `${churnRate.toFixed(1)}%` : '—'}
                             </td>
                           );
@@ -2361,13 +2361,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                                 value={getInputValue(week.week, platform, 'subscribers')}
                                 onChange={(e) => handleInputChange(week.week, platform, 'subscribers', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, platform, 'subscribers')}
-                                className="h-5 w-14 text-[10px] text-right border-amber-400"
+                                className="h-5 w-14 text-xs text-right border-amber-400"
                                 placeholder="—"
                               />
                             ) : (
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'subscribers', calcSubs)}
-                                className={cn('text-[10px] font-medium hover:underline', effectiveSubs > 0 ? 'text-foreground' : 'text-muted-foreground')}
+                                className={cn('text-xs font-medium hover:underline', effectiveSubs > 0 ? 'text-foreground' : 'text-muted-foreground')}
                                 title="Click to edit and override"
                               >
                                 {effectiveSubs > 0 ? formatNumber(effectiveSubs) : '—'}
@@ -2375,7 +2375,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             )}
                           </div>
                         </td>
-                        <td className="text-right p-1 text-[10px] text-muted-foreground">—</td>
+                        <td className="text-right p-1 text-xs text-muted-foreground">—</td>
                         {/* MRR */}
                         <td className="text-right p-1"></td>
                         <td className="text-right p-1">
@@ -2395,12 +2395,12 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                                 value={getInputValue(week.week, platform, 'mrr')}
                                 onChange={(e) => handleInputChange(week.week, platform, 'mrr', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, platform, 'mrr')}
-                                className="h-5 w-16 text-[10px] text-right border-amber-400"
+                                className="h-5 w-16 text-xs text-right border-amber-400"
                               />
                             ) : (
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'mrr', actual?.mrr || 0)}
-                                className={cn('text-[10px] font-medium hover:underline', actual?.mrr && actual.mrr > 0 ? 'text-foreground' : 'text-muted-foreground')}
+                                className={cn('text-xs font-medium hover:underline', actual?.mrr && actual.mrr > 0 ? 'text-foreground' : 'text-muted-foreground')}
                                 title="Click to edit and override"
                               >
                                 {actual?.mrr && actual.mrr > 0 ? toShorthand(actual.mrr) : '—'}
@@ -2408,7 +2408,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             )}
                           </div>
                         </td>
-                        <td className="text-right p-1 text-[10px] text-muted-foreground">—</td>
+                        <td className="text-right p-1 text-xs text-muted-foreground">—</td>
                         {/* ARR */}
                         <td className="text-right p-1"></td>
                         <td className="text-right p-1">
@@ -2428,12 +2428,12 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                                 value={getInputValue(week.week, platform, 'arr')}
                                 onChange={(e) => handleInputChange(week.week, platform, 'arr', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, platform, 'arr')}
-                                className="h-5 w-16 text-[10px] text-right border-amber-400"
+                                className="h-5 w-16 text-xs text-right border-amber-400"
                               />
                             ) : (
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'arr', actual?.arr || 0)}
-                                className={cn('text-[10px] font-medium hover:underline', actual?.arr && actual.arr > 0 ? 'text-foreground' : 'text-muted-foreground')}
+                                className={cn('text-xs font-medium hover:underline', actual?.arr && actual.arr > 0 ? 'text-foreground' : 'text-muted-foreground')}
                                 title="Click to edit and override"
                               >
                                 {actual?.arr && actual.arr > 0 ? toShorthand(actual.arr) : '—'}
@@ -2441,7 +2441,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             )}
                           </div>
                         </td>
-                        <td className="text-right p-1 text-[10px] text-muted-foreground">—</td>
+                        <td className="text-right p-1 text-xs text-muted-foreground">—</td>
                         <td className="p-1">
                           {(actual?.newPaid || actual?.mrr || actual?.arr) && (
                             <button
@@ -2462,63 +2462,63 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       <tr key={`${week.week}_total`} className={cn('border-b bg-muted/30 font-medium', week.week === weeklyProjections.length ? 'bg-primary/10' : '')}>
                         <td className="p-2"></td>
                         <td className="p-2 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
                             total
                           </span>
-                          <span className="ml-2 text-[10px] text-muted-foreground">{week.dateRange}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">{week.dateRange}</span>
                         </td>
                         {/* Views Goal */}
                         <td className="text-right p-1 text-muted-foreground">{formatNumber(week.visitors)}</td>
                         {/* Views Actual - total */}
-                        <td className="text-right p-1 font-semibold text-[10px]">{totalViews > 0 ? formatNumber(totalViews) : '—'}</td>
+                        <td className="text-right p-1 font-semibold text-xs">{totalViews > 0 ? formatNumber(totalViews) : '—'}</td>
                         {/* Growth - skip */}
-                        <td className="text-right p-1 text-muted-foreground text-[10px]">—</td>
+                        <td className="text-right p-1 text-muted-foreground text-xs">—</td>
                         {/* Signups Goal */}
                         <td className="text-right p-1">{formatNumber(week.signups)}</td>
                         {/* Signups Actual - total */}
-                        <td className="text-right p-1 font-semibold text-[10px]">{totalSignups > 0 ? formatNumber(totalSignups) : '—'}</td>
+                        <td className="text-right p-1 font-semibold text-xs">{totalSignups > 0 ? formatNumber(totalSignups) : '—'}</td>
                         {/* Growth - skip */}
-                        <td className="text-right p-1 text-muted-foreground text-[10px]">—</td>
+                        <td className="text-right p-1 text-muted-foreground text-xs">—</td>
                         {/* Signup Conv Rate */}
-                        <td className="text-right p-1 text-[10px] font-medium">
+                        <td className="text-right p-1 text-xs font-medium">
                           {totalSignupConvRate !== null ? `${totalSignupConvRate.toFixed(1)}%` : '—'}
                         </td>
                         {/* New Paid Goal */}
                         <td className="text-right p-1">{formatNumber(week.newPaid)}</td>
                         {/* New Paid Actual - total */}
-                        <td className="text-right p-1 font-semibold text-[10px]">{totalNewPaid > 0 ? formatNumber(totalNewPaid) : '—'}</td>
+                        <td className="text-right p-1 font-semibold text-xs">{totalNewPaid > 0 ? formatNumber(totalNewPaid) : '—'}</td>
                         {/* Growth - skip */}
-                        <td className="text-right p-1 text-muted-foreground text-[10px]">—</td>
+                        <td className="text-right p-1 text-muted-foreground text-xs">—</td>
                         {/* Paid Conv Rate */}
-                        <td className="text-right p-1 text-[10px] font-medium">
+                        <td className="text-right p-1 text-xs font-medium">
                           {totalPaidConvRate !== null ? `${totalPaidConvRate.toFixed(1)}%` : '—'}
                         </td>
                         {/* Churn - total */}
-                        <td className="text-right p-1 font-semibold text-[10px]">{totalChurn > 0 ? formatNumber(totalChurn) : '—'}</td>
+                        <td className="text-right p-1 font-semibold text-xs">{totalChurn > 0 ? formatNumber(totalChurn) : '—'}</td>
                         {/* Churn Rate - skip */}
-                        <td className="text-right p-1 text-muted-foreground text-[10px]">—</td>
+                        <td className="text-right p-1 text-muted-foreground text-xs">—</td>
                         {/* Subscribers Goal */}
                         <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
                         {/* Subscribers Actual - total */}
-                        <td className="text-right p-1 font-semibold text-[10px]">{totalSubs > 0 ? formatNumber(totalSubs) : '—'}</td>
+                        <td className="text-right p-1 font-semibold text-xs">{totalSubs > 0 ? formatNumber(totalSubs) : '—'}</td>
                         {/* Subs Var */}
-                        <td className={cn('text-right p-1 text-[10px]', totalSubsVar.color)}>
+                        <td className={cn('text-right p-1 text-xs', totalSubsVar.color)}>
                           {totalSubs > 0 ? `${totalSubsVar.value >= 0 ? '+' : ''}${totalSubsVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* MRR Goal */}
                         <td className="text-right p-1">{formatCurrency(week.mrr)}</td>
                         {/* MRR Actual - total */}
-                        <td className="text-right p-1 font-semibold text-[10px]">{totalMRR > 0 ? toShorthand(totalMRR) : '—'}</td>
+                        <td className="text-right p-1 font-semibold text-xs">{totalMRR > 0 ? toShorthand(totalMRR) : '—'}</td>
                         {/* MRR Var */}
-                        <td className={cn('text-right p-1 text-[10px]', totalMrrVar.color)}>
+                        <td className={cn('text-right p-1 text-xs', totalMrrVar.color)}>
                           {totalMRR > 0 ? `${totalMrrVar.value >= 0 ? '+' : ''}${totalMrrVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* ARR Goal */}
                         <td className="text-right p-1 font-medium">{formatCurrency(week.arr)}</td>
                         {/* ARR Actual - total */}
-                        <td className="text-right p-1 font-semibold text-[10px]">{totalARR > 0 ? toShorthand(totalARR) : '—'}</td>
+                        <td className="text-right p-1 font-semibold text-xs">{totalARR > 0 ? toShorthand(totalARR) : '—'}</td>
                         {/* ARR Var */}
-                        <td className={cn('text-right p-1 text-[10px]', totalArrVar.color)}>
+                        <td className={cn('text-right p-1 text-xs', totalArrVar.color)}>
                           {totalARR > 0 ? `${totalArrVar.value >= 0 ? '+' : ''}${totalArrVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* Delete - empty */}

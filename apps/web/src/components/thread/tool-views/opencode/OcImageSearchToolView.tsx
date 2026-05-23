@@ -180,7 +180,7 @@ export function OcImageSearchToolView({
           {totalImages > 0 && (
             <Badge
               variant="outline"
-              className="h-5 py-0 text-[10px] bg-muted text-muted-foreground"
+              className="h-5 py-0 text-xs bg-muted text-muted-foreground"
             >
               {totalImages} image{totalImages !== 1 ? 's' : ''}
             </Badge>
@@ -202,7 +202,7 @@ export function OcImageSearchToolView({
                       type="button"
                       onClick={() => setCurrentQueryIndex(idx)}
                       className={`
-                        inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11.5px] font-medium tracking-tight transition-colors
+                        inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium tracking-tight transition-colors
                         ${isActive
                           ? 'bg-foreground/[0.06] text-foreground border border-border/50'
                           : 'bg-transparent text-muted-foreground/80 hover:text-foreground hover:bg-foreground/[0.03] border border-transparent'
@@ -212,7 +212,7 @@ export function OcImageSearchToolView({
                       <Search className="w-3 h-3 flex-shrink-0" />
                       <span className="truncate max-w-[180px]">{bi.query}</span>
                       {bi.images.length > 0 && (
-                        <span className="text-[10px] text-muted-foreground/60">
+                        <span className="text-xs text-muted-foreground/60">
                           {bi.images.length}
                         </span>
                       )}
@@ -250,7 +250,7 @@ export function OcImageSearchToolView({
                   &quot;{query}&quot;
                 </span>
                 {numResults > 0 && (
-                  <span className="text-[10px] text-muted-foreground/60 ml-auto flex-shrink-0">
+                  <span className="text-xs text-muted-foreground/60 ml-auto flex-shrink-0">
                     {numResults} requested
                   </span>
                 )}
@@ -270,7 +270,7 @@ export function OcImageSearchToolView({
                 <ImageIcon className="size-8 opacity-40" />
                 <span className="text-xs">No images found</span>
                 {query && (
-                  <span className="text-[10px] opacity-60">
+                  <span className="text-xs opacity-60">
                     Try a different search query
                   </span>
                 )}
@@ -321,7 +321,7 @@ export function OcImageSearchToolView({
                                 {hasDimensions && (
                                   <Badge
                                     variant="secondary"
-                                    className="bg-black/60 hover:bg-black/70 text-white border-none shadow-md text-[10px] px-1.5 py-0"
+                                    className="bg-black/60 hover:bg-black/70 text-white border-none shadow-md text-xs px-1.5 py-0"
                                   >
                                     <Maximize2 className="h-2.5 w-2.5 mr-0.5" />
                                     {img.width}&times;{img.height}
@@ -338,7 +338,7 @@ export function OcImageSearchToolView({
                             {/* Title at bottom */}
                             {(img.title || img.source) && (
                               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2 pt-4">
-                                <p className="text-[10px] text-white/90 truncate leading-tight">
+                                <p className="text-xs text-white/90 truncate leading-tight">
                                   {img.title || img.source}
                                 </p>
                               </div>

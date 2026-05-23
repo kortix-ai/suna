@@ -307,7 +307,7 @@ export function UserSettingsModal({
                                             {group.skeleton ? (
                                                 <Skeleton className="h-3 w-20 rounded" />
                                             ) : (
-                                                <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">{group.label}</span>
+                                                <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">{group.label}</span>
                                             )}
                                         </div>
                                         <div className="flex flex-col gap-0.5">
@@ -917,7 +917,7 @@ function KeyboardShortcutsTab() {
                     {shortcuts.map((s) => (
                         <div key={s.label} className="flex items-center justify-between px-3 py-2.5">
                             <span className="text-sm text-foreground">{s.label}</span>
-                            <kbd className="inline-flex h-6 items-center rounded border bg-muted px-2 text-[10px] font-mono text-muted-foreground whitespace-nowrap">
+                            <kbd className="inline-flex h-6 items-center rounded border bg-muted px-2 text-xs font-mono text-muted-foreground whitespace-nowrap">
                                 {s.keys}
                             </kbd>
                         </div>
@@ -1582,7 +1582,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                             href="https://yolo.kortix.com"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
                         >
                             Learn more <ExternalLink className="size-3" />
                         </a>
@@ -1620,7 +1620,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                             <Zap className="size-3" />
                             Auto top-up
                         </p>
-                        <p className="text-[11px] text-muted-foreground/60">Never run out again</p>
+                        <p className="text-xs text-muted-foreground/60">Never run out again</p>
                     </div>
                     <AutoTopupCard fetchSettings showSaveButton />
                 </div>
@@ -1631,7 +1631,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                 <div className="border-t border-border pt-4 space-y-3">
                     <div className="flex items-center justify-between">
                         <p className="text-xs uppercase tracking-widest text-muted-foreground">Buy credits</p>
-                        <p className="text-[11px] text-muted-foreground/60">One-time top-up</p>
+                        <p className="text-xs text-muted-foreground/60">One-time top-up</p>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                         {CREDIT_PACKAGES.map((pkg) => {

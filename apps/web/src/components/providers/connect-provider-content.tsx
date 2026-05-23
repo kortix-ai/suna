@@ -811,7 +811,7 @@ export function ConnectProviderContent({
                 }
                 className="h-9 rounded-xl border-border/50 bg-background text-sm"
               />
-              <p className="text-[11px] text-muted-foreground/50 mt-1.5">
+              <p className="text-xs text-muted-foreground/50 mt-1.5">
                 Use {'{env:VAR_NAME}'} to read from environment
               </p>
             </div>

@@ -19,7 +19,7 @@ export default function CountryError() {
           <KortixLogo size={28} className="sm:w-8 sm:h-8" />
 
           {/* Title */}
-          <h1 className="text-2xl sm:text-3xl md:text-[43px] font-normal tracking-tight text-foreground leading-tight text-center">
+          <h1 className="text-2xl sm:text-3xl md:text-5xl font-normal tracking-tight text-foreground leading-tight text-center">
             Not available in your country
           </h1>
 
@@ -40,7 +40,7 @@ export default function CountryError() {
                   <span className="text-sm font-medium text-foreground">
                     Region restricted
                   </span>
-                  <span className="text-[13px] text-foreground/60">
+                  <span className="text-sm text-foreground/60">
                     Service not available in your location
                   </span>
                 </div>
@@ -67,7 +67,7 @@ export default function CountryError() {
           </div>
 
           {/* Footer text */}
-          <p className="text-[13px] text-foreground/40 text-center">
+          <p className="text-sm text-foreground/40 text-center">
             If you believe this is an error, please reach out to our support
             team.
           </p>

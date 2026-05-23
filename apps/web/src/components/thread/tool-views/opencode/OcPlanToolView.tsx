@@ -47,7 +47,7 @@ export function OcPlanToolView({
             title={title}
             subtitle={subtitle}
           />
-          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 tracking-tight flex-shrink-0">
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/80 tracking-tight flex-shrink-0">
             <ArrowRightLeft className="w-2.5 h-2.5" />
             {isExit ? 'Build' : 'Plan'}
           </span>

@@ -32,6 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { SandboxImage } from '@/components/session/sandbox-image';
 
@@ -367,7 +368,7 @@ function SystemMessageIndicator({
   return (
     <div className="flex items-center gap-2 -my-1">
       <div className="flex-1 h-px bg-border/30" />
-      <span className="text-[10px] text-muted-foreground/30 select-none whitespace-nowrap">
+      <span className="text-xs text-muted-foreground/30 select-none whitespace-nowrap">
         {text}
       </span>
       <div className="flex-1 h-px bg-border/30" />
@@ -411,7 +412,7 @@ function AnsweredQuestionCard({
             <span className="text-xs font-medium text-foreground">
               Questions
             </span>
-            <span className="text-[11px] text-muted-foreground/70">
+            <span className="text-xs text-muted-foreground/70">
               {answeredCount} answered
             </span>
             <ChevronDown
@@ -432,7 +433,7 @@ function AnsweredQuestionCard({
                   key={i}
                   className="px-2.5 py-2 border-b border-border/30 last:border-b-0"
                 >
-                  <div className="[&_*]:!text-muted-foreground/70 [&_p]:!my-0 [&_p]:!leading-relaxed [&_p]:!text-[11px] [&_ul]:!my-0 [&_ol]:!my-0 [&_li]:!my-0 [&_code]:!text-[10px] [&_strong]:!text-muted-foreground/60">
+                  <div className="[&_*]:!text-muted-foreground/70 [&_p]:!my-0 [&_p]:!leading-relaxed [&_p]:!text-xs [&_ul]:!my-0 [&_ol]:!my-0 [&_li]:!my-0 [&_code]:!text-xs [&_strong]:!text-muted-foreground/60">
                     <UnifiedMarkdown content={q.question} />
                   </div>
                   <div className="text-sm font-medium text-foreground mt-0.5">
@@ -1072,7 +1073,7 @@ function DCPNotificationCard({
         )}
       >
         <Scissors className="size-3.5 text-muted-foreground/70 flex-shrink-0" />
-        <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+        <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
           {isPrune ? 'Context Pruned' : 'Context Compressed'}
         </span>
 
@@ -1123,10 +1124,10 @@ function DCPNotificationCard({
               {notification.items.map((item, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-2 text-[11px] text-muted-foreground/80"
+                  className="flex items-center gap-2 text-xs text-muted-foreground/80"
                 >
                   <span className="text-muted-foreground/40">&rarr;</span>
-                  <span className="font-mono text-[10px] px-1 py-0.5 rounded bg-muted/50 text-muted-foreground/70">
+                  <span className="font-mono text-xs px-1 py-0.5 rounded bg-muted/50 text-muted-foreground/70">
                     {item.tool}
                   </span>
                   {item.description && (
@@ -1141,7 +1142,7 @@ function DCPNotificationCard({
 
           {/* Compress topic */}
           {notification.topic && (
-            <div className="text-[11px] text-muted-foreground/80">
+            <div className="text-xs text-muted-foreground/80">
               <span className="text-muted-foreground/50">Topic:</span>{' '}
               <span>{notification.topic}</span>
             </div>
@@ -1150,10 +1151,10 @@ function DCPNotificationCard({
           {/* Distilled content */}
           {notification.distilled && (
             <div className="mt-1.5 border-t border-border/30 pt-1.5">
-              <div className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-1">
+              <div className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider mb-1">
                 Distilled
               </div>
-              <div className="text-[11px] text-muted-foreground/80 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+              <div className="text-xs text-muted-foreground/80 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                 {notification.distilled}
               </div>
             </div>
@@ -1162,10 +1163,10 @@ function DCPNotificationCard({
           {/* Compress summary */}
           {notification.summary && (
             <div className="mt-1.5 border-t border-border/30 pt-1.5">
-              <div className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-1">
+              <div className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider mb-1">
                 Summary
               </div>
-              <div className="text-[11px] text-muted-foreground/80 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+              <div className="text-xs text-muted-foreground/80 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                 {notification.summary}
               </div>
             </div>
@@ -1249,7 +1250,7 @@ function SystemNotificationCard({
                   <span className="text-muted-foreground/40 flex-shrink-0">
                     {key}:
                   </span>
-                  <span className="text-muted-foreground/60 font-mono text-[11px] break-all">
+                  <span className="text-muted-foreground/60 font-mono text-xs break-all">
                     {value}
                   </span>
                 </div>
@@ -1257,7 +1258,7 @@ function SystemNotificationCard({
             </div>
           )}
           {notification.body && (
-            <div className="text-muted-foreground/50 font-mono text-[11px] whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
+            <div className="text-muted-foreground/50 font-mono text-xs whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
               {notification.body.slice(0, 2000)}
             </div>
           )}
@@ -1975,7 +1976,7 @@ function UserMessageRow({
               {triggerEventInfo.data?.trigger || 'Scheduled Task'}
             </span>
             {triggerEventInfo.data?.data?.manual && (
-              <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                 Manual
               </span>
             )}
@@ -2099,7 +2100,7 @@ function UserMessageRow({
         {replyContext && (
           <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-2xl bg-primary/5 border border-primary/10">
             <Reply className="size-3 text-primary/60 flex-shrink-0" />
-            <span className="text-[11px] text-muted-foreground truncate">
+            <span className="text-xs text-muted-foreground truncate">
               {replyContext.length > 150
                 ? `${replyContext.slice(0, 150)}...`
                 : replyContext}
@@ -2200,7 +2201,7 @@ function UserMessageRow({
         )}
       </div>
       {isEdited && (
-        <span className="text-[10px] text-muted-foreground/50 pr-1">
+        <span className="text-xs text-muted-foreground/50 pr-1">
           edited
         </span>
       )}
@@ -2411,7 +2412,7 @@ function GroupedReasoningCard({
 
       <CollapsibleContent>
         <div className="ml-[18px] mt-0.5 mb-1.5 pl-3 border-l border-border/30">
-          <div className="space-y-2 text-muted-foreground/50 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-[12px] [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-[12px] [&_.kortix-markdown_li]:!leading-[1.5] [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60">
+          <div className="space-y-2 text-muted-foreground/50 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-xs [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-xs [&_.kortix-markdown_li]:!leading-[1.5] [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60">
             {nonEmptyParts.map((p, i) => (
               <div key={p.id ?? i}>
                 <ThrottledMarkdown content={p.text!} isStreaming={false} />
@@ -2561,7 +2562,7 @@ function SameToolGroup({
           )}
           <span className="min-w-0 flex-1 truncate">{headerLabel}</span>
           {durationLabel && (
-            <span className="text-[10px] font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
+            <span className="text-xs font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
               {durationLabel}
             </span>
           )}
@@ -2607,7 +2608,7 @@ function SameToolGroup({
                       </span>
                     )}
                     {!running && dur >= 1000 && (
-                      <span className="ml-auto text-[10px] font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
+                      <span className="ml-auto text-xs font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
                         {Math.round(dur / 1000)}s
                       </span>
                     )}
@@ -3238,7 +3239,7 @@ function SessionTurn({
         <div className="rounded-2xl border border-border/60 bg-card/50 overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40 bg-muted/40">
             <Layers className="size-3.5 text-muted-foreground/70" />
-            <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+            <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
               Compaction
             </span>
           </div>
@@ -3489,7 +3490,9 @@ function SessionTurn({
               // Tools that always render as individual rows — never folded into
               // a "Tool · Nx" pile. File writes/creations are distinct artifacts
               // (index.html, styles.css, …) the user wants to see one-per-line.
-              const NO_GROUP_SET = new Set(['write']);
+              // Shell commands are likewise distinct actions, each shown on its
+              // own row rather than collapsed into a "Shell · Nx" pile.
+              const NO_GROUP_SET = new Set(['write', 'bash']);
               const norm = (t: string) => {
                 const n = t.replace(/^oc-/, '').replace(/-/g, '_');
                 if (CONTEXT_SET.has(n)) return '__context__';
@@ -3624,7 +3627,7 @@ function SessionTurn({
                       <div className="flex-1 h-px bg-border" />
                       <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/80 border border-border/60">
                         <Layers className="size-3 text-muted-foreground" />
-                        <span className="text-[10px] font-semibold text-muted-foreground tracking-wide">
+                        <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                           Compaction
                         </span>
                       </div>
@@ -3768,7 +3771,7 @@ function SessionTurn({
                     /{commandForTurn.name}
                   </span>
                   {commandForTurn.args && (
-                    <span className="text-[11px] text-muted-foreground truncate">
+                    <span className="text-xs text-muted-foreground truncate">
                       {commandForTurn.args}
                     </span>
                   )}
@@ -3842,7 +3845,7 @@ function SessionTurn({
         <div className="flex items-center gap-0.5 opacity-0 group-hover/turn:opacity-100 transition-opacity duration-150">
           {/* Duration & cost */}
           {duration && (
-            <span className="text-[11px] text-muted-foreground/50 mr-1">
+            <span className="text-xs text-muted-foreground/50 mr-1">
               {duration}
               {costInfo && (
                 <>
@@ -5869,16 +5872,28 @@ export function SessionChat({
     [],
   );
 
+  const pathname = usePathname();
+  const router = useRouter();
+
   // Thread context for subsessions only (real parentID).
   const { data: parentSessionData } = useOpenCodeSession(
     session?.parentID || '',
   );
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
+    const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
     return {
       variant: 'thread' as const,
       parentTitle: parentSessionData.title || 'Parent session',
       onBackToParent: () => {
+        if (projectRoute) {
+          const [, projectId, projectSessionId] = projectRoute;
+          const href = parentSessionData.parentID
+            ? `/projects/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
+            : `/projects/${projectId}/sessions/${projectSessionId}`;
+          router.push(href);
+          return;
+        }
         openTabAndNavigate({
           id: parentSessionData.id,
           title: parentSessionData.title || 'Parent session',
@@ -5888,7 +5903,7 @@ export function SessionChat({
         });
       },
     };
-  }, [session?.parentID, parentSessionData]);
+  }, [session?.parentID, parentSessionData, pathname, router]);
 
   // ============================================================================
   // Loading / Not-found states
@@ -6021,7 +6036,7 @@ export function SessionChat({
                               {optReply && (
                                 <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-2xl bg-primary/5 border border-primary/10">
                                   <Reply className="size-3 text-primary/60 flex-shrink-0" />
-                                  <span className="text-[11px] text-muted-foreground truncate">
+                                  <span className="text-xs text-muted-foreground truncate">
                                     {optReply.length > 150
                                       ? `${optReply.slice(0, 150)}...`
                                       : optReply}
@@ -6082,7 +6097,7 @@ export function SessionChat({
                       <div className="flex-1 h-px bg-border" />
                       <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/80 border border-border/60">
                         <Layers className="size-3.5 text-muted-foreground" />
-                        <span className="text-[11px] font-semibold text-muted-foreground tracking-wide">
+                        <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                           Compaction
                         </span>
                       </div>
@@ -6130,7 +6145,7 @@ export function SessionChat({
                           <div className="flex-1 h-px bg-border" />
                           <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/80 border border-border/60">
                             <Layers className="size-3.5 text-muted-foreground" />
-                            <span className="text-[11px] font-semibold text-muted-foreground tracking-wide">
+                            <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                               Compaction
                             </span>
                           </div>
@@ -6376,7 +6391,7 @@ export function SessionChat({
                               key={qm.id}
                               className="group/q flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-muted/60 transition-colors"
                             >
-                              <span className="text-[10px] tabular-nums text-muted-foreground/40 shrink-0 w-3 text-center">
+                              <span className="text-xs tabular-nums text-muted-foreground/40 shrink-0 w-3 text-center">
                                 {idx + 1}
                               </span>
                               <p className="flex-1 text-xs text-muted-foreground truncate min-w-0">

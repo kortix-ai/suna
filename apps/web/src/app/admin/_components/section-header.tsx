@@ -56,7 +56,7 @@ export function StatPill({ label, value, hint, tone = 'default', className }: St
         className,
       )}
     >
-      <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+      <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
         {label}
       </div>
       <div className={cn('mt-1 text-2xl font-semibold tracking-tight truncate', TONE_STYLES[tone])}>

@@ -264,7 +264,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                     <div className="flex items-center gap-2">
                       <ProviderLogo providerID={group.providerID} name={group.providerName} size="small" />
                       <span className="flex-1">{PROVIDER_LABELS[group.providerID] || group.providerName}</span>
-                      <span className="text-[10px] text-muted-foreground/30 normal-case tracking-normal">
+                      <span className="text-xs text-muted-foreground/30 normal-case tracking-normal">
                         {group.models.length}
                       </span>
                     </div>
@@ -284,12 +284,12 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                       >
                         <div className="min-w-0 flex-1 py-0.5">
                           <div className={cn(
-                            'truncate text-[13px] leading-tight',
+                            'truncate text-sm leading-tight',
                             isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
                           )}>
                             {model.modelName}
                           </div>
-                          <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-1">{model.modelID}</p>
+                          <p className="truncate text-xs text-muted-foreground/55 leading-snug mt-1">{model.modelID}</p>
                         </div>
                         {isFree && <Tag variant="free">Free</Tag>}
                         {isSelected && <Check className="text-foreground shrink-0" />}

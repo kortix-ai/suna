@@ -212,7 +212,7 @@ export function GenericToolView({
     return (
       <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
         <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
-          <CardTitle className="text-[12.5px] font-medium text-foreground tracking-tight">
+          <CardTitle className="text-sm font-medium text-foreground tracking-tight">
             Tool View Error
           </CardTitle>
         </CardHeader>
@@ -365,7 +365,7 @@ export function GenericToolView({
       >
         {!isStreaming && (formattedAssistantContent || formattedToolContent || isError) && (
           isError ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-red-500/90 tracking-tight">
+            <span className="inline-flex items-center gap-1.5 text-xs text-red-500/90 tracking-tight">
               <AlertCircle className="w-3 h-3" />
               Failed
             </span>
@@ -423,7 +423,7 @@ function CollapsibleSection({
           {label}
         </span>
         {keyCount != null && keyCount > 0 && !isExpanded && (
-          <span className="text-[10px] text-muted-foreground/50 font-mono">
+          <span className="text-xs text-muted-foreground/50 font-mono">
             {keyCount} {keyCount === 1 ? 'field' : 'fields'}
           </span>
         )}
@@ -472,7 +472,7 @@ function GenericStructuredOutputDisplay({ sections }: { sections: OutputSectionT
                 className="flex items-start gap-2.5 px-3 py-2 rounded-2xl bg-foreground/[0.03] border border-border/50"
               >
                 <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-muted-foreground/70" />
-                <p className="text-[12px] leading-relaxed text-foreground/80 font-mono break-words">
+                <p className="text-xs leading-relaxed text-foreground/80 font-mono break-words">
                   {section.text}
                 </p>
               </div>
@@ -487,11 +487,11 @@ function GenericStructuredOutputDisplay({ sections }: { sections: OutputSectionT
                 <Ban className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-red-500/90" />
                 <div className="min-w-0 flex-1">
                   {section.errorType && (
-                    <span className="text-[10px] font-semibold text-red-500/80 uppercase tracking-wider">
+                    <span className="text-xs font-semibold text-red-500/80 uppercase tracking-wider">
                       {section.errorType}
                     </span>
                   )}
-                  <p className="text-[12px] leading-relaxed text-foreground/80 font-mono break-words">
+                  <p className="text-xs leading-relaxed text-foreground/80 font-mono break-words">
                     {section.summary}
                   </p>
                 </div>
@@ -512,13 +512,13 @@ function GenericStructuredOutputDisplay({ sections }: { sections: OutputSectionT
                     )}
                   />
                   <span className="text-xs font-medium">Stack trace</span>
-                  <span className="text-[10px] text-muted-foreground/40 font-mono ml-1">
+                  <span className="text-xs text-muted-foreground/40 font-mono ml-1">
                     {section.lines.length} lines
                   </span>
                 </button>
                 {showTrace && (
                   <div className="mt-1 rounded-2xl bg-muted/20 border border-border/30 overflow-hidden">
-                    <pre className="p-3 font-mono text-[10px] leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all max-h-80 overflow-auto">
+                    <pre className="p-3 font-mono text-xs leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all max-h-80 overflow-auto">
                       {section.lines.map((line, li) => {
                         if (/^\s+File "/.test(line)) {
                           return (
@@ -548,7 +548,7 @@ function GenericStructuredOutputDisplay({ sections }: { sections: OutputSectionT
                 className="flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-foreground/[0.03] border border-border/50"
               >
                 <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-foreground/70" />
-                <span className="text-[12px] text-foreground/80 font-mono">
+                <span className="text-xs text-foreground/80 font-mono">
                   {section.text}
                 </span>
               </div>
@@ -685,7 +685,7 @@ function GenericToolErrorDisplay({
                 <AlertCircle className="h-3 w-3 flex-shrink-0 text-red-400/70 mt-0.5" />
                 <div className="min-w-0 flex-1">
                   {issue.path.length > 0 && (
-                    <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-red-500/[0.08] text-red-500/85 font-mono mr-1.5">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-red-500/[0.08] text-red-500/85 font-mono mr-1.5">
                       {issue.path.join('.')}
                     </span>
                   )}
@@ -696,12 +696,12 @@ function GenericToolErrorDisplay({
               </div>
               {issue.values && issue.values.length > 0 && (
                 <div className="ml-5">
-                  <div className="text-[10px] text-muted-foreground/50 mb-1">Expected one of:</div>
+                  <div className="text-xs text-muted-foreground/50 mb-1">Expected one of:</div>
                   <div className="flex flex-wrap gap-1">
                     {issue.values.map((val, vi) => (
                       <span
                         key={vi}
-                        className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted/40 text-muted-foreground/70 font-mono"
+                        className="text-xs px-1.5 py-0.5 rounded-md bg-muted/40 text-muted-foreground/70 font-mono"
                       >
                         {val}
                       </span>
@@ -754,13 +754,13 @@ function GenericToolErrorDisplay({
             className="flex items-center gap-1.5 px-3 py-1.5 w-full text-left border-t border-red-500/10 text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
           >
             <ChevronRight className={cn('h-3 w-3 transition-transform', showTrace ? 'rotate-90' : '')} />
-            <span className="text-[10px] font-medium">
+            <span className="text-xs font-medium">
               {traceback.includes('Traceback') ? 'Stack trace' : 'Full output'}
             </span>
           </button>
           {showTrace && (
             <div className="px-3 pb-2.5 max-h-64 overflow-auto">
-              <pre className="font-mono text-[10px] leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all">
+              <pre className="font-mono text-xs leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all">
                 {traceback}
               </pre>
             </div>

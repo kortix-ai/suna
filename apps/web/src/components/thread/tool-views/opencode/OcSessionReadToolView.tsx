@@ -92,12 +92,12 @@ export function OcSessionReadToolView({
           />
           <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
             {parsed && (
-              <Badge variant="outline" className={cn("h-5 py-0 text-[10px]", statusColor)}>
+              <Badge variant="outline" className={cn("h-5 py-0 text-xs", statusColor)}>
                 {parsed.status}
               </Badge>
             )}
             {mode === 'search' && pattern && (
-              <Badge variant="outline" className="h-5 py-0 text-[10px]">
+              <Badge variant="outline" className="h-5 py-0 text-xs">
                 /{pattern}/
               </Badge>
             )}

@@ -374,7 +374,7 @@ export default function NotificationManagementPage() {
                     <CardContent className="space-y-3">
                       <div className="space-y-2">
                         <p className="text-xs font-medium">Novu Template:</p>
-                        <pre className="p-2 bg-muted rounded text-[10px] overflow-x-auto">
+                        <pre className="p-2 bg-muted rounded text-xs overflow-x-auto">
 {`Hello {{subscriber.firstName}},
 
 {{payload.message}}
@@ -385,7 +385,7 @@ export default function NotificationManagementPage() {
 
                       <div className="space-y-2">
                         <p className="text-xs font-medium">Your Payload:</p>
-                        <pre className="p-2 bg-muted rounded text-[10px]">
+                        <pre className="p-2 bg-muted rounded text-xs">
 {`{
   "message": "New feature!",
   "action_url": "/features"
@@ -395,7 +395,7 @@ export default function NotificationManagementPage() {
 
                       <div className="space-y-2">
                         <p className="text-xs font-medium">Result:</p>
-                        <div className="p-2 bg-muted rounded text-[10px]">
+                        <div className="p-2 bg-muted rounded text-xs">
                           <p className="font-medium">John receives:</p>
                           <pre className="text-muted-foreground mt-1">Hello John,
 

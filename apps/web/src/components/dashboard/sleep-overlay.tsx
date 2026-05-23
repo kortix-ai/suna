@@ -67,7 +67,7 @@ function SleepClock({ phase }: { phase: 'in' | 'visible' | 'out' }) {
         transition: 'opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
-      <p className="text-foreground/35 text-[13px] font-light tracking-widest" suppressHydrationWarning>
+      <p className="text-foreground/35 text-sm font-light tracking-widest" suppressHydrationWarning>
         {day} {month} {date}
       </p>
       <p
@@ -188,7 +188,7 @@ export function SleepOverlay() {
             </span>
           )}
         </div>
-        <p className="text-foreground/80 text-[15px] sm:text-base font-medium tracking-wide mb-1">
+        <p className="text-foreground/80 text-sm sm:text-base font-medium tracking-wide mb-1">
           {user?.name || ''}
         </p>
         <p className="text-foreground/30 text-xs tracking-wide">

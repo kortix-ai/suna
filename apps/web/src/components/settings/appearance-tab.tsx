@@ -53,10 +53,10 @@ function WallpaperCard({
         )}
       </div>
       <div className="px-1.5 py-1">
-        <span className="text-[11px] font-medium text-foreground flex items-center gap-1">
+        <span className="text-xs font-medium text-foreground flex items-center gap-1">
           {wallpaper.name}
           {wallpaper.id === DEFAULT_WALLPAPER_ID && (
-            <span className="text-[0.5625rem] font-medium px-1 py-px rounded-full bg-muted text-muted-foreground">
+            <span className="text-xs font-medium px-1 py-px rounded-full bg-muted text-muted-foreground">
               Default
             </span>
           )}

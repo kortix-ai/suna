@@ -238,7 +238,7 @@ function ProvidersSection({
   return (
     <div className="space-y-3 overflow-y-auto">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider">
+        <span className="text-xs font-medium text-muted-foreground/40 uppercase tracking-wider">
           Connected ({connectedProviders.length})
         </span>
         <Button
@@ -782,7 +782,7 @@ function McpServersSection() {
                 value={addForm.command}
                 onChange={(e) => setAddForm((f) => ({ ...f, command: e.target.value }))}
               />
-              <p className="text-[11px] text-muted-foreground/60 mt-1">
+              <p className="text-xs text-muted-foreground/60 mt-1">
                 Full command with arguments, space-separated
               </p>
             </div>

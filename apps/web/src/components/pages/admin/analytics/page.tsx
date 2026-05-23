@@ -387,7 +387,7 @@ export default function AdminAnalyticsPage() {
                                   <div key={cat} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background border">
                                     <span className="text-sm font-medium">{cat}</span>
                                     <span className="text-xs text-muted-foreground">{count}</span>
-                                    <span className="text-[10px] text-muted-foreground/70">({percent}%)</span>
+                                    <span className="text-xs text-muted-foreground/70">({percent}%)</span>
                                   </div>
                                 );
                               })}
@@ -415,7 +415,7 @@ export default function AdminAnalyticsPage() {
                             <button
                               onClick={() => setIncludeStuckTasks(!includeStuckTasks)}
                               className={cn(
-                                "text-[0.5625rem] mt-1 px-1.5 py-0.5 rounded cursor-pointer transition-colors",
+                                "text-xs mt-1 px-1.5 py-0.5 rounded cursor-pointer transition-colors",
                                 includeStuckTasks
                                   ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
                                   : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -451,22 +451,22 @@ export default function AdminAnalyticsPage() {
                       <div className="text-center p-4 rounded-2xl bg-muted/30">
                         <p className="text-3xl font-bold">{engagementSummary?.dau || 0}</p>
                         <p className="text-xs text-muted-foreground mt-1">DAU</p>
-                        <p className="text-[10px] text-muted-foreground">Daily Active Users</p>
+                        <p className="text-xs text-muted-foreground">Daily Active Users</p>
                       </div>
                       <div className="text-center p-4 rounded-2xl bg-muted/30">
                         <p className="text-3xl font-bold">{engagementSummary?.wau || 0}</p>
                         <p className="text-xs text-muted-foreground mt-1">WAU</p>
-                        <p className="text-[10px] text-muted-foreground">Weekly Active Users</p>
+                        <p className="text-xs text-muted-foreground">Weekly Active Users</p>
                       </div>
                       <div className="text-center p-4 rounded-2xl bg-muted/30">
                         <p className="text-3xl font-bold">{engagementSummary?.mau || 0}</p>
                         <p className="text-xs text-muted-foreground mt-1">MAU</p>
-                        <p className="text-[10px] text-muted-foreground">Monthly Active Users</p>
+                        <p className="text-xs text-muted-foreground">Monthly Active Users</p>
                       </div>
                       <div className="text-center p-4 rounded-2xl bg-blue-500/10">
                         <p className="text-3xl font-bold text-blue-600">{engagementSummary?.dau_mau_ratio || 0}%</p>
                         <p className="text-xs text-muted-foreground mt-1">DAU/MAU</p>
-                        <p className="text-[10px] text-muted-foreground">Stickiness Ratio</p>
+                        <p className="text-xs text-muted-foreground">Stickiness Ratio</p>
                       </div>
                     </div>
                   )}
@@ -631,7 +631,7 @@ export default function AdminAnalyticsPage() {
                         <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-xl font-bold">{profitability.total_active_subscriptions?.toLocaleString() ?? '—'}</p>
                           <p className="text-xs text-muted-foreground">Total Active Subs</p>
-                          <p className="text-[10px] text-muted-foreground mt-1">
+                          <p className="text-xs text-muted-foreground mt-1">
                             Web: {profitability.stripe_active_subscriptions?.toLocaleString() ?? '—'} | App: {profitability.revenuecat_active_subscriptions?.toLocaleString() ?? '—'}
                           </p>
                         </div>
@@ -691,17 +691,17 @@ export default function AdminAnalyticsPage() {
 
                           {/* Per User Metrics */}
                           <div className="relative flex items-center justify-between p-3 pt-4 rounded-2xl border mt-2">
-                            <span className="absolute top-1 left-2 text-[0.5625rem] text-muted-foreground">Per Paying User ({profitability.unique_paying_users})</span>
+                            <span className="absolute top-1 left-2 text-xs text-muted-foreground">Per Paying User ({profitability.unique_paying_users})</span>
                             <div>
-                              <p className="text-[10px] text-muted-foreground">Revenue/User</p>
+                              <p className="text-xs text-muted-foreground">Revenue/User</p>
                               <p className="text-sm font-semibold">${profitability.avg_revenue_per_paid_user.toFixed(2)}</p>
                             </div>
                             <div className="text-right">
-                              <p className="text-[10px] text-muted-foreground">Cost/User</p>
+                              <p className="text-xs text-muted-foreground">Cost/User</p>
                               <p className="text-sm font-semibold">${profitability.avg_cost_per_active_user.toFixed(2)}</p>
                             </div>
                             <div className="text-right">
-                              <p className="text-[10px] text-muted-foreground">Profit/User</p>
+                              <p className="text-xs text-muted-foreground">Profit/User</p>
                               <p className={cn(
                                 "text-sm font-semibold",
                                 (profitability.avg_revenue_per_paid_user - profitability.avg_cost_per_active_user) >= 0 ? "text-emerald-600" : "text-red-500"
@@ -734,7 +734,7 @@ export default function AdminAnalyticsPage() {
                               <button
                                 onClick={() => setTierViewMode('revenue')}
                                 className={cn(
-                                  'text-[10px] px-2 py-0.5 rounded-full transition-colors',
+                                  'text-xs px-2 py-0.5 rounded-full transition-colors',
                                   tierViewMode === 'revenue' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
                                 )}
                               >
@@ -743,7 +743,7 @@ export default function AdminAnalyticsPage() {
                               <button
                                 onClick={() => setTierViewMode('cost')}
                                 className={cn(
-                                  'text-[10px] px-2 py-0.5 rounded-full transition-colors',
+                                  'text-xs px-2 py-0.5 rounded-full transition-colors',
                                   tierViewMode === 'cost' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
                                 )}
                               >
@@ -752,7 +752,7 @@ export default function AdminAnalyticsPage() {
                               <button
                                 onClick={() => setTierViewMode('profit')}
                                 className={cn(
-                                  'text-[10px] px-2 py-0.5 rounded-full transition-colors',
+                                  'text-xs px-2 py-0.5 rounded-full transition-colors',
                                   tierViewMode === 'profit' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
                                 )}
                               >
@@ -777,7 +777,7 @@ export default function AdminAnalyticsPage() {
                             return filteredTiers.length > 0 ? (
                               <div className="space-y-1.5">
                                 {/* Header */}
-                                <div className="grid grid-cols-3 gap-2 text-[10px] text-muted-foreground px-2 pb-1">
+                                <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground px-2 pb-1">
                                   <div>Tier</div>
                                   <div className="text-right">Users</div>
                                   <div className="text-right">{tierViewMode === 'revenue' ? 'Revenue' : tierViewMode === 'cost' ? 'Cost' : 'Profit'}</div>
@@ -795,17 +795,17 @@ export default function AdminAnalyticsPage() {
                                     >
                                       <div className="font-medium truncate flex items-center gap-1">
                                         {tier.display_name}
-                                        <span className="text-[10px] text-muted-foreground">
+                                        <span className="text-xs text-muted-foreground">
                                           ({tier.provider === 'stripe' ? 'Web' : 'App'})
                                         </span>
                                       </div>
                                       <div className="text-right">
                                         {userCount}
-                                        <span className="text-[10px] text-muted-foreground ml-1">({userPercent}%)</span>
+                                        <span className="text-xs text-muted-foreground ml-1">({userPercent}%)</span>
                                       </div>
                                       <div className={cn("text-right", tierViewMode === 'profit' && (value >= 0 ? 'text-green-600' : 'text-red-600'))}>
                                         {tierViewMode === 'profit' && value < 0 ? '-' : ''}${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        <span className="text-[10px] text-muted-foreground ml-1">({valuePercent}%)</span>
+                                        <span className="text-xs text-muted-foreground ml-1">({valuePercent}%)</span>
                                       </div>
                                     </div>
                                   );

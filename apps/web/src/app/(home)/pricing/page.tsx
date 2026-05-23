@@ -9,7 +9,7 @@ const START_URL = '/auth';
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
-  return <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">{children}</span>;
+  return <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{children}</span>;
 }
 
 const PLANS = [
@@ -85,7 +85,7 @@ const COMPARE: { section: string; rows: [string, Cell, Cell, Cell][] }[] = [
 function CompareCell({ v }: { v: Cell }) {
   if (v === true) return <Check className="size-4 text-foreground mx-auto" />;
   if (v === false) return <Minus className="size-4 text-muted-foreground/40 mx-auto" />;
-  return <span className="text-[13px] text-muted-foreground">{v}</span>;
+  return <span className="text-sm text-muted-foreground">{v}</span>;
 }
 
 const FAQ: [string, string][] = [
@@ -115,19 +115,19 @@ export default function PricingPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
             {PLANS.map((p) => (
               <div key={p.name} className={p.highlight ? 'rounded-3xl border-2 border-foreground bg-card/40 p-6 sm:p-7 shadow-lg relative' : 'rounded-3xl border border-border bg-card/40 p-6 sm:p-7'}>
-                {p.highlight && <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-foreground text-background text-[11px] font-medium">Most popular</span>}
+                {p.highlight && <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-foreground text-background text-xs font-medium">Most popular</span>}
                 <h3 className="text-sm font-semibold text-foreground">{p.name}</h3>
                 <div className="mt-3 flex items-baseline gap-1.5">
                   <span className="text-4xl font-medium tracking-tight text-foreground">{p.price}</span>
-                  {p.unit && <span className="text-[13px] text-muted-foreground">{p.unit}</span>}
+                  {p.unit && <span className="text-sm text-muted-foreground">{p.unit}</span>}
                 </div>
-                <p className="mt-2 text-[13px] text-muted-foreground leading-relaxed">{p.note}</p>
+                <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{p.note}</p>
                 <Button asChild size="lg" variant={p.highlight ? 'default' : 'outline'} className="mt-5 w-full h-11 rounded-full text-sm">
                   {p.external ? <a href={p.href} target="_blank" rel="noopener noreferrer">{p.cta}</a> : <Link href={p.href}>{p.cta}</Link>}
                 </Button>
                 <ul className="mt-6 space-y-2.5">
                   {p.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2.5 text-[13px] text-muted-foreground"><Check className="size-4 mt-0.5 text-foreground/70 shrink-0" />{f}</li>
+                    <li key={f} className="flex items-start gap-2.5 text-sm text-muted-foreground"><Check className="size-4 mt-0.5 text-foreground/70 shrink-0" />{f}</li>
                   ))}
                 </ul>
               </div>
@@ -135,7 +135,7 @@ export default function PricingPage() {
           </div>
         </Reveal>
         <Reveal delay={0.1}>
-          <p className="mt-6 text-center text-[13px] text-muted-foreground">Cloud is per seat + usage-based compute. You only pay for what your agents actually run.</p>
+          <p className="mt-6 text-center text-sm text-muted-foreground">Cloud is per seat + usage-based compute. You only pay for what your agents actually run.</p>
         </Reveal>
       </section>
 
@@ -159,11 +159,11 @@ export default function PricingPage() {
                 {COMPARE.map((group) => (
                   <Fragment key={group.section}>
                     <tr>
-                      <td colSpan={4} className="pt-7 pb-2 text-[11px] font-mono uppercase tracking-wider text-muted-foreground">{group.section}</td>
+                      <td colSpan={4} className="pt-7 pb-2 text-xs font-mono uppercase tracking-wider text-muted-foreground">{group.section}</td>
                     </tr>
                     {group.rows.map(([label, a, b, c]) => (
                       <tr key={label} className="border-b border-border/50">
-                        <td className="py-3 pr-4 text-[13px] text-foreground">{label}</td>
+                        <td className="py-3 pr-4 text-sm text-foreground">{label}</td>
                         <td className="py-3 px-4 text-center"><CompareCell v={a} /></td>
                         <td className="py-3 px-4 text-center"><CompareCell v={b} /></td>
                         <td className="py-3 px-4 text-center"><CompareCell v={c} /></td>
@@ -187,7 +187,7 @@ export default function PricingPage() {
             <Reveal key={q}>
               <div className="py-5">
                 <h3 className="text-sm font-semibold text-foreground">{q}</h3>
-                <p className="mt-1.5 text-[14px] text-muted-foreground leading-relaxed">{a}</p>
+                <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">{a}</p>
               </div>
             </Reveal>
           ))}

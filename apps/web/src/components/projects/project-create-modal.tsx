@@ -40,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import {
   linkRepository,
   type GitHubRepository,
@@ -77,6 +78,7 @@ export function ProjectCreateModal({
 
   const [mode, setMode] = useState<'managed' | 'github'>('managed');
   const [newName, setNewName] = useState('');
+  const [includeGeneralKnowledgeSkills, setIncludeGeneralKnowledgeSkills] = useState(true);
   const [selectedInstallationId, setSelectedInstallationId] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
   const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
@@ -84,6 +86,7 @@ export function ProjectCreateModal({
   function resetAndClose() {
     setMode('managed');
     setNewName('');
+    setIncludeGeneralKnowledgeSkills(true);
     setSelectedInstallationId('');
     setSelectedRepo('');
     onOpenChange(false);
@@ -163,7 +166,13 @@ export function ProjectCreateModal({
     // safe repo slug from whatever clean name we send.
     const name = newName.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
     if (!name) return toast.error('Project name is required');
-    createMutation.mutate({ account_id: accountId, name });
+    createMutation.mutate({
+      account_id: accountId,
+      name,
+      starter_template: includeGeneralKnowledgeSkills
+        ? 'general-knowledge-worker'
+        : 'minimal',
+    });
   }
 
   function handleLinkGitHub(event: FormEvent<HTMLFormElement>) {
@@ -256,6 +265,23 @@ export function ProjectCreateModal({
                   autoCorrect="off"
                   className="font-mono"
                   autoFocus
+                />
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-md border border-border/60 px-3 py-3">
+                <div className="min-w-0 space-y-1">
+                  <Label htmlFor="gkw-skills">General knowledge worker skills</Label>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Include preconfigured skills for research, audit support,
+                    brand voice, content creation, documents, slides, data, and
+                    web work.
+                  </p>
+                </div>
+                <Switch
+                  id="gkw-skills"
+                  checked={includeGeneralKnowledgeSkills}
+                  onCheckedChange={setIncludeGeneralKnowledgeSkills}
+                  disabled={submitting}
                 />
               </div>
 

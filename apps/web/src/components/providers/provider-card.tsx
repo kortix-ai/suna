@@ -18,7 +18,7 @@ export function GroupHeading({ children, className }: { children: ReactNode; cla
   return (
     <div
       className={cn(
-        'px-1 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40',
+        'px-1 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40',
         className,
       )}
     >
@@ -29,7 +29,7 @@ export function GroupHeading({ children, className }: { children: ReactNode; cla
 
 export function ConnectedBadge() {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-px text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-px text-xs font-medium text-emerald-600 dark:text-emerald-400">
       <span className="h-1 w-1 rounded-full bg-emerald-500" />
       connected
     </span>

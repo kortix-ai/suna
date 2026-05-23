@@ -152,7 +152,7 @@ function ServiceCard({
                 <h3 className="text-sm font-semibold text-foreground truncate">{service.name}</h3>
                 <Badge
                   variant={service.status === 'running' ? 'highlight' : service.status === 'failed' ? 'destructive' : 'secondary'}
-                  className="text-[10px] shrink-0"
+                  className="text-xs shrink-0"
                 >
                   {service.status === 'running' ? 'Running' : service.status === 'starting' ? 'Starting' : service.status === 'failed' ? 'Failed' : 'Stopped'}
                 </Badge>
@@ -182,13 +182,13 @@ function ServiceCard({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {service.startedAt && (
-                <span className="text-[11px] text-muted-foreground/50">{formatTimeAgo(service.startedAt)}</span>
+                <span className="text-xs text-muted-foreground/50">{formatTimeAgo(service.startedAt)}</span>
               )}
               {service.builtin && (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Built-in</Badge>
+                <Badge variant="secondary" className="text-xs px-1.5 py-0">Built-in</Badge>
               )}
               {!service.managed && (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 border-dashed">Observed</Badge>
+                <Badge variant="secondary" className="text-xs px-1.5 py-0 border-dashed">Observed</Badge>
               )}
             </div>
             <div className="flex items-center gap-0.5">

@@ -193,7 +193,7 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
             aria-selected={isCustomizeRoute}
             onClick={() => router.push(`/projects/${projectId}/customize`)}
             className={cn(
-              'group relative flex items-center text-[12.5px] select-none cursor-pointer',
+              'group relative flex items-center text-sm select-none cursor-pointer',
               'transition-colors duration-150 h-full',
               'gap-1.5 px-2.5 md:gap-2 md:px-3 max-w-[200px] min-w-[96px] md:min-w-[80px]',
               isCustomizeRoute
@@ -251,7 +251,7 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
               aria-selected={isActive}
               onClick={() => router.push(`/projects/${projectId}/sessions/${sessionId}`)}
               className={cn(
-                'group relative flex items-center text-[12.5px] select-none cursor-pointer',
+                'group relative flex items-center text-sm select-none cursor-pointer',
                 'transition-colors duration-150 h-full',
                 'gap-1.5 px-2.5 md:gap-2 md:px-3 max-w-[200px] min-w-[96px] md:min-w-[80px]',
                 isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',

@@ -244,17 +244,17 @@ const LOGO_ASSETS: LogoAsset[] = [
 ];
 
 const TYPE_SCALE = [
-  { token: 'text-[10px]', size: '0.625rem', px: '~10px', twClass: 'text-[0.625rem]', use: 'Timestamps, metadata, badges' },
-  { token: 'text-xs', size: '0.6875rem', px: '~11px', twClass: 'text-xs', use: 'Secondary labels, tooltips, KBD' },
-  { token: 'text-sm', size: '0.8125rem', px: '~13px', twClass: 'text-sm', use: 'Body text, menu items' },
-  { token: 'text-base', size: '0.875rem', px: '~14px', twClass: 'text-base', use: 'Default UI text, inputs' },
-  { token: 'text-md', size: '0.9375rem', px: '~15px', twClass: 'text-[0.9375rem]', use: 'Card titles, emphasized body' },
-  { token: 'text-lg', size: '1rem', px: '~16px', twClass: 'text-lg', use: 'Section headers, dialog titles' },
-  { token: 'text-xl', size: '1.125rem', px: '~18px', twClass: 'text-xl', use: 'Page section titles' },
-  { token: 'text-2xl', size: '1.25rem', px: '~20px', twClass: 'text-2xl', use: 'Page titles' },
-  { token: 'text-3xl', size: '1.5rem', px: '~24px', twClass: 'text-3xl', use: 'Hero subheadings' },
-  { token: 'text-4xl', size: '2rem', px: '~32px', twClass: 'text-4xl', use: 'Display / hero headings' },
-  { token: 'text-5xl', size: '2.5rem', px: '~40px', twClass: 'text-5xl', use: 'Marketing display' },
+  { token: 'text-xs', size: '0.625rem', px: '~10px', twClass: 'text-xs', use: 'Timestamps, metadata, badges' },
+  { token: 'text-xs', size: '0.75rem', px: '~12px', twClass: 'text-xs', use: 'Secondary labels, tooltips, KBD' },
+  { token: 'text-sm', size: '0.875rem', px: '~14px', twClass: 'text-sm', use: 'Body text, menu items' },
+  { token: 'text-base', size: '1rem', px: '~16px', twClass: 'text-base', use: 'Default UI text, inputs' },
+  { token: 'text-md', size: '1.0625rem', px: '~17px', twClass: 'text-[1.0625rem]', use: 'Card titles, emphasized body' },
+  { token: 'text-lg', size: '1.125rem', px: '~18px', twClass: 'text-lg', use: 'Section headers, dialog titles' },
+  { token: 'text-xl', size: '1.25rem', px: '~20px', twClass: 'text-xl', use: 'Page section titles' },
+  { token: 'text-2xl', size: '1.5rem', px: '~24px', twClass: 'text-2xl', use: 'Page titles' },
+  { token: 'text-3xl', size: '1.875rem', px: '~30px', twClass: 'text-3xl', use: 'Hero subheadings' },
+  { token: 'text-4xl', size: '2.25rem', px: '~36px', twClass: 'text-4xl', use: 'Display / hero headings' },
+  { token: 'text-5xl', size: '3rem', px: '~48px', twClass: 'text-5xl', use: 'Marketing display' },
 ] as const;
 
 const MOTION_DURATIONS = [
@@ -369,7 +369,7 @@ function Hex({ value }: { value: string }) {
       }}
       className="inline-flex items-center gap-1.5 group cursor-pointer"
     >
-      <span className="font-mono text-[11px] text-muted-foreground group-hover:text-foreground transition-colors">
+      <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground transition-colors">
         {value}
       </span>
       {copied ? (
@@ -414,7 +414,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
           download={downloadName}
           className="absolute inset-0 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity bg-black/[0.04] dark:bg-white/[0.04] cursor-pointer"
         >
-          <span className="flex items-center gap-1.5 text-[11px] font-medium bg-background ring-1 ring-border rounded-full px-3 py-1.5 shadow-sm">
+          <span className="flex items-center gap-1.5 text-xs font-medium bg-background ring-1 ring-border rounded-full px-3 py-1.5 shadow-sm">
             <Download className="size-3" /> {fmt.toUpperCase()}
           </span>
         </a>
@@ -424,7 +424,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
         <span className="text-xs font-medium text-foreground">
           {asset.label}
         </span>
-        <span className="text-[10px] font-mono text-muted-foreground">
+        <span className="text-xs font-mono text-muted-foreground">
           {asset.variant}
         </span>
       </div>
@@ -446,7 +446,7 @@ function FormatToggle({
           key={f}
           onClick={() => onChange(f)}
           className={cn(
-            'text-[11px] font-mono px-3 py-1 rounded-full transition-colors cursor-pointer',
+            'text-xs font-mono px-3 py-1 rounded-full transition-colors cursor-pointer',
             value === f
               ? 'bg-background text-foreground shadow-sm ring-1 ring-foreground/[0.06]'
               : 'text-muted-foreground hover:text-foreground'
@@ -484,7 +484,7 @@ function SectionDivider() {
 
 function ComponentLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2">
+    <h3 className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
       {children}
     </h3>
   );
@@ -516,7 +516,7 @@ function MotionBar({
       <button
         type="button"
         onClick={() => setActive((p) => !p)}
-        className="text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors cursor-pointer w-24 shrink-0 text-left"
+        className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors cursor-pointer w-24 shrink-0 text-left"
       >
         {label}
       </button>
@@ -531,7 +531,7 @@ function MotionBar({
           }}
         />
       </div>
-      <span className="text-[10px] font-mono text-muted-foreground w-14 shrink-0 text-right">
+      <span className="text-xs font-mono text-muted-foreground w-14 shrink-0 text-right">
         {durationMs}ms
       </span>
     </div>
@@ -561,7 +561,7 @@ function AntiPatternBlock({
         <div className="p-4">
           <div className="flex items-center gap-1.5 mb-2.5">
             <X className="size-3 text-red-500" />
-            <span className="text-[10px] uppercase tracking-widest text-red-500/70 font-medium">
+            <span className="text-xs uppercase tracking-widest text-red-500/70 font-medium">
               Don&apos;t
             </span>
           </div>
@@ -572,7 +572,7 @@ function AntiPatternBlock({
         <div className="p-4">
           <div className="flex items-center gap-1.5 mb-2.5">
             <Check className="size-3 text-emerald-500" />
-            <span className="text-[10px] uppercase tracking-widest text-emerald-500/70 font-medium">
+            <span className="text-xs uppercase tracking-widest text-emerald-500/70 font-medium">
               Do
             </span>
           </div>
@@ -630,7 +630,7 @@ function TocSidebar() {
               <a
                 href={`#${s.id}`}
                 className={cn(
-                  'text-[11px] block py-1 transition-colors',
+                  'text-xs block py-1 transition-colors',
                   activeId === s.id || isParentActive
                     ? 'text-foreground font-medium'
                     : 'text-muted-foreground hover:text-foreground'
@@ -645,7 +645,7 @@ function TocSidebar() {
                       <a
                         href={`#${c.id}`}
                         className={cn(
-                          'text-[10px] block py-0.5 transition-colors',
+                          'text-xs block py-0.5 transition-colors',
                           activeId === c.id
                             ? 'text-foreground font-medium'
                             : 'text-muted-foreground hover:text-foreground'
@@ -691,7 +691,7 @@ export default function BrandPage() {
             {/* ═══════════════ Hero ═══════════════ */}
             <section id="hero">
               <div className="mb-3">
-                  <Badge variant="outline" className="text-[10px] font-mono">
+                  <Badge variant="outline" className="text-xs font-mono">
                     v1.0
                   </Badge>
                 </div>
@@ -789,7 +789,7 @@ export default function BrandPage() {
                     <p className="text-xs text-muted-foreground">
                       Core palette
                     </p>
-                    <p className="font-mono text-[10px] text-muted-foreground/70">
+                    <p className="font-mono text-xs text-muted-foreground/70">
                       globals.css · :root / .dark
                     </p>
                   </div>
@@ -804,7 +804,7 @@ export default function BrandPage() {
                             className="relative ring-1 ring-inset ring-black/[0.06]"
                             style={{ backgroundColor: token.light }}
                           >
-                            <span className="absolute bottom-1 left-2 text-[9px] font-mono text-black/55 uppercase tracking-widest">
+                            <span className="absolute bottom-1 left-2 text-xs font-mono text-black/55 uppercase tracking-widest">
                               light
                             </span>
                           </div>
@@ -812,7 +812,7 @@ export default function BrandPage() {
                             className="relative ring-1 ring-inset ring-white/[0.06]"
                             style={{ backgroundColor: token.dark }}
                           >
-                            <span className="absolute bottom-1 left-2 text-[9px] font-mono text-white/55 uppercase tracking-widest">
+                            <span className="absolute bottom-1 left-2 text-xs font-mono text-white/55 uppercase tracking-widest">
                               dark
                             </span>
                           </div>
@@ -822,7 +822,7 @@ export default function BrandPage() {
                             <span className="text-xs font-medium text-foreground truncate">
                               {token.name}
                             </span>
-                            <span className="font-mono text-[10px] text-muted-foreground shrink-0">
+                            <span className="font-mono text-xs text-muted-foreground shrink-0">
                               {token.var}
                             </span>
                           </div>
@@ -858,7 +858,7 @@ export default function BrandPage() {
                       key={s.label}
                       className="border-b border-border/30 pb-5"
                     >
-                      <span className="font-mono text-[10px] text-muted-foreground tracking-widest block mb-2">
+                      <span className="font-mono text-xs text-muted-foreground tracking-widest block mb-2">
                         {s.label}
                       </span>
                       <p
@@ -875,13 +875,13 @@ export default function BrandPage() {
 
                 {/* Mono showcase */}
                 <div className="bg-neutral-950 text-neutral-100 rounded-lg p-5 md:p-6 mt-6">
-                  <span className="font-mono text-[10px] text-neutral-500 tracking-widest block mb-3">
+                  <span className="font-mono text-xs text-neutral-500 tracking-widest block mb-3">
                     Roobert Mono
                   </span>
                   <p className="font-mono text-lg md:text-2xl tracking-tight">
                     const agent = new Kortix();
                   </p>
-                  <p className="font-mono text-[11px] text-neutral-600 mt-4">
+                  <p className="font-mono text-xs text-neutral-600 mt-4">
                     ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz
                     0123456789
                   </p>
@@ -899,12 +899,12 @@ export default function BrandPage() {
                         className="flex items-baseline gap-4 py-3 border-b border-border/20"
                       >
                         <div className="w-24 shrink-0">
-                          <span className="font-mono text-[10px] text-muted-foreground">
+                          <span className="font-mono text-xs text-muted-foreground">
                             {t.token}
                           </span>
                         </div>
                         <div className="w-16 shrink-0">
-                          <span className="font-mono text-[10px] text-muted-foreground">
+                          <span className="font-mono text-xs text-muted-foreground">
                             {t.px}
                           </span>
                         </div>
@@ -917,7 +917,7 @@ export default function BrandPage() {
                           </span>
                         </div>
                         <div className="hidden sm:block shrink-0 max-w-48">
-                          <span className="text-[10px] text-muted-foreground truncate block">
+                          <span className="text-xs text-muted-foreground truncate block">
                             {t.use}
                           </span>
                         </div>
@@ -992,14 +992,14 @@ export default function BrandPage() {
                   <div className="space-y-2.5">
                     {SPACING_SCALE.map((s) => (
                       <div key={s.token} className="flex items-center gap-4">
-                        <span className="font-mono text-[10px] text-muted-foreground w-8 shrink-0 text-right">
+                        <span className="font-mono text-xs text-muted-foreground w-8 shrink-0 text-right">
                           {s.token}
                         </span>
                         <div
                           className="h-5 rounded-sm bg-foreground/60"
                           style={{ width: `${s.px * 3}px` }}
                         />
-                        <span className="font-mono text-[10px] text-muted-foreground">
+                        <span className="font-mono text-xs text-muted-foreground">
                           {s.px}px
                         </span>
                       </div>
@@ -1026,16 +1026,16 @@ export default function BrandPage() {
                   <ComponentLabel>Button</ComponentLabel>
                   <ComponentDesc>
                     10 variants × 8 sizes. The foundation of every interaction.
-                    There are only two radii: pills (buttons, badges) use <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-full</code>;
-                    every container (cards, dialogs, inputs, textareas, selects, info banners, alerts) uses <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-2xl</code>.
-                    Never put <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-sm/md/lg/xl</code> on a box.
-                    The <code className="font-mono text-[11px] bg-muted px-1 rounded">destructive</code> variant is reserved for the <strong>one irreversible confirm</strong> (a ConfirmDialog&apos;s primary action, the Danger Zone) — never for routine actions like Log out or Cancel.
+                    There are only two radii: pills (buttons, badges) use <code className="font-mono text-xs bg-muted px-1 rounded">rounded-full</code>;
+                    every container (cards, dialogs, inputs, textareas, selects, info banners, alerts) uses <code className="font-mono text-xs bg-muted px-1 rounded">rounded-2xl</code>.
+                    Never put <code className="font-mono text-xs bg-muted px-1 rounded">rounded-sm/md/lg/xl</code> on a box.
+                    The <code className="font-mono text-xs bg-muted px-1 rounded">destructive</code> variant is reserved for the <strong>one irreversible confirm</strong> (a ConfirmDialog&apos;s primary action, the Danger Zone) — never for routine actions like Log out or Cancel.
                   </ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-6">
                       {/* Base Variants */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Base Variants</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">Base Variants</p>
                         <div className="flex flex-wrap gap-2">
                           <Button variant="default">Default</Button>
                           <Button variant="secondary">Secondary</Button>
@@ -1047,7 +1047,7 @@ export default function BrandPage() {
                       </div>
                       {/* Kortix Variants */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Kortix Variants</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">Kortix Variants</p>
                         <div className="flex flex-wrap gap-2">
                           <Button variant="subtle">Subtle</Button>
                           <Button variant="muted">Muted</Button>
@@ -1057,7 +1057,7 @@ export default function BrandPage() {
                       </div>
                       {/* Standard Sizes */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Standard Sizes</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">Standard Sizes</p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button size="lg">Large</Button>
                           <Button size="default">Default</Button>
@@ -1067,7 +1067,7 @@ export default function BrandPage() {
                       </div>
                       {/* Compact Sizes */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Compact Sizes</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">Compact Sizes</p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button size="toolbar" variant="muted">Toolbar</Button>
                           <Button size="xs" variant="muted">XSmall</Button>
@@ -1077,7 +1077,7 @@ export default function BrandPage() {
                       </div>
                       {/* With Icons */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">With Icons</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">With Icons</p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button><Mail className="size-4" /> Send Email</Button>
                           <Button variant="outline"><Plus className="size-4" /> Create</Button>
@@ -1089,7 +1089,7 @@ export default function BrandPage() {
                       </div>
                       {/* States */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">States</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">States</p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button disabled>Disabled</Button>
                           <Button disabled variant="outline">Disabled Outline</Button>
@@ -1110,7 +1110,7 @@ export default function BrandPage() {
                   <DemoContainer>
                     <div className="space-y-4">
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Base Variants</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">Base Variants</p>
                         <div className="flex flex-wrap gap-2">
                           <Badge variant="default">Default</Badge>
                           <Badge variant="secondary">Secondary</Badge>
@@ -1122,7 +1122,7 @@ export default function BrandPage() {
                         </div>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Semantic Status</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">Semantic Status</p>
                         <div className="flex flex-wrap gap-2">
                           <Badge variant="success">Success</Badge>
                           <Badge variant="warning">Warning</Badge>
@@ -1131,7 +1131,7 @@ export default function BrandPage() {
                         </div>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Sizes</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">Sizes</p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="default">Default</Badge>
                           <Badge variant="default" size="sm">Small</Badge>
@@ -1140,7 +1140,7 @@ export default function BrandPage() {
                         </div>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">With Icons</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">With Icons</p>
                         <div className="flex flex-wrap gap-2">
                           <Badge variant="default"><Star className="size-3" />Featured</Badge>
                           <Badge variant="success"><Check className="size-3" />Verified</Badge>
@@ -1396,7 +1396,7 @@ export default function BrandPage() {
                   <DemoContainer>
                     <div className="space-y-6">
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
+                        <p className="text-xs text-muted-foreground mb-3">
                           Standard
                         </p>
                         <Tabs defaultValue="tab1">
@@ -1423,7 +1423,7 @@ export default function BrandPage() {
                         </Tabs>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
+                        <p className="text-xs text-muted-foreground mb-3">
                           Compact
                         </p>
                         <Tabs defaultValue="c1">
@@ -1790,7 +1790,7 @@ export default function BrandPage() {
                     <div className="space-y-6">
                       {/* Card-like skeleton */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
+                        <p className="text-xs text-muted-foreground mb-3">
                           Card Skeleton
                         </p>
                         <div className="flex items-start gap-4">
@@ -1804,7 +1804,7 @@ export default function BrandPage() {
                       </div>
                       {/* Inline skeletons */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
+                        <p className="text-xs text-muted-foreground mb-3">
                           Inline Variants
                         </p>
                         <div className="space-y-3">
@@ -1830,7 +1830,7 @@ export default function BrandPage() {
                     <div className="space-y-4">
                       {[0, 25, 50, 75, 100].map((v) => (
                         <div key={v} className="space-y-1.5">
-                          <span className="text-[10px] font-mono text-muted-foreground">
+                          <span className="text-xs font-mono text-muted-foreground">
                             {v}%
                           </span>
                           <Progress value={v} />
@@ -1927,7 +1927,7 @@ export default function BrandPage() {
                           <TableCell className="font-medium">Button</TableCell>
                           <TableCell>6</TableCell>
                           <TableCell>
-                            <Badge variant="new" className="text-[10px]">Stable</Badge>
+                            <Badge variant="new" className="text-xs">Stable</Badge>
                           </TableCell>
                           <TableCell className="text-right">624</TableCell>
                         </TableRow>
@@ -1935,7 +1935,7 @@ export default function BrandPage() {
                           <TableCell className="font-medium">Badge</TableCell>
                           <TableCell>7</TableCell>
                           <TableCell>
-                            <Badge variant="new" className="text-[10px]">Stable</Badge>
+                            <Badge variant="new" className="text-xs">Stable</Badge>
                           </TableCell>
                           <TableCell className="text-right">189</TableCell>
                         </TableRow>
@@ -1943,7 +1943,7 @@ export default function BrandPage() {
                           <TableCell className="font-medium">Card</TableCell>
                           <TableCell>2</TableCell>
                           <TableCell>
-                            <Badge variant="new" className="text-[10px]">Stable</Badge>
+                            <Badge variant="new" className="text-xs">Stable</Badge>
                           </TableCell>
                           <TableCell className="text-right">312</TableCell>
                         </TableRow>
@@ -1951,7 +1951,7 @@ export default function BrandPage() {
                           <TableCell className="font-medium">Input</TableCell>
                           <TableCell>1</TableCell>
                           <TableCell>
-                            <Badge variant="beta" className="text-[10px]">Enhancing</Badge>
+                            <Badge variant="beta" className="text-xs">Enhancing</Badge>
                           </TableCell>
                           <TableCell className="text-right">247</TableCell>
                         </TableRow>
@@ -1970,7 +1970,7 @@ export default function BrandPage() {
                   <DemoContainer>
                     <div className="space-y-4">
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
+                        <p className="text-xs text-muted-foreground mb-3">
                           Individual Keys
                         </p>
                         <div className="flex flex-wrap items-center gap-2">
@@ -1983,31 +1983,31 @@ export default function BrandPage() {
                         </div>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
+                        <p className="text-xs text-muted-foreground mb-3">
                           Key Groups (Shortcuts)
                         </p>
                         <div className="flex flex-wrap items-center gap-4">
                           <KbdGroup>
                             <Kbd>⌘</Kbd>
-                            <span className="text-muted-foreground text-[10px]">
+                            <span className="text-muted-foreground text-xs">
                               +
                             </span>
                             <Kbd>K</Kbd>
                           </KbdGroup>
                           <KbdGroup>
                             <Kbd>⌘</Kbd>
-                            <span className="text-muted-foreground text-[10px]">
+                            <span className="text-muted-foreground text-xs">
                               +
                             </span>
                             <Kbd>Shift</Kbd>
-                            <span className="text-muted-foreground text-[10px]">
+                            <span className="text-muted-foreground text-xs">
                               +
                             </span>
                             <Kbd>P</Kbd>
                           </KbdGroup>
                           <KbdGroup>
                             <Kbd>Ctrl</Kbd>
-                            <span className="text-muted-foreground text-[10px]">
+                            <span className="text-muted-foreground text-xs">
                               +
                             </span>
                             <Kbd>C</Kbd>
@@ -2048,7 +2048,7 @@ export default function BrandPage() {
                             key={i}
                             className="flex items-center gap-3 py-1.5 border-b border-border/20"
                           >
-                            <span className="text-[10px] font-mono text-muted-foreground w-6">
+                            <span className="text-xs font-mono text-muted-foreground w-6">
                               {String(i + 1).padStart(2, '0')}
                             </span>
                             <span className="text-sm text-foreground">
@@ -2070,8 +2070,8 @@ export default function BrandPage() {
               </h2>
               <p className="text-base text-muted-foreground leading-relaxed mb-8">
                 How Kortix list / management pages are built. These are the
-                shared chrome pieces used by <code className="text-[11px] font-mono">/scheduled-tasks</code>,{' '}
-                <code className="text-[11px] font-mono">/tunnel</code>. New
+                shared chrome pieces used by <code className="text-xs font-mono">/scheduled-tasks</code>,{' '}
+                <code className="text-xs font-mono">/tunnel</code>. New
                 management-style pages should compose the same pieces in the
                 same order so the whole app feels like one product.
               </p>
@@ -2083,7 +2083,7 @@ export default function BrandPage() {
                   The canonical hero for list/management pages. Rounded card
                   with animated background, centered icon tile, and a single
                   bold title line. Always rendered inside a container wrapper
-                  with <code className="text-[11px] font-mono">max-w-7xl</code> horizontal padding.
+                  with <code className="text-xs font-mono">max-w-7xl</code> horizontal padding.
                 </ComponentDesc>
                 <DemoContainer className="p-0 overflow-hidden">
                   <div className="p-6">
@@ -2096,7 +2096,7 @@ export default function BrandPage() {
                     </PageHeader>
                   </div>
                 </DemoContainer>
-                <pre className="mt-3 text-[11px] font-mono text-muted-foreground bg-muted/20 rounded-lg px-4 py-3 overflow-x-auto">{`<div className="container mx-auto max-w-7xl px-3 sm:px-4 py-3 sm:py-4">
+                <pre className="mt-3 text-xs font-mono text-muted-foreground bg-muted/20 rounded-lg px-4 py-3 overflow-x-auto">{`<div className="container mx-auto max-w-7xl px-3 sm:px-4 py-3 sm:py-4">
   <PageHeader icon={Zap}>
     <div className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight">
       <span className="text-primary">Scheduled Tasks</span>
@@ -2111,7 +2111,7 @@ export default function BrandPage() {
                 <ComponentDesc>
                   Item card used across every list page. Mouse-following
                   radial spotlight on hover plus a subtle border glow. Wrap
-                  with <code className="text-[11px] font-mono">bg-card border border-border/50</code> and
+                  with <code className="text-xs font-mono">bg-card border border-border/50</code> and
                   apply your own inner padding.
                 </ComponentDesc>
                 <DemoContainer>
@@ -2153,7 +2153,7 @@ export default function BrandPage() {
                 <ComponentLabel>PageSearchBar</ComponentLabel>
                 <ComponentDesc>
                   Standard search pill placed in the action bar below the
-                  PageHeader. Leave a <code className="text-[11px] font-mono">max-w-md</code> width so
+                  PageHeader. Leave a <code className="text-xs font-mono">max-w-md</code> width so
                   it sits next to a right-aligned primary action without
                   taking over.
                 </ComponentDesc>
@@ -2179,10 +2179,10 @@ export default function BrandPage() {
                 <ComponentDesc>
                   Every management page mounts its three zones with a
                   staggered fade + slide. Header on entry, search bar
-                  at <code className="text-[11px] font-mono">delay-75</code>, content at <code className="text-[11px] font-mono">delay-150</code>.
+                  at <code className="text-xs font-mono">delay-75</code>, content at <code className="text-xs font-mono">delay-150</code>.
                 </ComponentDesc>
                 <DemoContainer>
-                  <pre className="text-[11px] font-mono text-muted-foreground bg-muted/20 rounded-lg px-4 py-3 overflow-x-auto leading-relaxed">{`// Page header
+                  <pre className="text-xs font-mono text-muted-foreground bg-muted/20 rounded-lg px-4 py-3 overflow-x-auto leading-relaxed">{`// Page header
 <div className="... animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
 
 // Search + action bar
@@ -2212,13 +2212,13 @@ export default function BrandPage() {
                 <ComponentDesc>
                   The one layout wrapper. Standardises max-width, horizontal
                   padding, and scroll behavior. Four width presets:{' '}
-                  <code className="text-[11px] font-mono">reading (720)</code>,{' '}
-                  <code className="text-[11px] font-mono">default (1000)</code>,{' '}
-                  <code className="text-[11px] font-mono">wide (1280)</code>,{' '}
-                  <code className="text-[11px] font-mono">full</code>.
+                  <code className="text-xs font-mono">reading (720)</code>,{' '}
+                  <code className="text-xs font-mono">default (1000)</code>,{' '}
+                  <code className="text-xs font-mono">wide (1280)</code>,{' '}
+                  <code className="text-xs font-mono">full</code>.
                 </ComponentDesc>
                 <DemoContainer>
-                  <div className="rounded-lg border border-dashed border-border/60 py-10 text-center text-[11px] text-muted-foreground">
+                  <div className="rounded-lg border border-dashed border-border/60 py-10 text-center text-xs text-muted-foreground">
                     <code>&lt;PageShell width=&quot;default&quot;&gt; … &lt;/PageShell&gt;</code>
                     <div className="mt-1 opacity-60">max-w-[1000px] · px-6 lg:px-10 · py-10</div>
                   </div>
@@ -2236,7 +2236,7 @@ export default function BrandPage() {
                 </ComponentDesc>
                 <DemoContainer>
                   <BrandSection label="About">
-                    <p className="text-[14px] text-foreground leading-relaxed">
+                    <p className="text-sm text-foreground leading-relaxed">
                       Description content lives here. Sections separate
                       concerns on a page without ever drawing a card.
                     </p>
@@ -2244,12 +2244,12 @@ export default function BrandPage() {
                   <BrandSection
                     label="Details"
                     action={
-                      <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]">
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
                         Edit
                       </Button>
                     }
                   >
-                    <p className="text-[13px] text-muted-foreground">
+                    <p className="text-sm text-muted-foreground">
                       A second section with a trailing action.
                     </p>
                   </BrandSection>
@@ -2276,12 +2276,12 @@ export default function BrandPage() {
                     count={2}
                     description="People with access to this account."
                     action={
-                      <Button size="sm" className="h-8 px-3 text-[13px]">
+                      <Button size="sm" className="h-8 px-3 text-sm">
                         Invite
                       </Button>
                     }
                   >
-                    <p className="text-[13px] text-muted-foreground">
+                    <p className="text-sm text-muted-foreground">
                       Body content sits in the padded region. Pass{' '}
                       <code>flush</code> to drop the padding for a List.
                     </p>
@@ -2323,7 +2323,7 @@ export default function BrandPage() {
                 </ComponentDesc>
                 <DemoContainer className="space-y-5">
                   <div className="flex items-center gap-4">
-                    <span className="w-24 text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <span className="w-24 text-xs uppercase tracking-wider text-muted-foreground">
                       People
                     </span>
                     <UserAvatar email="ada@kortix.ai" name="Ada Lovelace" size="sm" />
@@ -2331,7 +2331,7 @@ export default function BrandPage() {
                     <UserAvatar email="alan@kortix.ai" name="Alan Turing" size="lg" />
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="w-24 text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <span className="w-24 text-xs uppercase tracking-wider text-muted-foreground">
                       Things
                     </span>
                     <EntityAvatar label="Acme AGI" size="sm" />
@@ -2405,7 +2405,7 @@ export default function BrandPage() {
                 <DemoContainer>
                   <DefinitionList dividers>
                     <DefinitionRow label="Path">
-                      <code className="text-[12px] font-mono text-foreground">
+                      <code className="text-xs font-mono text-foreground">
                         /workspace/jjk-domain-search
                       </code>
                     </DefinitionRow>
@@ -2452,12 +2452,12 @@ export default function BrandPage() {
                     title="No issues yet"
                     description="Create your first issue with C, or import from a session."
                     action={
-                      <Button size="sm" className="h-8 px-4 text-[13px]">
+                      <Button size="sm" className="h-8 px-4 text-sm">
                         New issue
                       </Button>
                     }
                     secondaryAction={
-                      <Button variant="ghost" size="sm" className="h-8 px-3 text-[13px]">
+                      <Button variant="ghost" size="sm" className="h-8 px-3 text-sm">
                         Learn more
                       </Button>
                     }
@@ -2486,7 +2486,7 @@ export default function BrandPage() {
                     icon={Check}
                     title="All set"
                     action={
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-[12px]">
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">
                         Dismiss
                       </Button>
                     }
@@ -2569,8 +2569,8 @@ export default function BrandPage() {
                   <AntiPatternBlock
                     title="AP-2: No arbitrary text sizes"
                     description="Creates 1,188+ inconsistent type sizes. No semantic meaning. No relationship to the type scale."
-                    bad={`<span className="text-[10px]">Label</span>\n<span className="text-[11px]">Meta</span>\n<span className="text-[13px]">Body</span>`}
-                    good={`<span className="text-[10px]">Label</span>\n<span className="text-xs">Meta</span>\n<span className="text-sm">Body</span>`}
+                    bad={`<span className="text-xs">Label</span>\n<span className="text-xs">Meta</span>\n<span className="text-sm">Body</span>`}
+                    good={`<span className="text-xs">Label</span>\n<span className="text-xs">Meta</span>\n<span className="text-sm">Body</span>`}
                   />
 
                   <AntiPatternBlock

@@ -163,25 +163,25 @@ export default function AdminStressTestPage() {
                     {/* Request Time details */}
                     <div className="flex-1 flex gap-0.5">
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
-                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">HTTP Call</span>
+                        <span className="text-xs text-blue-700 dark:text-blue-300 truncate px-1">HTTP Call</span>
                       </div>
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
-                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Setup</span>
+                        <span className="text-xs text-blue-700 dark:text-blue-300 truncate px-1">Setup</span>
                       </div>
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
-                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Thread</span>
+                        <span className="text-xs text-blue-700 dark:text-blue-300 truncate px-1">Thread</span>
                       </div>
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
-                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Agent</span>
+                        <span className="text-xs text-blue-700 dark:text-blue-300 truncate px-1">Agent</span>
                       </div>
                     </div>
                     {/* First Response details */}
                     <div className="flex-1 flex gap-0.5">
                       <div className="flex-[2] h-6 bg-orange-200 dark:bg-orange-900/40 rounded-sm flex items-center justify-center border border-orange-300 dark:border-orange-800/50">
-                        <span className="text-[10px] text-orange-700 dark:text-orange-300 truncate px-1">Agent Setup</span>
+                        <span className="text-xs text-orange-700 dark:text-orange-300 truncate px-1">Agent Setup</span>
                       </div>
                       <div className="flex-[3] h-6 bg-green-200 dark:bg-green-500/20 rounded-sm flex items-center justify-center border border-green-400 dark:border-green-500/40">
-                        <span className="text-[10px] text-green-700 dark:text-green-300 font-medium truncate px-1">LLM TTFT</span>
+                        <span className="text-xs text-green-700 dark:text-green-300 font-medium truncate px-1">LLM TTFT</span>
                       </div>
                     </div>
                   </div>

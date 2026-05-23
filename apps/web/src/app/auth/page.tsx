@@ -51,7 +51,7 @@ function LiveClock() {
   return (
     <div className="flex flex-col items-center select-none pointer-events-none">
       <p
-        className="text-foreground/35 text-[13px] font-light tracking-widest"
+        className="text-foreground/35 text-sm font-light tracking-widest"
         suppressHydrationWarning
       >
         {day} {month} {date}
@@ -158,7 +158,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             setInfo(null);
           }}
           className={cn(
-            'px-5 py-1.5 rounded-full text-[13px] font-medium transition-colors',
+            'px-5 py-1.5 rounded-full text-sm font-medium transition-colors',
             mode === 'signin'
               ? 'bg-background/80 text-foreground shadow-sm'
               : 'text-foreground/50 hover:text-foreground/80',
@@ -174,7 +174,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             setInfo(null);
           }}
           className={cn(
-            'px-5 py-1.5 rounded-full text-[13px] font-medium transition-colors',
+            'px-5 py-1.5 rounded-full text-sm font-medium transition-colors',
             mode === 'signup'
               ? 'bg-background/80 text-foreground shadow-sm'
               : 'text-foreground/50 hover:text-foreground/80',
@@ -185,10 +185,10 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
       </div>
 
       <div className="flex flex-col items-center mb-5">
-        <h1 className="text-[17px] font-medium text-foreground/90 tracking-tight">
+        <h1 className="text-base font-medium text-foreground/90 tracking-tight">
           {mode === 'signup' ? 'Create your account' : 'Sign in to Kortix'}
         </h1>
-        <p className="text-[13px] text-foreground/40 mt-0.5">
+        <p className="text-sm text-foreground/40 mt-0.5">
           {mode === 'signup' ? 'Email and password is all you need' : 'Your AI Computer'}
         </p>
       </div>
@@ -196,14 +196,14 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
       {errorMessage && (
         <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-[13px]">{errorMessage}</span>
+          <span className="text-sm">{errorMessage}</span>
         </div>
       )}
 
       {info && (
         <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-foreground/[0.05] border border-foreground/[0.08] text-foreground/80">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-[13px]">{info}</span>
+          <span className="text-sm">{info}</span>
         </div>
       )}
 
@@ -215,7 +215,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           placeholder="Email address"
           required
           autoComplete="email"
-          className="text-[15px]"
+          className="text-sm"
         />
         <Input
           id="password"
@@ -224,7 +224,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           placeholder="Password"
           required
           autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-          className="text-[15px]"
+          className="text-sm"
         />
         {mode === 'signup' && (
           <Input
@@ -234,7 +234,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             placeholder="Confirm password"
             required
             autoComplete="new-password"
-            className="text-[15px]"
+            className="text-sm"
           />
         )}
 
@@ -242,7 +242,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           type="submit"
           size="lg"
           disabled={pending}
-          className="w-full text-[13px]"
+          className="w-full text-sm"
         >
           {pending
             ? mode === 'signup'
@@ -259,7 +259,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         <>
           <div className="my-5 flex items-center gap-3">
             <div className="flex-1 h-px bg-foreground/[0.08]" />
-            <span className="text-[11px] uppercase tracking-wider text-foreground/40">or</span>
+            <span className="text-xs uppercase tracking-wider text-foreground/40">or</span>
             <div className="flex-1 h-px bg-foreground/[0.08]" />
           </div>
           <Suspense fallback={null}>
@@ -272,7 +272,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         <div className="mt-5 text-center">
           <Link
             href="/auth/forgot-password"
-            className="text-[12px] text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
+            className="text-xs text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
           >
             Forgot your password?
           </Link>

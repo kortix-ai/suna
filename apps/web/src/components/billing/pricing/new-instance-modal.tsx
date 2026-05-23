@@ -172,7 +172,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
                     >
                       {/* Recommended badge */}
                       {isRecommended && (
-                        <span className="absolute -top-2.5 right-3 text-[10px] font-semibold bg-foreground text-background px-2 py-0.5 rounded-full">
+                        <span className="absolute -top-2.5 right-3 text-xs font-semibold bg-foreground text-background px-2 py-0.5 rounded-full">
                           Recommended
                         </span>
                       )}
@@ -181,18 +181,18 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
 
                       {/* Specs */}
                       <div className="flex-1 min-w-0">
-                        <span className="text-[13px] font-semibold text-foreground tabular-nums">
+                        <span className="text-sm font-semibold text-foreground tabular-nums">
                           {t.cores} vCPU · {t.memory} GB
                         </span>
                         {meta && (
-                          <span className="text-[11px] text-muted-foreground/70 block mt-0.5">{meta.subtitle}</span>
+                          <span className="text-xs text-muted-foreground/70 block mt-0.5">{meta.subtitle}</span>
                         )}
                       </div>
 
                       {/* Price */}
                       <div className="text-right shrink-0">
                         <span className="text-lg font-semibold tabular-nums text-foreground">${t.priceMonthlyMarkup.toFixed(0)}</span>
-                        <span className="text-[11px] text-muted-foreground">/mo</span>
+                        <span className="text-xs text-muted-foreground">/mo</span>
                       </div>
                     </label>
                   );
@@ -204,7 +204,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
           {/* Includes */}
           <div className="px-5 pb-5">
             <div className="rounded-2xl bg-muted/40 px-4 py-3">
-              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Every plan includes</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Every plan includes</p>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                 {[
                   'Always-on cloud computer',
@@ -216,7 +216,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
                 ].map((f) => (
                   <div key={f} className="flex items-start gap-1.5 py-0.5">
                     <Check className="size-3 text-muted-foreground/50 shrink-0 mt-[1px]" />
-                    <span className="text-[11px] text-muted-foreground leading-tight">{f}</span>
+                    <span className="text-xs text-muted-foreground leading-tight">{f}</span>
                   </div>
                 ))}
               </div>
@@ -238,7 +238,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
               <span className="text-xl font-semibold tabular-nums text-foreground">{price}</span>
               <span className="text-xs text-muted-foreground">/mo</span>
             </div>
-            <p className="text-[11px] text-muted-foreground/60 mt-0.5">Cancel anytime</p>
+            <p className="text-xs text-muted-foreground/60 mt-0.5">Cancel anytime</p>
           </div>
           <Button className="h-11 px-7 text-sm font-semibold" disabled={isLoading || !selected} onClick={handleCta}>
             {isLoading ? <Loader2 className="size-4 animate-spin" /> : <>Get Your Kortix<ArrowRight className="size-3.5 ml-1.5" /></>}

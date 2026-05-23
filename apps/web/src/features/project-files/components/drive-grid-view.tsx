@@ -185,10 +185,10 @@ function FolderCard({
                 }}
                 onBlur={confirmRename}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full text-[13px] bg-transparent border-b border-primary/50 py-0.5 outline-none"
+                className="w-full text-sm bg-transparent border-b border-primary/50 py-0.5 outline-none"
               />
             ) : (
-              <span className="text-[13px] truncate text-foreground font-medium">
+              <span className="text-sm truncate text-foreground font-medium">
                 {node.name}
               </span>
             )}
@@ -369,12 +369,12 @@ function FileCard({
                 }}
                 onBlur={confirmRename}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full text-[13px] bg-transparent border-b border-primary/50 py-0.5 outline-none"
+                className="w-full text-sm bg-transparent border-b border-primary/50 py-0.5 outline-none"
               />
             ) : (
               <div className="flex items-center gap-1.5 min-w-0 w-full">
                 {getFileIcon(node.name, { className: 'h-3.5 w-3.5 shrink-0 text-muted-foreground', variant: 'monochrome' })}
-                <span className="text-[13px] truncate text-foreground font-medium">{node.name}</span>
+                <span className="text-sm truncate text-foreground font-medium">{node.name}</span>
               </div>
             )}
           </div>
@@ -529,7 +529,7 @@ export function DriveGridView({
                   )}
                 >
                   <DirIcon className="h-4 w-4 shrink-0 text-primary/70" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                     {node.name}
                   </span>
                 </div>
@@ -622,11 +622,11 @@ function SectionHeader({
 }) {
   return (
     <div className="flex items-baseline gap-2 mb-3 px-0.5">
-      <h3 className="text-[13px] font-semibold text-foreground/90 flex items-center gap-1.5">
+      <h3 className="text-sm font-semibold text-foreground/90 flex items-center gap-1.5">
         {icon}
         {label}
       </h3>
-      <span className="text-[11px] text-muted-foreground/60 tabular-nums">{count}</span>
+      <span className="text-xs text-muted-foreground/60 tabular-nums">{count}</span>
     </div>
   );
 }

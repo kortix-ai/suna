@@ -221,7 +221,7 @@ export function AgentSelector({
           </CommandPopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
-          <p>Switch agent <kbd className="ml-1 px-1.5 py-0.5 rounded bg-foreground/10 text-[10px] font-mono">Tab</kbd></p>
+          <p>Switch agent <kbd className="ml-1 px-1.5 py-0.5 rounded bg-foreground/10 text-xs font-mono">Tab</kbd></p>
         </TooltipContent>
       </Tooltip>
 
@@ -251,13 +251,13 @@ export function AgentSelector({
                   >
                     <div className="min-w-0 flex-1 py-0.5">
                       <div className={cn(
-                        'truncate text-[13px] leading-tight capitalize',
+                        'truncate text-sm leading-tight capitalize',
                         isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
                       )}>
                         {agent.name}
                       </div>
                       {agent.description && (
-                        <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-1">{agent.description}</p>
+                        <p className="truncate text-xs text-muted-foreground/55 leading-snug mt-1">{agent.description}</p>
                       )}
                     </div>
                     {isSelected && <Check className="text-foreground shrink-0" />}
@@ -510,7 +510,7 @@ function AutoContinueSelector({
                 <InfinityOff className="size-4" />
               )}
               {isActive && (
-                <span className="text-[11px]">{explicitPick && currentAlg ? currentAlg.label : 'Auto'}</span>
+                <span className="text-xs">{explicitPick && currentAlg ? currentAlg.label : 'Auto'}</span>
               )}
               <ChevronDown className={cn('size-3 opacity-50 transition-transform duration-200', open && 'rotate-180')} />
             </button>
@@ -527,14 +527,14 @@ function AutoContinueSelector({
             className="absolute bottom-full left-0 mb-1.5 z-50 w-80 bg-popover border border-border rounded-2xl overflow-hidden animate-in fade-in-0 slide-in-from-bottom-2 duration-150"
           >
             <div className="p-1">
-              <div className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              <div className="px-2.5 pt-1.5 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 AutoContinue
               </div>
 
               <button
                 onClick={() => { onSelect(null); setExplicitPick(false); setExpanded(false); setOpen(false); }}
                 className={cn(
-                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors cursor-pointer',
+                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors cursor-pointer',
                   !isActive ? 'bg-muted' : 'hover:bg-muted',
                 )}
               >
@@ -549,7 +549,7 @@ function AutoContinueSelector({
                   setExpanded(true);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors cursor-pointer',
+                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors cursor-pointer',
                   isActive && !expanded ? 'bg-muted' : isActive ? 'bg-primary/5' : 'hover:bg-muted',
                 )}
               >
@@ -575,7 +575,7 @@ function AutoContinueSelector({
                     <div
                       key={alg.id}
                       className={cn(
-                        'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors',
+                        'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors',
                         isSelected ? 'bg-muted' : 'hover:bg-muted',
                       )}
                     >
@@ -584,8 +584,8 @@ function AutoContinueSelector({
                         className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                       >
                         <span className="font-medium shrink-0">{alg.label}</span>
-                        <span className="text-[10px] text-muted-foreground/70 shrink-0">{alg.role}</span>
-                        <span className="text-[11px] text-muted-foreground truncate">{alg.description}</span>
+                        <span className="text-xs text-muted-foreground/70 shrink-0">{alg.role}</span>
+                        <span className="text-xs text-muted-foreground truncate">{alg.description}</span>
                         {isSelected && <Check className="size-3 text-foreground shrink-0 ml-auto" />}
                       </button>
                       <button
@@ -828,7 +828,7 @@ function AttachmentThumbnail({ af, name }: { af: AttachedFile; name: string }) {
   if (textPreview) {
     return (
       <div className="absolute inset-0 p-1 overflow-hidden">
-        <pre className="m-0 p-0 text-[6px] leading-[1.4] text-muted-foreground/70 font-mono whitespace-pre overflow-hidden select-none pointer-events-none">
+        <pre className="m-0 p-0 text-xs leading-[1.4] text-muted-foreground/70 font-mono whitespace-pre overflow-hidden select-none pointer-events-none">
           {textPreview}
         </pre>
         <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-muted/20 to-transparent" />
@@ -867,7 +867,7 @@ function AttachmentPreview({
                 <AttachmentThumbnail af={af} name={name} />
                 {/* Extension badge */}
                 {ext && !af.isImage && (
-                  <span className="absolute bottom-1 right-1 text-[0.5rem] font-medium text-muted-foreground/50 uppercase tracking-wider bg-background/80 px-1 py-0.5 rounded z-[5]">
+                  <span className="absolute bottom-1 right-1 text-xs font-medium text-muted-foreground/50 uppercase tracking-wider bg-background/80 px-1 py-0.5 rounded z-[5]">
                     {ext.toUpperCase()}
                   </span>
                 )}
@@ -876,7 +876,7 @@ function AttachmentPreview({
               <div className="px-2 py-1.5 border-t border-border/30 h-[32px] flex items-center">
                 <div className="flex items-center gap-1 min-w-0 w-full">
                   {getFileIcon(name, { className: 'h-3.5 w-3.5 shrink-0', variant: 'monochrome' })}
-                  <span className="text-[11px] truncate text-foreground">{name}</span>
+                  <span className="text-xs truncate text-foreground">{name}</span>
                 </div>
               </div>
             </div>
@@ -1027,7 +1027,7 @@ function MentionPopover({
       <div ref={listRef} className="max-h-72 overflow-y-auto py-1">
         {agents.length > 0 && (
           <>
-            <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Agents</div>
+            <div className="px-3 py-1 text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">Agents</div>
             {agents.map((item) => {
               const idx = globalIndex++;
               return (
@@ -1040,9 +1040,9 @@ function MentionPopover({
                     idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
                   )}
                 >
-                  <span className="size-4 rounded flex items-center justify-center bg-foreground/10 text-foreground/60 text-[10px] font-semibold shrink-0">@</span>
+                  <span className="size-4 rounded flex items-center justify-center bg-foreground/10 text-foreground/60 text-xs font-semibold shrink-0">@</span>
                   <span className="truncate font-medium capitalize">{item.label}</span>
-                  {item.description && <span className="text-muted-foreground/40 truncate text-[10px]">{item.description}</span>}
+                  {item.description && <span className="text-muted-foreground/40 truncate text-xs">{item.description}</span>}
                 </button>
               );
             })}
@@ -1050,7 +1050,7 @@ function MentionPopover({
         )}
         {sessions.length > 0 && (
           <>
-            <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Sessions</div>
+            <div className="px-3 py-1 text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">Sessions</div>
             {sessions.map((item) => {
               const idx = globalIndex++;
               return (
@@ -1065,7 +1065,7 @@ function MentionPopover({
                 >
                   <MessageSquare className="size-4 text-foreground/50 shrink-0" />
                   <span className="truncate text-sm font-medium">{item.label}</span>
-                  {item.description && <span className="text-[10px] text-muted-foreground/35 truncate ml-auto">{item.description}</span>}
+                  {item.description && <span className="text-xs text-muted-foreground/35 truncate ml-auto">{item.description}</span>}
                 </button>
               );
             })}
@@ -1073,7 +1073,7 @@ function MentionPopover({
         )}
         {files.length > 0 && (
           <>
-            <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Files</div>
+            <div className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Files</div>
             {files.map((item) => {
               const idx = globalIndex++;
               const filePath = item.value || item.label;
@@ -1097,7 +1097,7 @@ function MentionPopover({
                   )}
                   <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
                     <span className="truncate text-sm font-medium">{fileName}</span>
-                    <span className="text-[10px] text-muted-foreground/35 font-mono truncate flex-shrink min-w-0">
+                    <span className="text-xs text-muted-foreground/35 font-mono truncate flex-shrink min-w-0">
                       {cleanPath}
                     </span>
                   </div>
@@ -1181,7 +1181,7 @@ function TodoChip({ sessionId }: { sessionId: string }) {
                   {active && <div className="size-1 rounded-full bg-foreground" />}
                 </span>
                 <span className={cn(
-                  'text-[11px] leading-tight truncate',
+                  'text-xs leading-tight truncate',
                   done && 'line-through text-muted-foreground',
                   !done && 'text-foreground',
                 )}>
@@ -2148,7 +2148,7 @@ export function SessionChatInput({
               {text.trim().length === 0 && !stagedCommand && (
                 <div
                   aria-hidden
-                  className="absolute left-0.5 top-4 h-6 w-[calc(100%-0.5rem)] text-base sm:text-[15px] text-muted-foreground pointer-events-none overflow-hidden"
+                  className="absolute left-0.5 top-4 h-6 w-[calc(100%-0.5rem)] text-base sm:text-sm text-muted-foreground pointer-events-none overflow-hidden"
                 >
                   {lockForQuestion ? (
                     <div className="absolute inset-0">
@@ -2180,7 +2180,7 @@ export function SessionChatInput({
               {text.trim().length === 0 && stagedCommand && (
                 <div
                   aria-hidden
-                  className="absolute left-0.5 top-4 text-base sm:text-[15px] text-muted-foreground/50 pointer-events-none"
+                  className="absolute left-0.5 top-4 text-base sm:text-sm text-muted-foreground/50 pointer-events-none"
                 >
                   Enter details and press Enter, or press Esc to cancel
                 </div>
@@ -2190,7 +2190,7 @@ export function SessionChatInput({
                 <div
                   ref={highlightRef}
                   aria-hidden
-                  className="absolute inset-0 pointer-events-none px-0.5 pb-6 pt-4 text-base sm:text-[15px] whitespace-pre-wrap break-words leading-normal text-foreground"
+                  className="absolute inset-0 pointer-events-none px-0.5 pb-6 pt-4 text-base sm:text-sm whitespace-pre-wrap break-words leading-normal text-foreground"
                 >
                   {highlightSegments.map((seg, i) => (
                     <span
@@ -2219,7 +2219,7 @@ export function SessionChatInput({
                 rows={1}
                 disabled={disabled}
                 className={cn(
-                  'relative w-full bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px] text-base sm:text-[15px] outline-none placeholder:text-muted-foreground disabled:opacity-50',
+                  'relative w-full bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px] text-base sm:text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50',
                   highlightSegments && 'caret-foreground text-transparent',
                 )}
                 autoFocus={shouldAutoFocus}
@@ -2306,7 +2306,7 @@ export function SessionChatInput({
                       className="absolute bottom-full right-1/2 translate-x-1/2 mb-2 pointer-events-none animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 duration-150"
                     >
                       <div className="bg-primary text-primary-foreground rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap flex items-center gap-1.5">
-                        <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-[11px] font-medium">ESC</kbd>
+                        <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">ESC</kbd>
                         <span>{escCount === 1 ? '×2 to stop' : '×1 to stop'}</span>
                       </div>
                       {/* Arrow matching TooltipContent */}
@@ -2326,7 +2326,7 @@ export function SessionChatInput({
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top">
-                      <p>Stop <kbd className="ml-1 bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-[10px] font-medium">ESC</kbd> ×3</p>
+                      <p>Stop <kbd className="ml-1 bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">ESC</kbd> ×3</p>
                     </TooltipContent>
                   </Tooltip>
                 </div>

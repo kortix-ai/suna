@@ -108,13 +108,13 @@ export const DockCard = memo(function DockCard({
       
       {isFailed && (
         <div className="absolute -top-1 -right-1 w-5 h-5 bg-destructive rounded-full flex items-center justify-center border-2 border-white z-10">
-          <span className="text-[10px] text-white font-semibold">!</span>
+          <span className="text-xs text-white font-semibold">!</span>
         </div>
       )}
 
       <div 
         className={cn(
-          "absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 text-white text-[10px] font-medium rounded-md whitespace-nowrap pointer-events-none z-50",
+          "absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 text-white text-xs font-medium rounded-md whitespace-nowrap pointer-events-none z-50",
           "bg-black/80 backdrop-blur-xl border border-white/10",
           "opacity-0 group-hover:opacity-100 transition-opacity duration-150"
         )}
@@ -166,7 +166,7 @@ export const SystemDockCard = memo(function SystemDockCard({
 
       <div 
         className={cn(
-          "absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 text-white text-[10px] font-medium rounded-md whitespace-nowrap pointer-events-none z-50",
+          "absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 text-white text-xs font-medium rounded-md whitespace-nowrap pointer-events-none z-50",
           "bg-black/80 backdrop-blur-xl border border-white/10",
           "opacity-0 group-hover:opacity-100 transition-opacity duration-150"
         )}
@@ -388,7 +388,7 @@ export const AppDock = memo(function AppDock({
                 <button
                   type="button"
                   onClick={agentStatus === 'running' ? onJumpToLive : onJumpToLatest}
-                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium whitespace-nowrap text-white"
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium whitespace-nowrap text-white"
                 >
                   <div className={cn(
                     "w-1.5 h-1.5 rounded-full flex-shrink-0",

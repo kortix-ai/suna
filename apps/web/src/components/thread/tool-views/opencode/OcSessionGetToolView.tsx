@@ -119,7 +119,7 @@ function MetaItem({ icon: Icon, label, value, mono }: { icon: any; label: string
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
       <Icon className="size-3 flex-shrink-0 opacity-50" />
       <span className="opacity-60">{label}</span>
-      <span className={cn(mono && 'font-mono text-[11px]')}>{value}</span>
+      <span className={cn(mono && 'font-mono text-xs')}>{value}</span>
     </div>
   );
 }
@@ -148,7 +148,7 @@ function CollapsibleSection({
         <Icon className="size-3.5 text-muted-foreground/70" />
         <span className="text-xs font-medium">{title}</span>
         {badge && (
-          <Badge variant="outline" className="h-4 py-0 text-[0.5625rem] ml-auto">
+          <Badge variant="outline" className="h-4 py-0 text-xs ml-auto">
             {badge}
           </Badge>
         )}
@@ -198,13 +198,13 @@ export function OcSessionGetToolView({
           />
           <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
             {data?.compression && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 tracking-tight">
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/80 tracking-tight">
                 <Minimize2 className="w-3 h-3" />
                 Compressed
               </span>
             )}
             {data?.hasConversation && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 tracking-tight">
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/80 tracking-tight">
                 <MessageSquare className="w-3 h-3" />
                 {data.messageCount} msgs
               </span>
@@ -265,7 +265,7 @@ export function OcSessionGetToolView({
               {/* Lineage */}
               {data.lineage && (
                 <CollapsibleSection title="Lineage" icon={GitBranch}>
-                  <div className="px-3 py-2 font-mono text-[11px] text-muted-foreground/70 whitespace-pre-wrap leading-relaxed">
+                  <div className="px-3 py-2 font-mono text-xs text-muted-foreground/70 whitespace-pre-wrap leading-relaxed">
                     {data.lineage}
                   </div>
                 </CollapsibleSection>
@@ -288,7 +288,7 @@ export function OcSessionGetToolView({
 
               {/* Compression stats */}
               {data.compression && (
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground/50 px-1">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground/50 px-1">
                   <Minimize2 className="size-3" />
                   <span>{data.compression}</span>
                 </div>

@@ -82,7 +82,7 @@ export function AppHeader({
         {breadcrumb != null && (
           <>
             <BreadcrumbDivider />
-            <span className="select-none px-2 text-[13px] font-medium text-foreground">
+            <span className="select-none px-2 text-sm font-medium text-foreground">
               {breadcrumb}
             </span>
           </>
@@ -114,7 +114,7 @@ function BreadcrumbDivider() {
   return (
     <span
       aria-hidden="true"
-      className="select-none px-0.5 text-[14px] font-light text-muted-foreground/40 transform -skew-x-12"
+      className="select-none px-0.5 text-sm font-light text-muted-foreground/40 transform -skew-x-12"
     >
       /
     </span>

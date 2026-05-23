@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
 
@@ -13,9 +13,10 @@ import { ProjectShell } from '@/components/projects/project-shell';
 import { Button } from '@/components/ui/button';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
 import {
+  getProjectSession,
   getProjectSessionSandbox,
   restartProjectSession,
-  syncOpencodeSessionTitles,
+  syncOpencodeSessionData,
   updateProjectSession,
 } from '@/lib/projects-client';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
@@ -101,7 +102,7 @@ export default function ProjectSessionPage() {
       // Hard-clear the cookie so no subsequent navigation can be hijacked.
       setActiveInstanceCookie(null);
     })();
-  }, [sandbox, projectId]);
+  }, [sandbox, projectId, queryClient]);
 
   // Belt-and-suspenders: every render on this route force-clears the cookie.
   useEffect(() => {
@@ -196,10 +197,10 @@ function InlineSessionError({
   return (
     <div className="flex-1 min-h-0 flex items-center justify-center px-6">
       <div className="max-w-md text-center flex flex-col items-center gap-3">
-        <h2 className="text-[14px] font-medium text-foreground/90">{title}</h2>
-        <p className="text-[12px] leading-relaxed text-muted-foreground/70">{message}</p>
+        <h2 className="text-sm font-medium text-foreground/90">{title}</h2>
+        <p className="text-xs leading-relaxed text-muted-foreground/70">{message}</p>
         {detail ? (
-          <p className="max-w-full rounded-2xl border border-border/60 bg-muted/40 px-2 py-1 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          <p className="max-w-full rounded-2xl border border-border/60 bg-muted/40 px-2 py-1 font-mono text-xs leading-relaxed text-muted-foreground">
             {detail}
           </p>
         ) : null}
@@ -229,7 +230,15 @@ function ActiveSessionChat({
   const sessionsQuery = useOpenCodeSessions();
   const createMutation = useCreateOpenCodeSession();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const createdRef = useRef(false);
+  const projectSessionQuery = useQuery({
+    queryKey: ['project-session', projectId, sessionId],
+    queryFn: () => getProjectSession(projectId, sessionId),
+    enabled: !!projectId && !!sessionId,
+    staleTime: 10_000,
+  });
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId, sessionId),
     onSuccess: () => {
@@ -262,31 +271,89 @@ function ActiveSessionChat({
     createMutation,
   ]);
 
+  const opencodeSessions = useMemo(
+    () => sessionsQuery.data ?? [],
+    [sessionsQuery.data],
+  );
+  const rootOpenCodeSessionId = projectSessionQuery.data?.opencode_session_id ?? null;
+  const selectedOpenCodeSessionId = searchParams.get('oc');
+  const selectedSession = selectedOpenCodeSessionId
+    ? opencodeSessions.find((session) => session.id === selectedOpenCodeSessionId)
+    : null;
+  const rootSession = rootOpenCodeSessionId
+    ? opencodeSessions.find((session) => session.id === rootOpenCodeSessionId)
+    : null;
+  const firstRootSession =
+    opencodeSessions.find((session) => !session.parentID) ?? opencodeSessions[0] ?? null;
   const chatSessionId =
-    (sessionsQuery.data ?? [])[0]?.id ?? createMutation.data?.id ?? null;
+    selectedSession?.id ??
+    rootSession?.id ??
+    createMutation.data?.id ??
+    firstRootSession?.id ??
+    null;
 
   useEffect(() => {
     if (!chatSessionId) return;
+    if (rootOpenCodeSessionId) return;
+    const session = opencodeSessions.find((candidate) => candidate.id === chatSessionId);
+    if (session?.parentID) return;
     void updateProjectSession(projectId, sessionId, {
       opencode_session_id: chatSessionId,
+    }).then((updated) => {
+      queryClient.setQueryData(['project-session', projectId, sessionId], updated);
+      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
     }).catch(() => {});
-  }, [chatSessionId, projectId, sessionId]);
+  }, [chatSessionId, projectId, sessionId, rootOpenCodeSessionId, opencodeSessions, queryClient]);
 
-  // Mirror the viewed session's title into our cloud DB so the name shows
-  // even when the sandbox isn't running. Fires on mount and whenever opencode
-  // changes the title (e.g. auto-titling after the first prompt). Cache-hit
-  // paths in useOpenCodeSession won't trigger the queryFn, so this effect is
-  // the authoritative trigger for per-session title sync.
+  useEffect(() => {
+    if (!selectedOpenCodeSessionId) return;
+    if (selectedSession) return;
+    if (sessionsQuery.isLoading) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('oc');
+    const query = params.toString();
+    router.replace(
+      query
+        ? `/projects/${projectId}/sessions/${sessionId}?${query}`
+        : `/projects/${projectId}/sessions/${sessionId}`,
+      { scroll: false },
+    );
+  }, [
+    selectedOpenCodeSessionId,
+    selectedSession,
+    sessionsQuery.isLoading,
+    searchParams,
+    router,
+    projectId,
+    sessionId,
+  ]);
+
+  // Mirror the sandbox-local OpenCode session tree into our cloud DB. The
+  // project session row stays the branch/sandbox root; this metadata lets the
+  // project sidebar and session list render sub-sessions without guessing.
   // Must run BEFORE any conditional return — otherwise the runtimeError branch
   // below would skip this hook and trigger "rendered fewer hooks than expected".
   const activeSession = (sessionsQuery.data ?? []).find((s) => s.id === chatSessionId);
   const activeTitle = activeSession?.title || null;
   useEffect(() => {
-    if (!chatSessionId) return;
-    void syncOpencodeSessionTitles([
-      { opencode_session_id: chatSessionId, title: activeTitle },
-    ]).catch(() => {});
-  }, [chatSessionId, activeTitle]);
+    if (opencodeSessions.length === 0) return;
+    void syncOpencodeSessionData(
+      opencodeSessions.map((session) => ({
+        opencode_session_id: session.id,
+        title: session.title || null,
+        parent_id: session.parentID ?? null,
+        project_id: session.projectID ?? null,
+        created_at: session.time?.created ?? null,
+        updated_at: session.time?.updated ?? null,
+        archived_at: session.time?.archived ?? null,
+      })),
+    )
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+        queryClient.invalidateQueries({ queryKey: ['project-session', projectId, sessionId] });
+      })
+      .catch(() => {});
+  }, [opencodeSessions, activeTitle, queryClient, projectId, sessionId]);
 
   // First-message handoff from the project index composer (/projects/[id]). It
   // stashes the prompt under the PROJECT session id because the opencode

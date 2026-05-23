@@ -113,7 +113,7 @@ export function RolesTab({ accountId, canCreate }: RolesTabProps) {
         <div className="divide-y divide-border/60">
           {grouped.map(([resourceType, roles]) => (
             <div key={resourceType}>
-              <div className="bg-muted/20 px-6 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              <div className="bg-muted/20 px-6 py-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 {capitalize(resourceType)}{resourceType === 'account' ? '' : ' resources'}
               </div>
               <ul className="divide-y divide-border/60">

@@ -224,7 +224,7 @@ function ConnectionInfoTab({ connection }: { connection: TunnelConnection }) {
             ) : row.label === 'Capabilities' ? (
               <div className="flex flex-wrap justify-end gap-1.5">
                 {capabilities.length > 0 ? capabilities.map((cap) => (
-                  <Badge key={cap} variant="secondary" className="h-6 text-[11px] font-medium">
+                  <Badge key={cap} variant="secondary" className="h-6 text-xs font-medium">
                     {cap}
                   </Badge>
                 )) : (

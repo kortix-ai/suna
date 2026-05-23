@@ -425,15 +425,15 @@ function OnboardingSkipButton({ onConfirm }: { onConfirm: () => void }) {
 			<AlertDialogContent className="max-w-sm rounded-2xl">
 				<AlertDialogHeader>
 					<AlertDialogTitle className="text-base font-medium text-foreground/90">Skip onboarding?</AlertDialogTitle>
-					<AlertDialogDescription className="text-[13px] text-muted-foreground/60 leading-relaxed">
+					<AlertDialogDescription className="text-sm text-muted-foreground/60 leading-relaxed">
 						You can set up your profile anytime. Your agent will work fine — it just won&apos;t know your preferences yet.
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter className="gap-2 sm:gap-2">
-					<AlertDialogCancel className="rounded-full text-[13px]">Continue</AlertDialogCancel>
+					<AlertDialogCancel className="rounded-full text-sm">Continue</AlertDialogCancel>
 					<AlertDialogAction
 						onClick={onConfirm}
-						className="rounded-full text-[13px] bg-foreground text-background hover:bg-foreground/90"
+						className="rounded-full text-sm bg-foreground text-background hover:bg-foreground/90"
 					>
 						Skip onboarding
 					</AlertDialogAction>

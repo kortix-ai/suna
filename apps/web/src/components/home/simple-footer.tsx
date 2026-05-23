@@ -14,7 +14,7 @@ export function SimpleFooter() {
     <footer className="w-full border-t border-border">
       <div className="max-w-3xl mx-auto px-6 py-8">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
             <span>© {currentYear} Kortix</span>
             <Link href="/support" className="hover:text-foreground transition-colors">Support</Link>
             <Link href="/legal?tab=privacy" className="hover:text-foreground transition-colors">Privacy</Link>

@@ -747,7 +747,7 @@ export function FileBrowser() {
                       />
                     </div>
                     {folderNameExists && (
-                      <p className="text-[11px] text-destructive pl-6">
+                      <p className="text-xs text-destructive pl-6">
                         A file or folder with that name already exists
                       </p>
                     )}
@@ -785,7 +785,7 @@ export function FileBrowser() {
                       />
                     </div>
                     {fileNameExists && (
-                      <p className="text-[11px] text-destructive pl-6">
+                      <p className="text-xs text-destructive pl-6">
                         A file or folder with that name already exists
                       </p>
                     )}

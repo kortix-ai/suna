@@ -141,7 +141,7 @@ export const DesktopIcons = memo(function DesktopIcons({
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               onKeyDown={handleNewFolderKeyDown}
-              className="text-[11px] font-medium text-white text-center w-full leading-tight bg-black/40 rounded px-1 py-0.5 outline-none border border-white/30 focus:border-white/60"
+              className="text-xs font-medium text-white text-center w-full leading-tight bg-black/40 rounded px-1 py-0.5 outline-none border border-white/30 focus:border-white/60"
               style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}
             />
           </motion.div>
@@ -184,7 +184,7 @@ export const DesktopIcons = memo(function DesktopIcons({
                 <div className="w-[52px] h-[52px] flex items-center justify-center transition-transform duration-100 shrink-0 drop-shadow-md group-hover:drop-shadow-lg">
                   {getFileIcon(file)}
                 </div>
-                <span className="text-[11px] font-medium text-white text-center w-full leading-tight break-words drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+                <span className="text-xs font-medium text-white text-center w-full leading-tight break-words drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
                   {file.name}
                 </span>
               </motion.button>

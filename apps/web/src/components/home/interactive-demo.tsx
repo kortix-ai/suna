@@ -71,7 +71,7 @@ function PageHead({ title, sub, action }: { title: string; sub?: string; action?
     <div className="mb-5 flex items-start justify-between gap-4">
       <div>
         <h3 className="text-lg font-semibold tracking-tight text-foreground">{title}</h3>
-        {sub && <p className="mt-0.5 text-[13px] text-muted-foreground">{sub}</p>}
+        {sub && <p className="mt-0.5 text-sm text-muted-foreground">{sub}</p>}
       </div>
       {action}
     </div>
@@ -82,7 +82,7 @@ function FauxButton({ children, primary }: { children: React.ReactNode; primary?
   return (
     <span
       className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[12px] font-medium',
+        'inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-xs font-medium',
         primary ? 'bg-foreground text-background' : 'border border-border text-foreground',
       )}
     >
@@ -96,7 +96,7 @@ function Panel({ title, count, action, children, className }: { title?: string; 
     <div className={cn('overflow-hidden rounded-2xl border border-border/60 bg-card', className)}>
       {title && (
         <div className="flex items-center justify-between border-b border-border/60 px-4 py-2.5">
-          <span className="text-[13px] font-semibold text-foreground">
+          <span className="text-sm font-semibold text-foreground">
             {title}
             {count && <span className="ml-1.5 font-normal text-muted-foreground">{count}</span>}
           </span>
@@ -113,8 +113,8 @@ function Row({ leading, title, subtitle, trailing }: { leading: React.ReactNode;
     <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3 last:border-0 hover:bg-muted/30">
       <span className="shrink-0">{leading}</span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium text-foreground">{title}</div>
-        {subtitle && <div className="mt-0.5 truncate text-[12px] text-muted-foreground">{subtitle}</div>}
+        <div className="truncate text-sm font-medium text-foreground">{title}</div>
+        {subtitle && <div className="mt-0.5 truncate text-xs text-muted-foreground">{subtitle}</div>}
       </div>
       {trailing && <span className="shrink-0">{trailing}</span>}
     </div>
@@ -132,7 +132,7 @@ function IconTile({ icon: Icon }: { icon: LucideIcon }) {
 function StatusDot({ on, label }: { on: boolean; label?: [string, string] }) {
   const [onText, offText] = label ?? ['running', 'scheduled'];
   return (
-    <span className={cn('inline-flex items-center gap-1.5 text-[11px] font-medium', on ? 'text-emerald-600 dark:text-emerald-500' : 'text-muted-foreground')}>
+    <span className={cn('inline-flex items-center gap-1.5 text-xs font-medium', on ? 'text-emerald-600 dark:text-emerald-500' : 'text-muted-foreground')}>
       <span className={cn('size-1.5 rounded-full', on ? 'animate-pulse bg-emerald-500' : 'bg-muted-foreground/30')} />
       {on ? onText : offText}
     </span>
@@ -157,12 +157,12 @@ function HomePage() {
 
       {/* composer */}
       <div className="rounded-2xl border border-border bg-card p-3 shadow-sm">
-        <div className="px-1 pb-2 text-[13px] text-muted-foreground">Ask Kortix to do anything across your company…</div>
+        <div className="px-1 pb-2 text-sm text-muted-foreground">Ask Kortix to do anything across your company…</div>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <span className="inline-flex size-7 items-center justify-center rounded-full border border-border text-muted-foreground"><Paperclip className="size-3.5" /></span>
-            <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-[12px] text-foreground"><Bot className="size-3.5" /> finance-agent</span>
-            <span className="hidden h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-[12px] text-muted-foreground sm:inline-flex"><Sparkles className="size-3.5" /> Opus 4.7</span>
+            <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs text-foreground"><Bot className="size-3.5" /> finance-agent</span>
+            <span className="hidden h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs text-muted-foreground sm:inline-flex"><Sparkles className="size-3.5" /> Opus 4.7</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="inline-flex size-7 items-center justify-center rounded-full border border-border text-muted-foreground"><Mic className="size-3.5" /></span>
@@ -176,7 +176,7 @@ function HomePage() {
         {stats.map(([n, l]) => (
           <div key={l} className="rounded-2xl border border-border/60 bg-card px-4 py-3">
             <div className="text-xl font-semibold tracking-tight text-foreground">{n}</div>
-            <div className="mt-0.5 text-[12px] text-muted-foreground">{l}</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">{l}</div>
           </div>
         ))}
       </div>
@@ -215,13 +215,13 @@ function HomePage() {
 function ChatPage() {
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-4 flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+      <div className="mb-4 flex items-center gap-2 font-mono text-xs text-muted-foreground">
         <MessageSquare className="size-3.5" /> Sessions / Q3 board deck
       </div>
 
       <div className="flex-1 space-y-4 overflow-hidden">
         {/* user */}
-        <div className="ml-auto w-fit max-w-[82%] rounded-2xl rounded-br-sm bg-foreground px-4 py-2.5 text-[13px] text-background">
+        <div className="ml-auto w-fit max-w-[82%] rounded-2xl rounded-br-sm bg-foreground px-4 py-2.5 text-sm text-background">
           Build the Q3 board deck from our latest metrics and email it to the board.
         </div>
 
@@ -229,19 +229,19 @@ function ChatPage() {
         <div>
           <div className="mb-2 flex items-center gap-2">
             <span className="flex size-6 items-center justify-center rounded-md border border-border bg-muted/60"><Bot className="size-3.5" /></span>
-            <span className="text-[13px] font-medium text-foreground">finance-agent</span>
+            <span className="text-sm font-medium text-foreground">finance-agent</span>
             <Badge size="sm" variant="secondary">working</Badge>
-            <span className="ml-auto text-[11px] text-muted-foreground">14:32</span>
+            <span className="ml-auto text-xs text-muted-foreground">14:32</span>
           </div>
 
           {/* tool call card */}
           <div className="overflow-hidden rounded-2xl border border-border/60 bg-card">
-            <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-3 py-2 text-[12px]">
+            <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-3 py-2 text-xs">
               <Database className="size-3.5 text-muted-foreground" />
               <span className="font-medium text-foreground">query_warehouse</span>
               <Check className="ml-auto size-3.5 text-emerald-500" />
             </div>
-            <div className="space-y-1 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
+            <div className="space-y-1 px-3 py-2.5 font-mono text-xs leading-relaxed text-muted-foreground">
               <div><span className="text-foreground">SELECT</span> revenue, burn, pipeline</div>
               <div><span className="text-foreground">FROM</span> metrics.q3 → <span className="text-emerald-500">312 rows</span></div>
             </div>
@@ -250,12 +250,12 @@ function ChatPage() {
           {/* steps */}
           <div className="mt-3 space-y-2 pl-1">
             {['Pulled Q3 metrics from the data warehouse', 'Drafted 12 slides from your board template', 'Charted revenue, burn, and pipeline'].map((s) => (
-              <div key={s} className="flex items-start gap-2.5 text-[13px]">
+              <div key={s} className="flex items-start gap-2.5 text-sm">
                 <Check className="mt-[1px] size-3.5 shrink-0 text-emerald-500" />
                 <span className="text-muted-foreground">{s}</span>
               </div>
             ))}
-            <div className="flex items-start gap-2.5 text-[13px]">
+            <div className="flex items-start gap-2.5 text-sm">
               <span className="mt-[5px] size-1.5 shrink-0 animate-pulse rounded-full bg-foreground/40" />
               <span className="text-foreground">Formatting &amp; final review…</span>
             </div>
@@ -265,8 +265,8 @@ function ChatPage() {
           <div className="mt-3 flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3">
             <span className="flex size-9 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground"><FileText className="size-4" /></span>
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-medium text-foreground">Q3-board-deck.pptx</div>
-              <div className="text-[12px] text-muted-foreground">12 slides · ready in 4 min</div>
+              <div className="text-sm font-medium text-foreground">Q3-board-deck.pptx</div>
+              <div className="text-xs text-muted-foreground">12 slides · ready in 4 min</div>
             </div>
             <span className="inline-flex size-8 items-center justify-center rounded-full border border-border text-muted-foreground"><Download className="size-4" /></span>
           </div>
@@ -276,7 +276,7 @@ function ChatPage() {
       {/* input */}
       <div className="mt-4 flex items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2.5 shadow-sm">
         <Paperclip className="size-4 text-muted-foreground" />
-        <span className="flex-1 text-[13px] text-muted-foreground">Reply to finance-agent…</span>
+        <span className="flex-1 text-sm text-muted-foreground">Reply to finance-agent…</span>
         <span className="inline-flex size-7 items-center justify-center rounded-full bg-foreground text-background"><Send className="size-3.5" /></span>
       </div>
     </div>
@@ -303,7 +303,7 @@ function AgentsPage() {
             subtitle={desc}
             trailing={
               <div className="flex items-center gap-3">
-                <span className="hidden text-[11px] text-muted-foreground sm:inline">{runs}</span>
+                <span className="hidden text-xs text-muted-foreground sm:inline">{runs}</span>
                 <StatusDot on={on} />
               </div>
             }
@@ -329,12 +329,12 @@ function SkillsPage() {
           <div key={name} className="rounded-2xl border border-border/60 bg-card p-4">
             <div className="mb-3 flex items-center gap-2">
               <span className="flex size-7 items-center justify-center rounded-lg border border-border bg-muted/40"><Sparkles className="size-3.5 text-foreground/70" /></span>
-              <span className="text-[13px] font-semibold text-foreground">{name}</span>
+              <span className="text-sm font-semibold text-foreground">{name}</span>
               <Badge size="sm" variant="muted" className="ml-auto">{count}</Badge>
             </div>
             <ul className="space-y-1.5">
               {skills.map((s) => (
-                <li key={s} className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                <li key={s} className="flex items-center gap-2 text-xs text-muted-foreground">
                   <FileText className="size-3 shrink-0" />{s}
                 </li>
               ))}
@@ -363,14 +363,14 @@ function IntegrationsPage() {
       <PageHead
         title="Integrations"
         sub="3,000+ available · 6 connected"
-        action={<span className="hidden h-8 items-center gap-2 rounded-full border border-border bg-muted/40 px-3 text-[12px] text-muted-foreground sm:inline-flex"><Search className="size-3.5" /> Search…</span>}
+        action={<span className="hidden h-8 items-center gap-2 rounded-full border border-border bg-muted/40 px-3 text-xs text-muted-foreground sm:inline-flex"><Search className="size-3.5" /> Search…</span>}
       />
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         {tools.map(([d, name, connected]) => (
           <div key={name} className="flex items-center gap-2.5 rounded-2xl border border-border/60 bg-card px-3 py-2.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={favicon(d)} alt={name} width={20} height={20} className="size-5 shrink-0 rounded-md" />
-            <span className="truncate text-[13px] font-medium text-foreground">{name}</span>
+            <span className="truncate text-sm font-medium text-foreground">{name}</span>
             {connected ? (
               <Badge size="sm" variant="success" className="ml-auto gap-1"><span className="size-1.5 rounded-full bg-emerald-500" /> Connected</Badge>
             ) : (
@@ -462,10 +462,10 @@ function SecurityPage() {
           <Row
             key={name}
             leading={<IconTile icon={Key} />}
-            title={<span className="font-mono text-[12px]">{name}</span>}
-            subtitle={<span className="font-mono text-[12px]">{masked}</span>}
+            title={<span className="font-mono text-xs">{name}</span>}
+            subtitle={<span className="font-mono text-xs">{masked}</span>}
             trailing={
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={favicon(domain)} alt="" width={14} height={14} className="size-3.5 rounded-sm" />
                 <span className="hidden sm:inline">injected at runtime</span>
@@ -524,16 +524,16 @@ export function InteractiveDemo() {
             <span className="size-2.5 rounded-full bg-muted-foreground/15" />
             <span className="size-2.5 rounded-full bg-muted-foreground/15" />
           </div>
-          <div className="ml-2 flex min-w-0 items-center gap-1.5 text-[12px]">
+          <div className="ml-2 flex min-w-0 items-center gap-1.5 text-xs">
             <EntityAvatar label="Acme AGI" size="xs" />
             <span className="font-medium text-foreground">Acme AGI</span>
             <ChevronRight className="size-3 text-muted-foreground/40" />
             <span className="truncate text-muted-foreground">{page.label}</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden h-8 w-44 items-center gap-2 rounded-full border border-border bg-background px-3 text-[12px] text-muted-foreground md:flex">
+            <span className="hidden h-8 w-44 items-center gap-2 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground md:flex">
               <Search className="size-3.5" /> Search
-              <span className="ml-auto font-mono text-[10px] text-muted-foreground/50">⌘K</span>
+              <span className="ml-auto font-mono text-xs text-muted-foreground/50">⌘K</span>
             </span>
             <span className="flex size-8 items-center justify-center rounded-full border border-border text-muted-foreground"><Bell className="size-4" /></span>
             <UserAvatar email="sarah@acme.ai" name="Sarah Chen" size="sm" />
@@ -546,18 +546,18 @@ export function InteractiveDemo() {
             <button className="mb-3 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-foreground/[0.04]">
               <EntityAvatar label="Acme AGI" size="sm" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-semibold text-foreground">Acme AGI</span>
-                <span className="block truncate text-[11px] text-muted-foreground">Enterprise · 24 seats</span>
+                <span className="block truncate text-sm font-semibold text-foreground">Acme AGI</span>
+                <span className="block truncate text-xs text-muted-foreground">Enterprise · 24 seats</span>
               </span>
               <ChevronsUpDown className="size-3.5 text-muted-foreground" />
             </button>
 
-            <div className="mb-1 flex items-center gap-2 rounded-lg bg-foreground px-3 py-2 text-[13px] font-medium text-background">
+            <div className="mb-1 flex items-center gap-2 rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background">
               <Plus className="size-4" /> New session
             </div>
-            <div className="mb-3 flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] text-muted-foreground">
+            <div className="mb-3 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground">
               <Search className="size-4" /> Search
-              <span className="ml-auto font-mono text-[10px] text-muted-foreground/50">⌘K</span>
+              <span className="ml-auto font-mono text-xs text-muted-foreground/50">⌘K</span>
             </div>
 
             <nav className="flex flex-col gap-0.5">
@@ -568,7 +568,7 @@ export function InteractiveDemo() {
                     key={id}
                     onClick={() => setActive(id)}
                     className={cn(
-                      'flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13px] transition-colors',
+                      'flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm transition-colors',
                       id === active ? 'bg-foreground/[0.07] font-medium text-foreground' : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
@@ -582,8 +582,8 @@ export function InteractiveDemo() {
             <div className="mt-auto flex items-center gap-2.5 rounded-lg px-2 pb-1 pt-3">
               <UserAvatar email="sarah@acme.ai" name="Sarah Chen" size="sm" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium text-foreground">Sarah Chen</span>
-                <span className="block truncate text-[11px] text-muted-foreground">Owner</span>
+                <span className="block truncate text-sm font-medium text-foreground">Sarah Chen</span>
+                <span className="block truncate text-xs text-muted-foreground">Owner</span>
               </span>
               <ChevronsUpDown className="size-3.5 text-muted-foreground" />
             </div>
@@ -616,7 +616,7 @@ export function InteractiveDemo() {
               key={id}
               onClick={() => setActive(id)}
               className={cn(
-                'inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium transition-colors',
+                'inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors',
                 id === active
                   ? 'bg-foreground text-background'
                   : 'border border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground',

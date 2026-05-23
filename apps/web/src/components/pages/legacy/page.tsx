@@ -377,8 +377,8 @@ export default function LegacyThreadPage({
 			<div className="flex items-center gap-2 px-5 py-3 border-b border-border/50">
 				<History className="h-3.5 w-3.5 text-muted-foreground" />
 				<span className="text-xs font-medium text-muted-foreground">Previous Chat</span>
-				<span className="text-[10px] text-muted-foreground/60">·</span>
-				<span className="text-[10px] text-muted-foreground/60">{turns.length} turns</span>
+				<span className="text-xs text-muted-foreground/60">·</span>
+				<span className="text-xs text-muted-foreground/60">{turns.length} turns</span>
 			</div>
 
 			<div className="flex-1 overflow-y-auto">
@@ -398,7 +398,7 @@ export default function LegacyThreadPage({
 				<div className="w-full bg-card border border-border rounded-[24px] overflow-hidden relative">
 					<div className="pointer-events-none select-none blur-[2px] opacity-40">
 						<div className="px-4 pt-4 pb-6 min-h-[96px]">
-							<span className="text-[15px] text-muted-foreground">What do you want to build?</span>
+							<span className="text-sm text-muted-foreground">What do you want to build?</span>
 						</div>
 						<div className="flex items-center justify-between mb-1.5 pl-2 pr-1.5">
 							<div className="flex items-center gap-1">

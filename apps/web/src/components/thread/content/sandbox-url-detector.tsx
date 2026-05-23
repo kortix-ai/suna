@@ -136,7 +136,7 @@ function InlineIframePreview({
       <div className="flex items-center gap-1.5 h-8 px-2.5 bg-muted/40 border-b border-border/30 shrink-0">
         <div className="flex-1 flex items-center gap-1.5 min-w-0">
           <Globe className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-          <span className="text-[11px] text-muted-foreground font-mono truncate">
+          <span className="text-xs text-muted-foreground font-mono truncate">
             localhost:{port}
           </span>
         </div>
@@ -318,7 +318,7 @@ function SandboxPreviewCard({
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-muted-foreground/60 leading-tight mt-0.5 group-hover/link:text-muted-foreground/80 transition-colors">
+            <p className="text-xs text-muted-foreground/60 leading-tight mt-0.5 group-hover/link:text-muted-foreground/80 transition-colors">
               {isReachable ? 'Service running' : isChecking ? 'Checking port...' : 'Port not reachable'}
             </p>
           </button>
@@ -586,7 +586,7 @@ export const SandboxUrlDetector: React.FC<SandboxUrlDetectorProps> = ({
       {/* Compact chips for URLs found inside code blocks (examples/docs) */}
       {codeBlockUrls.length > 0 && (
         <div className="mt-3 flex flex-col gap-1.5">
-          <span className="text-[11px] text-muted-foreground/50 font-medium uppercase tracking-wider">
+          <span className="text-xs text-muted-foreground/50 font-medium uppercase tracking-wider">
             Endpoints mentioned in code
           </span>
           {codeBlockUrls.map(({ detected: d, proxyUrl }) => (

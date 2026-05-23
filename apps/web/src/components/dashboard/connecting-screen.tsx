@@ -350,20 +350,20 @@ function ProvisioningView({
     <>
       <KortixLogo size={40} />
 
-      <p className="text-[13px] font-normal text-foreground/55 max-w-[320px] truncate">
+      <p className="text-sm font-normal text-foreground/55 max-w-[320px] truncate">
         {label}
       </p>
 
       <DeterminateProgress pct={pct} />
 
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground/50">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground/50">
         <span className="tabular-nums font-medium">{Math.round(pct)}%</span>
         <span className="h-[10px] w-px bg-foreground/[0.08]" aria-hidden />
         <span className="max-w-[220px] truncate">{stageText}</span>
       </div>
 
       {machineInfo?.ip && (
-        <div className="inline-flex items-center gap-1.5 text-[10px] font-mono tracking-wide text-muted-foreground/35">
+        <div className="inline-flex items-center gap-1.5 text-xs font-mono tracking-wide text-muted-foreground/35">
           <span className="h-1 w-1 rounded-full bg-foreground/40" />
           {machineInfo.location?.toLowerCase().match(/us|hil/) ? 'US' : 'EU'}
           <span>·</span>
@@ -418,24 +418,24 @@ function ErrorView({
       </div>
 
       <div className="flex flex-col items-center gap-1">
-        <h1 className="text-[14px] font-medium text-foreground/90">
+        <h1 className="text-sm font-medium text-foreground/90">
           Couldn&apos;t start {label}
         </h1>
         {(serverType || location) && (
-          <p className="font-mono text-[10px] text-muted-foreground/35">
+          <p className="font-mono text-xs text-muted-foreground/35">
             {[serverType, location].filter(Boolean).join(' · ')}
           </p>
         )}
       </div>
 
-      <p className="max-w-[320px] text-center text-[12px] leading-relaxed text-muted-foreground/60 break-words">
+      <p className="max-w-[320px] text-center text-xs leading-relaxed text-muted-foreground/60 break-words">
         {message}
       </p>
 
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-[12px] font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
+        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-xs font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
       >
         <ArrowLeft className="h-3 w-3" />
         Back
@@ -465,10 +465,10 @@ function StoppedView({
       </div>
 
       <div className="flex flex-col items-center gap-1">
-        <h1 className="text-[14px] font-medium text-foreground/90">
+        <h1 className="text-sm font-medium text-foreground/90">
           {label} is stopped
         </h1>
-        <p className="max-w-[300px] text-center text-[12px] leading-relaxed text-muted-foreground/55">
+        <p className="max-w-[300px] text-center text-xs leading-relaxed text-muted-foreground/55">
           Open a new session or return to projects to continue.
         </p>
       </div>
@@ -477,7 +477,7 @@ function StoppedView({
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-[12px] font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-xs font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
         >
           <ArrowLeft className="h-3 w-3" />
           Back
@@ -496,7 +496,7 @@ function BackLink({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="fixed left-5 top-5 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/35 transition-colors hover:text-foreground/70 cursor-pointer"
+      className="fixed left-5 top-5 inline-flex items-center gap-1.5 text-xs text-muted-foreground/35 transition-colors hover:text-foreground/70 cursor-pointer"
     >
       <ArrowLeft className="h-3 w-3" />
       Back
@@ -541,10 +541,10 @@ function UnreachableView({
       </div>
 
       <div className="flex flex-col items-center gap-1.5">
-        <h1 className="text-[14px] font-medium text-foreground/90">
+        <h1 className="text-sm font-medium text-foreground/90">
           {isLocalDocker ? 'Local sandbox unreachable' : recoveryPhase === 'restarting_host' ? 'Rebooting host' : recoveryPhase === 'restarting_runtime' ? 'Restarting runtime services' : recoveryPhase === 'restarting_workload' ? 'Restarting workload' : degraded ? 'Workspace services unavailable' : 'Workspace offline'}
         </h1>
-        <p className="max-w-[300px] text-center text-[12px] leading-relaxed text-muted-foreground/55">
+        <p className="max-w-[300px] text-center text-xs leading-relaxed text-muted-foreground/55">
           {isLocalDocker
             ? 'Make sure Docker is running and the container has started.'
             : recoveryPhase === 'restarting_host'
@@ -558,14 +558,14 @@ function UnreachableView({
               : 'This workspace is unreachable. Return to projects and open or create another session.'}
         </p>
         {!isLocalDocker && sandboxId ? (
-          <p className="text-[10px] font-mono text-muted-foreground/35">Sandbox {sandboxId.slice(0, 8)}</p>
+          <p className="text-xs font-mono text-muted-foreground/35">Sandbox {sandboxId.slice(0, 8)}</p>
         ) : null}
         {!isLocalDocker && isRestartRecovering && secondsSinceRestart ? (
-          <p className="text-[10px] font-mono text-muted-foreground/35">recovering · {secondsSinceRestart}s</p>
+          <p className="text-xs font-mono text-muted-foreground/35">recovering · {secondsSinceRestart}s</p>
         ) : null}
       </div>
 
-      <div className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/45">
+      <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/45">
         <RefreshCw className="h-3 w-3 animate-spin" />
         <span>
           {recoveryPhase === 'restarting_host' ? 'Waiting for host and services' : recoveryPhase === 'restarting_runtime' ? 'Waiting for core runtime' : recoveryPhase === 'restarting_workload' ? 'Waiting for workload and services' : 'Retrying automatically'}
@@ -581,7 +581,7 @@ function UnreachableView({
         <button
           type="button"
           onClick={onSwitch}
-          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-[12px] font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-xs font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
         >
           <ArrowLeftRight className="h-3 w-3" />
           Projects

@@ -21,7 +21,7 @@ function DoctrineItem({
   return (
     <Reveal>
       <div className="flex gap-5">
-        <span className="text-[11px] font-mono text-muted-foreground pt-0.5 shrink-0 w-6 text-right">
+        <span className="text-xs font-mono text-muted-foreground pt-0.5 shrink-0 w-6 text-right">
           {number}
         </span>
         <div>
@@ -52,7 +52,7 @@ export default function FactoryPageClient() {
 
         {/* ── Opening thesis ── */}
         <Reveal>
-          <p className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground mb-6">
+          <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-6">
             The Autonomy Factory
           </p>
         </Reveal>

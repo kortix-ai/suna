@@ -250,7 +250,7 @@ const TYPE_META: Record<TriggerKind, TypeMeta> = {
       <>
         Cron-driven entry points. When a schedule fires, a fresh session
         sandbox boots with the rendered prompt template injected as{' '}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
           KORTIX_INITIAL_PROMPT
         </code>
         .
@@ -270,7 +270,7 @@ const TYPE_META: Record<TriggerKind, TypeMeta> = {
         Signed HTTP entry points. When a request hits the webhook URL, a
         fresh session sandbox boots with the rendered prompt template
         injected as{' '}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
           KORTIX_INITIAL_PROMPT
         </code>
         .
@@ -420,7 +420,7 @@ function ProjectTriggersBody({
             <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
               {parseErrors.length} trigger file{parseErrors.length === 1 ? '' : 's'} failed to parse
             </p>
-            <ul className="space-y-0.5 text-[11px] text-amber-700/80 dark:text-amber-400/80">
+            <ul className="space-y-0.5 text-xs text-amber-700/80 dark:text-amber-400/80">
               {parseErrors.map((err) => (
                 <li key={err.slug}>
                   <code className="font-mono">{err.path}</code> — {err.error}
@@ -542,7 +542,7 @@ function TriggerDetailSheet({
               {trigger.enabled ? 'Active' : 'Paused'}
             </Badge>
           </div>
-          <SheetDescription className="font-mono text-[11px] text-muted-foreground/70">
+          <SheetDescription className="font-mono text-xs text-muted-foreground/70">
             {trigger.slug}
           </SheetDescription>
         </SheetHeader>
@@ -684,7 +684,7 @@ function SectionHeader({
   return (
     <div className="flex items-center gap-2">
       <Icon className="h-3.5 w-3.5 text-muted-foreground/60" />
-      <span className="flex-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+      <span className="flex-1 text-xs font-medium uppercase tracking-wide text-muted-foreground/70">
         {title}
       </span>
       {action}
@@ -701,7 +701,7 @@ function CronSection({ trigger }: { trigger: ProjectTrigger }) {
       <SectionHeader title="Schedule" icon={Timer} />
       <div className="space-y-1.5 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
         <div className="text-sm font-medium text-foreground">{describeCron(expr)}</div>
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <code className="rounded bg-background px-1.5 py-0.5 font-mono">{expr}</code>
           <span className="text-muted-foreground/40">·</span>
           <span>{tz}</span>
@@ -723,13 +723,13 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
         <SectionHeader title="Endpoint" icon={Webhook} />
         <div className="rounded-2xl border border-border/70 bg-muted/20">
           <div className="flex items-center gap-2 px-3 py-2">
-            <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
+            <code className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
               {url}
             </code>
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 shrink-0 gap-1 px-2 text-[11px]"
+              className="h-7 shrink-0 gap-1 px-2 text-xs"
               onClick={() => void copyToClipboard(url, 'Webhook URL copied')}
             >
               <Copy className="h-3 w-3" />
@@ -737,7 +737,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
             </Button>
           </div>
           <Separator />
-          <div className="flex items-center gap-2 px-3 py-1.5 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground">
             {trigger.secret_env ? (
               <>
                 <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
@@ -761,7 +761,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 gap-1 px-1.5 text-[10px]"
+              className="h-6 gap-1 px-1.5 text-xs"
               onClick={() => void copyToClipboard(curl, 'cURL copied')}
             >
               <Copy className="h-3 w-3" />
@@ -769,10 +769,10 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
             </Button>
           }
         />
-        <pre className="max-h-[200px] overflow-auto rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[10.5px] leading-snug text-foreground">
+        <pre className="max-h-[200px] overflow-auto rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-xs leading-snug text-foreground">
           {curl}
         </pre>
-        <p className="text-[10px] text-muted-foreground/70">
+        <p className="text-xs text-muted-foreground/70">
           Replace <code className="font-mono">$BODY</code> and{' '}
           <code className="font-mono">$SECRET</code>. The signature must cover the
           raw request body byte-for-byte.
@@ -822,7 +822,7 @@ function PromptTemplateSection({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 px-2 text-[10px]"
+                className="h-6 px-2 text-xs"
                 onClick={() => {
                   setDraft(trigger.prompt_template);
                   setEditing(false);
@@ -832,7 +832,7 @@ function PromptTemplateSection({
               </Button>
               <Button
                 size="sm"
-                className="h-6 px-2 text-[10px]"
+                className="h-6 px-2 text-xs"
                 disabled={save.isPending || !draft.trim() || draft === trigger.prompt_template}
                 onClick={() => save.mutate()}
               >
@@ -847,7 +847,7 @@ function PromptTemplateSection({
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 gap-1 px-1.5 text-[10px]"
+              className="h-6 gap-1 px-1.5 text-xs"
               onClick={() => setEditing(true)}
             >
               <Pencil className="h-3 w-3" />
@@ -861,15 +861,15 @@ function PromptTemplateSection({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           rows={6}
-          className="resize-y font-mono text-[11.5px] leading-relaxed"
+          className="resize-y font-mono text-xs leading-relaxed"
           autoFocus
         />
       ) : (
-        <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground">
+        <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-xs leading-relaxed text-foreground">
           {trigger.prompt_template}
         </pre>
       )}
-      <p className="text-[10px] text-muted-foreground/70">
+      <p className="text-xs text-muted-foreground/70">
         Placeholders: <code className="font-mono">{'{{ message.text }}'}</code>,{' '}
         <code className="font-mono">{'{{ message.source }}'}</code>,{' '}
         <code className="font-mono">{'{{ trigger.type }}'}</code>,{' '}
@@ -894,7 +894,7 @@ function MetaSection({ trigger }: { trigger: ProjectTrigger }) {
           <div
             key={label}
             className={cn(
-              'flex items-center justify-between gap-3 px-3 py-2 text-[11.5px]',
+              'flex items-center justify-between gap-3 px-3 py-2 text-xs',
               i > 0 && 'border-t border-border/30',
             )}
           >
@@ -1075,7 +1075,7 @@ function slugifyName(input: string): string {
             <div className="space-y-4">
               {!forcedType && (
                 <div className="space-y-1.5">
-                  <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                  <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">
                     Trigger source
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -1099,7 +1099,7 @@ function slugifyName(input: string): string {
 
               {sourceType === 'cron' && (
                 <div className="space-y-1.5 pt-1">
-                  <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                  <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">
                     Schedule
                   </div>
                   <ScheduleBuilder value={cronExpr} onChange={setCronExpr} />
@@ -1118,7 +1118,7 @@ function slugifyName(input: string): string {
           {/* ── Step 2: Action ───────────────────────────────────── */}
           {step === 'action' && (
             <div className="space-y-1.5">
-              <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+              <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">
                 Action type
               </div>
               <div className="grid grid-cols-1 gap-2">
@@ -1130,7 +1130,7 @@ function slugifyName(input: string): string {
                   onClick={() => {/* prompt is the only cloud action type */}}
                 />
               </div>
-              <p className="px-1 pt-2 text-[11px] text-muted-foreground/70">
+              <p className="px-1 pt-2 text-xs text-muted-foreground/70">
                 Command, HTTP, and ticket-create actions live on the legacy
                 in-sandbox triggers system. Cloud triggers always spawn a fresh
                 project session with the rendered prompt.
@@ -1179,7 +1179,7 @@ function slugifyName(input: string): string {
                   value={agentName}
                   onChange={(e) => setAgentName(e.target.value)}
                   placeholder="default"
-                  className="font-mono text-[13px]"
+                  className="font-mono text-sm"
                 />
               </div>
 
@@ -1329,7 +1329,7 @@ function WebhookSourceConfig({
             onChange={(e) => onSecretChange(e.target.value)}
             placeholder="shared-secret"
             type="text"
-            className="font-mono text-[13px]"
+            className="font-mono text-sm"
           />
           <Button
             type="button"

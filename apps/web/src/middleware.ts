@@ -32,7 +32,7 @@ const PUBLIC_ROUTES = [
   '/support', // Support page should be public
   '/help', // Help center and documentation should be public
   '/credits-explained', // Credits explained page should be public
-  '/about', // About page should be public 
+  '/about', // About page should be public
   '/milano', // Milano page should be public
   '/berlin', // Berlin page should be public
   '/app', // App download page should be public,
@@ -54,6 +54,7 @@ const PUBLIC_ROUTES = [
   '/home-wip', // WIP landing page draft should be public
   '/home2', // Design-system homepage draft should be public
   '/maintenance', // Maintenance page must be accessible without auth
+  '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
 
@@ -114,17 +115,17 @@ export async function middleware(request: NextRequest) {
     const token = searchParams.get('token');
     const type = searchParams.get('type');
     const error = searchParams.get('error');
-    
+
     // If we have Supabase auth parameters, redirect to /auth/callback
     // Note: Mobile apps use direct deep links and bypass this route
     if (code || token || type || error) {
       const callbackUrl = new URL('/auth/callback', request.url);
-      
+
       // Preserve all query parameters
       searchParams.forEach((value, key) => {
         callbackUrl.searchParams.set(key, value);
       });
-      
+
       console.log('🔄 Redirecting Supabase verification from root to /auth/callback');
       return NextResponse.redirect(callbackUrl);
     }
@@ -133,12 +134,12 @@ export async function middleware(request: NextRequest) {
   // Extract path segments
   const pathSegments = pathname.split('/').filter(Boolean);
   const firstSegment = pathSegments[0];
-  
+
   // Check if first segment is a locale (e.g., /de, /it)
   if (firstSegment && locales.includes(firstSegment as Locale)) {
     const locale = firstSegment as Locale;
     const remainingPath = '/' + pathSegments.slice(1).join('/') || '/';
-    
+
     // Verify remaining path is a marketing route
     const isRemainingPathMarketing = MARKETING_ROUTES.some(route => {
       if (route === '/') {
@@ -146,7 +147,7 @@ export async function middleware(request: NextRequest) {
       }
       return remainingPath === route || remainingPath.startsWith(route + '/');
     });
-    
+
     if (isRemainingPathMarketing) {
       // Rewrite /de to /, etc.
       const response = NextResponse.rewrite(new URL(remainingPath, request.url));
@@ -155,16 +156,16 @@ export async function middleware(request: NextRequest) {
         maxAge: 31536000, // 1 year
         sameSite: 'lax',
       });
-      
+
       // Store locale in headers so next-intl can pick it up
       response.headers.set('x-locale', locale);
-      
+
       return response;
     }
   }
-  
+
   // Check if this is a marketing route (without locale prefix)
-  const isMarketingRoute = MARKETING_ROUTES.some(route => 
+  const isMarketingRoute = MARKETING_ROUTES.some(route =>
     pathname === route || pathname.startsWith(route + '/')
   );
 
@@ -219,9 +220,9 @@ export async function middleware(request: NextRequest) {
   // stale (revoked) refresh token → "Refresh Token Not Found" on the next request.
   let user: { id: string; user_metadata?: { locale?: string } } | null = null;
   let authError: Error | null = null;
-  
+
   const isAuthRoute = pathname === '/auth' || pathname.startsWith('/auth/');
-  
+
   if (!isAuthRoute) {
     try {
       const { data: { user: fetchedUser }, error: fetchedError } = await supabase.auth.getUser();
@@ -252,28 +253,28 @@ export async function middleware(request: NextRequest) {
     // Check if user has explicit preference in cookie
     const localeCookie = request.cookies.get('locale')?.value;
     const hasExplicitPreference = !!localeCookie && locales.includes(localeCookie as Locale);
-    
+
     // Check user metadata (if authenticated) - reuse the user we already fetched
     let userLocale: Locale | null = null;
     if (!hasExplicitPreference && user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
       userLocale = user.user_metadata.locale as Locale;
     }
-    
+
     // Only auto-redirect if:
     // - No explicit preference (no cookie, no user metadata)
     // - Detected locale is not English (default)
     // This prevents unnecessary redirects for English speakers and users with preferences
     if (!hasExplicitPreference && !userLocale) {
       const acceptLanguage = request.headers.get('accept-language');
-      
+
       const detectedLocale = detectBestLocaleFromHeaders(acceptLanguage);
-      
+
       // Only redirect if detected locale is not English (default)
       // This prevents unnecessary redirects for English speakers
       if (detectedLocale !== defaultLocale) {
         const redirectUrl = new URL(request.url);
         redirectUrl.pathname = `/${detectedLocale}${pathname === '/' ? '' : pathname}`;
-        
+
         const redirectResponse = NextResponse.redirect(redirectUrl);
         // Set cookie so we don't redirect again on next visit
         redirectResponse.cookies.set('locale', detectedLocale, {
@@ -296,7 +297,7 @@ export async function middleware(request: NextRequest) {
 
   // Everything else requires authentication - reuse the user we already fetched
   try {
-    
+
     // Redirect to auth if not authenticated (using the user we already fetched)
     if (authError || !user) {
       const url = request.nextUrl.clone();
@@ -331,4 +332,4 @@ export const config = {
      */
     '/((?!_next/static|_next/image|favicon.ico|monitoring|_betterstack|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
-}; 
+};

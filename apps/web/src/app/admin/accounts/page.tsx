@@ -1297,7 +1297,7 @@ function UsersTab({
                 <span className="text-muted-foreground/70">Provider: </span>
                 <span className="text-foreground/80 capitalize">{user.provider || '—'}</span>
               </div>
-              <div className="truncate font-mono text-[11px]">{user.user_id.slice(0, 8)}…</div>
+              <div className="truncate font-mono text-xs">{user.user_id.slice(0, 8)}…</div>
             </div>
           </div>
         );
@@ -1483,7 +1483,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
             </span>
             {value ? (
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <code className="font-mono text-[11px] text-foreground/90 break-all bg-muted/30 rounded px-2 py-1 flex-1 min-w-0">
+                <code className="font-mono text-xs text-foreground/90 break-all bg-muted/30 rounded px-2 py-1 flex-1 min-w-0">
                   {value}
                 </code>
                 {href && (
@@ -1491,7 +1491,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground shrink-0"
+                    className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground shrink-0"
                     title="Open in Stripe"
                   >
                     <ServiceFavicon domain="stripe.com" className="h-3 w-3" />

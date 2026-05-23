@@ -311,7 +311,7 @@ function StructuredOutputDisplay({ sections }: { sections: OutputSectionType[] }
                 <Ban className={cn('h-3.5 w-3.5 flex-shrink-0 mt-0.5', STATUS_TEXT.destructive)} />
                 <div className="min-w-0 flex-1">
                   {section.errorType && (
-                    <span className={cn('text-[10px] font-semibold uppercase tracking-wider', STATUS_TEXT.destructive)}>
+                    <span className={cn('text-xs font-semibold uppercase tracking-wider', STATUS_TEXT.destructive)}>
                       {section.errorType}
                     </span>
                   )}
@@ -336,13 +336,13 @@ function StructuredOutputDisplay({ sections }: { sections: OutputSectionType[] }
                     )}
                   />
                   <span className="text-xs font-medium">Stack trace</span>
-                  <span className="text-[10px] text-muted-foreground/40 font-mono ml-1">
+                  <span className="text-xs text-muted-foreground/40 font-mono ml-1">
                     {section.lines.length} lines
                   </span>
                 </button>
                 {showTrace && (
                   <div className="mt-1 rounded-2xl bg-muted/20 border border-border/30 overflow-hidden">
-                    <pre className="p-3 font-mono text-[10px] leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all max-h-80 overflow-auto">
+                    <pre className="p-3 font-mono text-xs leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all max-h-80 overflow-auto">
                       {section.lines.map((line, li) => {
                         if (/^\s+File "/.test(line)) {
                           return (
@@ -445,11 +445,11 @@ function ObservationReportCard({ report }: { report: ObservationReport }) {
             <Fingerprint className="h-3.5 w-3.5" />
             Observation #{report.id}
           </Badge>
-          <Badge variant="outline" className="h-6 bg-background/80 uppercase tracking-wide text-[10px]">
+          <Badge variant="outline" className="h-6 bg-background/80 uppercase tracking-wide text-xs">
             {report.type}
           </Badge>
           {report.created && (
-            <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
               <CalendarClock className="h-3.5 w-3.5" />
               {report.created}
             </span>
@@ -460,7 +460,7 @@ function ObservationReportCard({ report }: { report: ObservationReport }) {
 
       <div className="px-4 py-3 space-y-3">
         <div className="rounded-2xl border border-border/60 bg-background/70 p-3">
-          <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
+          <span className="inline-flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground mb-1.5">
             <FileText className="h-3.5 w-3.5" />
             Narrative
           </span>
@@ -468,7 +468,7 @@ function ObservationReportCard({ report }: { report: ObservationReport }) {
         </div>
 
         <div className="rounded-2xl border border-border/60 bg-background/70 p-3">
-          <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground mb-2">
+          <span className="inline-flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground mb-2">
             <ClipboardList className="h-3.5 w-3.5" />
             Facts
           </span>
@@ -484,12 +484,12 @@ function ObservationReportCard({ report }: { report: ObservationReport }) {
 
         {report.concepts.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground mr-1">
+            <span className="inline-flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground mr-1">
               <Tags className="h-3.5 w-3.5" />
               Concepts
             </span>
             {report.concepts.map((concept) => (
-              <Badge key={concept} variant="secondary" className="h-6 px-2 text-[11px] font-normal">
+              <Badge key={concept} variant="secondary" className="h-6 px-2 text-xs font-normal">
                 {concept}
               </Badge>
             ))}
@@ -498,19 +498,19 @@ function ObservationReportCard({ report }: { report: ObservationReport }) {
 
         {(report.tool || report.prompt || report.session || report.filesRead.length > 0) && (
           <div className="rounded-2xl border border-border/60 bg-background/70 p-3 space-y-2">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               {report.tool && <Badge variant="outline" className="h-5 px-1.5 font-normal">Tool: {report.tool}</Badge>}
               {report.prompt && <Badge variant="outline" className="h-5 px-1.5 font-normal">Prompt #{report.prompt}</Badge>}
               {report.session && <Badge variant="outline" className="h-5 px-1.5 font-normal">{report.session}</Badge>}
             </div>
             {report.filesRead.length > 0 && (
               <div className="space-y-1">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Files read</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Files read</p>
                 <div className="flex flex-wrap gap-1.5">
                   {report.filesRead.map((file) => (
                     <span
                       key={file}
-                      className="px-2 py-1 rounded-md bg-muted/60 border border-border/60 text-[11px] font-mono text-foreground/75 break-all"
+                      className="px-2 py-1 rounded-md bg-muted/60 border border-border/60 text-xs font-mono text-foreground/75 break-all"
                     >
                       {file}
                     </span>
@@ -589,11 +589,11 @@ function ErrorSection({ message }: { message: string }) {
             className="flex items-center gap-1.5 px-3 py-1.5 w-full text-left border-t border-destructive/10 text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
           >
             <ChevronRight className={cn('h-3 w-3 transition-transform', showTrace ? 'rotate-90' : '')} />
-            <span className="text-[10px] font-medium">Stack trace</span>
+            <span className="text-xs font-medium">Stack trace</span>
           </button>
           {showTrace && (
             <div className="px-3 pb-2.5 max-h-64 overflow-auto">
-              <pre className="font-mono text-[10px] leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all">
+              <pre className="font-mono text-xs leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all">
                 {traceback}
               </pre>
             </div>
@@ -620,7 +620,7 @@ function SimpleArgsSection({
           const displayVal = isPath ? toDisplayPath(val as string) : (typeof val === 'string' ? val : JSON.stringify(val));
           return (
             <div key={key} className="flex items-start gap-3 px-3 py-2">
-              <span className="text-[11px] font-medium text-muted-foreground min-w-[80px] pt-0.5 flex-shrink-0 font-mono">
+              <span className="text-xs font-medium text-muted-foreground min-w-[80px] pt-0.5 flex-shrink-0 font-mono">
                 {key}
               </span>
               {isPath ? (
@@ -664,7 +664,7 @@ function CodeSection({ label, content, lang }: { label: string; content: string;
         <span className="text-xs text-foreground flex-1 truncate">
           {humanLabel}
         </span>
-        <span className="text-[10px] text-muted-foreground flex-shrink-0">
+        <span className="text-xs text-muted-foreground flex-shrink-0">
           {lineCount} lines
         </span>
       </div>

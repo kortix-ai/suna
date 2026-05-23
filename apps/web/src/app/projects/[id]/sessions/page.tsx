@@ -23,6 +23,7 @@ import {
   getProject,
   listProjectSessions,
   restartProjectSession,
+  type ProjectOpenCodeSession,
   type ProjectSession,
   type ProjectSessionStatus,
 } from '@/lib/projects-client';
@@ -69,6 +70,21 @@ const STATUS_VARIANT: Record<
   completed: 'outline',
 };
 
+function rootOpenCodeSession(session: ProjectSession): ProjectOpenCodeSession | null {
+  const opencodeSessions = session.opencode_sessions ?? [];
+  const rootId = session.opencode_session_id;
+  if (rootId) return opencodeSessions.find((item) => item.id === rootId) ?? null;
+  return opencodeSessions.find((item) => !item.parent_id) ?? null;
+}
+
+function directSubsessions(session: ProjectSession): ProjectOpenCodeSession[] {
+  const root = rootOpenCodeSession(session);
+  if (!root) return [];
+  return (session.opencode_sessions ?? [])
+    .filter((item) => item.parent_id === root.id && !item.archived_at)
+    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
+}
+
 function SessionRow({
   session,
   onOpen,
@@ -87,65 +103,96 @@ function SessionRow({
   restarting: boolean;
 }) {
   const shortId = session.session_id.slice(0, 8);
+  const root = rootOpenCodeSession(session);
+  const children = directSubsessions(session);
+  const title = root?.title || session.name || shortId;
   return (
-    <ListRow
-      onClick={onOpen}
-      leading={<EntityAvatar icon={GitBranch} size="md" />}
-      title={<span className="font-mono">{shortId}</span>}
-      badges={
-        <Badge variant={STATUS_VARIANT[session.status]} size="sm">
-          {session.status}
-        </Badge>
-      }
-      subtitle={
-        <InlineMeta>
-          <span className="font-mono">{session.branch_name}</span>
-          <span>{relativeTime(session.created_at)}</span>
-        </InlineMeta>
-      }
-      trailing={
-        <div onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem onSelect={onOpen} className="gap-2">
-                <Play className="h-3.5 w-3.5" />
-                Open
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onOpenChangeRequest} className="gap-2">
-                <GitPullRequest className="h-3.5 w-3.5" />
-                Open change request
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={onRestart}
-                disabled={restarting}
-                className="gap-2"
-              >
-                {restarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-                Restart
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={onDelete}
-                disabled={deleting}
-                className="gap-2 text-muted-foreground focus:text-foreground"
-              >
-                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      }
-    />
+    <>
+      <ListRow
+        onClick={onOpen}
+        leading={<EntityAvatar icon={GitBranch} size="md" />}
+        title={<span>{title}</span>}
+        badges={
+          <>
+            <Badge variant={STATUS_VARIANT[session.status]} size="sm">
+              {session.status}
+            </Badge>
+            {children.length > 0 && (
+              <Badge variant="secondary" size="sm">
+                {children.length} sub
+              </Badge>
+            )}
+          </>
+        }
+        subtitle={
+          <InlineMeta>
+            <span className="font-mono">{session.branch_name}</span>
+            <span>{relativeTime(session.created_at)}</span>
+          </InlineMeta>
+        }
+        trailing={
+          <div onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onSelect={onOpen} className="gap-2">
+                  <Play className="h-3.5 w-3.5" />
+                  Open
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onOpenChangeRequest} className="gap-2">
+                  <GitPullRequest className="h-3.5 w-3.5" />
+                  Open change request
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={onRestart}
+                  disabled={restarting}
+                  className="gap-2"
+                >
+                  {restarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                  Restart
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={onDelete}
+                  disabled={deleting}
+                  className="gap-2 text-muted-foreground focus:text-foreground"
+                >
+                  {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        }
+      />
+      {children.length > 0 && (
+        <li className="ml-10 border-l border-border/60 py-1">
+          {children.map((child) => (
+            <button
+              key={child.id}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.location.href = `/projects/${session.project_id}/sessions/${session.session_id}?oc=${encodeURIComponent(child.id)}`;
+              }}
+              className="flex w-full items-center gap-2 px-4 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
+              <span className="min-w-0 flex-1 truncate">{child.title || 'Sub-session'}</span>
+              {child.updated_at && <span className="shrink-0 text-xs">{relativeTime(new Date(child.updated_at).toISOString())}</span>}
+            </button>
+          ))}
+        </li>
+      )}
+    </>
   );
 }
 

@@ -99,7 +99,7 @@ function ProjectViewInner() {
                   key={t.id}
                   value={t.id}
                   className={cn(
-                    'relative h-full inline-flex items-center text-[13px] font-medium tracking-tight cursor-pointer transition-colors outline-none',
+                    'relative h-full inline-flex items-center text-sm font-medium tracking-tight cursor-pointer transition-colors outline-none',
                     'text-muted-foreground/60 hover:text-foreground',
                     'data-[state=active]:text-foreground',
                     'after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-foreground after:rounded-full',
@@ -117,11 +117,11 @@ function ProjectViewInner() {
                   size="sm"
                   onClick={() => openNewTicket()}
                   title="New ticket (C)"
-                  className="h-7 px-2.5 text-[12px] gap-1.5"
+                  className="h-7 px-2.5 text-xs gap-1.5"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">New ticket</span>
-                  <kbd className="hidden sm:inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded border border-primary-foreground/20 bg-primary-foreground/10 text-[10px] font-mono font-medium leading-none text-primary-foreground/90">
+                  <kbd className="hidden sm:inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded border border-primary-foreground/20 bg-primary-foreground/10 text-xs font-mono font-medium leading-none text-primary-foreground/90">
                     C
                   </kbd>
                 </Button>

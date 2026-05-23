@@ -137,7 +137,7 @@ export function AccountSwitcher({
         aria-label="Switch account"
       >
         {tile}
-        <span className="max-w-40 truncate text-[13px] font-medium">{label}</span>
+        <span className="max-w-40 truncate text-sm font-medium">{label}</span>
         <ChevronsUpDown className="h-3 w-3 text-muted-foreground/50" />
       </button>
     ) : (
@@ -150,7 +150,7 @@ export function AccountSwitcher({
         )}
       >
         {tile}
-        <span className="min-w-0 flex-1 truncate text-left text-[12.5px] font-semibold tracking-tight text-foreground group-data-[collapsible=icon]:hidden">
+        <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold tracking-tight text-foreground group-data-[collapsible=icon]:hidden">
           {label}
         </span>
         <ChevronsUpDown className="ml-auto size-3 shrink-0 text-muted-foreground/40 group-data-[collapsible=icon]:hidden" />
@@ -188,14 +188,14 @@ export function AccountSwitcher({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Find account…"
-                className="h-7 pl-7 pr-2 text-[12px] placeholder:text-muted-foreground/50"
+                className="h-7 pl-7 pr-2 text-xs placeholder:text-muted-foreground/50"
               />
             </div>
           </div>
         )}
 
         <div className="py-1.5">
-          <div className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/50">
+          <div className="px-3 pb-1 pt-1 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground/50">
             Account
           </div>
           <div className="max-h-[280px] overflow-y-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -206,7 +206,7 @@ export function AccountSwitcher({
                 ))}
               </div>
             ) : filteredAccounts.length === 0 ? (
-              <div className="px-2 py-3 text-[11.5px] text-muted-foreground/60">
+              <div className="px-2 py-3 text-xs text-muted-foreground/60">
                 {query.trim() ? 'No accounts match' : 'No accounts yet'}
               </div>
             ) : (
@@ -229,7 +229,7 @@ export function AccountSwitcher({
                     )}
                   >
                     <EntityAvatar label={itemLabel} size="xs" />
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium leading-tight">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight">
                       {itemLabel}
                     </span>
                     {hint && (
@@ -273,7 +273,7 @@ export function AccountSwitcher({
             className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <ArrowUpRight className="size-3.5" />
-            <span className="flex-1 truncate text-[12.5px] font-medium text-foreground/80">
+            <span className="flex-1 truncate text-sm font-medium text-foreground/80">
               All accounts
             </span>
           </DropdownMenuItem>
@@ -282,7 +282,7 @@ export function AccountSwitcher({
             className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <Plus className="size-3.5" />
-            <span className="flex-1 truncate text-[12.5px] font-medium text-foreground/80">
+            <span className="flex-1 truncate text-sm font-medium text-foreground/80">
               New account
             </span>
           </DropdownMenuItem>
@@ -292,7 +292,7 @@ export function AccountSwitcher({
               className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
             >
               <CreditCard className="size-3.5" />
-              <span className="flex-1 truncate text-[12.5px] font-medium text-foreground/80">
+              <span className="flex-1 truncate text-sm font-medium text-foreground/80">
                 Billing
               </span>
             </DropdownMenuItem>

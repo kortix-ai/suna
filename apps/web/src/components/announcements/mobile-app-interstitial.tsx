@@ -131,10 +131,10 @@ export function MobileAppInterstitial() {
                   <>
                     <AppleLogo className="h-5 w-5 text-background" />
                     <div className="flex flex-col items-start">
-                      <span className="text-[8px] text-background/70 leading-none">
+                      <span className="text-xs text-background/70 leading-none">
                         App Store
                       </span>
-                      <span className="text-[11px] font-semibold text-background leading-tight">
+                      <span className="text-xs font-semibold text-background leading-tight">
                         iOS
                       </span>
                     </div>
@@ -143,10 +143,10 @@ export function MobileAppInterstitial() {
                   <>
                     <GooglePlayLogo className="h-4 w-4 text-background" />
                     <div className="flex flex-col items-start">
-                      <span className="text-[8px] text-background/70 leading-none">
+                      <span className="text-xs text-background/70 leading-none">
                         Google Play
                       </span>
-                      <span className="text-[11px] font-semibold text-background leading-tight">
+                      <span className="text-xs font-semibold text-background leading-tight">
                         Android
                       </span>
                     </div>

@@ -67,7 +67,7 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
         <Button
           size="sm"
           variant="default"
-          className="h-7 text-[11px] px-2.5"
+          className="h-7 text-xs px-2.5"
           onClick={openBilling}
         >
           <Zap className="size-3 mr-1" />
@@ -76,7 +76,7 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
         <Button
           size="sm"
           variant="outline"
-          className="h-7 text-[11px] px-2.5"
+          className="h-7 text-xs px-2.5"
           onClick={openBilling}
         >
           Buy credits
@@ -109,7 +109,7 @@ export function TurnErrorDisplay({ errorText, className }: TurnErrorDisplayProps
   // Abort/cancelled → tiny muted note, no card
   if (isAbortError(errorText)) {
     return (
-      <p className={cn('text-[11px] text-muted-foreground/50 italic', className)}>
+      <p className={cn('text-xs text-muted-foreground/50 italic', className)}>
         Interrupted
       </p>
     );
@@ -167,7 +167,7 @@ export function SessionRetryDisplay({
       <Loader2 className="size-3.5 mt-0.5 flex-shrink-0 animate-spin text-muted-foreground/70" />
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground break-words">{message}</p>
-        <p className="mt-1 text-[11px] text-muted-foreground/70">{line}</p>
+        <p className="mt-1 text-xs text-muted-foreground/70">{line}</p>
       </div>
     </div>
   );

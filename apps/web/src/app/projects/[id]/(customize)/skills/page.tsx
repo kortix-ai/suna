@@ -136,7 +136,7 @@ export function SkillsView({ projectId }: { projectId: string }) {
               placeholder="Search skills"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-8 pl-8 text-[12.5px] placeholder:text-muted-foreground/60"
+              className="h-8 pl-8 text-sm placeholder:text-muted-foreground/60"
             />
           </div>
         </div>
@@ -226,7 +226,7 @@ function SkillListItem({
         )}
         aria-expanded={expanded}
       >
-        <span className="truncate text-[12.5px] font-medium">{skill.name}</span>
+        <span className="truncate text-sm font-medium">{skill.name}</span>
       </button>
 
       {expanded && (
@@ -380,7 +380,7 @@ function InlineSkillTree({
           ))}
         </div>
       ) : filesQuery.isError ? (
-        <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">
           Couldn&apos;t load files.
         </p>
       ) : (
@@ -428,7 +428,7 @@ function SkillFileViewer({
           {fileName}
         </span>
         <span className="text-muted-foreground/40">·</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground/70">
           {selectedPath}
         </span>
         <DetailToolbarActions fileHref={fileHref} />
@@ -473,7 +473,7 @@ function DetailToolbarActions({
             </Link>
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-[10px]">
+        <TooltipContent side="bottom" className="text-xs">
           Open in file viewer
         </TooltipContent>
       </Tooltip>
@@ -533,7 +533,7 @@ function DetailEmpty() {
 function NoMatches({ query }: { query: string }) {
   return (
     <div className="px-3 py-6 text-center">
-      <p className="text-[11.5px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         No matches for{' '}
         <span className="font-mono text-foreground">{query}</span>.
       </p>
@@ -556,7 +556,7 @@ function EmptyList({
       description={
         <>
           Commit a{' '}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
             .kortix/opencode/skills/&lt;slug&gt;/SKILL.md
           </code>{' '}
           and it&apos;ll show up here.
@@ -595,12 +595,11 @@ function ErrorNotice({
 }) {
   return (
     <div className="px-3 py-4">
-      <p className="text-[12.5px] font-medium text-red-600 dark:text-red-400">Failed to load</p>
-      <p className="mt-1 text-[11px] text-red-600/80 dark:text-red-400/80">{message}</p>
+      <p className="text-sm font-medium text-destructive">Failed to load</p>
+      <p className="mt-1 text-xs text-destructive/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry
       </Button>
     </div>
   );
 }
-

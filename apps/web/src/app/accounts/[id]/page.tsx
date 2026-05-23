@@ -991,7 +991,7 @@ function MembersCard({
                             {canUpdateRole && !isSelf && (
                               <>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                                <DropdownMenuLabel className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                                   Change role
                                 </DropdownMenuLabel>
                                 {(
@@ -1011,7 +1011,7 @@ function MembersCard({
                                     <Shield className="h-3.5 w-3.5" />
                                     {ROLE_LABEL[role]}
                                     {role === member.account_role && (
-                                      <span className="ml-auto text-[10px] text-muted-foreground">
+                                      <span className="ml-auto text-xs text-muted-foreground">
                                         Current
                                       </span>
                                     )}
@@ -1389,7 +1389,7 @@ function PendingInvitesSection({
 
   return (
     <div className="border-b border-border/60 bg-muted/20">
-      <div className="px-6 pt-3 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="px-6 pt-3 pb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
         Pending invites · {invites.length}
       </div>
       <List>

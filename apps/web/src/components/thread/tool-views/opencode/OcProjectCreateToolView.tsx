@@ -127,8 +127,8 @@ export function OcProjectCreateToolView({
           <div className="flex items-center gap-2.5">
             <CheckCircle className="w-3.5 h-3.5 text-foreground/70 flex-shrink-0" />
             <div className="min-w-0">
-              <p className="text-[12.5px] font-medium text-foreground tracking-tight truncate">{data.name}</p>
-              <p className="text-[11.5px] text-muted-foreground/70">Global workspace is ready</p>
+              <p className="text-sm font-medium text-foreground tracking-tight truncate">{data.name}</p>
+              <p className="text-xs text-muted-foreground/70">Global workspace is ready</p>
             </div>
           </div>
 
@@ -143,7 +143,7 @@ export function OcProjectCreateToolView({
           {/* Workspace ID */}
           {data.id && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground/50">
-              <span>ID: <code className="bg-muted px-1 rounded text-[10px]">{data.id}</code></span>
+              <span>ID: <code className="bg-muted px-1 rounded text-xs">{data.id}</code></span>
             </div>
           )}
 

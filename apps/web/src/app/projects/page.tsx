@@ -82,7 +82,7 @@ function ProjectCard({
         <div className="flex w-full items-center gap-3">
           <EntityAvatar label={project.name} size="lg" />
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-[15px] font-semibold leading-tight text-foreground">
+            <h3 className="truncate text-sm font-semibold leading-tight text-foreground">
               {project.name}
             </h3>
             <p className="mt-1 truncate text-xs text-muted-foreground">
@@ -209,7 +209,7 @@ export default function ProjectsPage() {
         <div className="mx-auto w-full max-w-6xl space-y-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="flex flex-col gap-1">
-              <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
+              <h1 className="text-3xl font-semibold tracking-tight text-foreground">
                 Projects
               </h1>
               <p className="text-sm text-muted-foreground">

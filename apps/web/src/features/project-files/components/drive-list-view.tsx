@@ -207,11 +207,11 @@ function ListRow({
                 }}
                 onBlur={confirmRename}
                 onClick={(e) => e.stopPropagation()}
-                className="flex-1 text-[13px] bg-transparent border-b border-primary/50 py-0 outline-none min-w-0"
+                className="flex-1 text-sm bg-transparent border-b border-primary/50 py-0 outline-none min-w-0"
               />
             ) : (
               <span className={cn(
-                'text-[13px] truncate font-medium',
+                'text-sm truncate font-medium',
                 node.ignored && 'opacity-50',
                 node.name.startsWith('.') && 'text-muted-foreground',
               )}>
@@ -221,12 +221,12 @@ function ListRow({
           </div>
 
           {/* Type column */}
-          <span className="text-[11px] text-muted-foreground/80 truncate font-mono uppercase tracking-wider">
+          <span className="text-xs text-muted-foreground/80 truncate font-mono uppercase tracking-wider">
             {isDir ? 'folder' : ext}
           </span>
 
           {/* Size column */}
-          <span className="text-[11px] text-muted-foreground/60 tabular-nums">
+          <span className="text-xs text-muted-foreground/60 tabular-nums">
             —
           </span>
 
@@ -409,7 +409,7 @@ export function DriveListView({
           onClick={() => handleHeaderClick('name')}
           variant="ghost"
           size="xs"
-          className="text-[10px] text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold justify-start hover:text-foreground"
+          className="text-xs text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold justify-start hover:text-foreground"
         >
           Name
           <SortIcon field="name" />
@@ -418,7 +418,7 @@ export function DriveListView({
           onClick={() => handleHeaderClick('type')}
           variant="ghost"
           size="xs"
-          className="text-[10px] text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold hover:text-foreground"
+          className="text-xs text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold hover:text-foreground"
         >
           Type
           <SortIcon field="type" />
@@ -427,7 +427,7 @@ export function DriveListView({
           onClick={() => handleHeaderClick('size')}
           variant="ghost"
           size="xs"
-          className="text-[10px] text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold hover:text-foreground"
+          className="text-xs text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold hover:text-foreground"
         >
           Size
           <SortIcon field="size" />
@@ -448,19 +448,19 @@ export function DriveListView({
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <FolderCog className="h-4 w-4 text-primary/70 shrink-0" />
-            <span className="text-[13px] font-medium text-foreground truncate">
+            <span className="text-sm font-medium text-foreground truncate">
               {node.name}
             </span>
             {ELEVATED_DIR_META[node.name] && (
-              <span className="text-[11px] text-muted-foreground/50 truncate hidden sm:inline">
+              <span className="text-xs text-muted-foreground/50 truncate hidden sm:inline">
                 {ELEVATED_DIR_META[node.name]}
               </span>
             )}
           </div>
-          <span className="text-[10px] text-primary/70 font-mono uppercase tracking-wider">
+          <span className="text-xs text-primary/70 font-mono uppercase tracking-wider">
             system
           </span>
-          <span className="text-[11px] text-muted-foreground/40">—</span>
+          <span className="text-xs text-muted-foreground/40">—</span>
           <span />
         </div>
       ))}

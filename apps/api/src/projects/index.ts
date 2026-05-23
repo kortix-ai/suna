@@ -76,7 +76,7 @@ import {
   type GitHubRepo,
   verifyGitHubAppInstallStatePayload,
 } from './github';
-import { buildStarterFiles } from './starter';
+import { buildStarterFiles, normalizeStarterTemplateId } from './starter';
 import {
   createManagedRepo,
   mintRepoPushToken,
@@ -193,6 +193,9 @@ const PROVISIONING_SESSION_STATUSES = ['queued', 'branching', 'provisioning'] as
 const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
 
 function serializeSession(row: ProjectSessionRow) {
+  const opencodeSessions = Array.isArray(row.metadata?.opencode_sessions)
+    ? row.metadata.opencode_sessions
+    : [];
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -208,6 +211,7 @@ function serializeSession(row: ProjectSessionRow) {
     status: row.status,
     error: row.error,
     metadata: row.metadata ?? {},
+    opencode_sessions: opencodeSessions,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
@@ -2406,10 +2410,15 @@ projectsApp.post('/provision', async (c) => {
   // its own files on first `kortix ship`. If seeding fails we roll back the
   // orphan repo so we never leave a half-created project behind.
   const seedStarter = body.seed_starter === true || body.seedStarter === true;
+  const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
   let seeded = false;
   if (seedStarter) {
     try {
-      const starter = buildStarterFiles({ projectName: name, repoFullName: repoSlug });
+      const starter = buildStarterFiles({
+        projectName: name,
+        repoFullName: repoSlug,
+        template: starterTemplate,
+      });
       await seedRepoWithFiles({
         repoId: repo.repoId,
         token: push.token,
@@ -2848,13 +2857,17 @@ projectsApp.post('/create-repo', async (c) => {
   const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(repo.full_name);
   const defaultBranch = repo.default_branch || 'main';
 
-  // Commit the minimal Kortix starter (kortix.toml + .opencode runtime +
-  // default agent + README + .gitignore) into the fresh repo so users land
-  // with a working project shape on first session boot. GitHub's Contents
-  // API updates the branch tip on every write, so these must be sequential.
+  // Commit the Kortix starter into the fresh repo so users land with a
+  // working project shape on first session boot. GitHub's Contents API
+  // updates the branch tip on every write, so these must be sequential.
   // A partial starter is not a usable project.
   const [ownerLogin, repoSlug] = repo.full_name.split('/');
-  const starter = buildStarterFiles({ projectName, repoFullName: repo.full_name });
+  const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
+  const starter = buildStarterFiles({
+    projectName,
+    repoFullName: repo.full_name,
+    template: starterTemplate,
+  });
   for (const file of starter) {
     try {
       // README.md exists already from `auto_init: true` — upsert via sha.
@@ -5110,14 +5123,12 @@ projectsApp.patch('/:projectId/sessions/:sessionId', async (c) => {
   return c.json(serializeSession(row));
 });
 
-// POST /v1/projects/sync-opencode-titles
-// Mirrors session titles from the sandbox-local opencode DB into our cloud DB
-// (project_sessions.metadata.name). Opencode is the source of truth for the
-// title; the frontend pipes opencode's session.list response and SSE
-// session.updated events through this endpoint so the name is available even
-// when the sandbox isn't running. Rename direction (UI -> opencode) goes via
-// the SDK's session.update and lands back here through the same SSE pipe.
-projectsApp.post('/sync-opencode-titles', async (c) => {
+// POST /v1/projects/sync-opencode-sessions
+// Mirrors session data from the sandbox-local opencode DB into our cloud DB.
+// The project_sessions row remains the branch+sandbox root;
+// metadata.opencode_sessions stores the local OpenCode root/sub-session graph
+// for sidebar/list rendering when the sandbox is not the active runtime.
+const syncOpencodeSessionsHandler = async (c: Context<AppEnv>) => {
   const userId = c.get('userId') as string;
   const body = await readBody(c);
   const rawEntries = body.entries;
@@ -5125,7 +5136,17 @@ projectsApp.post('/sync-opencode-titles', async (c) => {
     return c.json({ error: 'entries must be an array' }, 400);
   }
 
-  const desiredByOcId = new Map<string, string | null>();
+  type OpenCodeSessionSnapshot = {
+    id: string;
+    title: string | null;
+    parent_id: string | null;
+    project_id: string | null;
+    created_at: number | null;
+    updated_at: number | null;
+    archived_at: number | null;
+  };
+
+  const desiredByOcId = new Map<string, OpenCodeSessionSnapshot>();
   for (const raw of rawEntries) {
     if (!isPlainObject(raw)) continue;
     const opencodeSessionId = normalizeString(
@@ -5133,15 +5154,62 @@ projectsApp.post('/sync-opencode-titles', async (c) => {
     );
     if (!opencodeSessionId) continue;
     const title = normalizeString(raw.title);
-    desiredByOcId.set(opencodeSessionId, title);
+    const parentId = normalizeString(raw.parent_id ?? raw.parentID ?? raw.parentId);
+    const projectId = normalizeString(raw.project_id ?? raw.projectID ?? raw.projectId);
+    const createdAt = typeof raw.created_at === 'number'
+      ? raw.created_at
+      : typeof raw.createdAt === 'number'
+        ? raw.createdAt
+        : null;
+    const updatedAt = typeof raw.updated_at === 'number'
+      ? raw.updated_at
+      : typeof raw.updatedAt === 'number'
+        ? raw.updatedAt
+        : null;
+    const archivedAt = typeof raw.archived_at === 'number'
+      ? raw.archived_at
+      : typeof raw.archivedAt === 'number'
+        ? raw.archivedAt
+        : null;
+    desiredByOcId.set(opencodeSessionId, {
+      id: opencodeSessionId,
+      title,
+      parent_id: parentId,
+      project_id: projectId,
+      created_at: createdAt,
+      updated_at: updatedAt,
+      archived_at: archivedAt,
+    });
   }
   if (desiredByOcId.size === 0) return c.json({ updated: 0 });
 
   const ids = Array.from(desiredByOcId.keys());
+  const rootByOcId = new Map<string, string>();
+  const resolveRoot = (id: string): string => {
+    const cached = rootByOcId.get(id);
+    if (cached) return cached;
+    const seen = new Set<string>();
+    let current = id;
+    while (true) {
+      if (seen.has(current)) break;
+      seen.add(current);
+      const parent = desiredByOcId.get(current)?.parent_id;
+      if (!parent) break;
+      if (!desiredByOcId.has(parent)) {
+        current = parent;
+        break;
+      }
+      current = parent;
+    }
+    for (const seenId of seen) rootByOcId.set(seenId, current);
+    return current;
+  };
+  for (const id of ids) resolveRoot(id);
+  const rootIds = Array.from(new Set(Array.from(rootByOcId.values())));
   const rows = await db
     .select()
     .from(projectSessions)
-    .where(inArray(projectSessions.opencodeSessionId, ids));
+    .where(inArray(projectSessions.opencodeSessionId, Array.from(new Set([...ids, ...rootIds]))));
   if (rows.length === 0) return c.json({ updated: 0 });
 
   // Per-row IAM authz. The engine answers from a per-request cache
@@ -5167,12 +5235,20 @@ projectsApp.post('/sync-opencode-titles', async (c) => {
     if (!verdict.allowed) continue;
     const ocId = row.opencodeSessionId;
     if (!ocId) continue;
-    const desired = desiredByOcId.get(ocId) ?? null;
+    const rootId = rootByOcId.get(ocId) ?? ocId;
     const current = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
-    if (desired === current) continue;
+    const rootEntry = desiredByOcId.get(ocId);
+    const desired = rootEntry ? rootEntry.title : current;
+    const scopedSessions = Array.from(desiredByOcId.values())
+      .filter((entry) => (rootByOcId.get(entry.id) ?? entry.id) === rootId)
+      .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
+    const currentSessions = JSON.stringify(row.metadata?.opencode_sessions ?? []);
+    const nextSessions = JSON.stringify(scopedSessions);
+    if (desired === current && currentSessions === nextSessions) continue;
     const nextMetadata: Record<string, unknown> = { ...(row.metadata ?? {}) };
     if (desired) nextMetadata.name = desired;
     else delete nextMetadata.name;
+    nextMetadata.opencode_sessions = scopedSessions;
     await db
       .update(projectSessions)
       .set({ metadata: nextMetadata, updatedAt: new Date() })
@@ -5180,7 +5256,9 @@ projectsApp.post('/sync-opencode-titles', async (c) => {
     updated += 1;
   }
   return c.json({ updated });
-});
+};
+
+projectsApp.post('/sync-opencode-sessions', syncOpencodeSessionsHandler);
 
 // GET /v1/projects/:projectId/sessions/:sessionId/sandbox
 // Returns the session's sandbox runtime row from `kortix.session_sandboxes`.

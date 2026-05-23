@@ -64,7 +64,7 @@ export function KortixComputerHeader({
         )}
 
         {title && (
-          <span className="text-[12.5px] font-medium text-foreground tracking-tight">
+          <span className="text-sm font-medium text-foreground tracking-tight">
             {title}
           </span>
         )}
@@ -72,7 +72,7 @@ export function KortixComputerHeader({
         {fileName && (
           <>
             <ChevronRight className="h-3 w-3 text-muted-foreground/40 flex-shrink-0" />
-            <span className="text-[12.5px] font-medium text-foreground tracking-tight truncate max-w-[140px] sm:max-w-[200px]">
+            <span className="text-sm font-medium text-foreground tracking-tight truncate max-w-[140px] sm:max-w-[200px]">
               {fileName}
             </span>
           </>
@@ -88,7 +88,7 @@ export function KortixComputerHeader({
                 <button
                   onClick={() => onBreadcrumbClick?.(segment.path)}
                   className={cn(
-                    "text-[12.5px] tracking-tight transition-colors truncate max-w-[100px] sm:max-w-[150px] touch-manipulation cursor-pointer",
+                    "text-sm tracking-tight transition-colors truncate max-w-[100px] sm:max-w-[150px] touch-manipulation cursor-pointer",
                     segment.isLast
                       ? "text-foreground font-medium"
                       : "text-muted-foreground/70 hover:text-foreground"

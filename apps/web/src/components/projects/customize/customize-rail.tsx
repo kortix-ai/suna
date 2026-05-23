@@ -189,7 +189,7 @@ function RailButton({
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex cursor-pointer items-center gap-2 rounded-lg text-[12.5px] font-medium transition-colors',
+        'group relative flex cursor-pointer items-center gap-2 rounded-lg text-sm font-medium transition-colors',
         horizontal
           ? 'whitespace-nowrap px-3 py-2'
           : 'w-full gap-2.5 px-2.5 py-1.5 text-left',
@@ -208,7 +208,7 @@ function RailButton({
         <span
           aria-hidden
           className={cn(
-            'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center font-mono text-[12px] leading-none',
+            'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center font-mono text-xs leading-none',
             active ? 'text-foreground' : 'text-muted-foreground/70',
           )}
         >

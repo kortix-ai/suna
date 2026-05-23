@@ -134,7 +134,7 @@ export const SmartJsonViewer: React.FC<SmartJsonViewerProps> = ({
           {!isExpanded && !isEmpty && (
             <span className="text-muted-foreground/50 flex items-center gap-1.5 mx-0.5">
                <MoreHorizontal className="h-3 w-3" />
-               <span className="text-[10px] bg-muted/60 px-1.5 py-0.5 rounded">{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
+               <span className="text-xs bg-muted/60 px-1.5 py-0.5 rounded">{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
             </span>
           )}
 

@@ -84,7 +84,7 @@ function WorkspaceAvatar({
   sandbox: SandboxInfo | null;
   size?: 'sm' | 'xs';
 }) {
-  const dim = size === 'sm' ? 'h-6 w-6 text-[10px]' : 'h-5 w-5 text-[9px]';
+  const dim = size === 'sm' ? 'h-6 w-6 text-xs' : 'h-5 w-5 text-xs';
   return (
     <span
       aria-hidden
@@ -358,10 +358,10 @@ export function InstanceSwitcherPopover() {
           >
             <WorkspaceAvatar sandbox={triggerSandbox} size="sm" />
             <div className="flex-1 min-w-0">
-              <p className="truncate text-[12px] font-semibold leading-tight text-foreground">
+              <p className="truncate text-xs font-semibold leading-tight text-foreground">
                 {triggerLabel}
               </p>
-              <p className="truncate text-[9.5px] font-medium uppercase tracking-wider text-muted-foreground/60 leading-tight mt-0.5">
+              <p className="truncate text-xs font-medium uppercase tracking-wider text-muted-foreground/60 leading-tight mt-0.5">
                 Workspace
               </p>
             </div>

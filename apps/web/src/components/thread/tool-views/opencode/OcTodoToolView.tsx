@@ -60,13 +60,13 @@ export function OcTodoToolView({
         actions={
           <>
             {total > 0 && (
-              <span className="text-[11px] text-muted-foreground/70 tracking-tight tabular-nums">
+              <span className="text-xs text-muted-foreground/70 tracking-tight tabular-nums">
                 <span className="text-foreground/90 font-medium">{completed}</span>
                 <span className="text-muted-foreground/50">/{total}</span>
               </span>
             )}
             {inProgress > 0 && (
-              <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/80 tracking-tight">
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/80 tracking-tight">
                 <StatusDot tone="active" />
                 {inProgress} active
               </span>
@@ -77,7 +77,7 @@ export function OcTodoToolView({
 
       <ToolViewBody padded={false}>
         {total === 0 ? (
-          <div className="px-4 py-6 text-[12px] text-muted-foreground/70 tracking-tight text-center">
+          <div className="px-4 py-6 text-xs text-muted-foreground/70 tracking-tight text-center">
             No tasks.
           </div>
         ) : (
@@ -90,7 +90,7 @@ export function OcTodoToolView({
                 <Checkbox status={todo.status} />
                 <span
                   className={cn(
-                    'flex-1 min-w-0 text-[13px] leading-snug truncate tracking-tight',
+                    'flex-1 min-w-0 text-sm leading-snug truncate tracking-tight',
                     todo.status === 'completed' && 'line-through text-muted-foreground/50',
                     todo.status === 'in_progress' && 'text-foreground font-medium',
                     todo.status === 'pending' && 'text-foreground/85',
@@ -99,7 +99,7 @@ export function OcTodoToolView({
                   {todo.content}
                 </span>
                 {todo.priority && (
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50 font-medium flex-shrink-0">
+                  <span className="text-xs uppercase tracking-wider text-muted-foreground/50 font-medium flex-shrink-0">
                     {todo.priority}
                   </span>
                 )}

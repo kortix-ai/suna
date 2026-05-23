@@ -227,7 +227,7 @@ function ConfigDegradationPanel({
         <div className="space-y-3">
           {status.problems.map((problem, index) => (
             <div key={`${problem.source}-${index}`} className="rounded-2xl border border-border/60 bg-background/70 px-3 py-3 space-y-2">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
                 <span>{formatProblemLabel(problem)}</span>
                 <span className="rounded-full border border-border/60 px-2 py-0.5 font-mono normal-case tracking-normal text-foreground/80">{problem.source}</span>
               </div>
@@ -254,7 +254,7 @@ function ConfigDegradationPanel({
           </Button>
         </div>
 
-        <div className="text-[11px] text-muted-foreground">
+        <div className="text-xs text-muted-foreground">
           {taskTargetLabel
             ? `The fix task will be created and started in ${taskTargetLabel}.`
             : 'If this instance has no project yet, Kortix will create a Workspace project automatically before starting the fix task.'}
@@ -336,7 +336,7 @@ function CommandCopyField({
             {copied ? 'Copied' : '1-click copy'}
           </Badge>
         </div>
-        <div className="text-muted-foreground mt-1.5 text-[11px] leading-relaxed">
+        <div className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
           {hint || 'Command hidden for security. The full command is copied to your clipboard.'}
         </div>
       </button>
@@ -364,7 +364,7 @@ function BackupRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium truncate">{backup.description || `Backup ${backup.id}`}</div>
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
           <span>{formatDate(backup.created)}</span>
           <span>·</span>
           <span>{formatBytes(backup.size)}</span>
@@ -408,7 +408,7 @@ function HealthBar({
       <div className="h-1.5 bg-foreground/[0.06] rounded-full overflow-hidden">
         {value !== null && <div className={cn('h-full transition-all', color)} style={{ width: `${value}%` }} />}
       </div>
-      {detail ? <div className="text-[11px] text-muted-foreground">{detail}</div> : null}
+      {detail ? <div className="text-xs text-muted-foreground">{detail}</div> : null}
     </div>
   );
 }
@@ -942,7 +942,7 @@ export function InstanceSettingsModal({
 
                 <div className="px-4 pb-3">
                   <div className="text-sm font-semibold truncate">{sandbox?.name || 'Instance settings'}</div>
-                  <div className="text-[11px] text-muted-foreground font-mono truncate mt-1">
+                  <div className="text-xs text-muted-foreground font-mono truncate mt-1">
                     {sandbox?.sandbox_id || '—'}
                   </div>
                 </div>
@@ -1060,18 +1060,18 @@ export function InstanceSettingsModal({
                       ? 'Health is split into host, workload, and runtime layers. Use the Health tab to inspect and repair the failing layer directly.'
                       : 'Refresh the health data to inspect the failing layer directly.'}
                   </div>
-                  {providerError ? <div className="text-[11px] break-words">{providerError}</div> : null}
+                  {providerError ? <div className="text-xs break-words">{providerError}</div> : null}
                   {adminHealth ? (
                     <div className="grid gap-2 sm:grid-cols-3">
                       {(['host', 'workload', 'runtime'] as const).map((key) => {
                         const layer = adminHealth.layers[key];
                         return (
                           <div key={key} className="rounded-2xl border border-border/60 bg-muted/10 px-3 py-2">
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{layer.label}</div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">{layer.label}</div>
                             <div className="mt-1">
                               <Badge size="sm" variant={layerBadgeVariant(layer.status)} className="capitalize">{layer.status}</Badge>
                             </div>
-                            <div className="mt-1 text-[11px] text-muted-foreground">{layer.summary}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">{layer.summary}</div>
                           </div>
                         );
                       })}
@@ -1121,7 +1121,7 @@ export function InstanceSettingsModal({
               <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Init status</div>
                 <div className="font-medium capitalize">{initStatus}</div>
-                {sandbox.init_attempts && sandbox.init_attempts > 1 ? <div className="text-[11px] text-muted-foreground">Attempt {sandbox.init_attempts}</div> : null}
+                {sandbox.init_attempts && sandbox.init_attempts > 1 ? <div className="text-xs text-muted-foreground">Attempt {sandbox.init_attempts}</div> : null}
               </div>
               <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Health status</div>
@@ -1261,7 +1261,7 @@ export function InstanceSettingsModal({
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 text-xs">
                         {Object.entries(layer.details).filter(([detailKey]) => detailKey !== 'services').map(([detailKey, value]) => (
                           <div key={detailKey} className="rounded-2xl border border-border/60 bg-background/60 px-3 py-2">
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{detailKey.replace(/_/g, ' ')}</div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">{detailKey.replace(/_/g, ' ')}</div>
                             <div className="mt-1 break-words font-mono text-foreground/85">{typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—')}</div>
                           </div>
                         ))}
@@ -1281,7 +1281,7 @@ export function InstanceSettingsModal({
                                     </Badge>
                                   </div>
                                   <div className="mt-1 text-xs text-muted-foreground font-mono">{service.id}</div>
-                                  {service.lastError ? <div className="mt-1 text-[11px] text-muted-foreground break-words">{service.lastError}</div> : null}
+                                  {service.lastError ? <div className="mt-1 text-xs text-muted-foreground break-words">{service.lastError}</div> : null}
                                 </div>
                                 <Button size="sm" variant="outline" onClick={() => triggerRepairAction('restart_service', service.id)} disabled={adminRepairMutation.isPending}>
                                   {adminRepairMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <RotateCw className="h-3.5 w-3.5 mr-2" />}
@@ -1413,7 +1413,7 @@ export function InstanceSettingsModal({
                   <CopyField label="List running containers" value="docker ps" />
                   <CopyField label="Open running Kortix container" value="docker exec -it justavps-workload bash" />
                 </div>
-                <div className="rounded-2xl border border-border/60 bg-background/60 px-3 py-2 text-[11px] text-muted-foreground">
+                <div className="rounded-2xl border border-border/60 bg-background/60 px-3 py-2 text-xs text-muted-foreground">
                   Inside the container, you can inspect <span className="font-mono text-foreground">/workspace</span>, verify runtime state, and debug the live Kortix environment directly.
                 </div>
               </SectionCard>
@@ -1450,7 +1450,7 @@ export function InstanceSettingsModal({
           <SectionCard title="Auto-update" bodyClassName="space-y-2">
             <div className="flex items-center gap-2 text-sm">
               <span className="font-medium">{sandbox?.auto_update_enabled === false ? 'Disabled' : 'Enabled by default'}</span>
-              <span className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] font-mono text-muted-foreground">
+              <span className="rounded-full border border-border/60 px-2 py-0.5 text-xs font-mono text-muted-foreground">
                 {sandbox?.auto_update_channel === 'dev' ? 'dev channel' : 'stable channel'}
               </span>
             </div>

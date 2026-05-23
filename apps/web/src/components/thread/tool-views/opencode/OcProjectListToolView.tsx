@@ -75,13 +75,13 @@ export function OcProjectListToolView({
                       {project.name}
                     </span>
                     {project.sessions > 0 && (
-                      <span className="inline-flex items-center gap-1 text-[10.5px] text-muted-foreground/70 tracking-tight">
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/70 tracking-tight">
                         <Users className="w-2.5 h-2.5" />
                         {project.sessions}
                       </span>
                     )}
                   </div>
-                  <div className="text-[11px] text-muted-foreground/60 space-y-0.5">
+                  <div className="text-xs text-muted-foreground/60 space-y-0.5">
                     <span className="font-mono truncate block" title={project.path}>
                       {project.path}
                     </span>

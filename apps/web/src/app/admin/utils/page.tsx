@@ -162,7 +162,7 @@ export default function AdminUtilsPage() {
               {config.affectedServices && config.affectedServices.length > 0 && (
                 <div className="flex gap-1.5 mt-2">
                   {config.affectedServices.map((s) => (
-                    <Badge key={s} variant="secondary" className="text-[10px]">
+                    <Badge key={s} variant="secondary" className="text-xs">
                       {s}
                     </Badge>
                   ))}

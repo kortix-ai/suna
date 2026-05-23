@@ -97,7 +97,7 @@ function Reveal({
 function SectionLabel({ label }: { label: string }) {
   return (
     <div className="mb-5 flex items-center gap-4">
-      <span className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">
+      <span className="text-xs uppercase tracking-[0.28em] text-muted-foreground">
         {label}
       </span>
       <div className="h-px flex-1 bg-border/50" />
@@ -120,14 +120,14 @@ function StudyCard({
     <article className="rounded-[28px] border border-border/60 bg-background/80 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.05)] backdrop-blur-xl sm:p-7">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
+          <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
             Study {id}
           </p>
           <h2 className="mt-2 text-2xl font-medium tracking-tight text-foreground">
             {name}
           </h2>
         </div>
-        <span className="rounded-full border border-border/60 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+        <span className="rounded-full border border-border/60 px-3 py-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
           Candidate
         </span>
       </div>
@@ -160,7 +160,7 @@ function NotebookBlock({
 }) {
   return (
     <section className="rounded-[24px] border border-border/55 bg-background/78 p-5 backdrop-blur-xl sm:p-6">
-      <p className="mb-4 text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
+      <p className="mb-4 text-xs uppercase tracking-[0.24em] text-muted-foreground">
         {title}
       </p>
       {children}
@@ -198,13 +198,13 @@ export default function ExplorationPage() {
         <div className="grid gap-10 xl:grid-cols-[minmax(0,1.25fr)_360px]">
           <div>
             <Reveal delay={0.03}>
-              <p className="text-[11px] uppercase tracking-[0.32em] text-muted-foreground">
+              <p className="text-xs uppercase tracking-[0.32em] text-muted-foreground">
                 Exploration
               </p>
               <h1 className="mt-4 max-w-4xl text-4xl font-medium tracking-tight text-foreground sm:text-5xl md:text-6xl">
                 A calmer way to evaluate how Kortix should explain itself.
               </h1>
-              <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
+              <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-sm">
                 This page is a working wall: architecture studies, filesystem proof,
                 integration language, and positioning lines. The goal is not to ship
                 all of it. The goal is to identify the strongest structure for the homepage.
@@ -242,7 +242,7 @@ export default function ExplorationPage() {
                 <Reveal delay={0.14}>
                   <NotebookBlock title="Memory Model">
                     <div className="rounded-2xl border border-border/45 bg-muted/18 p-5">
-                      <div className="flex flex-wrap gap-2 text-[11px] font-mono text-muted-foreground">
+                      <div className="flex flex-wrap gap-2 text-xs font-mono text-muted-foreground">
                         {['tool call', 'observation', 'consolidation', 'long-term memory', 'future context'].map(
                           (item, index) => (
                             <div key={item} className="flex items-center gap-2">

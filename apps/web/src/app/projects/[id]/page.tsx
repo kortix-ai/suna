@@ -110,7 +110,7 @@ export default function ProjectIndexPage() {
           onInput={warmStart}
         >
           <div className="space-y-2 text-center">
-            <h1 className="text-[28px] font-semibold tracking-tight text-foreground">
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">
               What should we build?
             </h1>
             <p className="text-sm text-muted-foreground">

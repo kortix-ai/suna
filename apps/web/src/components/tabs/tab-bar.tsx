@@ -202,7 +202,7 @@ function TabContextMenu({ tab, position, onAction, onClose }: ContextMenuProps) 
       {icon}
       <span className="flex-1">{label}</span>
       {shortcut && (
-        <span className="text-[10px] text-muted-foreground/40 ml-4">{shortcut}</span>
+        <span className="text-xs text-muted-foreground/40 ml-4">{shortcut}</span>
       )}
     </button>
   );
@@ -320,7 +320,7 @@ function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, ge
           {sessionTabs.length > 0 && (
             <DropdownMenuGroup>
               {otherTabs.length > 0 && (
-                <DropdownMenuLabel className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider py-1">
+                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider py-1">
                   Sessions
                 </DropdownMenuLabel>
               )}
@@ -331,7 +331,7 @@ function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, ge
           {otherTabs.length > 0 && (
             <DropdownMenuGroup>
               {sessionTabs.length > 0 && (
-                <DropdownMenuLabel className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider py-1">
+                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider py-1">
                   Pages
                 </DropdownMenuLabel>
               )}
@@ -345,7 +345,7 @@ function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, ge
           )}
         </div>
 
-        <div className="px-2.5 py-1.5 border-t border-border/40 text-[10px] text-muted-foreground/60">
+        <div className="px-2.5 py-1.5 border-t border-border/40 text-xs text-muted-foreground/60">
           {tabs.length} tab{tabs.length !== 1 ? 's' : ''} open
         </div>
       </DropdownMenuContent>
@@ -465,7 +465,7 @@ function TabItem({
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       className={cn(
-        'group relative flex items-center text-[12.5px] select-none cursor-pointer',
+        'group relative flex items-center text-sm select-none cursor-pointer',
         'transition-colors duration-150',
         'h-full',
         isDashboard

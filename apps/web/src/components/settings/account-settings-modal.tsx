@@ -101,7 +101,7 @@ export function AccountSettingsModal({
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-lg font-semibold leading-tight">Account settings</div>
-                  <div className="truncate text-[11px] text-muted-foreground leading-tight">
+                  <div className="truncate text-xs text-muted-foreground leading-tight">
                     {accountLabel} · {roleLine}
                   </div>
                 </div>
@@ -174,10 +174,10 @@ export function AccountSettingsModal({
                   </>
                 ) : (
                   <>
-                    <div className="truncate text-[13px] font-medium leading-tight">
+                    <div className="truncate text-sm font-medium leading-tight">
                       {accountLabel}
                     </div>
-                    <div className="truncate text-[11px] text-muted-foreground leading-tight">
+                    <div className="truncate text-xs text-muted-foreground leading-tight">
                       {roleLine}
                     </div>
                   </>
@@ -187,7 +187,7 @@ export function AccountSettingsModal({
               {/* Tabs */}
               <div className="flex flex-col gap-0.5">
                 <div className="px-3 pb-1.5">
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
                     Account
                   </span>
                 </div>

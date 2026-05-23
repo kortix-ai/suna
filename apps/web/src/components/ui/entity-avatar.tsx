@@ -17,11 +17,11 @@ import { cn } from '@/lib/utils';
  */
 
 const SIZE_MAP = {
-  xs: { box: 'size-5 rounded-[5px] text-[9px]', icon: 'h-3 w-3' },
-  sm: { box: 'size-6 rounded-md text-[10px]', icon: 'h-3.5 w-3.5' },
-  md: { box: 'size-8 rounded-lg text-[11px]', icon: 'h-4 w-4' },
-  lg: { box: 'size-10 rounded-lg text-[13px]', icon: 'h-5 w-5' },
-  xl: { box: 'size-14 rounded-xl text-[17px]', icon: 'h-7 w-7' },
+  xs: { box: 'size-5 rounded-[5px] text-xs', icon: 'h-3 w-3' },
+  sm: { box: 'size-6 rounded-md text-xs', icon: 'h-3.5 w-3.5' },
+  md: { box: 'size-8 rounded-lg text-xs', icon: 'h-4 w-4' },
+  lg: { box: 'size-10 rounded-lg text-sm', icon: 'h-5 w-5' },
+  xl: { box: 'size-14 rounded-xl text-base', icon: 'h-7 w-7' },
 } as const;
 
 export type EntityAvatarSize = keyof typeof SIZE_MAP;

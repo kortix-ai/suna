@@ -341,7 +341,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
 
           {/* Address bar */}
           <form onSubmit={handleAddressSubmit} className="flex-1 flex items-center">
-            <div className="w-full flex items-center h-7 px-2.5 bg-foreground/[0.035] border border-transparent rounded-2xl text-[12px] tracking-tight focus-within:bg-background focus-within:border-border/60 transition-colors">
+            <div className="w-full flex items-center h-7 px-2.5 bg-foreground/[0.035] border border-transparent rounded-2xl text-xs tracking-tight focus-within:bg-background focus-within:border-border/60 transition-colors">
               <Globe className="h-3 w-3 mr-2 shrink-0 opacity-50" />
               <input
                 ref={addressInputRef}
@@ -452,7 +452,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
               className="flex-1 bg-transparent outline-none text-foreground placeholder:text-muted-foreground truncate"
             />
             {port > 0 && !isAddressEditing && !isExternalBrowsing && (
-              <span className="ml-2 shrink-0 text-[11px] text-muted-foreground/70">
+              <span className="ml-2 shrink-0 text-xs text-muted-foreground/70">
                 :{port}
               </span>
             )}

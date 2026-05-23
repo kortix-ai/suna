@@ -61,7 +61,7 @@ export default function HomeError({
         </div>
 
         {/* Title */}
-        <h1 className="text-center text-3xl font-normal tracking-tight text-foreground sm:text-[43px] sm:leading-tight">
+        <h1 className="text-center text-3xl font-normal tracking-tight text-foreground sm:text-5xl sm:leading-tight">
           Something went wrong
         </h1>
 

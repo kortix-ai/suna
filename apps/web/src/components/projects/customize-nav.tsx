@@ -64,7 +64,7 @@ export function CustomizeNav({ projectId }: { projectId: string }) {
       )}
     >
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/70">
           Customize
         </span>
       </div>
@@ -124,7 +124,7 @@ function CustomizeNavLink({
       href={href}
       title={item.hint}
       className={cn(
-        'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium transition-colors',
+        'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors',
         active
           ? 'bg-muted/70 text-foreground'
           : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
@@ -140,7 +140,7 @@ function CustomizeNavLink({
         <span
           aria-hidden
           className={cn(
-            'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center font-mono text-[12px] leading-none',
+            'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center font-mono text-xs leading-none',
             active ? 'text-foreground' : 'text-muted-foreground/70',
           )}
         >

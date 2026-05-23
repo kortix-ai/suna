@@ -157,7 +157,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
                   {[...Array(COLS)].map((_, i) => (
                     <motion.div
                       key={i}
-                      className="flex-1 h-6 border-r border-zinc-200 dark:border-zinc-700 flex items-center justify-center text-[10px] text-zinc-400 font-medium"
+                      className="flex-1 h-6 border-r border-zinc-200 dark:border-zinc-700 flex items-center justify-center text-xs text-zinc-400 font-medium"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: 0.3 + i * 0.03 }}
@@ -171,7 +171,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
               {[...Array(ROWS)].map((_, rowIndex) => (
                 <div key={rowIndex} className="flex">
                   <motion.div 
-                    className="w-10 h-7 bg-zinc-50 dark:bg-zinc-800/50 border-r border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-center text-[10px] text-zinc-400 font-medium"
+                    className="w-10 h-7 bg-zinc-50 dark:bg-zinc-800/50 border-r border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-center text-xs text-zinc-400 font-medium"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.3 + rowIndex * 0.02 }}
@@ -262,7 +262,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
 
             <div className="bg-zinc-100 dark:bg-zinc-800 border-t border-zinc-200 dark:border-zinc-700 px-2 py-1.5 flex gap-1">
               <motion.div
-                className="px-3 py-1 text-[10px] bg-white dark:bg-zinc-900 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300"
+                className="px-3 py-1 text-xs bg-white dark:bg-zinc-900 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.5 }}
@@ -270,7 +270,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
                 Sheet1
               </motion.div>
               <motion.div
-                className="px-2 py-1 text-[10px] text-zinc-400 flex items-center"
+                className="px-2 py-1 text-xs text-zinc-400 flex items-center"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: [0, 1, 0.5, 1] }}
                 transition={{ delay: 1, duration: 1 }}

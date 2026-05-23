@@ -104,7 +104,7 @@ function VisibleCodeBlock({ text, label, variant = 'default' }: {
   return (
     <div className="relative group cursor-pointer min-w-0 w-full" onClick={copy}>
       <pre className={cn(
-        'px-3 py-2.5 rounded-md text-[10.5px] font-mono border overflow-x-auto transition-colors leading-relaxed max-w-full whitespace-pre-wrap break-all',
+        'px-3 py-2.5 rounded-md text-xs font-mono border overflow-x-auto transition-colors leading-relaxed max-w-full whitespace-pre-wrap break-all',
         'bg-muted/40 border-border/50 hover:border-border',
         variant === 'green' ? 'text-emerald-400' : 'text-foreground/80',
       )}>
@@ -132,12 +132,12 @@ function SecretCodeBlock({ text, label }: { text: string; label?: string }) {
   return (
     <div className="relative group cursor-pointer min-w-0 w-full" onClick={copy}>
       <div className="rounded-2xl border border-border/50 overflow-hidden transition-colors hover:border-border">
-        <p className="px-3 py-2.5 text-[10.5px] font-mono text-foreground/70 truncate leading-relaxed bg-muted/40">
+        <p className="px-3 py-2.5 text-xs font-mono text-foreground/70 truncate leading-relaxed bg-muted/40">
           {finalMasked}
         </p>
         <div className="flex items-center gap-1.5 px-3 py-1.5 border-t border-border/30 bg-muted/20">
           <KeyRound className="h-2.5 w-2.5 text-muted-foreground/50 shrink-0" />
-          <span className="text-[10px] text-muted-foreground/50">Private key hidden — click to copy full command</span>
+          <span className="text-xs text-muted-foreground/50">Private key hidden — click to copy full command</span>
         </div>
       </div>
       <CopyOverlay copied={copied} />
@@ -171,7 +171,7 @@ export function SSHResultView({ sshResult, copiedField, onCopy, onRegenerate, is
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium text-foreground mb-0.5">Let your AI agent do it</p>
-            <p className="text-[10px] text-muted-foreground leading-relaxed">
+            <p className="text-xs text-muted-foreground leading-relaxed">
               Copy this prompt into{' '}
               <span className="text-foreground/80 font-medium">Claude Code, Cursor, Codex</span>
               {' '}— it contains your key so the agent sets everything up.
@@ -184,26 +184,26 @@ export function SSHResultView({ sshResult, copiedField, onCopy, onRegenerate, is
       {/* ── Divider ── */}
       <div className="flex items-center gap-3">
         <div className="h-px flex-1 bg-border/40" />
-        <span className="text-[10px] text-muted-foreground/40 uppercase tracking-wider">or manually</span>
+        <span className="text-xs text-muted-foreground/40 uppercase tracking-wider">or manually</span>
         <div className="h-px flex-1 bg-border/40" />
       </div>
 
       {/* ── Step 1: Save SSH key & connect ── */}
       <div className="rounded-2xl border border-border/60 overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40 bg-muted/20">
-          <span className="h-5 w-5 rounded-full bg-foreground text-background text-[10px] font-semibold flex items-center justify-center shrink-0">1</span>
+          <span className="h-5 w-5 rounded-full bg-foreground text-background text-xs font-semibold flex items-center justify-center shrink-0">1</span>
           <span className="text-xs font-medium">Save SSH key &amp; connect</span>
-          <div className="ml-auto flex items-center gap-1 text-[10px] text-amber-500 dark:text-amber-400">
+          <div className="ml-auto flex items-center gap-1 text-xs text-amber-500 dark:text-amber-400">
             <KeyRound className="h-2.5 w-2.5" />
             <span>Contains private key</span>
           </div>
         </div>
         <div className="p-3 space-y-2 min-w-0">
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Run once in your terminal — saves your key and opens an SSH session.
           </p>
           <SecretCodeBlock text={setupCmd} label="Setup command" />
-          <p className="text-[10px] text-muted-foreground mt-2">Reconnect later:</p>
+          <p className="text-xs text-muted-foreground mt-2">Reconnect later:</p>
           <VisibleCodeBlock text={reconnectCmd} label="SSH command" />
         </div>
       </div>
@@ -211,7 +211,7 @@ export function SSHResultView({ sshResult, copiedField, onCopy, onRegenerate, is
       {/* ── Step 2: Open in your editor ── */}
       <div className="rounded-2xl border border-border/60 overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40 bg-muted/20">
-          <span className="h-5 w-5 rounded-full bg-foreground text-background text-[10px] font-semibold flex items-center justify-center shrink-0">2</span>
+          <span className="h-5 w-5 rounded-full bg-foreground text-background text-xs font-semibold flex items-center justify-center shrink-0">2</span>
           <span className="text-xs font-medium">Open in your editor</span>
         </div>
         <div className="divide-y divide-border/30">
@@ -220,19 +220,19 @@ export function SSHResultView({ sshResult, copiedField, onCopy, onRegenerate, is
             <div className="flex items-center gap-2">
               <Monitor className="h-3.5 w-3.5 text-muted-foreground/70" />
               <span className="text-xs font-medium">Cursor / VS Code</span>
-              <span className="text-[0.5625rem] font-medium bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full leading-none">
+              <span className="text-xs font-medium bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded-full leading-none">
                 Recommended
               </span>
             </div>
-            <p className="text-[10px] text-muted-foreground">Add host to SSH config (run once):</p>
+            <p className="text-xs text-muted-foreground">Add host to SSH config (run once):</p>
             <VisibleCodeBlock text={sshConfigCmd} label="SSH config" variant="green" />
-            <p className="text-[10px] text-muted-foreground leading-relaxed">
+            <p className="text-xs text-muted-foreground leading-relaxed">
               Then{' '}
-              <kbd className="px-1 py-0.5 rounded-sm bg-muted border border-border/50 text-[0.5625rem] font-mono text-foreground/70">Cmd+Shift+P</kbd>
+              <kbd className="px-1 py-0.5 rounded-sm bg-muted border border-border/50 text-xs font-mono text-foreground/70">Cmd+Shift+P</kbd>
               {' → '}
               <span className="text-foreground/70">Remote-SSH: Connect to Host</span>
               {' → '}
-              <code className="px-1 py-0.5 rounded-sm bg-muted border border-border/50 font-mono text-[10px] text-foreground/80">{sshResult.host_alias}</code>
+              <code className="px-1 py-0.5 rounded-sm bg-muted border border-border/50 font-mono text-xs text-foreground/80">{sshResult.host_alias}</code>
             </p>
           </div>
 
@@ -391,7 +391,7 @@ export function SSHKeyDialog({ open, onOpenChange }: SSHKeyDialogProps) {
                 <><Key className="h-3.5 w-3.5" /> Generate SSH Key</>
               )}
             </Button>
-            <p className="text-[10px] text-muted-foreground/60 text-center">
+            <p className="text-xs text-muted-foreground/60 text-center">
               Generates a fresh ed25519 keypair and configures SSH access.
             </p>
 
@@ -399,12 +399,12 @@ export function SSHKeyDialog({ open, onOpenChange }: SSHKeyDialogProps) {
               <div className="rounded-2xl border border-border/50 p-3 space-y-2">
                 <p className="text-xs font-medium text-foreground/80">Reconnect command</p>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 min-w-0 text-[10px] font-mono bg-muted/40 border border-border/50 rounded-md px-2.5 py-1.5 text-foreground/70 truncate select-all">
+                  <code className="flex-1 min-w-0 text-xs font-mono bg-muted/40 border border-border/50 rounded-md px-2.5 py-1.5 text-foreground/70 truncate select-all">
                     {sshMeta.ssh_command}
                   </code>
                   <InlineCopyButton text={sshMeta.ssh_command} label="Reconnect" />
                 </div>
-                <p className="text-[0.5625rem] text-muted-foreground/40">
+                <p className="text-xs text-muted-foreground/40">
                   From {new Date(sshMeta.updatedAt).toLocaleString()}
                 </p>
               </div>

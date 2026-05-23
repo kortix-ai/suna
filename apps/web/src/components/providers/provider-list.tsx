@@ -134,15 +134,15 @@ export function ProviderList({
                 <ProviderLogo providerID={p.id} name={p.name} size="default" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[13px] font-medium text-foreground/85">
+                    <span className="text-sm font-medium text-foreground/85">
                       {PROVIDER_LABELS[p.id] || p.name || p.id}
                     </span>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[0.5625rem] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                       <span className="w-1 h-1 rounded-full bg-emerald-500" />
                       connected
                     </span>
                   </div>
-                  <span className="text-[11px] text-muted-foreground/50">
+                  <span className="text-xs text-muted-foreground/50">
                     {modelCount} model{modelCount !== 1 ? 's' : ''}
                     {source && <> · <span className="capitalize">{source}</span></>}
                   </span>
@@ -184,7 +184,7 @@ export function ProviderList({
                   {Object.values(p.models ?? {}).map((m: any) => (
                     <div
                       key={m.id}
-                      className="flex items-center gap-2 px-3 py-1 text-[11px] text-foreground/50 hover:bg-muted/20"
+                      className="flex items-center gap-2 px-3 py-1 text-xs text-foreground/50 hover:bg-muted/20"
                     >
                       <span className="truncate">{m.name || m.id}</span>
                     </div>

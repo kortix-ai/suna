@@ -215,7 +215,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
           placeholder="0 0 9 * * *"
           disabled={disabled}
         />
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           6-field: second minute hour day month weekday
         </p>
         <Button
@@ -389,7 +389,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
 
         {/* Summary — small caption, no card divider since the wrapping
             card is gone. */}
-        <p className="text-[11px] text-muted-foreground/60">
+        <p className="text-xs text-muted-foreground/60">
           {describeSchedule(state)}
         </p>
       </div>
@@ -415,7 +415,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
               placeholder="0 0 9 * * *"
               disabled={disabled}
             />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               6-field: sec min hour day month weekday
             </p>
           </div>

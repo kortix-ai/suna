@@ -128,7 +128,7 @@ export function ThreadBrowser({
               {thread.project_name || 'Untitled'}
             </span>
             {thread.is_public && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0">Public</Badge>
+              <Badge variant="outline" className="text-xs px-1.5 py-0">Public</Badge>
             )}
           </div>
           <div className="text-xs mt-0.5">
@@ -143,7 +143,7 @@ export function ThreadBrowser({
       cell: (thread) => (
         <div className="text-center">
           <div className="font-semibold">{thread.user_message_count}</div>
-          <p className="text-[10px] text-muted-foreground">{thread.message_count} total</p>
+          <p className="text-xs text-muted-foreground">{thread.message_count} total</p>
         </div>
       ),
       width: 'w-16',
@@ -173,7 +173,7 @@ export function ThreadBrowser({
                   </Button>
                 )}
                 {translation && (
-                  <Badge variant="secondary" className="mt-1 text-[10px]">
+                  <Badge variant="secondary" className="mt-1 text-xs">
                     Translated
                   </Badge>
                 )}

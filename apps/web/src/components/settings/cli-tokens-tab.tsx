@@ -275,7 +275,7 @@ function InlineCreate({
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               Copy it now — it won&apos;t be shown again. Then run{' '}
-              <code className="rounded bg-background px-1 py-0.5 font-mono text-[11px]">
+              <code className="rounded bg-background px-1 py-0.5 font-mono text-xs">
                 kortix login --token &lt;paste&gt;
               </code>{' '}
               in your terminal.

@@ -783,7 +783,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
       {/* ── Top toolbar ──────────────────────────────────────────────── */}
       <div className="flex-shrink-0 border-b px-3 py-1.5 flex items-center gap-2 h-10">
         {/* Left: summary (no filename — parent header already shows it) */}
-        <span className="text-[11px] text-muted-foreground/60 tabular-nums">
+        <span className="text-xs text-muted-foreground/60 tabular-nums">
           {tables.filter((t) => t.type === 'table').length} table{tables.filter((t) => t.type === 'table').length !== 1 ? 's' : ''}
           {tables.some((t) => t.type === 'view') && (
             <> · {tables.filter((t) => t.type === 'view').length} view{tables.filter((t) => t.type === 'view').length !== 1 ? 's' : ''}</>
@@ -831,7 +831,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
               <button
                 key={mode}
                 className={cn(
-                  'h-6 px-2 text-[11px] rounded-sm cursor-pointer inline-flex items-center gap-1 transition-colors',
+                  'h-6 px-2 text-xs rounded-sm cursor-pointer inline-flex items-center gap-1 transition-colors',
                   viewMode === mode
                     ? 'bg-background shadow-sm text-foreground'
                     : 'text-muted-foreground/60 hover:text-foreground',
@@ -898,7 +898,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
                   <Table2 className="h-3.5 w-3.5 flex-shrink-0 text-blue-500/70" />
                 )}
                 <span className="truncate flex-1 text-xs font-medium">{table.name}</span>
-                <span className="text-[10px] tabular-nums text-muted-foreground/50 flex-shrink-0">
+                <span className="text-xs tabular-nums text-muted-foreground/50 flex-shrink-0">
                   {table.rowCount.toLocaleString()}
                 </span>
               </button>
@@ -906,7 +906,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
           </div>
 
           {/* Sidebar footer */}
-          <div className="border-t px-3 py-1.5 text-[10px] text-muted-foreground/30 tabular-nums">
+          <div className="border-t px-3 py-1.5 text-xs text-muted-foreground/30 tabular-nums">
             {filteredTables.length}/{tables.length} shown
           </div>
         </div>
@@ -926,7 +926,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
                     <Table2 className="h-3.5 w-3.5 flex-shrink-0 text-blue-500/70" />
                   )}
                   <span className="text-xs font-medium text-foreground truncate">{selectedTableInfo.name}</span>
-                  <span className="text-[10px] text-muted-foreground/40 tabular-nums flex-shrink-0">
+                  <span className="text-xs text-muted-foreground/40 tabular-nums flex-shrink-0">
                     {selectedTableInfo.rowCount.toLocaleString()} × {selectedTableInfo.columns.length}
                   </span>
                 </div>
@@ -1109,14 +1109,14 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
                           </td>
                           <td className="text-center px-3 py-2">
                             {col.pk && (
-                              <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-amber-500/10 text-amber-500 text-[10px] font-semibold">
+                              <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-amber-500/10 text-amber-500 text-xs font-semibold">
                                 ✓
                               </span>
                             )}
                           </td>
                           <td className="text-center px-3 py-2">
                             {col.notnull && (
-                              <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-red-500/10 text-red-500 text-[10px] font-semibold">
+                              <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-red-500/10 text-red-500 text-xs font-semibold">
                                 ✓
                               </span>
                             )}
@@ -1163,14 +1163,14 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
               {/* Query input */}
               <div className="flex-shrink-0 border-b p-3 space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted-foreground/50">SQL</span>
+                  <span className="text-xs text-muted-foreground/50">SQL</span>
                   <div className="ml-auto flex items-center gap-1.5">
-                    <span className="text-[10px] text-muted-foreground/30">
+                    <span className="text-xs text-muted-foreground/30">
                       {typeof navigator !== 'undefined' && navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Enter
                     </span>
                     <button
                       className={cn(
-                        'h-7 px-2.5 text-[11px] rounded-md cursor-pointer inline-flex items-center gap-1 transition-colors',
+                        'h-7 px-2.5 text-xs rounded-md cursor-pointer inline-flex items-center gap-1 transition-colors',
                         sqlQuery.trim()
                           ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                           : 'bg-muted text-muted-foreground cursor-not-allowed',
@@ -1210,7 +1210,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
                 )}
 
                 {queryResult && !queryResult.error && (
-                  <div className="flex-shrink-0 border-b px-3 py-1.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <div className="flex-shrink-0 border-b px-3 py-1.5 flex items-center gap-2 text-xs text-muted-foreground">
                     <span>{queryResult.rowCount.toLocaleString()} row{queryResult.rowCount !== 1 ? 's' : ''}</span>
                     <span className="text-muted-foreground/30">·</span>
                     <span>{queryResult.time.toFixed(1)}ms</span>
@@ -1267,7 +1267,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
             <div className="flex items-center justify-between px-4 py-2.5 border-b">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-xs font-mono text-foreground/70 truncate">{expandedCell.column}</span>
-                <span className="text-[10px] text-muted-foreground/30 tabular-nums shrink-0">
+                <span className="text-xs text-muted-foreground/30 tabular-nums shrink-0">
                   row {expandedCell.rowIndex + 1}
                 </span>
               </div>
@@ -1315,7 +1315,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
             </div>
 
             {/* Footer */}
-            <div className="border-t px-4 py-1.5 text-[10px] text-muted-foreground/30 tabular-nums">
+            <div className="border-t px-4 py-1.5 text-xs text-muted-foreground/30 tabular-nums">
               {expandedEditValue.length.toLocaleString()} chars
             </div>
           </div>

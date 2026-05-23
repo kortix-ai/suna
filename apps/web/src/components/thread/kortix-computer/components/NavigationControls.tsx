@@ -37,7 +37,7 @@ function StatusPill({
   // At latest + idle = static "Latest" pill (no action)
   if (isAtLatest) {
     return (
-      <div className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-muted/60 text-[11px] font-medium text-muted-foreground select-none">
+      <div className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-muted/60 text-xs font-medium text-muted-foreground select-none">
         <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
         Latest
       </div>

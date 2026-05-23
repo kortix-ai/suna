@@ -83,7 +83,7 @@ export function AdminSidebar() {
           </div>
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight">Admin</span>
-            <span className="text-[11px] text-muted-foreground">Kortix console</span>
+            <span className="text-xs text-muted-foreground">Kortix console</span>
           </div>
         </Link>
       </SidebarHeader>

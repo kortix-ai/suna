@@ -487,7 +487,7 @@ export function OcShowUserToolView({
           <div className="flex flex-row items-center justify-between">
             <ToolViewIconTitle icon={Icon} title={displayTitle} subtitle={description || undefined} />
             <div className="flex items-center gap-2 flex-shrink-0">
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/40 text-muted-foreground/60 font-medium">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-muted/40 text-muted-foreground/60 font-medium">
                 {items!.length} items
               </span>
               {ciCanOpen && (
@@ -532,7 +532,7 @@ export function OcShowUserToolView({
             )}
             {type && (
               <span className={cn(
-                'text-[10px] px-2 py-0.5 rounded-md font-medium uppercase tracking-wider',
+                'text-xs px-2 py-0.5 rounded-md font-medium uppercase tracking-wider',
                 type === 'error'
                   ? cn(STATUS_BG.destructive, STATUS_TEXT.destructive)
                   : 'bg-foreground/[0.04] text-muted-foreground/70',

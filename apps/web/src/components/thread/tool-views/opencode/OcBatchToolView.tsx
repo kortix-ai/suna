@@ -78,13 +78,13 @@ export function OcBatchToolView({
           totalCalls > 0 ? (
             <>
               {successful > 0 && (
-                <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/80 tracking-tight">
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/80 tracking-tight">
                   <StatusDot tone="success" />
                   {successful}
                 </span>
               )}
               {failed > 0 && (
-                <span className={cn('inline-flex items-center gap-1.5 text-[11px] tracking-tight', STATUS_TEXT.destructive)}>
+                <span className={cn('inline-flex items-center gap-1.5 text-xs tracking-tight', STATUS_TEXT.destructive)}>
                   <StatusDot tone="error" />
                   {failed}
                 </span>
@@ -96,7 +96,7 @@ export function OcBatchToolView({
 
       <ToolViewBody padded={false}>
         {toolCalls.length === 0 ? (
-          <div className="px-4 py-6 text-[12px] text-muted-foreground/70 tracking-tight text-center">
+          <div className="px-4 py-6 text-xs text-muted-foreground/70 tracking-tight text-center">
             No tool calls.
           </div>
         ) : (
@@ -116,10 +116,10 @@ export function OcBatchToolView({
                 ) : (
                   <X className={cn('w-3 h-3 flex-shrink-0', STATUS_TEXT.destructive)} />
                 )}
-                <span className="text-[12.5px] font-mono text-foreground/90 flex-1 truncate">
+                <span className="text-sm font-mono text-foreground/90 flex-1 truncate">
                   {call.tool}
                 </span>
-                <span className="text-[10.5px] text-muted-foreground/50 tabular-nums flex-shrink-0">
+                <span className="text-xs text-muted-foreground/50 tabular-nums flex-shrink-0">
                   {i + 1}
                 </span>
               </li>

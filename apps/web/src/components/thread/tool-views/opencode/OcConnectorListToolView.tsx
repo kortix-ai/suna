@@ -74,7 +74,7 @@ export function OcConnectorListToolView({
                   }
                   subtitle={
                     conn.description ? (
-                      <div className="text-[11px] text-muted-foreground/60">
+                      <div className="text-xs text-muted-foreground/60">
                         {conn.description}
                       </div>
                     ) : undefined

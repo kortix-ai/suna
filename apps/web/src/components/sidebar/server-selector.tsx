@@ -394,7 +394,7 @@ function DialogInstanceRow({
           <span className={cn(
             'text-sm leading-tight flex-1 min-w-0 break-all',
             isActive ? 'text-foreground font-semibold' : 'text-foreground/80 font-medium',
-            !hasCustomLabel && 'font-mono text-[13px]',
+            !hasCustomLabel && 'font-mono text-sm',
           )}>
             {hasCustomLabel ? server.label : displayUrl}
           </span>
@@ -405,13 +405,13 @@ function DialogInstanceRow({
             </Badge>
           )}
           {isCancelledAtPeriodEnd && (
-            <span className="flex items-center gap-0.5 px-1.5 py-px text-[0.5625rem] font-medium rounded-full uppercase tracking-wider leading-none flex-shrink-0 bg-destructive/10 text-destructive border border-destructive/20">
+            <span className="flex items-center gap-0.5 px-1.5 py-px text-xs font-medium rounded-full uppercase tracking-wider leading-none flex-shrink-0 bg-destructive/10 text-destructive border border-destructive/20">
               <CalendarX2 className="h-2.5 w-2.5" />
               Cancelling
             </span>
           )}
           {server.isDefault && (
-            <span className="px-1.5 py-px text-[0.5625rem] font-medium text-muted-foreground/60 bg-muted/50 rounded-full uppercase tracking-wider leading-none flex-shrink-0">
+            <span className="px-1.5 py-px text-xs font-medium text-muted-foreground/60 bg-muted/50 rounded-full uppercase tracking-wider leading-none flex-shrink-0">
               default
             </span>
           )}
@@ -428,14 +428,14 @@ function DialogInstanceRow({
         {/* Status + version + actions */}
         <div className="mt-1.5 ml-6 flex items-center gap-3 flex-wrap">
           {displayStatus && (
-            <span className={cn('flex items-center gap-1 text-[10px] font-medium', displayStatus.color)}>
+            <span className={cn('flex items-center gap-1 text-xs font-medium', displayStatus.color)}>
               <StatusDot status={displayStatus.dot} />
               {displayStatus.label}
             </span>
           )}
 
           {version && (
-            <span className="text-[10px] font-mono text-muted-foreground/60">v{version}</span>
+            <span className="text-xs font-mono text-muted-foreground/60">v{version}</span>
           )}
 
           {/* Update available */}
@@ -454,7 +454,7 @@ function DialogInstanceRow({
 
           {/* Updating */}
           {sandboxUpdate?.isUpdating && (
-            <span className="flex items-center gap-1 text-[10px] font-medium text-amber-500">
+            <span className="flex items-center gap-1 text-xs font-medium text-amber-500">
               <Loader2 className="h-3 w-3 animate-spin" />
               Updating...
             </span>
@@ -462,7 +462,7 @@ function DialogInstanceRow({
 
           {/* Changelog */}
           {sandboxUpdate?.updateAvailable && !sandboxUpdate.isUpdating && sandboxUpdate.changelog && (
-            <div className="basis-full mt-0.5 text-[10px] text-muted-foreground/70 space-y-0.5 max-w-[280px]">
+            <div className="basis-full mt-0.5 text-xs text-muted-foreground/70 space-y-0.5 max-w-[280px]">
               <p className="font-medium">{sandboxUpdate.changelog.title}</p>
               <ul className="list-disc list-inside">
                 {sandboxUpdate.changelog.changes.slice(0, 3).map((c, i) => (
@@ -521,7 +521,7 @@ function DialogInstanceRow({
 
         {/* Cancellation notice */}
         {isCancelledAtPeriodEnd && (
-          <p className="mt-1.5 ml-6 text-[11px] text-destructive">
+          <p className="mt-1.5 ml-6 text-xs text-destructive">
             {cancelAt
               ? `Ends ${new Date(cancelAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
               : 'Cancels at end of billing period'}
@@ -1065,7 +1065,7 @@ export function InstanceManagerDialog({
               {servers.length > 0 && sshMeta && (
                 <div className="rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-[11px] font-medium text-foreground/80">SSH Access</p>
+                    <p className="text-xs font-medium text-foreground/80">SSH Access</p>
                     <Button
                       type="button"
                       onClick={() => setMode('ssh')}
@@ -1076,11 +1076,11 @@ export function InstanceManagerDialog({
                       Open setup
                     </Button>
                   </div>
-                  <pre className="max-w-full text-[10px] font-mono bg-muted/40 border border-border rounded-2xl px-2.5 py-2 overflow-x-hidden whitespace-pre-wrap break-all text-foreground">
+                  <pre className="max-w-full text-xs font-mono bg-muted/40 border border-border rounded-2xl px-2.5 py-2 overflow-x-hidden whitespace-pre-wrap break-all text-foreground">
                     {renderShellHighlighted(sshMeta.ssh_command)}
                   </pre>
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] text-muted-foreground/50">Last generated {new Date(sshMeta.updatedAt).toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground/50">Last generated {new Date(sshMeta.updatedAt).toLocaleString()}</p>
                     <div className="flex items-center gap-1.5">
                       <Button
                         type="button"
@@ -1118,8 +1118,8 @@ export function InstanceManagerDialog({
             {sandboxProgress && (
               <div className="rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] text-muted-foreground">{sandboxProgress.message}</p>
-                  <span className="text-[11px] tabular-nums text-muted-foreground/80">{Math.round(sandboxProgress.progress)}%</span>
+                  <p className="text-xs text-muted-foreground">{sandboxProgress.message}</p>
+                  <span className="text-xs tabular-nums text-muted-foreground/80">{Math.round(sandboxProgress.progress)}%</span>
                 </div>
                 <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
                   <div
@@ -1259,7 +1259,7 @@ export function InstanceManagerDialog({
             <div className="flex flex-col gap-3">
               {/* URL */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-muted-foreground">
+                <label className="text-xs font-medium text-muted-foreground">
                   Instance Address
                 </label>
                 <Input type="text"
@@ -1270,14 +1270,14 @@ export function InstanceManagerDialog({
                   className="h-9 text-sm font-mono"
                   required
                 />
-                <p className="text-[10px] text-muted-foreground/50">
+                <p className="text-xs text-muted-foreground/50">
                   The full URL of the Kortix server, e.g. http://192.168.1.50:8008/v1/p/kortix-sandbox/8000
                 </p>
               </div>
 
               {/* Label */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-muted-foreground">
+                <label className="text-xs font-medium text-muted-foreground">
                   Display Name <span className="text-muted-foreground/40">(optional)</span>
                 </label>
                 <Input type="text"
@@ -1319,7 +1319,7 @@ export function InstanceManagerDialog({
                 <div className="space-y-2">
                   <p className="text-xs text-muted-foreground">Reconnect command:</p>
                   <div className="relative">
-                    <pre className="max-w-full text-[10px] font-mono bg-muted/40 border border-border rounded-2xl px-3 py-2.5 pr-16 overflow-x-hidden whitespace-pre-wrap break-all text-foreground">
+                    <pre className="max-w-full text-xs font-mono bg-muted/40 border border-border rounded-2xl px-3 py-2.5 pr-16 overflow-x-hidden whitespace-pre-wrap break-all text-foreground">
                       {renderShellHighlighted(sshMeta.ssh_command)}
                     </pre>
                     <Button
@@ -1333,19 +1333,19 @@ export function InstanceManagerDialog({
                       {copiedField === 'connect' ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
                     </Button>
                   </div>
-                  <p className="text-[10px] text-muted-foreground/50">Need new keys? Regenerate below.</p>
+                  <p className="text-xs text-muted-foreground/50">Need new keys? Regenerate below.</p>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="rounded-2xl border border-border/40 bg-muted/20 px-2.5 py-2">
-                    <p className="text-[0.5625rem] uppercase tracking-wider text-muted-foreground/40 mb-0.5">Host</p>
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground/40 mb-0.5">Host</p>
                     <p className="text-xs font-mono text-foreground/80">{sshMeta.host}</p>
                   </div>
                   <div className="rounded-2xl border border-border/40 bg-muted/20 px-2.5 py-2">
-                    <p className="text-[0.5625rem] uppercase tracking-wider text-muted-foreground/40 mb-0.5">Port</p>
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground/40 mb-0.5">Port</p>
                     <p className="text-xs font-mono text-foreground/80">{sshMeta.port}</p>
                   </div>
                   <div className="rounded-2xl border border-border/40 bg-muted/20 px-2.5 py-2">
-                    <p className="text-[0.5625rem] uppercase tracking-wider text-muted-foreground/40 mb-0.5">User</p>
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground/40 mb-0.5">User</p>
                     <p className="text-xs font-mono text-foreground/80">{sshMeta.username}</p>
                   </div>
                 </div>
@@ -1413,7 +1413,7 @@ export function InstanceManagerDialog({
           <AlertDialogDescription asChild>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p>Your instance stays active until the end of your billing period. After that:</p>
-              <ul className="list-disc list-inside text-destructive/70 space-y-0.5 text-[13px]">
+              <ul className="list-disc list-inside text-destructive/70 space-y-0.5 text-sm">
                 <li>The machine will be <strong>permanently shut down</strong></li>
                 <li>All data on the instance will be <strong>deleted</strong></li>
               </ul>

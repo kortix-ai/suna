@@ -82,7 +82,7 @@ export function VersionSelector() {
             'group inline-flex items-center gap-2 h-8 pl-2 pr-1.5 rounded-2xl',
             'border border-border/60 bg-background hover:bg-muted/40',
             'transition-colors',
-            'text-[12.5px] font-medium',
+            'text-sm font-medium',
             'shrink-0 min-w-0 max-w-[280px]',
           )}
           title="Switch version"
@@ -90,7 +90,7 @@ export function VersionSelector() {
           <GitBranch className="h-3.5 w-3.5 text-muted-foreground/80 shrink-0" />
           <span className="truncate">{activeRef || 'Version'}</span>
           {isOnMain && (
-            <span className="hidden sm:inline-flex items-center rounded-full bg-muted px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="hidden sm:inline-flex items-center rounded-full bg-muted px-1.5 py-px text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Main
             </span>
           )}
@@ -110,7 +110,7 @@ export function VersionSelector() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Find a version…"
-            className="flex-1 min-w-0 h-7 bg-transparent border-0 outline-none px-0 text-[12.5px] text-foreground placeholder:text-muted-foreground/50"
+            className="flex-1 min-w-0 h-7 bg-transparent border-0 outline-none px-0 text-sm text-foreground placeholder:text-muted-foreground/50"
             autoFocus
           />
         </div>
@@ -170,7 +170,7 @@ export function VersionSelector() {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-[0.08em] font-semibold text-muted-foreground/60">
+    <div className="px-3 pt-2 pb-1 text-xs uppercase tracking-[0.08em] font-semibold text-muted-foreground/60">
       {children}
     </div>
   );
@@ -212,17 +212,17 @@ function VersionRow({
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-[13px] font-medium text-foreground truncate">
+          <span className="text-sm font-medium text-foreground truncate">
             {branch.name}
           </span>
           {branch.is_default && (
-            <span className="inline-flex items-center rounded bg-muted px-1 py-px text-[9.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="inline-flex items-center rounded bg-muted px-1 py-px text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Main
             </span>
           )}
         </div>
 
-        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground/80">
           <span className="font-mono">{branch.tip_short}</span>
           {date && <span className="text-muted-foreground/40">·</span>}
           {date && <span>{date}</span>}
@@ -247,7 +247,7 @@ function VersionRow({
         </div>
 
         {branch.subject && (
-          <div className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">
+          <div className="text-xs text-muted-foreground/70 mt-0.5 truncate">
             {branch.subject}
           </div>
         )}

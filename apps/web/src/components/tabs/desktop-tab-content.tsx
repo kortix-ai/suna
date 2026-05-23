@@ -113,7 +113,7 @@ export function DesktopTabContent() {
           {isLoading && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-              <span className="text-[10px]">connecting</span>
+              <span className="text-xs">connecting</span>
             </span>
           )}
         </div>

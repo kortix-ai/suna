@@ -106,17 +106,17 @@ function CheckpointListItem({
         className="mt-0.5"
       />
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-medium text-foreground leading-snug line-clamp-2">
+        <p className="text-sm font-medium text-foreground leading-snug line-clamp-2">
           {commit.subject || '(no message)'}
         </p>
-        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="truncate" title={commit.author_email}>
             {commit.author_name}
           </span>
           <span className="text-muted-foreground/30">·</span>
           <span title={formatFull(ts)}>{formatRelative(ts)}</span>
           <span className="text-muted-foreground/30">·</span>
-          <span className="font-mono text-[10.5px] text-muted-foreground/70">
+          <span className="font-mono text-xs text-muted-foreground/70">
             {commit.short_hash}
           </span>
         </div>
@@ -176,7 +176,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
           <span className="font-medium text-sm">Checkpoints</span>
           {activeRef && (
             <span
-              className="flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground/90 truncate max-w-[140px]"
+              className="flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground/90 truncate max-w-[140px]"
               title={`Version: ${activeRef}`}
             >
               <GitBranch className="h-3 w-3" />
@@ -184,7 +184,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
             </span>
           )}
           {total > 0 && (
-            <span className="text-[10px] text-muted-foreground tabular-nums">
+            <span className="text-xs text-muted-foreground tabular-nums">
               {total}
               {data?.hasMore ? '+' : ''}
             </span>
@@ -229,7 +229,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
                 <p className="text-xs text-muted-foreground">
                   Failed to load checkpoints
                 </p>
-                <p className="text-[10px] text-muted-foreground/60">
+                <p className="text-xs text-muted-foreground/60">
                   {error instanceof Error ? error.message : 'Unknown error'}
                 </p>
               </div>
@@ -253,10 +253,10 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
                         gi === 0 ? '' : 'border-t border-border/40',
                       )}
                     >
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
                         {group.label}
                       </span>
-                      <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
+                      <span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
                         {group.items.length}
                       </span>
                     </div>
@@ -274,7 +274,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
                 ))}
                 {data?.hasMore && (
                   <div className="text-center py-2">
-                    <span className="text-[10px] text-muted-foreground/50">
+                    <span className="text-xs text-muted-foreground/50">
                       Showing the most recent {total} checkpoints
                     </span>
                   </div>

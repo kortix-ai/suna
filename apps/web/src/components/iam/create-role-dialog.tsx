@@ -239,7 +239,7 @@ export function CreateRoleDialog({
                 )}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Policies attach this role at the matching scope. A Project role
               can only be granted on a project scope; an Account role grants
               account-wide privileges.
@@ -279,9 +279,9 @@ export function CreateRoleDialog({
                   className={keyError ? 'border-destructive' : undefined}
                 />
                 {keyError ? (
-                  <p className="text-[11px] text-destructive">{keyError}</p>
+                  <p className="text-xs text-destructive">{keyError}</p>
                 ) : (
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     Immutable identifier. Auto-derived from name until you edit it.
                   </p>
                 )}
@@ -395,7 +395,7 @@ export function CreateRoleDialog({
                             <span className="block truncate text-sm text-foreground">
                               {a.label}
                             </span>
-                            <code className="block truncate text-[10px] font-mono text-muted-foreground">
+                            <code className="block truncate text-xs font-mono text-muted-foreground">
                               {a.action}
                             </code>
                           </span>

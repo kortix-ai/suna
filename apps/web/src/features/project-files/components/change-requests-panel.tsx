@@ -58,10 +58,10 @@ function CrListItem({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="font-mono text-[10.5px] text-muted-foreground">#{cr.number}</span>
-          <p className="truncate text-[13px] font-medium text-foreground">{cr.title}</p>
+          <span className="font-mono text-xs text-muted-foreground">#{cr.number}</span>
+          <p className="truncate text-sm font-medium text-foreground">{cr.title}</p>
         </div>
-        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <GitBranch className="h-3 w-3" />
           <span className="font-mono truncate max-w-[120px]">{cr.head_ref}</span>
           <span>→</span>
@@ -131,7 +131,7 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
           <span className="font-medium text-sm">Change requests</span>
           {activeRef && (
             <span
-              className="flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground/90 truncate max-w-[120px]"
+              className="flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground/90 truncate max-w-[120px]"
               title={`Version: ${activeRef}`}
             >
               <GitBranch className="h-3 w-3" />
@@ -140,7 +140,7 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
           )}
           <Button
             size="sm"
-            className="h-7 ml-auto gap-1 px-2 text-[11px]"
+            className="h-7 ml-auto gap-1 px-2 text-xs"
             onClick={() => setOpenDialogShown(true)}
             title="Open a new change request"
           >
@@ -174,10 +174,10 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
             onValueChange={(v) => setStatus(v as ChangeRequestStatus | 'all')}
           >
             <TabsList className="h-7 w-full grid grid-cols-4 p-0.5">
-              <TabsTrigger value="open" className="text-[11px] h-6">Open</TabsTrigger>
-              <TabsTrigger value="merged" className="text-[11px] h-6">Merged</TabsTrigger>
-              <TabsTrigger value="closed" className="text-[11px] h-6">Closed</TabsTrigger>
-              <TabsTrigger value="all" className="text-[11px] h-6">All</TabsTrigger>
+              <TabsTrigger value="open" className="text-xs h-6">Open</TabsTrigger>
+              <TabsTrigger value="merged" className="text-xs h-6">Merged</TabsTrigger>
+              <TabsTrigger value="closed" className="text-xs h-6">Closed</TabsTrigger>
+              <TabsTrigger value="all" className="text-xs h-6">All</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -202,7 +202,7 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
                   <Button
                     size="sm"
                     variant="outline"
-                    className="mt-1 h-7 gap-1 text-[11px]"
+                    className="mt-1 h-7 gap-1 text-xs"
                     onClick={() => setOpenDialogShown(true)}
                   >
                     <Plus className="h-3.5 w-3.5" />

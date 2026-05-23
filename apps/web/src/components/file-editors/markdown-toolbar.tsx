@@ -294,7 +294,7 @@ export function MarkdownToolbar({
       <TooltipContent side="bottom" className="flex items-center gap-2">
         <span>{tooltip}</span>
         {shortcut && (
-          <kbd className="px-1.5 py-0.5 text-[10px] bg-muted rounded font-mono">
+          <kbd className="px-1.5 py-0.5 text-xs bg-muted rounded font-mono">
             {shortcut}
           </kbd>
         )}
@@ -487,7 +487,7 @@ export function MarkdownToolbar({
             </TooltipTrigger>
             <TooltipContent side="bottom">
               {hasChanges ? (
-                <>Save changes <kbd className="ml-1.5 px-1 py-0.5 text-[10px] bg-muted rounded font-mono">⌘S</kbd></>
+                <>Save changes <kbd className="ml-1.5 px-1 py-0.5 text-xs bg-muted rounded font-mono">⌘S</kbd></>
               ) : (
                 'No changes to save'
               )}
@@ -714,7 +714,7 @@ export function MarkdownToolbar({
         <>
           <Separator orientation="vertical" className="h-6 mx-1 shrink-0" />
           <div className="flex items-center gap-0.5 shrink-0 bg-muted/50 rounded-md px-1 py-0.5">
-            <span className="text-[10px] text-muted-foreground font-medium px-1">Table</span>
+            <span className="text-xs text-muted-foreground font-medium px-1">Table</span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-7 px-1.5 gap-1">
@@ -833,7 +833,7 @@ export function MarkdownToolbar({
             <TabsTrigger value="upload" className="gap-1.5 opacity-50 cursor-not-allowed" disabled>
               <Upload className="h-4 w-4" />
               Upload
-              <span className="text-[10px] ml-1">(Soon)</span>
+              <span className="text-xs ml-1">(Soon)</span>
             </TabsTrigger>
             <TabsTrigger value="url" className="gap-1.5">
               <Link2 className="h-4 w-4" />

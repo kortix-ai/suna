@@ -115,12 +115,12 @@ export function OcSessionListToolView({
                       {s.title || '(untitled)'}
                     </span>
                     {s.parent && (
-                      <Badge variant="outline" className="h-4 py-0 text-[0.5625rem] font-normal text-muted-foreground/60">
+                      <Badge variant="outline" className="h-4 py-0 text-xs font-normal text-muted-foreground/60">
                         fork
                       </Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60">
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground/60">
                     <span className="font-mono truncate">{s.id}</span>
                     <span className="flex items-center gap-1">
                       <Clock className="size-3" />

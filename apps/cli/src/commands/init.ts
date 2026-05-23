@@ -1,6 +1,12 @@
 import { existsSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import {
+  DEFAULT_STARTER_TEMPLATE_ID,
+  listGeneralKnowledgeWorkerSkills,
+  STARTER_TEMPLATE_IDS,
+  type StarterTemplateId,
+} from '@kortix/starter';
 
 import { applyScaffold } from '../scaffold.ts';
 import { prompt, confirm } from '../prompts.ts';
@@ -17,9 +23,9 @@ import { C, status } from '../style.ts';
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
     case 'opencode':
-      return 'symlink at .opencode/skills/kortix/';
+      return 'wrapper at .opencode/skills/kortix/';
     case 'claude':
-      return 'symlink at .claude/skills/kortix/';
+      return 'wrapper at .claude/skills/kortix/';
     case 'codex':
       return 'AGENTS.md pointer';
     case 'cursor':
@@ -50,6 +56,8 @@ Options:
                        panel (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
+  --template <name>    Starter template: general-knowledge-worker (default) or minimal.
+                       Use minimal to skip the general knowledge worker skills.
   --force              Re-scaffold even if kortix.toml already exists.
   --overwrite          Overwrite existing files (default: preserve).
   --no-git             Don't run \`git init\` if the dir isn't a repo.
@@ -61,6 +69,7 @@ interface InitFlags {
   name?: string;
   primary?: CodingAgent;
   agents?: CodingAgent[];
+  template?: StarterTemplateId;
   force: boolean;
   overwrite: boolean;
   noGit: boolean;
@@ -135,6 +144,18 @@ function parseFlags(argv: string[]): InitFlags {
         i += 1;
         break;
       }
+      case '--template': {
+        const next = argv[i + 1];
+        if (!next || next.startsWith('-')) {
+          throw new Error(`kortix: --template requires a value`);
+        }
+        if (!(STARTER_TEMPLATE_IDS as readonly string[]).includes(next)) {
+          throw new Error(`kortix: --template must be one of ${STARTER_TEMPLATE_IDS.join(', ')}`);
+        }
+        f.template = next as StarterTemplateId;
+        i += 1;
+        break;
+      }
       default:
         if (arg.startsWith('-')) throw new Error(`kortix: unknown option "${arg}"`);
         throw new Error(`kortix: unexpected argument "${arg}"`);
@@ -194,6 +215,12 @@ function sampleStarterPrompt(): string {
   );
 }
 
+function formatSkillList(skills: string[]): string {
+  const visible = skills.slice(0, 12).join(', ');
+  const remaining = skills.length - 12;
+  return remaining > 0 ? `${visible}, +${remaining} more` : visible;
+}
+
 export async function runInit(argv: string[]): Promise<number> {
   let flags: InitFlags;
   try {
@@ -229,6 +256,21 @@ export async function runInit(argv: string[]): Promise<number> {
     const defaultName = basename(cwd);
     const answer = await prompt(`Project name`, defaultName);
     projectName = normalizeProjectName(answer);
+  }
+
+  // ── Resolve starter template ────────────────────────────────────────
+  let template: StarterTemplateId;
+  if (flags.template) {
+    template = flags.template;
+  } else if (flags.yes) {
+    template = DEFAULT_STARTER_TEMPLATE_ID;
+  } else {
+    const skills = listGeneralKnowledgeWorkerSkills();
+    const includeSkills = await confirm(
+      `Include general knowledge worker skills? (${formatSkillList(skills)})`,
+      true,
+    );
+    template = includeSkills ? 'general-knowledge-worker' : 'minimal';
   }
 
   // ── Resolve coding agents (multi-select TUI) ─────────────────────────
@@ -282,6 +324,7 @@ export async function runInit(argv: string[]): Promise<number> {
   const result = applyScaffold({
     repoRoot: cwd,
     projectName,
+    template,
     preserveExisting: !flags.overwrite,
   });
 

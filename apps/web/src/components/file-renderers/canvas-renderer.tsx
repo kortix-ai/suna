@@ -1607,7 +1607,7 @@ function FloatingToolbar({
                 {activeAction === 'upscale' ? (
                   <KortixLoader size="small" />
                 ) : (
-                  <span className="text-[10px] font-semibold border border-current rounded px-0.5">HD</span>
+                  <span className="text-xs font-semibold border border-current rounded px-0.5">HD</span>
                 )}
                 Upscale
               </Button>
@@ -1702,7 +1702,7 @@ function FloatingToolbar({
             </Tooltip>
             <PopoverContent className="w-80 p-3" align="end">
               <div className="space-y-3">
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wide">AI Image Edit</div>
+                <div className="text-xs text-muted-foreground uppercase tracking-wide">AI Image Edit</div>
                 <Textarea
                   placeholder="Describe the edit you want to make..."
                   value={editPrompt}
@@ -1921,7 +1921,7 @@ function FrameFloatingToolbar({
                   <div className="text-xs text-muted-foreground font-medium">Frame Size</div>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-muted-foreground">
+                      <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs text-muted-foreground">
                         Presets
                       </Button>
                     </PopoverTrigger>
@@ -1953,7 +1953,7 @@ function FrameFloatingToolbar({
                         },
                       ].map(cat => (
                         <div key={cat.cat}>
-                          <div className="px-2 py-1 text-[0.5625rem] text-muted-foreground uppercase tracking-wider">{cat.cat}</div>
+                          <div className="px-2 py-1 text-xs text-muted-foreground uppercase tracking-wider">{cat.cat}</div>
                           {cat.items.map(p => (
                             <button
                               key={p.n}
@@ -1964,7 +1964,7 @@ function FrameFloatingToolbar({
                               }}
                             >
                               <span>{p.n}</span>
-                              <span className="text-[0.5625rem] text-muted-foreground font-mono">{p.w}×{p.h}</span>
+                              <span className="text-xs text-muted-foreground font-mono">{p.w}×{p.h}</span>
                             </button>
                           ))}
                         </div>
@@ -1974,7 +1974,7 @@ function FrameFloatingToolbar({
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] text-muted-foreground uppercase">Width</label>
+                    <label className="text-xs text-muted-foreground uppercase">Width</label>
                     <input
                       type="number"
                       value={tempWidth}
@@ -1986,7 +1986,7 @@ function FrameFloatingToolbar({
                   </div>
                   <X className="h-3 w-3 text-muted-foreground mt-4" />
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] text-muted-foreground uppercase">Height</label>
+                    <label className="text-xs text-muted-foreground uppercase">Height</label>
                     <input
                       type="number"
                       value={tempHeight}
@@ -2333,11 +2333,11 @@ function MultiSelectToolbar({
                         ) : (
                           <div className="w-full h-full flex flex-col items-center justify-center text-xs text-muted-foreground p-1">
                             <ImagePlus className="h-4 w-4 mb-0.5 opacity-50" />
-                            <span className="truncate w-full text-center text-[0.5625rem]">{el.name?.split('/').pop() || `Image ${idx + 1}`}</span>
+                            <span className="truncate w-full text-center text-xs">{el.name?.split('/').pop() || `Image ${idx + 1}`}</span>
                           </div>
                         )}
                       </div>
-                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[10px] px-1.5 rounded-full">
+                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-1.5 rounded-full">
                         {idx + 1}
                       </div>
                     </div>
@@ -3384,7 +3384,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
                 {framePresets.map((category) => (
                   <div key={category.category}>
-                    <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">
+                    <div className="px-2 py-1 text-xs text-muted-foreground uppercase tracking-wider">
                       {category.category}
                     </div>
                     {category.items.map((preset) => (
@@ -3394,7 +3394,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                         onClick={() => handleAddFrame(preset.width, preset.height, preset.name)}
                       >
                         <span>{preset.name}</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">{preset.width}×{preset.height}</span>
+                        <span className="text-xs text-muted-foreground font-mono">{preset.width}×{preset.height}</span>
                       </button>
                     ))}
                   </div>
@@ -3416,7 +3416,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               </Tooltip>
               <PopoverContent className="w-80 p-3" align="end">
                 <div className="space-y-3">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Quick Image Generation</div>
+                  <div className="text-xs text-muted-foreground uppercase tracking-wide">Quick Image Generation</div>
                   <Textarea
                     placeholder="Describe the image you want to create..."
                     value={generatePrompt}

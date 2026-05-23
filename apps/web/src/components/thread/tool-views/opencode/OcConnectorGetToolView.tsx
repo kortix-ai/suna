@@ -75,7 +75,7 @@ export function OcConnectorGetToolView({
               {data.env && (
                 <div className="flex items-center gap-2 text-xs">
                   <span className="text-muted-foreground">Env:</span>
-                  <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">
+                  <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
                     {data.env}
                   </code>
                 </div>

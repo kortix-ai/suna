@@ -120,7 +120,7 @@ export default function Variant2Home() {
               </Button>
 
               <div className="flex flex-col items-center gap-3 w-full">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-medium">
+                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-medium">
                   -- or self-host
                 </span>
                 <button
@@ -146,7 +146,7 @@ export default function Variant2Home() {
               animate={{ opacity: 1 }}
               transition={{ delay: 1, duration: 1 }}
             >
-              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Scroll to explore</span>
+              <span className="text-xs uppercase tracking-widest text-muted-foreground">Scroll to explore</span>
               <div className="w-px h-8 bg-gradient-to-b from-muted-foreground/30 to-transparent" />
             </motion.div>
           </motion.section>
@@ -198,7 +198,7 @@ export default function Variant2Home() {
                         <div className="size-1.5 rounded-full bg-muted-foreground/15" />
                         <div className="size-1.5 rounded-full bg-muted-foreground/15" />
                       </div>
-                      <span className="text-[0.5625rem] font-mono text-muted-foreground ml-1">output</span>
+                      <span className="text-xs font-mono text-muted-foreground ml-1">output</span>
                     </div>
                     <div className="relative overflow-hidden" style={{ aspectRatio: `${width}/${height}` }}>
                       <Image src={src} alt={label} width={width} height={height} className="w-full h-full object-cover" />
@@ -206,7 +206,7 @@ export default function Variant2Home() {
                   </div>
                   <div className="mt-2.5 px-0.5">
                     <div className="text-sm font-medium text-foreground tracking-tight">{label}</div>
-                    <div className="mt-1 text-[10px] text-muted-foreground font-mono">{prompt}</div>
+                    <div className="mt-1 text-xs text-muted-foreground font-mono">{prompt}</div>
                   </div>
                 </Reveal>
               ))}
@@ -250,24 +250,24 @@ export default function Variant2Home() {
               </div>
 
               <Reveal delay={0.15}>
-                <div className="rounded-2xl overflow-hidden border border-border/40 bg-card/20 font-mono text-[11px]">
+                <div className="rounded-2xl overflow-hidden border border-border/40 bg-card/20 font-mono text-xs">
                   <div className="bg-muted/10 border-b border-border/30 px-4 py-3 flex items-center gap-2.5">
                     <div className="flex gap-1.5">
                       <div className="size-2.5 rounded-full bg-muted-foreground/15" />
                       <div className="size-2.5 rounded-full bg-muted-foreground/15" />
                       <div className="size-2.5 rounded-full bg-muted-foreground/15" />
                     </div>
-                    <span className="text-[10px] font-mono text-muted-foreground ml-1">kortix — session</span>
+                    <span className="text-xs font-mono text-muted-foreground ml-1">kortix — session</span>
                   </div>
                   <div className="p-5 space-y-5">
                     <div className="space-y-1">
-                      <div className="text-muted-foreground text-[0.5625rem] uppercase tracking-widest">You</div>
+                      <div className="text-muted-foreground text-xs uppercase tracking-widest">You</div>
                       <div className="text-foreground leading-relaxed">
                         Research our top 3 competitors, summarise their pricing, and send a Slack report to #strategy.
                       </div>
                     </div>
                     <div className="space-y-2 pl-3 border-l border-border/25">
-                      <div className="text-muted-foreground text-[0.5625rem] uppercase tracking-widest mb-3">Kortix</div>
+                      <div className="text-muted-foreground text-xs uppercase tracking-widest mb-3">Kortix</div>
                       {[
                         { done: true, text: 'Browsing competitor sites via Chromium...' },
                         { done: true, text: 'Extracting pricing pages (3 sites)...' },
@@ -307,11 +307,11 @@ export default function Variant2Home() {
                       <div className="size-2.5 rounded-full bg-muted-foreground/15" />
                       <div className="size-2.5 rounded-full bg-muted-foreground/15" />
                     </div>
-                    <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">root@kortix ~ kortix status</span>
+                    <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest">root@kortix ~ kortix status</span>
                     <div className="size-2.5 opacity-0" />
                   </div>
-                  <div className="p-5 space-y-1 text-[11px]">
-                    <div className="grid grid-cols-12 gap-2 text-[0.5625rem] text-muted-foreground uppercase tracking-widest pb-2 border-b border-border/20 mb-3">
+                  <div className="p-5 space-y-1 text-xs">
+                    <div className="grid grid-cols-12 gap-2 text-xs text-muted-foreground uppercase tracking-widest pb-2 border-b border-border/20 mb-3">
                       <div className="col-span-5">Agent</div>
                       <div className="col-span-3">Uptime</div>
                       <div className="col-span-4">Last action</div>
@@ -391,7 +391,7 @@ export default function Variant2Home() {
                 <Reveal delay={0.15}>
                   <div className="rounded-2xl border border-border/40 bg-card/20 overflow-hidden">
                     <div className="px-5 py-4 border-b border-border/25">
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">Connected</div>
+                      <div className="text-xs uppercase tracking-widest text-muted-foreground font-medium">Connected</div>
                     </div>
                     <div className="p-4 flex flex-col gap-2">
                       {[
@@ -404,10 +404,10 @@ export default function Variant2Home() {
                       ].map(({ name, tag }) => (
                         <div key={name} className="flex items-center justify-between py-1.5">
                           <span className="text-sm text-foreground font-medium">{name}</span>
-                          <span className="text-[0.5625rem] font-mono uppercase tracking-widest text-muted-foreground bg-muted/20 px-2 py-0.5 rounded-md">{tag}</span>
+                          <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground bg-muted/20 px-2 py-0.5 rounded-md">{tag}</span>
                         </div>
                       ))}
-                      <div className="pt-2 text-[10px] text-muted-foreground text-center border-t border-border/20">
+                      <div className="pt-2 text-xs text-muted-foreground text-center border-t border-border/20">
                         3,000+ via OAuth · MCP · REST · CLI · env vars
                       </div>
                     </div>
@@ -415,9 +415,9 @@ export default function Variant2Home() {
                 </Reveal>
 
                 <Reveal delay={0.25}>
-                  <div className="rounded-2xl border border-border/40 bg-card/20 overflow-hidden font-mono text-[11px]">
+                  <div className="rounded-2xl border border-border/40 bg-card/20 overflow-hidden font-mono text-xs">
                     <div className="px-5 py-4 border-b border-border/25">
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">~/workspace</div>
+                      <div className="text-xs uppercase tracking-widest text-muted-foreground font-medium">~/workspace</div>
                     </div>
                     <div className="p-4 flex flex-col gap-0.5">
                       {[
@@ -434,7 +434,7 @@ export default function Variant2Home() {
                           className="flex items-center gap-2 py-1 px-1 rounded hover:bg-muted/15 transition-colors"
                           style={{ paddingLeft: `${d * 1.25 + 0.25}rem` }}
                         >
-                          <span className="text-muted-foreground text-[10px]">{f ? '·' : '▸'}</span>
+                          <span className="text-muted-foreground text-xs">{f ? '·' : '▸'}</span>
                           <span className="text-foreground">{n}</span>
                         </div>
                       ))}
@@ -465,8 +465,8 @@ export default function Variant2Home() {
                 onClick={handleCopy}
                 className="group inline-flex items-center gap-2.5 h-9 px-4 rounded-lg bg-foreground/[0.03] border border-foreground/[0.08] hover:bg-foreground/[0.06] hover:border-foreground/[0.12] transition-colors cursor-pointer"
               >
-                <span className="font-mono text-[11px] text-muted-foreground select-none">$</span>
-                <code className="text-[11px] font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
+                <span className="font-mono text-xs text-muted-foreground select-none">$</span>
+                <code className="text-xs font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
                 <div className="pl-2.5 border-l border-foreground/[0.08]">
                   {copied
                     ? <Check className="size-3 text-emerald-500" />

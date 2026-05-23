@@ -364,7 +364,7 @@ function ErrorDisplay({
           {statusCode ? getStatusLabel(statusCode) : 'Request Failed'}
         </span>
         {statusCode && (
-          <Badge variant="outline" className="h-5 py-0 text-[10px] bg-muted text-muted-foreground">
+          <Badge variant="outline" className="h-5 py-0 text-xs bg-muted text-muted-foreground">
             {statusCode}
           </Badge>
         )}
@@ -374,7 +374,7 @@ function ErrorDisplay({
       </p>
       <div className="flex items-center gap-1.5">
         <Globe className="h-3 w-3 flex-shrink-0 opacity-50" />
-        <span className="font-mono text-[11px] opacity-50 truncate">
+        <span className="font-mono text-xs opacity-50 truncate">
           {url}
         </span>
       </div>
@@ -418,7 +418,7 @@ function ContentDisplay({
             from {domain}
           </span>
         </span>
-        <span className="text-[10px] text-muted-foreground flex-shrink-0">
+        <span className="text-xs text-muted-foreground flex-shrink-0">
           {lineCount} lines
         </span>
       </div>

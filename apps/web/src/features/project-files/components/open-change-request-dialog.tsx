@@ -63,7 +63,7 @@ function displayBranchName(name: string): string {
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2.5">
-      <Label className="w-12 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <Label className="w-12 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </Label>
       {children}
@@ -97,7 +97,7 @@ function BranchRow({ branch }: { branch: ProjectBranch }) {
         )}
       </div>
       {branch.subject && (
-        <span className="ml-[18px] text-[10.5px] text-muted-foreground/80 truncate">
+        <span className="ml-[18px] text-xs text-muted-foreground/80 truncate">
           {branch.subject}
         </span>
       )}
@@ -225,7 +225,7 @@ export function OpenChangeRequestDialog({
             <GitPullRequest className="h-4 w-4 text-muted-foreground" />
             Open change request
           </DialogTitle>
-          <DialogDescription className="text-[12px]">
+          <DialogDescription className="text-xs">
             {sessionMode ? (
               <>
                 Propose merging this session&apos;s work into{' '}

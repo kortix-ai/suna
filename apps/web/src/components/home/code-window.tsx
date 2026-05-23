@@ -89,7 +89,7 @@ export function CodeWindow({ className }: { className?: string }) {
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              'rounded-t-lg px-3 py-1.5 font-mono text-[11px] transition-colors',
+              'rounded-t-lg px-3 py-1.5 font-mono text-xs transition-colors',
               tab === t.id ? 'bg-card text-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
           >
@@ -98,7 +98,7 @@ export function CodeWindow({ className }: { className?: string }) {
         ))}
       </div>
       {/* body */}
-      <div className="min-h-[260px] px-5 py-4 font-mono text-[12.5px]">
+      <div className="min-h-[260px] px-5 py-4 font-mono text-sm">
         {tab === 'toml' && <TomlBody />}
         {tab === 'agent' && <AgentBody />}
         {tab === 'deploy' && <DeployBody />}

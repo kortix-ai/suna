@@ -330,7 +330,7 @@ export function PdfRenderer({ url, blob, className, compact = false }: PdfRender
               onClick={resetZoom}
               disabled={isDefaultZoom}
               className={cn(
-                'h-7 px-1.5 rounded text-[11px] tabular-nums font-medium transition-colors',
+                'h-7 px-1.5 rounded text-xs tabular-nums font-medium transition-colors',
                 isDefaultZoom
                   ? 'text-muted-foreground/50 cursor-default'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer',
@@ -367,11 +367,11 @@ export function PdfRenderer({ url, blob, className, compact = false }: PdfRender
               </Button>
               
               <div className="flex items-center gap-1 px-2">
-                <span className="text-[11px] font-medium tabular-nums">
+                <span className="text-xs font-medium tabular-nums">
                   {pageNumber}
                 </span>
-                <span className="text-[11px] text-muted-foreground">/</span>
-                <span className="text-[11px] text-muted-foreground tabular-nums">
+                <span className="text-xs text-muted-foreground">/</span>
+                <span className="text-xs text-muted-foreground tabular-nums">
                   {numPages}
                 </span>
               </div>

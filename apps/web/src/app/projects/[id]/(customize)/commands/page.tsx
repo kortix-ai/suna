@@ -107,7 +107,7 @@ export function CommandsView({ projectId }: { projectId: string }) {
               placeholder="Search commands"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-8 pl-8 text-[12.5px] placeholder:text-muted-foreground/60"
+              className="h-8 pl-8 text-sm placeholder:text-muted-foreground/60"
             />
           </div>
         </div>
@@ -179,14 +179,14 @@ function CommandRow({
     >
       <span
         className={cn(
-          'inline-flex h-4 min-w-[1rem] items-center justify-center rounded text-[10px] font-mono font-medium',
+          'inline-flex h-4 min-w-[1rem] items-center justify-center rounded text-xs font-mono font-medium',
           active ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground/80',
         )}
         aria-hidden
       >
         /
       </span>
-      <span className="truncate text-[12.5px] font-medium">{command.name}</span>
+      <span className="truncate text-sm font-medium">{command.name}</span>
     </button>
   );
 }
@@ -231,7 +231,7 @@ function CommandDetail({
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
         <span className="truncate text-sm font-mono text-foreground">{fileName}</span>
         <span className="text-muted-foreground/40">·</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground/70">
           {command.path}
         </span>
         <DetailToolbarActions
@@ -244,7 +244,7 @@ function CommandDetail({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-6 py-8">
           <div className="space-y-2">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/60">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
               Command
             </div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
@@ -272,7 +272,7 @@ function CommandDetail({
             ) : body.trim() ? (
               <UnifiedMarkdown content={body} />
             ) : (
-              <p className="text-[12.5px] italic text-muted-foreground/60">
+              <p className="text-sm italic text-muted-foreground/60">
                 Command body is empty. Add the prompt content below the
                 frontmatter.
               </p>
@@ -306,7 +306,7 @@ function DetailToolbarActions({
             <Pencil className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-[10px]">
+        <TooltipContent side="bottom" className="text-xs">
           Inline editing coming soon
         </TooltipContent>
       </Tooltip>
@@ -322,7 +322,7 @@ function DetailToolbarActions({
             <Copy className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-[10px]">
+        <TooltipContent side="bottom" className="text-xs">
           Copy source
         </TooltipContent>
       </Tooltip>
@@ -339,7 +339,7 @@ function DetailToolbarActions({
             </Link>
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-[10px]">
+        <TooltipContent side="bottom" className="text-xs">
           Open in file viewer
         </TooltipContent>
       </Tooltip>
@@ -399,7 +399,7 @@ function DetailEmpty() {
 function NoMatches({ query }: { query: string }) {
   return (
     <div className="px-3 py-6 text-center">
-      <p className="text-[11.5px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         No matches for{' '}
         <span className="font-mono text-foreground">{query}</span>.
       </p>
@@ -416,7 +416,7 @@ function EmptyList() {
       description={
         <>
           Commit a{' '}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
             .opencode/command/&lt;slug&gt;.md
           </code>{' '}
           to add a slash command.
@@ -477,8 +477,8 @@ function ErrorNotice({
 }) {
   return (
     <div className="px-3 py-4">
-      <p className="text-[12.5px] font-medium text-red-600 dark:text-red-400">Failed to load</p>
-      <p className="mt-1 text-[11px] text-red-600/80 dark:text-red-400/80">{message}</p>
+      <p className="text-sm font-medium text-destructive">Failed to load</p>
+      <p className="mt-1 text-xs text-destructive/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry
       </Button>

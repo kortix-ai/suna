@@ -108,7 +108,7 @@ export function OcApplyPatchToolView({
             title="Apply Patch"
             subtitle={files.length > 0 ? `${files.length} file${files.length > 1 ? 's' : ''}` : undefined}
           />
-          <div className="flex items-center gap-2 flex-shrink-0 ml-2 text-[11px] font-mono tracking-tight">
+          <div className="flex items-center gap-2 flex-shrink-0 ml-2 text-xs font-mono tracking-tight">
             {totalAdditions > 0 && (
               <span className="text-foreground/70">+{totalAdditions}</span>
             )}
@@ -148,7 +148,7 @@ export function OcApplyPatchToolView({
                         <div className="w-3.5" />
                       )}
 
-                      <Badge variant="outline" className={`h-5 py-0 px-1.5 text-[10px] font-semibold uppercase ${config.color} ${config.bg} border-none flex-shrink-0`}>
+                      <Badge variant="outline" className={`h-5 py-0 px-1.5 text-xs font-semibold uppercase ${config.color} ${config.bg} border-none flex-shrink-0`}>
                         {config.label}
                       </Badge>
 
@@ -163,11 +163,11 @@ export function OcApplyPatchToolView({
                           {name}
                         </span>
                         {dir && (
-                          <span className="text-muted-foreground/40 truncate text-[10px]">{dir}</span>
+                          <span className="text-muted-foreground/40 truncate text-xs">{dir}</span>
                         )}
                       </span>
 
-                      <div className="flex items-center gap-1.5 text-[10.5px] flex-shrink-0 font-mono">
+                      <div className="flex items-center gap-1.5 text-xs flex-shrink-0 font-mono">
                         {file.additions > 0 && <span className="text-foreground/70">+{file.additions}</span>}
                         {file.deletions > 0 && <span className="text-muted-foreground/70">-{file.deletions}</span>}
                       </div>
@@ -201,12 +201,12 @@ export function OcApplyPatchToolView({
       >
         {!isStreaming && (
           isError ? (
-            <span className={cn('inline-flex items-center gap-1.5 text-[11px] tracking-tight', STATUS_TEXT.destructive)}>
+            <span className={cn('inline-flex items-center gap-1.5 text-xs tracking-tight', STATUS_TEXT.destructive)}>
               <AlertCircle className="w-3 h-3" />
               Failed
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/80 tracking-tight">
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/80 tracking-tight">
               <CheckCircle className="w-3 h-3 text-foreground/70" />
               {files.length} {files.length === 1 ? 'file' : 'files'} patched
             </span>

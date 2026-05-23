@@ -78,7 +78,7 @@ export function OcMemSearchToolView({
           <ToolViewIconTitle icon={Brain} title={title} subtitle={query} />
           <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
             {sourceHint && (
-              <Badge variant="outline" className="h-5 py-0 text-[10px]">
+              <Badge variant="outline" className="h-5 py-0 text-xs">
                 {sourceHint}
               </Badge>
             )}
@@ -109,13 +109,13 @@ export function OcMemSearchToolView({
                       <Icon className="size-3.5 text-muted-foreground/60 flex-shrink-0" />
                       <Badge
                         variant="outline"
-                        className={cn('h-5 py-0 text-[10px] font-normal', sourceClass)}
+                        className={cn('h-5 py-0 text-xs font-normal', sourceClass)}
                       >
                         {sourceLabel} / {hit.type}
                       </Badge>
-                      <span className="text-[10px] text-muted-foreground/50 font-mono">#{hit.id}</span>
+                      <span className="text-xs text-muted-foreground/50 font-mono">#{hit.id}</span>
                       {hit.confidence != null && (
-                        <span className="text-[10px] text-muted-foreground/50 ml-auto">
+                        <span className="text-xs text-muted-foreground/50 ml-auto">
                           {Math.round(hit.confidence * 100)}% conf
                         </span>
                       )}
@@ -126,7 +126,7 @@ export function OcMemSearchToolView({
                     {hit.files.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1.5">
                         {hit.files.map((f) => (
-                          <span key={f} className="text-[10px] font-mono text-muted-foreground/50 bg-muted/50 px-1.5 py-0.5 rounded">
+                          <span key={f} className="text-xs font-mono text-muted-foreground/50 bg-muted/50 px-1.5 py-0.5 rounded">
                             {f}
                           </span>
                         ))}

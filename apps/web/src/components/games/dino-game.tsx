@@ -743,7 +743,7 @@ export function DinoGame() {
           imageRendering: 'pixelated',
         }}
       />
-      <p className="text-[10px] text-foreground/20 select-none">
+      <p className="text-xs text-foreground/20 select-none">
         Space / ↑ jump · ↓ duck
       </p>
     </div>

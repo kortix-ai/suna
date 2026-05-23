@@ -147,7 +147,7 @@ export function FilePreviewModal() {
               {fileName}
             </span>
             {filePathList.length > 1 && (
-              <span className="text-[11px] text-muted-foreground/70 tabular-nums shrink-0 ml-1">
+              <span className="text-xs text-muted-foreground/70 tabular-nums shrink-0 ml-1">
                 {currentFileIndex + 1} / {filePathList.length}
               </span>
             )}

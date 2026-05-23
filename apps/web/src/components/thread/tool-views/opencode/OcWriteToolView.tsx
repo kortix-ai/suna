@@ -77,7 +77,7 @@ export function OcWriteToolView({
             </div>
           </div>
         ) : (
-          <div className="px-4 py-3 text-[12px] text-muted-foreground/80 tracking-tight">
+          <div className="px-4 py-3 text-xs text-muted-foreground/80 tracking-tight">
             File written:&nbsp;
             <span className="font-mono text-foreground/90">{displayPath}</span>
           </div>

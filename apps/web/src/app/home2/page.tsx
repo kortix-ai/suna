@@ -173,7 +173,7 @@ function SectionHeader({ title, label }: { title: string; label?: string }) {
       ) : null}
       <Separator className="flex-1 bg-border/70" />
       {label ? (
-        <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
           {label}
         </span>
       ) : null}
@@ -222,7 +222,7 @@ function FeatureCard({ card }: { card: FeatureCardData }) {
     <Card className="group min-h-[174px] gap-0 overflow-hidden rounded-2xl border-border/70 bg-card/60 py-0 transition-colors hover:bg-card">
       <div className="flex h-full flex-col p-5">
         <div className="flex items-center justify-between">
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <span className="font-mono text-xs text-muted-foreground">
             {card.n}
           </span>
           <span className="flex size-8 items-center justify-center rounded-2xl border border-border/60 bg-background/70 text-muted-foreground transition-colors group-hover:text-foreground">
@@ -232,7 +232,7 @@ function FeatureCard({ card }: { card: FeatureCardData }) {
         <h3 className="mt-3 text-sm font-semibold text-foreground">
           {card.title}
         </h3>
-        <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+        <p className="mt-2 text-sm leading-5 text-muted-foreground">
           {card.desc}
         </p>
         <div className="mt-auto pt-4">
@@ -250,7 +250,7 @@ function FeatureCard({ card }: { card: FeatureCardData }) {
               ))}
             </div>
           ) : (
-            <div className="rounded-2xl border border-border/60 bg-muted/30 px-3 py-1.5 font-mono text-[10px] text-muted-foreground">
+            <div className="rounded-2xl border border-border/60 bg-muted/30 px-3 py-1.5 font-mono text-xs text-muted-foreground">
               {card.command}
             </div>
           )}
@@ -275,7 +275,7 @@ function LeftRail() {
         <Badge
           asChild
           variant="secondary"
-          className="gap-2 rounded-full px-3 py-1.5 text-[13px] font-normal"
+          className="gap-2 rounded-full px-3 py-1.5 text-sm font-normal"
         >
           <Link href="/technology">
             <IconAgent className="size-3.5" strokeWidth={1.5} />
@@ -287,7 +287,7 @@ function LeftRail() {
         <h1 className="mt-7 max-w-[560px] text-[42px] font-medium leading-[1.08] tracking-[-0.035em] text-foreground sm:text-[52px] lg:text-[50px] xl:text-[60px]">
           Run your company on agents you own
         </h1>
-        <p className="mt-5 max-w-[500px] text-[15px] leading-6 text-muted-foreground">
+        <p className="mt-5 max-w-[500px] text-sm leading-6 text-muted-foreground">
           Kortix turns one repo into an AI command center: agents, triggers,
           tools, memory, projects, approvals, and deliverables in one workspace.
         </p>
@@ -305,7 +305,7 @@ function LeftRail() {
         </div>
       </div>
 
-      <div className="relative z-10 mt-8 flex items-center justify-between text-[11px] text-muted-foreground">
+      <div className="relative z-10 mt-8 flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-4">
           <Link
             href="https://discord.com/invite/RvFhXUdZ9H"
@@ -393,7 +393,7 @@ function FrameworkSection() {
   return (
     <section className="mt-10 pb-20">
       <SectionHeader title="Framework" />
-      <p className="mt-4 text-[15px] leading-6 text-muted-foreground">
+      <p className="mt-4 text-sm leading-6 text-muted-foreground">
         Kortix is the operating framework for autonomous company work: declare
         the workspace, run sessions in isolated environments, and keep the
         important changes reviewable.
@@ -436,7 +436,7 @@ function FrameworkSection() {
               key={title}
               className="gap-0 rounded-2xl border-border/70 bg-card/60 p-5"
             >
-              <div className="font-mono text-[11px] text-muted-foreground">
+              <div className="font-mono text-xs text-muted-foreground">
                 0{index + 1}
               </div>
               <div className="mt-2 text-sm font-semibold uppercase tracking-[0.08em] text-foreground">
@@ -473,7 +473,7 @@ function FrameworkSection() {
             <h3 className="mt-4 text-sm font-semibold text-foreground">
               {title}
             </h3>
-            <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+            <p className="mt-2 text-sm leading-5 text-muted-foreground">
               {desc}
             </p>
           </Card>
@@ -490,7 +490,7 @@ function ReadmePane() {
       <div className="mx-auto max-w-[1140px] px-5 py-8 sm:px-8 lg:px-10 xl:px-12">
         <section>
           <SectionHeader title="README" />
-          <p className="mt-8 max-w-[980px] text-[15px] leading-7 text-muted-foreground">
+          <p className="mt-8 max-w-[980px] text-sm leading-7 text-muted-foreground">
             <strong className="font-medium text-foreground">
               Kortix is the AI command center for your company.
             </strong>{' '}
@@ -552,7 +552,7 @@ function ReadmePane() {
                   <h3 className="mt-4 text-sm font-semibold text-foreground">
                     {title as string}
                   </h3>
-                  <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+                  <p className="mt-2 text-sm leading-5 text-muted-foreground">
                     {desc as string}
                   </p>
                 </Card>
@@ -572,7 +572,7 @@ export default function Home2Page() {
     <div className="min-h-dvh bg-background text-foreground">
       <LeftRail />
       <ReadmePane />
-      <div className="fixed bottom-4 right-4 hidden items-center gap-1.5 rounded-full border border-border bg-background/95 px-3 py-1.5 font-mono text-[11px] text-muted-foreground shadow-sm backdrop-blur lg:flex">
+      <div className="fixed bottom-4 right-4 hidden items-center gap-1.5 rounded-full border border-border bg-background/95 px-3 py-1.5 font-mono text-xs text-muted-foreground shadow-sm backdrop-blur lg:flex">
         <IconCalendar className="size-3" strokeWidth={1.5} />
         <Kbd>home2</Kbd>
       </div>

@@ -163,7 +163,7 @@ function DeviceAuthorize() {
             {/* Header */}
             <div className="flex flex-col items-center gap-1 mb-6">
               <KortixLogo size={24} />
-              <p className="text-[11px] text-foreground/30 tracking-[0.2em] uppercase mt-3">
+              <p className="text-xs text-foreground/30 tracking-[0.2em] uppercase mt-3">
                 Authorize Device
               </p>
             </div>
@@ -183,7 +183,7 @@ function DeviceAuthorize() {
 
             {/* Machine info */}
             {info.machineHostname && (
-              <div className="flex items-center gap-2 text-[13px] text-foreground/40 mb-5">
+              <div className="flex items-center gap-2 text-sm text-foreground/40 mb-5">
                 <Monitor className="h-3.5 w-3.5" />
                 <span>{info.machineHostname}</span>
               </div>
@@ -205,7 +205,7 @@ function DeviceAuthorize() {
                 <div className="w-full border-t border-foreground/[0.06]" />
               </div>
               <div className="relative flex justify-center">
-                <span className="px-3 bg-background/80 dark:bg-background/75 text-[10px] text-foreground/20 tracking-[0.15em] uppercase">
+                <span className="px-3 bg-background/80 dark:bg-background/75 text-xs text-foreground/20 tracking-[0.15em] uppercase">
                   Permissions
                 </span>
               </div>
@@ -238,7 +238,7 @@ function DeviceAuthorize() {
                     </div>
                     <Icon className={cn('h-4 w-4 shrink-0', selected ? 'text-foreground/70' : 'text-foreground/25')} />
                     <div className="flex-1 min-w-0">
-                      <span className={cn('text-[13px]', selected ? 'text-foreground/80' : 'text-foreground/40')}>
+                      <span className={cn('text-sm', selected ? 'text-foreground/80' : 'text-foreground/40')}>
                         {cap.label}
                       </span>
                     </div>
@@ -251,7 +251,7 @@ function DeviceAuthorize() {
             <div className="space-y-2">
               <Button
                 size="lg"
-                className="w-full text-[13px] font-medium"
+                className="w-full text-sm font-medium"
                 onClick={handleApprove}
                 disabled={approve.isPending || deny.isPending}
               >
@@ -268,7 +268,7 @@ function DeviceAuthorize() {
           </div>
 
           {/* Footer hint */}
-          <p className="text-[11px] text-center text-foreground/20 mt-4">
+          <p className="text-xs text-center text-foreground/20 mt-4">
             Confirm the code above matches your terminal.
           </p>
         </div>
@@ -300,7 +300,7 @@ function StatusScreen({
           {icon}
         </div>
         <div className="text-center space-y-1">
-          <h1 className="text-[28px] font-extralight tracking-tight text-foreground/80">
+          <h1 className="text-3xl font-extralight tracking-tight text-foreground/80">
             {title}
           </h1>
           <p className="text-sm text-foreground/50 max-w-[280px]">

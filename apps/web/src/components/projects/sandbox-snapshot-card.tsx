@@ -267,7 +267,7 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
               {data.items.slice(0, 10).map((snap) => (
                 <li key={snap.snapshot_row_id} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
                   <code className="font-mono text-xs">{shortSha(snap.commit_sha)}</code>
-                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
                     {snap.branch || '—'}
                   </span>
                   <StatusPill status={snap.status} />

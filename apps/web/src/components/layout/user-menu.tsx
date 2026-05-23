@@ -165,10 +165,10 @@ export function UserMenu({
           className="ring-1 ring-border/40"
         />
         <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
-          <span className="truncate text-[12px] font-medium tracking-tight text-foreground">
+          <span className="truncate text-sm font-medium tracking-tight text-foreground">
             {user.name}
           </span>
-          <span className="mt-0.5 truncate text-[10.5px] text-muted-foreground/80">
+          <span className="mt-0.5 truncate text-xs text-muted-foreground/80">
             {user.email}
           </span>
         </div>
@@ -189,8 +189,8 @@ export function UserMenu({
         <div className="flex items-center gap-2.5 px-3 pt-3 pb-2.5">
           <UserAvatar email={user.email} name={user.name} avatarUrl={user.avatar} size="md" />
           <div className="min-w-0 flex-1 leading-tight">
-            <div className="truncate text-[13px] font-medium text-foreground">{user.name}</div>
-            <div className="mt-0.5 truncate text-[11px] text-muted-foreground/80">{user.email}</div>
+            <div className="truncate text-sm font-medium text-foreground">{user.name}</div>
+            <div className="mt-0.5 truncate text-xs text-muted-foreground/80">{user.email}</div>
           </div>
           {user.planName && (
             <Badge size="sm" variant="secondary" className="shrink-0 font-semibold uppercase tracking-[0.06em]">
@@ -217,7 +217,7 @@ export function UserMenu({
 
           {/* Theme — inline segmented control, pill radius (on-brand). */}
           <div className="flex h-8 items-center justify-between rounded-lg px-2">
-            <span className="text-[12.5px] font-medium text-foreground/85">Theme</span>
+            <span className="text-sm font-medium text-foreground/85">Theme</span>
             <div
               role="radiogroup"
               aria-label="Theme"
@@ -307,9 +307,9 @@ function ActionRow({
       )}
     >
       {icon}
-      <span className="flex-1 truncate text-[12.5px] font-medium leading-tight">{label}</span>
+      <span className="flex-1 truncate text-sm font-medium leading-tight">{label}</span>
       {shortcut && (
-        <kbd className="rounded bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground/70">
+        <kbd className="rounded bg-muted/60 px-1.5 py-0.5 text-xs font-medium tabular-nums text-muted-foreground/70">
           {shortcut}
         </kbd>
       )}

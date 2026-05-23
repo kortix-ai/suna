@@ -91,14 +91,14 @@ export function OcSessionSearchToolView({
                     <span className="text-sm font-medium text-foreground truncate flex-1">
                       {h.title || '(untitled)'}
                     </span>
-                    <Badge variant="outline" className="h-4 py-0 text-[0.5625rem] font-normal text-muted-foreground/60">
+                    <Badge variant="outline" className="h-4 py-0 text-xs font-normal text-muted-foreground/60">
                       {h.score}
                     </Badge>
                   </div>
                   {h.snippet && (
-                    <p className="text-[11px] text-muted-foreground/70 line-clamp-2 mb-1">{h.snippet}</p>
+                    <p className="text-xs text-muted-foreground/70 line-clamp-2 mb-1">{h.snippet}</p>
                   )}
-                  <div className="flex items-center gap-3 text-[10px] text-muted-foreground/50">
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground/50">
                     <span className="font-mono">{h.id}</span>
                     <span className="flex items-center gap-1">
                       <Clock className="size-2.5" />

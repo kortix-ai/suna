@@ -2,7 +2,7 @@
 
 import { useState, memo } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { Loader2, MoreHorizontal, RotateCcw, Trash2 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -35,6 +35,7 @@ import {
   listProjectSessions,
   restartProjectSession,
   type ProjectSession,
+  type ProjectOpenCodeSession,
   type ProjectSessionStatus,
 } from '@/lib/projects-client';
 
@@ -48,8 +49,27 @@ function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): bool
   return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
 }
 
+function rootOpenCodeSession(session: ProjectSession): ProjectOpenCodeSession | null {
+  const opencodeSessions = session.opencode_sessions ?? [];
+  const rootId = session.opencode_session_id;
+  if (rootId) {
+    return opencodeSessions.find((item) => item.id === rootId) ?? null;
+  }
+  return opencodeSessions.find((item) => !item.parent_id) ?? null;
+}
+
+function directSubsessions(session: ProjectSession): ProjectOpenCodeSession[] {
+  const root = rootOpenCodeSession(session);
+  if (!root) return [];
+  return (session.opencode_sessions ?? [])
+    .filter((item) => item.parent_id === root.id && !item.archived_at)
+    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
+}
+
 export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeOpenCodeSessionId = searchParams.get('oc');
   const queryClient = useQueryClient();
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(null);
 
@@ -96,7 +116,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
   if (error) {
     return (
-      <div className="py-2 px-2 text-[11px] text-red-600 dark:text-red-400">
+      <div className="px-2 py-2 text-xs text-destructive/80">
         Failed to load sessions
       </div>
     );
@@ -108,7 +128,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
   if (sessions.length === 0) {
     return (
-      <div className="px-2 pt-1 pb-2 text-[11.5px] text-muted-foreground/60">
+      <div className="px-2 pb-2 pt-1 text-xs text-muted-foreground/60">
         No sessions yet.
       </div>
     );
@@ -120,19 +140,42 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         {sessions.map((session) => {
           const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
           const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+          const root = rootOpenCodeSession(session);
+          const children = directSubsessions(session);
           return (
-            <ProjectSessionRow
-              key={session.session_id}
-              session={session}
-              href={href}
-              isActive={!!isActive}
-              onDelete={(id, label) => setSessionToDelete({ id, label })}
-              onRestart={(id) => restartMutation.mutate(id)}
-              isRestarting={
-                restartMutation.isPending &&
-                restartMutation.variables === session.session_id
-              }
-            />
+            <div key={session.session_id} className="space-y-px">
+              <ProjectSessionRow
+                session={session}
+                href={href}
+                isActive={!!isActive && !activeOpenCodeSessionId}
+                titleOverride={root?.title ?? undefined}
+                childCount={children.length}
+                onDelete={(id, label) => setSessionToDelete({ id, label })}
+                onRestart={(id) => restartMutation.mutate(id)}
+                isRestarting={
+                  restartMutation.isPending &&
+                  restartMutation.variables === session.session_id
+                }
+              />
+              {children.length > 0 && isActive && (
+                <div className="ml-4 border-l border-border/30 pl-1">
+                  {children.map((child) => {
+                    const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
+                    const activeChild =
+                      !!isActive && activeOpenCodeSessionId === child.id;
+                    return (
+                      <ProjectSubsessionRow
+                        key={child.id}
+                        title={child.title || 'Sub-session'}
+                        href={childHref}
+                        isActive={activeChild}
+                        updatedAt={child.updated_at}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
@@ -176,6 +219,8 @@ interface ProjectSessionRowProps {
   onDelete: (sessionId: string, label: string) => void;
   onRestart: (sessionId: string) => void;
   isRestarting: boolean;
+  titleOverride?: string;
+  childCount?: number;
 }
 
 const ProjectSessionRow = memo(function ProjectSessionRow({
@@ -185,6 +230,8 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
   onDelete,
   onRestart,
   isRestarting,
+  titleOverride,
+  childCount = 0,
 }: ProjectSessionRowProps) {
   const [isHovering, setIsHovering] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -193,14 +240,14 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
   const showActions = isHovering || menuOpen;
 
   // Title source of truth is the cloud DB's `name` column (mirrored from
-  // opencode via /v1/projects/sync-opencode-titles). Older rows may still
+  // opencode via /v1/projects/sync-opencode-sessions). Older rows may still
   // carry the legacy metadata.session_name key, so fall back to it before
   // showing the branch_name slice.
   const legacyMetadataName =
     typeof session.metadata?.session_name === 'string'
       ? (session.metadata.session_name as string)
       : null;
-  const titleCandidate = session.name?.trim() || legacyMetadataName?.trim() || null;
+  const titleCandidate = titleOverride?.trim() || session.name?.trim() || legacyMetadataName?.trim() || null;
   const fallback = session.branch_name ? session.branch_name.slice(0, 14) : 'session';
   const displayTitle = titleCandidate || fallback;
 
@@ -221,7 +268,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
     >
       <div
         className={cn(
-          'flex h-7 cursor-pointer items-center gap-2 rounded-lg px-2 transition-colors duration-150',
+          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 transition-colors duration-150',
           isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
             : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
@@ -231,12 +278,18 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
 
         <span
           className={cn(
-            'flex-1 truncate text-[12.5px]',
+            'flex-1 truncate text-sm',
             isActive && 'font-medium',
           )}
         >
           {displayTitle}
         </span>
+
+        {childCount > 0 && (
+          <span className="rounded-full bg-sidebar-accent/60 px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+            {childCount}
+          </span>
+        )}
 
         {/* Right slot — timestamp flush-right by default; 3-dots overlay
             in the exact same spot on hover. */}
@@ -244,7 +297,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
           {relative && (
             <span
               className={cn(
-                'text-[9.5px] tabular-nums text-muted-foreground/60 transition-opacity duration-150',
+                'text-xs tabular-nums text-muted-foreground/60 transition-opacity duration-150',
                 showActions && 'opacity-0',
               )}
             >
@@ -304,6 +357,45 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
     </Link>
   );
 });
+
+function ProjectSubsessionRow({
+  title,
+  href,
+  isActive,
+  updatedAt,
+}: {
+  title: string;
+  href: string;
+  isActive: boolean;
+  updatedAt: number | null;
+}) {
+  const relative = updatedAt
+    ? shortRelative(formatDistanceToNowStrict(new Date(updatedAt), { addSuffix: false }))
+    : '';
+
+  return (
+    <Link href={href} className="block">
+      <div
+        className={cn(
+          'flex h-7 cursor-pointer items-center gap-2 rounded-lg px-2 transition-colors duration-150',
+          isActive
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+        )}
+      >
+        <span className="h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />
+        <span className={cn('flex-1 truncate text-xs', isActive && 'font-medium')}>
+          {title}
+        </span>
+        {relative && (
+          <span className="text-xs tabular-nums text-muted-foreground/60">
+            {relative}
+          </span>
+        )}
+      </div>
+    </Link>
+  );
+}
 
 function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
   const isProvisioning =

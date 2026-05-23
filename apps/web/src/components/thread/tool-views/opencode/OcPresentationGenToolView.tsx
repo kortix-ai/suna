@@ -197,7 +197,7 @@ export function OcPresentationGenToolView({
                 </div>
 
                 {parsed.slide_file && (
-                  <p className="text-[11px] text-muted-foreground/50 font-mono truncate px-1">
+                  <p className="text-xs text-muted-foreground/50 font-mono truncate px-1">
                     {parsed.slide_file}
                   </p>
                 )}

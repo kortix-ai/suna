@@ -76,7 +76,7 @@ export function OcSkillToolView({
             title={skillName || 'Skill'}
             subtitle={skillDir || undefined}
           />
-          <span className="inline-flex items-center text-[11px] text-muted-foreground/80 tracking-tight flex-shrink-0 font-mono">
+          <span className="inline-flex items-center text-xs text-muted-foreground/80 tracking-tight flex-shrink-0 font-mono">
             SKILL.md
           </span>
         </div>
@@ -139,7 +139,7 @@ function SkillFiles({ files }: { files: string[] }) {
       {open && (
         <div className="border-t border-border/30 px-3 py-2 space-y-1">
           {files.map((f, i) => (
-            <div key={i} className="text-[11px] font-mono text-muted-foreground truncate">{f}</div>
+            <div key={i} className="text-xs font-mono text-muted-foreground truncate">{f}</div>
           ))}
         </div>
       )}

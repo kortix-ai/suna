@@ -522,7 +522,7 @@ export default function APIKeysPage() {
               </div>
               <Input type="text" value={publicUrlResult.url} readOnly className="font-mono text-xs" />
               {publicUrlResult.expiresAt && (
-                <p className="text-[11px] text-muted-foreground">Expires {formatDateFull(publicUrlResult.expiresAt)}</p>
+                <p className="text-xs text-muted-foreground">Expires {formatDateFull(publicUrlResult.expiresAt)}</p>
               )}
             </div>
           )}
@@ -572,7 +572,7 @@ export default function APIKeysPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">Port {share.port}</span>
-                        {share.label && <Badge variant="secondary" className="text-[11px]">{share.label}</Badge>}
+                        {share.label && <Badge variant="secondary" className="text-xs">{share.label}</Badge>}
                       </div>
                       <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
                         <span className="font-mono truncate max-w-[260px]">{share.url.replace(/^https?:\/\//, '')}</span>

@@ -89,10 +89,10 @@ export default function DebugConnectingPage() {
       {/* Control panel — fixed, out of the way of the centered content */}
       <div className="pointer-events-auto fixed right-5 top-5 z-[100] w-[260px] overflow-hidden rounded-2xl border border-border/50 bg-background/95 shadow-2xl shadow-black/20 backdrop-blur-xl">
         <div className="border-b border-border/40 px-4 py-3">
-          <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
             Connecting screen
           </p>
-          <p className="mt-0.5 text-[13px] font-medium text-foreground">
+          <p className="mt-0.5 text-sm font-medium text-foreground">
             Debug harness
           </p>
         </div>
@@ -100,7 +100,7 @@ export default function DebugConnectingPage() {
         <div className="max-h-[70vh] overflow-y-auto p-2">
           {groups.map((group) => (
             <div key={group} className="mb-2 last:mb-0">
-              <p className="px-2 pb-1 pt-2 text-[9px] font-semibold uppercase tracking-[0.15em] text-muted-foreground/45">
+              <p className="px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground/45">
                 {group}
               </p>
               {VARIANTS.filter((v) => v.group === group).map((v) => (
@@ -109,7 +109,7 @@ export default function DebugConnectingPage() {
                   type="button"
                   onClick={() => setVariant(v.id)}
                   className={
-                    'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors ' +
+                    'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors ' +
                     (variant === v.id
                       ? 'bg-foreground/[0.06] text-foreground'
                       : 'text-muted-foreground/70 hover:bg-foreground/[0.03] hover:text-foreground/90')
@@ -131,9 +131,9 @@ export default function DebugConnectingPage() {
         </div>
 
         <div className="border-t border-border/40 px-4 py-3">
-          <p className="text-[10px] leading-relaxed text-muted-foreground/50">
+          <p className="text-xs leading-relaxed text-muted-foreground/50">
             Not linked from the app. Visit{' '}
-            <code className="rounded bg-foreground/[0.06] px-1 font-mono text-[10px]">
+            <code className="rounded bg-foreground/[0.06] px-1 font-mono text-xs">
               /debug/connecting
             </code>{' '}
             any time.

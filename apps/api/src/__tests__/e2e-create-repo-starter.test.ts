@@ -20,7 +20,7 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 // `getStarterFiles()` walks it and returns the files sorted by path
 // (case-insensitive, via localeCompare). This list is the contract:
 // "every project ships with these, in this order."
-const SPEC_STARTER_PATHS = [
+const BASE_STARTER_PATHS = [
   '.gitignore',
   '.kortix/Dockerfile',
   '.kortix/opencode/agents/kortix.md',
@@ -403,18 +403,34 @@ function createApp() {
 describe('create-repo starter scaffold contract', () => {
   beforeEach(() => resetState());
 
-  test('builds exactly the SPEC starter scaffold', () => {
+  test('builds exactly the minimal starter scaffold', () => {
     const files = buildStarterFiles({
       projectName: 'Company OS',
       repoFullName: 'kortix-org/company-os',
+      template: 'minimal',
     });
 
-    expect(files.map((file) => file.path)).toEqual(SPEC_STARTER_PATHS);
-    expect(new Set(files.map((file) => file.path)).size).toBe(SPEC_STARTER_PATHS.length);
+    expect(files.map((file) => file.path)).toEqual(BASE_STARTER_PATHS);
+    expect(new Set(files.map((file) => file.path)).size).toBe(BASE_STARTER_PATHS.length);
     expect(files.every((file) => file.content.trim().length > 0)).toBe(true);
 
     const agent = files.find((file) => file.path === '.kortix/opencode/agents/kortix.md');
     expect(agent?.content).toContain('permission:\n  "*": allow');
+  });
+
+  test('defaults to the general knowledge worker starter scaffold', () => {
+    const files = buildStarterFiles({
+      projectName: 'Company OS',
+      repoFullName: 'kortix-org/company-os',
+    });
+    const paths = files.map((file) => file.path);
+
+    for (const path of BASE_STARTER_PATHS) expect(paths).toContain(path);
+    expect(paths).toContain('.kortix/opencode/skills/account-research/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/audit-support/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/content-creation/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/brand-voice/SKILL.md');
+    expect(new Set(paths).size).toBe(paths.length);
   });
 
   test('manages account GitHub App installation metadata through the project API', async () => {
@@ -544,7 +560,7 @@ describe('create-repo starter scaffold contract', () => {
     });
   });
 
-  test('commits the exact starter scaffold with the account GitHub App token before registering the project', async () => {
+  test('commits the default starter scaffold with the account GitHub App token before registering the project', async () => {
     const app = createApp();
     const res = await app.request('/v1/projects/create-repo', {
       method: 'POST',
@@ -586,13 +602,17 @@ describe('create-repo starter scaffold contract', () => {
       auth: { token: 'installation-token', source: 'app_installation' },
     });
 
-    expect(commitCalls.map((call) => call.path)).toEqual(SPEC_STARTER_PATHS);
+    const committedPaths = commitCalls.map((call) => call.path);
+    for (const path of BASE_STARTER_PATHS) expect(committedPaths).toContain(path);
+    expect(committedPaths).toContain('.kortix/opencode/skills/account-research/SKILL.md');
+    expect(committedPaths).toContain('.kortix/opencode/skills/audit-support/SKILL.md');
+    expect(committedPaths).toContain('.kortix/opencode/skills/content-creation/SKILL.md');
     expect(commitCalls.every((call) => call.auth?.token === 'installation-token')).toBe(true);
     expect(commitCalls.every((call) => call.branch === 'main')).toBe(true);
     expect(commitCalls.every((call) => call.message === `chore: scaffold ${call.path}`)).toBe(true);
     // README.md is upserted via sha because `auto_init: true` creates one
     // on repo creation. Every other file is brand-new.
-    const readmeIdx = SPEC_STARTER_PATHS.indexOf('README.md');
+    const readmeIdx = committedPaths.indexOf('README.md');
     expect(commitCalls[readmeIdx]!.existingSha).toBe('existing-readme-sha');
     expect(commitCalls.filter((_, i) => i !== readmeIdx).every((call) => call.existingSha === undefined)).toBe(true);
 

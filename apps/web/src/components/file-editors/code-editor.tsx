@@ -674,7 +674,7 @@ export function CodeEditor({
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 {hasChanges ? (
-                  <>Save changes <kbd className="ml-1.5 px-1 py-0.5 text-[10px] bg-muted rounded font-mono">⌘S</kbd></>
+                  <>Save changes <kbd className="ml-1.5 px-1 py-0.5 text-xs bg-muted rounded font-mono">⌘S</kbd></>
                 ) : (
                   'No changes to save'
                 )}

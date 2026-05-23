@@ -46,7 +46,7 @@ function ForgotPasswordContent() {
       >
         <div className="p-3 rounded-2xl flex items-center gap-2 bg-foreground/[0.05] border border-foreground/[0.08] text-foreground/80">
           <MailCheck className="h-4 w-4 flex-shrink-0" />
-          <span className="text-[13px] truncate">
+          <span className="text-sm truncate">
             Reset link sent to <span className="text-foreground/95">{sentTo}</span>
           </span>
         </div>
@@ -63,7 +63,7 @@ function ForgotPasswordContent() {
       {errorMessage && (
         <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-[13px]">{errorMessage}</span>
+          <span className="text-sm">{errorMessage}</span>
         </div>
       )}
 
@@ -75,13 +75,13 @@ function ForgotPasswordContent() {
           placeholder="Email address"
           required
           autoComplete="email"
-          className="text-[15px]"
+          className="text-sm"
         />
         <Button
           type="submit"
           size="lg"
           disabled={pending}
-          className="w-full text-[13px]"
+          className="w-full text-sm"
         >
           {pending ? 'Sending link…' : 'Send reset link'}
         </Button>

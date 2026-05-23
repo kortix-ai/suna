@@ -225,7 +225,7 @@ export function LLMAnalysisPanel() {
                               <span className="font-medium">{area.area}</span>
                               <Badge 
                                 variant="outline" 
-                                className={cn('text-[10px] uppercase', 
+                                className={cn('text-xs uppercase',
                                   area.severity === 'high' 
                                     ? 'border-destructive/50 text-destructive' 
                                     : 'border-secondary/50 text-secondary'

@@ -133,12 +133,12 @@ function SessionList({ sessions }: { sessions: ParsedSession[] }) {
         >
           <MessageCircle className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground/60 group-hover:text-foreground/80 transition-colors" />
           <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-            <span className="text-[12.5px] font-medium tracking-tight truncate">{s.title}</span>
-            <span className="text-[11px] text-muted-foreground/60 font-mono truncate">
+            <span className="text-sm font-medium tracking-tight truncate">{s.title}</span>
+            <span className="text-xs text-muted-foreground/60 font-mono truncate">
               {s.slug || s.id}
             </span>
           </div>
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground/70 tracking-tight flex-shrink-0">
+          <div className="flex items-center gap-3 text-xs text-muted-foreground/70 tracking-tight flex-shrink-0">
             {s.summary && s.summary.files > 0 && (
               <span className="font-mono tabular-nums">
                 {s.summary.files} {s.summary.files === 1 ? 'file' : 'files'}
@@ -229,7 +229,7 @@ export function OcBashToolView({
                 <div className="rounded-2xl border border-border/50 bg-foreground/[0.025] overflow-hidden">
                   <PreWithPaths
                     text={output.content}
-                    className="p-3 font-mono text-[12px] leading-relaxed text-foreground/85 whitespace-pre-wrap break-words overflow-x-auto"
+                    className="p-3 font-mono text-xs leading-relaxed text-foreground/85 whitespace-pre-wrap break-words overflow-x-auto"
                   />
                 </div>
               )}
@@ -243,7 +243,7 @@ export function OcBashToolView({
                 <div
                   key={i}
                   className={cn(
-                    'flex items-start gap-2 px-3 py-2 rounded-2xl border text-[11.5px] tracking-tight',
+                    'flex items-start gap-2 px-3 py-2 rounded-2xl border text-xs tracking-tight',
                     m.isTimeout
                       ? cn(STATUS_BORDER.destructive, STATUS_BG.destructive, STATUS_TEXT.destructive)
                       : 'border-border/50 bg-foreground/[0.02] text-muted-foreground/80',

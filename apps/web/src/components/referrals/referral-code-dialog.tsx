@@ -54,7 +54,7 @@ export function ReferralCodeDialog({ open, onOpenChange, referralCode = '', onCo
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             placeholder={t('enterCode')}
             maxLength={8}
-            className="font-mono text-center text-[15px] font-medium tracking-widest mb-4"
+            className="font-mono text-center text-sm font-medium tracking-widest mb-4"
             autoFocus
             onKeyDown={(e) => e.key === 'Enter' && handleSave()}
           />
@@ -64,7 +64,7 @@ export function ReferralCodeDialog({ open, onOpenChange, referralCode = '', onCo
             <Button
               variant="ghost"
               size="sm"
-              className="flex-1 text-[13px] text-foreground/40 hover:text-foreground/70 "
+              className="flex-1 text-sm text-foreground/40 hover:text-foreground/70 "
               onClick={() => onOpenChange(false)}
             >
               {tCommon('cancel')}
@@ -72,7 +72,7 @@ export function ReferralCodeDialog({ open, onOpenChange, referralCode = '', onCo
             <Button
               variant="default"
               size="sm"
-              className="flex-1 text-[13px]"
+              className="flex-1 text-sm"
               onClick={handleSave}
             >
               {tCommon('save')}

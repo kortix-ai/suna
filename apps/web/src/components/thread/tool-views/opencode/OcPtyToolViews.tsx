@@ -98,7 +98,7 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 text-[10.5px] font-medium tracking-tight',
+        'inline-flex items-center gap-1.5 text-xs font-medium tracking-tight',
         isError ? STATUS_TEXT.destructive : 'text-muted-foreground/80',
       )}
     >
@@ -132,7 +132,7 @@ function InfoRow({
     <div className="flex items-start gap-2.5 px-3 py-2">
       <Icon className="size-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
       <div className="min-w-0 flex-1">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium mb-0.5">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground/60 font-medium mb-0.5">
           {label}
         </div>
         <div
@@ -365,7 +365,7 @@ export function OcPtyReadToolView({
                   className="p-3 font-mono text-xs leading-relaxed text-zinc-300 whitespace-pre-wrap break-words"
                 />
                 {parsed.bufferInfo && (
-                  <div className="px-3 pb-2 text-[10px] text-muted-foreground italic border-t border-border">
+                  <div className="px-3 pb-2 text-xs text-muted-foreground italic border-t border-border">
                     <span className="pt-1.5 inline-block">{parsed.bufferInfo}</span>
                   </div>
                 )}

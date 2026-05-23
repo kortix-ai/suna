@@ -307,7 +307,7 @@ export function PoliciesTable({
       {!policiesQuery.isLoading && policies.length > 0 && (
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border/60 bg-muted/20 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            <tr className="border-b border-border/60 bg-muted/20 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <th className="px-6 py-2.5 font-medium">Effect</th>
               <th className="px-3 py-2.5 font-medium">Scope</th>
               <th className="px-3 py-2.5 font-medium">Applies to</th>
@@ -1215,13 +1215,13 @@ function CreatePolicyDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  <SelectLabel className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Account-level
                   </SelectLabel>
                   <SelectItem value="account">Everything</SelectItem>
                 </SelectGroup>
                 <SelectGroup>
-                  <SelectLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  <SelectLabel className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Resource-specific
                   </SelectLabel>
                   {(['project', 'project_group', 'member', 'group', 'sandbox', 'trigger', 'channel'] as PolicyScopeType[]).map(
@@ -1473,7 +1473,7 @@ function CreatePolicyDialog({
               <span>
                 Make this a <strong className="text-destructive">deny</strong> policy
                 {effect === 'deny' && (
-                  <span className="block text-[11px] text-muted-foreground">
+                  <span className="block text-xs text-muted-foreground">
                     Revokes the role&apos;s actions on this scope. Wins over any allow.
                   </span>
                 )}

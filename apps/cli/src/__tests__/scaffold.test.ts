@@ -7,6 +7,30 @@ import { applyScaffold } from '../scaffold';
 
 let dir: string;
 
+const BASE_STARTER_PATHS = [
+  '.gitignore',
+  '.kortix/Dockerfile',
+  '.kortix/opencode/agents/kortix.md',
+  '.kortix/opencode/opencode.jsonc',
+  '.kortix/opencode/skills/kortix-system/SKILL.md',
+  '.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md',
+  '.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md',
+  '.kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/agents.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/commands.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/mcp-servers.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/models.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/overview.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/permissions.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/plugins.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/rules.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/skills.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
+  '.kortix/opencode/tools/show.ts',
+  'README.md',
+  'kortix.toml',
+];
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'kortix-scaffold-'));
 });
@@ -30,28 +54,10 @@ describe('applyScaffold', () => {
   test('writes the full Kortix starter into a fresh directory', () => {
     const result = applyScaffold({ repoRoot: dir, projectName: 'Hello World' });
 
-    expect(result.written.sort()).toEqual([
-      '.gitignore',
-      '.kortix/Dockerfile',
-      '.kortix/opencode/agents/kortix.md',
-      '.kortix/opencode/opencode.jsonc',
-      '.kortix/opencode/skills/kortix-system/SKILL.md',
-      '.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md',
-      '.kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md',
-      '.kortix/opencode/skills/kortix-system/references/opencode/agents.md',
-      '.kortix/opencode/skills/kortix-system/references/opencode/commands.md',
-      '.kortix/opencode/skills/kortix-system/references/opencode/mcp-servers.md',
-      '.kortix/opencode/skills/kortix-system/references/opencode/models.md',
-      '.kortix/opencode/skills/kortix-system/references/opencode/overview.md',
-      '.kortix/opencode/skills/kortix-system/references/opencode/permissions.md',
-      '.kortix/opencode/skills/kortix-system/references/opencode/plugins.md',
-      '.kortix/opencode/skills/kortix-system/references/opencode/rules.md',
-      '.kortix/opencode/skills/kortix-system/references/opencode/skills.md',
-      '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
-      '.kortix/opencode/tools/show.ts',
-      'README.md',
-      'kortix.toml',
-    ]);
+    for (const path of BASE_STARTER_PATHS) expect(result.written).toContain(path);
+    expect(result.written).toContain('.kortix/opencode/skills/account-research/SKILL.md');
+    expect(result.written).toContain('.kortix/opencode/skills/audit-support/SKILL.md');
+    expect(result.written).toContain('.kortix/opencode/skills/content-creation/SKILL.md');
     expect(result.skipped).toEqual([]);
 
     // Same files now exist on disk.
@@ -73,6 +79,14 @@ describe('applyScaffold', () => {
     expect(agent).toContain('permission:\n  "*": allow');
     expect(readFileSync(join(dir, '.kortix/opencode/tools/show.ts'), 'utf8'))
       .toContain('import { tool } from "@opencode-ai/plugin"');
+  });
+
+  test('minimal template writes only the shared Kortix starter', () => {
+    const result = applyScaffold({ repoRoot: dir, projectName: 'Minimal', template: 'minimal' });
+
+    expect(result.written.sort()).toEqual([...BASE_STARTER_PATHS].sort());
+    expect(result.written).not.toContain('.kortix/opencode/skills/account-research/SKILL.md');
+    expect(walk(dir)).toEqual([...BASE_STARTER_PATHS].sort());
   });
 
   test('preserveExisting leaves prior files alone, fills in the rest', () => {

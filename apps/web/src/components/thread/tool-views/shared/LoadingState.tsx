@@ -47,9 +47,9 @@ export function LoadingState({
     <div className="flex flex-col items-center justify-center h-full min-h-[180px] py-6 px-4">
       <div className="text-center w-full max-w-xs flex flex-col items-center">
         <KortixLoader customSize={16} />
-        <h3 className="mt-3 text-[12.5px] font-medium text-foreground tracking-tight">{title}</h3>
+        <h3 className="mt-3 text-sm font-medium text-foreground tracking-tight">{title}</h3>
         {subtitle && (
-          <p className="mt-1 text-[11.5px] text-muted-foreground/70 truncate">{subtitle}</p>
+          <p className="mt-1 text-xs text-muted-foreground/70 truncate">{subtitle}</p>
         )}
         {showProgress && (
           <div className="mt-3 w-full">

@@ -126,7 +126,7 @@ export function MarkdownFrontmatterCard({
         className,
       )}
     >
-      <div className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-[12px] leading-relaxed font-mono">
+      <div className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-xs leading-relaxed font-mono">
         {entries.map(([key, value]) => (
           <React.Fragment key={key}>
             <span className="text-muted-foreground/70 select-none">{key}</span>
