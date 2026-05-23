@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Account-wide MFA enforcement toggle on the Settings tab. Off by default.
 // When ON, every browser/JWT request whose session is not aal2 is denied
 // at the IAM engine — super-admins are exempt (so the switch can't
@@ -39,6 +40,7 @@ interface MfaRequiredCardProps {
 }
 
 export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -113,13 +115,9 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
           <div>
             <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <KeyRound className="h-4 w-4 text-muted-foreground" />
-              Require MFA for all members
-            </h2>
+              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line116JsxTextRequireMFAForAllMembers')}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              When enabled, members must complete a second-factor challenge
-              before any IAM-gated action. Super-admins and Personal Access
-              Tokens are exempt.
-            </p>
+              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line119JsxTextWhenEnabledMembersMustCompleteASecondFactor')}</p>
           </div>
           {statusQuery.isLoading ? (
             <Skeleton className="h-9 w-24 rounded-md" />
@@ -147,8 +145,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
             </span>
           ) : (
             <span className="font-medium text-muted-foreground">
-              Not required
-            </span>
+              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line150JsxTextNotRequired')}</span>
           )}
         </p>
       </div>
@@ -162,12 +159,9 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Require MFA for this account?</DialogTitle>
+            <DialogTitle>{tHardcodedUi.raw('componentsIamMfaRequiredCard.line165JsxTextRequireMFAForThisAccount')}</DialogTitle>
             <DialogDescription>
-              Members without a verified second factor will be blocked from
-              every IAM-gated action until they enrol. CLI tokens (PATs) are
-              unaffected.
-            </DialogDescription>
+              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line167JsxTextMembersWithoutAVerifiedSecondFactorWillBe')}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -182,9 +176,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
               <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <p>
-                  Nobody would retain access. Promote a super-admin or have at
-                  least one member enrol MFA before enabling.
-                </p>
+                  {tHardcodedUi.raw('componentsIamMfaRequiredCard.line185JsxTextNobodyWouldRetainAccessPromoteASuperAdmin')}</p>
               </div>
             )}
 
@@ -197,17 +189,14 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
                 <span className="font-medium text-foreground">
                   {previewQuery.data.total_members}
                 </span>{' '}
-                members have MFA enrolled.
-              </div>
+                {tHardcodedUi.raw('componentsIamMfaRequiredCard.line200JsxTextMembersHaveMFAEnrolled')}</div>
             )}
 
             {partitionedLosers.lockouts.length > 0 && (
               <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-xs">
                 <p className="mb-2 font-medium text-amber-700 dark:text-amber-400">
                   {partitionedLosers.lockouts.length}{' '}
-                  {partitionedLosers.lockouts.length === 1 ? 'member' : 'members'} will
-                  be locked out until they enrol MFA:
-                </p>
+                  {partitionedLosers.lockouts.length === 1 ? 'member' : 'members'} {tHardcodedUi.raw('componentsIamMfaRequiredCard.line208JsxTextWillBeLockedOutUntilTheyEnrolMFA')}</p>
                 <ul className="max-h-40 space-y-0.5 overflow-y-auto">
                   {partitionedLosers.lockouts.map((l) => (
                     <li key={l.user_id} className="flex items-center gap-2">
@@ -231,10 +220,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
                     exempt
                   </Badge>
                   {partitionedLosers.exemptAdmins.length} super-admin
-                  {partitionedLosers.exemptAdmins.length === 1 ? '' : 's'} without
-                  MFA — they won&apos;t be locked out, but consider asking them
-                  to enrol:
-                </p>
+                  {partitionedLosers.exemptAdmins.length === 1 ? '' : 's'} {tHardcodedUi.raw('componentsIamMfaRequiredCard.line234JsxTextWithoutMFATheyWonTBeLockedOut')}</p>
                 <ul className="max-h-32 space-y-0.5 overflow-y-auto">
                   {partitionedLosers.exemptAdmins.map((l) => (
                     <li key={l.user_id} className="truncate text-foreground">
@@ -263,8 +249,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
               className="gap-1.5"
             >
               {flipMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Require MFA
-            </Button>
+              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line266JsxTextRequireMFA')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -278,12 +263,9 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Disable MFA requirement?</DialogTitle>
+            <DialogTitle>{tHardcodedUi.raw('componentsIamMfaRequiredCard.line281JsxTextDisableMFARequirement')}</DialogTitle>
             <DialogDescription>
-              Members will be able to sign in with a password alone. Per-policy
-              MFA conditions you may have set on individual policies still
-              apply — only the account-wide gate is removed.
-            </DialogDescription>
+              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line283JsxTextMembersWillBeAbleToSignInWith')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
@@ -300,8 +282,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
               className="gap-1.5"
             >
               {flipMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Disable MFA requirement
-            </Button>
+              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line303JsxTextDisableMFARequirement')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

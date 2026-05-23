@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useState } from 'react';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import type { Stage } from '@/components/dashboard/connecting-screen';
@@ -65,6 +67,7 @@ const VARIANTS: { id: Variant; label: string; group: string }[] = [
 ];
 
 export default function DebugConnectingPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [variant, setVariant] = useState<Variant>('connecting');
   const [animatedPct, setAnimatedPct] = useState(0);
 
@@ -78,7 +81,7 @@ export default function DebugConnectingPage() {
     return () => clearInterval(id);
   }, [variant]);
 
-  const screen = useMemo(() => renderVariant(variant, animatedPct), [variant, animatedPct]);
+  const screen = useMemo(() => renderVariant(variant, animatedPct, tHardcodedUi), [variant, animatedPct, tHardcodedUi]);
 
   const groups = Array.from(new Set(VARIANTS.map((v) => v.group)));
 
@@ -89,12 +92,8 @@ export default function DebugConnectingPage() {
       {/* Control panel — fixed, out of the way of the centered content */}
       <div className="pointer-events-auto fixed right-5 top-5 z-[100] w-[260px] overflow-hidden rounded-2xl border border-border/50 bg-background/95 shadow-2xl shadow-black/20 backdrop-blur-xl">
         <div className="border-b border-border/40 px-4 py-3">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
-            Connecting screen
-          </p>
-          <p className="mt-0.5 text-sm font-medium text-foreground">
-            Debug harness
-          </p>
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/60">{tHardcodedUi.raw('appDebugConnectingPage.line93JsxTextConnectingScreen')}</p>
+          <p className="mt-0.5 text-sm font-medium text-foreground">{tHardcodedUi.raw('appDebugConnectingPage.line96JsxTextDebugHarness')}</p>
         </div>
 
         <div className="max-h-[70vh] overflow-y-auto p-2">
@@ -131,20 +130,21 @@ export default function DebugConnectingPage() {
         </div>
 
         <div className="border-t border-border/40 px-4 py-3">
-          <p className="text-xs leading-relaxed text-muted-foreground/50">
-            Not linked from the app. Visit{' '}
+          <p className="text-xs leading-relaxed text-muted-foreground/50">{tHardcodedUi.raw('appDebugConnectingPage.line135JsxTextNotLinkedFromTheAppVisit')}{' '}
             <code className="rounded bg-foreground/[0.06] px-1 font-mono text-xs">
               /debug/connecting
-            </code>{' '}
-            any time.
-          </p>
+            </code>{' '}{tHardcodedUi.raw('appDebugConnectingPage.line139JsxTextAnyTime')}</p>
         </div>
       </div>
     </>
   );
 }
 
-function renderVariant(variant: Variant, animatedPct: number): React.ReactNode {
+function renderVariant(
+  variant: Variant,
+  animatedPct: number,
+  tHardcodedUi: ReturnType<typeof useTranslations>,
+): React.ReactNode {
   const MOCK_STAGES = [
     { id: 'server_creating', progress: 5, message: 'Booting machine' },
     { id: 'cloud_init_running', progress: 35, message: 'Pulling image' },
@@ -168,7 +168,7 @@ function renderVariant(variant: Variant, animatedPct: number): React.ReactNode {
       return (
         <ConnectingScreen
           forceConnecting
-          title="Opening workspace"
+          title={tHardcodedUi.raw('appDebugConnectingPage.line171JsxAttrTitleOpeningWorkspace')}
           labelOverride="sandbox-83e1c69c-3"
         />
       );
@@ -182,7 +182,7 @@ function renderVariant(variant: Variant, animatedPct: number): React.ReactNode {
       return <ConnectingScreen forceConnecting overrideStage={'restoring' as Stage} />;
 
     case 'minimal-signing-in':
-      return <ConnectingScreen forceConnecting minimal title="Signing in" />;
+      return <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appDebugConnectingPage.line185JsxAttrTitleSigningIn')} />;
     case 'minimal-authorizing':
       return <ConnectingScreen forceConnecting minimal title="Authorizing" />;
     case 'minimal-no-title':
@@ -192,7 +192,7 @@ function renderVariant(variant: Variant, animatedPct: number): React.ReactNode {
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title="Provisioning workspace"
+          title={tHardcodedUi.raw('appDebugConnectingPage.line195JsxAttrTitleProvisioningWorkspace')}
           provisioning={{
             progress: 0,
             stageLabel: 'Preparing workspace',
@@ -203,7 +203,7 @@ function renderVariant(variant: Variant, animatedPct: number): React.ReactNode {
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title="Provisioning workspace"
+          title={tHardcodedUi.raw('appDebugConnectingPage.line206JsxAttrTitleProvisioningWorkspace')}
           provisioning={{
             progress: animatedPct,
             stageLabel:
@@ -221,7 +221,7 @@ function renderVariant(variant: Variant, animatedPct: number): React.ReactNode {
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title="Provisioning workspace"
+          title={tHardcodedUi.raw('appDebugConnectingPage.line224JsxAttrTitleProvisioningWorkspace')}
           provisioning={{
             progress: 42,
             stageLabel: 'Installing runtime',
@@ -233,7 +233,7 @@ function renderVariant(variant: Variant, animatedPct: number): React.ReactNode {
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"
-          title="Provisioning workspace"
+          title={tHardcodedUi.raw('appDebugConnectingPage.line236JsxAttrTitleProvisioningWorkspace')}
           provisioning={{
             progress: 60,
             stages: MOCK_STAGES,

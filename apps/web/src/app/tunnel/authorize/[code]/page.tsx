@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Suspense, useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
@@ -17,6 +19,8 @@ import {
 } from '@/hooks/tunnel/use-tunnel';
 import { CAPABILITY_REGISTRY } from '@/components/tunnel/types';
 
+const EXPIRED_STATUS_ICON_CLASS = 'bg-amber-500/10 border-amber-500/20';
+
 export default function DeviceAuthorizePage() {
   return (
     <Suspense
@@ -32,6 +36,7 @@ export default function DeviceAuthorizePage() {
 }
 
 function DeviceAuthorize() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const params = useParams();
   const router = useRouter();
   const code = params.code as string;
@@ -110,8 +115,8 @@ function DeviceAuthorize() {
     return (
       <StatusScreen
         icon={<X className="h-6 w-6 text-foreground/50" />}
-        title="Request Not Found"
-        description="This authorization request doesn't exist or has expired."
+        title={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line113JsxAttrTitleRequestNotFound')}
+        description={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line114JsxAttrDescriptionThisAuthorizationRequestDoesnTExistOrHas')}
       />
     );
   }
@@ -121,9 +126,9 @@ function DeviceAuthorize() {
     return (
       <StatusScreen
         icon={<Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />}
-        iconClassName="bg-amber-500/10 border-amber-500/20"
-        title="Request Expired"
-        description="This authorization request has expired. Run the connect command again."
+        iconClassName={EXPIRED_STATUS_ICON_CLASS}
+        title={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line125JsxAttrTitleRequestExpired')}
+        description={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line126JsxAttrDescriptionThisAuthorizationRequestHasExpiredRunTheConnect')}
       />
     );
   }
@@ -163,9 +168,7 @@ function DeviceAuthorize() {
             {/* Header */}
             <div className="flex flex-col items-center gap-1 mb-6">
               <KortixLogo size={24} />
-              <p className="text-xs text-foreground/30 tracking-[0.2em] uppercase mt-3">
-                Authorize Device
-              </p>
+              <p className="text-xs text-foreground/30 tracking-[0.2em] uppercase mt-3">{tHardcodedUi.raw('appTunnelAuthorizeCodePage.line167JsxTextAuthorizeDevice')}</p>
             </div>
 
             {/* Device code hero */}
@@ -261,16 +264,12 @@ function DeviceAuthorize() {
                 onClick={handleDeny}
                 disabled={deny.isPending || approve.isPending}
                 className="w-full text-xs text-foreground/30 hover:text-foreground/50 transition-colors py-2"
-              >
-                Deny request
-              </button>
+              >{tHardcodedUi.raw('appTunnelAuthorizeCodePage.line265JsxTextDenyRequest')}</button>
             </div>
           </div>
 
           {/* Footer hint */}
-          <p className="text-xs text-center text-foreground/20 mt-4">
-            Confirm the code above matches your terminal.
-          </p>
+          <p className="text-xs text-center text-foreground/20 mt-4">{tHardcodedUi.raw('appTunnelAuthorizeCodePage.line272JsxTextConfirmTheCodeAboveMatchesYourTerminal')}</p>
         </div>
       </div>
     </div>

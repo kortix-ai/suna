@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Permission policies table — used by both the group-detail and the
 // member-detail pages. The shape mirrors Cloudflare's policy editor:
 // Scope · Applies to · Roles, with a Create policy modal that walks
@@ -122,6 +123,7 @@ export function PoliciesTable({
   principalLabel,
   canManage,
 }: PoliciesTableProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   // Non-null = the dialog is open in "edit" mode for that policy. Mutually
@@ -228,7 +230,7 @@ export function PoliciesTable({
   return (
     <>
       <SectionCard
-        title="Permission policies"
+        title={tHardcodedUi.raw('componentsIamPoliciesTable.line231JsxAttrTitlePermissionPolicies')}
         description={`Policies grant ${principalLabel} access to specific resources.`}
         action={
           canManage && (
@@ -239,7 +241,7 @@ export function PoliciesTable({
                   size="sm"
                   variant="outline"
                   className="gap-1.5"
-                  title="Download policies as JSON (portable across accounts)"
+                  title={tHardcodedUi.raw('componentsIamPoliciesTable.line242JsxAttrTitleDownloadPoliciesAsJSONPortableAcrossAccounts')}
                 >
                   <Download className="h-4 w-4" />
                   Export
@@ -250,7 +252,7 @@ export function PoliciesTable({
                 size="sm"
                 variant="outline"
                 className="gap-1.5"
-                title="Bulk-import policies from JSON"
+                title={tHardcodedUi.raw('componentsIamPoliciesTable.line253JsxAttrTitleBulkImportPoliciesFromJSON')}
               >
                 <Upload className="h-4 w-4" />
                 Import
@@ -260,15 +262,13 @@ export function PoliciesTable({
                 size="sm"
                 variant="outline"
                 className="gap-1.5"
-                title="Apply a curated set of policies in one click"
+                title={tHardcodedUi.raw('componentsIamPoliciesTable.line263JsxAttrTitleApplyACuratedSetOfPoliciesInOne')}
               >
                 <Sparkles className="h-4 w-4" />
-                From template
-              </Button>
+                {tHardcodedUi.raw('componentsIamPoliciesTable.line266JsxTextFromTemplate')}</Button>
               <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
                 <Plus className="h-4 w-4" />
-                Grant access
-              </Button>
+                {tHardcodedUi.raw('componentsIamPoliciesTable.line270JsxTextGrantAccess')}</Button>
             </div>
           )
         }
@@ -296,7 +296,7 @@ export function PoliciesTable({
         <EmptyState
           icon={KeyRound}
           size="sm"
-          title="No access granted yet"
+          title={tHardcodedUi.raw('componentsIamPoliciesTable.line299JsxAttrTitleNoAccessGrantedYet')}
           description={
             canManage
               ? `Grant ${principalLabel} access to a project or the whole account.`
@@ -311,7 +311,7 @@ export function PoliciesTable({
             <tr className="border-b border-border/60 bg-muted/20 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <th className="px-6 py-2.5 font-medium">Effect</th>
               <th className="px-3 py-2.5 font-medium">Scope</th>
-              <th className="px-3 py-2.5 font-medium">Applies to</th>
+              <th className="px-3 py-2.5 font-medium">{tHardcodedUi.raw('componentsIamPoliciesTable.line314JsxTextAppliesTo')}</th>
               <th className="px-3 py-2.5 font-medium">Role</th>
               <th className="w-12 px-3 py-2.5" />
             </tr>
@@ -355,7 +355,7 @@ export function PoliciesTable({
                             variant="outline"
                             size="sm"
                             className="gap-1 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                            title="Applies only when this condition is met"
+                            title={tHardcodedUi.raw('componentsIamPoliciesTable.line358JsxAttrTitleAppliesOnlyWhenThisConditionIsMet')}
                           >
                             <ShieldCheck className="h-3 w-3" />
                             {c}
@@ -368,12 +368,12 @@ export function PoliciesTable({
                             className="border-amber-500/40 text-amber-700 dark:text-amber-300"
                             title={`Auto-revokes at ${new Date(p.expires_at).toLocaleString()}`}
                           >
-                            expires in {formatExpiryShort(p.expires_at)}
+                            {tHardcodedUi.raw('componentsIamPoliciesTable.line371JsxTextExpiresIn')}{formatExpiryShort(p.expires_at)}
                           </Badge>
                         )}
                       </div>
                     ) : (
-                      <span className="text-xs text-muted-foreground">unknown role</span>
+                      <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamPoliciesTable.line376JsxTextUnknownRole')}</span>
                     )}
                   </td>
                   <td className="px-3 py-3 text-right">
@@ -384,7 +384,7 @@ export function PoliciesTable({
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                            aria-label="Policy actions"
+                            aria-label={tHardcodedUi.raw('componentsIamPoliciesTable.line387JsxAttrAriaLabelPolicyActions')}
                           >
                             <MoreHorizontal className="h-3.5 w-3.5" />
                           </Button>
@@ -395,15 +395,13 @@ export function PoliciesTable({
                             className="gap-2"
                           >
                             <Pencil className="h-3.5 w-3.5" />
-                            Edit policy
-                          </DropdownMenuItem>
+                            {tHardcodedUi.raw('componentsIamPoliciesTable.line398JsxTextEditPolicy')}</DropdownMenuItem>
                           <DropdownMenuItem
                             onSelect={() => setDeleteTarget(p)}
                             className="gap-2"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                            Remove policy
-                          </DropdownMenuItem>
+                            {tHardcodedUi.raw('componentsIamPoliciesTable.line405JsxTextRemovePolicy')}</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )}
@@ -444,9 +442,9 @@ export function PoliciesTable({
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        title="Remove policy"
-        description="This member or group will lose the permissions granted by this policy."
-        confirmLabel="Remove policy"
+        title={tHardcodedUi.raw('componentsIamPoliciesTable.line447JsxAttrTitleRemovePolicy')}
+        description={tHardcodedUi.raw('componentsIamPoliciesTable.line448JsxAttrDescriptionThisMemberOrGroupWillLoseThePermissions')}
+        confirmLabel={tHardcodedUi.raw('componentsIamPoliciesTable.line449JsxAttrConfirmLabelRemovePolicy')}
         isPending={deleteMutation.isPending}
         onConfirm={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.policy_id);
@@ -495,6 +493,7 @@ function BulkImportDialog({
   principalId: string;
   onImported: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [json, setJson] = useState('');
   const [parseError, setParseError] = useState<string | null>(null);
   const [preview, setPreview] = useState<BulkImportEntry[] | null>(null);
@@ -555,12 +554,9 @@ function BulkImportDialog({
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Bulk import policies</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsIamPoliciesTable.line558JsxTextBulkImportPolicies')}</DialogTitle>
           <DialogDescription>
-            Paste JSON exported from this UI or built by hand. Entries
-            reference roles by <span className="font-mono">role_key</span> so
-            they&apos;re portable across accounts.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsIamPoliciesTable.line560JsxTextPasteJSONExportedFromThisUIOrBuilt')}<span className="font-mono">role_key</span> {tHardcodedUi.raw('componentsIamPoliciesTable.line561JsxTextSoTheyRePortableAcrossAccounts')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -571,7 +567,7 @@ function BulkImportDialog({
               setPreview(null);
               setParseError(null);
             }}
-            placeholder='[{"principal_type":"member","principal_id":"...","scope_type":"project","scope_id":"...","role_key":"project_editor"}]'
+            placeholder={tHardcodedUi.raw('componentsIamPoliciesTable.line574JsxAttrPlaceholderPrincipalTypeMemberPrincipalIdScopeTypeProject')}
             className="h-48 w-full resize-y rounded-md border border-border/60 bg-background p-2 font-mono text-xs"
             disabled={mutation.isPending}
           />
@@ -585,18 +581,15 @@ function BulkImportDialog({
               disabled={mutation.isPending}
             />
             <span>
-              <span className="font-medium">Re-target to this {principalType}</span>
+              <span className="font-medium">{tHardcodedUi.raw('componentsIamPoliciesTable.line588JsxTextReTargetToThis')}{principalType}</span>
               <span className="block text-[11px] text-muted-foreground">
-                Overrides the principal in every entry so you can import an
-                export from a different member / group.
-              </span>
+                {tHardcodedUi.raw('componentsIamPoliciesTable.line590JsxTextOverridesThePrincipalInEveryEntrySoYou')}</span>
             </span>
           </label>
 
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={parse} disabled={mutation.isPending}>
-              Parse & preview
-            </Button>
+              {tHardcodedUi.raw('componentsIamPoliciesTable.line598JsxTextParsePreview')}</Button>
             {preview && (
               <span className="text-xs text-muted-foreground">
                 {preview.length} {preview.length === 1 ? 'entry' : 'entries'} parsed
@@ -670,6 +663,7 @@ function ApplyTemplateDialog({
   projectGroups: ProjectGroup[];
   onApplied: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [selectedKey, setSelectedKey] = useState<string>('');
   const [scopeId, setScopeId] = useState<string>('');
 
@@ -731,11 +725,9 @@ function ApplyTemplateDialog({
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Apply a policy template</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsIamPoliciesTable.line734JsxTextApplyAPolicyTemplate')}</DialogTitle>
           <DialogDescription>
-            Templates are curated bundles — pick one and we&apos;ll create the
-            matching policies in one shot. Skipped entries already existed.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsIamPoliciesTable.line736JsxTextTemplatesAreCuratedBundlesPickOneAndWe')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -743,8 +735,7 @@ function ApplyTemplateDialog({
             <Skeleton className="h-32 w-full" />
           ) : eligible.length === 0 ? (
             <p className="rounded-md border border-border/60 px-3 py-3 text-xs text-muted-foreground">
-              No templates apply to this principal type.
-            </p>
+              {tHardcodedUi.raw('componentsIamPoliciesTable.line746JsxTextNoTemplatesApplyToThisPrincipalType')}</p>
           ) : (
             <div className="space-y-1.5">
               {eligible.map((t) => {
@@ -802,8 +793,7 @@ function ApplyTemplateDialog({
                     ? projects.length === 0
                       ? (
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                          No projects in this account
-                        </div>
+                          {tHardcodedUi.raw('componentsIamPoliciesTable.line805JsxTextNoProjectsInThisAccount')}</div>
                       )
                       : projects.map((p) => (
                           <SelectItem key={p.project_id} value={p.project_id}>
@@ -813,8 +803,7 @@ function ApplyTemplateDialog({
                     : projectGroups.length === 0
                       ? (
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                          No project groups yet
-                        </div>
+                          {tHardcodedUi.raw('componentsIamPoliciesTable.line816JsxTextNoProjectGroupsYet')}</div>
                       )
                       : projectGroups.map((g) => (
                           <SelectItem key={g.group_id} value={g.group_id}>
@@ -841,8 +830,7 @@ function ApplyTemplateDialog({
             className="gap-1.5"
           >
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Apply template
-          </Button>
+            {tHardcodedUi.raw('componentsIamPoliciesTable.line844JsxTextApplyTemplate')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -896,6 +884,7 @@ function CreatePolicyDialog({
   editing,
   onCreated,
 }: CreatePolicyDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isEditing = !!editing;
   const [effect, setEffect] = useState<PolicyEffect>('allow');
   const [scopeType, setScopeType] = useState<PolicyScopeType | ''>('');
@@ -1212,7 +1201,7 @@ function CreatePolicyDialog({
               disabled={createMutation.isPending}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Pick a scope..." />
+                <SelectValue placeholder={tHardcodedUi.raw('componentsIamPoliciesTable.line1215JsxAttrPlaceholderPickAScope')} />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
@@ -1232,7 +1221,7 @@ function CreatePolicyDialog({
                         <SelectItem key={rt} value={rt}>
                           {meta.label}
                           {meta.inputKind === 'text' && (
-                            <span className="ml-2 text-[10px] text-muted-foreground">id paste</span>
+                            <span className="ml-2 text-[10px] text-muted-foreground">{tHardcodedUi.raw('componentsIamPoliciesTable.line1235JsxTextIdPaste')}</span>
                           )}
                         </SelectItem>
                       );
@@ -1246,11 +1235,10 @@ function CreatePolicyDialog({
           {/* ── Step 2: Applies to (only after a scope is picked) ─── */}
           {scopeType && (
             <div className="space-y-1.5">
-              <Label>Applies to</Label>
+              <Label>{tHardcodedUi.raw('componentsIamPoliciesTable.line1249JsxTextAppliesTo')}</Label>
               {scopeType === 'account' && (
                 <p className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                  All resources in this account
-                </p>
+                  {tHardcodedUi.raw('componentsIamPoliciesTable.line1252JsxTextAllResourcesInThisAccount')}</p>
               )}
               {scopeType === 'project' && (
                 <Select
@@ -1259,13 +1247,12 @@ function CreatePolicyDialog({
                   disabled={createMutation.isPending}
                 >
                   <SelectTrigger ref={appliesToTriggerRef}>
-                    <SelectValue placeholder="Pick a project..." />
+                    <SelectValue placeholder={tHardcodedUi.raw('componentsIamPoliciesTable.line1262JsxAttrPlaceholderPickAProject')} />
                   </SelectTrigger>
                   <SelectContent>
                     {projects.length === 0 ? (
                       <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                        No projects in this account
-                      </div>
+                        {tHardcodedUi.raw('componentsIamPoliciesTable.line1267JsxTextNoProjectsInThisAccount')}</div>
                     ) : (
                       projects.map((p) => (
                         <SelectItem key={p.project_id} value={p.project_id}>
@@ -1283,13 +1270,12 @@ function CreatePolicyDialog({
                   disabled={createMutation.isPending}
                 >
                   <SelectTrigger ref={appliesToTriggerRef}>
-                    <SelectValue placeholder="Pick a member..." />
+                    <SelectValue placeholder={tHardcodedUi.raw('componentsIamPoliciesTable.line1286JsxAttrPlaceholderPickAMember')} />
                   </SelectTrigger>
                   <SelectContent>
                     {members.length === 0 ? (
                       <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                        No members in this account
-                      </div>
+                        {tHardcodedUi.raw('componentsIamPoliciesTable.line1291JsxTextNoMembersInThisAccount')}</div>
                     ) : (
                       members.map((m) => (
                         <SelectItem key={m.user_id} value={m.user_id}>
@@ -1307,13 +1293,12 @@ function CreatePolicyDialog({
                   disabled={createMutation.isPending}
                 >
                   <SelectTrigger ref={appliesToTriggerRef}>
-                    <SelectValue placeholder="Pick a group..." />
+                    <SelectValue placeholder={tHardcodedUi.raw('componentsIamPoliciesTable.line1310JsxAttrPlaceholderPickAGroup')} />
                   </SelectTrigger>
                   <SelectContent>
                     {groups.length === 0 ? (
                       <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                        No groups in this account
-                      </div>
+                        {tHardcodedUi.raw('componentsIamPoliciesTable.line1315JsxTextNoGroupsInThisAccount')}</div>
                     ) : (
                       groups.map((g) => (
                         <SelectItem key={g.group_id} value={g.group_id}>
@@ -1331,14 +1316,12 @@ function CreatePolicyDialog({
                   disabled={createMutation.isPending}
                 >
                   <SelectTrigger ref={appliesToTriggerRef}>
-                    <SelectValue placeholder="Pick a project group..." />
+                    <SelectValue placeholder={tHardcodedUi.raw('componentsIamPoliciesTable.line1334JsxAttrPlaceholderPickAProjectGroup')} />
                   </SelectTrigger>
                   <SelectContent>
                     {projectGroups.length === 0 ? (
                       <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                        No project groups yet. Create one in Settings → Project
-                        groups, then attach projects to it.
-                      </div>
+                        {tHardcodedUi.raw('componentsIamPoliciesTable.line1339JsxTextNoProjectGroupsYetCreateOneInSettings')}</div>
                     ) : (
                       projectGroups.map((g) => (
                         <SelectItem key={g.group_id} value={g.group_id}>
@@ -1364,9 +1347,7 @@ function CreatePolicyDialog({
                       disabled={createMutation.isPending}
                     />
                     <p className="text-[11px] text-muted-foreground">
-                      No picker yet for {scopeType}s. Find the id in the
-                      resource&apos;s URL or detail page and paste it here.
-                    </p>
+                      {tHardcodedUi.raw('componentsIamPoliciesTable.line1367JsxTextNoPickerYetFor')}{scopeType}{tHardcodedUi.raw('componentsIamPoliciesTable.line1367JsxTextSFindTheIdInTheResourceS')}</p>
                   </>
                 )}
             </div>
@@ -1378,13 +1359,11 @@ function CreatePolicyDialog({
               <Label>{isEditing ? 'Role' : 'Roles'}</Label>
               {!isEditing && availableRoles.length > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Each selected role becomes its own policy.
-                </p>
+                  {tHardcodedUi.raw('componentsIamPoliciesTable.line1381JsxTextEachSelectedRoleBecomesItsOwnPolicy')}</p>
               )}
               {availableRoles.length === 0 ? (
                 <p className="rounded-2xl border border-dashed border-border/60 px-3 py-3 text-xs text-muted-foreground">
-                  No roles available for this scope.
-                </p>
+                  {tHardcodedUi.raw('componentsIamPoliciesTable.line1386JsxTextNoRolesAvailableForThisScope')}</p>
               ) : (
                 <>
                   {availableRoles.length > SEARCH_THRESHOLD && (
@@ -1393,7 +1372,7 @@ function CreatePolicyDialog({
                       <Input
                         value={roleSearch}
                         onChange={(e) => setRoleSearch(e.target.value)}
-                        placeholder="Search roles..."
+                        placeholder={tHardcodedUi.raw('componentsIamPoliciesTable.line1396JsxAttrPlaceholderSearchRoles')}
                         className="h-8 pl-8 text-sm"
                         disabled={createMutation.isPending}
                       />
@@ -1406,8 +1385,7 @@ function CreatePolicyDialog({
                   >
                     {filteredRoles.length === 0 ? (
                       <p className="px-2 py-3 text-center text-xs text-muted-foreground">
-                        No roles match &ldquo;{roleSearch}&rdquo;.
-                      </p>
+                        {tHardcodedUi.raw('componentsIamPoliciesTable.line1409JsxTextNoRolesMatch')}{roleSearch}{tHardcodedUi.raw('componentsIamPoliciesTable.line1409JsxTextText')}</p>
                     ) : (
                       filteredRoles.map((r) => {
                         const checked = selectedRoleIds.has(r.role_id);
@@ -1472,11 +1450,10 @@ function CreatePolicyDialog({
                 className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-destructive"
               />
               <span>
-                Make this a <strong className="text-destructive">deny</strong> policy
+                {tHardcodedUi.raw('componentsIamPoliciesTable.line1475JsxTextMakeThisA')}<strong className="text-destructive">deny</strong> policy
                 {effect === 'deny' && (
                   <span className="block text-xs text-muted-foreground">
-                    Revokes the role&apos;s actions on this scope. Wins over any allow.
-                  </span>
+                    {tHardcodedUi.raw('componentsIamPoliciesTable.line1478JsxTextRevokesTheRoleSActionsOnThisScope')}</span>
                 )}
               </span>
             </label>
@@ -1570,8 +1547,7 @@ function CreatePolicyDialog({
                   )}
                 </span>
                 <span className="text-[11px] font-normal">
-                  Restrict by IP or MFA
-                </span>
+                  {tHardcodedUi.raw('componentsIamPoliciesTable.line1573JsxTextRestrictByIPOrMFA')}</span>
               </button>
               {conditionsOpen && (
                 <div className="space-y-4 border-t border-border/60 px-3 py-3">
@@ -1585,23 +1561,18 @@ function CreatePolicyDialog({
                       className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
                     />
                     <span>
-                      <strong>Require MFA</strong>
+                      <strong>{tHardcodedUi.raw('componentsIamPoliciesTable.line1588JsxTextRequireMFA')}</strong>
                       <span className="block text-[11px] text-muted-foreground">
-                        Policy only applies when the session is verified with a second
-                        factor (Supabase aal2).
-                      </span>
+                        {tHardcodedUi.raw('componentsIamPoliciesTable.line1590JsxTextPolicyOnlyAppliesWhenTheSessionIsVerified')}</span>
                     </span>
                   </label>
 
                   {/* IP allowlist */}
                   <div className="space-y-1.5">
                     <div>
-                      <Label className="text-xs">IP allowlist</Label>
+                      <Label className="text-xs">{tHardcodedUi.raw('componentsIamPoliciesTable.line1599JsxTextIPAllowlist')}</Label>
                       <p className="text-[11px] text-muted-foreground">
-                        Caller&apos;s IP must match one of these. Accepts IPv4 / IPv6
-                        addresses or CIDRs (10.0.0.0/8, 2001:db8::/32). Empty = no
-                        restriction.
-                      </p>
+                        {tHardcodedUi.raw('componentsIamPoliciesTable.line1601JsxTextCallerSIPMustMatchOneOfThese')}</p>
                     </div>
                     {ipCidrs.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
@@ -1641,7 +1612,7 @@ function CreatePolicyDialog({
                             addCidr(cidrDraft);
                           }
                         }}
-                        placeholder="e.g. 10.0.0.0/8"
+                        placeholder={tHardcodedUi.raw('componentsIamPoliciesTable.line1644JsxAttrPlaceholderEG100008')}
                         className="h-8 font-mono text-xs"
                         disabled={createMutation.isPending}
                       />
@@ -1667,8 +1638,7 @@ function CreatePolicyDialog({
           {/* ── Summary line (visible once ready) ─────────────────── */}
           {ready && (
             <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5 text-sm leading-relaxed text-foreground">
-              <span className="text-muted-foreground">{principalLabel}</span> will
-              be{' '}
+              <span className="text-muted-foreground">{principalLabel}</span> {tHardcodedUi.raw('componentsIamPoliciesTable.line1670JsxTextWillBe')}{' '}
               <strong className={effect === 'deny' ? 'text-destructive' : 'text-foreground'}>
                 {effect === 'deny' ? 'denied' : 'allowed'}
               </strong>{' '}

@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Copy, Check, ExternalLink, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ function truncateString(val: string, maxLen: number = 80): string {
 }
 
 const ValueRenderer = ({ value }: { value: any }) => {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const type = getType(value);
 
   if (type === 'null') return <span className="text-muted-foreground/50 italic">null</span>;
@@ -38,18 +40,16 @@ const ValueRenderer = ({ value }: { value: any }) => {
           target="_blank" 
           rel="noopener noreferrer" 
           className="text-blue-500 hover:underline inline-flex items-center gap-1 break-all"
-        >
-          &quot;{truncateString(value)}&quot;
-          <ExternalLink className="h-3 w-3 inline flex-shrink-0" />
+        >{tHardcodedUi.raw('componentsThreadToolViewsSharedSmartjsonviewer.line42JsxTextQuot')}{truncateString(value)}{tHardcodedUi.raw('componentsThreadToolViewsSharedSmartjsonviewer.line42JsxTextQuoteaab7c3c')}<ExternalLink className="h-3 w-3 inline flex-shrink-0" />
         </a>
       );
     }
     // File path detection
     if (value.startsWith('/') && !value.includes('\n') && value.length < 300) {
-      return <span className="text-foreground/70 break-all">&quot;{value}&quot;</span>;
+      return <span className="text-foreground/70 break-all">{tHardcodedUi.raw('componentsThreadToolViewsSharedSmartjsonviewer.line49JsxTextQuot')}{value}{tHardcodedUi.raw('componentsThreadToolViewsSharedSmartjsonviewer.line49JsxTextQuote68c4839')}</span>;
     }
     // Long string truncation in collapsed view
-    return <span className="text-foreground/60 break-all">&quot;{value}&quot;</span>;
+    return <span className="text-foreground/60 break-all">{tHardcodedUi.raw('componentsThreadToolViewsSharedSmartjsonviewer.line52JsxTextQuot')}{value}{tHardcodedUi.raw('componentsThreadToolViewsSharedSmartjsonviewer.line52JsxTextQuotcd964905')}</span>;
   }
   if (type === 'number') return <span className="text-blue-600 dark:text-blue-400">{value}</span>;
   if (type === 'boolean') return <span className="text-amber-600 dark:text-amber-400">{String(value)}</span>;

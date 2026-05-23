@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import {
   Search,
@@ -113,6 +115,7 @@ function ParentDropTarget({
 }
 
 export function FileBrowser() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
   const openFile = useFilesStore((s) => s.openFile);
@@ -512,7 +515,7 @@ export function FileBrowser() {
           // Best approach: create empty dir with same name for copy
           await mkdirMutation.mutateAsync({ dirPath: destPath });
           toast.success(`Created copy of folder "${clipboard.name}" here (empty)`);
-          toast('Note: directory contents are not copied', { description: 'Copy individual files to move them.' });
+          toast(tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line515CallToastNoteDirectoryContentsAreNotCopied'), { description: 'Copy individual files to move them.' });
         }
       } else {
         // Cut = move via rename
@@ -554,17 +557,14 @@ export function FileBrowser() {
       <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
         <ServerOff className="h-12 w-12 text-muted-foreground" />
         <div>
-          <h3 className="text-lg font-medium">Server not reachable</h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            Could not connect to the OpenCode server at{' '}
+          <h3 className="text-lg font-medium">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line557JsxTextServerNotReachable')}</h3>
+          <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line559JsxTextCouldNotConnectToTheOpencodeServerAt')}{' '}
             <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
               {serverUrl}
             </code>
           </p>
-          <p className="text-sm text-muted-foreground mt-1">
-            Make sure <code className="text-xs bg-muted px-1.5 py-0.5 rounded">opencode serve</code> or{' '}
-            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">opencode web</code> is running.
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line565JsxTextMakeSure')}<code className="text-xs bg-muted px-1.5 py-0.5 rounded">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line565JsxTextOpencodeServe')}</code> or{' '}
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line566JsxTextOpencodeWeb')}</code>{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line566JsxTextIsRunning')}</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()}>
           <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
@@ -586,7 +586,7 @@ export function FileBrowser() {
             className="h-7 w-7"
             onClick={handleUpload}
             disabled={uploadMutation.isPending}
-            title="Upload file"
+            title={tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line589JsxAttrTitleUploadFile')}
           >
             <Upload className="h-3.5 w-3.5" />
           </Button>
@@ -599,7 +599,7 @@ export function FileBrowser() {
               setNewFileName('untitled.txt');
             }}
             disabled={createMutation.isPending}
-            title="New file"
+            title={tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line602JsxAttrTitleNewFile')}
           >
             <FilePlus className="h-3.5 w-3.5" />
           </Button>
@@ -612,7 +612,7 @@ export function FileBrowser() {
               setNewFolderName('New Folder');
             }}
             disabled={mkdirMutation.isPending}
-            title="New folder"
+            title={tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line615JsxAttrTitleNewFolder')}
           >
             <FolderPlus className="h-3.5 w-3.5" />
           </Button>
@@ -633,7 +633,7 @@ export function FileBrowser() {
             size="icon"
             className="h-7 w-7"
             onClick={toggleSearch}
-            title="Search files (Ctrl+P)"
+            title={tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line636JsxAttrTitleSearchFilesCtrlP')}
           >
             <Search className="h-3.5 w-3.5" />
           </Button>
@@ -656,7 +656,7 @@ export function FileBrowser() {
               downloadDir(dirPath, dirName);
             }}
             disabled={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
-            title="Download current directory as zip"
+            title={tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line659JsxAttrTitleDownloadCurrentDirectoryAsZip')}
           >
             {isDirDownloading(isRootPath ? '/workspace' : currentPath) ? (
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -692,9 +692,7 @@ export function FileBrowser() {
         {/* Error state */}
         {error && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              Failed to load files
-            </p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line696JsxTextFailedToLoadFiles')}</p>
             <p className="text-xs text-muted-foreground max-w-sm">
               {error instanceof Error ? error.message : 'Unknown error'}
             </p>
@@ -749,9 +747,7 @@ export function FileBrowser() {
                       />
                     </div>
                     {folderNameExists && (
-                      <p className="text-xs text-destructive pl-6">
-                        A file or folder with that name already exists
-                      </p>
+                      <p className="text-xs text-destructive pl-6">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line753JsxTextAFileOrFolderWithThatNameAlready')}</p>
                     )}
                   </div>
                 )}
@@ -787,9 +783,7 @@ export function FileBrowser() {
                       />
                     </div>
                     {fileNameExists && (
-                      <p className="text-xs text-destructive pl-6">
-                        A file or folder with that name already exists
-                      </p>
+                      <p className="text-xs text-destructive pl-6">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line791JsxTextAFileOrFolderWithThatNameAlready')}</p>
                     )}
                   </div>
                 )}
@@ -837,9 +831,7 @@ export function FileBrowser() {
                 {/* Empty directory */}
                 {files.length === 0 && !isCreatingFolder && !isCreatingFile && (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <p className="text-sm text-muted-foreground">
-                      Empty directory
-                    </p>
+                    <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line841JsxTextEmptyDirectory')}</p>
                   </div>
                 )}
               </div>
@@ -854,9 +846,7 @@ export function FileBrowser() {
                 }}
                 disabled={createMutation.isPending}
               >
-                <FilePlus className="mr-2 h-4 w-4" />
-                New File
-              </ContextMenuItem>
+                <FilePlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line858JsxTextNewFile')}</ContextMenuItem>
               <ContextMenuItem
                 onClick={() => {
                   setTimeout(() => {
@@ -866,17 +856,13 @@ export function FileBrowser() {
                 }}
                 disabled={mkdirMutation.isPending}
               >
-                <FolderPlus className="mr-2 h-4 w-4" />
-                New Folder
-              </ContextMenuItem>
+                <FolderPlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line870JsxTextNewFolder')}</ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem
                 onClick={handleUpload}
                 disabled={uploadMutation.isPending}
               >
-                <Upload className="mr-2 h-4 w-4" />
-                Upload File
-              </ContextMenuItem>
+                <Upload className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line878JsxTextUploadFile')}</ContextMenuItem>
               {clipboard && (
                 <>
                   <ContextMenuSeparator />
@@ -931,13 +917,8 @@ export function FileBrowser() {
             <AlertDialogTitle>
               Delete {deleteTarget?.type === 'directory' ? 'folder' : 'file'}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete{' '}
-              <span className="font-semibold text-foreground">
-                &quot;{deleteTarget?.name}&quot;
-              </span>
-              ? This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line935JsxTextAreYouSureYouWantToDelete')}{' '}
+              <span className="font-semibold text-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line937JsxTextQuot')}{deleteTarget?.name}{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line937JsxTextQuot6e940e76')}</span>{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line939JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>

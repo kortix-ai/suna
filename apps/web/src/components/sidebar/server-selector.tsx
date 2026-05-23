@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import * as React from 'react';
 import {
   Plus,
@@ -329,6 +331,7 @@ function DialogInstanceRow({
   sandboxUpdate?: SandboxUpdateInfo;
   onVersionDetected?: (version: string) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const resolvedUrl = resolveServerUrl(server);
   const displayUrl = resolvedUrl.replace(/^https?:\/\//, '');
   const hasCustomLabel = server.label && server.label !== displayUrl;
@@ -447,8 +450,7 @@ function DialogInstanceRow({
               className="rounded-full"
               onClick={(e) => { e.stopPropagation(); sandboxUpdate.update(); }}
             >
-              <ArrowDownToLine className="h-3 w-3" />
-              Update to v{sandboxUpdate.latestVersion}
+              <ArrowDownToLine className="h-3 w-3" />{tHardcodedUi.raw('componentsSidebarServerSelector.line451JsxTextUpdateToV')}{sandboxUpdate.latestVersion}
             </Button>
           )}
 
@@ -543,6 +545,7 @@ export function InstanceManagerDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { servers, activeServerId, addServer, updateServer } =
     useServerStore();
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -966,14 +969,10 @@ export function InstanceManagerDialog({
               </>
             ) : mode === 'ssh' ? (
               <>
-                <KeyRound className="h-4 w-4 text-muted-foreground" />
-                SSH Access
-              </>
+                <KeyRound className="h-4 w-4 text-muted-foreground" />{tHardcodedUi.raw('componentsSidebarServerSelector.line970JsxTextSshAccess')}</>
             ) : mode === 'add' ? (
               <>
-                <Plus className="h-4 w-4 text-muted-foreground" />
-                New Instance
-              </>
+                <Plus className="h-4 w-4 text-muted-foreground" />{tHardcodedUi.raw('componentsSidebarServerSelector.line975JsxTextNewInstance')}</>
             ) : mode === 'custom' ? 'Custom Instance' : 'Edit Instance'}
           </DialogTitle>
           <DialogDescription id="instance-dialog-desc" className="text-xs">
@@ -990,7 +989,7 @@ export function InstanceManagerDialog({
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50 pointer-events-none" />
                   <Input type="text"
-                    placeholder="Search instances..." autoComplete="off"
+                    placeholder={tHardcodedUi.raw('componentsSidebarServerSelector.line993JsxAttrPlaceholderSearchInstances')} autoComplete="off"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="h-8 text-xs pl-8 pr-3"
@@ -1040,16 +1039,14 @@ export function InstanceManagerDialog({
                   onClick={() => setMode('add')}
                   className="flex-1"
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  New Instance
-                </Button>
+                  <Plus className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsSidebarServerSelector.line1044JsxTextNewInstance')}</Button>
 
                 {servers.length > 0 && (
                   <Button
                     type="button"
                     onClick={handleGenerateSSH}
                     disabled={isGeneratingSSH}
-                    title="Generate SSH key for sandbox"
+                    title={tHardcodedUi.raw('componentsSidebarServerSelector.line1052JsxAttrTitleGenerateSshKeyForSandbox')}
                     variant="outline"
                     size="icon"
                   >
@@ -1065,22 +1062,20 @@ export function InstanceManagerDialog({
               {servers.length > 0 && sshMeta && (
                 <div className="rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-medium text-foreground/80">SSH Access</p>
+                    <p className="text-xs font-medium text-foreground/80">{tHardcodedUi.raw('componentsSidebarServerSelector.line1068JsxTextSshAccess')}</p>
                     <Button
                       type="button"
                       onClick={() => setMode('ssh')}
                       variant="ghost"
                       size="xs"
                       className="text-muted-foreground hover:text-foreground"
-                    >
-                      Open setup
-                    </Button>
+                    >{tHardcodedUi.raw('componentsSidebarServerSelector.line1076JsxTextOpenSetup')}</Button>
                   </div>
                   <pre className="max-w-full text-xs font-mono bg-muted/40 border border-border rounded-2xl px-2.5 py-2 overflow-x-hidden whitespace-pre-wrap break-all text-foreground">
                     {renderShellHighlighted(sshMeta.ssh_command)}
                   </pre>
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs text-muted-foreground/50">Last generated {new Date(sshMeta.updatedAt).toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsSidebarServerSelector.line1083JsxTextLastGenerated')}{new Date(sshMeta.updatedAt).toLocaleString()}</p>
                     <div className="flex items-center gap-1.5">
                       <Button
                         type="button"
@@ -1147,7 +1142,7 @@ export function InstanceManagerDialog({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">Cloud</p>
-                    <p className="text-xs text-muted-foreground/70 mt-0.5">Managed sandbox on Daytona cloud</p>
+                    <p className="text-xs text-muted-foreground/70 mt-0.5">{tHardcodedUi.raw('componentsSidebarServerSelector.line1150JsxTextManagedSandboxOnDaytonaCloud')}</p>
                   </div>
                 </button>
               )}
@@ -1168,7 +1163,7 @@ export function InstanceManagerDialog({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">JustaVPS</p>
-                    <p className="text-xs text-muted-foreground/70 mt-0.5">Create a managed VPS via JustaVPS</p>
+                    <p className="text-xs text-muted-foreground/70 mt-0.5">{tHardcodedUi.raw('componentsSidebarServerSelector.line1171JsxTextCreateAManagedVpsViaJustavps')}</p>
                   </div>
                 </button>
               )}
@@ -1188,10 +1183,8 @@ export function InstanceManagerDialog({
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">Local Docker</p>
-                    <p className="text-xs text-muted-foreground/70 mt-0.5">
-                      Connect to an already-running local sandbox
-                    </p>
+                    <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsSidebarServerSelector.line1191JsxTextLocalDocker')}</p>
+                    <p className="text-xs text-muted-foreground/70 mt-0.5">{tHardcodedUi.raw('componentsSidebarServerSelector.line1193JsxTextConnectToAnAlreadyRunningLocalSandbox')}</p>
                   </div>
                 </button>
               )}
@@ -1204,16 +1197,14 @@ export function InstanceManagerDialog({
                 >
                   <EntityAvatar icon={Plus} size="md" className="mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">Add Cloud Instance</p>
-                    <p className="text-xs text-muted-foreground/70 mt-0.5">Select server type and location for an additional JustaVPS instance</p>
+                    <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsSidebarServerSelector.line1207JsxTextAddCloudInstance')}</p>
+                    <p className="text-xs text-muted-foreground/70 mt-0.5">{tHardcodedUi.raw('componentsSidebarServerSelector.line1208JsxTextSelectServerTypeAndLocationForAnAdditional')}</p>
                   </div>
                 </button>
               )}
 
               {isBillingEnabled() && !canAddInstances && (
-                <div className="rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3 text-xs text-muted-foreground/70">
-                  Free plan: connect a custom instance, or upgrade to Pro to add managed cloud instances.
-                </div>
+                <div className="rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3 text-xs text-muted-foreground/70">{tHardcodedUi.raw('componentsSidebarServerSelector.line1215JsxTextFreePlanConnectACustomInstanceOrUpgrade')}</div>
               )}
 
               {/* Custom URL */}
@@ -1225,10 +1216,8 @@ export function InstanceManagerDialog({
               >
                 <EntityAvatar icon={Globe} size="md" className="mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground">Custom URL</p>
-                  <p className="text-xs text-muted-foreground/70 mt-0.5">
-                    Connect to any Kortix instance by address
-                  </p>
+                  <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsSidebarServerSelector.line1228JsxTextCustomUrl')}</p>
+                  <p className="text-xs text-muted-foreground/70 mt-0.5">{tHardcodedUi.raw('componentsSidebarServerSelector.line1230JsxTextConnectToAnyKortixInstanceByAddress')}</p>
                 </div>
               </button>
             </div>
@@ -1259,9 +1248,7 @@ export function InstanceManagerDialog({
             <div className="flex flex-col gap-3">
               {/* URL */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Instance Address
-                </label>
+                <label className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsSidebarServerSelector.line1263JsxTextInstanceAddress')}</label>
                 <Input type="text"
                   ref={urlInputRef}
                   placeholder="http://localhost:8008/v1/p/kortix-sandbox/8000"
@@ -1270,18 +1257,15 @@ export function InstanceManagerDialog({
                   className="h-9 text-sm font-mono"
                   required
                 />
-                <p className="text-xs text-muted-foreground/50">
-                  The full URL of the Kortix server, e.g. http://192.168.1.50:8008/v1/p/kortix-sandbox/8000
-                </p>
+                <p className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsSidebarServerSelector.line1274JsxTextTheFullUrlOfTheKortixServerE')}</p>
               </div>
 
               {/* Label */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Display Name <span className="text-muted-foreground/40">(optional)</span>
+                <label className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsSidebarServerSelector.line1281JsxTextDisplayName')}<span className="text-muted-foreground/40">(optional)</span>
                 </label>
                 <Input type="text"
-                  placeholder="My dev instance"
+                  placeholder={tHardcodedUi.raw('componentsSidebarServerSelector.line1284JsxAttrPlaceholderMyDevInstance')}
                   value={formLabel}
                   onChange={(e) => setFormLabel(e.target.value)}
                   className="h-9 text-sm"
@@ -1317,7 +1301,7 @@ export function InstanceManagerDialog({
             {sshMeta ? (
               <>
                 <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Reconnect command:</p>
+                  <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSidebarServerSelector.line1320JsxTextReconnectCommand')}</p>
                   <div className="relative">
                     <pre className="max-w-full text-xs font-mono bg-muted/40 border border-border rounded-2xl px-3 py-2.5 pr-16 overflow-x-hidden whitespace-pre-wrap break-all text-foreground">
                       {renderShellHighlighted(sshMeta.ssh_command)}
@@ -1328,12 +1312,12 @@ export function InstanceManagerDialog({
                       variant="outline"
                       size="icon-sm"
                       className="absolute top-2.5 right-2.5 z-10"
-                      aria-label="Copy connect command"
+                      aria-label={tHardcodedUi.raw('componentsSidebarServerSelector.line1331JsxAttrAriaLabelCopyConnectCommand')}
                     >
                       {copiedField === 'connect' ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground/50">Need new keys? Regenerate below.</p>
+                  <p className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsSidebarServerSelector.line1336JsxTextNeedNewKeysRegenerateBelow')}</p>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="rounded-2xl border border-border/40 bg-muted/20 px-2.5 py-2">
@@ -1351,7 +1335,7 @@ export function InstanceManagerDialog({
                 </div>
               </>
             ) : (
-              <p className="text-xs text-muted-foreground">Generate SSH keys to get setup and connect commands.</p>
+              <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSidebarServerSelector.line1354JsxTextGenerateSshKeysToGetSetupAndConnect')}</p>
             )}
 
             <div className="flex items-center pt-1 border-t border-border/30">
@@ -1409,26 +1393,24 @@ export function InstanceManagerDialog({
     <AlertDialog open={!!pendingCancelServer} onOpenChange={(o) => { if (!o) setPendingCancelServer(null); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Cancel this instance?</AlertDialogTitle>
+          <AlertDialogTitle>{tHardcodedUi.raw('componentsSidebarServerSelector.line1412JsxTextCancelThisInstance')}</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2 text-sm text-muted-foreground">
-              <p>Your instance stays active until the end of your billing period. After that:</p>
+              <p>{tHardcodedUi.raw('componentsSidebarServerSelector.line1415JsxTextYourInstanceStaysActiveUntilTheEndOf')}</p>
               <ul className="list-disc list-inside text-destructive/70 space-y-0.5 text-sm">
-                <li>The machine will be <strong>permanently shut down</strong></li>
-                <li>All data on the instance will be <strong>deleted</strong></li>
+                <li>{tHardcodedUi.raw('componentsSidebarServerSelector.line1417JsxTextTheMachineWillBe')}<strong>{tHardcodedUi.raw('componentsSidebarServerSelector.line1417JsxTextPermanentlyShutDown')}</strong></li>
+                <li>{tHardcodedUi.raw('componentsSidebarServerSelector.line1418JsxTextAllDataOnTheInstanceWillBe')}<strong>deleted</strong></li>
               </ul>
-              <p>You can reactivate anytime before the period ends.</p>
+              <p>{tHardcodedUi.raw('componentsSidebarServerSelector.line1420JsxTextYouCanReactivateAnytimeBeforeThePeriodEnds')}</p>
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Keep Instance</AlertDialogCancel>
+          <AlertDialogCancel>{tHardcodedUi.raw('componentsSidebarServerSelector.line1425JsxTextKeepInstance')}</AlertDialogCancel>
           <AlertDialogAction
             className={buttonVariants({ variant: 'destructive' })}
             onClick={handleCancelConfirmed}
-          >
-            Cancel & Schedule Deletion
-          </AlertDialogAction>
+          >{tHardcodedUi.raw('componentsSidebarServerSelector.line1430JsxTextCancelScheduleDeletion')}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -1441,6 +1423,7 @@ export function InstanceManagerDialog({
 // ============================================================================
 
 export function ServerSelector() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { servers, activeServerId } = useServerStore();
   const router = useRouter();
   const pathname = usePathname();
@@ -1472,9 +1455,7 @@ export function ServerSelector() {
           className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
           onClick={() => router.push('/dashboard')}
         >
-          <Settings2 className="size-3" />
-          Open dashboard
-        </button>
+          <Settings2 className="size-3" />{tHardcodedUi.raw('componentsSidebarServerSelector.line1476JsxTextOpenDashboard')}</button>
       </div>
     </div>
   );

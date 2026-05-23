@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { DiffView } from '@/components/diff/diff-view';
 import { QuestionPrompt } from '@/components/session/question-prompt';
 import { SubSessionModal } from '@/components/session/sub-session-modal';
@@ -353,6 +354,7 @@ type ServicePreviewState = ReturnType<typeof useServicePreview>;
 
 /** Scaled 1920×1080 iframe viewport — the chrome-less body of a service preview. */
 function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const {
     previewUrl,
     displayLabel,
@@ -377,14 +379,14 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
         <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-10">
           <div className="flex items-center gap-2 text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" />
-            <span className="text-xs">Loading preview...</span>
+            <span className="text-xs">{tHardcodedUi.raw('componentsSessionToolRenderers.line380JsxTextLoadingPreview')}</span>
           </div>
         </div>
       )}
       {hasError && (
         <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
           <div className="text-center text-muted-foreground">
-            <p className="text-xs">Failed to load</p>
+            <p className="text-xs">{tHardcodedUi.raw('componentsSessionToolRenderers.line387JsxTextFailedToLoad')}</p>
             <button
               type="button"
               onClick={handleRefresh}
@@ -410,7 +412,7 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
             top: 0,
             left: 0,
           }}
-          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads allow-modals"
+          sandbox={tHardcodedUi.raw('componentsSessionToolRenderers.line413JsxAttrSandboxAllowSameOriginAllowScriptsAllowFormsAllow')}
           onLoad={onLoad}
           onError={onError}
         />
@@ -420,6 +422,7 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
 }
 
 function InlineServicePreview({ url, label }: { url: string; label?: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const preview = useServicePreview(url, label);
   const {
     navigationEnabled,
@@ -472,7 +475,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
               <ExternalLink className="h-3 w-3" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">Open in browser</TooltipContent>
+          <TooltipContent side="top">{tHardcodedUi.raw('componentsSessionToolRenderers.line475JsxTextOpenInBrowser')}</TooltipContent>
         </Tooltip>
         {proxy && (
           <Tooltip>
@@ -488,7 +491,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
                 Preview
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="top">Open as tab</TooltipContent>
+            <TooltipContent side="top">{tHardcodedUi.raw('componentsSessionToolRenderers.line491JsxTextOpenAsTab')}</TooltipContent>
           </Tooltip>
         )}
       </div>
@@ -843,13 +846,13 @@ function JsonFailureOutputCard({
   failure: ParsedJsonFailure;
   toolName?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="text-xs overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-rose-500/20">
         <CircleAlert className="size-3.5 text-rose-500/80 flex-shrink-0" />
         <span className="font-medium text-rose-600 dark:text-rose-400">
-          Integration request failed
-        </span>
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line851JsxTextIntegrationRequestFailed')}</span>
         {typeof failure.status === 'number' && (
           <span className="ml-auto text-xs text-rose-600 dark:text-rose-400 font-mono">
             HTTP {failure.status}
@@ -1531,6 +1534,7 @@ function DiffChanges({
  * Render parsed structured output sections with semantic styling.
  */
 function StructuredOutput({ sections }: { sections: OutputSection[] }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [showTrace, setShowTrace] = useState(false);
 
   return (
@@ -1594,7 +1598,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                       showTrace && 'rotate-90',
                     )}
                   />
-                  <span className="text-xs font-medium">Stack trace</span>
+                  <span className="text-xs font-medium">{tHardcodedUi.raw('componentsSessionToolRenderers.line1597JsxTextStackTrace')}</span>
                   <span className="text-xs text-muted-foreground/40 font-mono ml-1">
                     {section.lines.length} lines
                   </span>
@@ -1678,6 +1682,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
 // ============================================================================
 
 function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -1727,7 +1732,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-xs text-muted-foreground">
                     <Fingerprint className="size-3" />
-                    Observation #{report.id}
+                    {tHardcodedUi.raw('componentsSessionToolRenderers.line1730JsxTextObservation')}{report.id}
                   </span>
                   <span className="text-xs text-muted-foreground uppercase tracking-wide">
                     {report.type}
@@ -1808,7 +1813,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                       )}
                       {report.prompt && (
                         <span className="text-xs font-medium text-muted-foreground">
-                          Prompt #{report.prompt}
+                          {tHardcodedUi.raw('componentsSessionToolRenderers.line1811JsxTextPrompt')}{report.prompt}
                         </span>
                       )}
                       {report.session && (
@@ -1820,8 +1825,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                     {report.filesRead.length > 0 && (
                       <div className="space-y-1">
                         <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                          Files read
-                        </div>
+                          {tHardcodedUi.raw('componentsSessionToolRenderers.line1823JsxTextFilesRead')}</div>
                         <div className="flex flex-wrap gap-1.5">
                           {report.filesRead.map((file) => (
                             <span
@@ -1844,7 +1848,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-xs text-muted-foreground">
                     <Fingerprint className="size-3" />
-                    LTM #{report.id}
+                    {tHardcodedUi.raw('componentsSessionToolRenderers.line1847JsxTextLTM')}{report.id}
                   </span>
                   <span className="text-xs text-muted-foreground uppercase tracking-wide">
                     {report.type}
@@ -1936,6 +1940,7 @@ ToolRegistry.register('oc-get_mem', GetMemTool);
 ToolRegistry.register('oc-get-mem', GetMemTool);
 
 function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -2008,8 +2013,7 @@ function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                     </span>
                     {hit.confidence != null && (
                       <span className="ml-auto text-xs text-muted-foreground/60">
-                        {Math.round(hit.confidence * 100)}% conf
-                      </span>
+                        {Math.round(hit.confidence * 100)}{tHardcodedUi.raw('componentsSessionToolRenderers.line2011JsxTextConf')}</span>
                     )}
                   </div>
                   <p className="text-xs leading-relaxed text-foreground/90">
@@ -2305,6 +2309,7 @@ function InlineSessionMessagesList({
 }: {
   messages: ParsedSessionMessage[];
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex flex-col gap-1 p-1.5">
       <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -2347,8 +2352,7 @@ function InlineSessionMessagesList({
               {msg.content.length > 800 && (
                 <span className="text-muted-foreground/50">
                   {' '}
-                  ... (truncated)
-                </span>
+                  {tHardcodedUi.raw('componentsSessionToolRenderers.line2350JsxTextTruncated')}</span>
               )}
             </div>
             {msg.tools && (
@@ -2382,6 +2386,7 @@ function InlineSessionMessagesList({
 }
 
 function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const metadata = partMetadata(part);
@@ -2462,7 +2467,7 @@ function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         {isWaiting || isStalePending ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
             <Loader2 className="size-3 animate-spin" />
-            <span>Preparing command...</span>
+            <span>{tHardcodedUi.raw('componentsSessionToolRenderers.line2465JsxTextPreparingCommand')}</span>
           </div>
         ) : (
           <div className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">
@@ -2572,6 +2577,7 @@ ToolRegistry.register('pty_spawn', PtySpawnTool);
 
 // --- Pty Read ---
 function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
 
@@ -2621,8 +2627,7 @@ function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Terminal Output
-          </span>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line2624JsxTextTerminalOutput')}</span>
           {ptyId && (
             <span className="text-muted-foreground text-xs truncate font-mono">
               {ptyId}
@@ -2666,6 +2671,7 @@ ToolRegistry.register('pty_read', PtyReadTool);
 
 // --- Pty Write ---
 function PtyWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const ptyInput = (input.input as string) || (input.text as string) || '';
@@ -2682,7 +2688,7 @@ function PtyWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       {ptyInput && (
         <div className="px-3 py-2.5">
           <pre className="font-mono text-xs leading-relaxed text-foreground/90 whitespace-pre-wrap break-all">
-            <span className="text-muted-foreground/60 select-none">&gt; </span>
+            <span className="text-muted-foreground/60 select-none">{tHardcodedUi.raw('componentsSessionToolRenderers.line2685JsxTextText')}</span>
             {ptyInput}
           </pre>
         </div>
@@ -2810,6 +2816,7 @@ ToolRegistry.register('morph_edit', EditTool);
 
 // --- Write ---
 function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const metadata = partMetadata(part);
@@ -2850,8 +2857,7 @@ function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         <ToolCode code={content} language={ext} />
       ) : isStalePending ? (
         <div className="px-3 py-2 text-muted-foreground/60 text-xs italic">
-          Waiting for file content...
-        </div>
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent')}</div>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />
     </BasicTool>
@@ -2895,6 +2901,7 @@ function RawPatchDiffView({ patch }: { patch: string; filename: string }) {
 }
 
 function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const metadata = partMetadata(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
@@ -3041,8 +3048,7 @@ function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         </div>
       ) : isStreaming ? (
         <div className="px-3 py-2 text-muted-foreground/60 text-xs italic">
-          Applying patch…
-        </div>
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line3044JsxTextApplyingPatch')}</div>
       ) : null}
     </BasicTool>
   );
@@ -3366,6 +3372,7 @@ function InlineGrepResults({
 
 // --- Glob ---
 function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const output = partOutput(part);
@@ -3417,7 +3424,7 @@ function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </div>
       ) : isNoResults ? (
-        <ToolEmptyState message="No matching files found" />
+        <ToolEmptyState message={tHardcodedUi.raw('componentsSessionToolRenderers.line3420JsxAttrMessageNoMatchingFilesFound')} />
       ) : output ? (
         <ToolOutputFallback output={output} toolName="glob" />
       ) : null}
@@ -3428,6 +3435,7 @@ ToolRegistry.register('glob', GlobTool);
 
 // --- Grep ---
 function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const output = partOutput(part);
@@ -3482,7 +3490,7 @@ function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </div>
       ) : isNoResults ? (
-        <ToolEmptyState message="No matching results found" />
+        <ToolEmptyState message={tHardcodedUi.raw('componentsSessionToolRenderers.line3485JsxAttrMessageNoMatchingResultsFound')} />
       ) : output ? (
         <ToolOutputFallback output={output} toolName="grep" />
       ) : null}
@@ -3493,6 +3501,7 @@ ToolRegistry.register('grep', GrepTool);
 
 // --- List ---
 function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -3531,7 +3540,7 @@ function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </div>
       ) : isNoResults ? (
-        <ToolEmptyState message="Directory is empty" />
+        <ToolEmptyState message={tHardcodedUi.raw('componentsSessionToolRenderers.line3534JsxAttrMessageDirectoryIsEmpty')} />
       ) : output ? (
         <ToolOutputFallback output={output} toolName="list" />
       ) : null}
@@ -3769,6 +3778,7 @@ function wsFavicon(url: string): string | null {
 }
 
 function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -3803,8 +3813,7 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Web Search
-          </span>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line3806JsxTextWebSearch')}</span>
           <span className="text-muted-foreground text-xs truncate font-mono">
             {query}
           </span>
@@ -4151,6 +4160,7 @@ ToolRegistry.register('scrape-webpage', ScrapeWebpageTool);
 
 // --- ImageSearch ---
 function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -4237,8 +4247,7 @@ function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Image Search
-          </span>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line4240JsxTextImageSearch')}</span>
           <span className="text-muted-foreground text-xs truncate font-mono">
             {displayQuery}
           </span>
@@ -4306,6 +4315,7 @@ ToolRegistry.register('image-search', ImageSearchTool);
 
 // --- ImageGen ---
 function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -4411,8 +4421,7 @@ function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             />
           ) : isImageLoading ? (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">
-              Loading image preview...
-            </div>
+              {tHardcodedUi.raw('componentsSessionToolRenderers.line4414JsxTextLoadingImagePreview')}</div>
           ) : (
             <div className="px-2 py-1.5 text-xs text-muted-foreground font-mono break-all">
               {imagePath}
@@ -4497,6 +4506,7 @@ function PresentationGenTool({
   forceOpen,
   locked,
 }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -4609,7 +4619,7 @@ function PresentationGenTool({
             <div className="flex items-center gap-2 text-xs">
               <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
-                Created slide {parsed.slide_number}
+                {tHardcodedUi.raw('componentsSessionToolRenderers.line4612JsxTextCreatedSlide')}{parsed.slide_number}
                 {parsed.slide_title ? `: ${parsed.slide_title}` : ''}
               </span>
               {parsed.total_slides && (
@@ -4844,6 +4854,7 @@ function buildHtmlStaticUrl(filePath: string): string {
 }
 
 function ShowTool({ part, sessionId }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const running = useContext(ToolRunningContext);
   const { enabled: navigationEnabled } = useToolNavigation();
@@ -4932,8 +4943,7 @@ function ShowTool({ part, sessionId }: ToolProps) {
         <div className="flex items-center gap-3 px-5 py-4">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
           <TextShimmer duration={1} spread={2} className="text-sm">
-            Preparing output...
-          </TextShimmer>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line4935JsxTextPreparingOutput')}</TextShimmer>
         </div>
       </div>
     );
@@ -5013,7 +5023,7 @@ function ShowTool({ part, sessionId }: ToolProps) {
                   <ExternalLink className="size-3.5" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="top">Open in browser</TooltipContent>
+              <TooltipContent side="top">{tHardcodedUi.raw('componentsSessionToolRenderers.line5016JsxTextOpenInBrowser')}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -5029,7 +5039,7 @@ function ShowTool({ part, sessionId }: ToolProps) {
                   Preview
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="top">Open as tab</TooltipContent>
+              <TooltipContent side="top">{tHardcodedUi.raw('componentsSessionToolRenderers.line5032JsxTextOpenAsTab')}</TooltipContent>
             </Tooltip>
           </div>
         ) : canOpenInTab ? (
@@ -5220,6 +5230,7 @@ function DCPCompressTool({ part }: ToolProps) {
 ToolRegistry.register('compress', DCPCompressTool);
 
 function ContextInfoTool({ part }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // context_info is a synthetic tool injected by DCP — render minimally or hide
   const output = partOutput(part);
   if (!output) return null;
@@ -5232,8 +5243,7 @@ function ContextInfoTool({ part }: ToolProps) {
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-muted-foreground/70 whitespace-nowrap">
-            Context Info
-          </span>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line5235JsxTextContextInfo')}</span>
           <span className="text-xs text-muted-foreground/50 font-medium whitespace-nowrap">
             DCP
           </span>
@@ -5259,6 +5269,7 @@ function RemovedIntegrationTool({
   forceOpen,
   locked,
 }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const output = partOutput(part);
 
   return (
@@ -5267,8 +5278,7 @@ function RemovedIntegrationTool({
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Legacy Integration Tool
-          </span>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line5270JsxTextLegacyIntegrationTool')}</span>
           <span className="text-xs text-muted-foreground/60 font-medium whitespace-nowrap ml-auto">
             removed
           </span>
@@ -5280,8 +5290,7 @@ function RemovedIntegrationTool({
     >
       <div className="px-3 py-2.5 space-y-2">
         <p className="text-xs text-muted-foreground leading-relaxed">
-          This legacy integration tool surface has been removed while connectors are rebuilt.
-        </p>
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line5283JsxTextThisLegacyIntegrationToolSurfaceHasBeenRemoved')}</p>
         {output ? (
           <ToolOutputFallback
             output={output}
@@ -5622,6 +5631,7 @@ ToolRegistry.register('oc-session-read', SessionReadTool);
 // ============================================================================
 
 function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	const input = partInput(part);
 	const output = partOutput(part);
 	const status = partStatus(part);
@@ -5821,7 +5831,7 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 									Conversation
 								</span>
 								<span className="text-xs text-muted-foreground/50 ml-auto">
-									{parsed.msgCount} msgs · {parsed.toolCount}{" "}
+									{parsed.msgCount} {tHardcodedUi.raw('componentsSessionToolRenderers.line5824JsxTextMsgs')}{parsed.toolCount}{" "}
 									tools
 								</span>
 							</button>
@@ -5853,8 +5863,7 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 					{!parsed.hasConversation && parsed.todos.length === 0 && (
 						<div className="px-3 py-3 text-center">
 							<p className="text-xs text-muted-foreground/40 italic">
-								No messages in this session
-							</p>
+								{tHardcodedUi.raw('componentsSessionToolRenderers.line5856JsxTextNoMessagesInThisSession')}</p>
 						</div>
 					)}
 				</div>
@@ -6102,6 +6111,7 @@ function SessionListBackgroundTool({
   forceOpen,
   locked,
 }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -6180,7 +6190,7 @@ function SessionListBackgroundTool({
           </div>
         </div>
       ) : noWorkers ? (
-        <ToolEmptyState message="No background sessions" />
+        <ToolEmptyState message={tHardcodedUi.raw('componentsSessionToolRenderers.line6183JsxAttrMessageNoBackgroundSessions')} />
       ) : null}
     </BasicTool>
   );
@@ -6203,12 +6213,13 @@ ToolRegistry.register('oc-session-list-spawned', SessionListBackgroundTool);
 // ============================================================================
 
 function ProjectDeleteTool({ part }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const project = (input.project as string) || '';
   return (
     <div className="flex items-center gap-2 px-2.5 py-1 text-xs text-muted-foreground/40">
       <Trash2 className="size-3 flex-shrink-0" />
-      <span>Workspace delete disabled{project ? ` (${project})` : ''}</span>
+      <span>{tHardcodedUi.raw('componentsSessionToolRenderers.line6211JsxTextWorkspaceDeleteDisabled')}{project ? ` (${project})` : ''}</span>
     </div>
   );
 }
@@ -6271,6 +6282,7 @@ function extractWorkerPreview(cleaned: string): string | null {
 }
 
 function AgentSpawnTool({ part, forceOpen }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const surface = useContext(ToolSurfaceContext);
   const input = partInput(part);
   const status = partStatus(part);
@@ -6398,8 +6410,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
                 </TextShimmer>
               ) : (
                 <span className="text-xs text-muted-foreground">
-                  Starting…
-                </span>
+                  {tHardcodedUi.raw('componentsSessionToolRenderers.line6401JsxTextStarting')}</span>
               )}
             </div>
           )}
@@ -6537,6 +6548,7 @@ ToolRegistry.register('task-start', AgentSpawnTool);
 // ============================================================================
 
 function AgentMessageTool({ part }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const status = partStatus(part);
   const output = partOutput(part);
@@ -6571,7 +6583,7 @@ function AgentMessageTool({ part }: ToolProps) {
           <div className="flex items-center gap-2.5">
             <MessageCircle className="size-4 text-muted-foreground flex-shrink-0" />
             <span className="text-sm font-medium text-foreground truncate flex-1">
-              Message → {taskId ? taskId.slice(-12) : 'worker'}
+              {tHardcodedUi.raw('componentsSessionToolRenderers.line6574JsxTextMessage')}{taskId ? taskId.slice(-12) : 'worker'}
             </span>
             {isRunning && (
               <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-medium flex-shrink-0 flex items-center gap-1">
@@ -6625,6 +6637,7 @@ ToolRegistry.register('agent-message', AgentMessageTool);
 
 // agent_task_update — routes to the right renderer based on action
 function AgentTaskUpdateTool({ part, forceOpen }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const action = (input.action as string) || '';
   switch (action) {
@@ -6640,7 +6653,7 @@ function AgentTaskUpdateTool({ part, forceOpen }: ToolProps) {
         <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/70">
           <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
           <span className="text-foreground/80 truncate flex-1">
-            Task approved{taskId ? ` · ${taskId.slice(-12)}` : ''}
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line6643JsxTextTaskApproved')}{taskId ? ` · ${taskId.slice(-12)}` : ''}
           </span>
         </div>
       );
@@ -6667,6 +6680,7 @@ ToolRegistry.register('task_cancel', AgentStopTool);
 ToolRegistry.register('task-cancel', AgentStopTool);
 
 function AgentStopTool({ part }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const agentId = (input.agent_id as string) || '';
   return (
@@ -6675,8 +6689,7 @@ function AgentStopTool({ part }: ToolProps) {
         <div className="flex items-center gap-2.5">
           <StopCircle className="size-4 text-muted-foreground flex-shrink-0" />
           <span className="text-sm font-medium text-foreground truncate flex-1">
-            Agent stopped
-          </span>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line6678JsxTextAgentStopped')}</span>
           {agentId && (
             <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">
               {agentId.slice(-12)}
@@ -6897,10 +6910,11 @@ ToolRegistry.register('task_done', TaskDoneTool);
 ToolRegistry.register('task-done', TaskDoneTool);
 
 function TaskDeleteTool({ part }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex items-center gap-2 px-2.5 py-1 text-xs text-muted-foreground/40">
       <Trash2 className="size-3 flex-shrink-0" />
-      <span>Task removed</span>
+      <span>{tHardcodedUi.raw('componentsSessionToolRenderers.line6903JsxTextTaskRemoved')}</span>
     </div>
   );
 }
@@ -7361,6 +7375,7 @@ ToolRegistry.register('oc-connector_get', ConnectorGetTool);
 ToolRegistry.register('oc-connector-get', ConnectorGetTool);
 
 function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const data = useMemo(() => parseConnectorSetupOutput(output || ''), [output]);
@@ -7395,8 +7410,7 @@ function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) {
           </div>
         ) : (
           <div className="p-3 text-xs text-muted-foreground">
-            Setting up connectors...
-          </div>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line7398JsxTextSettingUpConnectors')}</div>
         )}
       </div>
     </BasicTool>
@@ -7776,6 +7790,7 @@ export function ToolError({
   error: string;
   toolName?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [showTrace, setShowTrace] = useState(false);
 
   // Normalize and try structured rendering
@@ -7842,8 +7857,7 @@ export function ToolError({
               {issue.values && issue.values.length > 0 && (
                 <div className="ml-5">
                   <div className="text-xs text-muted-foreground/50 mb-1">
-                    Expected one of:
-                  </div>
+                    {tHardcodedUi.raw('componentsSessionToolRenderers.line7845JsxTextExpectedOneOf')}</div>
                   <div className="flex flex-wrap gap-1">
                     {issue.values.map((val, vi) => (
                       <span
@@ -7880,7 +7894,7 @@ export function ToolError({
                 showTrace && 'rotate-90',
               )}
             />
-            <span className="text-xs font-medium">Stack trace</span>
+            <span className="text-xs font-medium">{tHardcodedUi.raw('componentsSessionToolRenderers.line7883JsxTextStackTrace')}</span>
           </button>
           {showTrace && (
             <div className="px-2 pb-2 max-h-48 overflow-auto">
@@ -7980,6 +7994,7 @@ function PermissionPromptInline({
   permission,
   onReply,
 }: PermissionPromptInlineProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [visible, setVisible] = useState(false);
   const [replying, setReplying] = useState(false);
 
@@ -8023,16 +8038,14 @@ function PermissionPromptInline({
           variant="outline"
           size="xs"
         >
-          Allow always
-        </Button>
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line8026JsxTextAllowAlways')}</Button>
         <Button
           disabled={replying}
           onClick={() => handleReply('once')}
           variant="default"
           size="xs"
         >
-          Allow once
-        </Button>
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line8034JsxTextAllowOnce')}</Button>
       </div>
     </div>
   );

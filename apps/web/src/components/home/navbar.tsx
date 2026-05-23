@@ -149,6 +149,7 @@ interface NavbarProps {
 }
 
 export function Navbar({ isAbsolute = false }: NavbarProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('hero');
@@ -217,9 +218,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           <ContextMenuContent className="w-48">
             <ContextMenuSub>
               <ContextMenuSubTrigger className="gap-2 text-sm">
-                <Gem className="size-3.5 shrink-0" />
-                Download symbol
-              </ContextMenuSubTrigger>
+                <Gem className="size-3.5 shrink-0" />{tHardcodedUi.raw('componentsHomeNavbar.line221JsxTextDownloadSymbol')}</ContextMenuSubTrigger>
               <ContextMenuSubContent className="w-40">
                 {[
                   { label: 'Black · SVG', href: '/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg', file: 'kortix-symbol-black.svg' },
@@ -235,9 +234,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             </ContextMenuSub>
             <ContextMenuSub>
               <ContextMenuSubTrigger className="gap-2 text-sm">
-                <Type className="size-3.5 shrink-0" />
-                Download wordmark
-              </ContextMenuSubTrigger>
+                <Type className="size-3.5 shrink-0" />{tHardcodedUi.raw('componentsHomeNavbar.line239JsxTextDownloadWordmark')}</ContextMenuSubTrigger>
               <ContextMenuSubContent className="w-40">
                 {[
                   { label: 'Black · SVG', href: '/brandkit/Logo/Wordmark/SVG/Wordmark Black.svg', file: 'kortix-wordmark-black.svg' },
@@ -255,9 +252,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               onClick={() => router.push('/design-system')}
               className="gap-2 text-sm cursor-pointer"
             >
-              <Layers className="size-3.5 shrink-0" />
-              Design system
-            </ContextMenuItem>
+              <Layers className="size-3.5 shrink-0" />{tHardcodedUi.raw('componentsHomeNavbar.line259JsxTextDesignSystem')}</ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
 
@@ -298,7 +293,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           </a>
 
           <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-            <Link href="/enterprise">Request demo</Link>
+            <Link href="/enterprise">{tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}</Link>
           </Button>
           {user ? (
             <Button asChild size="sm">
@@ -308,9 +303,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             <Button
               onClick={() => { trackCtaSignup(); router.push(ctaLink); }}
               size="sm"
-            >
-              Get started
-            </Button>
+            >{tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}</Button>
           )}
 
           {/* Mobile Menu Button */}
@@ -319,7 +312,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             variant="ghost"
             size="icon"
             className="md:hidden"
-            aria-label="Open menu"
+            aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
           >
             <Menu className="size-5" />
           </Button>
@@ -345,7 +338,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 onClick={toggleDrawer}
                 variant="outline"
                 size="icon"
-                aria-label="Close menu"
+                aria-label={tHardcodedUi.raw('componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu')}
               >
                 <X className="size-5" />
               </Button>

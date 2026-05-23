@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -63,6 +65,7 @@ import type {
 } from '../../types';
 
 export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Fetch config from database
   const { data: configData, isLoading: configLoading } = useARRSimulatorConfig();
   const updateConfigMutation = useUpdateARRSimulatorConfig();
@@ -1129,17 +1132,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5" />
-            ARR Growth Simulator
-          </CardTitle>
-          <CardDescription>
-            Adjust parameters to model your path to {formatCurrency(targetARR)} ARR by June 2026
-          </CardDescription>
+            <TrendingUp className="h-5 w-5" />{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1133JsxTextArrGrowthSimulator')}</CardTitle>
+          <CardDescription>{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1136JsxTextAdjustParametersToModelYourPathTo')}{formatCurrency(targetARR)}{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1136JsxTextArrByJune2026')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
             <div className="space-y-2">
-              <Label className="text-xs">Starting Subscribers</Label>
+              <Label className="text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1142JsxTextStartingSubscribers')}</Label>
               <Input
                 type="number"
                 value={startingSubs || ''}
@@ -1149,7 +1148,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs">Starting MRR ($)</Label>
+              <Label className="text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1152JsxTextStartingMrr')}</Label>
               <Input
                 type="number"
                 value={startingMRR || ''}
@@ -1159,7 +1158,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs">Weekly Visitors</Label>
+              <Label className="text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1162JsxTextWeeklyVisitors')}</Label>
               <Input
                 type="number"
                 value={weeklyVisitors || ''}
@@ -1169,7 +1168,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs">Monthly Visitor Growth (%)</Label>
+              <Label className="text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1172JsxTextMonthlyVisitorGrowth')}</Label>
               <Input
                 type="number"
                 value={visitorGrowth || ''}
@@ -1179,7 +1178,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs">Landing Conv. (%)</Label>
+              <Label className="text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1182JsxTextLandingConv')}</Label>
               <Input
                 type="number"
                 value={landingConversion || ''}
@@ -1189,7 +1188,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs">Signup → Paid (%)</Label>
+              <Label className="text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1192JsxTextSignupPaid')}</Label>
               <Input
                 type="number"
                 value={signupToPaid || ''}
@@ -1200,7 +1199,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs">ARPU ($/mo)</Label>
+              <Label className="text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1203JsxTextArpuMo')}</Label>
               <Input
                 type="number"
                 value={arpu || ''}
@@ -1210,7 +1209,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs">Monthly Churn (%)</Label>
+              <Label className="text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1213JsxTextMonthlyChurn')}</Label>
               <Input
                 type="number"
                 value={monthlyChurn || ''}
@@ -1220,7 +1219,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs">Target ARR ($)</Label>
+              <Label className="text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1223JsxTextTargetArr')}</Label>
               <Input
                 type="number"
                 value={targetARR || ''}
@@ -1238,13 +1237,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-primary">{formatCurrency(finalMonth?.arr || 0)}</div>
-            <p className="text-xs text-muted-foreground mt-1">Projected ARR (Jun 2026)</p>
+            <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1241JsxTextProjectedArrJun2026')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold">{formatNumber(finalMonth?.totalSubs || 0)}</div>
-            <p className="text-xs text-muted-foreground mt-1">Total Subscribers</p>
+            <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1247JsxTextTotalSubscribers')}</p>
           </CardContent>
         </Card>
         <Card>
@@ -1252,13 +1251,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
             <div className={cn('text-2xl font-bold', gapToTarget > 0 ? 'text-red-500' : 'text-green-500')}>
               {gapToTarget > 0 ? `-${formatCurrency(gapToTarget)}` : `+${formatCurrency(Math.abs(gapToTarget))}`}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Gap to Target</p>
+            <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1255JsxTextGapToTarget')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold">{progressPercent.toFixed(1)}%</div>
-            <p className="text-xs text-muted-foreground mt-1">Progress to Goal</p>
+            <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1261JsxTextProgressToGoal')}</p>
             <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
               <div 
                 className={cn('h-full transition-colors', progressPercent >= 100 ? 'bg-green-500' : 'bg-primary')}
@@ -1273,7 +1272,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">ARR Trajectory</span>
+            <span className="text-sm font-medium">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1276JsxTextArrTrajectory')}</span>
             <span className="text-sm text-muted-foreground">
               {formatCurrency(projections[0]?.arr || 0)} → {formatCurrency(finalMonth?.arr || 0)}
             </span>
@@ -1313,16 +1312,12 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           variant={simulatorView === 'monthly' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setSimulatorView('monthly')}
-        >
-          📅 Monthly View
-        </Button>
+        >{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1317JsxTextMonthlyView')}</Button>
         <Button
           variant={simulatorView === 'weekly' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setSimulatorView('weekly')}
-        >
-          📊 Weekly Tracking
-        </Button>
+        >{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1324JsxTextWeeklyTracking')}</Button>
       </div>
 
       {simulatorView === 'monthly' && (
@@ -1332,9 +1327,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         {/* ARR Growth (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              📈 ARR: Goal vs Actual
-            </CardTitle>
+            <CardTitle className="text-base flex items-center gap-2">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1336JsxTextArrGoalVsActual')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -1394,9 +1387,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         {/* Subscriber Growth (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              👥 Subscribers: Goal vs Actual
-            </CardTitle>
+            <CardTitle className="text-base flex items-center gap-2">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1398JsxTextSubscribersGoalVsActual')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -1448,9 +1439,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         {/* MRR Growth (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              💰 MRR: Goal vs Actual
-            </CardTitle>
+            <CardTitle className="text-base flex items-center gap-2">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1452JsxTextMrrGoalVsActual')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -1502,9 +1491,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         {/* New Paid vs Churn (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              📊 New Paid vs Churn: Goal vs Actual
-            </CardTitle>
+            <CardTitle className="text-base flex items-center gap-2">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1506JsxTextNewPaidVsChurnGoalVsActual')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -1562,8 +1549,8 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       {/* Monthly Breakdown Table with Actual vs Goal */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Monthly Breakdown (Goal vs Actual)</CardTitle>
-          <CardDescription>Projected growth from Dec 2025 to Jun 2026 with actual data comparison</CardDescription>
+          <CardTitle className="text-base">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1565JsxTextMonthlyBreakdownGoalVsActual')}</CardTitle>
+          <CardDescription>{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1566JsxTextProjectedGrowthFromDec2025ToJun2026')}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -1576,12 +1563,12 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th className="text-center p-3 font-medium" colSpan={2}>Signups</th>
                   <th className="text-center p-3 font-medium">Growth</th>
                   <th className="text-center p-3 font-medium">Conv</th>
-                  <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1579JsxTextNewPaid')}</th>
                   <th className="text-center p-3 font-medium">Growth</th>
                   <th className="text-center p-3 font-medium">Conv</th>
                   <th className="text-center p-3 font-medium">Churn</th>
-                  <th className="text-center p-3 font-medium">Churn Rate</th>
-                  <th className="text-center p-3 font-medium" colSpan={2}>Total Subs</th>
+                  <th className="text-center p-3 font-medium">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1583JsxTextChurnRate')}</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1584JsxTextTotalSubs')}</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>MRR</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>ARR</th>
                 </tr>
@@ -1746,7 +1733,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             <button
                               onClick={() => handleToggleMonthlyOverride(month.monthIndex, platform, field)}
                               className="text-amber-500 hover:text-amber-600 transition-colors"
-                              title="Locked (manual override). Click to unlock and use auto-fetched value."
+                              title={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1749JsxAttrTitleLockedManualOverrideClickToUnlockAndUse')}
                             >
                               <Lock className="h-3 w-3" />
                             </button>
@@ -1764,7 +1751,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             <button
                               onClick={() => enableMonthlyOverrideInstantly(month.monthIndex, platform, month.month, field, autoValue)}
                               className={cn('text-xs font-medium hover:underline cursor-pointer', hasActual && meetsGoal ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground')}
-                              title="Click to edit and override"
+                              title={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1767JsxAttrTitleClickToEditAndOverride')}
                             >
                               {(effectiveValue as number) > 0 ? displayValue : '—'}
                             </button>
@@ -1907,7 +1894,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           {/* ARR: Actual vs Goal */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">📈 ARR: Actual vs Goal</CardTitle>
+              <CardTitle className="text-base">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1910JsxTextArrActualVsGoal')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-[250px]">
@@ -1929,7 +1916,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           {/* Subscribers: Actual vs Goal */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">👥 Subscribers: Actual vs Goal</CardTitle>
+              <CardTitle className="text-base">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1932JsxTextSubscribersActualVsGoal')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-[250px]">
@@ -1951,7 +1938,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           {/* MRR: Actual vs Goal */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">💰 MRR: Actual vs Goal</CardTitle>
+              <CardTitle className="text-base">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1954JsxTextMrrActualVsGoal')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-[250px]">
@@ -1973,7 +1960,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           {/* New Paid: Actual vs Goal */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">🎯 New Paid: Actual vs Goal</CardTitle>
+              <CardTitle className="text-base">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1976JsxTextNewPaidActualVsGoal')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-[250px]">
@@ -1996,10 +1983,8 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         {/* Weekly Breakdown Table with Actual Data Entry */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">📊 Weekly Tracking (Dec 2025 - Jun 2026)</CardTitle>
-            <CardDescription>
-              Data is auto-synced from Stripe/Vercel. Edit any value to override it — once edited, it stays locked (🔒) and won't be overwritten by auto-sync. Click the lock icon to unlock and resume syncing.
-            </CardDescription>
+            <CardTitle className="text-base">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1999JsxTextWeeklyTrackingDec2025Jun2026')}</CardTitle>
+            <CardDescription>{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2001JsxTextDataIsAutoSyncedFromStripeVercelEdit')}</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
@@ -2007,17 +1992,17 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                 <thead className="sticky top-0 bg-background">
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-2 font-medium">Week</th>
-                    <th className="text-left p-2 font-medium">Date Range</th>
+                    <th className="text-left p-2 font-medium">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2010JsxTextDateRange')}</th>
                     <th className="text-center p-2 font-medium" colSpan={2}>Views</th>
                     <th className="text-center p-2 font-medium">Growth</th>
                     <th className="text-center p-2 font-medium" colSpan={2}>Signups</th>
                     <th className="text-center p-2 font-medium">Growth</th>
                     <th className="text-center p-2 font-medium">Conv</th>
-                    <th className="text-center p-2 font-medium" colSpan={2}>New Paid</th>
+                    <th className="text-center p-2 font-medium" colSpan={2}>{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2016JsxTextNewPaid')}</th>
                     <th className="text-center p-2 font-medium">Growth</th>
                     <th className="text-center p-2 font-medium">Conv</th>
                     <th className="text-center p-2 font-medium">Churn</th>
-                    <th className="text-center p-2 font-medium">Churn Rate</th>
+                    <th className="text-center p-2 font-medium">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2020JsxTextChurnRate')}</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>MRR</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>ARR</th>
@@ -2041,13 +2026,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th className="text-right p-2 text-muted-foreground font-normal text-xs"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-xs">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-xs">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2044JsxTextVar')}</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-xs">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-xs">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2047JsxTextVar')}</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-xs">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-xs">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-xs">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2050JsxTextVar')}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -2201,7 +2186,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'views', autoViews)}
                                 className={cn('text-xs font-medium hover:underline', effectiveViews > 0 ? 'text-foreground' : 'text-muted-foreground')}
-                                title="Click to edit and override"
+                                title={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2204JsxAttrTitleClickToEditAndOverride')}
                               >
                                 {effectiveViews > 0 ? formatNumber(effectiveViews) : '—'}
                               </button>
@@ -2238,7 +2223,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'signups', autoSignups)}
                                 className={cn('text-xs font-medium hover:underline', effectiveSignups > 0 ? 'text-foreground' : 'text-muted-foreground')}
-                                title="Click to edit and override"
+                                title={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2241JsxAttrTitleClickToEditAndOverride')}
                               >
                                 {effectiveSignups > 0 ? formatNumber(effectiveSignups) : '—'}
                               </button>
@@ -2279,7 +2264,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'newPaid', autoNewPaid || actual?.newPaid || 0)}
                                 className={cn('text-xs font-medium hover:underline', effectiveNewPaid > 0 ? 'text-foreground' : 'text-muted-foreground')}
-                                title="Click to edit and override"
+                                title={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2282JsxAttrTitleClickToEditAndOverride')}
                               >
                                 {effectiveNewPaid > 0 ? formatNumber(effectiveNewPaid) : '—'}
                               </button>
@@ -2319,7 +2304,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'churn', autoChurn)}
                                 className={cn('text-xs font-medium hover:underline', effectiveChurn > 0 ? 'text-red-500' : 'text-muted-foreground')}
-                                title="Click to edit and override"
+                                title={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2322JsxAttrTitleClickToEditAndOverride')}
                               >
                                 {effectiveChurn > 0 ? formatNumber(effectiveChurn) : '—'}
                               </button>
@@ -2368,7 +2353,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'subscribers', calcSubs)}
                                 className={cn('text-xs font-medium hover:underline', effectiveSubs > 0 ? 'text-foreground' : 'text-muted-foreground')}
-                                title="Click to edit and override"
+                                title={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2371JsxAttrTitleClickToEditAndOverride')}
                               >
                                 {effectiveSubs > 0 ? formatNumber(effectiveSubs) : '—'}
                               </button>
@@ -2401,7 +2386,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'mrr', actual?.mrr || 0)}
                                 className={cn('text-xs font-medium hover:underline', actual?.mrr && actual.mrr > 0 ? 'text-foreground' : 'text-muted-foreground')}
-                                title="Click to edit and override"
+                                title={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2404JsxAttrTitleClickToEditAndOverride')}
                               >
                                 {actual?.mrr && actual.mrr > 0 ? toShorthand(actual.mrr) : '—'}
                               </button>
@@ -2434,7 +2419,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                               <button
                                 onClick={() => enableOverrideInstantly(week.week, platform, 'arr', actual?.arr || 0)}
                                 className={cn('text-xs font-medium hover:underline', actual?.arr && actual.arr > 0 ? 'text-foreground' : 'text-muted-foreground')}
-                                title="Click to edit and override"
+                                title={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line2437JsxAttrTitleClickToEditAndOverride')}
                               >
                                 {actual?.arr && actual.arr > 0 ? toShorthand(actual.arr) : '—'}
                               </button>

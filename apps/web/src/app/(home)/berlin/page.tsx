@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useCallback } from 'react';
 import { MapPin } from 'lucide-react';
 import { AnimatedBg } from '@/components/ui/animated-bg';
@@ -22,6 +24,7 @@ import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 // This page only renders for desktop users
 
 export default function BerlinPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isMobile = useIsMobile();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -89,7 +92,7 @@ export default function BerlinPage() {
             <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-12 sm:pt-20 max-w-4xl mx-auto pb-6 sm:pb-7">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/5 border border-primary/10">
                 <MapPin className="w-4 h-4 text-primary" />
-                <span className="text-sm font-medium text-primary">Berlin, Germany</span>
+                <span className="text-sm font-medium text-primary">{tHardcodedUi.raw('appHomeBerlinPage.line92JsxTextBerlinGermany')}</span>
               </div>
               
               <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-medium tracking-tighter text-balance text-center px-4 sm:px-2">
@@ -97,12 +100,8 @@ export default function BerlinPage() {
               </h1>
               
               <div className="text-center space-y-2 max-w-3xl px-4">
-                <h2 className="text-lg sm:text-xl md:text-2xl font-medium tracking-tight text-muted-foreground">
-                  Dein Autonomer KI-Worker
-                </h2>
-                <p className="text-sm sm:text-base text-muted-foreground/80 font-normal text-balance leading-relaxed">
-                  Gebaut für komplexe Aufgaben, entwickelt für alles. Der ultimative KI-Assistent, der alles bewältigt—von einfachen Anfragen bis zu mega-komplexen Projekten.
-                </p>
+                <h2 className="text-lg sm:text-xl md:text-2xl font-medium tracking-tight text-muted-foreground">{tHardcodedUi.raw('appHomeBerlinPage.line101JsxTextDeinAutonomerKiWorker')}</h2>
+                <p className="text-sm sm:text-base text-muted-foreground/80 font-normal text-balance leading-relaxed">{tHardcodedUi.raw('appHomeBerlinPage.line104JsxTextGebautFurKomplexeAufgabenEntwickeltFurAllesDer')}</p>
               </div>
 
               <div className="flex flex-col items-center w-full max-w-3xl mx-auto gap-2 flex-wrap justify-center px-4 sm:px-0">
@@ -110,7 +109,7 @@ export default function BerlinPage() {
                   <SessionChatInput
                     onSend={handleSend}
                     disabled={isSubmitting}
-                    placeholder="Beschreibe deine Aufgabe..."
+                    placeholder={tHardcodedUi.raw('appHomeBerlinPage.line113JsxAttrPlaceholderBeschreibeDeineAufgabe')}
                     agents={local.agent.list}
                     selectedAgent={local.agent.current?.name ?? null}
                     onAgentChange={(name) => local.agent.set(name ?? undefined)}

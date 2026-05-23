@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Drift detection card on the Audit tab. Surfaces stale or
 // cleanup-candidate IAM objects so admins can prune. Read-only —
 // the report only proposes work; clicking through to the targets
@@ -20,6 +21,7 @@ interface DriftCardProps {
 }
 
 export function DriftCard({ accountId }: DriftCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [lookback, setLookback] = useState(60);
   const query = useQuery({
     queryKey: ['iam-drift', accountId, lookback],
@@ -36,7 +38,7 @@ export function DriftCard({ accountId }: DriftCardProps) {
 
   return (
     <SectionCard
-      title="IAM drift"
+      title={tHardcodedUi.raw('componentsIamDriftCard.line39JsxAttrTitleIAMDrift')}
       description={
         report
           ? totalIssues === 0
@@ -47,8 +49,7 @@ export function DriftCard({ accountId }: DriftCardProps) {
       action={
         <div className="flex items-center gap-2">
           <label className="text-[11px] text-muted-foreground">
-            Lookback&nbsp;
-            <select
+            {tHardcodedUi.raw('componentsIamDriftCard.line50JsxTextLookbackNbsp')}<select
               value={lookback}
               onChange={(e) => setLookback(parseInt(e.target.value, 10))}
               className="rounded-md border border-border/60 bg-background px-1 py-0.5 text-xs"
@@ -81,14 +82,13 @@ export function DriftCard({ accountId }: DriftCardProps) {
           <Skeleton className="h-32 w-full" />
         ) : !report ? (
           <p className="text-xs text-muted-foreground">
-            Couldn&apos;t load drift report.
-          </p>
+            {tHardcodedUi.raw('componentsIamDriftCard.line84JsxTextCouldnTLoadDriftReport')}</p>
         ) : (
           <>
             <DriftSection
-              title="Unused policies"
+              title={tHardcodedUi.raw('componentsIamDriftCard.line89JsxAttrTitleUnusedPolicies')}
               count={report.unused_policies.length}
-              empty="No unused policies."
+              empty={tHardcodedUi.raw('componentsIamDriftCard.line91JsxAttrEmptyNoUnusedPolicies')}
               tone="amber"
             >
               {report.unused_policies.slice(0, 10).map((p) => (
@@ -110,9 +110,9 @@ export function DriftCard({ accountId }: DriftCardProps) {
             </DriftSection>
 
             <DriftSection
-              title="Expired policies still present"
+              title={tHardcodedUi.raw('componentsIamDriftCard.line113JsxAttrTitleExpiredPoliciesStillPresent')}
               count={report.expired_policies.length}
-              empty="No expired policies to clean up."
+              empty={tHardcodedUi.raw('componentsIamDriftCard.line115JsxAttrEmptyNoExpiredPoliciesToCleanUp')}
               tone="amber"
             >
               {report.expired_policies.slice(0, 10).map((p) => (
@@ -128,9 +128,9 @@ export function DriftCard({ accountId }: DriftCardProps) {
             </DriftSection>
 
             <DriftSection
-              title="Empty groups (no members)"
+              title={tHardcodedUi.raw('componentsIamDriftCard.line131JsxAttrTitleEmptyGroupsNoMembers')}
               count={report.empty_groups.length}
-              empty="No empty groups."
+              empty={tHardcodedUi.raw('componentsIamDriftCard.line133JsxAttrEmptyNoEmptyGroups')}
               tone="muted"
             >
               {report.empty_groups.slice(0, 10).map((g) => (
@@ -139,9 +139,9 @@ export function DriftCard({ accountId }: DriftCardProps) {
             </DriftSection>
 
             <DriftSection
-              title="Orphan groups (no policies attached)"
+              title={tHardcodedUi.raw('componentsIamDriftCard.line142JsxAttrTitleOrphanGroupsNoPoliciesAttached')}
               count={report.orphan_groups.length}
-              empty="No orphan groups."
+              empty={tHardcodedUi.raw('componentsIamDriftCard.line144JsxAttrEmptyNoOrphanGroups')}
               tone="muted"
             >
               {report.orphan_groups.slice(0, 10).map((g) => (
@@ -168,6 +168,7 @@ function DriftSection({
   tone: 'amber' | 'muted';
   children: React.ReactNode;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div>
       <div className="mb-2 flex items-center gap-2 text-xs font-medium text-foreground">
@@ -186,8 +187,7 @@ function DriftSection({
       )}
       {count > 10 && (
         <p className="mt-1 text-[11px] text-muted-foreground">
-          Showing first 10 of {count}. Use the IAM API to enumerate the rest.
-        </p>
+          {tHardcodedUi.raw('componentsIamDriftCard.line189JsxTextShowingFirst10Of')}{count}{tHardcodedUi.raw('componentsIamDriftCard.line189JsxTextUseTheIAMAPIToEnumerateTheRest')}</p>
       )}
     </div>
   );

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import * as React from 'react';
 import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -317,6 +319,7 @@ function CollapsedIconButton({ icon, label, onClick, flyoutContent, disabled, is
 // ============================================================================
 
 function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = normalizeAppPathname(usePathname());
   const { data: sessions } = useOpenCodeSessions();
   const permissions = useOpenCodePendingStore((s) => s.permissions);
@@ -337,7 +340,7 @@ function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
   return (
     <div className="overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       {rootSessions.length === 0 ? (
-        <div className="px-3 py-8 text-center text-xs text-muted-foreground">No sessions yet</div>
+        <div className="px-3 py-8 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line340JsxTextNoSessionsYet')}</div>
       ) : (
         rootSessions.map((session) => {
           const active = pathname === `/sessions/${session.id}`;
@@ -396,6 +399,7 @@ const changeTypeColor: Record<string, string> = {
 };
 
 function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const {
     updateAvailable, latestVersion, currentChannel, changelog,
     isUpdating, updateResult, isBackingUp, isDestructive, phaseProgress,
@@ -457,9 +461,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
       <div className="rounded-2xl border border-primary/15 bg-muted/40 overflow-hidden">
         <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
           <Loader2 className="h-3.5 w-3.5 text-primary animate-spin flex-shrink-0" />
-          <span className="text-xs font-semibold text-foreground truncate min-w-0">
-            Backing up sandbox
-          </span>
+          <span className="text-xs font-semibold text-foreground truncate min-w-0">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line461JsxTextBackingUpSandbox')}</span>
           <span className="flex-1" />
           <span className="text-xs text-muted-foreground flex-shrink-0">v{latestVersion}</span>
         </div>
@@ -485,7 +487,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
       <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.04] overflow-hidden">
         <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
           <Bug className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
-          <span className="text-xs font-semibold text-foreground truncate min-w-0">Update failed</span>
+          <span className="text-xs font-semibold text-foreground truncate min-w-0">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line488JsxTextUpdateFailed')}</span>
           <span className="flex-1" />
           <span className="text-xs text-muted-foreground flex-shrink-0">v{latestVersion}</span>
         </div>
@@ -583,9 +585,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
           </Button>
         ) : (
           <div className="flex-1 flex items-center justify-center gap-1.5 h-7 text-xs font-medium text-amber-600 dark:text-amber-400">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Updating…
-          </div>
+            <Loader2 className="h-3 w-3 animate-spin" />{tHardcodedUi.raw('componentsSidebarSidebarLeft.line587JsxTextUpdating')}</div>
         )}
         <Button
           onClick={navigateToChangelog}
@@ -608,6 +608,7 @@ function UserProfileSection({ user }: { user: { name: string; email: string; ava
 // ============================================================================
 
 function SidebarSections() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [legacyOpen, setLegacyOpen] = React.useState(false);
   const { data: legacyData, isLoading: legacyLoading } = useLegacyThreads();
   const pathname = normalizeAppPathname(usePathname());
@@ -676,7 +677,7 @@ function SidebarSections() {
               className="flex items-center gap-2.5 flex-1 px-2.5 py-1.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer"
             >
               <History className="h-3.5 w-3.5 flex-shrink-0" />
-              <span className="flex-1 text-left">Previous Chats</span>
+              <span className="flex-1 text-left">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line679JsxTextPreviousChats')}</span>
               <span className="text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
                 {legacyData!.total}
               </span>
@@ -774,14 +775,12 @@ function SidebarSections() {
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Convert all previous chats?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will convert {legacyData?.total ?? 0} previous chats into sessions. The process runs in the background, but may take a few minutes depending on the number of chats.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{tHardcodedUi.raw('componentsSidebarSidebarLeft.line777JsxTextConvertAllPreviousChats')}</AlertDialogTitle>
+            <AlertDialogDescription>{tHardcodedUi.raw('componentsSidebarSidebarLeft.line779JsxTextThisWillConvert')}{legacyData?.total ?? 0}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line779JsxTextPreviousChatsIntoSessionsTheProcessRunsIn')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleMigrateAll}>Convert all</AlertDialogAction>
+            <AlertDialogAction onClick={handleMigrateAll}>{tHardcodedUi.raw('componentsSidebarSidebarLeft.line784JsxTextConvertAll')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -794,6 +793,7 @@ function SidebarSections() {
 // ============================================================================
 
 function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; onExpand: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { sandbox, refetch } = useSandbox();
   const [reactivating, setReactivating] = useState(false);
   const activeServerId = useServerStore((s) => s.activeServerId);
@@ -855,7 +855,7 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
             <button
               type="button"
               onClick={onExpand}
-              aria-label="Subscription cancelled — click to reactivate"
+              aria-label={tHardcodedUi.raw('componentsSidebarSidebarLeft.line858JsxAttrAriaLabelSubscriptionCancelledClickToReactivate')}
               className="relative flex items-center justify-center w-full py-2 rounded-lg cursor-pointer text-destructive hover:bg-destructive/10 transition-colors duration-150"
             >
               <AlertTriangle className="h-4 w-4" />
@@ -866,7 +866,7 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
             </button>
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={12} className="max-w-64 text-xs">
-            <div className="font-medium text-destructive">Subscription cancelled</div>
+            <div className="font-medium text-destructive">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line869JsxTextSubscriptionCancelled')}</div>
             <div className="mt-1 text-muted-foreground">{detail}</div>
           </TooltipContent>
         </Tooltip>
@@ -875,10 +875,8 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
   }
 
   return (
-    <InfoBanner tone="destructive" title="Subscription cancelled">
-      <p className="leading-relaxed">
-        This instance will be deleted {daysLeft !== null ? `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : `on ${dateStr}`}. All data will be permanently removed.
-      </p>
+    <InfoBanner tone="destructive" title={tHardcodedUi.raw('componentsSidebarSidebarLeft.line878JsxAttrTitleSubscriptionCancelled')}>
+      <p className="leading-relaxed">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line880JsxTextThisInstanceWillBeDeleted')}{daysLeft !== null ? `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : `on ${dateStr}`}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line880JsxTextAllDataWillBePermanentlyRemoved')}</p>
       <Button
         type="button"
         disabled={reactivating}
@@ -894,6 +892,7 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
 }
 
 function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: boolean; onExpand: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { sandbox } = useSandbox();
   const activeServerId = useServerStore((s) => s.activeServerId);
   const servers = useServerStore((s) => s.servers);
@@ -1039,7 +1038,7 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
             </button>
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={12} className="max-w-64 text-xs">
-            <div className="font-medium">Config degraded — runtime still healthy</div>
+            <div className="font-medium">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line1042JsxTextConfigDegradedRuntimeStillHealthy')}</div>
             <div className="mt-1 text-muted-foreground">{primaryProblem.message || 'Invalid config source ignored.'}</div>
           </TooltipContent>
         </Tooltip>
@@ -1060,11 +1059,9 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
 
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-foreground">Config ignored</span>
+            <span className="text-xs font-medium text-foreground">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line1063JsxTextConfigIgnored')}</span>
             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/18 bg-emerald-500/10 px-1.5 py-0.5 text-xs font-medium text-emerald-400">
-              <CheckCircle2 className="h-2.5 w-2.5" />
-              Runtime healthy
-            </span>
+              <CheckCircle2 className="h-2.5 w-2.5" />{tHardcodedUi.raw('componentsSidebarSidebarLeft.line1066JsxTextRuntimeHealthy')}</span>
           </div>
 
           <div className="space-y-1">
@@ -1092,7 +1089,7 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
               Prompt
             </Button>
             {configStatus.problems.length > 1 ? (
-              <span className="text-xs text-muted-foreground">+{configStatus.problems.length - 1} more source{configStatus.problems.length === 2 ? '' : 's'}</span>
+              <span className="text-xs text-muted-foreground">+{configStatus.problems.length - 1}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line1095JsxTextMoreSource')}{configStatus.problems.length === 2 ? '' : 's'}</span>
             ) : null}
           </div>
 
@@ -1108,6 +1105,7 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
 }
 
 export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { state, setOpen, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
   // On mobile, the sidebar always shows expanded content inside the Sheet
@@ -1301,7 +1299,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               effectiveState === 'collapsed' ? 'opacity-0 pointer-events-none' : 'opacity-100'
             )}
             onClick={() => isMobile ? setOpenMobile(false) : setOpen(false)}
-            aria-label="Collapse sidebar"
+            aria-label={tHardcodedUi.raw('componentsSidebarSidebarLeft.line1304JsxAttrAriaLabelCollapseSidebar')}
           >
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
@@ -1336,7 +1334,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
           />
           <CollapsedIconButton
             icon={<SquarePen className="h-4 w-4" />}
-            label="New session"
+            label={tHardcodedUi.raw('componentsSidebarSidebarLeft.line1339JsxAttrLabelNewSession')}
             onClick={handleNewSession}
             disabled={createSession.isPending}
           />

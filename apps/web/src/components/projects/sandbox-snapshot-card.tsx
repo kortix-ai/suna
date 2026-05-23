@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Clock, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { useMemo } from 'react';
@@ -84,6 +86,7 @@ function formatRelative(input: string): string {
 }
 
 export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
 
   const snapshotsQuery = useQuery<ProjectSnapshotsResponse>({
@@ -151,11 +154,10 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
     return (
       <section className="rounded-2xl border border-destructive/30 bg-destructive/5">
         <header className="border-b border-destructive/20 px-6 py-4">
-          <h2 className="text-base font-semibold text-destructive">Sandbox snapshot</h2>
+          <h2 className="text-base font-semibold text-destructive">{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line154JsxTextSandboxSnapshot')}</h2>
         </header>
         <div className="px-6 py-5">
-          <p className="text-sm text-destructive">
-            Failed to load snapshot status: {(snapshotsQuery.error as Error).message}
+          <p className="text-sm text-destructive">{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line158JsxTextFailedToLoadSnapshotStatus')}{(snapshotsQuery.error as Error).message}
           </p>
           <Button variant="outline" size="sm" className="mt-3" onClick={() => snapshotsQuery.refetch()}>
             Retry
@@ -169,12 +171,10 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
   return (
     <section className="rounded-2xl border border-border/70 bg-card">
       <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">Sandbox snapshot</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Every session boots from this project&apos;s own Daytona snapshot, built from{' '}
-          <code className="font-mono">.kortix/Dockerfile</code> at the latest commit on{' '}
-          <code className="font-mono">{branch || 'main'}</code>. The {Math.min(data.items.length, 5)} most recent ready snapshots are retained.
-        </p>
+        <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line172JsxTextSandboxSnapshot')}</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line174JsxTextEverySessionBootsFromThisProjectAposS')}{' '}
+          <code className="font-mono">.kortix/Dockerfile</code>{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line175JsxTextAtTheLatestCommitOn')}{' '}
+          <code className="font-mono">{branch || 'main'}</code>{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line176JsxTextThe')}{Math.min(data.items.length, 5)}{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line176JsxTextMostRecentReadySnapshotsAreRetained')}</p>
       </header>
 
       <div className="space-y-5 px-6 py-5">
@@ -183,31 +183,28 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">Branch HEAD</span>
+                <span className="text-muted-foreground">{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line186JsxTextBranchHead')}</span>
                 <code className="rounded bg-background px-1.5 py-0.5 font-mono text-xs">
                   {shortSha(headSha)}
                 </code>
                 {data.head_resolve_error && (
                   <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                    <AlertTriangle className="h-3 w-3" />
-                    Could not resolve HEAD
-                  </span>
+                    <AlertTriangle className="h-3 w-3" />{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line193JsxTextCouldNotResolveHead')}</span>
                 )}
               </div>
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">Latest ready</span>
+                <span className="text-muted-foreground">{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line198JsxTextLatestReady')}</span>
                 <code className="rounded bg-background px-1.5 py-0.5 font-mono text-xs">
                   {shortSha(latestReady?.commit_sha)}
                 </code>
                 {latestReady && (
-                  <span className="text-xs text-muted-foreground">
-                    · built {formatRelative(latestReady.updated_at)}
+                  <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line204JsxTextBuilt')}{formatRelative(latestReady.updated_at)}
                   </span>
                 )}
               </div>
               {activeForBranch && (
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="text-muted-foreground">In progress</span>
+                  <span className="text-muted-foreground">{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line210JsxTextInProgress')}</span>
                   <code className="rounded bg-background px-1.5 py-0.5 font-mono text-xs">
                     {shortSha(activeForBranch.commit_sha)}
                   </code>
@@ -219,18 +216,14 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
             <div className="flex shrink-0 items-center gap-2">
               {needsRebuild ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-                  <AlertTriangle className="h-3 w-3" />
-                  Needs rebuild
-                </span>
+                  <AlertTriangle className="h-3 w-3" />{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line223JsxTextNeedsRebuild')}</span>
               ) : latestReady ? (
                 <StatusPill status="ready" />
               ) : activeForBranch ? (
                 <StatusPill status={activeForBranch.status} />
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  Not built yet
-                </span>
+                  <Clock className="h-3 w-3" />{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line232JsxTextNotBuiltYet')}</span>
               )}
               {canManage && (
                 <Button
@@ -254,14 +247,9 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
 
         {/* ── History list ────────────────────────────────────────────── */}
         <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Recent builds
-          </h3>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line258JsxTextRecentBuilds')}</h3>
           {data.items.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
-              No snapshot builds yet. The first build kicks off automatically when the project is created;
-              it typically completes within a few minutes.
-            </p>
+            <p className="rounded-2xl border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsProjectsSandboxSnapshotCard.line262JsxTextNoSnapshotBuildsYetTheFirstBuildKicks')}</p>
           ) : (
             <List className="rounded-2xl border border-border/60">
               {data.items.slice(0, 10).map((snap) => (

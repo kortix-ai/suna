@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Empty state shown inside the dashboard shell when the user has zero
  * instances. Replaces the dedicated /instances landing page — same layout
@@ -80,6 +82,7 @@ function ComputerHero({
 }
 
 export function NoInstanceState() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
   const isCloud = isBillingEnabled();
@@ -125,34 +128,28 @@ export function NoInstanceState() {
       <div className="w-full max-w-lg">
         {canClaimComputer ? (
           <ComputerHero
-            title="Kortix is now even better"
+            title={tHardcodedUi.raw('componentsDashboardNoInstanceState.line128JsxAttrTitleKortixIsNowEvenBetter')}
             description={
-              <>
-                Your plan now includes a dedicated cloud computer
-                {accountState?.tier?.monthly_credits ? (
+              <>{tHardcodedUi.raw('componentsDashboardNoInstanceState.line131JsxTextYourPlanNowIncludesADedicatedCloudComputer')}{accountState?.tier?.monthly_credits ? (
                   <>
                     {' '}with{' '}
                     <span className="text-foreground font-medium">
                       ${accountState.tier.monthly_credits}/mo
-                    </span>{' '}
-                    in credits
-                  </>
-                ) : ''}
-                . Always on, runs while you sleep, full root access.
-              </>
+                    </span>{' '}{tHardcodedUi.raw('componentsDashboardNoInstanceState.line138JsxTextInCredits')}</>
+                ) : ''}{tHardcodedUi.raw('componentsDashboardNoInstanceState.line141JsxTextAlwaysOnRunsWhileYouSleepFullRoot')}</>
             }
-            ctaLabel="Claim Computer"
-            ctaLoadingLabel="Setting up…"
+            ctaLabel={tHardcodedUi.raw('componentsDashboardNoInstanceState.line144JsxAttrCtalabelClaimComputer')}
+            ctaLoadingLabel={tHardcodedUi.raw('componentsDashboardNoInstanceState.line145JsxAttrCtaloadinglabelSettingUp')}
             onCta={handleClaim}
             loading={claiming}
             features={['Included in your plan', 'Always on', 'Persistent storage']}
           />
         ) : (
           <ComputerHero
-            title="Get your cloud computer"
-            description="A dedicated cloud computer that's always on, runs while you sleep, with full root access and persistent storage."
+            title={tHardcodedUi.raw('componentsDashboardNoInstanceState.line152JsxAttrTitleGetYourCloudComputer')}
+            description={tHardcodedUi.raw('componentsDashboardNoInstanceState.line153JsxAttrDescriptionADedicatedCloudComputerThatSAlwaysOn')}
             ctaLabel={isCloud ? 'Get started' : 'Create instance'}
-            ctaLoadingLabel="Setting up…"
+            ctaLoadingLabel={tHardcodedUi.raw('componentsDashboardNoInstanceState.line155JsxAttrCtaloadinglabelSettingUp')}
             onCta={handleCreateInstance}
             loading={creating}
             features={['Always on', 'Full root access', 'Persistent storage']}

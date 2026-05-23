@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
@@ -106,6 +108,7 @@ const IntegrationIcon: React.FC<{
 
 
 export default function TemplateSharePage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const params = useParams();
   const templateId = params.shareId as string; // Note: keeping shareId param name for URL compatibility
   const router = useRouter();
@@ -275,11 +278,9 @@ export default function TemplateSharePage() {
       <div className="min-h-screen">
         <div className="flex items-center justify-center h-screen">
           <div className="text-center">
-            <h2 className="text-2xl font-semibold mb-2">Template not found</h2>
-            <p className="text-muted-foreground mb-4">The template you're looking for doesn't exist or has been removed.</p>
-            <Button onClick={() => router.push('/agents?tab=my-agents')}>
-              Browse Agents
-            </Button>
+            <h2 className="text-2xl font-semibold mb-2">{tHardcodedUi.raw('appTemplatesShareidPage.line278JsxTextTemplateNotFound')}</h2>
+            <p className="text-muted-foreground mb-4">{tHardcodedUi.raw('appTemplatesShareidPage.line279JsxTextTheTemplateYouReLookingForDoesnT')}</p>
+            <Button onClick={() => router.push('/agents?tab=my-agents')}>{tHardcodedUi.raw('appTemplatesShareidPage.line281JsxTextBrowseAgents')}</Button>
           </div>
         </div>
       </div>
@@ -353,7 +354,7 @@ export default function TemplateSharePage() {
                 >
                   <Sun className="h-4 w-4 rotate-0 scale-100 transition-colors dark:-rotate-90 dark:scale-0" />
                   <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-colors dark:rotate-0 dark:scale-100" />
-                  <span className="sr-only">Toggle theme</span>
+                  <span className="sr-only">{tHardcodedUi.raw('appTemplatesShareidPage.line356JsxTextToggleTheme')}</span>
                 </Button>
                 <Button
                   variant="ghost"
@@ -370,9 +371,7 @@ export default function TemplateSharePage() {
                   onClick={handleInstall}
                   className="font-normal tracking-wide"
                 >
-                  <Sparkles className="h-3 w-3 mr-2" />
-                  Install Agent
-                </Button>
+                  <Sparkles className="h-3 w-3 mr-2" />{tHardcodedUi.raw('appTemplatesShareidPage.line374JsxTextInstallAgent')}</Button>
               </div>
             </div>
           </div>
@@ -388,9 +387,7 @@ export default function TemplateSharePage() {
                 href="/agents?tab=my-agents"
                 className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Agents
-              </Link>
+                <ArrowLeft className="w-4 h-4 mr-2" />{tHardcodedUi.raw('appTemplatesShareidPage.line392JsxTextBackToAgents')}</Link>
               <div className="relative">
                 {colorPalette.length > 0 && (
                   <div
@@ -424,9 +421,7 @@ export default function TemplateSharePage() {
                   <h1 className="text-3xl font-medium tracking-tight">{template.name}</h1>
                   {template.is_kortix_team && (
                     <Badge variant="highlight" className="mt-2">
-                      <Sparkles className="w-3 h-3 mr-1" />
-                      Official Template
-                    </Badge>
+                      <Sparkles className="w-3 h-3 mr-1" />{tHardcodedUi.raw('appTemplatesShareidPage.line428JsxTextOfficialTemplate')}</Badge>
                   )}
                 </div>
 
@@ -436,7 +431,7 @@ export default function TemplateSharePage() {
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <User className="w-4 h-4" />
-                    <span>Created by <span className="text-foreground font-medium">{template.creator_name || 'Anonymous'}</span></span>
+                    <span>{tHardcodedUi.raw('appTemplatesShareidPage.line439JsxTextCreatedBy')}<span className="text-foreground font-medium">{template.creator_name || 'Anonymous'}</span></span>
                   </div>
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Download className="w-4 h-4" />
@@ -467,9 +462,7 @@ export default function TemplateSharePage() {
                     onClick={() => scrollToSection('system-prompt')}
                     className="w-full px-3 py-2 text-sm rounded-lg transition-colors text-left flex items-center gap-2 text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   >
-                    <FileText className="w-4 h-4" />
-                    System Prompt
-                  </button>
+                    <FileText className="w-4 h-4" />{tHardcodedUi.raw('appTemplatesShareidPage.line471JsxTextSystemPrompt')}</button>
                   {hasIntegrations && (
                     <button
                       onClick={() => scrollToSection('integrations')}
@@ -488,12 +481,8 @@ export default function TemplateSharePage() {
             <Card id="system-prompt" className="bg-transparent border-0 shadow-none">
               <CardHeader className="px-0">
                 <CardTitle className="text-xl flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  System Prompt
-                </CardTitle>
-                <CardDescription>
-                  The core instructions that define this agent's behavior
-                </CardDescription>
+                  <FileText className="w-5 h-5" />{tHardcodedUi.raw('appTemplatesShareidPage.line492JsxTextSystemPrompt')}</CardTitle>
+                <CardDescription>{tHardcodedUi.raw('appTemplatesShareidPage.line495JsxTextTheCoreInstructionsThatDefineThisAgentS')}</CardDescription>
               </CardHeader>
               <CardContent className="px-0">
                 <div className="rounded-2xl border bg-muted/10 p-6">
@@ -539,9 +528,7 @@ export default function TemplateSharePage() {
                     <Plug className="w-5 h-5" />
                     Integrations
                   </CardTitle>
-                  <CardDescription>
-                    External services and APIs this agent can connect to
-                  </CardDescription>
+                  <CardDescription>{tHardcodedUi.raw('appTemplatesShareidPage.line543JsxTextExternalServicesAndApisThisAgentCanConnect')}</CardDescription>
                 </CardHeader>
                 <CardContent className="px-0">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -576,12 +563,8 @@ export default function TemplateSharePage() {
               <Card id="tools" className="bg-transparent border-0 shadow-none">
                 <CardHeader className="px-0">
                   <CardTitle className="text-xl flex items-center gap-2">
-                    <Wrench className="w-5 h-5" />
-                    Custom Tools
-                  </CardTitle>
-                  <CardDescription>
-                    Specialized tools built for this agent
-                  </CardDescription>
+                    <Wrench className="w-5 h-5" />{tHardcodedUi.raw('appTemplatesShareidPage.line580JsxTextCustomTools')}</CardTitle>
+                  <CardDescription>{tHardcodedUi.raw('appTemplatesShareidPage.line583JsxTextSpecializedToolsBuiltForThisAgent')}</CardDescription>
                 </CardHeader>
                 <CardContent className="px-0">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

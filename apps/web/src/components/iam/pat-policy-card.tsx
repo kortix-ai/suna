@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // PAT lifecycle policy on the Settings tab. Caps how long a CLI Personal
 // Access Token can live, requires expiry on every mint, and auto-revokes
 // idle tokens. Project-scoped tokens (sandbox-injected) are exempt.
@@ -28,6 +29,7 @@ interface PatPolicyCardProps {
 }
 
 export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['iam-pat-policy', accountId],
@@ -92,13 +94,9 @@ export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
       <header className="border-b border-border/60 px-6 py-4">
         <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
           <KeyRound className="h-4 w-4 text-muted-foreground" />
-          CLI token lifecycle
-        </h2>
+          {tHardcodedUi.raw('componentsIamPatPolicyCard.line95JsxTextCLITokenLifecycle')}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Apply to Personal Access Tokens (CLI / programmatic clients).
-          Sandbox-injected tokens are exempt — their lifetime is bound to
-          the sandbox itself.
-        </p>
+          {tHardcodedUi.raw('componentsIamPatPolicyCard.line98JsxTextApplyToPersonalAccessTokensCLIProgrammaticClients')}</p>
       </header>
 
       <div className="space-y-5 px-6 py-5">
@@ -115,42 +113,37 @@ export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
                 className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
               />
               <span>
-                <span className="font-medium">Require expiry on every PAT</span>
+                <span className="font-medium">{tHardcodedUi.raw('componentsIamPatPolicyCard.line118JsxTextRequireExpiryOnEveryPAT')}</span>
                 <span className="block text-[11px] text-muted-foreground">
-                  When on, the mint endpoint refuses PATs without an
-                  <span className="font-mono"> expires_at</span>.
+                  {tHardcodedUi.raw('componentsIamPatPolicyCard.line120JsxTextWhenOnTheMintEndpointRefusesPATsWithout')}<span className="font-mono"> expires_at</span>.
                 </span>
               </span>
             </label>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label className="text-xs">Max lifetime (days)</Label>
+                <Label className="text-xs">{tHardcodedUi.raw('componentsIamPatPolicyCard.line128JsxTextMaxLifetimeDays')}</Label>
                 <Input
                   value={maxLifetime}
                   onChange={(e) => setMaxLifetime(e.target.value)}
-                  placeholder="blank = no cap"
+                  placeholder={tHardcodedUi.raw('componentsIamPatPolicyCard.line132JsxAttrPlaceholderBlankNoCap')}
                   inputMode="numeric"
                   disabled={!canManage || mutation.isPending}
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  Refuses PATs whose requested expires_at is further out
-                  than this many days from now.
-                </p>
+                  {tHardcodedUi.raw('componentsIamPatPolicyCard.line137JsxTextRefusesPATsWhoseRequestedExpiresAtIsFurther')}</p>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Idle auto-revoke (days)</Label>
+                <Label className="text-xs">{tHardcodedUi.raw('componentsIamPatPolicyCard.line142JsxTextIdleAutoRevokeDays')}</Label>
                 <Input
                   value={idleRevoke}
                   onChange={(e) => setIdleRevoke(e.target.value)}
-                  placeholder="blank = never"
+                  placeholder={tHardcodedUi.raw('componentsIamPatPolicyCard.line146JsxAttrPlaceholderBlankNever')}
                   inputMode="numeric"
                   disabled={!canManage || mutation.isPending}
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  Tokens not used in this many days are auto-revoked on
-                  the next sign-in attempt.
-                </p>
+                  {tHardcodedUi.raw('componentsIamPatPolicyCard.line151JsxTextTokensNotUsedInThisManyDaysAre')}</p>
               </div>
             </div>
 
@@ -165,8 +158,7 @@ export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
                   className="gap-1.5"
                 >
                   {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Save policy
-                </Button>
+                  {tHardcodedUi.raw('componentsIamPatPolicyCard.line168JsxTextSavePolicy')}</Button>
               </div>
             )}
           </>

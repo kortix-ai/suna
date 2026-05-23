@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Menu, SlidersHorizontal, X } from 'lucide-react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
@@ -29,13 +30,14 @@ interface ProjectTabBarProps {
  * session header), so this is the single mobile entry into the sidebar.
  */
 function MobileSidebarTrigger() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const sidebar = useSidebar();
   return (
     <button
       type="button"
       onClick={() => sidebar.setOpenMobile(true)}
       className="flex items-center justify-center h-9 w-9 rounded-md text-muted-foreground/70 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-      aria-label="Open menu"
+      aria-label={tHardcodedUi.raw('componentsProjectsProjectTabBar.line38JsxAttrAriaLabelOpenMenu')}
     >
       <Menu className="h-5 w-5" />
     </button>

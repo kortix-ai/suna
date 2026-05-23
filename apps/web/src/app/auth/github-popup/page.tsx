@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
@@ -13,6 +15,7 @@ interface AuthMessage {
 }
 
 export default function GitHubOAuthPopup() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [status, setStatus] = useState<'loading' | 'processing' | 'error'>(
     'loading',
   );
@@ -191,7 +194,7 @@ export default function GitHubOAuthPopup() {
         )}
 
         <div className="space-y-2">
-          <h1 className="text-lg font-medium">GitHub Sign-In</h1>
+          <h1 className="text-lg font-medium">{tHardcodedUi.raw('appAuthGithubPopupPage.line194JsxTextGithubSignIn')}</h1>
           <p className={cn('text-sm', getStatusColor())}>{getStatusMessage()}</p>
         </div>
 

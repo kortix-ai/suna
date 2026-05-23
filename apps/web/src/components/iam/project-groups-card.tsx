@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Project groups on the Settings tab. Bundle multiple projects under one
 // name; policies attach via scope_type='project_group' (engine resolves
 // "is target project in the group?" at match time).
@@ -40,6 +41,7 @@ interface ProjectGroupsCardProps {
 }
 
 export function ProjectGroupsCard({ accountId, canManage }: ProjectGroupsCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [manageGroup, setManageGroup] = useState<ProjectGroup | null>(null);
@@ -70,19 +72,14 @@ export function ProjectGroupsCard({ accountId, canManage }: ProjectGroupsCardPro
           <div>
             <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <FolderTree className="h-4 w-4 text-muted-foreground" />
-              Project groups
-            </h2>
+              {tHardcodedUi.raw('componentsIamProjectGroupsCard.line73JsxTextProjectGroups')}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Bundle projects so one policy covers many — e.g. &ldquo;Mobile editors
-              get Editor role on every project in the Mobile group&rdquo;. Pick the
-              group as the scope when creating a policy.
-            </p>
+              {tHardcodedUi.raw('componentsIamProjectGroupsCard.line76JsxTextBundleProjectsSoOnePolicyCoversManyE')}</p>
           </div>
           {canManage && (
             <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />
-              New group
-            </Button>
+              {tHardcodedUi.raw('componentsIamProjectGroupsCard.line84JsxTextNewGroup')}</Button>
           )}
         </div>
       </header>
@@ -92,9 +89,7 @@ export function ProjectGroupsCard({ accountId, canManage }: ProjectGroupsCardPro
           <Skeleton className="h-16 w-full" />
         ) : groups.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No project groups yet. Create one, attach projects, then use it as a
-            scope in any policy.
-          </p>
+            {tHardcodedUi.raw('componentsIamProjectGroupsCard.line95JsxTextNoProjectGroupsYetCreateOneAttachProjects')}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -136,7 +131,7 @@ export function ProjectGroupsCard({ accountId, canManage }: ProjectGroupsCardPro
                           variant="ghost"
                           className="h-8 w-8 text-muted-foreground hover:text-destructive"
                           onClick={() => setDeleteTarget(g)}
-                          aria-label="Delete group"
+                          aria-label={tHardcodedUi.raw('componentsIamProjectGroupsCard.line139JsxAttrAriaLabelDeleteGroup')}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -173,13 +168,13 @@ export function ProjectGroupsCard({ accountId, canManage }: ProjectGroupsCardPro
         onOpenChange={(o) => {
           if (!o) setDeleteTarget(null);
         }}
-        title="Delete project group?"
+        title={tHardcodedUi.raw('componentsIamProjectGroupsCard.line176JsxAttrTitleDeleteProjectGroup')}
         description={
           deleteTarget
             ? `"${deleteTarget.name}" will be removed. Any policies scoped to this group will stop matching its projects (those projects still keep their individual policies).`
             : ''
         }
-        confirmLabel="Delete group"
+        confirmLabel={tHardcodedUi.raw('componentsIamProjectGroupsCard.line182JsxAttrConfirmLabelDeleteGroup')}
         confirmVariant="destructive"
         isPending={deleteMutation.isPending}
         onConfirm={() => {
@@ -203,6 +198,7 @@ function CreateGroupDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
 
@@ -226,11 +222,9 @@ function CreateGroupDialog({
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New project group</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsIamProjectGroupsCard.line229JsxTextNewProjectGroup')}</DialogTitle>
           <DialogDescription>
-            Choose a short, descriptive name. You&apos;ll add projects to the
-            group next.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsIamProjectGroupsCard.line231JsxTextChooseAShortDescriptiveNameYouLlAdd')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -238,17 +232,17 @@ function CreateGroupDialog({
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Mobile production"
+              placeholder={tHardcodedUi.raw('componentsIamProjectGroupsCard.line241JsxAttrPlaceholderMobileProduction')}
               autoFocus
               disabled={mutation.isPending}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Description (optional)</Label>
+            <Label>{tHardcodedUi.raw('componentsIamProjectGroupsCard.line247JsxTextDescriptionOptional')}</Label>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Customer-facing mobile apps"
+              placeholder={tHardcodedUi.raw('componentsIamProjectGroupsCard.line251JsxAttrPlaceholderCustomerFacingMobileApps')}
               disabled={mutation.isPending}
             />
           </div>
@@ -267,8 +261,7 @@ function CreateGroupDialog({
             className="gap-1.5"
           >
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Create group
-          </Button>
+            {tHardcodedUi.raw('componentsIamProjectGroupsCard.line270JsxTextCreateGroup')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -288,6 +281,7 @@ function ManageGroupProjectsDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
 
   const projectsQuery = useQuery({
@@ -343,19 +337,18 @@ function ManageGroupProjectsDialog({
         <DialogHeader>
           <DialogTitle>{group.name}</DialogTitle>
           <DialogDescription>
-            Projects in this group are covered by any policy scoped to it.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsIamProjectGroupsCard.line346JsxTextProjectsInThisGroupAreCoveredByAny')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
             <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              In this group ({membersQuery.data?.length ?? 0})
+              {tHardcodedUi.raw('componentsIamProjectGroupsCard.line353JsxTextInThisGroup')}{membersQuery.data?.length ?? 0})
             </h3>
             {membersQuery.isLoading ? (
               <Skeleton className="h-12 w-full" />
             ) : (membersQuery.data ?? []).length === 0 ? (
-              <p className="text-xs text-muted-foreground">No projects yet.</p>
+              <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamProjectGroupsCard.line358JsxTextNoProjectsYet')}</p>
             ) : (
               <ul className="space-y-1">
                 {(membersQuery.data ?? []).map((m) => (
@@ -370,7 +363,7 @@ function ManageGroupProjectsDialog({
                       className="h-6 w-6 text-muted-foreground hover:text-destructive"
                       onClick={() => removeMutation.mutate(m.project_id)}
                       disabled={removeMutation.isPending}
-                      aria-label="Remove from group"
+                      aria-label={tHardcodedUi.raw('componentsIamProjectGroupsCard.line373JsxAttrAriaLabelRemoveFromGroup')}
                     >
                       <X className="h-3.5 w-3.5" />
                     </Button>
@@ -382,14 +375,13 @@ function ManageGroupProjectsDialog({
 
           <div>
             <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Add projects ({candidates.length} available)
+              {tHardcodedUi.raw('componentsIamProjectGroupsCard.line385JsxTextAddProjects')}{candidates.length} available)
             </h3>
             {projectsQuery.isLoading ? (
               <Skeleton className="h-12 w-full" />
             ) : candidates.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                Every project in this account is already in the group.
-              </p>
+                {tHardcodedUi.raw('componentsIamProjectGroupsCard.line391JsxTextEveryProjectInThisAccountIsAlreadyIn')}</p>
             ) : (
               <ul className="max-h-48 space-y-1 overflow-y-auto">
                 {candidates.map((p) => (

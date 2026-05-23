@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Milestones tab — matches the Team tab's visual pattern exactly.
  *
@@ -27,6 +29,7 @@ import {
 import { MilestoneDialog } from './milestone-dialog';
 
 export function MilestonesTab({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data, isLoading } = useMilestones(projectId, 'all');
   const [dialog, setDialog] = useState<{ mode: 'create' } | { mode: 'edit'; milestone: Milestone } | null>(null);
 
@@ -54,21 +57,19 @@ export function MilestonesTab({ projectId }: { projectId: string }) {
               className="ml-auto h-6 px-2 text-[11px] text-muted-foreground/60 hover:text-foreground gap-1"
               onClick={() => setDialog({ mode: 'create' })}
             >
-              <Plus className="h-3 w-3" />
-              New milestone
-            </Button>
+              <Plus className="h-3 w-3" />{tHardcodedUi.raw('componentsKortixMilestonesTab.line58JsxTextNewMilestone')}</Button>
           </div>
 
           <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
             {isLoading ? (
-              <div className="py-8 text-center text-[12px] text-muted-foreground/50">Loading…</div>
+              <div className="py-8 text-center text-[12px] text-muted-foreground/50">{tHardcodedUi.raw('componentsKortixMilestonesTab.line64JsxTextLoading')}</div>
             ) : open.length === 0 ? (
               <button
                 onClick={() => setDialog({ mode: 'create' })}
                 className="w-full py-8 text-center hover:bg-muted/20 transition-colors cursor-pointer"
               >
-                <p className="text-[12.5px] text-foreground/70 font-medium mb-0.5">No open milestones</p>
-                <p className="text-[11.5px] text-muted-foreground/50">Group tickets by end-to-end outcome. Create the first one.</p>
+                <p className="text-[12.5px] text-foreground/70 font-medium mb-0.5">{tHardcodedUi.raw('componentsKortixMilestonesTab.line70JsxTextNoOpenMilestones')}</p>
+                <p className="text-[11.5px] text-muted-foreground/50">{tHardcodedUi.raw('componentsKortixMilestonesTab.line71JsxTextGroupTicketsByEndToEndOutcomeCreate')}</p>
               </button>
             ) : (
               open.map((m) => (
@@ -127,6 +128,7 @@ function MilestoneRow({
   onClick: () => void;
   subdued?: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const hue = milestone.color_hue ?? 210;
   const acceptance = milestone.acceptance_md.trim().split('\n')[0]?.slice(0, 140) ?? '';
   const p = milestone.progress;
@@ -170,7 +172,7 @@ function MilestoneRow({
             M{milestone.number}
           </span>
           <span className="inline-flex items-center h-4 px-1.5 rounded text-[10px] tabular-nums bg-muted/40 text-muted-foreground/70">
-            {p.done}/{p.total} done · {milestone.percent_complete}%
+            {p.done}/{p.total}{tHardcodedUi.raw('componentsKortixMilestonesTab.line173JsxTextDone')}{milestone.percent_complete}%
           </span>
           <StatusChip status={milestone.status} />
           {p.blocked > 0 && (

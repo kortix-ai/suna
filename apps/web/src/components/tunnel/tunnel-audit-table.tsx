@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * TunnelAuditTable — paginated audit log viewer for tunnel operations.
  */
@@ -16,15 +18,16 @@ interface TunnelAuditTableProps {
 }
 
 export function TunnelAuditTable({ tunnelId }: TunnelAuditTableProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [page, setPage] = useState(1);
   const { data, isLoading } = useTunnelAuditLogs(tunnelId, page);
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading audit logs...</div>;
+    return <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelAuditTable.line23JsxTextLoadingAuditLogs')}</div>;
   }
 
   if (!data || data.data.length === 0) {
-    return <div className="text-sm text-muted-foreground">No audit logs yet.</div>;
+    return <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelAuditTable.line27JsxTextNoAuditLogsYet')}</div>;
   }
 
   const { data: logs, pagination } = data;

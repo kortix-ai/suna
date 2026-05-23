@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +20,7 @@ import { listAccounts, type KortixAccount } from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 export default function AccountsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
@@ -62,18 +65,14 @@ export default function AccountsPage() {
             onClick={() => router.push('/projects')}
             className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to projects
-          </button>
+            <ArrowLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsPage.line66JsxTextBackToProjects')}</button>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Accounts</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Accounts you belong to.</p>
+              <p className="mt-1 text-sm text-muted-foreground">{tHardcodedUi.raw('appAccountsPage.line71JsxTextAccountsYouBelongTo')}</p>
             </div>
             <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              New account
-            </Button>
+              <Plus className="h-4 w-4" />{tHardcodedUi.raw('appAccountsPage.line75JsxTextNewAccount')}</Button>
           </div>
 
           {accountsQuery.isLoading ? (

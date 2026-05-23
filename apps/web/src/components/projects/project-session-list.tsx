@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, memo } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -67,6 +69,7 @@ function directSubsessions(session: ProjectSession): ProjectOpenCodeSession[] {
 }
 
 export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeOpenCodeSessionId = searchParams.get('oc');
@@ -116,9 +119,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
   if (error) {
     return (
-      <div className="px-2 py-2 text-xs text-destructive/80">
-        Failed to load sessions
-      </div>
+      <div className="px-2 py-2 text-xs text-destructive/80">{tHardcodedUi.raw('componentsProjectsProjectSessionList.line120JsxTextFailedToLoadSessions')}</div>
     );
   }
 
@@ -128,9 +129,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
   if (sessions.length === 0) {
     return (
-      <div className="px-2 pb-2 pt-1 text-xs text-muted-foreground/60">
-        No sessions yet.
-      </div>
+      <div className="px-2 pb-2 pt-1 text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}</div>
     );
   }
 
@@ -186,12 +185,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete session?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently destroy the branch and sandbox for{' '}
-              <span className="font-medium text-foreground">{sessionToDelete?.label}</span>
-              . This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{tHardcodedUi.raw('componentsProjectsProjectSessionList.line189JsxTextDeleteSession')}</AlertDialogTitle>
+            <AlertDialogDescription>{tHardcodedUi.raw('componentsProjectsProjectSessionList.line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox')}{' '}
+              <span className="font-medium text-foreground">{sessionToDelete?.label}</span>{tHardcodedUi.raw('componentsProjectsProjectSessionList.line193JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -233,6 +229,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
   titleOverride,
   childCount = 0,
 }: ProjectSessionRowProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isHovering, setIsHovering] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // Keep menu trigger mounted while open so the dropdown stays anchored
@@ -309,7 +306,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                aria-label="Session actions"
+                aria-label={tHardcodedUi.raw('componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions')}
                 className={cn(
                   'absolute right-0 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground transition-opacity duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer',
                   showActions ? 'opacity-100' : 'opacity-0 pointer-events-none',

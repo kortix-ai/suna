@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import {
   ArrowDown,
   ArrowUp,
@@ -1051,6 +1052,7 @@ function DCPNotificationCard({
 }: {
   notification: DCPNotification;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
   const isPrune = notification.type === 'prune';
   const hasItems = notification.items.length > 0;
@@ -1121,7 +1123,7 @@ function DCPNotificationCard({
                   key={i}
                   className="flex items-center gap-2 text-xs text-muted-foreground/80"
                 >
-                  <span className="text-muted-foreground/40">&rarr;</span>
+                  <span className="text-muted-foreground/40">{tHardcodedUi.raw('componentsSessionSessionChat.line1124JsxTextRarr')}</span>
                   <span className="font-mono text-xs px-1 py-0.5 rounded bg-muted/50 text-muted-foreground/70">
                     {item.tool}
                   </span>
@@ -1337,6 +1339,7 @@ function EditPartDialog({
   onSave: (text: string) => void;
   loading?: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [text, setText] = useState(initialText);
 
   // Reset text when dialog opens with new content
@@ -1357,11 +1360,9 @@ function EditPartDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader className="flex-shrink-0">
-          <DialogTitle>Edit fork prompt</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsSessionSessionChat.line1360JsxTextEditForkPrompt')}</DialogTitle>
           <DialogDescription>
-            This creates a native fork at this message and opens the new session
-            with your edited prompt restored in the composer.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1362JsxTextThisCreatesANativeForkAtThisMessage')}</DialogDescription>
         </DialogHeader>
         <div className="flex-1 min-h-0 py-2">
           <Textarea
@@ -1392,8 +1393,7 @@ function EditPartDialog({
             {loading ? (
               <Loader2 className="size-3.5 animate-spin mr-1.5" />
             ) : null}
-            Fork with edits
-          </Button>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1395JsxTextForkWithEdits')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1411,15 +1411,14 @@ function ConfirmForkDialog({
   onConfirm: () => void;
   loading?: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Fork session?</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsSessionSessionChat.line1418JsxTextForkSession')}</DialogTitle>
           <DialogDescription>
-            This will create a new session from this point in the conversation.
-            The fork opens separately and won&apos;t change this session.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1420JsxTextThisWillCreateANewSessionFromThis')}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button
@@ -1433,8 +1432,7 @@ function ConfirmForkDialog({
             {loading ? (
               <Loader2 className="size-3.5 animate-spin mr-1.5" />
             ) : null}
-            Fork session
-          </Button>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1436JsxTextForkSession')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1458,6 +1456,7 @@ function PartActions({
   loading?: boolean;
   className?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [editOpen, setEditOpen] = useState(false);
 
   // Only text parts are editable
@@ -1482,8 +1481,7 @@ function PartActions({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">
-            Edit fork prompt
-          </TooltipContent>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1485JsxTextEditForkPrompt')}</TooltipContent>
         </Tooltip>
       </div>
 
@@ -2687,6 +2685,7 @@ function SessionTurn({
   disableToolNavigation,
   onPermissionReply,
 }: SessionTurnProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   const [userCopied, setUserCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
@@ -3392,7 +3391,7 @@ function SessionTurn({
                       <GitFork className="size-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Fork to new session</TooltipContent>
+                  <TooltipContent>{tHardcodedUi.raw('componentsSessionSessionChat.line3395JsxTextForkToNewSession')}</TooltipContent>
                 </Tooltip>
               )}
             </div>
@@ -3817,7 +3816,7 @@ function SessionTurn({
               <span className="relative inline-flex rounded-full size-3 bg-muted-foreground/50" />
             </span>
             {retryInfo ? (
-              <span className="text-muted-foreground/70">Waiting to retry</span>
+              <span className="text-muted-foreground/70">{tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry')}</span>
             ) : (
               <AnimatedThinkingText
                 statusText={throttledStatus || undefined}
@@ -3899,6 +3898,7 @@ export function SessionChat({
   readOnly,
   initialScrollTop,
 }: SessionChatProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const onboardingActive = useOnboardingModeStore((s) => s.active);
   const onboardingSessionId = useOnboardingModeStore((s) => s.sessionId);
   const disableToolNavigation =
@@ -5818,8 +5818,7 @@ export function SessionChat({
       ) : isNotFound ? (
         <div className="flex-1 flex flex-col items-center justify-center min-h-0 gap-3 text-center px-6">
           <div className="text-sm text-muted-foreground">
-            This session is not accessible right now.
-          </div>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow')}</div>
           <button
             type="button"
             onClick={() => {
@@ -5830,8 +5829,7 @@ export function SessionChat({
             }}
             className="text-sm text-primary hover:underline"
           >
-            ← Go to home
-          </button>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}</button>
         </div>
       ) : (
         <div ref={chatAreaRef} className="relative flex-1 min-h-0 z-10">
@@ -5924,8 +5922,7 @@ export function SessionChat({
                       />
                       {isRetrying && (
                         <span className={cn('text-xs', STATUS_TEXT.warning)}>
-                          Retrying connection...
-                        </span>
+                          {tHardcodedUi.raw('componentsSessionSessionChat.line5927JsxTextRetryingConnection')}</span>
                       )}
                     </div>
                   </div>
@@ -5951,8 +5948,7 @@ export function SessionChat({
                         className="dark:invert-0 invert flex-shrink-0 h-[14px] w-auto"
                       />
                       <div className="text-sm text-muted-foreground">
-                        Compacting session...
-                      </div>
+                        {tHardcodedUi.raw('componentsSessionSessionChat.line5954JsxTextCompactingSession')}</div>
                     </div>
                   </div>
                 )}
@@ -6092,8 +6088,7 @@ export function SessionChat({
               onClick={smoothScrollToAbsoluteBottom}
             >
               <ArrowDown className="size-3 mr-1" />
-              Scroll to bottom
-            </Button>
+              {tHardcodedUi.raw('componentsSessionSessionChat.line6095JsxTextScrollToBottom')}</Button>
           </div>
         </div>
       )}

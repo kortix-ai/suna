@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Shared brand surface for the auth sub-flows (forgot / reset password).
  *
@@ -58,13 +60,12 @@ export function AuthCardShell({
 
 /** Consistent "Back to sign in" link used across the auth sub-flows. */
 export function BackToSignIn() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <Link
       href="/auth"
       className="inline-flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline transition-colors"
     >
-      <ArrowLeft className="size-3" />
-      Back to sign in
-    </Link>
+      <ArrowLeft className="size-3" />{tHardcodedUi.raw('componentsAuthAuthCardShell.line67JsxTextBackToSignIn')}</Link>
   );
 }

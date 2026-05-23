@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Break-glass emergency access card on the Settings tab. A privileged
 // member can self-activate a time-bounded super-admin promotion (with
 // mandatory reason) for incident response. Auto-expires; everything's
@@ -43,6 +44,7 @@ export function BreakGlassCard({
   currentUserId,
   canManage,
 }: BreakGlassCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [activateOpen, setActivateOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<BreakGlassGrant | null>(null);
@@ -92,13 +94,9 @@ export function BreakGlassCard({
           <div>
             <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <Flame className="h-4 w-4 text-amber-600" />
-              Break-glass emergency access
-            </h2>
+              {tHardcodedUi.raw('componentsIamBreakGlassCard.line95JsxTextBreakGlassEmergencyAccess')}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Self-activate temporary super-admin for incident response. A
-              reason is required and every activation, expiry, and revocation
-              is audit-logged.
-            </p>
+              {tHardcodedUi.raw('componentsIamBreakGlassCard.line98JsxTextSelfActivateTemporarySuperAdminForIncidentResponse')}</p>
           </div>
           {canManage && (
             <Button
@@ -113,8 +111,7 @@ export function BreakGlassCard({
               {ownActive ? (
                 <>
                   <X className="h-3.5 w-3.5" />
-                  Revoke my grant
-                </>
+                  {tHardcodedUi.raw('componentsIamBreakGlassCard.line116JsxTextRevokeMyGrant')}</>
               ) : (
                 <>
                   <Flame className="h-3.5 w-3.5" />
@@ -131,15 +128,13 @@ export function BreakGlassCard({
           <Skeleton className="h-12 w-full" />
         ) : active.length === 0 && history.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No break-glass grants on file. Activate one only during a real
-            incident — every use shows up in audit reports.
-          </p>
+            {tHardcodedUi.raw('componentsIamBreakGlassCard.line134JsxTextNoBreakGlassGrantsOnFileActivateOne')}</p>
         ) : (
           <div className="space-y-3">
             {active.length > 0 && (
               <div>
                 <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                  Active ({active.length})
+                  {tHardcodedUi.raw('componentsIamBreakGlassCard.line142JsxTextActive')}{active.length})
                 </h3>
                 <ul className="space-y-2">
                   {active.map((g) => (
@@ -158,7 +153,7 @@ export function BreakGlassCard({
             {history.length > 0 && (
               <details className="rounded-md border border-border/60 px-3 py-2 text-xs">
                 <summary className="cursor-pointer text-muted-foreground">
-                  History ({history.length})
+                  {tHardcodedUi.raw('componentsIamBreakGlassCard.line161JsxTextHistory')}{history.length})
                 </summary>
                 <ul className="mt-3 space-y-2">
                   {history.slice(0, 25).map((g) => (
@@ -194,7 +189,7 @@ export function BreakGlassCard({
         onOpenChange={(o) => {
           if (!o) setRevokeTarget(null);
         }}
-        title="Revoke break-glass grant?"
+        title={tHardcodedUi.raw('componentsIamBreakGlassCard.line197JsxAttrTitleRevokeBreakGlassGrant')}
         description={
           revokeTarget
             ? `Ends the grant for ${emailByUserId.get(revokeTarget.user_id) ?? revokeTarget.user_id} immediately. They lose super-admin on their next request.`
@@ -224,6 +219,7 @@ function ActivateBreakGlassDialog({
   onOpenChange: (o: boolean) => void;
   onActivated: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [reason, setReason] = useState('');
   const [minutes, setMinutes] = useState('60');
 
@@ -254,21 +250,16 @@ function ActivateBreakGlassDialog({
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Activate break-glass?</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsIamBreakGlassCard.line257JsxTextActivateBreakGlass')}</DialogTitle>
           <DialogDescription>
-            You&apos;ll get full super-admin until the grant expires or you
-            revoke it. Every action you take while active is attributed
-            normally — break-glass only adds permission, never anonymity.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsIamBreakGlassCard.line259JsxTextYouLlGetFullSuperAdminUntilThe')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <p>
-              Use only during a real incident. Activation is audit-logged
-              with your name and reason.
-            </p>
+              {tHardcodedUi.raw('componentsIamBreakGlassCard.line269JsxTextUseOnlyDuringARealIncidentActivationIs')}</p>
           </div>
 
           <div className="space-y-1.5">
@@ -276,14 +267,14 @@ function ActivateBreakGlassDialog({
             <Input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. P0 — billing pipeline stuck, need to rotate secrets"
+              placeholder={tHardcodedUi.raw('componentsIamBreakGlassCard.line279JsxAttrPlaceholderEGP0BillingPipelineStuckNeedTo')}
               disabled={mutation.isPending}
               autoFocus
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label>Duration (minutes)</Label>
+            <Label>{tHardcodedUi.raw('componentsIamBreakGlassCard.line286JsxTextDurationMinutes')}</Label>
             <Input
               value={minutes}
               onChange={(e) => setMinutes(e.target.value)}
@@ -292,8 +283,7 @@ function ActivateBreakGlassDialog({
               disabled={mutation.isPending}
             />
             <p className="text-[11px] text-muted-foreground">
-              Max 480 (8 hours). Default is 60 minutes.
-            </p>
+              {tHardcodedUi.raw('componentsIamBreakGlassCard.line295JsxTextMax4808HoursDefaultIs60Minutes')}</p>
           </div>
         </div>
 
@@ -334,6 +324,7 @@ function GrantRow({
   canRevoke: boolean;
   onRevoke: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const remainingMs = active ? new Date(grant.expires_at).getTime() - Date.now() : 0;
   const remainingLabel =
     remainingMs > 0
@@ -363,7 +354,7 @@ function GrantRow({
               </Badge>
             )}
           </div>
-          <p className="mt-1 italic text-muted-foreground">&ldquo;{grant.reason}&rdquo;</p>
+          <p className="mt-1 italic text-muted-foreground">{tHardcodedUi.raw('componentsIamBreakGlassCard.line366JsxTextText')}{grant.reason}{tHardcodedUi.raw('componentsIamBreakGlassCard.line366JsxTextText')}</p>
           <p className="mt-1 text-[11px] text-muted-foreground">
             Activated {new Date(grant.activated_at).toLocaleString()}
           </p>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useRef } from 'react';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { ImagePreview } from '@/components/session/image-preview';
@@ -36,6 +38,7 @@ interface SandboxImageProps {
  * Follows the same pattern as tool-renderers.tsx ImageGenTool (lines 3660-3685).
  */
 export function SandboxImage({ src, alt = 'Image', className, preview }: SandboxImageProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	const isLocalPath = isLocalSandboxFilePath(src);
 
 	// Strip /workspace/ prefix since the SDK expects paths relative to project root
@@ -92,9 +95,7 @@ export function SandboxImage({ src, alt = 'Image', className, preview }: Sandbox
 	// Error state — fetch completed but no blob URL (file not found, etc.)
 	if (isLocalPath && !isLoading && !resolvedSrc) {
 		return (
-			<div className={cn('flex items-center justify-center bg-muted/20 rounded text-muted-foreground text-xs', className)} style={{ minHeight: 80, minWidth: 80 }}>
-				Image unavailable
-			</div>
+			<div className={cn('flex items-center justify-center bg-muted/20 rounded text-muted-foreground text-xs', className)} style={{ minHeight: 80, minWidth: 80 }}>{tHardcodedUi.raw('componentsSessionSandboxImage.line96JsxTextImageUnavailable')}</div>
 		);
 	}
 

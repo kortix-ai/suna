@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useMemo, useCallback, useState, useEffect, useRef, lazy, Suspense } from 'react';
 import {
   AlertTriangle,
@@ -187,20 +189,17 @@ function isNotFoundError(errorMsg: string): boolean {
 
 /** Shared "file does not exist" UI shown when a file cannot be loaded. */
 function FileNotFoundState({ filePath }: { filePath: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
       <div className="h-12 w-12 rounded-2xl bg-muted/50 flex items-center justify-center">
         <FileX className="h-6 w-6 text-muted-foreground/40" />
       </div>
-      <p className="text-sm font-medium text-muted-foreground">
-        File not found
-      </p>
+      <p className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line196JsxTextFileNotFound')}</p>
       <p className="text-xs font-mono text-muted-foreground/50 max-w-sm break-all">
         {filePath}
       </p>
-      <p className="text-xs text-muted-foreground/40 max-w-xs">
-        This file does not exist or may have been deleted.
-      </p>
+      <p className="text-xs text-muted-foreground/40 max-w-xs">{tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line202JsxTextThisFileDoesNotExistOrMayHave')}</p>
     </div>
   );
 }
@@ -249,6 +248,7 @@ export function FileContentRenderer({
   markdownPreview,
   onMarkdownPreviewChange,
 }: FileContentRendererProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const fileName = filePath.split('/').pop() || '';
   const isHeicImage = isHeicFile(fileName);
   const projectCtx = useProjectContext();
@@ -552,9 +552,7 @@ export function FileContentRenderer({
               </Badge>
             )}
             {readOnly && (
-              <Badge variant="muted" size="sm" className="shrink-0 uppercase tracking-wider">
-                View only
-              </Badge>
+              <Badge variant="muted" size="sm" className="shrink-0 uppercase tracking-wider">{tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line556JsxTextViewOnly')}</Badge>
             )}
             {/* Inline diagnostic counts */}
             {(fileDiagErrorCount > 0 || fileDiagWarningCount > 0) && (
@@ -585,7 +583,7 @@ export function FileContentRenderer({
                   className="h-7 px-3 text-xs gap-1.5 font-medium"
                   onClick={() => handleSave(latestContentRef.current)}
                   disabled={isSaving}
-                  title="Save (⌘S)"
+                  title={tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line588JsxAttrTitleSaveS')}
                 >
                   {isSaving ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -599,7 +597,7 @@ export function FileContentRenderer({
                   size="icon"
                   className="h-7 w-7 text-muted-foreground hover:text-foreground"
                   onClick={handleDiscard}
-                  title="Discard changes"
+                  title={tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line602JsxAttrTitleDiscardChanges')}
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                 </Button>
@@ -690,9 +688,7 @@ export function FileContentRenderer({
                 <div className="h-12 w-12 rounded-2xl bg-destructive/10 flex items-center justify-center">
                   <FileWarning className="h-6 w-6 text-destructive/50" />
                 </div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Failed to load file
-                </p>
+                <p className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line694JsxTextFailedToLoadFile')}</p>
                 <p className="text-xs text-muted-foreground/50 max-w-sm break-all font-mono">
                   {filePath}
                 </p>
@@ -804,7 +800,7 @@ export function FileContentRenderer({
             {(serverHealth === 'checking' || !authenticatedPreviewUrl) && (
               <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin opacity-40" />
-                <p className="text-xs opacity-50">Starting preview server…</p>
+                <p className="text-xs opacity-50">{tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line807JsxTextStartingPreviewServer')}</p>
               </div>
             )}
 
@@ -842,9 +838,7 @@ export function FileContentRenderer({
               <div className="h-12 w-12 rounded-2xl bg-muted/50 flex items-center justify-center">
                 <FileWarning className="h-6 w-6 text-muted-foreground/30" />
               </div>
-              <p className="text-sm text-muted-foreground/50">
-                Binary file
-              </p>
+              <p className="text-sm text-muted-foreground/50">{tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line846JsxTextBinaryFile')}</p>
               <Button variant="outline" size="sm" className="" onClick={handleDownload}>
                 <Download className="h-3.5 w-3.5 mr-1.5" />
                 Download
@@ -867,9 +861,7 @@ export function FileContentRenderer({
                   tone="warning"
                   icon={GitBranch}
                   className="shrink-0 items-center gap-1.5 rounded-none border-x-0 border-t-0 px-3 py-1.5"
-                >
-                  Uncommitted changes
-                </InfoBanner>
+                >{tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line871JsxTextUncommittedChanges')}</InfoBanner>
               )}
               {isJsonTreeView && isJsonFile ? (
                 <div key={filePath} className="w-full h-full overflow-auto">
@@ -905,6 +897,7 @@ export function FileContentRenderer({
 // ---------------------------------------------------------------------------
 
 function JsonTreeView({ content }: { content: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const parsed = useMemo(() => {
     try {
       return JSON.parse(content);
@@ -915,9 +908,7 @@ function JsonTreeView({ content }: { content: string }) {
 
   if (parsed === null) {
     return (
-      <div className="p-4 text-sm text-destructive/70 font-mono">
-        Invalid JSON
-      </div>
+      <div className="p-4 text-sm text-destructive/70 font-mono">{tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line919JsxTextInvalidJson')}</div>
     );
   }
 
@@ -929,6 +920,7 @@ function JsonTreeView({ content }: { content: string }) {
 }
 
 function JsonNode({ value, keyName, depth }: { value: unknown; keyName: string | null; depth: number }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isCollapsed, setIsCollapsed] = useState(depth > 2);
 
   if (value === null) {
@@ -963,9 +955,7 @@ function JsonNode({ value, keyName, depth }: { value: unknown; keyName: string |
     return (
       <div style={{ paddingLeft: depth * 20 }} className="break-all">
         {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-emerald-500/80">
-          &quot;{value.length > 200 ? value.slice(0, 200) + '...' : value}&quot;
-        </span>
+        <span className="text-emerald-500/80">{tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line967JsxTextQuot')}{value.length > 200 ? value.slice(0, 200) + '...' : value}{tHardcodedUi.raw('featuresProjectFilesComponentsFileContentRenderer.line967JsxTextQuotfff0f8c6')}</span>
         {isUrl && (
           <a href={value} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-400/60 hover:text-blue-400 text-xs">
             open

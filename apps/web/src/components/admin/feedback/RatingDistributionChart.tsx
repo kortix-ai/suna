@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdminFeedbackStats } from '@/hooks/admin/use-admin-feedback';
@@ -31,6 +33,7 @@ const ratingColors: Record<string, string> = {
 };
 
 export function RatingDistributionChart() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: stats, isLoading } = useAdminFeedbackStats();
 
   const chartData = stats?.rating_distribution
@@ -46,16 +49,14 @@ export function RatingDistributionChart() {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base font-medium">Rating Distribution</CardTitle>
-        <CardDescription>Breakdown by star rating</CardDescription>
+        <CardTitle className="text-base font-medium">{tHardcodedUi.raw('componentsAdminFeedbackRatingdistributionchart.line49JsxTextRatingDistribution')}</CardTitle>
+        <CardDescription>{tHardcodedUi.raw('componentsAdminFeedbackRatingdistributionchart.line50JsxTextBreakdownByStarRating')}</CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <Skeleton className="h-[250px] w-full" />
         ) : chartData.length === 0 ? (
-          <div className="h-[250px] flex items-center justify-center text-muted-foreground">
-            No rating data available
-          </div>
+          <div className="h-[250px] flex items-center justify-center text-muted-foreground">{tHardcodedUi.raw('componentsAdminFeedbackRatingdistributionchart.line57JsxTextNoRatingDataAvailable')}</div>
         ) : (
           <ChartContainer config={chartConfig} className="h-[250px] w-full">
             <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>

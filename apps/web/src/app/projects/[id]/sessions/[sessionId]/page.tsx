@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -52,6 +54,7 @@ import {
  * The URL stays at `/projects/<id>/sessions/<sessionId>` the whole time.
  */
 export default function ProjectSessionPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
@@ -148,7 +151,7 @@ export default function ProjectSessionPage() {
       return (
         <InlineSessionError
           title={`${sandboxLabel ?? 'session'} is stopped`}
-          message="The sandbox for this session was stopped. Open a new session to continue."
+          message={tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen')}
         />
       );
     }
@@ -223,6 +226,7 @@ function ActiveSessionChat({
   projectId: string;
   sessionId: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const runtimeReady = useSandboxConnectionStore(
     (s) => s.status === 'connected' && s.healthy === true,
   );
@@ -377,8 +381,8 @@ function ActiveSessionChat({
   if (!runtimeReady && runtimeBootError) {
     return (
       <InlineSessionError
-        title="OpenCode runtime is not ready"
-        message="The sandbox booted, but the project runtime did not become usable."
+        title={tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line380JsxAttrTitleOpencodeRuntimeIsNotReady')}
+        message={tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid')}
         detail={runtimeBootError}
         action={
           <Button
@@ -391,9 +395,7 @@ function ActiveSessionChat({
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <RotateCcw className="h-3.5 w-3.5" />
-            )}
-            Restart session
-          </Button>
+            )}{tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line395JsxTextRestartSession')}</Button>
         }
       />
     );
@@ -420,9 +422,7 @@ function ActiveSessionChat({
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <RotateCcw className="h-3.5 w-3.5" />
-            )}
-            Restart session
-          </Button>
+            )}{tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line424JsxTextRestartSession')}</Button>
         }
       />
     );

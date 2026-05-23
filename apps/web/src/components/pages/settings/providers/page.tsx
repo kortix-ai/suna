@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,6 +12,7 @@ import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
 export default function ProvidersPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const { data: providersData, isLoading, refetch } = useOpenCodeProviders();
 
@@ -24,19 +27,15 @@ export default function ProvidersPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg sm:text-xl font-semibold">LLM Providers</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Connect model providers that power your agent.
-            </p>
+            <h1 className="text-lg sm:text-xl font-semibold">{tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line27JsxTextLlmProviders')}</h1>
+            <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line29JsxTextConnectModelProvidersThatPowerYourAgent')}</p>
           </div>
           <Button
             variant="outline"
             size="sm"
             onClick={() => openProviderModal('providers')}
           >
-            <Plus className="h-4 w-4" />
-            Add Provider
-          </Button>
+            <Plus className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line38JsxTextAddProvider')}</Button>
         </div>
 
         {isLoading ? (
@@ -51,15 +50,13 @@ export default function ProvidersPage() {
           />
         ) : (
           <div className="rounded-2xl border border-dashed border-border/60 py-16 flex flex-col items-center gap-4">
-            <p className="text-sm text-muted-foreground/60">No providers connected yet</p>
+            <p className="text-sm text-muted-foreground/60">{tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line54JsxTextNoProvidersConnectedYet')}</p>
             <Button
               variant="outline"
               size="sm"
               onClick={() => openProviderModal('providers')}
             >
-              <Plus className="h-4 w-4" />
-              Connect your first provider
-            </Button>
+              <Plus className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line61JsxTextConnectYourFirstProvider')}</Button>
           </div>
         )}
       </div>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React from 'react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
@@ -18,6 +20,7 @@ export function IframePreview({
   className,
   sandbox = getIframeSandbox(),
 }: IframePreviewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isLoading, setIsLoading] = React.useState(true);
   const [hasError, setHasError] = React.useState(false);
 
@@ -33,10 +36,8 @@ export function IframePreview({
       {/* Error state */}
       {hasError ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-muted/30">
-          <div className="text-muted-foreground font-medium mb-1">Unable to load preview</div>
-          <div className="text-muted-foreground text-sm text-center mb-4">
-            Click the link in the header to open in a new tab.
-          </div>
+          <div className="text-muted-foreground font-medium mb-1">{tHardcodedUi.raw('componentsThreadIframePreview.line36JsxTextUnableToLoadPreview')}</div>
+          <div className="text-muted-foreground text-sm text-center mb-4">{tHardcodedUi.raw('componentsThreadIframePreview.line38JsxTextClickTheLinkInTheHeaderToOpen')}</div>
         </div>
       ) : (
         <iframe

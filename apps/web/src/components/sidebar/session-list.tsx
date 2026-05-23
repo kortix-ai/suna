@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo, useCallback, startTransition, useEffect, useRef, memo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { normalizeAppPathname, getActiveInstanceIdFromCookie, getCurrentInstanceIdFromPathname, buildInstancePath } from '@/lib/instance-routes';
@@ -110,6 +112,7 @@ const SessionRow = memo(function SessionRow({
   onCompact,
   onPrefetch,
 }: SessionRowProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isHovering, setIsHovering] = useState(false);
 
   const displayTitle = session.title?.includes('@worker')
@@ -205,8 +208,7 @@ const SessionRow = memo(function SessionRow({
               </span>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs">
-              {pendingCount} {pendingCount === 1 ? 'question' : 'questions'} waiting for your input
-            </TooltipContent>
+              {pendingCount} {pendingCount === 1 ? 'question' : 'questions'}{tHardcodedUi.raw('componentsSidebarSessionList.line208JsxTextWaitingForYourInput')}</TooltipContent>
           </Tooltip>
         )}
 
@@ -414,6 +416,7 @@ interface SessionListProps {
 }
 
 export function SessionList({ projectId }: SessionListProps = {}) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { isMobile, state, setOpenMobile } = useSidebar();
   const rawPathname = usePathname();
   const pathname = normalizeAppPathname(rawPathname);
@@ -903,8 +906,8 @@ export function SessionList({ projectId }: SessionListProps = {}) {
         ) : rootSessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
             <MessageCircle className="h-8 w-8 text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">No sessions yet</p>
-            <p className="text-xs text-muted-foreground mt-1">Start a new session to get going</p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSidebarSessionList.line906JsxTextNoSessionsYet')}</p>
+            <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsSidebarSessionList.line907JsxTextStartANewSessionToGetGoing')}</p>
           </div>
         ) : (
           <div className="space-y-px">
@@ -937,8 +940,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
                       onClick={() => setDisplayLimit((l) => l + SESSION_PAGE_SIZE)}
                       variant="ghost"
                       className="w-full h-auto py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-sidebar-accent rounded-lg"
-                    >
-                      Show more ({remaining.length - displayLimit} remaining)
+                    >{tHardcodedUi.raw('componentsSidebarSessionList.line941JsxTextShowMore')}{remaining.length - displayLimit} remaining)
                     </Button>
                   )}
                 </>
@@ -963,13 +965,10 @@ export function SessionList({ projectId }: SessionListProps = {}) {
       <AlertDialog open={isArchiveDialogOpen} onOpenChange={setIsArchiveDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Archive session</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to archive{' '}
-              <span className="font-semibold">&ldquo;{sessionToArchive?.name}&rdquo;</span>?
-              <br />
-              You can restore it later from the archived list.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{tHardcodedUi.raw('componentsSidebarSessionList.line966JsxTextArchiveSession')}</AlertDialogTitle>
+            <AlertDialogDescription>{tHardcodedUi.raw('componentsSidebarSessionList.line968JsxTextAreYouSureYouWantToArchive')}{' '}
+              <span className="font-semibold">{tHardcodedUi.raw('componentsSidebarSessionList.line969JsxTextLdquo')}{sessionToArchive?.name}{tHardcodedUi.raw('componentsSidebarSessionList.line969JsxTextRdquo')}</span>?
+              <br />{tHardcodedUi.raw('componentsSidebarSessionList.line971JsxTextYouCanRestoreItLaterFromTheArchived')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="cursor-pointer">Cancel</AlertDialogCancel>
@@ -1002,10 +1001,8 @@ export function SessionList({ projectId }: SessionListProps = {}) {
       >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Rename session</DialogTitle>
-            <DialogDescription>
-              Enter a new name for this session.
-            </DialogDescription>
+            <DialogTitle>{tHardcodedUi.raw('componentsSidebarSessionList.line1005JsxTextRenameSession')}</DialogTitle>
+            <DialogDescription>{tHardcodedUi.raw('componentsSidebarSessionList.line1007JsxTextEnterANewNameForThisSession')}</DialogDescription>
           </DialogHeader>
           <Input type="text"
             value={renameValue}
@@ -1014,7 +1011,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
               if (e.key === 'Enter') confirmRename();
             }}
             autoFocus
-            placeholder="Session title..."
+            placeholder={tHardcodedUi.raw('componentsSidebarSessionList.line1017JsxAttrPlaceholderSessionTitle')}
           />
           <DialogFooter>
             <Button

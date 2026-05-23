@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { use, useMemo, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFrontendClient } from '@pipedream/sdk/browser';
@@ -95,6 +96,7 @@ export function ConnectorsView({ projectId }: { projectId: string }) {
 }
 
 function ConnectorsBody({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const query = useQuery({
     queryKey: ['project-connectors', projectId],
     queryFn: () => listConnectors(projectId),
@@ -108,24 +110,20 @@ function ConnectorsBody({ projectId }: { projectId: string }) {
         <header className="space-y-1">
           <h2 className="text-base font-semibold text-foreground">Connectors</h2>
           <p className="text-xs text-muted-foreground">
-            Integrations the agent reaches through the Executor. Stored in{' '}
+            {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line111JsxTextIntegrationsTheAgentReachesThroughTheExecutorStored')}{' '}
             <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">kortix.toml</code>{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">[[connectors]]</code>;
-            credentials and who-can-use-them are managed here. Calls run server-side — no secrets
-            ever touch the sandbox.
-          </p>
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">[[connectors]]</code>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line113JsxTextCredentialsAndWhoCanUseThemAreManaged')}</p>
         </header>
 
         {query.isLoading ? (
           <ConnectorsSkeleton />
         ) : isForbidden ? (
-          <InfoBanner tone="warning" icon={ShieldAlert} title="Admin access required">
-            Only project managers can manage connectors.
-          </InfoBanner>
+          <InfoBanner tone="warning" icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line122JsxAttrTitleAdminAccessRequired')}>
+            {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line123JsxTextOnlyProjectManagersCanManageConnectors')}</InfoBanner>
         ) : query.isError ? (
           <InfoBanner
             tone="destructive"
-            title="Failed to load connectors"
+            title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line128JsxAttrTitleFailedToLoadConnectors')}
             action={
               <Button variant="outline" size="sm" onClick={() => query.refetch()}>
                 Retry
@@ -143,6 +141,7 @@ function ConnectorsBody({ projectId }: { projectId: string }) {
 }
 
 function ConnectorsCard({ projectId, connectors }: { projectId: string; connectors: AdminConnector[] }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = ['project-connectors', projectId];
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
@@ -170,7 +169,7 @@ function ConnectorsCard({ projectId, connectors }: { projectId: string; connecto
       <SectionCard
         title="Connectors"
         count={connectors.length || undefined}
-        description="Stored in kortix.toml. Add a connector or browse the app catalogue."
+        description={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line173JsxAttrDescriptionStoredInKortixTomlAddAConnectorOr')}
         flush
         action={
           <div className="flex items-center gap-2">
@@ -180,17 +179,16 @@ function ConnectorsCard({ projectId, connectors }: { projectId: string; connecto
             </Button>
             <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setAddOpen(true)}>
               <Plus className="h-3.5 w-3.5" />
-              Add connector
-            </Button>
+              {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line183JsxTextAddConnector')}</Button>
           </div>
         }
       >
         {connectors.length === 0 ? (
           <EmptyState
             icon={Plug}
-            title="No connectors yet"
-            description="Add a connector or pick an app to connect."
-            action={<Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5"><Plus className="h-3.5 w-3.5" />Add connector</Button>}
+            title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line191JsxAttrTitleNoConnectorsYet')}
+            description={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line192JsxAttrDescriptionAddAConnectorOrPickAnAppTo')}
+            action={<Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5"><Plus className="h-3.5 w-3.5" />{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line193JsxTextAddConnector')}</Button>}
           />
         ) : (
           <List>
@@ -235,6 +233,7 @@ function ConnectorRow({
   onChanged: () => void;
   onConnected: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const Icon = PROVIDER_ICON[conn.provider] ?? Plug;
   const isPipedream = conn.provider === 'pipedream';
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -280,7 +279,7 @@ function ConnectorRow({
         <>
           <Badge variant="outline" size="sm">{providerLabel(conn.provider)}</Badge>
           {conn.credentialMode === 'per_user' && <Badge variant="outline" size="sm">Per-user</Badge>}
-          {conn.authSecret && !conn.secretSet && <Badge variant="warning" size="sm">Needs auth</Badge>}
+          {conn.authSecret && !conn.secretSet && <Badge variant="warning" size="sm">{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line283JsxTextNeedsAuth')}</Badge>}
           {conn.status === 'error' && <Badge variant="destructive" size="sm">Error</Badge>}
           {conn.status === 'disabled' && <Badge variant="outline" size="sm">Disabled</Badge>}
           {conn.sharing && <Badge variant="secondary" size="sm">{sharingLabel(conn.sharing)}</Badge>}
@@ -288,7 +287,7 @@ function ConnectorRow({
       }
       subtitle={
         confirmDelete ? (
-          <span className="text-xs text-muted-foreground">Remove this connector from kortix.toml?</span>
+          <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line291JsxTextRemoveThisConnectorFromKortixToml')}</span>
         ) : (
           <InlineMeta>
             {`${conn.actions.length} ${conn.actions.length === 1 ? 'tool' : 'tools'}`}
@@ -312,10 +311,10 @@ function ConnectorRow({
               </Button>
             )}
             {!isPipedream && conn.authSecret && !conn.secretSet && (
-              <Button size="sm" variant="default" className="h-7 px-2 text-xs" onClick={onSetCredential}>Set credential</Button>
+              <Button size="sm" variant="default" className="h-7 px-2 text-xs" onClick={onSetCredential}>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line315JsxTextSetCredential')}</Button>
             )}
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onViewTools} aria-label="View tools"><Wrench className="h-3.5 w-3.5" /></Button>
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onShare} aria-label="Manage sharing"><Share2 className="h-3.5 w-3.5" /></Button>
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onViewTools} aria-label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line317JsxAttrAriaLabelViewTools')}><Wrench className="h-3.5 w-3.5" /></Button>
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onShare} aria-label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line318JsxAttrAriaLabelManageSharing')}><Share2 className="h-3.5 w-3.5" /></Button>
             <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive" onClick={() => setConfirmDelete(true)} aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></Button>
           </div>
         )
@@ -358,6 +357,7 @@ function ConnectorSetupFields({
   value: ConnectorSetup;
   onChange: (s: ConnectorSetup) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const members = useQuery({
     queryKey: ['project-access', projectId],
     queryFn: () => listProjectAccess(projectId),
@@ -369,16 +369,16 @@ function ConnectorSetupFields({
       <div className="space-y-2">
         <Label>Credential</Label>
         <RadioGroup value={value.credential} onValueChange={(v) => onChange({ ...value, credential: v as ConnectorSetup['credential'] })} className="space-y-2">
-          <ShareOption value="shared" label="Shared" desc="One connection for the whole project" current={value.credential} />
-          <ShareOption value="per_user" label="Each member connects their own" desc="Every member links their own account (BYO)" current={value.credential} />
+          <ShareOption value="shared" label="Shared" desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line372JsxAttrDescOneConnectionForTheWholeProject')} current={value.credential} />
+          <ShareOption value="per_user" label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line373JsxAttrLabelEachMemberConnectsTheirOwn')} desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line373JsxAttrDescEveryMemberLinksTheirOwnAccountBYO')} current={value.credential} />
         </RadioGroup>
       </div>
       <div className="space-y-2">
-        <Label>Who can use it</Label>
+        <Label>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line377JsxTextWhoCanUseIt')}</Label>
         <RadioGroup value={value.access} onValueChange={(v) => onChange({ ...value, access: v as ConnectorSetup['access'] })} className="space-y-2">
-          <ShareOption value="project" label="Project-wide" desc="Every member of this project" current={value.access} />
-          <ShareOption value="private" label="Only me" desc="Just you" current={value.access} />
-          <ShareOption value="members" label="Select members" desc="A chosen list of members" current={value.access} />
+          <ShareOption value="project" label="Project-wide" desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line379JsxAttrDescEveryMemberOfThisProject')} current={value.access} />
+          <ShareOption value="private" label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line380JsxAttrLabelOnlyMe')} desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line380JsxAttrDescJustYou')} current={value.access} />
+          <ShareOption value="members" label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line381JsxAttrLabelSelectMembers')} desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line381JsxAttrDescAChosenListOfMembers')} current={value.access} />
         </RadioGroup>
         {value.access === 'members' && (
           <div className="space-y-2 rounded-2xl border border-border/60 p-3">
@@ -417,17 +417,18 @@ function AddConnectorDialog({
   onOpenChange: (o: boolean) => void;
   onAdded: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[92vw] gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle>Add a connector</DialogTitle>
-          <DialogDescription>One-click connect a popular app, or add a custom source. Saved to kortix.toml.</DialogDescription>
+          <DialogTitle>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line424JsxTextAddAConnector')}</DialogTitle>
+          <DialogDescription>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line425JsxTextOneClickConnectAPopularAppOrAdd')}</DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="apps">
           <div className="px-6 pt-4">
             <TabsList>
-              <TabsTrigger value="apps">Easy connect</TabsTrigger>
+              <TabsTrigger value="apps">{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line430JsxTextEasyConnect')}</TabsTrigger>
               <TabsTrigger value="custom">Custom</TabsTrigger>
             </TabsList>
           </div>
@@ -445,6 +446,7 @@ function AddConnectorDialog({
 
 /** Easy-connect app catalogue — searchable card grid with "Load more" pagination (mirrors main). */
 function AppCatalogue({ projectId, onAdded }: { projectId: string; onAdded: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [q, setQ] = useState('');
   const appsQuery = useInfiniteQuery({
     queryKey: ['easy-connect-apps', projectId, q],
@@ -463,20 +465,19 @@ function AppCatalogue({ projectId, onAdded }: { projectId: string; onAdded: () =
       <div className="px-6 pt-4">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search apps — gmail, slack, stripe, notion…" className="h-10 pl-9" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line466JsxAttrPlaceholderSearchAppsGmailSlackStripeNotion')} className="h-10 pl-9" />
         </div>
       </div>
       <div className="max-h-[58vh] overflow-y-auto px-6 py-4">
         {notConfigured ? (
-          <InfoBanner tone="neutral" title="App connect isn't configured">
-            Easy-connect apps need the connect provider configured on the API.
-          </InfoBanner>
+          <InfoBanner tone="neutral" title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line471JsxAttrTitleAppConnectIsnTConfigured')}>
+            {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line472JsxTextEasyConnectAppsNeedTheConnectProviderConfigured')}</InfoBanner>
         ) : appsQuery.isLoading ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 9 }).map((_, i) => <Skeleton key={i} className="h-[104px] w-full rounded-2xl" />)}
           </div>
         ) : apps.length === 0 ? (
-          <EmptyState icon={Search} title="No apps found" description={q ? `Nothing matches "${q}".` : 'Try a search.'} />
+          <EmptyState icon={Search} title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line479JsxAttrTitleNoAppsFound')} description={q ? `Nothing matches "${q}".` : 'Try a search.'} />
         ) : (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -505,7 +506,7 @@ function AppCatalogue({ projectId, onAdded }: { projectId: string; onAdded: () =
             {appsQuery.hasNextPage && (
               <div className="flex justify-center pt-5">
                 <Button variant="outline" size="sm" onClick={() => appsQuery.fetchNextPage()} disabled={appsQuery.isFetchingNextPage} className="h-9 px-8">
-                  {appsQuery.isFetchingNextPage ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading…</> : 'Load more'}
+                  {appsQuery.isFetchingNextPage ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line508JsxTextLoading')}</> : 'Load more'}
                 </Button>
               </div>
             )}
@@ -531,6 +532,7 @@ function ConfigureAppDialog({
   onOpenChange: (o: boolean) => void;
   onAdded: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [setup, setSetup] = useState<ConnectorSetup>({ credential: 'per_user', access: 'project', memberIds: [] });
   const save = useMutation({
     mutationFn: () =>
@@ -550,7 +552,7 @@ function ConfigureAppDialog({
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
           <DialogTitle>Add {app?.name}</DialogTitle>
-          <DialogDescription>Choose how the credential is stored and who can use it.</DialogDescription>
+          <DialogDescription>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line553JsxTextChooseHowTheCredentialIsStoredAndWho')}</DialogDescription>
         </DialogHeader>
         <div className="max-h-[58vh] overflow-y-auto px-6 py-5">
           <ConnectorSetupFields projectId={projectId} value={setup} onChange={setSetup} />
@@ -567,6 +569,7 @@ function ConfigureAppDialog({
 }
 
 function CustomConnectorForm({ projectId, onAdded, onCancel }: { projectId: string; onAdded: () => void; onCancel: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [draft, setDraft] = useState<ConnectorDraftInput>({ slug: '', provider: 'openapi', auth: { type: 'none' } });
   const [setup, setSetup] = useState<ConnectorSetup>({ credential: 'shared', access: 'project', memberIds: [] });
   const set = (patch: Partial<ConnectorDraftInput>) => setDraft((d) => ({ ...d, ...patch }));
@@ -604,12 +607,12 @@ function CustomConnectorForm({ projectId, onAdded, onCancel }: { projectId: stri
         </div>
 
         {(p === 'openapi') && (
-          <Field label="Spec (URL or repo path)"><Input value={draft.spec ?? ''} onChange={(e) => set({ spec: e.target.value })} placeholder="https://…/openapi.json" required /></Field>
+          <Field label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line607JsxAttrLabelSpecURLOrRepoPath')}><Input value={draft.spec ?? ''} onChange={(e) => set({ spec: e.target.value })} placeholder="https://…/openapi.json" required /></Field>
         )}
         {p === 'graphql' && (
           <>
             <Field label="Endpoint"><Input value={draft.endpoint ?? ''} onChange={(e) => set({ endpoint: e.target.value })} placeholder="https://api/graphql" required /></Field>
-            <Field label="SDL spec (optional)"><Input value={draft.spec ?? ''} onChange={(e) => set({ spec: e.target.value })} placeholder=".kortix/executor/schema.graphql" /></Field>
+            <Field label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line612JsxAttrLabelSDLSpecOptional')}><Input value={draft.spec ?? ''} onChange={(e) => set({ spec: e.target.value })} placeholder=".kortix/executor/schema.graphql" /></Field>
           </>
         )}
         {p === 'mcp' && (
@@ -626,8 +629,8 @@ function CustomConnectorForm({ projectId, onAdded, onCancel }: { projectId: stri
         )}
         {p === 'http' && (
           <>
-            <Field label="Base URL"><Input value={draft.baseUrl ?? ''} onChange={(e) => set({ baseUrl: e.target.value })} placeholder="https://api.internal" required /></Field>
-            <Field label="Routes spec (optional)"><Input value={draft.spec ?? ''} onChange={(e) => set({ spec: e.target.value })} placeholder=".kortix/executor/routes.toml" /></Field>
+            <Field label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line629JsxAttrLabelBaseURL')}><Input value={draft.baseUrl ?? ''} onChange={(e) => set({ baseUrl: e.target.value })} placeholder="https://api.internal" required /></Field>
+            <Field label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line630JsxAttrLabelRoutesSpecOptional')}><Input value={draft.spec ?? ''} onChange={(e) => set({ spec: e.target.value })} placeholder=".kortix/executor/routes.toml" /></Field>
           </>
         )}
 
@@ -641,18 +644,18 @@ function CustomConnectorForm({ projectId, onAdded, onCancel }: { projectId: stri
                   <SelectItem value="none">None</SelectItem>
                   <SelectItem value="bearer">Bearer</SelectItem>
                   <SelectItem value="basic">Basic</SelectItem>
-                  <SelectItem value="custom">Custom header</SelectItem>
+                  <SelectItem value="custom">{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line644JsxTextCustomHeader')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             {draft.auth?.type === 'custom' && (
-              <Field label="Header name"><Input value={draft.auth?.name ?? ''} onChange={(e) => setAuth({ name: e.target.value })} placeholder="X-API-Key" required /></Field>
+              <Field label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line649JsxAttrLabelHeaderName')}><Input value={draft.auth?.name ?? ''} onChange={(e) => setAuth({ name: e.target.value })} placeholder="X-API-Key" required /></Field>
             )}
           </div>
         )}
 
         {needsAuth && draft.auth?.type && draft.auth.type !== 'none' && (
-          <p className="text-xs text-muted-foreground">You'll set the credential value after adding (or each member connects their own, per the mode below).</p>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line655JsxTextYouLlSetTheCredentialValueAfterAdding')}</p>
         )}
 
         <div className="border-t border-border/60 pt-4">
@@ -688,6 +691,7 @@ function SetCredentialDialog({
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [value, setValue] = useState('');
   const save = useMutation({
     mutationFn: () => setConnectorCredential(projectId, connector!.slug, value),
@@ -698,10 +702,9 @@ function SetCredentialDialog({
     <Dialog open={open} onOpenChange={(o) => { if (!save.isPending) onOpenChange(o); }}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle>Set credential for {connector?.slug}</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line701JsxTextSetCredentialFor')}{connector?.slug}</DialogTitle>
           <DialogDescription>
-            Stored encrypted as <code className="font-mono">{connector?.authSecret}</code> and resolved server-side — never injected into the sandbox.
-          </DialogDescription>
+            {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line703JsxTextStoredEncryptedAs')}<code className="font-mono">{connector?.authSecret}</code> {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line703JsxTextAndResolvedServerSideNeverInjectedIntoThe')}</DialogDescription>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); if (value) save.mutate(); }}>
           <div className="space-y-1.5 px-6 py-5">
@@ -721,6 +724,7 @@ function SetCredentialDialog({
 // ─── Source viewer — tools + schema + TS signature ──────────────────────────
 
 function ConnectorToolsDialog({ connector, open, onOpenChange }: { connector: AdminConnector | null; open: boolean; onOpenChange: (o: boolean) => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [selected, setSelected] = useState<string | null>(null);
   const action = useMemo(
     () => connector?.actions.find((a) => a.path === selected) ?? connector?.actions[0] ?? null,
@@ -732,12 +736,12 @@ function ConnectorToolsDialog({ connector, open, onOpenChange }: { connector: Ad
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
           <DialogTitle>{connector?.slug}</DialogTitle>
-          <DialogDescription>{connector?.actions.length ?? 0} tools · provider {connector?.provider}</DialogDescription>
+          <DialogDescription>{connector?.actions.length ?? 0} {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line735JsxTextToolsProvider')}{connector?.provider}</DialogDescription>
         </DialogHeader>
         <div className="flex max-h-[60vh] min-h-[18rem]">
           <div className="w-56 shrink-0 overflow-y-auto border-r border-border/60 py-2">
             {(connector?.actions ?? []).length === 0 ? (
-              <p className="px-4 py-3 text-xs text-muted-foreground">No tools yet — Sync after the credential is set.</p>
+              <p className="px-4 py-3 text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line740JsxTextNoToolsYetSyncAfterTheCredentialIs')}</p>
             ) : (
               (connector?.actions ?? []).map((a) => (
                 <button
@@ -763,12 +767,12 @@ function ConnectorToolsDialog({ connector, open, onOpenChange }: { connector: Ad
                   <pre className="overflow-x-auto rounded-2xl border border-border/60 bg-muted/40 p-3 font-mono text-xs text-foreground">{tsSignature(connector!.slug, action)}</pre>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Input schema</Label>
+                  <Label>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line766JsxTextInputSchema')}</Label>
                   <pre className="max-h-64 overflow-auto rounded-2xl border border-border/60 bg-muted/40 p-3 font-mono text-xs text-foreground">{JSON.stringify(action.inputSchema ?? { type: 'object', properties: {} }, null, 2)}</pre>
                 </div>
               </div>
             ) : (
-              <EmptyState icon={Wrench} title="No tool selected" description="Pick a tool on the left." />
+              <EmptyState icon={Wrench} title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line771JsxAttrTitleNoToolSelected')} description={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line771JsxAttrDescriptionPickAToolOnTheLeft')} />
             )}
           </div>
         </div>
@@ -803,6 +807,7 @@ function ConnectorSharingDialog({
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [mode, setMode] = useState<'project' | 'private' | 'members'>('project');
   const [memberIds, setMemberIds] = useState<string[]>([]);
 
@@ -837,17 +842,17 @@ function ConnectorSharingDialog({
     <Dialog open={open} onOpenChange={(o) => { if (!save.isPending) onOpenChange(o); }}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle>Who can use {connector?.slug}?</DialogTitle>
-          <DialogDescription>Controls which members' sessions can call this connector.</DialogDescription>
+          <DialogTitle>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line840JsxTextWhoCanUse')}{connector?.slug}?</DialogTitle>
+          <DialogDescription>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line841JsxTextControlsWhichMembersSessionsCanCallThisConnector')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 px-6 py-5">
           {connector && !connector.secretSet && (
-            <InfoBanner tone="neutral" title="Credential not set">Set the credential (or connect the account) before sharing takes effect.</InfoBanner>
+            <InfoBanner tone="neutral" title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line845JsxAttrTitleCredentialNotSet')}>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line845JsxTextSetTheCredentialOrConnectTheAccountBefore')}</InfoBanner>
           )}
           <RadioGroup value={mode} onValueChange={(v) => setMode(v as typeof mode)} className="space-y-2">
-            <ShareOption value="project" label="Project-wide" desc="Every member of this project" current={mode} />
-            <ShareOption value="private" label="Only me" desc="Just you" current={mode} />
-            <ShareOption value="members" label="Select members" desc="A chosen list of members" current={mode} />
+            <ShareOption value="project" label="Project-wide" desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line848JsxAttrDescEveryMemberOfThisProject')} current={mode} />
+            <ShareOption value="private" label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line849JsxAttrLabelOnlyMe')} desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line849JsxAttrDescJustYou')} current={mode} />
+            <ShareOption value="members" label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line850JsxAttrLabelSelectMembers')} desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line850JsxAttrDescAChosenListOfMembers')} current={mode} />
           </RadioGroup>
           {mode === 'members' && (
             <div className="space-y-2 rounded-2xl border border-border/60 p-3">

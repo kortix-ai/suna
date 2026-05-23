@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState } from 'react';
 import {
   AlertCircle,
@@ -144,6 +146,7 @@ interface CheckpointsPanelProps {
  * (typically the main content area of the file explorer page).
  */
 export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const ctx = useProjectContext();
   const activeRef = ctx?.ref ?? '';
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
@@ -226,9 +229,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
             {error && !isLoading && (
               <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
                 <AlertCircle className="h-6 w-6 text-muted-foreground/30" />
-                <p className="text-xs text-muted-foreground">
-                  Failed to load checkpoints
-                </p>
+                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointsPanel.line230JsxTextFailedToLoadCheckpoints')}</p>
                 <p className="text-xs text-muted-foreground/60">
                   {error instanceof Error ? error.message : 'Unknown error'}
                 </p>
@@ -238,7 +239,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
             {!isLoading && !error && total === 0 && (
               <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
                 <GitCommitHorizontal className="h-6 w-6 text-muted-foreground/30" />
-                <p className="text-xs text-muted-foreground">No checkpoints yet</p>
+                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointsPanel.line241JsxTextNoCheckpointsYet')}</p>
               </div>
             )}
 
@@ -274,8 +275,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
                 ))}
                 {data?.hasMore && (
                   <div className="text-center py-2">
-                    <span className="text-xs text-muted-foreground/50">
-                      Showing the most recent {total} checkpoints
+                    <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointsPanel.line278JsxTextShowingTheMostRecent')}{total} checkpoints
                     </span>
                   </div>
                 )}

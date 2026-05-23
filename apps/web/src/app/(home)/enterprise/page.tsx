@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { useState, useCallback } from 'react';
 import {
@@ -30,6 +32,7 @@ const VALUE_PROPS = [
 const FIELD = 'h-11 rounded-xl bg-card/40';
 
 export default function EnterprisePage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [submitted, setSubmitted] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', company: '', size: '', role: '', deployment: '', goal: '' });
 
@@ -66,16 +69,11 @@ export default function EnterprisePage() {
           {/* ─── Left: sell ─── */}
           <div className="lg:pt-6">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border bg-card/60 text-xs font-mono uppercase tracking-wider text-muted-foreground mb-6">
-              <span className="size-1.5 rounded-full bg-emerald-500" />
-              Enterprise-ready · Batteries included · On-prem available
-            </div>
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-medium tracking-tight text-foreground leading-[1.04]">
-              See Kortix run<br />
-              <span className="text-muted-foreground">your company&apos;s work.</span>
+              <span className="size-1.5 rounded-full bg-emerald-500" />{tHardcodedUi.raw('appHomeEnterprisePage.line70JsxTextEnterpriseReadyBatteriesIncludedOnPremAvailable')}</div>
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-medium tracking-tight text-foreground leading-[1.04]">{tHardcodedUi.raw('appHomeEnterprisePage.line73JsxTextSeeKortixRun')}<br />
+              <span className="text-muted-foreground">{tHardcodedUi.raw('appHomeEnterprisePage.line74JsxTextYourCompanyAposSWork')}</span>
             </h1>
-            <p className="mt-5 text-base sm:text-lg text-muted-foreground leading-relaxed max-w-lg">
-              Book a 30-minute walkthrough with a solutions engineer. We&apos;ll map a workforce of agents to your real workflows and stack — and show it live.
-            </p>
+            <p className="mt-5 text-base sm:text-lg text-muted-foreground leading-relaxed max-w-lg">{tHardcodedUi.raw('appHomeEnterprisePage.line77JsxTextBookA30MinuteWalkthroughWithASolutions')}</p>
 
             <div className="mt-9 flex flex-col gap-4">
               {VALUE_PROPS.map(({ icon, title, desc }) => (
@@ -90,9 +88,7 @@ export default function EnterprisePage() {
             </div>
 
             <div className="mt-9 flex items-center gap-2 text-sm text-muted-foreground">
-              <Clock className="size-4 text-foreground/60" />
-              A solutions engineer replies within one business day.
-            </div>
+              <Clock className="size-4 text-foreground/60" />{tHardcodedUi.raw('appHomeEnterprisePage.line94JsxTextASolutionsEngineerRepliesWithinOneBusinessDay')}</div>
           </div>
 
           {/* ─── Right: form ─── */}
@@ -102,47 +98,46 @@ export default function EnterprisePage() {
                 <div className="flex items-center justify-center size-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 mb-5">
                   <Check className="size-6" />
                 </div>
-                <h2 className="text-xl font-medium tracking-tight text-foreground">Thanks{form.name ? `, ${form.name.split(' ')[0]}` : ''} — request received.</h2>
-                <p className="mt-2 text-sm text-muted-foreground max-w-sm">
-                  We&apos;ll reach out at <span className="text-foreground font-medium">{form.email || 'your email'}</span> within one business day. If your mail client didn&apos;t open, email us at{' '}
+                <h2 className="text-xl font-medium tracking-tight text-foreground">Thanks{form.name ? `, ${form.name.split(' ')[0]}` : ''}{tHardcodedUi.raw('appHomeEnterprisePage.line105JsxTextRequestReceived')}</h2>
+                <p className="mt-2 text-sm text-muted-foreground max-w-sm">{tHardcodedUi.raw('appHomeEnterprisePage.line107JsxTextWeAposLlReachOutAt')}<span className="text-foreground font-medium">{form.email || 'your email'}</span>{tHardcodedUi.raw('appHomeEnterprisePage.line107JsxTextWithinOneBusinessDayIfYourMailClient')}{' '}
                   <a href={`mailto:${CONTACT_EMAIL}`} className="text-foreground underline underline-offset-4">{CONTACT_EMAIL}</a>.
                 </p>
-                <Button variant="outline" className="mt-6 rounded-full" onClick={() => setSubmitted(false)}>Submit another request</Button>
+                <Button variant="outline" className="mt-6 rounded-full" onClick={() => setSubmitted(false)}>{tHardcodedUi.raw('appHomeEnterprisePage.line110JsxTextSubmitAnotherRequest')}</Button>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-foreground">Request a demo</h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">Tell us a bit about you and what you want to automate.</p>
+                  <h2 className="text-lg font-semibold text-foreground">{tHardcodedUi.raw('appHomeEnterprisePage.line115JsxTextRequestADemo')}</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">{tHardcodedUi.raw('appHomeEnterprisePage.line116JsxTextTellUsABitAboutYouAndWhat')}</p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="name" className="text-sm">Full name</Label>
-                    <Input id="name" value={form.name} onChange={set('name')} required placeholder="Jane Doe" className={FIELD} />
+                    <Label htmlFor="name" className="text-sm">{tHardcodedUi.raw('appHomeEnterprisePage.line121JsxTextFullName')}</Label>
+                    <Input id="name" value={form.name} onChange={set('name')} required placeholder={tHardcodedUi.raw('appHomeEnterprisePage.line122JsxAttrPlaceholderJaneDoe')} className={FIELD} />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="email" className="text-sm">Work email</Label>
-                    <Input id="email" type="email" value={form.email} onChange={set('email')} required placeholder="jane@company.com" className={FIELD} />
+                    <Label htmlFor="email" className="text-sm">{tHardcodedUi.raw('appHomeEnterprisePage.line125JsxTextWorkEmail')}</Label>
+                    <Input id="email" type="email" value={form.email} onChange={set('email')} required placeholder={tHardcodedUi.raw('appHomeEnterprisePage.line126JsxAttrPlaceholderJaneCompanyCom')} className={FIELD} />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="company" className="text-sm">Company</Label>
-                    <Input id="company" value={form.company} onChange={set('company')} required placeholder="Acme Inc." className={FIELD} />
+                    <Input id="company" value={form.company} onChange={set('company')} required placeholder={tHardcodedUi.raw('appHomeEnterprisePage.line133JsxAttrPlaceholderAcmeInc')} className={FIELD} />
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="role" className="text-sm">Role <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                    <Input id="role" value={form.role} onChange={set('role')} placeholder="Head of Operations" className={FIELD} />
+                    <Input id="role" value={form.role} onChange={set('role')} placeholder={tHardcodedUi.raw('appHomeEnterprisePage.line137JsxAttrPlaceholderHeadOfOperations')} className={FIELD} />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="size" className="text-sm">Company size</Label>
+                    <Label htmlFor="size" className="text-sm">{tHardcodedUi.raw('appHomeEnterprisePage.line143JsxTextCompanySize')}</Label>
                     <select id="size" value={form.size} onChange={set('size')} required className={cn(FIELD, 'w-full border border-input px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50')}>
-                      <option value="" disabled>Select…</option>
+                      <option value="" disabled>{tHardcodedUi.raw('appHomeEnterprisePage.line145JsxTextSelect')}</option>
                       <option>1–10</option>
                       <option>11–50</option>
                       <option>51–200</option>
@@ -151,26 +146,25 @@ export default function EnterprisePage() {
                     </select>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="deployment" className="text-sm">Deployment interest</Label>
+                    <Label htmlFor="deployment" className="text-sm">{tHardcodedUi.raw('appHomeEnterprisePage.line154JsxTextDeploymentInterest')}</Label>
                     <select id="deployment" value={form.deployment} onChange={set('deployment')} required className={cn(FIELD, 'w-full border border-input px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50')}>
-                      <option value="" disabled>Select…</option>
-                      <option>Managed cloud</option>
-                      <option>Private cloud / VPC</option>
-                      <option>On-prem / air-gapped</option>
-                      <option>Not sure yet</option>
+                      <option value="" disabled>{tHardcodedUi.raw('appHomeEnterprisePage.line156JsxTextSelect')}</option>
+                      <option>{tHardcodedUi.raw('appHomeEnterprisePage.line157JsxTextManagedCloud')}</option>
+                      <option>{tHardcodedUi.raw('appHomeEnterprisePage.line158JsxTextPrivateCloudVpc')}</option>
+                      <option>{tHardcodedUi.raw('appHomeEnterprisePage.line159JsxTextOnPremAirGapped')}</option>
+                      <option>{tHardcodedUi.raw('appHomeEnterprisePage.line160JsxTextNotSureYet')}</option>
                     </select>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="goal" className="text-sm">What would you like to automate?</Label>
-                  <Textarea id="goal" value={form.goal} onChange={set('goal')} rows={4} placeholder="e.g. due-diligence research, support tickets, financial reporting…" className="bg-card/40 resize-none" />
+                  <Label htmlFor="goal" className="text-sm">{tHardcodedUi.raw('appHomeEnterprisePage.line166JsxTextWhatWouldYouLikeToAutomate')}</Label>
+                  <Textarea id="goal" value={form.goal} onChange={set('goal')} rows={4} placeholder={tHardcodedUi.raw('appHomeEnterprisePage.line167JsxAttrPlaceholderEGDueDiligenceResearchSupportTicketsFinancial')} className="bg-card/40 resize-none" />
                 </div>
 
-                <Button type="submit" size="lg" className="h-12 w-full rounded-xl text-sm mt-1">
-                  Request demo<ArrowRight className="ml-1.5 size-3.5" />
+                <Button type="submit" size="lg" className="h-12 w-full rounded-xl text-sm mt-1">{tHardcodedUi.raw('appHomeEnterprisePage.line171JsxTextRequestDemo')}<ArrowRight className="ml-1.5 size-3.5" />
                 </Button>
-                <p className="text-xs text-muted-foreground text-center">No spam. We only use this to prepare your demo.</p>
+                <p className="text-xs text-muted-foreground text-center">{tHardcodedUi.raw('appHomeEnterprisePage.line173JsxTextNoSpamWeOnlyUseThisToPrepare')}</p>
               </form>
             )}
           </div>

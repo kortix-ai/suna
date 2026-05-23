@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { X, Check, Loader2, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -32,6 +34,7 @@ export interface NewInstanceModalProps {
 }
 
 export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewInstanceModalProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   useAuth();
   const dialogRef = useRef<HTMLDivElement>(null);
   const defaultApplied = useRef(false);
@@ -139,14 +142,12 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
           <div className="flex flex-col items-center pt-7 pb-5 px-6 border-b border-border bg-neutral-50/50 dark:bg-neutral-950/50">
             <Image src="/kortix-computer.png" alt="Kortix Computer" width={140} height={140} className="object-contain mb-4" priority />
             <h2 className="text-xl font-semibold tracking-tight text-foreground text-center">{title || 'Your Kortix'}</h2>
-            <p className="text-sm text-muted-foreground mt-1 text-center max-w-[280px]">
-              One machine. All your tools. Agents that run themselves.
-            </p>
+            <p className="text-sm text-muted-foreground mt-1 text-center max-w-[280px]">{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line143JsxTextOneMachineAllYourToolsAgentsThatRun')}</p>
           </div>
 
           {/* Tier selection */}
           <div className="px-5 pt-5 pb-4">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Choose your machine</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line149JsxTextChooseYourMachine')}</p>
 
             {typesLoading ? (
               <div className="space-y-2.5">
@@ -182,7 +183,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
                       {/* Specs */}
                       <div className="flex-1 min-w-0">
                         <span className="text-sm font-semibold text-foreground tabular-nums">
-                          {t.cores} vCPU · {t.memory} GB
+                          {t.cores}{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line185JsxTextVcpu')}{t.memory} GB
                         </span>
                         {meta && (
                           <span className="text-xs text-muted-foreground/70 block mt-0.5">{meta.subtitle}</span>
@@ -204,7 +205,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
           {/* Includes */}
           <div className="px-5 pb-5">
             <div className="rounded-2xl bg-muted/40 px-4 py-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Every plan includes</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line207JsxTextEveryPlanIncludes')}</p>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                 {[
                   'Always-on cloud computer',
@@ -238,10 +239,10 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
               <span className="text-xl font-semibold tabular-nums text-foreground">{price}</span>
               <span className="text-xs text-muted-foreground">/mo</span>
             </div>
-            <p className="text-xs text-muted-foreground/60 mt-0.5">Cancel anytime</p>
+            <p className="text-xs text-muted-foreground/60 mt-0.5">{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line241JsxTextCancelAnytime')}</p>
           </div>
           <Button className="h-11 px-7 text-sm font-semibold" disabled={isLoading || !selected} onClick={handleCta}>
-            {isLoading ? <Loader2 className="size-4 animate-spin" /> : <>Get Your Kortix<ArrowRight className="size-3.5 ml-1.5" /></>}
+            {isLoading ? <Loader2 className="size-4 animate-spin" /> : <>{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line244JsxTextGetYourKortix')}<ArrowRight className="size-3.5 ml-1.5" /></>}
           </Button>
         </div>
       </div>

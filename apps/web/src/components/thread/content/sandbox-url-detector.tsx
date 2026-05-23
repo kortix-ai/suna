@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ExternalLink,
@@ -25,6 +27,7 @@ import {
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
+import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 
 interface SandboxUrlDetectorProps {
   content: string;
@@ -81,6 +84,7 @@ function InlineIframePreview({
   proxyUrl: string;
   port: number;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Inject auth token for cloud preview proxy URLs
   const authenticatedUrl = useAuthenticatedPreviewUrl(proxyUrl);
   const isAuthReady = authenticatedUrl !== null;
@@ -183,7 +187,7 @@ function InlineIframePreview({
         {hasError && (
           <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
             <div className="text-center text-muted-foreground">
-              <p className="text-xs">Failed to load</p>
+              <p className="text-xs">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line186JsxTextFailedToLoad')}</p>
               <button
                 onClick={handleRefresh}
                 className="text-xs text-primary hover:underline mt-1"
@@ -200,7 +204,7 @@ function InlineIframePreview({
             src={authenticatedUrl}
             title={`Preview :${port}`}
             className="w-full h-full border-0 bg-white"
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads allow-modals"
+            sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
             onLoad={handleLoad}
             onError={handleError}
           />
@@ -221,6 +225,7 @@ function SandboxPreviewCard({
   detected: DetectedLocalhostUrl;
   proxyUrl: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   const [showInlinePreview, setShowInlinePreview] = useState(true);
   const reachability = usePortReachability(proxyUrl);
@@ -382,7 +387,7 @@ function SandboxPreviewCard({
                   <ExternalLink className="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="top">Open in browser</TooltipContent>
+              <TooltipContent side="top">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line385JsxTextOpenInBrowser')}</TooltipContent>
             </Tooltip>
 
             {/* Open as tab — primary action */}
@@ -426,6 +431,7 @@ function SandboxUrlChip({
   detected: DetectedLocalhostUrl;
   proxyUrl: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
 
   const tabId = `preview:${detected.port}`;
@@ -506,7 +512,7 @@ function SandboxUrlChip({
               <ExternalLink className="h-3 w-3" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">Open in browser</TooltipContent>
+          <TooltipContent side="top">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line509JsxTextOpenInBrowser')}</TooltipContent>
         </Tooltip>
 
         <Tooltip>
@@ -518,7 +524,7 @@ function SandboxUrlChip({
               <MonitorPlay className="h-3 w-3" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">Open preview</TooltipContent>
+          <TooltipContent side="top">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line521JsxTextOpenPreview')}</TooltipContent>
         </Tooltip>
       </div>
     </div>
@@ -542,6 +548,7 @@ export const SandboxUrlDetector: React.FC<SandboxUrlDetectorProps> = ({
   content,
   isStreaming = false,
 }) => {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Strip kortix_system XML tags before any processing/rendering.
   // These tags contain internal/system content injected by OpenCode plugins
   // that should not appear in the UI.
@@ -586,9 +593,7 @@ export const SandboxUrlDetector: React.FC<SandboxUrlDetectorProps> = ({
       {/* Compact chips for URLs found inside code blocks (examples/docs) */}
       {codeBlockUrls.length > 0 && (
         <div className="mt-3 flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground/50 font-medium uppercase tracking-wider">
-            Endpoints mentioned in code
-          </span>
+          <span className="text-xs text-muted-foreground/50 font-medium uppercase tracking-wider">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line590JsxTextEndpointsMentionedInCode')}</span>
           {codeBlockUrls.map(({ detected: d, proxyUrl }) => (
             <SandboxUrlChip
               key={`code-${d.port}-${d.path}`}

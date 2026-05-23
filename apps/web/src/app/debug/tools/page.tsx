@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState } from 'react';
 import {
   ToolPartRenderer,
@@ -259,6 +261,7 @@ const GROUPS: Group[] = [
 ];
 
 export default function DebugToolsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(true);
   const focusToolCall = useKortixComputerStore((s) => s.focusToolCall);
 
@@ -266,10 +269,8 @@ export default function DebugToolsPage() {
     <div className="min-h-screen w-full bg-background text-foreground">
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/60 bg-background/80 px-6 py-3 backdrop-blur">
         <div>
-          <h1 className="text-base font-semibold">Tool renderers</h1>
-          <p className="text-xs text-muted-foreground">
-            /debug/tools — visual harness for session tool chrome
-          </p>
+          <h1 className="text-base font-semibold">{tHardcodedUi.raw('appDebugToolsPage.line268JsxTextToolRenderers')}</h1>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appDebugToolsPage.line270JsxTextDebugToolsVisualHarnessForSessionToolChrome')}</p>
         </div>
         <button
           type="button"
@@ -283,9 +284,7 @@ export default function DebugToolsPage() {
       {/* Side-panel Actions view preview — the focused navigator that reuses
           the same ToolPartRenderer handlers, fed the mock tool parts. */}
       <div className="mx-auto w-full max-w-3xl px-6 pt-10">
-        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Side panel · Actions
-        </h2>
+        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{tHardcodedUi.raw('appDebugToolsPage.line286JsxTextSidePanelActions')}</h2>
         <div className="h-[560px] w-full overflow-hidden rounded-2xl border border-border bg-card">
           <SessionActionsPanel
             sessionId="debug"
@@ -303,8 +302,7 @@ export default function DebugToolsPage() {
           git-status list (empty here, no sandbox). */}
       <div className="mx-auto w-full max-w-3xl px-6 pt-10">
         <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Side panel · Changes
-        </h2>
+          {tHardcodedUi.raw('appDebugToolsPage.line305JsxTextSidePanelChanges')}</h2>
         <div className="h-[420px] w-full overflow-hidden rounded-2xl border border-border bg-card">
           <SessionFilesPanel />
         </div>
@@ -314,10 +312,7 @@ export default function DebugToolsPage() {
           chat → side-panel flow), via ToolActivateContext + focusToolCall. */}
       <ToolActivateContext.Provider value={(callID) => focusToolCall(callID)}>
         <div className="mx-auto w-full max-w-3xl px-6 py-10">
-          <p className="mb-6 text-xs text-muted-foreground/60">
-            Click any row below → it opens in the panel above. (Inline = chat
-            presentation.)
-          </p>
+          <p className="mb-6 text-xs text-muted-foreground/60">{tHardcodedUi.raw('appDebugToolsPage.line306JsxTextClickAnyRowBelowItOpensInThe')}</p>
           {GROUPS.map((group) => (
             <section key={group.title} className="mb-12">
               <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

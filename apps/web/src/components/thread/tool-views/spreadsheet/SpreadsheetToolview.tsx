@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { ToolViewProps } from '../types';
 import { getToolTitle } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +16,7 @@ export function SpreadsheetToolView({
   isStreaming = false,
   project,
 }: ToolViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [syncState, setSyncState] = useState<SyncState>({ 
     status: 'idle', 
     lastSyncedAt: null, 
@@ -123,7 +125,7 @@ export function SpreadsheetToolView({
                   onClick={handleDownload}
                   disabled={!filePath || isDownloading}
                   className="h-7 px-2"
-                  title="Download file"
+                  title={tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSpreadsheettoolview.line126JsxAttrTitleDownloadFile')}
                 >
                   {isDownloading ? (
                     <KortixLoader customSize={12} />

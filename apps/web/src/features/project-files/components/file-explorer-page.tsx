@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -66,6 +68,7 @@ import { DRAG_MIME } from './file-tree-item';
  * File preview opens as a full-screen modal overlay.
  */
 export function FileExplorerPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
   const viewMode = useFilesStore((s) => s.viewMode);
@@ -591,7 +594,7 @@ export function FileExplorerPage() {
                 }}
                 onBlur={handleCreateFolder}
                 className="flex-1 text-sm bg-transparent border border-border rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
-                placeholder="Folder name"
+                placeholder={tHardcodedUi.raw('featuresProjectFilesComponentsFileExplorerPage.line594JsxAttrPlaceholderFolderName')}
               />
             </div>
           )}
@@ -609,7 +612,7 @@ export function FileExplorerPage() {
                 }}
                 onBlur={handleCreateFile}
                 className="flex-1 text-sm bg-transparent border border-border rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
-                placeholder="File name"
+                placeholder={tHardcodedUi.raw('featuresProjectFilesComponentsFileExplorerPage.line612JsxAttrPlaceholderFileName')}
               />
             </div>
           )}
@@ -655,7 +658,7 @@ export function FileExplorerPage() {
         {/* Error */}
         {error && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-            <p className="text-sm text-muted-foreground">Failed to load files</p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileExplorerPage.line658JsxTextFailedToLoadFiles')}</p>
             <p className="text-xs text-muted-foreground max-w-sm">
               {error instanceof Error ? error.message : 'Unknown error'}
             </p>
@@ -768,10 +771,8 @@ export function FileExplorerPage() {
               <Upload className="h-8 w-8 text-primary" />
             </div>
             <div>
-              <p className="text-base font-medium text-foreground">Drop files to upload</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Files will be uploaded to the current directory
-              </p>
+              <p className="text-base font-medium text-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileExplorerPage.line771JsxTextDropFilesToUpload')}</p>
+              <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('featuresProjectFilesComponentsFileExplorerPage.line773JsxTextFilesWillBeUploadedToTheCurrentDirectory')}</p>
             </div>
           </div>
         </div>
@@ -802,11 +803,8 @@ export function FileExplorerPage() {
             <AlertDialogTitle>
               Delete {deleteTarget?.type === 'directory' ? 'folder' : 'file'}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete{' '}
-              <span className="font-semibold text-foreground">&quot;{deleteTarget?.name}&quot;</span>?
-              This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>{tHardcodedUi.raw('featuresProjectFilesComponentsFileExplorerPage.line806JsxTextAreYouSureYouWantToDelete')}{' '}
+              <span className="font-semibold text-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileExplorerPage.line807JsxTextQuot')}{deleteTarget?.name}{tHardcodedUi.raw('featuresProjectFilesComponentsFileExplorerPage.line807JsxTextQuot32c14d98')}</span>{tHardcodedUi.raw('featuresProjectFilesComponentsFileExplorerPage.line807JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>

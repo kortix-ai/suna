@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { DataTable, DataTableColumn } from '@/components/ui/data-table';
@@ -15,6 +17,7 @@ import { useAdminFeedbackList } from '@/hooks/admin/use-admin-feedback';
 import type { FeedbackWithUser } from '@/hooks/admin/use-admin-feedback';
 
 export function AdminFeedbackTable() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
@@ -105,7 +108,7 @@ export function AdminFeedbackTable() {
               {feedback.feedback_text}
             </div>
           ) : (
-            <span className="text-xs text-muted-foreground italic">No feedback text</span>
+            <span className="text-xs text-muted-foreground italic">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line108JsxTextNoFeedbackText')}</span>
           )}
         </div>
       ),
@@ -126,11 +129,9 @@ export function AdminFeedbackTable() {
               }}
               title={`View thread ${feedback.thread_id.substring(0, 8)}...`}
             >
-              <ExternalLink className="h-3 w-3" />
-              View Chat
-            </Button>
+              <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line130JsxTextViewChat')}</Button>
           ) : (
-            <span className="text-xs text-muted-foreground italic">No thread</span>
+            <span className="text-xs text-muted-foreground italic">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line133JsxTextNoThread')}</span>
           )}
         </div>
       ),
@@ -162,8 +163,7 @@ export function AdminFeedbackTable() {
     return (
       <Card>
         <CardContent className="py-8">
-          <div className="text-center text-destructive">
-            Failed to load feedback: {error.message}
+          <div className="text-center text-destructive">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line166JsxTextFailedToLoadFeedback')}{error.message}
           </div>
         </CardContent>
       </Card>
@@ -174,47 +174,47 @@ export function AdminFeedbackTable() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row gap-4">
         <div className="flex-1 space-y-2">
-          <Label className="text-sm font-medium text-muted-foreground">Filter by Rating</Label>
+          <Label className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line177JsxTextFilterByRating')}</Label>
           <Select value={ratingFilter} onValueChange={(value) => { setRatingFilter(value); setPage(1); }}>
             <SelectTrigger>
-              <SelectValue placeholder="All ratings" />
+              <SelectValue placeholder={tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line180JsxAttrPlaceholderAllRatings')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All ratings</SelectItem>
-              <SelectItem value="5">5 stars</SelectItem>
-              <SelectItem value="4">4 stars</SelectItem>
-              <SelectItem value="3">3 stars</SelectItem>
-              <SelectItem value="2">2 stars</SelectItem>
-              <SelectItem value="1">1 star</SelectItem>
-              <SelectItem value="0.5">Below 1 star</SelectItem>
+              <SelectItem value="all">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line183JsxTextAllRatings')}</SelectItem>
+              <SelectItem value="5">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line184JsxTextText5Stars')}</SelectItem>
+              <SelectItem value="4">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line185JsxTextText4Stars')}</SelectItem>
+              <SelectItem value="3">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line186JsxTextText3Stars')}</SelectItem>
+              <SelectItem value="2">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line187JsxTextText2Stars')}</SelectItem>
+              <SelectItem value="1">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line188JsxTextText1Star')}</SelectItem>
+              <SelectItem value="0.5">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line189JsxTextBelow1Star')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className="flex-1 space-y-2">
-          <Label className="text-sm font-medium text-muted-foreground">Filter by Feedback Text</Label>
+          <Label className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line195JsxTextFilterByFeedbackText')}</Label>
           <Select value={hasTextFilter} onValueChange={(value) => { setHasTextFilter(value); setPage(1); }}>
             <SelectTrigger>
-              <SelectValue placeholder="All feedback" />
+              <SelectValue placeholder={tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line198JsxAttrPlaceholderAllFeedback')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All feedback</SelectItem>
-              <SelectItem value="with_text">With text</SelectItem>
-              <SelectItem value="without_text">Without text</SelectItem>
+              <SelectItem value="all">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line201JsxTextAllFeedback')}</SelectItem>
+              <SelectItem value="with_text">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line202JsxTextWithText')}</SelectItem>
+              <SelectItem value="without_text">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line203JsxTextWithoutText')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className="flex-1 space-y-2">
-          <Label className="text-sm font-medium text-muted-foreground">Sort By</Label>
+          <Label className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line209JsxTextSortBy')}</Label>
           <Select value={sortBy} onValueChange={(value) => { setSortBy(value); setPage(1); }}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="created_at">Date Created</SelectItem>
+              <SelectItem value="created_at">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line215JsxTextDateCreated')}</SelectItem>
               <SelectItem value="rating">Rating</SelectItem>
-              <SelectItem value="updated_at">Last Updated</SelectItem>
+              <SelectItem value="updated_at">{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line217JsxTextLastUpdated')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -234,9 +234,7 @@ export function AdminFeedbackTable() {
 
         {(ratingFilter !== 'all' || hasTextFilter !== 'all') && (
           <div className="flex items-end">
-            <Button variant="outline" onClick={handleClearFilters}>
-              Clear Filters
-            </Button>
+            <Button variant="outline" onClick={handleClearFilters}>{tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line238JsxTextClearFilters')}</Button>
           </div>
         )}
       </div>
@@ -255,7 +253,7 @@ export function AdminFeedbackTable() {
             <DataTable
               columns={columns}
               data={feedbackListResponse?.data || []}
-              emptyMessage="No feedback found matching your criteria"
+              emptyMessage={tHardcodedUi.raw('componentsAdminAdminFeedbackTable.line258JsxAttrEmptymessageNoFeedbackFoundMatchingYourCriteria')}
               getItemId={(feedback) => feedback.feedback_id}
             />
           )}

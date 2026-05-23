@@ -1,3 +1,4 @@
+import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { Wrench } from 'lucide-react';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 
@@ -5,6 +6,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function MaintenancePage() {
+  const tHardcodedUi = { raw: getHardcodedUiServerText };
   const config = await getMaintenanceConfig();
 
   const title = config.title || 'We\'ll be right back';
@@ -50,16 +52,12 @@ export default async function MaintenancePage() {
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-medium text-primary hover:underline underline-offset-4"
-            >
-              Check system status →
-            </a>
+            >{tHardcodedUi.raw('appMaintenancePage.line54JsxTextCheckSystemStatus')}</a>
           </div>
         )}
 
         {/* Auto-refresh hint */}
-        <p className="text-xs text-muted-foreground/60">
-          This page refreshes automatically every 30 seconds.
-        </p>
+        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('appMaintenancePage.line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds')}</p>
 
         {/* Auto-refresh meta (client-side) */}
         <AutoRefresh />

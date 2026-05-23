@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * ProviderList — shared connected-providers list used in settings dialogs
  * and provider management UIs.
@@ -58,6 +60,7 @@ export function ProviderList({
   showConnectButton = true,
   compact = false,
 }: ProviderListProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
@@ -100,7 +103,7 @@ export function ProviderList({
   if (connectedProviders.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-center">
-        <p className="text-xs text-muted-foreground/60">No providers connected</p>
+        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProvidersProviderList.line103JsxTextNoProvidersConnected')}</p>
         {showConnectButton && onConnect && (
           <Button
             variant="outline"
@@ -108,9 +111,7 @@ export function ProviderList({
             className="mt-3"
             onClick={onConnect}
           >
-            <Plus className="h-3 w-3" />
-            Connect a provider
-          </Button>
+            <Plus className="h-3 w-3" />{tHardcodedUi.raw('componentsProvidersProviderList.line112JsxTextConnectAProvider')}</Button>
         )}
       </div>
     );
@@ -202,16 +203,14 @@ export function ProviderList({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect provider?</AlertDialogTitle>
+            <AlertDialogTitle>{tHardcodedUi.raw('componentsProvidersProviderList.line205JsxTextDisconnectProvider')}</AlertDialogTitle>
             <AlertDialogDescription className="text-xs">
               {confirmDisconnect && (
                 <>
                   Remove{' '}
                   <span className="font-medium text-foreground">
                     {PROVIDER_LABELS[confirmDisconnect] || confirmDisconnect}
-                  </span>
-                  ? You&apos;ll need to re-enter your API key to use it again.
-                </>
+                  </span>{tHardcodedUi.raw('componentsProvidersProviderList.line213JsxTextYouAposLlNeedToReEnterYour')}</>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>

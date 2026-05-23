@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * ProjectProviderModal — per-project port of the legacy global provider modal.
  *
@@ -83,6 +85,7 @@ export function ProjectProviderModal({
   onOpenChange,
   defaultTab,
 }: ProjectProviderModalProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Gate the secrets fetch on `open`. The modal is always mounted by callers
   // like ModelSelector (so `<Dialog>` can animate in/out cleanly), and firing
   // this query on mount produces a noisy toast for users who can't manage the
@@ -148,11 +151,8 @@ export function ProjectProviderModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="!grid h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[600px] grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
         <DialogHeader className="space-y-0.5 px-5 pt-5 pb-3 pr-12">
-          <DialogTitle className="text-sm font-semibold">LLM Providers</DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground/60">
-            Connect providers — keys are stored per-project and injected as env vars
-            into every new session sandbox.
-          </DialogDescription>
+          <DialogTitle className="text-sm font-semibold">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line151JsxTextLlmProviders')}</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line153JsxTextConnectProvidersKeysAreStoredPerProjectAnd')}</DialogDescription>
         </DialogHeader>
 
         {!inSubflow && (
@@ -174,9 +174,7 @@ export function ProjectProviderModal({
                 data-state={activeTab === 'catalog' ? 'active' : 'inactive'}
                 onClick={() => switchTab('catalog')}
                 className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
-              >
-                Add provider
-              </FilterBarItem>
+              >{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line178JsxTextAddProvider')}</FilterBarItem>
               <FilterBarItem
                 data-state={activeTab === 'models' ? 'active' : 'inactive'}
                 onClick={() => switchTab('models')}
@@ -261,6 +259,7 @@ function ConnectedTab({
   search: string;
   onAddProvider: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
@@ -297,10 +296,8 @@ function ConnectedTab({
   if (connectedProviders.length === 0) {
     return (
       <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 px-6 text-center">
-        <p className="text-xs text-muted-foreground/60">No providers connected yet</p>
-        <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={onAddProvider}>
-          Add provider
-        </Button>
+        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line300JsxTextNoProvidersConnectedYet')}</p>
+        <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={onAddProvider}>{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line302JsxTextAddProvider')}</Button>
       </div>
     );
   }
@@ -308,9 +305,7 @@ function ConnectedTab({
   if (filtered.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-        <p className="text-xs text-muted-foreground/60">
-          No connected providers match &ldquo;{search}&rdquo;
-        </p>
+        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line312JsxTextNoConnectedProvidersMatchLdquo')}{search}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line312JsxTextRdquo')}</p>
       </div>
     );
   }
@@ -358,25 +353,21 @@ function ConnectedTab({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect provider?</AlertDialogTitle>
+            <AlertDialogTitle>{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line361JsxTextDisconnectProvider')}</AlertDialogTitle>
             <AlertDialogDescription className="text-xs">
               {confirmProvider && (
                 <>
                   Remove{' '}
-                  <span className="font-medium text-foreground">{confirmProvider.label}</span>?
-                  This deletes{' '}
+                  <span className="font-medium text-foreground">{confirmProvider.label}</span>{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line366JsxTextThisDeletes')}{' '}
                   {confirmProvider.envVars.length === 1 ? (
                     <>
                       the{' '}
                       <code className="rounded bg-muted px-1 py-0.5 font-mono">
                         {confirmProvider.envVars[0]}
-                      </code>{' '}
-                      project secret.
-                    </>
+                      </code>{' '}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line374JsxTextProjectSecret')}</>
                   ) : (
                     <>
-                      {confirmProvider.envVars.length} project secrets (
-                      {confirmProvider.envVars.map((envVar, index) => (
+                      {confirmProvider.envVars.length}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line378JsxTextProjectSecrets')}{confirmProvider.envVars.map((envVar, index) => (
                         <span key={envVar}>
                           {index > 0 && ', '}
                           <code className="rounded bg-muted px-1 py-0.5 font-mono">{envVar}</code>
@@ -384,9 +375,7 @@ function ConnectedTab({
                       ))}
                       ).
                     </>
-                  )}{' '}
-                  You&apos;ll need to reconnect to use it again.
-                </>
+                  )}{' '}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line388JsxTextYouAposLlNeedToReconnectToUse')}</>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -420,6 +409,7 @@ function CatalogTab({
   subview: CatalogSubview;
   setSubview: (next: CatalogSubview) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return LLM_PROVIDERS;
@@ -488,12 +478,8 @@ function CatalogTab({
           <Plus className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-foreground">
-            Custom provider
-          </div>
-          <div className="mt-0.5 truncate text-xs text-muted-foreground">
-            Connect any OpenAI-compatible endpoint with your own base URL
-          </div>
+          <div className="truncate text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line492JsxTextCustomProvider')}</div>
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line495JsxTextConnectAnyOpenaiCompatibleEndpointWithYourOwn')}</div>
         </div>
         <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
       </Button>
@@ -551,6 +537,7 @@ function ProviderDetail({
   onBack: () => void;
   onConnect: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Catalog already pre-sorts newest-first; we just render. Lots of providers
   // ship 100+ models — let the dialog body scroll rather than virtualizing.
   const models = provider.models;
@@ -572,9 +559,7 @@ function ProviderDetail({
         className="-ml-2 h-7 gap-1 px-2 text-xs text-muted-foreground"
         onClick={onBack}
       >
-        <ChevronLeft className="h-3.5 w-3.5" />
-        Back to providers
-      </Button>
+        <ChevronLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line576JsxTextBackToProviders')}</Button>
 
       <div className="flex items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3">
         <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
@@ -614,14 +599,10 @@ function ProviderDetail({
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
             Models
           </span>
-          <span className="text-xs text-muted-foreground/40 tabular-nums">
-            newest first
-          </span>
+          <span className="text-xs text-muted-foreground/40 tabular-nums">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line618JsxTextNewestFirst')}</span>
         </div>
         {models.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border/40 px-4 py-6 text-center text-xs text-muted-foreground">
-            No models declared.
-          </div>
+          <div className="rounded-2xl border border-dashed border-border/40 px-4 py-6 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line623JsxTextNoModelsDeclared')}</div>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/40">
             {models.map((model, i) => (
@@ -700,6 +681,7 @@ function ApiKeyConnectForm({
   onBack: () => void;
   onConnected: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   // One entry per env var the provider declares. Render order is the order in
   // the catalog — for multi-key providers like Azure that means
@@ -763,9 +745,7 @@ function ApiKeyConnectForm({
         className="-ml-2 h-7 gap-1 px-2 text-xs text-muted-foreground"
         onClick={onBack}
       >
-        <ChevronLeft className="h-3.5 w-3.5" />
-        Back to providers
-      </Button>
+        <ChevronLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line767JsxTextBackToProviders')}</Button>
 
       <div className="flex items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3">
         <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
@@ -823,8 +803,7 @@ function ApiKeyConnectForm({
             rel="noopener noreferrer"
             className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            <ExternalLink className="h-3 w-3" />
-            Get credentials from {helpHostname}
+            <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line827JsxTextGetCredentialsFrom')}{helpHostname}
           </a>
         )}
 
@@ -843,20 +822,14 @@ function ApiKeyConnectForm({
         >
           {upsert.isPending ? (
             <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              Connecting…
-            </>
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line847JsxTextConnecting')}</>
           ) : (
             'Connect'
           )}
         </Button>
       </form>
 
-      <p className="px-1 text-xs text-muted-foreground">
-        Values are encrypted at rest (AES-256-GCM, per-project key) and injected
-        into every new session sandbox as env vars. Restart any running session
-        for this provider to take effect there.
-      </p>
+      <p className="px-1 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line856JsxTextValuesAreEncryptedAtRestAes256Gcm')}</p>
     </div>
   );
 }
@@ -881,6 +854,7 @@ function CustomProviderForm({
   onBack: () => void;
   onDone: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CustomFormState>({
     providerId: '',
@@ -979,15 +953,11 @@ function CustomProviderForm({
         className="-ml-2 h-7 gap-1 px-2 text-xs text-muted-foreground"
         onClick={onBack}
       >
-        <ChevronLeft className="h-3.5 w-3.5" />
-        Back to providers
-      </Button>
+        <ChevronLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line983JsxTextBackToProviders')}</Button>
 
       <div className="rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3">
-        <div className="text-sm font-medium text-foreground">Custom provider</div>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Connect any OpenAI-compatible endpoint. The API key is saved as a
-          project secret; the provider declaration goes in your repo&apos;s{' '}
+        <div className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line987JsxTextCustomProvider')}</div>
+        <p className="mt-0.5 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line989JsxTextConnectAnyOpenaiCompatibleEndpointTheApiKey')}{' '}
           <code className="rounded bg-background px-1 py-0.5 font-mono">.opencode/opencode.jsonc</code>.
         </p>
       </div>
@@ -998,9 +968,7 @@ function CustomProviderForm({
       >
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Provider ID
-            </label>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1002JsxTextProviderId')}</label>
             <Input
               type="text"
               value={form.providerId}
@@ -1016,22 +984,18 @@ function CustomProviderForm({
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Display name
-            </label>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1020JsxTextDisplayName')}</label>
             <Input
               type="text"
               value={form.name}
               onChange={(e) => setField('name', e.target.value)}
-              placeholder="My LLM"
+              placeholder={tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1026JsxAttrPlaceholderMyLlm')}
               className="h-9 text-sm"
             />
           </div>
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-            Base URL
-          </label>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1033JsxTextBaseUrl')}</label>
           <Input
             type="text"
             value={form.baseURL}
@@ -1041,23 +1005,20 @@ function CustomProviderForm({
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-            API key{' '}
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1045JsxTextApiKey')}{' '}
             <span className="font-normal text-muted-foreground/60">(optional)</span>
           </label>
           <Input
             type="text"
             value={form.apiKey}
             onChange={(e) => setField('apiKey', e.target.value)}
-            placeholder="sk-… (saved as a project secret)"
+            placeholder={tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1052JsxAttrPlaceholderSkSavedAsAProjectSecret')}
             className="h-9 font-mono text-xs"
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Model ID
-            </label>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1059JsxTextModelId')}</label>
             <Input
               type="text"
               value={form.modelId}
@@ -1067,14 +1028,12 @@ function CustomProviderForm({
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Model name
-            </label>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1071JsxTextModelName')}</label>
             <Input
               type="text"
               value={form.modelName}
               onChange={(e) => setField('modelName', e.target.value)}
-              placeholder="Foo 7B"
+              placeholder={tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1077JsxAttrPlaceholderFoo7b')}
               className="h-9 text-sm"
             />
           </div>
@@ -1090,9 +1049,7 @@ function CustomProviderForm({
         <Button type="submit" size="sm" className="px-4" disabled={save.isPending}>
           {save.isPending ? (
             <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              Generating…
-            </>
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1094JsxTextGenerating')}</>
           ) : (
             'Generate snippet'
           )}
@@ -1111,6 +1068,7 @@ function CustomProviderSnippetView({
   secretName: string | null;
   onDone: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -1132,21 +1090,17 @@ function CustomProviderSnippetView({
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {secretName ? (
-            <>
-              Your key is stored as{' '}
-              <code className="rounded bg-background px-1 py-0.5 font-mono">{secretName}</code>{' '}
-              and will be injected into sessions as an env var.
-            </>
+            <>{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1136JsxTextYourKeyIsStoredAs')}{' '}
+              <code className="rounded bg-background px-1 py-0.5 font-mono">{secretName}</code>{' '}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1138JsxTextAndWillBeInjectedIntoSessionsAsAn')}</>
           ) : (
-            <>No API key was provided — the snippet below omits the apiKey field.</>
+            <>{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1141JsxTextNoApiKeyWasProvidedTheSnippetBelow')}</>
           )}
         </p>
       </div>
 
       <div>
         <div className="mb-1.5 flex items-center justify-between px-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
-            Add to <code className="font-mono normal-case">.opencode/opencode.jsonc</code>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1149JsxTextAddTo')}<code className="font-mono normal-case">.opencode/opencode.jsonc</code>
           </span>
           <Button
             type="button"
@@ -1164,11 +1118,8 @@ function CustomProviderSnippetView({
         </pre>
       </div>
 
-      <p className="px-1 text-xs text-muted-foreground">
-        Paste this into your project repo&apos;s{' '}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono">.opencode/opencode.jsonc</code>{' '}
-        and commit. Restart any running session for the change to land in the sandbox.
-      </p>
+      <p className="px-1 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1168JsxTextPasteThisIntoYourProjectRepoAposS')}{' '}
+        <code className="rounded bg-muted px-1 py-0.5 font-mono">.opencode/opencode.jsonc</code>{' '}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1170JsxTextAndCommitRestartAnyRunningSessionForThe')}</p>
 
       <Button size="sm" onClick={onDone}>
         Done
@@ -1236,6 +1187,7 @@ function ModelsTab({
   connectedProviders: LlmProviderEntry[];
   search: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const grouped = useMemo(() => {
     const q = search.trim().toLowerCase();
     return connectedProviders
@@ -1254,9 +1206,7 @@ function ModelsTab({
   if (connectedProviders.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-        <p className="text-xs text-muted-foreground/60">
-          Connect a provider to see its models.
-        </p>
+        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1258JsxTextConnectAProviderToSeeItsModels')}</p>
       </div>
     );
   }
@@ -1310,6 +1260,7 @@ function ModelsTab({
 
 /** Convenience: small trigger button that opens the modal. */
 export function ConnectProviderButton({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -1319,9 +1270,7 @@ export function ConnectProviderButton({ projectId }: { projectId: string }) {
         className="h-8 gap-1.5 text-xs"
         onClick={() => setOpen(true)}
       >
-        <Plug className="h-3.5 w-3.5" />
-        Connect provider
-      </Button>
+        <Plug className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1323JsxTextConnectProvider')}</Button>
       <ProjectProviderModal projectId={projectId} open={open} onOpenChange={setOpen} />
     </>
   );

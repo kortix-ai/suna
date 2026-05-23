@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -67,6 +69,7 @@ function ListRow({
   isDownloadingItem,
   isCut,
 }: ListRowProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -251,9 +254,7 @@ function ListRow({
         </ContextMenuItem>
         {!isDir && onOpenInTab && (
           <ContextMenuItem onClick={() => onOpenInTab(node)}>
-            <ExternalLink className="mr-2 h-4 w-4" />
-            Open in tab
-          </ContextMenuItem>
+            <ExternalLink className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line255JsxTextOpenInTab')}</ContextMenuItem>
         )}
         {onDownload && (
           <ContextMenuItem onClick={() => onDownload(node)} disabled={isDownloadingItem}>
@@ -263,9 +264,7 @@ function ListRow({
         )}
         {!isDir && onHistory && (
           <ContextMenuItem onClick={() => onHistory(node)}>
-            <History className="mr-2 h-4 w-4" />
-            Checkpoint history
-          </ContextMenuItem>
+            <History className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line267JsxTextCheckpointHistory')}</ContextMenuItem>
         )}
         <ContextMenuSeparator />
         {onCopy && (
@@ -281,9 +280,7 @@ function ListRow({
           </ContextMenuItem>
         )}
         <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.path)}>
-          <Copy className="mr-2 h-4 w-4" />
-          Copy path
-        </ContextMenuItem>
+          <Copy className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line285JsxTextCopyPath')}</ContextMenuItem>
         <ContextMenuSeparator />
         {onRename && (
           <ContextMenuItem onClick={() => setTimeout(startRenaming, 100)}>
@@ -356,6 +353,7 @@ export function DriveListView({
   isDirDownloading,
   readOnly = false,
 }: DriveListViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // In read-only mode, suppress mutation handlers so the row context menu
   // omits Delete/Rename/Cut/Copy entries entirely. History stays enabled —
   // it's a read action (checkpoint history of a file).
@@ -393,10 +391,8 @@ export function DriveListView({
         <div className="h-14 w-14 rounded-2xl bg-muted/40 flex items-center justify-center mb-4">
           <FolderOpen className="h-7 w-7 text-muted-foreground/40" />
         </div>
-        <p className="text-sm font-medium text-foreground">This folder is empty</p>
-        <p className="text-xs text-muted-foreground mt-1.5 max-w-xs">
-          No files or subfolders at this path in the current version.
-        </p>
+        <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line396JsxTextThisFolderIsEmpty')}</p>
+        <p className="text-xs text-muted-foreground mt-1.5 max-w-xs">{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line398JsxTextNoFilesOrSubfoldersAtThisPathIn')}</p>
       </div>
     );
   }

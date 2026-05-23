@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import Link from 'next/link';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -9,6 +11,7 @@ import { AnimatedBg } from '@/components/ui/animated-bg';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 export default function NotFound() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="w-full relative overflow-hidden min-h-[100dvh]">
       <div className="relative flex flex-col items-center w-full px-3 sm:px-6 min-h-[100dvh] justify-center py-8">
@@ -61,14 +64,10 @@ export default function NotFound() {
           </div>
 
           {/* Title - responsive */}
-          <h1 className="text-3xl sm:text-5xl font-normal tracking-tight text-foreground leading-tight text-center">
-            Page not found
-          </h1>
+          <h1 className="text-3xl sm:text-5xl font-normal tracking-tight text-foreground leading-tight text-center">{tHardcodedUi.raw('appNotFound.line65JsxTextPageNotFound')}</h1>
 
           {/* Description - responsive */}
-          <p className="text-sm sm:text-base text-foreground/60 text-center leading-relaxed px-2">
-            The page you&apos;re looking for doesn&apos;t exist or has been moved.
-          </p>
+          <p className="text-sm sm:text-base text-foreground/60 text-center leading-relaxed px-2">{tHardcodedUi.raw('appNotFound.line70JsxTextThePageYouAposReLookingForDoesn')}</p>
 
           {/* Status Card - 456px width, 96px height */}
           <Card className="w-full h-24 bg-card border border-border">
@@ -78,12 +77,8 @@ export default function NotFound() {
                   <AlertCircle className="h-6 w-6 text-orange-500" />
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-foreground">
-                    404 Error
-                  </span>
-                  <span className="text-sm text-foreground/60 font-mono">
-                    resource not available
-                  </span>
+                  <span className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appNotFound.line82JsxTextText404Error')}</span>
+                  <span className="text-sm text-foreground/60 font-mono">{tHardcodedUi.raw('appNotFound.line85JsxTextResourceNotAvailable')}</span>
                 </div>
               </div>
             </CardContent>
@@ -97,7 +92,7 @@ export default function NotFound() {
           >
             <Link href="/projects" className="flex items-center justify-center gap-2">
               <ArrowLeft className="h-4 w-4" />
-              <span>Return Home</span>
+              <span>{tHardcodedUi.raw('appNotFound.line100JsxTextReturnHome')}</span>
             </Link>
           </Button>
         </motion.div>

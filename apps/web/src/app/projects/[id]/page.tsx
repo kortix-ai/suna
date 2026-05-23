@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
@@ -33,6 +35,7 @@ import { toast } from '@/lib/toast';
  * without sending, the warm session is deleted so we never orphan a sandbox.
  */
 export default function ProjectIndexPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -110,12 +113,8 @@ export default function ProjectIndexPage() {
           onInput={warmStart}
         >
           <div className="space-y-2 text-center">
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-              What should we build?
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Describe a task to start a new session in this project.
-            </p>
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">{tHardcodedUi.raw('appProjectsIdPage.line114JsxTextWhatShouldWeBuild')}</h1>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appProjectsIdPage.line117JsxTextDescribeATaskToStartANewSession')}</p>
           </div>
           <SessionChatInput onSend={handleSend} disabled={busy} autoFocus />
         </div>

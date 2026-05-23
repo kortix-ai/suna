@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useEffect, useCallback } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
@@ -40,6 +42,7 @@ export function AutoTopupCard({
   onChange,
   configRef,
 }: AutoTopupCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -146,7 +149,7 @@ export function AutoTopupCard({
         <Alert variant="warning">
           <AlertCircle className="size-4" />
           <AlertDescription className="flex items-center justify-between gap-2">
-            <span>Couldn't load your current settings. Showing defaults.</span>
+            <span>{tHardcodedUi.raw('componentsBillingAutoTopupCard.line149JsxTextCouldnTLoadYourCurrentSettingsShowingDefaults')}</span>
             <Button
               size="sm"
               variant="outline"
@@ -162,8 +165,8 @@ export function AutoTopupCard({
       {/* Toggle row */}
       <div className="flex items-center justify-between">
         <div className="text-left">
-          <p className="text-sm font-medium">Auto Top-up</p>
-          <p className="text-xs text-muted-foreground">Recharge credits automatically</p>
+          <p className="text-sm font-medium">{tHardcodedUi.raw('componentsBillingAutoTopupCard.line165JsxTextAutoTopUp')}</p>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsBillingAutoTopupCard.line166JsxTextRechargeCreditsAutomatically')}</p>
         </div>
         <Switch
           checked={enabled}
@@ -178,9 +181,7 @@ export function AutoTopupCard({
       {showMissingCardWarning && (
         <Alert variant="warning">
           <AlertCircle className="size-4" />
-          <AlertDescription>
-            No default payment method found. Add a default card in Billing before enabling auto top-up.
-          </AlertDescription>
+          <AlertDescription>{tHardcodedUi.raw('componentsBillingAutoTopupCard.line182JsxTextNoDefaultPaymentMethodFoundAddADefault')}</AlertDescription>
         </Alert>
       )}
 
@@ -201,7 +202,7 @@ export function AutoTopupCard({
                 placeholder={String(AUTO_TOPUP_DEFAULT_AMOUNT)}
               />
             </div>
-            <span className="text-xs text-muted-foreground shrink-0">when below</span>
+            <span className="text-xs text-muted-foreground shrink-0">{tHardcodedUi.raw('componentsBillingAutoTopupCard.line204JsxTextWhenBelow')}</span>
             <div className="relative flex-1">
               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
               <Input
@@ -219,17 +220,13 @@ export function AutoTopupCard({
           {/* Green confirmation */}
           <div className="flex items-start gap-2 pt-1">
             <ShieldCheck className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
-            <p className="text-xs text-muted-foreground">
-              Your card is only charged when your balance drops. Disable anytime in Settings.
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsBillingAutoTopupCard.line223JsxTextYourCardIsOnlyChargedWhenYourBalance')}</p>
           </div>
         </div>
       )}
 
       {!enabled && (
-        <p className="text-xs text-muted-foreground/40">
-          Your agent will pause when credits run out. You can enable this anytime.
-        </p>
+        <p className="text-xs text-muted-foreground/40">{tHardcodedUi.raw('componentsBillingAutoTopupCard.line231JsxTextYourAgentWillPauseWhenCreditsRunOut')}</p>
       )}
 
       {saveResult && (

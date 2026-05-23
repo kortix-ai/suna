@@ -1,3 +1,6 @@
+'use client';
+
+import { useTranslations } from 'next-intl';
 import { Fragment } from 'react';
 import Link from 'next/link';
 import { Check, Minus, ArrowRight } from 'lucide-react';
@@ -97,6 +100,7 @@ const FAQ: [string, string][] = [
 ];
 
 export default function PricingPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="relative bg-background pt-28 sm:pt-32">
 
@@ -104,8 +108,8 @@ export default function PricingPage() {
       <section className="max-w-5xl mx-auto px-6 pt-8 pb-14 text-center">
         <Reveal>
           <Eyebrow>Pricing</Eyebrow>
-          <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-medium tracking-tight text-foreground leading-[1.04]">Start free. Scale when you&apos;re ready.</h1>
-          <p className="mt-5 text-base sm:text-lg text-muted-foreground leading-relaxed max-w-2xl mx-auto">Self-host the whole platform for free. Move to managed cloud per seat, and to enterprise when you need on-prem and advanced controls.</p>
+          <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-medium tracking-tight text-foreground leading-[1.04]">{tHardcodedUi.raw('appHomePricingPage.line107JsxTextStartFreeScaleWhenYouAposReReady')}</h1>
+          <p className="mt-5 text-base sm:text-lg text-muted-foreground leading-relaxed max-w-2xl mx-auto">{tHardcodedUi.raw('appHomePricingPage.line108JsxTextSelfHostTheWholePlatformForFreeMove')}</p>
         </Reveal>
       </section>
 
@@ -115,7 +119,7 @@ export default function PricingPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
             {PLANS.map((p) => (
               <div key={p.name} className={p.highlight ? 'rounded-3xl border-2 border-foreground bg-card/40 p-6 sm:p-7 shadow-lg relative' : 'rounded-3xl border border-border bg-card/40 p-6 sm:p-7'}>
-                {p.highlight && <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-foreground text-background text-xs font-medium">Most popular</span>}
+                {p.highlight && <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-foreground text-background text-xs font-medium">{tHardcodedUi.raw('appHomePricingPage.line118JsxTextMostPopular')}</span>}
                 <h3 className="text-sm font-semibold text-foreground">{p.name}</h3>
                 <div className="mt-3 flex items-baseline gap-1.5">
                   <span className="text-4xl font-medium tracking-tight text-foreground">{p.price}</span>
@@ -135,14 +139,14 @@ export default function PricingPage() {
           </div>
         </Reveal>
         <Reveal delay={0.1}>
-          <p className="mt-6 text-center text-sm text-muted-foreground">Cloud is per seat + usage-based compute. You only pay for what your agents actually run.</p>
+          <p className="mt-6 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('appHomePricingPage.line138JsxTextCloudIsPerSeatUsageBasedComputeYou')}</p>
         </Reveal>
       </section>
 
       {/* Comparison */}
       <section className="max-w-6xl mx-auto px-6 py-16 sm:py-24 border-t border-border/50">
         <Reveal>
-          <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground leading-tight mb-10">Compare plans</h2>
+          <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground leading-tight mb-10">{tHardcodedUi.raw('appHomePricingPage.line145JsxTextComparePlans')}</h2>
         </Reveal>
         <Reveal delay={0.05}>
           <div className="overflow-x-auto">
@@ -150,7 +154,7 @@ export default function PricingPage() {
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left py-3 pr-4 w-[34%]" />
-                  <th className="py-3 px-4 text-sm font-semibold text-foreground text-center">Open Source</th>
+                  <th className="py-3 px-4 text-sm font-semibold text-foreground text-center">{tHardcodedUi.raw('appHomePricingPage.line153JsxTextOpenSource')}</th>
                   <th className="py-3 px-4 text-sm font-semibold text-foreground text-center">Cloud</th>
                   <th className="py-3 px-4 text-sm font-semibold text-foreground text-center">Enterprise</th>
                 </tr>
@@ -180,7 +184,7 @@ export default function PricingPage() {
       {/* FAQ */}
       <section className="max-w-3xl mx-auto px-6 py-16 sm:py-24 border-t border-border/50">
         <Reveal>
-          <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground leading-tight mb-8">Pricing questions</h2>
+          <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground leading-tight mb-8">{tHardcodedUi.raw('appHomePricingPage.line183JsxTextPricingQuestions')}</h2>
         </Reveal>
         <div className="divide-y divide-border/60">
           {FAQ.map(([q, a]) => (
@@ -197,13 +201,13 @@ export default function PricingPage() {
       {/* CTA */}
       <section className="max-w-5xl mx-auto px-6 py-20 sm:py-28 border-t border-border/50 text-center">
         <Reveal>
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-foreground leading-tight">Start free today.</h2>
-          <p className="mt-4 text-base sm:text-lg text-muted-foreground max-w-xl mx-auto">Self-host in minutes, or have us walk you through Cloud and Enterprise in a live demo.</p>
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomePricingPage.line200JsxTextStartFreeToday')}</h2>
+          <p className="mt-4 text-base sm:text-lg text-muted-foreground max-w-xl mx-auto">{tHardcodedUi.raw('appHomePricingPage.line201JsxTextSelfHostInMinutesOrHaveUsWalk')}</p>
         </Reveal>
         <Reveal delay={0.1}>
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Button asChild size="lg" className="h-12 px-8 text-sm rounded-full"><Link href={DEMO_URL}>Request demo<ArrowRight className="ml-1.5 size-3.5" /></Link></Button>
-            <Button asChild size="lg" variant="outline" className="h-12 px-7 text-sm rounded-full"><Link href={START_URL}>Get started</Link></Button>
+            <Button asChild size="lg" className="h-12 px-8 text-sm rounded-full"><Link href={DEMO_URL}>{tHardcodedUi.raw('appHomePricingPage.line205JsxTextRequestDemo')}<ArrowRight className="ml-1.5 size-3.5" /></Link></Button>
+            <Button asChild size="lg" variant="outline" className="h-12 px-7 text-sm rounded-full"><Link href={START_URL}>{tHardcodedUi.raw('appHomePricingPage.line206JsxTextGetStarted')}</Link></Button>
           </div>
         </Reveal>
       </section>

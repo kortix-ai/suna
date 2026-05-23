@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
@@ -11,6 +12,7 @@ const ROWS = 10;
 const HEADER_COLOR = '#1F4E79';
 
 export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [phase, setPhase] = useState(0);
   const [cursorPos, setCursorPos] = useState({ row: 0, col: 0 });
   const [filledCells, setFilledCells] = useState<Set<string>>(new Set());
@@ -128,9 +130,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
             className="text-sm text-muted-foreground"
             animate={{ opacity: [0.5, 1, 0.5] }}
             transition={{ duration: 1.5, repeat: Infinity }}
-          >
-            Building spreadsheet...
-          </motion.p>
+          >{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSpreadsheetsimulation.line132JsxTextBuildingSpreadsheet')}</motion.p>
         </div>
       </div>
     );

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { pierreDarkCm, pierreLightCm } from '@/lib/codemirror-pierre-theme';
@@ -351,6 +353,7 @@ export function CodeEditor({
   diagnostics,
   targetLine,
 }: CodeEditorProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -617,6 +620,7 @@ export function CodeEditor({
   }, [langExtension, diagExt]);
 
   const SaveButton = () => {
+    const tHardcodedUi = useTranslations('hardcodedUi');
     if (readOnly || !onSave) return null;
     
     switch (saveState) {
@@ -674,7 +678,7 @@ export function CodeEditor({
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 {hasChanges ? (
-                  <>Save changes <kbd className="ml-1.5 px-1 py-0.5 text-xs bg-muted rounded font-mono">⌘S</kbd></>
+                  <>{tHardcodedUi.raw('componentsFileEditorsCodeEditor.line677JsxTextSaveChanges')}<kbd className="ml-1.5 px-1 py-0.5 text-xs bg-muted rounded font-mono">{tHardcodedUi.raw('componentsFileEditorsCodeEditor.line677JsxTextS')}</kbd></>
                 ) : (
                   'No changes to save'
                 )}
@@ -715,9 +719,7 @@ export function CodeEditor({
                       <RotateCcw className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    Discard changes
-                  </TooltipContent>
+                  <TooltipContent side="bottom">{tHardcodedUi.raw('componentsFileEditorsCodeEditor.line719JsxTextDiscardChanges')}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}

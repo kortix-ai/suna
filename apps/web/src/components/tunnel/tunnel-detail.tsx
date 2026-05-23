@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * TunnelDetail — detailed view of a single tunnel connection.
  * Shows: connection info, permissions manager, audit log.
@@ -22,6 +24,7 @@ interface TunnelDetailProps {
 }
 
 export function TunnelDetail({ tunnelId }: TunnelDetailProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const { data: connection, isLoading } = useTunnelConnection(tunnelId);
 
@@ -32,11 +35,9 @@ export function TunnelDetail({ tunnelId }: TunnelDetailProps) {
   if (!connection) {
     return (
       <div className="p-6">
-        <p className="text-sm text-muted-foreground">Tunnel connection not found.</p>
+        <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelDetail.line35JsxTextTunnelConnectionNotFound')}</p>
         <Button variant="outline" size="sm" className="mt-2" onClick={() => router.push('/tunnel')}>
-          <ArrowLeft className="h-3.5 w-3.5 mr-1" />
-          Back to tunnels
-        </Button>
+          <ArrowLeft className="h-3.5 w-3.5 mr-1" />{tHardcodedUi.raw('componentsTunnelTunnelDetail.line38JsxTextBackToTunnels')}</Button>
       </div>
     );
   }
@@ -75,8 +76,7 @@ export function TunnelDetail({ tunnelId }: TunnelDetailProps) {
                 {isOnline ? 'Connected' : 'Offline'}
               </span>
               {machineInfo?.hostname && (
-                <span className="text-sm text-muted-foreground">
-                  &middot; {machineInfo.hostname}
+                <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelDetail.line79JsxTextMiddot')}{machineInfo.hostname}
                 </span>
               )}
             </div>
@@ -97,7 +97,7 @@ export function TunnelDetail({ tunnelId }: TunnelDetailProps) {
         <Tabs defaultValue="permissions" className="w-full">
           <TabsList>
             <TabsTrigger value="permissions">Permissions</TabsTrigger>
-            <TabsTrigger value="audit">Audit Log</TabsTrigger>
+            <TabsTrigger value="audit">{tHardcodedUi.raw('componentsTunnelTunnelDetail.line100JsxTextAuditLog')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="permissions" className="mt-4">

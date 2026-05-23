@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
@@ -241,6 +243,7 @@ interface TabListDropdownProps {
 }
 
 function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, getStatus }: TabListDropdownProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredTabs = useMemo(() => {
@@ -309,7 +312,7 @@ function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, ge
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.stopPropagation()}
-              placeholder="Filter tabs..."
+              placeholder={tHardcodedUi.raw('componentsTabsTabBar.line312JsxAttrPlaceholderFilterTabs')}
               autoFocus
               className="h-8 text-xs"
             />
@@ -339,9 +342,7 @@ function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, ge
             </DropdownMenuGroup>
           )}
           {filteredTabs.length === 0 && (
-            <div className="px-2 py-4 text-xs text-muted-foreground text-center">
-              No matching tabs
-            </div>
+            <div className="px-2 py-4 text-xs text-muted-foreground text-center">{tHardcodedUi.raw('componentsTabsTabBar.line343JsxTextNoMatchingTabs')}</div>
           )}
         </div>
 
@@ -561,6 +562,7 @@ function TabItem({
 // ============================================================================
 
 export function TabBar() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const rawPathname = usePathname();
   const pathname = normalizeAppPathname(rawPathname);
   const currentInstanceId = getCurrentInstanceIdFromPathname(rawPathname) || getActiveInstanceIdFromCookie();
@@ -1100,14 +1102,14 @@ export function TabBar() {
           <button
             onClick={() => { sidebar.setOpenMobile(true); }}
             className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-            aria-label="Open menu"
+            aria-label={tHardcodedUi.raw('componentsTabsTabBar.line1094JsxAttrAriaLabelOpenMenu')}
           >
             <Menu className="h-4 w-4" />
           </button>
           <button
             onClick={() => { rightSidebar?.setOpenMobile(true); }}
             className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-            aria-label="Quick actions"
+            aria-label={tHardcodedUi.raw('componentsTabsTabBar.line1101JsxAttrAriaLabelQuickActions')}
           >
             <PanelRight className="h-4 w-4" />
           </button>
@@ -1194,7 +1196,7 @@ export function TabBar() {
                 <Plus className="h-3 w-3" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">New tab</TooltipContent>
+            <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsTabsTabBar.line1188JsxTextNewTab')}</TooltipContent>
           </Tooltip>
 
           <Tooltip>
@@ -1210,7 +1212,7 @@ export function TabBar() {
                 />
               </div>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">Open tab list</TooltipContent>
+            <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsTabsTabBar.line1204JsxTextOpenTabList')}</TooltipContent>
           </Tooltip>
 
         </div>

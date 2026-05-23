@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from 'next-intl';
+
 import { useState } from "react";
 import { useTriggerWorkflow, useWorkflows } from "@/hooks/admin/use-notification-workflow";
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { LegacyBanner } from "@/components/admin/legacy-banner";
 
 export default function NotificationManagementPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [workflowId, setWorkflowId] = useState("");
   const [payload, setPayload] = useState(
     JSON.stringify(
@@ -100,18 +103,16 @@ export default function NotificationManagementPage() {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-semibold tracking-tight">Notification Management</h1>
+                <h1 className="text-2xl font-semibold tracking-tight">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line103JsxTextNotificationManagement')}</h1>
                 <Badge variant="outline" className="text-xs">
                   {broadcast ? (
                     <><Users className="w-3 h-3 mr-1" />Broadcast</>
                   ) : (
-                    <><User className="w-3 h-3 mr-1" />Single User</>
+                    <><User className="w-3 h-3 mr-1" />{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line108JsxTextSingleUser')}</>
                   )}
                 </Badge>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Send notifications via Novu workflows
-              </p>
+              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line113JsxTextSendNotificationsViaNovuWorkflows')}</p>
             </div>
             <Button
               onClick={handleTrigger}
@@ -145,7 +146,7 @@ export default function NotificationManagementPage() {
             <div className="flex items-center gap-3 p-4 border rounded-2xl bg-card">
               <div className="flex items-center gap-2">
                 <User className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Single User</span>
+                <span className="text-sm font-medium">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line148JsxTextSingleUser')}</span>
               </div>
               <Switch
                 checked={broadcast}
@@ -154,7 +155,7 @@ export default function NotificationManagementPage() {
               />
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Broadcast All</span>
+                <span className="text-sm font-medium">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line157JsxTextBroadcastAll')}</span>
               </div>
             </div>
 
@@ -165,10 +166,8 @@ export default function NotificationManagementPage() {
                     1
                   </div>
                   <div>
-                    <CardTitle className="text-base">Select Workflow</CardTitle>
-                    <CardDescription className="text-xs">
-                      Choose from your Novu workflows
-                    </CardDescription>
+                    <CardTitle className="text-base">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line168JsxTextSelectWorkflow')}</CardTitle>
+                    <CardDescription className="text-xs">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line170JsxTextChooseFromYourNovuWorkflows')}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -181,14 +180,10 @@ export default function NotificationManagementPage() {
                     {loadingWorkflows ? (
                       <SelectItem value="loading" disabled>
                         <div className="flex items-center gap-2">
-                          <KortixLoader size="small" />
-                          Loading workflows...
-                        </div>
+                          <KortixLoader size="small" />{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line185JsxTextLoadingWorkflows')}</div>
                       </SelectItem>
                     ) : workflows.length === 0 ? (
-                      <SelectItem value="none" disabled>
-                        No workflows found
-                      </SelectItem>
+                      <SelectItem value="none" disabled>{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line190JsxTextNoWorkflowsFound')}</SelectItem>
                     ) : (
                       workflows.map((workflow) => (
                         <SelectItem key={workflow.workflow_id} value={workflow.workflow_id}>
@@ -225,18 +220,16 @@ export default function NotificationManagementPage() {
                       2
                     </div>
                     <div>
-                      <CardTitle className="text-base">Target Recipient</CardTitle>
-                      <CardDescription className="text-xs">
-                        Who should receive this notification
-                      </CardDescription>
+                      <CardTitle className="text-base">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line228JsxTextTargetRecipient')}</CardTitle>
+                      <CardDescription className="text-xs">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line230JsxTextWhoShouldReceiveThisNotification')}</CardDescription>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between p-3 bg-muted/50 rounded-2xl">
-                    <span className="text-sm font-medium">Target by:</span>
+                    <span className="text-sm font-medium">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line237JsxTextTargetBy')}</span>
                     <div className="flex items-center gap-3">
-                      <span className="text-sm text-muted-foreground">User ID</span>
+                      <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line239JsxTextUserId')}</span>
                       <Switch
                         checked={useEmail}
                         onCheckedChange={setUseEmail}
@@ -247,31 +240,27 @@ export default function NotificationManagementPage() {
 
                   {useEmail ? (
                     <div className="space-y-2">
-                      <Label htmlFor="subscriber-email">Email Address</Label>
+                      <Label htmlFor="subscriber-email">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line250JsxTextEmailAddress')}</Label>
                       <Input
                         id="subscriber-email"
                         type="email"
-                        placeholder="user@example.com"
+                        placeholder={tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line254JsxAttrPlaceholderUserExampleCom')}
                         value={subscriberEmail}
                         onChange={(e) => setSubscriberEmail(e.target.value)}
                       />
                       <p className="text-xs text-muted-foreground">
-                        <Sparkles className="w-3 h-3 inline mr-1" />
-                        Auto-creates subscriber if doesn't exist
-                      </p>
+                        <Sparkles className="w-3 h-3 inline mr-1" />{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line260JsxTextAutoCreatesSubscriberIfDoesnTExist')}</p>
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <Label htmlFor="subscriber-id">User ID</Label>
+                      <Label htmlFor="subscriber-id">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line265JsxTextUserId')}</Label>
                       <Input type="text"
                         id="subscriber-id"
-                        placeholder="Enter user/account ID"
+                        placeholder={tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line268JsxAttrPlaceholderEnterUserAccountId')}
                         value={subscriberId}
                         onChange={(e) => setSubscriberId(e.target.value)}
                       />
-                      <p className="text-xs text-muted-foreground">
-                        The Supabase user ID of the recipient
-                      </p>
+                      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line273JsxTextTheSupabaseUserIdOfTheRecipient')}</p>
                     </div>
                   )}
                 </CardContent>
@@ -285,10 +274,8 @@ export default function NotificationManagementPage() {
                     {broadcast ? "2" : "3"}
                   </div>
                   <div>
-                    <CardTitle className="text-base">Payload Data (Optional)</CardTitle>
-                    <CardDescription className="text-xs">
-                      Custom data to send with the notification
-                    </CardDescription>
+                    <CardTitle className="text-base">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line288JsxTextPayloadDataOptional')}</CardTitle>
+                    <CardDescription className="text-xs">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line290JsxTextCustomDataToSendWithTheNotification')}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -326,15 +313,15 @@ export default function NotificationManagementPage() {
                   <div className="space-y-2">
                     <div className="space-y-1">
                       <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{email}}"}</code>
-                      <p className="text-xs text-muted-foreground pl-2">User's email</p>
+                      <p className="text-xs text-muted-foreground pl-2">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line329JsxTextUserSEmail')}</p>
                     </div>
                     <div className="space-y-1">
                       <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{name}}"}</code>
-                      <p className="text-xs text-muted-foreground pl-2">Full name</p>
+                      <p className="text-xs text-muted-foreground pl-2">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line333JsxTextFullName')}</p>
                     </div>
                     <div className="space-y-1">
                       <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{first_name}}"}</code>
-                      <p className="text-xs text-muted-foreground pl-2">First name</p>
+                      <p className="text-xs text-muted-foreground pl-2">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line337JsxTextFirstName')}</p>
                     </div>
                     <div className="space-y-1">
                       <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{phone}}"}</code>
@@ -343,16 +330,12 @@ export default function NotificationManagementPage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Use in Novu template:
-                    </p>
+                    <p className="text-xs text-muted-foreground mb-2">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line347JsxTextUseInNovuTemplate')}</p>
                     <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{subscriber.firstName}}"}</code>
                     <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{subscriber.lastName}}"}</code>
                     <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{subscriber.email}}"}</code>
                     <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{subscriber.phone}}"}</code>
-                    <p className="text-xs text-muted-foreground mt-3">
-                      Payload data:
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-3">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line354JsxTextPayloadData')}</p>
                     <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{payload.yourKey}}"}</code>
                   </div>
                 )}
@@ -373,7 +356,7 @@ export default function NotificationManagementPage() {
                   <CollapsibleContent>
                     <CardContent className="space-y-3">
                       <div className="space-y-2">
-                        <p className="text-xs font-medium">Novu Template:</p>
+                        <p className="text-xs font-medium">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line376JsxTextNovuTemplate')}</p>
                         <pre className="p-2 bg-muted rounded text-xs overflow-x-auto">
 {`Hello {{subscriber.firstName}},
 
@@ -384,7 +367,7 @@ export default function NotificationManagementPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <p className="text-xs font-medium">Your Payload:</p>
+                        <p className="text-xs font-medium">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line387JsxTextYourPayload')}</p>
                         <pre className="p-2 bg-muted rounded text-xs">
 {`{
   "message": "New feature!",
@@ -396,12 +379,8 @@ export default function NotificationManagementPage() {
                       <div className="space-y-2">
                         <p className="text-xs font-medium">Result:</p>
                         <div className="p-2 bg-muted rounded text-xs">
-                          <p className="font-medium">John receives:</p>
-                          <pre className="text-muted-foreground mt-1">Hello John,
-
-New feature!
-
-/features</pre>
+                          <p className="font-medium">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line399JsxTextJohnReceives')}</p>
+                          <pre className="text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line400JsxTextHelloJohnNewFeatureFeatures')}</pre>
                         </div>
                       </div>
                     </CardContent>
@@ -412,24 +391,24 @@ New feature!
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">Quick Tips</CardTitle>
+                <CardTitle className="text-sm">{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line415JsxTextQuickTips')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-xs text-muted-foreground">
                 <div className="flex gap-2">
                   <span className="text-primary">•</span>
-                  <span>Create workflows in Novu dashboard first</span>
+                  <span>{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line420JsxTextCreateWorkflowsInNovuDashboardFirst')}</span>
                 </div>
                 <div className="flex gap-2">
                   <span className="text-primary">•</span>
-                  <span>Payload must be valid JSON</span>
+                  <span>{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line424JsxTextPayloadMustBeValidJson')}</span>
                 </div>
                 <div className="flex gap-2">
                   <span className="text-primary">•</span>
-                  <span>Email mode auto-creates subscribers</span>
+                  <span>{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line428JsxTextEmailModeAutoCreatesSubscribers')}</span>
                 </div>
                 <div className="flex gap-2">
                   <span className="text-primary">•</span>
-                  <span>Broadcasts send to all active subscribers</span>
+                  <span>{tHardcodedUi.raw('componentsPagesAdminNotificationsPage.line432JsxTextBroadcastsSendToAllActiveSubscribers')}</span>
                 </div>
               </CardContent>
             </Card>

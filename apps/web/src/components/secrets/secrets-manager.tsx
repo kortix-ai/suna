@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * SecretsManager — simple raw KV editor for sandbox environment variables.
  */
@@ -26,6 +28,7 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
 export function SecretsManager() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: secrets, isLoading } = useSecrets();
   const setSecret = useSetSecret();
   const deleteSecret = useDeleteSecret();
@@ -115,7 +118,7 @@ export function SecretsManager() {
             <Input type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter keys..."
+              placeholder={tHardcodedUi.raw('componentsSecretsSecretsManager.line118JsxAttrPlaceholderFilterKeys')}
               className="h-8 pl-8 text-xs"
             />
           </div>
@@ -193,7 +196,7 @@ export function SecretsManager() {
                     <Input type="text"
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
-                      placeholder="Enter value..."
+                      placeholder={tHardcodedUi.raw('componentsSecretsSecretsManager.line196JsxAttrPlaceholderEnterValue')}
                       className="h-7 text-xs font-mono"
                       autoFocus
                       onKeyDown={(e) => {
@@ -202,7 +205,7 @@ export function SecretsManager() {
                       }}
                     />
                   ) : isConfirmingDelete ? (
-                    <span className="text-xs text-muted-foreground">Remove this key?</span>
+                    <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSecretsSecretsManager.line205JsxTextRemoveThisKey')}</span>
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <code className={cn(

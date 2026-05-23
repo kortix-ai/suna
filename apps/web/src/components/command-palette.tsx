@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, usePathname, useParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -162,6 +163,7 @@ function FileSearchPage({
   query: string;
   onSelect: (filePath: string, lineNumber?: number) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isContent = query.trimStart().startsWith('>');
   const effectiveQuery = (isContent ? query.replace(/^\s*>\s*/, '') : query).trim();
   const enabled = effectiveQuery.length >= 2;
@@ -180,12 +182,10 @@ function FileSearchPage({
           <Search className="h-4 w-4 text-muted-foreground/40" />
         </div>
         <div className="space-y-1 text-center">
-          <p className="text-sm text-muted-foreground/60">Search files in this project&apos;s repo</p>
+          <p className="text-sm text-muted-foreground/60">{tHardcodedUi.raw('componentsCommandPalette.line183JsxTextSearchFilesInThisProjectSRepo')}</p>
           <p className="text-xs text-muted-foreground/30">
-            Prefix with{' '}
-            <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-xs">&gt;</kbd> to search
-            file contents
-          </p>
+            {tHardcodedUi.raw('componentsCommandPalette.line185JsxTextPrefixWith')}{' '}
+            <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('componentsCommandPalette.line186JsxTextText')}</kbd> {tHardcodedUi.raw('componentsCommandPalette.line186JsxTextToSearchFileContents')}</p>
         </div>
       </div>
     );
@@ -210,8 +210,7 @@ function FileSearchPage({
           <Search className="h-4 w-4 text-muted-foreground/30" />
         </div>
         <span className="text-sm text-muted-foreground/60">
-          No {isContent ? 'content matches' : 'files'} for &ldquo;{effectiveQuery}&rdquo;
-        </span>
+          No {isContent ? 'content matches' : 'files'} {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextFor')}{effectiveQuery}{tHardcodedUi.raw('componentsCommandPalette.line213JsxTextText')}</span>
       </div>
     );
   }
@@ -294,6 +293,7 @@ function MessagesPage({
   query: string;
   onSelect: (messageId: string) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: messages, isLoading } = useOpenCodeMessages(sessionId);
 
   const turns = useMemo(
@@ -325,7 +325,7 @@ function MessagesPage({
     return (
       <div className="flex items-center justify-center gap-2 py-10">
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/50" />
-        <span className="text-sm text-muted-foreground/50">Loading messages...</span>
+        <span className="text-sm text-muted-foreground/50">{tHardcodedUi.raw('componentsCommandPalette.line328JsxTextLoadingMessages')}</span>
       </div>
     );
   }
@@ -369,6 +369,7 @@ function MessagesPage({
 // ============================================================================
 
 export function CommandPalette() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState<PalettePage>('root');
@@ -1206,7 +1207,7 @@ export function CommandPalette() {
                           onSelect={() => goToPage('agents')}
                         >
                           <Bot className="h-4 w-4" />
-                          <span className="flex-1">Change Agent</span>
+                          <span className="flex-1">{tHardcodedUi.raw('componentsCommandPalette.line1209JsxTextChangeAgent')}</span>
                           {currentAgent && (
                             <span className="text-xs text-muted-foreground/40">{currentAgent.name}</span>
                           )}
@@ -1217,7 +1218,7 @@ export function CommandPalette() {
                           onSelect={() => goToPage('models')}
                         >
                           <Cpu className="h-4 w-4" />
-                          <span className="flex-1">Change Model</span>
+                          <span className="flex-1">{tHardcodedUi.raw('componentsCommandPalette.line1220JsxTextChangeModel')}</span>
                           {currentModelKey && (
                             <span className="text-xs text-muted-foreground/40 truncate max-w-[160px]">
                               {allModels.find(
@@ -1232,7 +1233,7 @@ export function CommandPalette() {
                           onSelect={() => goToPage('messages')}
                         >
                           <MessageCircle className="h-4 w-4" />
-                          <span className="flex-1">Jump to Message</span>
+                          <span className="flex-1">{tHardcodedUi.raw('componentsCommandPalette.line1235JsxTextJumpToMessage')}</span>
                           <ChevronRight className="h-3 w-3 text-muted-foreground/30" />
                         </CommandItem>
                       </>
@@ -1245,7 +1246,7 @@ export function CommandPalette() {
                         onSelect={() => goToPage('files')}
                       >
                         <Search className="h-4 w-4" />
-                        <span className="flex-1">Search Files</span>
+                        <span className="flex-1">{tHardcodedUi.raw('componentsCommandPalette.line1248JsxTextSearchFiles')}</span>
                         <span className="px-1.5 py-0.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-xs font-mono text-muted-foreground/55 leading-none">
                           repo
                         </span>
@@ -1257,7 +1258,7 @@ export function CommandPalette() {
                   {/* Recent — project sessions when scoped to a project, else
                       recent projects (no legacy global session feed). */}
                   {projectId && recentProjectSessions.length > 0 && (
-                    <CommandGroup heading="Recent Sessions" forceMount>
+                    <CommandGroup heading={tHardcodedUi.raw('componentsCommandPalette.line1260JsxAttrHeadingRecentSessions')} forceMount>
                       {recentProjectSessions.map((session) => (
                         <CommandItem
                           key={session.session_id}
@@ -1278,7 +1279,7 @@ export function CommandPalette() {
                   )}
 
                   {!projectId && recentProjects.length > 0 && (
-                    <CommandGroup heading="Recent Projects" forceMount>
+                    <CommandGroup heading={tHardcodedUi.raw('componentsCommandPalette.line1281JsxAttrHeadingRecentProjects')} forceMount>
                       {recentProjects.map((project) => (
                         <CommandItem
                           key={project.project_id}
@@ -1416,7 +1417,7 @@ export function CommandPalette() {
 
                   {/* Open URL — shown when query looks like a URL or port */}
                   {detectedUrl && (
-                    <CommandGroup heading="Open URL" forceMount>
+                    <CommandGroup heading={tHardcodedUi.raw('componentsCommandPalette.line1419JsxAttrHeadingOpenURL')} forceMount>
                       <CommandItem
                         value={sanitizeCmdkValue(`open url browser preview ${query.trim()} localhost port`)}
                         onSelect={handleOpenUrl}
@@ -1434,15 +1435,14 @@ export function CommandPalette() {
 
                   {/* Search files action — searches the project's git repo */}
                   {queryLongEnough && !detectedUrl && projectId && (
-                    <CommandGroup heading="File Search" forceMount>
+                    <CommandGroup heading={tHardcodedUi.raw('componentsCommandPalette.line1437JsxAttrHeadingFileSearch')} forceMount>
                       <CommandItem
                         value={sanitizeCmdkValue(`search files ${query.trim()} repo grep find open`)}
                         onSelect={() => goToPage('files', true)}
                       >
                         <Search className="h-4 w-4" />
                         <span className="flex-1">
-                          Search files for &ldquo;{query.trim()}&rdquo;
-                        </span>
+                          {tHardcodedUi.raw('componentsCommandPalette.line1444JsxTextSearchFilesFor')}{query.trim()}{tHardcodedUi.raw('componentsCommandPalette.line1444JsxTextText')}</span>
                         <span className="px-1.5 py-0.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-xs font-mono text-muted-foreground/55 leading-none">
                           repo
                         </span>
@@ -1459,11 +1459,9 @@ export function CommandPalette() {
                       </div>
                       <div className="text-center">
                         <span className="text-sm text-muted-foreground/60">
-                          No results for &ldquo;{query.trim()}&rdquo;
-                        </span>
+                          {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextNoResultsFor')}{query.trim()}{tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextText')}</span>
                         <p className="text-xs text-muted-foreground/30 mt-1">
-                          Try &ldquo;Search files&rdquo; or a different term
-                        </p>
+                          {tHardcodedUi.raw('componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm')}</p>
                       </div>
                     </div>
                   )}
@@ -1741,8 +1739,8 @@ export function CommandPalette() {
           )}
           {page === 'files' && (
             <div className="flex items-center gap-1">
-              <CommandKbd>&gt;</CommandKbd>
-              <span>content search</span>
+              <CommandKbd>{tHardcodedUi.raw('componentsCommandPalette.line1744JsxTextText')}</CommandKbd>
+              <span>{tHardcodedUi.raw('componentsCommandPalette.line1745JsxTextContentSearch')}</span>
             </div>
           )}
           <div className="flex items-center gap-1">

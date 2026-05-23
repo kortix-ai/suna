@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Workspace switcher — Slack/Linear-style.
  *
@@ -142,6 +144,7 @@ export function WorkspacesFlyoutContent({
    *  Lets the parent close the flyout. */
   onAfterAction?: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
@@ -210,13 +213,9 @@ export function WorkspacesFlyoutContent({
       <div className="p-1 flex flex-col">
         {isLoading && visible.length === 0 ? (
           <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
-            Loading…
-          </div>
+            <Loader2 className="size-3.5 animate-spin" />{tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line214JsxTextLoading')}</div>
         ) : visible.length === 0 ? (
-          <div className="px-2 py-6 text-center text-xs text-muted-foreground/60">
-            No workspaces yet
-          </div>
+          <div className="px-2 py-6 text-center text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line218JsxTextNoWorkspacesYet')}</div>
         ) : (
           visible.map((s) => {
             const isActive = s.sandbox_id === activeInstanceId;
@@ -287,7 +286,7 @@ export function WorkspacesFlyoutContent({
           className={rowClass}
         >
           <ArrowUpRight />
-          <span className="flex-1 text-left">All workspaces</span>
+          <span className="flex-1 text-left">{tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line290JsxTextAllWorkspaces')}</span>
         </button>
       </div>
 
@@ -305,6 +304,7 @@ export function WorkspacesFlyoutContent({
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function InstanceSwitcherPopover() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
   const { user } = useAuth();
 
@@ -354,7 +354,7 @@ export function InstanceSwitcherPopover() {
               'text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer',
               open && 'bg-sidebar-accent',
             )}
-            aria-label="Switch workspace"
+            aria-label={tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line357JsxAttrAriaLabelSwitchWorkspace')}
           >
             <WorkspaceAvatar sandbox={triggerSandbox} size="sm" />
             <div className="flex-1 min-w-0">

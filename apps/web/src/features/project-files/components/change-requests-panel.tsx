@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState } from 'react';
 import {
   GitBranch,
@@ -91,6 +93,7 @@ interface ChangeRequestsPanelProps {
  * dialog with diff + merge/close actions.
  */
 export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const ctx = useProjectContext();
   const activeRef = ctx?.ref ?? '';
   const defaultBranch = ctx?.defaultBranch ?? '';
@@ -128,7 +131,7 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
         {/* Header */}
         <div className="flex items-center gap-2 px-3 h-12 border-b border-border/40 shrink-0">
           <GitPullRequest className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium text-sm">Change requests</span>
+          <span className="font-medium text-sm">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line131JsxTextChangeRequests')}</span>
           {activeRef && (
             <span
               className="flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground/90 truncate max-w-[120px]"
@@ -142,7 +145,7 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
             size="sm"
             className="h-7 ml-auto gap-1 px-2 text-xs"
             onClick={() => setOpenDialogShown(true)}
-            title="Open a new change request"
+            title={tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line145JsxAttrTitleOpenANewChangeRequest')}
           >
             <Plus className="h-3.5 w-3.5" />
             New
@@ -196,8 +199,7 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
               <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
                 <GitPullRequest className="h-6 w-6 text-muted-foreground/30" />
                 <p className="text-xs text-muted-foreground">
-                  No {status === 'all' ? '' : status} change requests
-                </p>
+                  No {status === 'all' ? '' : status}{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line199JsxTextChangeRequests')}</p>
                 {status === 'open' && (
                   <Button
                     size="sm"
@@ -205,9 +207,7 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
                     className="mt-1 h-7 gap-1 text-xs"
                     onClick={() => setOpenDialogShown(true)}
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    Open the first one
-                  </Button>
+                    <Plus className="h-3.5 w-3.5" />{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line209JsxTextOpenTheFirstOne')}</Button>
                 )}
               </div>
             )}

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -35,6 +37,7 @@ export default function CliAuthorizePage() {
 type Phase = 'idle' | 'authorizing' | 'success' | 'error';
 
 function CliAuthorizeInner() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { user, isLoading } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
@@ -68,8 +71,8 @@ function CliAuthorizeInner() {
     return (
       <Centered>
         <ErrorCard
-          title="Missing callback"
-          message="This page is opened by the kortix CLI. Run `kortix login` in your terminal to start."
+          title={tHardcodedUi.raw('appCliAuthorizePage.line70JsxAttrTitleMissingCallback')}
+          message={tHardcodedUi.raw('appCliAuthorizePage.line71JsxAttrMessageThisPageIsOpenedByTheKortixCli')}
         />
       </Centered>
     );
@@ -78,7 +81,7 @@ function CliAuthorizeInner() {
   if (!validation.ok) {
     return (
       <Centered>
-        <ErrorCard title="Invalid callback" message={validation.reason} />
+        <ErrorCard title={tHardcodedUi.raw('appCliAuthorizePage.line80JsxAttrTitleInvalidCallback')} message={validation.reason} />
       </Centered>
     );
   }
@@ -203,6 +206,7 @@ function ConsentCard({
   error,
   onAuthorize,
 }: ConsentProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const busy = phase === 'authorizing';
   return (
     <div className="rounded-2xl border bg-background shadow-sm">
@@ -212,17 +216,12 @@ function ConsentCard({
             <TerminalSquare className="size-5" />
           </div>
           <div>
-            <div className="text-base font-semibold">Authorize Kortix CLI</div>
-            <div className="text-xs text-muted-foreground">
-              kortix.com → your terminal
-            </div>
+            <div className="text-base font-semibold">{tHardcodedUi.raw('appCliAuthorizePage.line214JsxTextAuthorizeKortixCli')}</div>
+            <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line216JsxTextKortixComYourTerminal')}</div>
           </div>
         </div>
 
-        <p className="text-sm text-muted-foreground">
-          Approving will create a new Personal Access Token in your account
-          and hand it to the CLI running on this machine.
-        </p>
+        <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line222JsxTextApprovingWillCreateANewPersonalAccessToken')}</p>
 
         <dl className="mt-5 space-y-2 rounded-2xl border bg-muted/30 p-4 text-sm">
           <Row label="Account" value={userEmail || 'You'} />
@@ -247,8 +246,7 @@ function ConsentCard({
           <Button onClick={onAuthorize} disabled={busy} size="lg">
             {busy ? (
               <>
-                <Loader2 className="size-4 animate-spin" /> Authorizing…
-              </>
+                <Loader2 className="size-4 animate-spin" />{tHardcodedUi.raw('appCliAuthorizePage.line249JsxTextAuthorizing')}</>
             ) : (
               <>
                 <KeyRound className="size-4" /> Authorize
@@ -258,9 +256,8 @@ function ConsentCard({
         </div>
       </div>
 
-      <div className="border-t bg-muted/30 px-7 py-3 text-xs text-muted-foreground">
-        You can revoke this token anytime under{' '}
-        <strong className="text-foreground">Settings → CLI tokens</strong>.
+      <div className="border-t bg-muted/30 px-7 py-3 text-xs text-muted-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line261JsxTextYouCanRevokeThisTokenAnytimeUnder')}{' '}
+        <strong className="text-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line262JsxTextSettingsCliTokens')}</strong>.
       </div>
     </div>
   );
@@ -280,18 +277,15 @@ function Row({ label, value }: { label: string; value: string }) {
 // ──────────────────────────────────────────────────────────────────────────
 
 function SuccessCard() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="rounded-2xl border bg-background p-7 shadow-sm text-center">
       <div className="mx-auto grid size-12 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
         <CheckCircle2 className="size-6" />
       </div>
-      <div className="mt-4 text-base font-semibold">CLI authorized</div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Return to your terminal — you&apos;re signed in.
-      </p>
-      <p className="mt-4 text-xs text-muted-foreground">
-        You can close this tab.
-      </p>
+      <div className="mt-4 text-base font-semibold">{tHardcodedUi.raw('appCliAuthorizePage.line287JsxTextCliAuthorized')}</div>
+      <p className="mt-1 text-sm text-muted-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line289JsxTextReturnToYourTerminalYouAposReSigned')}</p>
+      <p className="mt-4 text-xs text-muted-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line292JsxTextYouCanCloseThisTab')}</p>
     </div>
   );
 }

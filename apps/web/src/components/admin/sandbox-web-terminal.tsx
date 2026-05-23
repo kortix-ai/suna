@@ -1,10 +1,13 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { RotateCw, Maximize2, Minimize2, ExternalLink, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fetchAdminSandboxProxyToken } from '@/hooks/admin/use-admin-sandboxes';
+import { CLIPBOARD_IFRAME_ALLOW, TERMINAL_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 
 interface SandboxWebTerminalProps {
   sandboxId: string;
@@ -37,6 +40,7 @@ export default function SandboxWebTerminal({
   terminalUrl,
   label,
 }: SandboxWebTerminalProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
@@ -92,7 +96,7 @@ export default function SandboxWebTerminal({
         <div className="flex items-center justify-center h-[400px]">
           <div className="text-center space-y-2">
             <Loader2 className="size-5 animate-spin text-yellow-500 mx-auto" />
-            <p className="text-sm text-zinc-500">Waiting for sandbox to be ready…</p>
+            <p className="text-sm text-zinc-500">{tHardcodedUi.raw('componentsAdminSandboxWebTerminal.line95JsxTextWaitingForSandboxToBeReady')}</p>
           </div>
         </div>
       </div>
@@ -134,7 +138,7 @@ export default function SandboxWebTerminal({
           <Button variant="ghost" size="icon" className="size-7 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800" onClick={handleReload} title="Reconnect">
             <RotateCw className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" className="size-7 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800" onClick={handleOpenNewTab} title="Open in new tab">
+          <Button variant="ghost" size="icon" className="size-7 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800" onClick={handleOpenNewTab} title={tHardcodedUi.raw('componentsAdminSandboxWebTerminal.line137JsxAttrTitleOpenInNewTab')}>
             <ExternalLink className="size-3.5" />
           </Button>
           <Button variant="ghost" size="icon" className="size-7 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800" onClick={() => setIsFullscreen((f) => !f)} title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
@@ -148,7 +152,7 @@ export default function SandboxWebTerminal({
           <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
             <div className="text-center space-y-2">
               <Loader2 className="size-5 animate-spin text-zinc-500 mx-auto" />
-              <p className="text-xs text-zinc-600">Connecting…</p>
+              <p className="text-xs text-zinc-600">{tHardcodedUi.raw('componentsAdminSandboxWebTerminal.line151JsxTextConnecting')}</p>
             </div>
           </div>
         )}
@@ -160,8 +164,8 @@ export default function SandboxWebTerminal({
             onLoad={handleIframeLoad}
             className="block border-0"
             style={{ width: '100%', height: '100%' }}
-            allow="clipboard-read; clipboard-write"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            allow={CLIPBOARD_IFRAME_ALLOW}
+            sandbox={TERMINAL_IFRAME_SANDBOX}
           />
         )}
       </div>

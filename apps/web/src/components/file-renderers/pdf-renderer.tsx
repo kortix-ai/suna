@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -39,6 +41,7 @@ interface PdfRendererProps {
 }
 
 export function PdfRenderer({ url, blob, className, compact = false }: PdfRendererProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [containerWidth, setContainerWidth] = useState<number>(0);
@@ -216,7 +219,7 @@ export function PdfRenderer({ url, blob, className, compact = false }: PdfRender
   if (!pdfFile) {
     return (
       <div className={cn('w-full h-full flex items-center justify-center bg-muted/20', className)}>
-        <div className="text-sm text-muted-foreground">No PDF source provided</div>
+        <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line219JsxTextNoPdfSourceProvided')}</div>
       </div>
     );
   }
@@ -238,9 +241,7 @@ export function PdfRenderer({ url, blob, className, compact = false }: PdfRender
               </div>
             }
             error={
-              <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
-                Failed to load PDF
-              </div>
+              <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line242JsxTextFailedToLoadPdf')}</div>
             }
           >
             <Page
@@ -274,8 +275,8 @@ export function PdfRenderer({ url, blob, className, compact = false }: PdfRender
               <AlertTriangle className="h-4 w-4 text-muted-foreground" />
             </div>
             <div className="text-center">
-              <p className="text-sm font-medium text-foreground">Failed to load PDF</p>
-              <p className="text-xs text-muted-foreground mt-1">The file may be corrupted or inaccessible</p>
+              <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line277JsxTextFailedToLoadPdf')}</p>
+              <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line278JsxTextTheFileMayBeCorruptedOrInaccessible')}</p>
             </div>
           </div>
         ) : (
@@ -287,7 +288,7 @@ export function PdfRenderer({ url, blob, className, compact = false }: PdfRender
               loading={
                 <div className="flex flex-col items-center justify-center h-64 gap-3">
                   <KortixLoader size="medium" />
-                  <p className="text-sm text-muted-foreground">Loading PDF...</p>
+                  <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line290JsxTextLoadingPdf')}</p>
                 </div>
               }
               className="flex flex-col items-center max-w-full"
@@ -320,7 +321,7 @@ export function PdfRenderer({ url, blob, className, compact = false }: PdfRender
               onClick={zoomOut}
               disabled={!canZoomOut}
               className="h-7 w-7 p-0"
-              title="Zoom out (Cmd+-)"
+              title={tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line323JsxAttrTitleZoomOutCmd')}
             >
               <ZoomOut className="h-3.5 w-3.5" />
             </Button>
@@ -335,7 +336,7 @@ export function PdfRenderer({ url, blob, className, compact = false }: PdfRender
                   ? 'text-muted-foreground/50 cursor-default'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer',
               )}
-              title="Reset zoom (Cmd+0)"
+              title={tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line338JsxAttrTitleResetZoomCmd0')}
             >
               {Math.round(zoomLevel * 100)}%
             </button>
@@ -346,7 +347,7 @@ export function PdfRenderer({ url, blob, className, compact = false }: PdfRender
               onClick={zoomIn}
               disabled={!canZoomIn}
               className="h-7 w-7 p-0"
-              title="Zoom in (Cmd++)"
+              title={tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line349JsxAttrTitleZoomInCmd')}
             >
               <ZoomIn className="h-3.5 w-3.5" />
             </Button>
@@ -361,7 +362,7 @@ export function PdfRenderer({ url, blob, className, compact = false }: PdfRender
                 onClick={previousPage}
                 disabled={pageNumber <= 1}
                 className="h-7 w-7 p-0"
-                title="Previous page (←)"
+                title={tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line364JsxAttrTitlePreviousPage')}
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </Button>
@@ -382,7 +383,7 @@ export function PdfRenderer({ url, blob, className, compact = false }: PdfRender
                 onClick={nextPage}
                 disabled={pageNumber >= numPages}
                 className="h-7 w-7 p-0"
-                title="Next page (→)"
+                title={tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line385JsxAttrTitleNextPage')}
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </Button>

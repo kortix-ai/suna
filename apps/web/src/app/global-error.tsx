@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-html-link-for-pages */
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import * as Sentry from '@sentry/nextjs';
 import { shouldIgnoreBrowserRuntimeNoise } from '@/lib/browser-error-noise';
@@ -274,6 +275,7 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [diag, setDiag] = useState<Diag | null>(null);
 
   useEffect(() => {
@@ -341,8 +343,8 @@ export default function GlobalError({
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>System Fault</title>
+        <meta name="viewport" content={tHardcodedUi.raw('appGlobalError.line344JsxAttrContentWidthDeviceWidthInitialScale1')} />
+        <title>{tHardcodedUi.raw('appGlobalError.line345JsxTextSystemFault')}</title>
         <style dangerouslySetInnerHTML={{ __html: STYLES }} />
       </head>
       <body className="fault-body">
@@ -362,11 +364,8 @@ export default function GlobalError({
             >
               <path d="M25.5614 24.916H29.8268C29.8268 19.6306 26.9378 15.0039 22.6171 12.4587C26.9377 9.91355 29.8267 5.28685 29.8267 0.00146484H25.5613C25.5613 5.00287 21.8906 9.18692 17.0654 10.1679V0.00146484H12.8005V10.1679C7.9526 9.20401 4.3046 5.0186 4.3046 0.00146484H0.0391572C0.0391572 5.28685 2.92822 9.91355 7.24884 12.4587C2.92818 15.0039 0.0390625 19.6306 0.0390625 24.916H4.30451C4.30451 19.8989 7.95259 15.7135 12.8005 14.7496V24.9206H17.0654V14.7496C21.9133 15.7134 25.5614 19.8989 25.5614 24.916Z" />
             </svg>
-            <h1 className="fault-title">System Fault</h1>
-            <p className="fault-subtitle">
-              The app failed to load. Our team has been notified — the details
-              below help support reproduce your session.
-            </p>
+            <h1 className="fault-title">{tHardcodedUi.raw('appGlobalError.line365JsxTextSystemFault')}</h1>
+            <p className="fault-subtitle">{tHardcodedUi.raw('appGlobalError.line367JsxTextTheAppFailedToLoadOurTeamHas')}</p>
           </header>
 
           <section className="fault-card" aria-label="Error">
@@ -406,9 +405,7 @@ export default function GlobalError({
           </section>
 
           <div className="fault-actions">
-            <a className="fault-btn primary" href="/">
-              Return Home
-            </a>
+            <a className="fault-btn primary" href="/">{tHardcodedUi.raw('appGlobalError.line410JsxTextReturnHome')}</a>
             <button
               type="button"
               className="fault-btn secondary"
@@ -418,9 +415,8 @@ export default function GlobalError({
             </button>
           </div>
 
-          <p className="fault-support">
-            If this persists, contact{' '}
-            <a href="mailto:support@kortix.ai">support@kortix.ai</a>
+          <p className="fault-support">{tHardcodedUi.raw('appGlobalError.line422JsxTextIfThisPersistsContact')}{' '}
+            <a href="mailto:support@kortix.ai">{tHardcodedUi.raw('appGlobalError.line423JsxTextSupportKortixAi')}</a>
           </p>
         </main>
       </body>

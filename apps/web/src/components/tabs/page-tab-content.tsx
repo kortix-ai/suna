@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { lazy, Suspense, useMemo, type ComponentType } from 'react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
@@ -138,6 +140,7 @@ function resolveComponent(routeKey: string): { Component: ComponentType<any>; pa
 }
 
 export function PageTabContent({ href }: { href: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	const routeKey = useMemo(() => {
 		try {
 			return new URL(href, window.location.origin).pathname;
@@ -160,9 +163,7 @@ export function PageTabContent({ href }: { href: string }) {
 
 	if (!resolved) {
 		return (
-			<div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-				Page not found
-			</div>
+			<div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTabsPageTabContent.line164JsxTextPageNotFound')}</div>
 		);
 	}
 

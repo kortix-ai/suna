@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * <TriggersView /> — Shared body for the Customize "Schedules" and
  * "Webhooks" pages. One component, type-scoped: pass `type: "cron"` for
@@ -242,20 +244,39 @@ interface TypeMeta {
   };
 }
 
+function CronTriggerDescription() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+
+  return (
+    <>
+      {tHardcodedUi.raw('componentsProjectsTriggersView.line253JsxTextCronDrivenEntryPointsWhenAScheduleFires')}{' '}
+      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+        KORTIX_INITIAL_PROMPT
+      </code>
+      .
+    </>
+  );
+}
+
+function WebhookTriggerDescription() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+
+  return (
+    <>
+      {tHardcodedUi.raw('componentsProjectsTriggersView.line272JsxTextSignedHttpEntryPointsWhenARequestHits')}{' '}
+      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+        KORTIX_INITIAL_PROMPT
+      </code>
+      .
+    </>
+  );
+}
+
 const TYPE_META: Record<TriggerKind, TypeMeta> = {
   cron: {
     pageTitle: 'Schedules',
     icon: Timer,
-    description: (
-      <>
-        Cron-driven entry points. When a schedule fires, a fresh session
-        sandbox boots with the rendered prompt template injected as{' '}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-          KORTIX_INITIAL_PROMPT
-        </code>
-        .
-      </>
-    ),
+    description: <CronTriggerDescription />,
     createButtonLabel: 'New schedule',
     empty: {
       title: 'No schedules yet',
@@ -265,17 +286,7 @@ const TYPE_META: Record<TriggerKind, TypeMeta> = {
   webhook: {
     pageTitle: 'Webhooks',
     icon: Webhook,
-    description: (
-      <>
-        Signed HTTP entry points. When a request hits the webhook URL, a
-        fresh session sandbox boots with the rendered prompt template
-        injected as{' '}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-          KORTIX_INITIAL_PROMPT
-        </code>
-        .
-      </>
-    ),
+    description: <WebhookTriggerDescription />,
     createButtonLabel: 'New webhook',
     empty: {
       title: 'No webhooks yet',
@@ -314,6 +325,7 @@ function ProjectTriggersBody({
   type: TriggerKind;
   meta: TypeMeta;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ['project-triggers', projectId], [projectId]);
 
@@ -418,8 +430,7 @@ function ProjectTriggersBody({
         {parseErrors.length > 0 && (
           <section className="space-y-2 rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
             <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
-              {parseErrors.length} trigger file{parseErrors.length === 1 ? '' : 's'} failed to parse
-            </p>
+              {parseErrors.length}{tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextTriggerFile')}{parseErrors.length === 1 ? '' : 's'}{tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextFailedToParse')}</p>
             <ul className="space-y-0.5 text-xs text-amber-700/80 dark:text-amber-400/80">
               {parseErrors.map((err) => (
                 <li key={err.slug}>
@@ -573,6 +584,7 @@ function DetailBody({
   onMutated: () => void;
   onDelete: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isCron = trigger.type === 'cron';
 
   // ── Mutations ──────────────────────────────────────────────────────────
@@ -619,9 +631,7 @@ function DetailBody({
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <Play className="h-3.5 w-3.5" />
-          )}
-          Fire now
-        </Button>
+          )}{tHardcodedUi.raw('componentsProjectsTriggersView.line623JsxTextFireNow')}</Button>
         <Button
           variant="outline"
           size="sm"
@@ -712,6 +722,7 @@ function CronSection({ trigger }: { trigger: ProjectTrigger }) {
 }
 
 function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // The API hands us the public webhook URL directly — no client-side
   // assembly needed.
   const url = trigger.webhook_url ?? '';
@@ -740,14 +751,11 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
           <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground">
             {trigger.secret_env ? (
               <>
-                <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                Signed via project secret <code className="ml-1 font-mono">{trigger.secret_env}</code>
+                <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />{tHardcodedUi.raw('componentsProjectsTriggersView.line744JsxTextSignedViaProjectSecret')}<code className="ml-1 font-mono">{trigger.secret_env}</code>
               </>
             ) : (
               <>
-                <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
-                No signing secret configured
-              </>
+                <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />{tHardcodedUi.raw('componentsProjectsTriggersView.line749JsxTextNoSigningSecretConfigured')}</>
             )}
           </div>
         </div>
@@ -755,7 +763,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
 
       <div className="space-y-2">
         <SectionHeader
-          title="Sample request"
+          title={tHardcodedUi.raw('componentsProjectsTriggersView.line758JsxAttrTitleSampleRequest')}
           icon={Terminal}
           action={
             <Button
@@ -773,10 +781,8 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
           {curl}
         </pre>
         <p className="text-xs text-muted-foreground/70">
-          Replace <code className="font-mono">$BODY</code> and{' '}
-          <code className="font-mono">$SECRET</code>. The signature must cover the
-          raw request body byte-for-byte.
-        </p>
+          Replace <code className="font-mono">{tHardcodedUi.raw('componentsProjectsTriggersView.line776JsxTextBody')}</code> and{' '}
+          <code className="font-mono">{tHardcodedUi.raw('componentsProjectsTriggersView.line777JsxTextSecret')}</code>{tHardcodedUi.raw('componentsProjectsTriggersView.line777JsxTextTheSignatureMustCoverTheRawRequestBody')}</p>
       </div>
     </section>
   );
@@ -791,6 +797,7 @@ function PromptTemplateSection({
   trigger: ProjectTrigger;
   onMutated: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(trigger.prompt_template);
 
@@ -814,7 +821,7 @@ function PromptTemplateSection({
   return (
     <section className="space-y-2">
       <SectionHeader
-        title="Prompt template"
+        title={tHardcodedUi.raw('componentsProjectsTriggersView.line817JsxAttrTitlePromptTemplate')}
         icon={Sparkles}
         action={
           editing ? (
@@ -935,6 +942,7 @@ function CreateTriggerDialog({
    * settings + name/prompt/agent. Used by the per-type pages. */
   forcedType?: TriggerKind;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [step, setStep] = useState<WizardStep>('source');
 
   // Source
@@ -1075,21 +1083,19 @@ function slugifyName(input: string): string {
             <div className="space-y-4">
               {!forcedType && (
                 <div className="space-y-1.5">
-                  <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">
-                    Trigger source
-                  </div>
+                  <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">{tHardcodedUi.raw('componentsProjectsTriggersView.line1079JsxTextTriggerSource')}</div>
                   <div className="grid grid-cols-2 gap-2">
                     <SourceCard
                       icon={Timer}
                       title="Cron"
-                      description="Time-based schedule"
+                      description={tHardcodedUi.raw('componentsProjectsTriggersView.line1085JsxAttrDescriptionTimeBasedSchedule')}
                       selected={sourceType === 'cron'}
                       onClick={() => setSourceType('cron')}
                     />
                     <SourceCard
                       icon={Webhook}
                       title="Webhook"
-                      description="Fires on HTTP request"
+                      description={tHardcodedUi.raw('componentsProjectsTriggersView.line1092JsxAttrDescriptionFiresOnHttpRequest')}
                       selected={sourceType === 'webhook'}
                       onClick={() => setSourceType('webhook')}
                     />
@@ -1118,23 +1124,17 @@ function slugifyName(input: string): string {
           {/* ── Step 2: Action ───────────────────────────────────── */}
           {step === 'action' && (
             <div className="space-y-1.5">
-              <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">
-                Action type
-              </div>
+              <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">{tHardcodedUi.raw('componentsProjectsTriggersView.line1122JsxTextActionType')}</div>
               <div className="grid grid-cols-1 gap-2">
                 <SourceCard
                   icon={MessageSquare}
                   title="Prompt"
-                  description="Spawn a session and send this instruction to the agent"
+                  description={tHardcodedUi.raw('componentsProjectsTriggersView.line1128JsxAttrDescriptionSpawnASessionAndSendThisInstructionTo')}
                   selected
                   onClick={() => {/* prompt is the only cloud action type */}}
                 />
               </div>
-              <p className="px-1 pt-2 text-xs text-muted-foreground/70">
-                Command, HTTP, and ticket-create actions live on the legacy
-                in-sandbox triggers system. Cloud triggers always spawn a fresh
-                project session with the rendered prompt.
-              </p>
+              <p className="px-1 pt-2 text-xs text-muted-foreground/70">{tHardcodedUi.raw('componentsProjectsTriggersView.line1134JsxTextCommandHttpAndTicketCreateActionsLiveOn')}</p>
             </div>
           )}
 
@@ -1148,7 +1148,7 @@ function slugifyName(input: string): string {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Daily standup digest"
+                  placeholder={tHardcodedUi.raw('componentsProjectsTriggersView.line1151JsxAttrPlaceholderDailyStandupDigest')}
                   maxLength={64}
                 />
               </div>
@@ -1159,11 +1159,10 @@ function slugifyName(input: string): string {
                   id="trigger-prompt"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Generate the daily status report and save it to /workspace/reports/"
+                  placeholder={tHardcodedUi.raw('componentsProjectsTriggersView.line1162JsxAttrPlaceholderGenerateTheDailyStatusReportAndSaveIt')}
                   rows={4}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Mustache placeholders supported:{' '}
+                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsTriggersView.line1166JsxTextMustachePlaceholdersSupported')}{' '}
                   <code className="font-mono">{'{{ message.text }}'}</code>,{' '}
                   <code className="font-mono">{'{{ message.source }}'}</code>,{' '}
                   <code className="font-mono">{'{{ trigger.type }}'}</code>,{' '}
@@ -1319,10 +1318,11 @@ function WebhookSourceConfig({
   secret: string;
   onSecretChange: (next: string) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="space-y-3 pt-2">
       <div className="space-y-2">
-        <Label>Signing secret</Label>
+        <Label>{tHardcodedUi.raw('componentsProjectsTriggersView.line1325JsxTextSigningSecret')}</Label>
         <div className="flex gap-2">
           <Input
             value={secret}
@@ -1345,20 +1345,14 @@ function WebhookSourceConfig({
       </div>
 
       <div className="space-y-1.5 rounded-2xl border bg-muted/50 p-3">
-        <div className="text-xs font-medium text-muted-foreground">
-          External URL
-        </div>
+        <div className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsTriggersView.line1349JsxTextExternalUrl')}</div>
         <code className="block break-all font-mono text-xs text-foreground">
           {buildWebhookUrl('<trigger-id>')}
         </code>
-        <p className="text-xs text-muted-foreground">
-          We generate the trigger id on create. POST a JSON body to this URL
-          with an{' '}
-          <code className="font-mono text-xs">X-Kortix-Signature</code> header
-          set to{' '}
-          <code className="font-mono text-xs">sha256=&lt;hmac&gt;</code>
-          {' '}computed over the raw body with the secret above.
-        </p>
+        <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsTriggersView.line1355JsxTextWeGenerateTheTriggerIdOnCreatePost')}{' '}
+          <code className="font-mono text-xs">X-Kortix-Signature</code>{tHardcodedUi.raw('componentsProjectsTriggersView.line1357JsxTextHeaderSetTo')}{' '}
+          <code className="font-mono text-xs">{tHardcodedUi.raw('componentsProjectsTriggersView.line1359JsxTextSha256LtHmacGt')}</code>
+          {' '}{tHardcodedUi.raw('componentsProjectsTriggersView.line1360JsxTextComputedOverTheRawBodyWithTheSecret')}</p>
       </div>
     </div>
   );
@@ -1377,6 +1371,7 @@ function DeleteDialog({
   onClose: () => void;
   onDeleted: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const remove = useMutation({
     mutationFn: (trigger: ProjectTrigger) =>
       deleteProjectTrigger(projectId, trigger.slug),
@@ -1391,16 +1386,14 @@ function DeleteDialog({
     <AlertDialog open={!!target} onOpenChange={(open) => !open && onClose()}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete trigger?</AlertDialogTitle>
+          <AlertDialogTitle>{tHardcodedUi.raw('componentsProjectsTriggersView.line1394JsxTextDeleteTrigger')}</AlertDialogTitle>
           <AlertDialogDescription>
             {target && (
               <>
                 Remove{' '}
                 <span className="font-medium text-foreground">
                   {getTriggerName(target)}
-                </span>{' '}
-                and stop any future runs from it. Past events are kept for audit.
-              </>
+                </span>{' '}{tHardcodedUi.raw('componentsProjectsTriggersView.line1402JsxTextAndStopAnyFutureRunsFromItPast')}</>
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -1431,23 +1424,23 @@ function TriggersSkeleton() {
 }
 
 function ForbiddenNotice() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-foreground">
       <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
       <div className="space-y-0.5 text-sm">
-        <p className="font-medium">Access required</p>
-        <p className="text-xs text-muted-foreground">
-          You don&apos;t have permission to view this project&apos;s triggers.
-        </p>
+        <p className="font-medium">{tHardcodedUi.raw('componentsProjectsTriggersView.line1438JsxTextAccessRequired')}</p>
+        <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsTriggersView.line1440JsxTextYouDonAposTHavePermissionToView')}</p>
       </div>
     </div>
   );
 }
 
 function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3">
-      <p className="text-sm font-medium text-destructive">Failed to load triggers</p>
+      <p className="text-sm font-medium text-destructive">{tHardcodedUi.raw('componentsProjectsTriggersView.line1450JsxTextFailedToLoadTriggers')}</p>
       <p className="mt-1 text-xs text-destructive/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
@@ -25,6 +27,7 @@ export default function OAuthConsentPage() {
 }
 
 function OAuthConsent() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, isLoading } = useAuth();
@@ -143,8 +146,8 @@ function OAuthConsent() {
     return (
       <div className="fixed inset-0 bg-background flex items-center justify-center">
         <div className="max-w-sm text-center space-y-4">
-          <p className="text-destructive font-medium">Invalid authorization request</p>
-          <p className="text-sm text-muted-foreground">Missing required parameters.</p>
+          <p className="text-destructive font-medium">{tHardcodedUi.raw('appOauthAuthorizePage.line146JsxTextInvalidAuthorizationRequest')}</p>
+          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appOauthAuthorizePage.line147JsxTextMissingRequiredParameters')}</p>
         </div>
       </div>
     );
@@ -156,7 +159,7 @@ function OAuthConsent() {
         <div className="max-w-sm text-center space-y-4">
           {error ? (
             <>
-              <p className="text-destructive font-medium">Authorization request unavailable</p>
+              <p className="text-destructive font-medium">{tHardcodedUi.raw('appOauthAuthorizePage.line159JsxTextAuthorizationRequestUnavailable')}</p>
               <p className="text-sm text-muted-foreground">{error}</p>
             </>
           ) : (
@@ -180,13 +183,11 @@ function OAuthConsent() {
             Authorize {clientName}
           </h1>
           <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{clientName}</span> wants to access your Kortix account
-          </p>
+            <span className="font-medium text-foreground">{clientName}</span>{tHardcodedUi.raw('appOauthAuthorizePage.line183JsxTextWantsToAccessYourKortixAccount')}</p>
         </div>
 
         <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            This will allow {clientName} to:
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('appOauthAuthorizePage.line189JsxTextThisWillAllow')}{clientName} to:
           </p>
           <ul className="space-y-2">
             {scopes.map((s) => (
@@ -199,7 +200,7 @@ function OAuthConsent() {
         </div>
 
         <div className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
-          <p className="text-xs text-muted-foreground">Signed in as</p>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appOauthAuthorizePage.line202JsxTextSignedInAs')}</p>
           <p className="text-sm font-medium truncate">{user.email}</p>
         </div>
 
@@ -228,9 +229,7 @@ function OAuthConsent() {
           </Button>
         </div>
 
-        <p className="text-xs text-center text-muted-foreground">
-          You can revoke access at any time from your account settings.
-        </p>
+        <p className="text-xs text-center text-muted-foreground">{tHardcodedUi.raw('appOauthAuthorizePage.line232JsxTextYouCanRevokeAccessAtAnyTimeFrom')}</p>
       </div>
     </div>
   );

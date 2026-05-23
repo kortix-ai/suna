@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState } from 'react';
 import { Copy, Check, ChevronDown, ChevronRight, Network } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -448,6 +450,7 @@ export function SessionContextModal({
   providers,
   allSessions,
 }: SessionContextModalProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copiedAll, setCopiedAll] = useState(false);
 
   const rawMessages = useMemo(
@@ -554,31 +557,26 @@ export function SessionContextModal({
             <div className="flex flex-col gap-3 p-4 rounded-2xl border border-primary/20 bg-primary/5">
               <div className="flex items-center gap-2">
                 <Network className="size-4 text-primary" />
-                <div className="text-sm font-semibold text-foreground">
-                  Aggregate Totals
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">
-                    (this session + {descendantIds.length} sub-session{descendantIds.length !== 1 ? 's' : ''})
+                <div className="text-sm font-semibold text-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line558JsxTextAggregateTotals')}<span className="ml-2 text-xs font-normal text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line560JsxTextThisSession')}{descendantIds.length} sub-session{descendantIds.length !== 1 ? 's' : ''})
                   </span>
                 </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Stat label="Total Cost" value={
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line565JsxAttrLabelTotalCost')} value={
                   <span className="text-primary font-semibold">{usd.format(aggregateTotals.cost)}</span>
                 } />
-                <Stat label="Total Messages" value={aggregateTotals.messages.toLocaleString()} />
-                <Stat label="Input Tokens" value={fmt.number(aggregateTotals.inputTokens)} />
-                <Stat label="Output Tokens" value={fmt.number(aggregateTotals.outputTokens)} />
-                <Stat label="Reasoning Tokens" value={fmt.number(aggregateTotals.reasoningTokens)} />
-                <Stat label="Cache Tokens" value={`${fmt.number(aggregateTotals.cacheReadTokens)} / ${fmt.number(aggregateTotals.cacheWriteTokens)}`} />
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line568JsxAttrLabelTotalMessages')} value={aggregateTotals.messages.toLocaleString()} />
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line569JsxAttrLabelInputTokens')} value={fmt.number(aggregateTotals.inputTokens)} />
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line570JsxAttrLabelOutputTokens')} value={fmt.number(aggregateTotals.outputTokens)} />
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line571JsxAttrLabelReasoningTokens')} value={fmt.number(aggregateTotals.reasoningTokens)} />
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line572JsxAttrLabelCacheTokens')} value={`${fmt.number(aggregateTotals.cacheReadTokens)} / ${fmt.number(aggregateTotals.cacheWriteTokens)}`} />
               </div>
             </div>
           )}
 
           {/* This session label when sub-sessions exist */}
           {hasSubSessions && (
-            <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-              This Session Only
-            </div>
+            <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{tHardcodedUi.raw('componentsSessionSessionContextModal.line580JsxTextThisSessionOnly')}</div>
           )}
 
           {/* Stats grid — 1:1 from SolidJS */}
@@ -591,7 +589,7 @@ export function SessionContextModal({
           {/* Context breakdown bar — 1:1 from SolidJS */}
           {breakdown.length > 0 && (
             <div className="flex flex-col gap-2">
-              <div className="text-xs text-muted-foreground">Context Breakdown</div>
+              <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line594JsxTextContextBreakdown')}</div>
               <div className="h-2 w-full rounded-full bg-muted overflow-hidden flex">
                 {breakdown.map((segment) => (
                   <div
@@ -616,7 +614,7 @@ export function SessionContextModal({
           {/* Sub-session cost tree */}
           {hasSubSessions && subSessionTree && subSessionTree.children.length > 0 && (
             <div className="flex flex-col gap-2">
-              <div className="text-xs text-muted-foreground">Sub-Session Breakdown</div>
+              <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line619JsxTextSubSessionBreakdown')}</div>
               <div className="border rounded-2xl p-3 bg-muted/20">
                 {subSessionTree.children.map((child) => (
                   <SubSessionTreeNode key={child.id} node={child} usd={usd} />
@@ -627,8 +625,7 @@ export function SessionContextModal({
 
           {/* Raw messages — 1:1 from SolidJS */}
           <div className="flex flex-col gap-2">
-            <div className="text-xs text-muted-foreground">
-              Raw Messages ({counts.all})
+            <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line631JsxTextRawMessages')}{counts.all})
             </div>
             <Accordion type="multiple" className="border rounded-2xl overflow-hidden">
               {(messages ?? []).map((msg) => (

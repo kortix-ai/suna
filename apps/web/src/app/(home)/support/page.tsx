@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { ChevronDown } from 'lucide-react';
 import { useState, useEffect, useRef, Suspense } from 'react';
@@ -33,6 +35,7 @@ function FAQItem({ question, answer }: { question: string; answer: React.ReactNo
 }
 
 function SupportPageContent() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const searchParams = useSearchParams();
   const accountDeleteRef = useRef<HTMLDivElement>(null);
 
@@ -58,42 +61,38 @@ function SupportPageContent() {
           </h1>
         </Reveal>
         <Reveal delay={0.08}>
-          <p className="text-base text-muted-foreground leading-relaxed max-w-xl">
-            Email us at{' '}
-            <a href="mailto:support@kortix.com" className={linkClass}>support@kortix.com</a>.
-            {' '}We typically respond within 24 hours on business days.
-          </p>
+          <p className="text-base text-muted-foreground leading-relaxed max-w-xl">{tHardcodedUi.raw('appHomeSupportPage.line62JsxTextEmailUsAt')}{' '}
+            <a href="mailto:support@kortix.com" className={linkClass}>{tHardcodedUi.raw('appHomeSupportPage.line63JsxTextSupportKortixCom')}</a>.
+            {' '}{tHardcodedUi.raw('appHomeSupportPage.line64JsxTextWeTypicallyRespondWithin24HoursOnBusiness')}</p>
         </Reveal>
 
         {/* FAQ */}
         <Reveal>
           <div className="mt-14">
-            <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
-              Frequently Asked Questions
-            </h2>
+            <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">{tHardcodedUi.raw('appHomeSupportPage.line72JsxTextFrequentlyAskedQuestions')}</h2>
             <div>
               <FAQItem
-                question="What is Kortix?"
-                answer="A 24/7 cloud computer where AI agents do the actual work of running a company. You connect your tools, define your agents, set their schedules and triggers — and the machine operates whether you're there or not."
+                question={tHardcodedUi.raw('appHomeSupportPage.line76JsxAttrQuestionWhatIsKortix')}
+                answer={tHardcodedUi.raw('appHomeSupportPage.line77JsxAttrAnswerA247CloudComputerWhereAiAgents')}
               />
               <FAQItem
-                question="How is Kortix different from other AI platforms?"
-                answer="Most AI platforms are chat interfaces that give you suggestions. Kortix is a persistent computer that runs agents autonomously — they browse the web, execute code, call APIs, manage files, and coordinate across your tools. They work while you sleep."
+                question={tHardcodedUi.raw('appHomeSupportPage.line80JsxAttrQuestionHowIsKortixDifferentFromOtherAiPlatforms')}
+                answer={tHardcodedUi.raw('appHomeSupportPage.line81JsxAttrAnswerMostAiPlatformsAreChatInterfacesThatGive')}
               />
               <FAQItem
-                question="Can Kortix connect to my apps?"
-                answer="Yes. 3,000+ integrations via OAuth, MCP servers, REST APIs, CLI tools, and environment variables. If it has an interface, Kortix connects to it."
+                question={tHardcodedUi.raw('appHomeSupportPage.line84JsxAttrQuestionCanKortixConnectToMyApps')}
+                answer={tHardcodedUi.raw('appHomeSupportPage.line85JsxAttrAnswerYes3000IntegrationsViaOauthMcpServers')}
               />
               <FAQItem
-                question="How do I request a feature or report a bug?"
+                question={tHardcodedUi.raw('appHomeSupportPage.line88JsxAttrQuestionHowDoIRequestAFeatureOrReport')}
                 answer={
-                  <>Email <a href="mailto:support@kortix.com" className={linkClass}>support@kortix.com</a> with details. For bugs, include steps to reproduce and any error messages. Screenshots help.</>
+                  <>Email <a href="mailto:support@kortix.com" className={linkClass}>{tHardcodedUi.raw('appHomeSupportPage.line90JsxTextSupportKortixCom')}</a>{tHardcodedUi.raw('appHomeSupportPage.line90JsxTextWithDetailsForBugsIncludeStepsToReproduce')}</>
                 }
               />
               <FAQItem
-                question="What if I don't get credits after paying?"
+                question={tHardcodedUi.raw('appHomeSupportPage.line94JsxAttrQuestionWhatIfIDonTGetCreditsAfter')}
                 answer={
-                  <>Contact <a href="mailto:support@kortix.com" className={linkClass}>support@kortix.com</a> immediately. We prioritize billing issues and typically resolve them within a few hours.</>
+                  <>Contact <a href="mailto:support@kortix.com" className={linkClass}>{tHardcodedUi.raw('appHomeSupportPage.line96JsxTextSupportKortixCom')}</a>{tHardcodedUi.raw('appHomeSupportPage.line96JsxTextImmediatelyWePrioritizeBillingIssuesAndTypicallyResolve')}</>
                 }
               />
             </div>
@@ -103,23 +102,17 @@ function SupportPageContent() {
         {/* Account Deletion */}
         <Reveal>
           <div ref={accountDeleteRef} id="account-delete" className="mt-14">
-            <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
-              Account Deletion
-            </h2>
-            <p className="text-base text-muted-foreground leading-relaxed mb-4">
-              To delete your account, either email{' '}
-              <a href="mailto:support@kortix.com" className={linkClass}>support@kortix.com</a>
-              {' '}or do it yourself from settings:
-            </p>
+            <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">{tHardcodedUi.raw('appHomeSupportPage.line107JsxTextAccountDeletion')}</h2>
+            <p className="text-base text-muted-foreground leading-relaxed mb-4">{tHardcodedUi.raw('appHomeSupportPage.line110JsxTextToDeleteYourAccountEitherEmail')}{' '}
+              <a href="mailto:support@kortix.com" className={linkClass}>{tHardcodedUi.raw('appHomeSupportPage.line111JsxTextSupportKortixCom')}</a>
+              {' '}{tHardcodedUi.raw('appHomeSupportPage.line112JsxTextOrDoItYourselfFromSettings')}</p>
             <ol className="text-sm text-muted-foreground leading-relaxed space-y-2 list-decimal ml-4">
-              <li>Click your avatar → Settings</li>
-              <li>Scroll to Delete Account</li>
-              <li>Choose 14-day grace period or immediate deletion</li>
-              <li>Type &quot;delete&quot; to confirm</li>
+              <li>{tHardcodedUi.raw('appHomeSupportPage.line115JsxTextClickYourAvatarSettings')}</li>
+              <li>{tHardcodedUi.raw('appHomeSupportPage.line116JsxTextScrollToDeleteAccount')}</li>
+              <li>{tHardcodedUi.raw('appHomeSupportPage.line117JsxTextChoose14DayGracePeriodOrImmediateDeletion')}</li>
+              <li>{tHardcodedUi.raw('appHomeSupportPage.line118JsxTextTypeQuotDeleteQuotToConfirm')}</li>
             </ol>
-            <p className="text-xs text-muted-foreground mt-4">
-              All agents, sessions, credentials, and billing data will be permanently removed. This cannot be undone.
-            </p>
+            <p className="text-xs text-muted-foreground mt-4">{tHardcodedUi.raw('appHomeSupportPage.line121JsxTextAllAgentsSessionsCredentialsAndBillingDataWill')}</p>
           </div>
         </Reveal>
 
@@ -130,12 +123,8 @@ function SupportPageContent() {
               Legal
             </h2>
             <div className="flex flex-col gap-1.5">
-              <Link href="/legal?tab=terms" className={`text-base ${linkClass} w-fit`}>
-                Terms of Service
-              </Link>
-              <Link href="/legal?tab=privacy" className={`text-base ${linkClass} w-fit`}>
-                Privacy Policy
-              </Link>
+              <Link href="/legal?tab=terms" className={`text-base ${linkClass} w-fit`}>{tHardcodedUi.raw('appHomeSupportPage.line134JsxTextTermsOfService')}</Link>
+              <Link href="/legal?tab=privacy" className={`text-base ${linkClass} w-fit`}>{tHardcodedUi.raw('appHomeSupportPage.line137JsxTextPrivacyPolicy')}</Link>
               <Link href="/legal?tab=imprint" className={`text-base ${linkClass} w-fit`}>
                 Imprint
               </Link>
@@ -146,16 +135,10 @@ function SupportPageContent() {
         {/* Contact */}
         <Reveal>
           <div className="mt-14 pt-8 border-t border-border">
-            <p className="text-base text-muted-foreground leading-relaxed">
-              Still need help? Reach out.
-            </p>
+            <p className="text-base text-muted-foreground leading-relaxed">{tHardcodedUi.raw('appHomeSupportPage.line150JsxTextStillNeedHelpReachOut')}</p>
             <div className="flex flex-col gap-1.5 mt-3">
-              <a href="mailto:support@kortix.com" className={`text-base ${linkClass} w-fit`}>
-                support@kortix.com
-              </a>
-              <a href="mailto:security@kortix.com" className={`text-base ${linkClass} w-fit`}>
-                security@kortix.com
-              </a>
+              <a href="mailto:support@kortix.com" className={`text-base ${linkClass} w-fit`}>{tHardcodedUi.raw('appHomeSupportPage.line154JsxTextSupportKortixCom')}</a>
+              <a href="mailto:security@kortix.com" className={`text-base ${linkClass} w-fit`}>{tHardcodedUi.raw('appHomeSupportPage.line157JsxTextSecurityKortixCom')}</a>
             </div>
           </div>
         </Reveal>

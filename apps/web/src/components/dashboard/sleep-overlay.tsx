@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from 'react';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { createClient } from '@/lib/supabase/client';
@@ -97,6 +99,7 @@ function useSleepUser() {
 }
 
 export function SleepOverlay() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { sleeping, wake } = useSleep();
   const user = useSleepUser();
   const [stage, setStage] = useState<'mounting' | 'in' | 'visible' | 'out' | 'hidden'>('hidden');
@@ -191,9 +194,7 @@ export function SleepOverlay() {
         <p className="text-foreground/80 text-sm sm:text-base font-medium tracking-wide mb-1">
           {user?.name || ''}
         </p>
-        <p className="text-foreground/30 text-xs tracking-wide">
-          Click anywhere or press Enter to continue
-        </p>
+        <p className="text-foreground/30 text-xs tracking-wide">{tHardcodedUi.raw('componentsDashboardSleepOverlay.line195JsxTextClickAnywhereOrPressEnterToContinue')}</p>
       </div>
     </div>
   );

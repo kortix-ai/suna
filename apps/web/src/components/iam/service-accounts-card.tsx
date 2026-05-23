@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Service accounts on the Settings tab. First-class machine identities
 // owned by the account itself; policies attach via the standard policy
 // editor (pick scope_type='token' principal). One bearer per SA;
@@ -49,6 +50,7 @@ interface ServiceAccountsCardProps {
 }
 
 export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [createdBearer, setCreatedBearer] = useState<CreatedServiceAccount | null>(null);
@@ -90,19 +92,14 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
           <div>
             <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <Bot className="h-4 w-4 text-muted-foreground" />
-              Service accounts
-            </h2>
+              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line93JsxTextServiceAccounts')}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Machine identities for CI/CD and integrations. Attach policies
-              just like a member — pick the service account as the principal
-              when creating a policy.
-            </p>
+              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line96JsxTextMachineIdentitiesForCICDAndIntegrationsAttach')}</p>
           </div>
           {canManage && (
             <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />
-              New service account
-            </Button>
+              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line104JsxTextNewServiceAccount')}</Button>
           )}
         </div>
       </header>
@@ -112,16 +109,14 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
           <Skeleton className="h-16 w-full" />
         ) : sas.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No service accounts yet. Create one to get a bearer token your
-            CI/automation can use without impersonating a human.
-          </p>
+            {tHardcodedUi.raw('componentsIamServiceAccountsCard.line115JsxTextNoServiceAccountsYetCreateOneToGet')}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/60 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                 <th className="py-2 font-medium">Name</th>
                 <th className="py-2 font-medium">Status</th>
-                <th className="py-2 font-medium">Last used</th>
+                <th className="py-2 font-medium">{tHardcodedUi.raw('componentsIamServiceAccountsCard.line124JsxTextLastUsed')}</th>
                 <th className="w-32 py-2" />
               </tr>
             </thead>
@@ -176,7 +171,7 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
                           className="h-8 w-8 text-muted-foreground hover:text-destructive"
                           onClick={() => setDeleteTarget(sa)}
                           aria-label="Delete"
-                          title="Delete permanently"
+                          title={tHardcodedUi.raw('componentsIamServiceAccountsCard.line179JsxAttrTitleDeletePermanently')}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -213,7 +208,7 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
         onOpenChange={(o) => {
           if (!o) setDisableTarget(null);
         }}
-        title="Disable service account?"
+        title={tHardcodedUi.raw('componentsIamServiceAccountsCard.line216JsxAttrTitleDisableServiceAccount')}
         description={
           disableTarget
             ? `"${disableTarget.name}" will start failing auth on its next request. Its bearer becomes unusable but the account row is preserved for audit. Re-enable by deleting + creating a new one.`
@@ -232,7 +227,7 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
         onOpenChange={(o) => {
           if (!o) setDeleteTarget(null);
         }}
-        title="Delete service account?"
+        title={tHardcodedUi.raw('componentsIamServiceAccountsCard.line235JsxAttrTitleDeleteServiceAccount')}
         description={
           deleteTarget
             ? `Permanently removes "${deleteTarget.name}" and revokes its bearer. Any IAM policies attached to it are also dropped.`
@@ -262,6 +257,7 @@ function CreateServiceAccountDialog({
   onOpenChange: (o: boolean) => void;
   onCreated: (sa: CreatedServiceAccount) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
 
@@ -284,12 +280,9 @@ function CreateServiceAccountDialog({
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New service account</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsIamServiceAccountsCard.line287JsxTextNewServiceAccount')}</DialogTitle>
           <DialogDescription>
-            A bearer token will be shown once after creation. Attach policies
-            to it from the member detail view (it appears under the Token
-            principal type).
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsIamServiceAccountsCard.line289JsxTextABearerTokenWillBeShownOnceAfter')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -303,11 +296,11 @@ function CreateServiceAccountDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Description (optional)</Label>
+            <Label>{tHardcodedUi.raw('componentsIamServiceAccountsCard.line306JsxTextDescriptionOptional')}</Label>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="GitHub Actions deploy worker"
+              placeholder={tHardcodedUi.raw('componentsIamServiceAccountsCard.line310JsxAttrPlaceholderGitHubActionsDeployWorker')}
               disabled={mutation.isPending}
             />
           </div>
@@ -343,6 +336,7 @@ function ShowBearerDialog({
   bearer: CreatedServiceAccount;
   onClose: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -357,12 +351,9 @@ function ShowBearerDialog({
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Save this bearer now</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsIamServiceAccountsCard.line360JsxTextSaveThisBearerNow')}</DialogTitle>
           <DialogDescription>
-            This is the only time we&apos;ll show <strong>{bearer.name}</strong>&apos;s
-            secret. Store it in your secrets manager — we can&apos;t recover it
-            if you lose it.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsIamServiceAccountsCard.line362JsxTextThisIsTheOnlyTimeWeLlShow')}<strong>{bearer.name}</strong>{tHardcodedUi.raw('componentsIamServiceAccountsCard.line362JsxTextSSecretStoreItInYourSecretsManager')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs break-all">
@@ -377,8 +368,7 @@ function ShowBearerDialog({
               href={`/accounts/${accountId}/tokens/${bearer.service_account_id}`}
               className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             >
-              Attach policies
-              <ExternalLink className="h-3 w-3" />
+              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line380JsxTextAttachPolicies')}<ExternalLink className="h-3 w-3" />
             </Link>
           </div>
         </div>

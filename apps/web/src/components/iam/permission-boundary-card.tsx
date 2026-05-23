@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Per-member permission boundary on the member detail page. Acts as a
 // max-envelope — the IAM engine clips this member's effective
 // permissions to the configured action-prefix list, even if explicit
@@ -32,6 +33,7 @@ export function PermissionBoundaryCard({
   userId,
   canManage,
 }: PermissionBoundaryCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = ['iam-member-boundary', accountId, userId];
 
@@ -107,8 +109,8 @@ export function PermissionBoundaryCard({
 
   return (
     <SectionCard
-      title="Permission boundary"
-      description="Caps the max set of actions this member can ever use, no matter how many allow-policies they have. Super-admins are exempt."
+      title={tHardcodedUi.raw('componentsIamPermissionBoundaryCard.line110JsxAttrTitlePermissionBoundary')}
+      description={tHardcodedUi.raw('componentsIamPermissionBoundaryCard.line111JsxAttrDescriptionCapsTheMaxSetOfActionsThisMember')}
     >
       <div className="space-y-4 px-6 py-5">
         {boundaryQuery.isLoading ? (
@@ -117,26 +119,20 @@ export function PermissionBoundaryCard({
           <>
             {!hasBoundary && (
               <p className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                No boundary configured. All explicit allow-policies apply at
-                full strength.
-              </p>
+                {tHardcodedUi.raw('componentsIamPermissionBoundaryCard.line120JsxTextNoBoundaryConfiguredAllExplicitAllowPoliciesApply')}</p>
             )}
 
             {hasBoundary && isLocallyEmpty && (
               <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-                Boundary is an empty list — this member is effectively denied
-                every action until you add prefixes or clear the boundary.
-              </p>
+                {tHardcodedUi.raw('componentsIamPermissionBoundaryCard.line127JsxTextBoundaryIsAnEmptyListThisMemberIs')}</p>
             )}
 
             <div className="space-y-1.5">
               <div className="text-xs text-muted-foreground">
-                Allowed action prefixes. Use a trailing dot to cover a whole
-                namespace (e.g.{' '}
+                {tHardcodedUi.raw('componentsIamPermissionBoundaryCard.line134JsxTextAllowedActionPrefixesUseATrailingDotTo')}{' '}
                 <span className="font-mono">project.</span> covers{' '}
                 <span className="font-mono">project.read</span>,{' '}
-                <span className="font-mono">project.session.start</span>, etc.).
-              </div>
+                <span className="font-mono">project.session.start</span>{tHardcodedUi.raw('componentsIamPermissionBoundaryCard.line138JsxTextEtc')}</div>
               {prefixes.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {prefixes.map((p) => (
@@ -178,7 +174,7 @@ export function PermissionBoundaryCard({
                         addPrefix(draft);
                       }
                     }}
-                    placeholder="e.g. project."
+                    placeholder={tHardcodedUi.raw('componentsIamPermissionBoundaryCard.line181JsxAttrPlaceholderEGProject')}
                     className="h-8 font-mono text-xs"
                     disabled={saveMutation.isPending}
                   />
@@ -207,8 +203,7 @@ export function PermissionBoundaryCard({
                     disabled={clearMutation.isPending || saveMutation.isPending}
                   >
                     <ShieldOff className="h-3.5 w-3.5" />
-                    Clear boundary
-                  </Button>
+                    {tHardcodedUi.raw('componentsIamPermissionBoundaryCard.line210JsxTextClearBoundary')}</Button>
                 ) : (
                   <span />
                 )}
@@ -230,9 +225,9 @@ export function PermissionBoundaryCard({
       <ConfirmDialog
         open={clearOpen}
         onOpenChange={setClearOpen}
-        title="Clear permission boundary?"
-        description="Removes the boundary entirely. All explicit allow-policies on this member will apply again at full strength."
-        confirmLabel="Clear boundary"
+        title={tHardcodedUi.raw('componentsIamPermissionBoundaryCard.line233JsxAttrTitleClearPermissionBoundary')}
+        description={tHardcodedUi.raw('componentsIamPermissionBoundaryCard.line234JsxAttrDescriptionRemovesTheBoundaryEntirelyAllExplicitAllowPolicies')}
+        confirmLabel={tHardcodedUi.raw('componentsIamPermissionBoundaryCard.line235JsxAttrConfirmLabelClearBoundary')}
         confirmVariant="destructive"
         isPending={clearMutation.isPending}
         onConfirm={() => clearMutation.mutate()}

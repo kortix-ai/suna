@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -112,14 +114,18 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced;
 }
 
-function ensureAdmin(adminRole: { isAdmin?: boolean } | undefined, roleLoading: boolean) {
+function ensureAdmin(
+  adminRole: { isAdmin?: boolean } | undefined,
+  roleLoading: boolean,
+  tHardcodedUi: ReturnType<typeof useTranslations>,
+) {
   if (roleLoading) return <Skeleton className="h-96 w-full" />;
   if (!adminRole?.isAdmin) {
     return (
       <div className="min-h-[40vh] flex items-center justify-center">
         <div className="text-center space-y-3">
           <ShieldCheck className="h-12 w-12 text-muted-foreground/40 mx-auto" />
-          <h2 className="text-lg font-medium">Admin access required</h2>
+          <h2 className="text-lg font-medium">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line122JsxTextAdminAccessRequired')}</h2>
         </div>
       </div>
     );
@@ -130,9 +136,10 @@ function ensureAdmin(adminRole: { isAdmin?: boolean } | undefined, roleLoading: 
 const PAGE_SIZE = 50;
 
 export function AdminInstancesSection({ embedded = false }: { embedded?: boolean }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const { data: adminRole, isLoading: roleLoading } = useAdminRole();
-  const gate = ensureAdmin(adminRole, roleLoading);
+  const gate = ensureAdmin(adminRole, roleLoading, tHardcodedUi);
   const [searchInput, setSearchInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
@@ -187,12 +194,12 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
         {!embedded && (
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2"><Server className="h-6 w-6" />Admin Instances</h1>
-              <p className="text-sm text-muted-foreground mt-1">All instances across every account · {total.toLocaleString()} total</p>
+              <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2"><Server className="h-6 w-6" />{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line190JsxTextAdminInstances')}</h1>
+              <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line191JsxTextAllInstancesAcrossEveryAccount')}{total.toLocaleString()} total</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => router.push('/admin')}>Admin Home</Button>
-              <Button variant="outline" onClick={() => router.push('/instances')} className="gap-2"><ArrowLeft className="h-4 w-4" />Back to Instances</Button>
+              <Button variant="outline" onClick={() => router.push('/admin')}>{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line194JsxTextAdminHome')}</Button>
+              <Button variant="outline" onClick={() => router.push('/instances')} className="gap-2"><ArrowLeft className="h-4 w-4" />{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line195JsxTextBackToInstances')}</Button>
             </div>
           </div>
         )}
@@ -200,18 +207,18 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-            <Input type="text" className="pl-8 h-8 text-sm" placeholder="Search by instance ID, name, account, email..." autoComplete="off" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+            <Input type="text" className="pl-8 h-8 text-sm" placeholder={tHardcodedUi.raw('componentsAdminAdminDashboardSections.line203JsxAttrPlaceholderSearchByInstanceIdNameAccountEmail')} autoComplete="off" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
           </div>
           <Select value={statusFilter || 'all'} onValueChange={(v) => setStatusFilter(v === 'all' ? '' : v)}>
             <SelectTrigger className="h-8 w-[130px] text-sm"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="pooled">Pooled</SelectItem><SelectItem value="provisioning">Provisioning</SelectItem><SelectItem value="stopped">Stopped</SelectItem><SelectItem value="error">Error</SelectItem>
+              <SelectItem value="all">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line208JsxTextAllStatuses')}</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="pooled">Pooled</SelectItem><SelectItem value="provisioning">Provisioning</SelectItem><SelectItem value="stopped">Stopped</SelectItem><SelectItem value="error">Error</SelectItem>
             </SelectContent>
           </Select>
           <Select value={providerFilter || 'all'} onValueChange={(v) => setProviderFilter(v === 'all' ? '' : v)}>
             <SelectTrigger className="h-8 w-[130px] text-sm"><SelectValue placeholder="Provider" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All providers</SelectItem><SelectItem value="justavps">JustAVPS</SelectItem><SelectItem value="daytona">Daytona</SelectItem><SelectItem value="local_docker">Local</SelectItem>
+              <SelectItem value="all">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line214JsxTextAllProviders')}</SelectItem><SelectItem value="justavps">JustAVPS</SelectItem><SelectItem value="daytona">Daytona</SelectItem><SelectItem value="local_docker">Local</SelectItem>
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="h-8 gap-1.5"><RefreshCw className={cn('h-3.5 w-3.5', isFetching ? 'animate-spin' : '')} /></Button>
@@ -220,18 +227,18 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
         {isLoading ? (
           <div className="space-y-3">{[...Array(8)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
         ) : list.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground border border-foreground/[0.08] rounded-2xl"><Server className="h-10 w-10 mx-auto mb-3 opacity-30" /><p className="text-sm">No instances match your filters</p></div>
+          <div className="text-center py-16 text-muted-foreground border border-foreground/[0.08] rounded-2xl"><Server className="h-10 w-10 mx-auto mb-3 opacity-30" /><p className="text-sm">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line223JsxTextNoInstancesMatchYourFilters')}</p></div>
         ) : (
           <div className={cn('border border-foreground/[0.08] rounded-2xl overflow-hidden transition-opacity', isFetching ? 'opacity-60' : '')}>
             <Table>
-              <TableHeader><TableRow className="hover:bg-transparent"><TableHead className="w-[90px]">ID</TableHead><TableHead>Name</TableHead><TableHead>Account / Email</TableHead><TableHead>Provider</TableHead><TableHead>Status</TableHead><TableHead>Created</TableHead><TableHead className="w-[150px]">Actions</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow className="hover:bg-transparent"><TableHead className="w-[90px]">ID</TableHead><TableHead>Name</TableHead><TableHead>{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line227JsxTextAccountEmail')}</TableHead><TableHead>Provider</TableHead><TableHead>Status</TableHead><TableHead>Created</TableHead><TableHead className="w-[150px]">Actions</TableHead></TableRow></TableHeader>
               <TableBody>
                 {list.map((sandbox) => (
                   <TableRow key={sandbox.sandboxId} className="group cursor-pointer" onClick={() => setSelectedSandbox(toSandboxInfo(sandbox))}>
                     <TableCell className="font-mono text-xs text-muted-foreground" title={sandbox.sandboxId}>{sandbox.sandboxId.slice(0, 8)}</TableCell>
-                    <TableCell className="text-sm max-w-[140px] truncate" title={sandbox.name ?? undefined}>{sandbox.name ?? <span className="text-muted-foreground">&mdash;</span>}</TableCell>
+                    <TableCell className="text-sm max-w-[140px] truncate" title={sandbox.name ?? undefined}>{sandbox.name ?? <span className="text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line232JsxTextMdash')}</span>}</TableCell>
                     <TableCell><div className="flex flex-col min-w-0"><span className="text-sm truncate">{sandbox.accountName ?? '—'}</span>{sandbox.ownerEmail && <span className="text-xs text-muted-foreground truncate">{sandbox.ownerEmail}</span>}</div></TableCell>
-                    <TableCell className="text-sm capitalize">{sandbox.provider ?? <span className="text-muted-foreground">&mdash;</span>}</TableCell>
+                    <TableCell className="text-sm capitalize">{sandbox.provider ?? <span className="text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line234JsxTextMdash')}</span>}</TableCell>
                     <TableCell><StatusBadge status={sandbox.status} /></TableCell>
                     <TableCell className="text-xs text-muted-foreground">{formatDate(sandbox.createdAt)}</TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
@@ -251,17 +258,17 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>Page {page} of {pages} — {total.toLocaleString()} results</span>
             <div className="flex gap-1">
-              <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(1)} disabled={page === 1} title="First page">«</Button>
+              <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(1)} disabled={page === 1} title={tHardcodedUi.raw('componentsAdminAdminDashboardSections.line254JsxAttrTitleFirstPage')}>«</Button>
               <Button variant="outline" size="sm" className="h-7 px-2 gap-1" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}><ChevronLeft className="h-3.5 w-3.5" /> Prev</Button>
               <Button variant="outline" size="sm" className="h-7 px-2 gap-1" onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page === pages}>Next <ChevronRight className="h-3.5 w-3.5" /></Button>
-              <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(pages)} disabled={page === pages} title="Last page">»</Button>
+              <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(pages)} disabled={page === pages} title={tHardcodedUi.raw('componentsAdminAdminDashboardSections.line257JsxAttrTitleLastPage')}>»</Button>
             </div>
           </div>
         )}
 
         <Dialog open={!!confirmDelete} onOpenChange={() => setConfirmDelete(null)}>
           <DialogContent className="gap-0 overflow-hidden p-0">
-            <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4"><DialogTitle className="text-lg font-semibold tracking-tight">Delete Instance</DialogTitle><DialogDescription className="text-sm text-muted-foreground">Permanently delete <span className="font-mono text-foreground">{confirmDelete?.sandboxId.slice(0, 8)}</span>{confirmDelete?.provider === 'justavps' && ' and terminate the JustaVPS machine'}. This cannot be undone.</DialogDescription></DialogHeader>
+            <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4"><DialogTitle className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line264JsxTextDeleteInstance')}</DialogTitle><DialogDescription className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line264JsxTextPermanentlyDelete')}<span className="font-mono text-foreground">{confirmDelete?.sandboxId.slice(0, 8)}</span>{confirmDelete?.provider === 'justavps' && ' and terminate the JustaVPS machine'}{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line264JsxTextThisCannotBeUndone')}</DialogDescription></DialogHeader>
             {confirmDelete && <div className="px-6 py-5"><div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-3 space-y-1.5 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Account</span><span>{confirmDelete.accountName ?? '—'}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Provider</span><span className="capitalize">{confirmDelete.provider ?? '—'}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Status</span><span>{confirmDelete.status ?? '—'}</span></div></div></div>}
             <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3"><Button variant="ghost" onClick={() => setConfirmDelete(null)} disabled={deleteMutation.isPending}>Cancel</Button><Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>{deleteMutation.isPending ? 'Deleting…' : 'Delete'}</Button></div>
           </DialogContent>
@@ -279,9 +286,10 @@ function formatCredits(value: string | null) {
 }
 
 export function AdminAccountsSection({ embedded = false }: { embedded?: boolean }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const { data: adminRole, isLoading: roleLoading } = useAdminRole();
-  const gate = ensureAdmin(adminRole, roleLoading);
+  const gate = ensureAdmin(adminRole, roleLoading, tHardcodedUi);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<AdminAccount | null>(null);
   const [amount, setAmount] = useState('');
@@ -317,14 +325,14 @@ export function AdminAccountsSection({ embedded = false }: { embedded?: boolean 
         {!embedded && (
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2"><Users className="h-6 w-6" /> Admin Accounts</h1>
-              <p className="text-sm text-muted-foreground mt-1">Accounts, users, billing state, and credit balances · {accountsQuery.data?.total ?? 0} total accounts · {totalCredits.toFixed(2)} credits tracked</p>
+              <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2"><Users className="h-6 w-6" />{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line320JsxTextAdminAccounts')}</h1>
+              <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line321JsxTextAccountsUsersBillingStateAndCreditBalances')}{accountsQuery.data?.total ?? 0}{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line321JsxTextTotalAccounts')}{totalCredits.toFixed(2)}{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line321JsxTextCreditsTracked')}</p>
             </div>
-            <div className="flex items-center gap-2"><Button variant="outline" onClick={() => router.push('/admin')}>Admin Home</Button><Button variant="outline" onClick={() => router.push('/instances')} className="gap-2"><ArrowLeft className="h-4 w-4" />Back to Instances</Button></div>
+            <div className="flex items-center gap-2"><Button variant="outline" onClick={() => router.push('/admin')}>{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line323JsxTextAdminHome')}</Button><Button variant="outline" onClick={() => router.push('/instances')} className="gap-2"><ArrowLeft className="h-4 w-4" />{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line323JsxTextBackToInstances')}</Button></div>
           </div>
         )}
 
-        <div className="relative max-w-md"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search account, owner email, account ID..." className="pl-8 h-9" /></div>
+        <div className="relative max-w-md"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tHardcodedUi.raw('componentsAdminAdminDashboardSections.line327JsxAttrPlaceholderSearchAccountOwnerEmailAccountId')} className="pl-8 h-9" /></div>
 
         {accountsQuery.isLoading ? (
           <div className="space-y-3">{[...Array(8)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
@@ -335,7 +343,7 @@ export function AdminAccountsSection({ embedded = false }: { embedded?: boolean 
                 <div className="flex items-center justify-between gap-4"><div className="min-w-0"><div className="text-sm font-medium truncate">{account.name || 'Unnamed account'}</div><div className="text-xs text-muted-foreground truncate">{account.ownerEmail || 'No owner email'} · {account.accountId}</div></div><div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0"><span>{account.memberCount} users</span><span>{account.tier || 'free'}</span><span className="font-mono text-foreground">{formatCredits(account.balance)} cr</span></div></div>
               </button>
             ))}
-            {!accountsQuery.data?.accounts?.length && <div className="px-4 py-12 text-center text-sm text-muted-foreground">No accounts found.</div>}
+            {!accountsQuery.data?.accounts?.length && <div className="px-4 py-12 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line338JsxTextNoAccountsFound')}</div>}
           </div>
         )}
 
@@ -345,7 +353,7 @@ export function AdminAccountsSection({ embedded = false }: { embedded?: boolean 
             {selected && (
               <div className="space-y-6 px-6 py-5">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="rounded-2xl border p-3"><div className="text-xs text-muted-foreground">Total credits</div><div className="text-lg font-semibold">{formatCredits(selected.balance)}</div></div>
+                  <div className="rounded-2xl border p-3"><div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line348JsxTextTotalCredits')}</div><div className="text-lg font-semibold">{formatCredits(selected.balance)}</div></div>
                   <div className="rounded-2xl border p-3"><div className="text-xs text-muted-foreground">Expiring</div><div className="text-lg font-semibold">{formatCredits(selected.expiringCredits)}</div></div>
                   <div className="rounded-2xl border p-3"><div className="text-xs text-muted-foreground">Permanent</div><div className="text-lg font-semibold">{formatCredits(selected.nonExpiringCredits)}</div></div>
                   <div className="rounded-2xl border p-3"><div className="text-xs text-muted-foreground">Daily</div><div className="text-lg font-semibold">{formatCredits(selected.dailyCreditsBalance)}</div></div>
@@ -354,24 +362,24 @@ export function AdminAccountsSection({ embedded = false }: { embedded?: boolean 
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-medium"><Users className="h-4 w-4" /> Users</div>
                     <div className="border rounded-2xl divide-y">
-                      {usersQuery.isLoading ? <div className="p-4 text-sm text-muted-foreground flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading users…</div> : (usersQuery.data?.users ?? []).map((user) => <div key={user.user_id} className="px-4 py-3 text-sm flex items-center justify-between gap-3"><div className="min-w-0"><div className="truncate">{user.email}</div><div className="text-xs text-muted-foreground font-mono truncate">{user.user_id}</div></div><div className="text-xs text-muted-foreground uppercase tracking-wide">{user.account_role}</div></div>)}
+                      {usersQuery.isLoading ? <div className="p-4 text-sm text-muted-foreground flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line357JsxTextLoadingUsers')}</div> : (usersQuery.data?.users ?? []).map((user) => <div key={user.user_id} className="px-4 py-3 text-sm flex items-center justify-between gap-3"><div className="min-w-0"><div className="truncate">{user.email}</div><div className="text-xs text-muted-foreground font-mono truncate">{user.user_id}</div></div><div className="text-xs text-muted-foreground uppercase tracking-wide">{user.account_role}</div></div>)}
                     </div>
                   </div>
                   <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm font-medium"><CreditCard className="h-4 w-4" /> Billing & credits</div>
+                    <div className="flex items-center gap-2 text-sm font-medium"><CreditCard className="h-4 w-4" />{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line361JsxTextBillingCredits')}</div>
                     <div className="rounded-2xl border p-4 space-y-3 text-sm">
                       <div><span className="text-muted-foreground">Tier:</span> <span className="font-medium ml-1">{selected.tier || 'free'}</span></div>
                       <div><span className="text-muted-foreground">Provider:</span> <span className="font-medium ml-1">{selected.provider || '—'}</span></div>
-                      <div><span className="text-muted-foreground">Payment status:</span> <span className="font-medium ml-1">{selected.paymentStatus || '—'}</span></div>
+                      <div><span className="text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line365JsxTextPaymentStatus')}</span> <span className="font-medium ml-1">{selected.paymentStatus || '—'}</span></div>
                       <div><span className="text-muted-foreground">Plan:</span> <span className="font-medium ml-1">{selected.planType || '—'}</span></div>
-                      <div><span className="text-muted-foreground">Billing email:</span> <span className="font-medium ml-1 break-all">{selected.billingCustomerEmail || '—'}</span></div>
+                      <div><span className="text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line367JsxTextBillingEmail')}</span> <span className="font-medium ml-1 break-all">{selected.billingCustomerEmail || '—'}</span></div>
                     </div>
                     <div className="rounded-2xl border p-4 space-y-3">
-                      <div className="text-sm font-medium">Grant credits</div>
-                      <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount (e.g. 25)" />
-                      <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Reason / note" />
-                      <label className="flex items-center gap-2 text-sm"><Checkbox checked={isExpiring} onCheckedChange={(checked) => setIsExpiring(checked === true)} />Grant as expiring credits</label>
-                      <Button onClick={handleGrantCredits} disabled={grantCredits.isPending} className="w-full">{grantCredits.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Add credits</Button>
+                      <div className="text-sm font-medium">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line370JsxTextGrantCredits')}</div>
+                      <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={tHardcodedUi.raw('componentsAdminAdminDashboardSections.line371JsxAttrPlaceholderAmountEG25')} />
+                      <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={tHardcodedUi.raw('componentsAdminAdminDashboardSections.line372JsxAttrPlaceholderReasonNote')} />
+                      <label className="flex items-center gap-2 text-sm"><Checkbox checked={isExpiring} onCheckedChange={(checked) => setIsExpiring(checked === true)} />{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line373JsxTextGrantAsExpiringCredits')}</label>
+                      <Button onClick={handleGrantCredits} disabled={grantCredits.isPending} className="w-full">{grantCredits.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line374JsxTextAddCredits')}</Button>
                     </div>
                   </div>
                 </div>
@@ -393,9 +401,10 @@ function AccessStatusBadge({ status }: { status: AccessRequest['status'] }) {
 }
 
 export function AdminAccessRequestsSection({ embedded = false }: { embedded?: boolean }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const { data: adminRole, isLoading: roleLoading } = useAdminRole();
-  const gate = ensureAdmin(adminRole, roleLoading);
+  const gate = ensureAdmin(adminRole, roleLoading, tHardcodedUi);
   const [activeTab, setActiveTab] = useState<string>('pending');
   const [confirmDialog, setConfirmDialog] = useState<{ request: AccessRequest; action: 'approve' | 'reject' } | null>(null);
   const { data, isLoading } = useAccessRequests({ status: activeTab === 'all' ? undefined : activeTab });
@@ -432,10 +441,10 @@ export function AdminAccessRequestsSection({ embedded = false }: { embedded?: bo
         {!embedded && (
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2"><UserPlus className="h-6 w-6" />Access Requests</h1>
-              <p className="text-sm text-muted-foreground mt-1">Review and manage early access requests</p>
+              <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2"><UserPlus className="h-6 w-6" />{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line435JsxTextAccessRequests')}</h1>
+              <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line436JsxTextReviewAndManageEarlyAccessRequests')}</p>
             </div>
-            <div className="flex items-center gap-2"><Button variant="outline" onClick={() => router.push('/admin')}>Admin Home</Button><Button variant="outline" onClick={() => router.push('/instances')} className="gap-2"><ArrowLeft className="h-4 w-4" />Back to Instances</Button></div>
+            <div className="flex items-center gap-2"><Button variant="outline" onClick={() => router.push('/admin')}>{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line438JsxTextAdminHome')}</Button><Button variant="outline" onClick={() => router.push('/instances')} className="gap-2"><ArrowLeft className="h-4 w-4" />{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line438JsxTextBackToInstances')}</Button></div>
             <div className="flex gap-3">
               <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-amber-500">{summary.pending}</p><p className="text-xs text-muted-foreground">Pending</p></div>
               <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-green-500">{summary.approved}</p><p className="text-xs text-muted-foreground">Approved</p></div>
@@ -456,7 +465,7 @@ export function AdminAccessRequestsSection({ embedded = false }: { embedded?: bo
         {isLoading ? (
           <div className="space-y-3">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
         ) : requests.length === 0 ? (
-          <div className="rounded-2xl border border-border/60 bg-muted/10 py-16 text-center text-sm text-muted-foreground">No requests found for this filter.</div>
+          <div className="rounded-2xl border border-border/60 bg-muted/10 py-16 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line459JsxTextNoRequestsFoundForThisFilter')}</div>
         ) : (
           <div className="border border-foreground/[0.08] rounded-2xl overflow-hidden">
             <Table>
@@ -474,7 +483,7 @@ export function AdminAccessRequestsSection({ embedded = false }: { embedded?: bo
                             <Button size="sm" onClick={() => setConfirmDialog({ request, action: 'approve' })}>Approve</Button>
                             <Button size="sm" variant="outline" onClick={() => setConfirmDialog({ request, action: 'reject' })}>Reject</Button>
                           </>
-                        ) : <span className="text-xs text-muted-foreground">No actions</span>}
+                        ) : <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line477JsxTextNoActions')}</span>}
                       </div>
                     </TableCell>
                   </TableRow>

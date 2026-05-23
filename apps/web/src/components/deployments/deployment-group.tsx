@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState } from 'react';
 import {
   ExternalLink,
@@ -54,6 +56,7 @@ export function DeploymentGroup({
   isRedeployPending,
   isDeletePending,
 }: DeploymentGroupProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isExpanded, setIsExpanded] = useState(false);
   const { latestDeployment, allVersions, versionCount } = group;
   const status = statusConfig[latestDeployment.status] || statusConfig.pending;
@@ -143,7 +146,7 @@ export function DeploymentGroup({
                     </a>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">Open live URL</TooltipContent>
+                <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentGroup.line146JsxTextOpenLiveUrl')}</TooltipContent>
               </Tooltip>
             )}
             <Tooltip>
@@ -156,7 +159,7 @@ export function DeploymentGroup({
                   <ScrollText className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">View logs</TooltipContent>
+              <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentGroup.line159JsxTextViewLogs')}</TooltipContent>
             </Tooltip>
             {canRedeploy && (
               <Tooltip>
@@ -169,7 +172,7 @@ export function DeploymentGroup({
                     <Pencil className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">Edit &amp; Redeploy</TooltipContent>
+                <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentGroup.line172JsxTextEditAmpRedeploy')}</TooltipContent>
               </Tooltip>
             )}
             {canRedeploy && (
@@ -262,9 +265,7 @@ export function DeploymentGroup({
                 onClick={() => onEditRedeploy(latestDeployment)}
                 className="h-8 gap-1.5 text-xs cursor-pointer"
               >
-                <Pencil className="h-3.5 w-3.5" />
-                Edit &amp; Redeploy
-              </Button>
+                <Pencil className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsDeploymentsDeploymentGroup.line266JsxTextEditAmpRedeploy')}</Button>
               <Button
                 variant="ghost"
                 size="sm"
@@ -292,8 +293,7 @@ export function DeploymentGroup({
                 isExpanded && 'rotate-90',
               )}
             />
-            {isExpanded ? 'Hide' : 'Show'} version history
-          </Button>
+            {isExpanded ? 'Hide' : 'Show'}{tHardcodedUi.raw('componentsDeploymentsDeploymentGroup.line295JsxTextVersionHistory')}</Button>
         </div>
 
         {/* Version history (collapsible) */}

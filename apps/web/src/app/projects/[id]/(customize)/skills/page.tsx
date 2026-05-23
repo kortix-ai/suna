@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * /projects/[id]/skills — Project skills browser.
  *
@@ -75,6 +77,7 @@ export default function ProjectSkillsPage({
 }
 
 export function SkillsView({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -146,7 +149,7 @@ export function SkillsView({ projectId }: { projectId: string }) {
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <Input
-              placeholder="Search skills"
+              placeholder={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line149JsxAttrPlaceholderSearchSkills')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="h-8 pl-8 text-sm placeholder:text-muted-foreground/60"
@@ -165,7 +168,7 @@ export function SkillsView({ projectId }: { projectId: string }) {
               onRetry={() => detailQuery.refetch()}
             />
           ) : skills.length === 0 ? (
-            <EmptyList icon={Sparkles} label="No skills yet" />
+            <EmptyList icon={Sparkles} label={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line168JsxAttrLabelNoSkillsYet')} />
           ) : filtered.length === 0 ? (
             <NoMatches query={query} />
           ) : (
@@ -265,6 +268,7 @@ function InlineSkillTree({
   selectedFilePath: string | null;
   onPickFile: (path: string) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const skillDir = useMemo(() => {
     const idx = skill.path.lastIndexOf('/');
     return idx > 0 ? skill.path.slice(0, idx) : skill.path;
@@ -316,9 +320,7 @@ function InlineSkillTree({
           ))}
         </div>
       ) : filesQuery.isError ? (
-        <p className="px-2 py-1.5 text-xs text-muted-foreground">
-          Couldn&apos;t load files.
-        </p>
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line320JsxTextCouldnAposTLoadFiles')}</p>
       ) : (
         <div className="relative">
           <div
@@ -517,6 +519,7 @@ function DetailToolbarActions({
 }: {
   fileHref: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Copy / edit live inside the shared FileContentRenderer chrome (when
   // showHeader is enabled there). Here we only own the "deep link to the
   // file viewer" action, since the rest of the customize chrome shows it
@@ -536,9 +539,7 @@ function DetailToolbarActions({
             </Link>
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          Open in file viewer
-        </TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line540JsxTextOpenInFileViewer')}</TooltipContent>
       </Tooltip>
     </div>
   );
@@ -584,20 +585,21 @@ function DetailBodySkeleton() {
 }
 
 function DetailEmpty() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
       icon={Sparkles}
-      title="Select a skill"
-      description="Pick a SKILL.md from the list to preview it."
+      title={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line590JsxAttrTitleSelectASkill')}
+      description={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line591JsxAttrDescriptionPickASkillMdFromTheListTo')}
     />
   );
 }
 
 function NoMatches({ query }: { query: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-6 text-center">
-      <p className="text-xs text-muted-foreground">
-        No matches for{' '}
+      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line600JsxTextNoMatchesFor')}{' '}
         <span className="font-mono text-foreground">{query}</span>.
       </p>
     </div>
@@ -611,19 +613,15 @@ function EmptyList({
   icon: Icon;
   label: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
       icon={icon}
       size="sm"
       title={label}
       description={
-        <>
-          Commit a{' '}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-            .kortix/opencode/skills/&lt;slug&gt;/SKILL.md
-          </code>{' '}
-          and it&apos;ll show up here.
-        </>
+        <>{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line621JsxTextCommitA')}{' '}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line623JsxTextKortixOpencodeSkillsLtSlugGtSkillMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line625JsxTextAndItAposLlShowUpHere')}</>
       }
       action={
         <Button asChild variant="ghost" size="sm" className="gap-1.5">
@@ -632,9 +630,7 @@ function EmptyList({
             target="_blank"
             rel="noopener noreferrer"
           >
-            <ExternalLink className="h-3 w-3" />
-            OpenCode skills docs
-          </a>
+            <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line636JsxTextOpencodeSkillsDocs')}</a>
         </Button>
       }
     />
@@ -642,10 +638,9 @@ function EmptyList({
 }
 
 function ForbiddenNotice() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <InfoBanner icon={ShieldAlert} title="Access required">
-      No permission to read this repo.
-    </InfoBanner>
+    <InfoBanner icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line646JsxAttrTitleAccessRequired')}>{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line647JsxTextNoPermissionToReadThisRepo')}</InfoBanner>
   );
 }
 
@@ -656,9 +651,10 @@ function ErrorNotice({
   message: string;
   onRetry: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-4">
-      <p className="text-sm font-medium text-destructive">Failed to load</p>
+      <p className="text-sm font-medium text-destructive">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line661JsxTextFailedToLoad')}</p>
       <p className="mt-1 text-xs text-destructive/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry

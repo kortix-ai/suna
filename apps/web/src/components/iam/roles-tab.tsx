@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 // Roles tab on the account page. Lists system + custom roles in one table.
 // System roles are read-only (built into the catalog); custom roles can be
 // edited or deleted by users with role.create/update/delete.
@@ -23,6 +25,7 @@ interface RolesTabProps {
 }
 
 export function RolesTab({ accountId, canCreate }: RolesTabProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -60,13 +63,11 @@ export function RolesTab({ accountId, canCreate }: RolesTabProps) {
   return (
     <SectionCard
       title="Roles"
-      description="System roles ship with the platform. Create custom roles to bundle exactly the permissions your account needs."
+      description={tHardcodedUi.raw('componentsIamRolesTab.line63JsxAttrDescriptionSystemRolesShipWithThePlatformCreateCustom')}
       action={
         canCreate && (
           <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            Create a role
-          </Button>
+            <Plus className="h-4 w-4" />{tHardcodedUi.raw('componentsIamRolesTab.line68JsxTextCreateARole')}</Button>
         )
       }
       flush
@@ -77,7 +78,7 @@ export function RolesTab({ accountId, canCreate }: RolesTabProps) {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search roles by name or key..."
+            placeholder={tHardcodedUi.raw('componentsIamRolesTab.line80JsxAttrPlaceholderSearchRolesByNameOrKey')}
             className="h-9 pl-9"
           />
         </div>

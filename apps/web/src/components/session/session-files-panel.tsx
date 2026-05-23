@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { GitPullRequestArrow, Loader2, Sparkles } from 'lucide-react';
@@ -33,6 +34,7 @@ const STATUS_BADGE: Record<string, { letter: string; cls: string; label: string 
  *      it commits + opens via `kortix cr open` for the user to review & merge.
  */
 export function SessionFilesPanel() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // The git branch == the ROUTE session id; SessionLayout's `sessionId` prop is
   // the OpenCode chat session id (used to message the agent).
   const { id: projectId, sessionId: gitSessionId } = useParams<{
@@ -77,24 +79,18 @@ export function SessionFilesPanel() {
       <div className="flex-shrink-0 space-y-3 border-b border-border/40 p-4">
         <div className="space-y-1.5">
           <h3 className="text-sm font-medium text-foreground">
-            This session is its own version
-          </h3>
+            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line80JsxTextThisSessionIsItsOwnVersion')}</h3>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Changes here live on a standalone version of your project — separate
-            from{' '}
-            <span className="font-mono text-foreground/80">{baseRef}</span>, so
-            you can work in parallel without affecting it. To make any of them
-            part of your main Kortix version, ask your agent to open a{' '}
-            <span className="font-medium text-foreground/80">change request</span>
-            ; you can review and merge it into{' '}
+            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line83JsxTextChangesHereLiveOnAStandaloneVersionOf')}{' '}
+            <span className="font-mono text-foreground/80">{baseRef}</span>{tHardcodedUi.raw('componentsSessionSessionFilesPanel.line85JsxTextSoYouCanWorkInParallelWithoutAffecting')}{' '}
+            <span className="font-medium text-foreground/80">{tHardcodedUi.raw('componentsSessionSessionFilesPanel.line88JsxTextChangeRequest')}</span>
+            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line89JsxTextYouCanReviewAndMergeItInto')}{' '}
             <span className="font-mono text-foreground/80">{baseRef}</span>{' '}
-            whenever you&apos;re ready.
-          </p>
+            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line91JsxTextWheneverYouReReady')}</p>
         </div>
         <Button size="sm" className="w-full" onClick={copyChangeRequestPrompt}>
           <Sparkles className="size-3.5" />
-          Ask agent to open a change request
-        </Button>
+          {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line96JsxTextAskAgentToOpenAChangeRequest')}</Button>
       </div>
 
       {/* The currently-changed files (git status). */}
@@ -110,8 +106,7 @@ export function SessionFilesPanel() {
         {isLoadingChanges ? (
           <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground/50">
             <Loader2 className="size-4 animate-spin" />
-            Loading changes…
-          </div>
+            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line113JsxTextLoadingChanges')}</div>
         ) : changedCount > 0 ? (
           <div className="space-y-0.5">
             {changedFiles.map((file) => {
@@ -148,9 +143,7 @@ export function SessionFilesPanel() {
           </div>
         ) : (
           <div className="px-1 py-8 text-center text-xs text-muted-foreground/60">
-            No changes yet. Files the agent creates or edits in this session will
-            show up here.
-          </div>
+            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line151JsxTextNoChangesYetFilesTheAgentCreatesOr')}</div>
         )}
       </div>
     </div>

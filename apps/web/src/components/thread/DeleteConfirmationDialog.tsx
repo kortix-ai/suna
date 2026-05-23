@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useEffect } from 'react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { buttonVariants } from '@/components/ui/button';
@@ -33,6 +35,7 @@ export function DeleteConfirmationDialog({
   threadName,
   isDeleting,
 }: DeleteConfirmationDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Reset pointer events when dialog opens
   useEffect(() => {
     if (isOpen) {
@@ -44,13 +47,10 @@ export function DeleteConfirmationDialog({
     <AlertDialog open={isOpen} onOpenChange={onClose}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete conversation</AlertDialogTitle>
-          <AlertDialogDescription>
-            Are you sure you want to delete the conversation{' '}
+          <AlertDialogTitle>{tHardcodedUi.raw('componentsThreadDeleteconfirmationdialog.line47JsxTextDeleteConversation')}</AlertDialogTitle>
+          <AlertDialogDescription>{tHardcodedUi.raw('componentsThreadDeleteconfirmationdialog.line49JsxTextAreYouSureYouWantToDeleteThe')}{' '}
             <span className="font-semibold">"{threadName}"</span>?
-            <br />
-            This action cannot be undone.
-          </AlertDialogDescription>
+            <br />{tHardcodedUi.raw('componentsThreadDeleteconfirmationdialog.line52JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>

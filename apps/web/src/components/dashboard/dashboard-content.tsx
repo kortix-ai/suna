@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useEffect, useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useIsMobile } from '@/hooks/utils';
@@ -36,6 +38,7 @@ import { cn } from '@/lib/utils';
 const SEND_FADE_MS = 150;
 
 export function DashboardContent() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isSending, setIsSending] = useState(false);
 
   const isMobile = useIsMobile();
@@ -174,7 +177,7 @@ export function DashboardContent() {
                 setOpenMobile(true);
               }}
               className="flex items-center justify-center h-9 w-9 -ml-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 active:bg-accent transition-colors touch-manipulation"
-              aria-label="Open menu"
+              aria-label={tHardcodedUi.raw('componentsDashboardDashboardContent.line177JsxAttrAriaLabelOpenMenu')}
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -196,7 +199,7 @@ export function DashboardContent() {
               setOpenMobile(true);
             }}
             className="flex items-center justify-center h-9 w-9 -ml-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 active:bg-accent transition-colors touch-manipulation"
-            aria-label="Open menu"
+            aria-label={tHardcodedUi.raw('componentsDashboardDashboardContent.line199JsxAttrAriaLabelOpenMenu')}
           >
             <Menu className="h-5 w-5" />
           </button>
@@ -225,7 +228,7 @@ export function DashboardContent() {
       <SessionChatInput
         onSend={handleSend}
         disabled={isSending}
-        placeholder="Ask anything..."
+        placeholder={tHardcodedUi.raw('componentsDashboardDashboardContent.line228JsxAttrPlaceholderAskAnything')}
         agents={local.agent.list}
         selectedAgent={local.agent.current?.name ?? null}
         onAgentChange={(name) => local.agent.set(name ?? undefined)}

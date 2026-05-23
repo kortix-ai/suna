@@ -1,3 +1,6 @@
+'use client';
+
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -182,6 +185,7 @@ function SectionHeader({ title, label }: { title: string; label?: string }) {
 }
 
 function CommandBox() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <Card className="mt-9 gap-0 overflow-hidden rounded-2xl border-border/80 bg-card/70 py-0">
       <div className="grid grid-cols-4 border-b border-border/70 text-xs">
@@ -203,9 +207,7 @@ function CommandBox() {
       </div>
       <div className="flex min-h-14 items-center justify-between gap-4 px-4 font-mono text-xs text-foreground">
         <div className="min-w-0 truncate">
-          <span className="text-muted-foreground">npx</span> kortix init
-          company-os
-        </div>
+          <span className="text-muted-foreground">npx</span>{tHardcodedUi.raw('appHome2Page.line206JsxTextKortixInitCompanyOs')}</div>
         <IconCopy
           className="size-4 shrink-0 text-muted-foreground"
           strokeWidth={1.5}
@@ -261,6 +263,7 @@ function FeatureCard({ card }: { card: FeatureCardData }) {
 }
 
 function LeftRail() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <aside className="relative flex min-h-[100svh] flex-col overflow-hidden border-r border-border bg-background px-7 py-6 lg:fixed lg:inset-y-0 lg:left-0 lg:w-[41.65vw]">
       <MiniLogo />
@@ -278,29 +281,21 @@ function LeftRail() {
           className="gap-2 rounded-full px-3 py-1.5 text-sm font-normal"
         >
           <Link href="/technology">
-            <IconAgent className="size-3.5" strokeWidth={1.5} />
-            Introducing | Company OS
-            <IconArrowUpRight className="size-3.5" strokeWidth={1.5} />
+            <IconAgent className="size-3.5" strokeWidth={1.5} />{tHardcodedUi.raw('appHome2Page.line282JsxTextIntroducingCompanyOs')}<IconArrowUpRight className="size-3.5" strokeWidth={1.5} />
           </Link>
         </Badge>
 
-        <h1 className="mt-7 max-w-[560px] text-4xl font-medium leading-[1.08] tracking-[-0.035em] text-foreground sm:text-5xl lg:text-5xl xl:text-6xl">
-          Run your company on agents you own
-        </h1>
-        <p className="mt-5 max-w-[500px] text-sm leading-6 text-muted-foreground">
-          Kortix turns one repo into an AI command center: agents, triggers,
-          tools, memory, projects, approvals, and deliverables in one workspace.
-        </p>
+        <h1 className="mt-7 max-w-[560px] text-4xl font-medium leading-[1.08] tracking-[-0.035em] text-foreground sm:text-5xl lg:text-5xl xl:text-6xl">{tHardcodedUi.raw('appHome2Page.line288JsxTextRunYourCompanyOnAgentsYouOwn')}</h1>
+        <p className="mt-5 max-w-[500px] text-sm leading-6 text-muted-foreground">{tHardcodedUi.raw('appHome2Page.line291JsxTextKortixTurnsOneRepoIntoAnAiCommand')}</p>
 
         <div className="mt-7 flex flex-wrap items-center gap-3">
           <Button asChild size="lg" className="h-11 px-7">
-            <Link href="/auth">
-              Get Started{' '}
+            <Link href="/auth">{tHardcodedUi.raw('appHome2Page.line298JsxTextGetStarted')}{' '}
               <IconArrowUpRight className="size-4" strokeWidth={1.5} />
             </Link>
           </Button>
           <Button asChild size="lg" variant="outline" className="h-11 px-7">
-            <Link href="/enterprise">Request demo</Link>
+            <Link href="/enterprise">{tHardcodedUi.raw('appHome2Page.line303JsxTextRequestDemo')}</Link>
           </Button>
         </div>
       </div>
@@ -369,9 +364,10 @@ function TopNav() {
 }
 
 function BuiltForStrip() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <section className="mt-8 border-t border-border/60 pt-6">
-      <SectionHeader title="" label="Built for" />
+      <SectionHeader title="" label={tHardcodedUi.raw('appHome2Page.line374JsxAttrLabelBuiltFor')} />
       <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {builtFor.map((item) => (
           <Card
@@ -390,14 +386,11 @@ function BuiltForStrip() {
 }
 
 function FrameworkSection() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <section className="mt-10 pb-20">
       <SectionHeader title="Framework" />
-      <p className="mt-4 text-sm leading-6 text-muted-foreground">
-        Kortix is the operating framework for autonomous company work: declare
-        the workspace, run sessions in isolated environments, and keep the
-        important changes reviewable.
-      </p>
+      <p className="mt-4 text-sm leading-6 text-muted-foreground">{tHardcodedUi.raw('appHome2Page.line397JsxTextKortixIsTheOperatingFrameworkForAutonomousCompany')}</p>
 
       <div className="mt-8 grid gap-3 lg:grid-cols-[1fr_260px]">
         <Card className="gap-0 overflow-hidden rounded-2xl border-border/70 bg-card/60 py-0">
@@ -484,6 +477,7 @@ function FrameworkSection() {
 }
 
 function ReadmePane() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <main className="bg-background lg:ml-[41.65vw]">
       <TopNav />
@@ -491,13 +485,7 @@ function ReadmePane() {
         <section>
           <SectionHeader title="README" />
           <p className="mt-8 max-w-[980px] text-sm leading-7 text-muted-foreground">
-            <strong className="font-medium text-foreground">
-              Kortix is the AI command center for your company.
-            </strong>{' '}
-            It turns a project repo into a living company workspace where agents
-            plan, operate across tools, produce finished deliverables, and leave
-            a reviewable trail behind.
-          </p>
+            <strong className="font-medium text-foreground">{tHardcodedUi.raw('appHome2Page.line495JsxTextKortixIsTheAiCommandCenterForYour')}</strong>{' '}{tHardcodedUi.raw('appHome2Page.line497JsxTextItTurnsAProjectRepoIntoALiving')}</p>
 
           <CommandBox />
 

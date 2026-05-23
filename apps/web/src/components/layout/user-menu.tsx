@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * UserMenu — the ONE "you" menu.
  *
@@ -73,6 +74,7 @@ export function UserMenu({
   user: UserMenuUser;
   variant?: UserMenuVariant;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   // Read the context directly (not useSidebar, which throws) so the header
   // variant works where there's no SidebarProvider.
@@ -139,7 +141,7 @@ export function UserMenu({
           'flex h-8 cursor-pointer items-center gap-2 rounded-full border border-border/50 bg-transparent pl-1 pr-2 transition-colors',
           'hover:bg-muted/40 data-[state=open]:bg-muted/50',
         )}
-        aria-label="Your menu"
+        aria-label={tHardcodedUi.raw('componentsLayoutUserMenu.line142JsxAttrAriaLabelYourMenu')}
       >
         <UserAvatar email={user.email} name={user.name} avatarUrl={user.avatar} size="sm" />
         <ChevronsUpDown className="size-3 text-muted-foreground/60" />
@@ -206,7 +208,7 @@ export function UserMenu({
           />
           <ActionRow
             icon={<SettingsIcon className="size-3.5" />}
-            label="User settings"
+            label={tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
             onSelect={() => openUserSettings('general')}
           />
 
@@ -245,7 +247,7 @@ export function UserMenu({
 
           <ActionRow
             icon={<LogOut className="size-3.5" />}
-            label="Log out"
+            label={tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
             onSelect={handleLogout}
           />
         </div>

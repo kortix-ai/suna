@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PresentationSlideCard } from './PresentationSlideCard';
@@ -45,6 +46,7 @@ export function PresentationSlidePreview({
   className = '',
   initialSlide,
 }: PresentationSlidePreviewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { openPresentation } = usePresentationViewerStore();
   const { subdomainOpts } = useSandboxProxy();
   const [metadata, setMetadata] = useState<PresentationMetadata | null>(null);
@@ -121,7 +123,7 @@ export function PresentationSlidePreview({
     return (
       <div className={cn('flex flex-col items-center justify-center p-8 bg-muted/30 rounded-2xl border', className)}>
         <KortixLoader customSize={24} className="mb-2" />
-        <span className="text-sm text-muted-foreground">Loading presentation...</span>
+        <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationslidepreview.line124JsxTextLoadingPresentation')}</span>
         {retryCount > 0 && (
           <span className="text-xs text-muted-foreground/70 mt-1">
             Attempt {retryCount + 1}

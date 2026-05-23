@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { use, useMemo, useState, useCallback } from 'react';
 import { Loader2, AlertCircle, ChevronRight, History, GitFork, ArrowRightLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -177,6 +179,7 @@ function formatToolSubtitle(name: string, args: Record<string, unknown>): string
 }
 
 function LegacyToolCard({ tool }: { tool: ParsedToolCall }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	const subtitle = formatToolSubtitle(tool.name, tool.args);
 
 	return (
@@ -213,9 +216,7 @@ function LegacyToolCard({ tool }: { tool: ParsedToolCall }) {
 						</div>
 					)}
 					{!tool.result && (
-						<div className="p-3 text-xs text-muted-foreground/50 italic">
-							No output
-						</div>
+						<div className="p-3 text-xs text-muted-foreground/50 italic">{tHardcodedUi.raw('componentsPagesLegacyPage.line217JsxTextNoOutput')}</div>
 					)}
 				</div>
 			</CollapsibleContent>
@@ -232,6 +233,7 @@ function LegacyTurn({
 	onFork: () => void;
 	forking: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	return (
 		<div className="space-y-3 group/turn relative">
 			{turn.userText && (
@@ -283,7 +285,7 @@ function LegacyTurn({
 									<GitFork className="size-3.5" />
 								</button>
 							</TooltipTrigger>
-							<TooltipContent>Continue from here</TooltipContent>
+							<TooltipContent>{tHardcodedUi.raw('componentsPagesLegacyPage.line286JsxTextContinueFromHere')}</TooltipContent>
 						</Tooltip>
 					</div>
 				</>
@@ -297,6 +299,7 @@ export default function LegacyThreadPage({
 }: {
 	params: Promise<{ threadId: string }>;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	const { threadId } = use(params);
 	const { data, isLoading, error } = useLegacyMessages(threadId);
 	const createSession = useCreateOpenCodeSession();
@@ -367,7 +370,7 @@ export default function LegacyThreadPage({
 		return (
 			<div className="flex-1 flex flex-col items-center justify-center text-center gap-3">
 				<AlertCircle className="h-8 w-8 text-destructive" />
-				<p className="text-sm text-muted-foreground">Failed to load messages</p>
+				<p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesLegacyPage.line370JsxTextFailedToLoadMessages')}</p>
 			</div>
 		);
 	}
@@ -376,7 +379,7 @@ export default function LegacyThreadPage({
 		<div className="flex flex-col h-full">
 			<div className="flex items-center gap-2 px-5 py-3 border-b border-border/50">
 				<History className="h-3.5 w-3.5 text-muted-foreground" />
-				<span className="text-xs font-medium text-muted-foreground">Previous Chat</span>
+				<span className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsPagesLegacyPage.line379JsxTextPreviousChat')}</span>
 				<span className="text-xs text-muted-foreground/60">·</span>
 				<span className="text-xs text-muted-foreground/60">{turns.length} turns</span>
 			</div>
@@ -398,7 +401,7 @@ export default function LegacyThreadPage({
 				<div className="w-full bg-card border border-border rounded-[24px] overflow-hidden relative">
 					<div className="pointer-events-none select-none blur-[2px] opacity-40">
 						<div className="px-4 pt-4 pb-6 min-h-[96px]">
-							<span className="text-sm text-muted-foreground">What do you want to build?</span>
+							<span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesLegacyPage.line401JsxTextWhatDoYouWantToBuild')}</span>
 						</div>
 						<div className="flex items-center justify-between mb-1.5 pl-2 pr-1.5">
 							<div className="flex items-center gap-1">
@@ -411,8 +414,8 @@ export default function LegacyThreadPage({
 						</div>
 					</div>
 					<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-[24px]">
-						<p className="text-sm text-muted-foreground">This is a legacy chat. Convert it to continue.</p>
-						<p className="text-xs text-muted-foreground/70 mt-1">Files will be imported to the Legacy folder on the Files page.</p>
+						<p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesLegacyPage.line414JsxTextThisIsALegacyChatConvertItTo')}</p>
+						<p className="text-xs text-muted-foreground/70 mt-1">{tHardcodedUi.raw('componentsPagesLegacyPage.line415JsxTextFilesWillBeImportedToTheLegacyFolder')}</p>
 						<button
 							onClick={handleMigrate}
 							disabled={forking || migrating || turns.length === 0}
@@ -430,9 +433,7 @@ export default function LegacyThreadPage({
 								</>
 							) : (
 								<>
-									<ArrowRightLeft className="size-3.5" />
-									Convert to session
-								</>
+									<ArrowRightLeft className="size-3.5" />{tHardcodedUi.raw('componentsPagesLegacyPage.line434JsxTextConvertToSession')}</>
 							)}
 						</button>
 					</div>

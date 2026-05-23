@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Project view — single-sandbox combined page.
  *
@@ -53,12 +55,11 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 function BoardRedirect() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   useEffect(() => { router.replace('/workspace'); }, [router]);
   return (
-    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      Redirecting to workspace…
-    </div>
+    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesBoardPage.line60JsxTextRedirectingToWorkspace')}</div>
   );
 }
 
@@ -68,6 +69,7 @@ export default function ProjectViewPage() {
 }
 
 function ProjectViewInner() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [tab, setTab] = useState<Tab>('board');
   const [newTicketOpen, setNewTicketOpen] = useState(false);
   const [newTicketDefaultStatus, setNewTicketDefaultStatus] = useState<string | undefined>();
@@ -116,11 +118,11 @@ function ProjectViewInner() {
                 <Button
                   size="sm"
                   onClick={() => openNewTicket()}
-                  title="New ticket (C)"
+                  title={tHardcodedUi.raw('componentsPagesBoardPage.line119JsxAttrTitleNewTicketC')}
                   className="h-7 px-2.5 text-xs gap-1.5"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">New ticket</span>
+                  <span className="hidden sm:inline">{tHardcodedUi.raw('componentsPagesBoardPage.line123JsxTextNewTicket')}</span>
                   <kbd className="hidden sm:inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded border border-primary-foreground/20 bg-primary-foreground/10 text-xs font-mono font-medium leading-none text-primary-foreground/90">
                     C
                   </kbd>

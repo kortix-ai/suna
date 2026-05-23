@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   Select,
@@ -162,6 +164,7 @@ const MINUTE_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [state, setState] = useState<ScheduleState>(() => cronToState(value) ?? DEFAULT_STATE);
   const [showCron, setShowCron] = useState(false);
   const [rawCron, setRawCron] = useState(value);
@@ -207,7 +210,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
   if (isCustom) {
     return (
       <div className="rounded-2xl border border-border bg-muted/20 p-4 space-y-3">
-        <p className="text-sm text-muted-foreground">Custom cron expression</p>
+        <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line210JsxTextCustomCronExpression')}</p>
         <Input type="text"
           value={rawCron}
           onChange={(e) => onRawCronEdit(e.target.value)}
@@ -215,9 +218,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
           placeholder="0 0 9 * * *"
           disabled={disabled}
         />
-        <p className="text-xs text-muted-foreground">
-          6-field: second minute hour day month weekday
-        </p>
+        <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line219JsxTextText6FieldSecondMinuteHourDayMonthWeekday')}</p>
         <Button
           type="button"
           variant="link"
@@ -225,9 +226,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
           onClick={() => update({ frequency: 'daily' })}
           disabled={disabled}
           className="h-auto p-0 text-xs"
-        >
-          Switch to visual editor
-        </Button>
+        >{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line229JsxTextSwitchToVisualEditor')}</Button>
       </div>
     );
   }
@@ -284,7 +283,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
         {/* Month day row */}
         {state.frequency === 'monthly' && (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">On day</span>
+            <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line287JsxTextOnDay')}</span>
             <Select
               value={String(state.monthDay)}
               onValueChange={(v) => update({ monthDay: Number(v) })}
@@ -299,7 +298,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
                 ))}
               </SelectContent>
             </Select>
-            <span className="text-sm text-muted-foreground">of each month</span>
+            <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line302JsxTextOfEachMonth')}</span>
           </div>
         )}
 
@@ -328,7 +327,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
             <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             {state.frequency === 'hourly' ? (
               <>
-                <span className="text-sm text-muted-foreground">at minute</span>
+                <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line331JsxTextAtMinute')}</span>
                 <Select
                   value={String(state.minute)}
                   onValueChange={(v) => update({ minute: Number(v) })}
@@ -404,8 +403,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
           disabled={disabled}
         >
           <ChevronDown className={cn("h-3 w-3 transition-transform", showCron && "rotate-180")} />
-          {showCron ? 'Hide' : 'Edit'} cron expression
-        </Button>
+          {showCron ? 'Hide' : 'Edit'}{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line407JsxTextCronExpression')}</Button>
         {showCron && (
           <div className="mt-2 space-y-1">
             <Input type="text"
@@ -415,9 +413,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
               placeholder="0 0 9 * * *"
               disabled={disabled}
             />
-            <p className="text-xs text-muted-foreground">
-              6-field: sec min hour day month weekday
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line419JsxTextText6FieldSecMinHourDayMonthWeekday')}</p>
           </div>
         )}
       </div>

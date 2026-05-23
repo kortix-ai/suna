@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import React, { useState, useMemo, useCallback } from 'react';
 import { Key, Plus, Trash2, Copy, Check, Shield, RefreshCw, Bot, AlertCircle, ExternalLink, Loader2, CheckCircle2 } from 'lucide-react';
@@ -158,6 +160,7 @@ function StatusBadge({ status }: { status: string }) {
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export default function APIKeysPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Use instanceId (the stable DB UUID) so the api-keys backend can resolve
   // ownership unambiguously. Using sandboxId (external_id) breaks for cloud
   // providers like Daytona where the external_id is also a UUID — the backend
@@ -381,10 +384,8 @@ export default function APIKeysPage() {
         {/* ── Header ──────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg sm:text-xl font-semibold">API Keys</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Manage keys for programmatic access to your sandbox.
-            </p>
+            <h1 className="text-lg sm:text-xl font-semibold">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line384JsxTextApiKeys')}</h1>
+            <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line386JsxTextManageKeysForProgrammaticAccessToYourSandbox')}</p>
           </div>
           <Button
             variant="outline"
@@ -395,9 +396,7 @@ export default function APIKeysPage() {
               window.open(docsUrl, '_blank', 'noopener,noreferrer');
             }}
           >
-            <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-            API Docs
-          </Button>
+            <ExternalLink className="w-3.5 h-3.5 mr-1.5" />{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line399JsxTextApiDocs')}</Button>
         </div>
 
         {/* ── Sandbox Token ───────────────────────────────────────────── */}
@@ -409,12 +408,10 @@ export default function APIKeysPage() {
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">Sandbox Token</span>
+                  <span className="text-sm font-medium">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line412JsxTextSandboxToken')}</span>
                   <StatusBadge status={activeSandboxKey.status} />
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Used by the agent inside your sandbox to call the platform API
-                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line416JsxTextUsedByTheAgentInsideYourSandboxTo')}</p>
               </div>
             </div>
             <AlertDialog>
@@ -426,11 +423,8 @@ export default function APIKeysPage() {
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Regenerate Sandbox Token</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will revoke the current token and create a new one.
-                    It will be applied to the sandbox automatically.
-                  </AlertDialogDescription>
+                  <AlertDialogTitle>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line429JsxTextRegenerateSandboxToken')}</AlertDialogTitle>
+                  <AlertDialogDescription>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line431JsxTextThisWillRevokeTheCurrentTokenAndCreate')}</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -449,20 +443,16 @@ export default function APIKeysPage() {
         {/* ── Public Access Links ─────────────────────────────────────── */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-muted-foreground">Public Links</h2>
+            <h2 className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line452JsxTextPublicLinks')}</h2>
             <Dialog>
               <DialogTrigger asChild>
                 <Button size="sm">
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  New Link
-                </Button>
+                  <Plus className="w-4 h-4 mr-1.5" />{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line457JsxTextNewLink')}</Button>
               </DialogTrigger>
               <DialogContent className="max-w-sm">
                 <DialogHeader>
-                  <DialogTitle>Create Public Link</DialogTitle>
-                  <DialogDescription>
-                    Generate a token-based public URL for a sandbox port.
-                  </DialogDescription>
+                  <DialogTitle>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line462JsxTextCreatePublicLink')}</DialogTitle>
+                  <DialogDescription>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line464JsxTextGenerateATokenBasedPublicUrlForA')}</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
                   <div className="space-y-1.5">
@@ -476,15 +466,15 @@ export default function APIKeysPage() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="share-ttl" className="text-xs text-muted-foreground">Expires after</Label>
+                    <Label htmlFor="share-ttl" className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line479JsxTextExpiresAfter')}</Label>
                     <Select value={shareForm.ttl} onValueChange={(value) => setShareForm((prev) => ({ ...prev, ttl: value }))}>
                       <SelectTrigger id="share-ttl"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="1h">1 hour</SelectItem>
-                        <SelectItem value="1d">1 day</SelectItem>
-                        <SelectItem value="7d">7 days</SelectItem>
-                        <SelectItem value="30d">30 days</SelectItem>
-                        <SelectItem value="365d">1 year</SelectItem>
+                        <SelectItem value="1h">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line483JsxTextText1Hour')}</SelectItem>
+                        <SelectItem value="1d">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line484JsxTextText1Day')}</SelectItem>
+                        <SelectItem value="7d">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line485JsxTextText7Days')}</SelectItem>
+                        <SelectItem value="30d">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line486JsxTextText30Days')}</SelectItem>
+                        <SelectItem value="365d">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line487JsxTextText1Year')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -494,7 +484,7 @@ export default function APIKeysPage() {
                       id="share-label"
                       value={shareForm.label}
                       onChange={(e) => setShareForm((prev) => ({ ...prev, label: e.target.value }))}
-                      placeholder="e.g. channels-master"
+                      placeholder={tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line497JsxAttrPlaceholderEGChannelsMaster')}
                     />
                   </div>
                 </div>
@@ -516,7 +506,7 @@ export default function APIKeysPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-primary" />
-                  <span className="text-sm font-medium">Link created</span>
+                  <span className="text-sm font-medium">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line519JsxTextLinkCreated')}</span>
                 </div>
                 <CopyButton value={publicUrlResult.url} label="Copy" />
               </div>
@@ -534,8 +524,8 @@ export default function APIKeysPage() {
                 <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
                   <AlertCircle className="w-5 h-5 text-muted-foreground" />
                 </div>
-                <p className="text-sm font-medium">No sandbox active</p>
-                <p className="text-xs text-muted-foreground">A running sandbox is required to manage public links.</p>
+                <p className="text-sm font-medium">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line537JsxTextNoSandboxActive')}</p>
+                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line538JsxTextARunningSandboxIsRequiredToManagePublic')}</p>
               </div>
             ) : isSharesLoading ? (
               <div className="divide-y">
@@ -556,8 +546,8 @@ export default function APIKeysPage() {
                 <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
                   <ExternalLink className="w-5 h-5 text-muted-foreground" />
                 </div>
-                <p className="text-sm font-medium mb-1">No public links</p>
-                <p className="text-xs text-muted-foreground">Create a link to expose a sandbox port publicly.</p>
+                <p className="text-sm font-medium mb-1">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line559JsxTextNoPublicLinks')}</p>
+                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line560JsxTextCreateALinkToExposeASandboxPort')}</p>
               </div>
             ) : (
               <div className="divide-y">
@@ -598,24 +588,22 @@ export default function APIKeysPage() {
         {/* ── User API Keys ───────────────────────────────────────────── */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-muted-foreground">Your Keys</h2>
+            <h2 className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line601JsxTextYourKeys')}</h2>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm">
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  Create Key
-                </Button>
+                  <Plus className="w-4 h-4 mr-1.5" />{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line606JsxTextCreateKey')}</Button>
               </DialogTrigger>
               <DialogContent className="max-w-sm">
                 <DialogHeader>
-                  <DialogTitle>New API Key</DialogTitle>
+                  <DialogTitle>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line611JsxTextNewApiKey')}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="title" className="text-xs text-muted-foreground">Name</Label>
                     <Input type="text"
                       id="title"
-                      placeholder="e.g. CI/CD Pipeline"
+                      placeholder={tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line618JsxAttrPlaceholderEGCiCdPipeline')}
                       value={newKeyData.title}
                       onChange={(e) => setNewKeyData((prev) => ({ ...prev, title: e.target.value }))}
                       onKeyDown={(e) => {
@@ -628,7 +616,7 @@ export default function APIKeysPage() {
                     <Label htmlFor="description" className="text-xs text-muted-foreground">Description <span className="font-normal">(optional)</span></Label>
                     <Input type="text"
                       id="description"
-                      placeholder="What is this key for?"
+                      placeholder={tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line631JsxAttrPlaceholderWhatIsThisKeyFor')}
                       value={newKeyData.description}
                       onChange={(e) => setNewKeyData((prev) => ({ ...prev, description: e.target.value }))}
                     />
@@ -643,11 +631,11 @@ export default function APIKeysPage() {
                         <SelectValue placeholder="Never" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="never">No expiration</SelectItem>
-                        <SelectItem value="7">7 days</SelectItem>
-                        <SelectItem value="30">30 days</SelectItem>
-                        <SelectItem value="90">90 days</SelectItem>
-                        <SelectItem value="365">1 year</SelectItem>
+                        <SelectItem value="never">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line646JsxTextNoExpiration')}</SelectItem>
+                        <SelectItem value="7">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line647JsxTextText7Days')}</SelectItem>
+                        <SelectItem value="30">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line648JsxTextText30Days')}</SelectItem>
+                        <SelectItem value="90">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line649JsxTextText90Days')}</SelectItem>
+                        <SelectItem value="365">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line650JsxTextText1Year')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -674,10 +662,8 @@ export default function APIKeysPage() {
                 <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
                   <AlertCircle className="w-5 h-5 text-muted-foreground" />
                 </div>
-                <p className="text-sm font-medium">No sandbox active</p>
-                <p className="text-xs text-muted-foreground">
-                  A running sandbox is required to manage API keys.
-                </p>
+                <p className="text-sm font-medium">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line677JsxTextNoSandboxActive')}</p>
+                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line679JsxTextARunningSandboxIsRequiredToManageApi')}</p>
               </div>
             ) : isLoading ? (
               <div className="divide-y">
@@ -699,23 +685,17 @@ export default function APIKeysPage() {
                 <p className="text-muted-foreground text-sm">
                   {(error as Error)?.message || apiKeysResponse?.error?.message || 'Failed to load API keys.'}
                 </p>
-                <Button variant="outline" size="sm" onClick={() => refetch()}>
-                  Try Again
-                </Button>
+                <Button variant="outline" size="sm" onClick={() => refetch()}>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line703JsxTextTryAgain')}</Button>
               </div>
             ) : userKeys.length === 0 ? (
               <div className="px-4 py-12 text-center">
                 <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
                   <Key className="w-5 h-5 text-muted-foreground" />
                 </div>
-                <p className="text-sm font-medium mb-1">No API keys</p>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Create a key to access your sandbox programmatically.
-                </p>
+                <p className="text-sm font-medium mb-1">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line711JsxTextNoApiKeys')}</p>
+                <p className="text-xs text-muted-foreground mb-4">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line713JsxTextCreateAKeyToAccessYourSandboxProgrammatically')}</p>
                 <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  Create Key
-                </Button>
+                  <Plus className="w-4 h-4 mr-1.5" />{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line717JsxTextCreateKey')}</Button>
               </div>
             ) : (
               <div className="divide-y">
@@ -743,7 +723,7 @@ export default function APIKeysPage() {
                           </span>
                         )}
                         {apiKey.last_used_at && (
-                          <span>Last used {formatDate(apiKey.last_used_at)}</span>
+                          <span>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line746JsxTextLastUsed')}{formatDate(apiKey.last_used_at)}</span>
                         )}
                       </div>
                     </div>
@@ -759,10 +739,8 @@ export default function APIKeysPage() {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Revoke &quot;{apiKey.title}&quot;</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will immediately invalidate the key. Any applications using it will stop working.
-                              </AlertDialogDescription>
+                              <AlertDialogTitle>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line762JsxTextRevokeQuot')}{apiKey.title}{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line762JsxTextQuot')}</AlertDialogTitle>
+                              <AlertDialogDescription>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line764JsxTextThisWillImmediatelyInvalidateTheKeyAnyApplications')}</AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -784,10 +762,8 @@ export default function APIKeysPage() {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Delete &quot;{apiKey.title}&quot;</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will permanently remove the key. This cannot be undone.
-                              </AlertDialogDescription>
+                              <AlertDialogTitle>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line787JsxTextDeleteQuot')}{apiKey.title}{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line787JsxTextQuot')}</AlertDialogTitle>
+                              <AlertDialogDescription>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line789JsxTextThisWillPermanentlyRemoveTheKeyThisCannot')}</AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -814,12 +790,9 @@ export default function APIKeysPage() {
           <div className="flex items-start gap-3">
             <Shield className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
             <div className="text-xs text-muted-foreground space-y-1">
-              <p>
-                Pass your secret key as a Bearer token: <code className="bg-muted px-1 py-0.5 rounded text-foreground">Authorization: Bearer kortix_...</code>
+              <p>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line818JsxTextPassYourSecretKeyAsABearerToken')}<code className="bg-muted px-1 py-0.5 rounded text-foreground">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line818JsxTextAuthorizationBearerKortix')}</code>
               </p>
-              <p>
-                Keys are hashed server-side and never stored in plain text. The secret is shown once at creation.
-              </p>
+              <p>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line821JsxTextKeysAreHashedServerSideAndNeverStored')}</p>
             </div>
           </div>
         </div>
@@ -854,9 +827,7 @@ export default function APIKeysPage() {
               </div>
 
               <div className="rounded-2xl bg-yellow-500/10 border border-yellow-500/20 px-3 py-2.5">
-                <p className="text-xs text-yellow-700 dark:text-yellow-300">
-                  Store this key securely. It cannot be retrieved after closing this dialog.
-                </p>
+                <p className="text-xs text-yellow-700 dark:text-yellow-300">{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line858JsxTextStoreThisKeySecurelyItCannotBeRetrieved')}</p>
               </div>
             </div>
           )}
