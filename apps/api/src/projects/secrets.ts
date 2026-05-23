@@ -1,4 +1,5 @@
 import {
+  createHash,
   createCipheriv,
   createDecipheriv,
   hkdfSync,
@@ -82,6 +83,31 @@ export async function listProjectSecrets(projectId: string): Promise<Record<stri
     env[row.name] = decryptProjectSecret(projectId, row.valueEnc);
   }
   return env;
+}
+
+export function projectSecretsRevision(env: Record<string, string>): string {
+  const hash = createHash('sha256');
+  for (const [name, value] of Object.entries(env).sort(([a], [b]) => a.localeCompare(b))) {
+    hash.update(name);
+    hash.update('\0');
+    hash.update(value);
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+export async function listProjectSecretsSnapshot(projectId: string): Promise<{
+  env: Record<string, string>;
+  names: string[];
+  revision: string;
+}> {
+  const env = await listProjectSecrets(projectId);
+  const names = Object.keys(env).sort();
+  return {
+    env,
+    names,
+    revision: projectSecretsRevision(env),
+  };
 }
 
 export async function getProjectSecretValue(

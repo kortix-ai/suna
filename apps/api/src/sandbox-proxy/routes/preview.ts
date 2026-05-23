@@ -13,6 +13,7 @@ import {
   KORTIX_USER_CONTEXT_HEADER,
 } from '../../shared/kortix-user-context';
 import { getTraceHeaders } from '../../lib/request-context';
+import { listProjectSecretsSnapshot } from '../../projects/secrets';
 
 interface PreviewProxyContext {
   userId: string;
@@ -36,6 +37,7 @@ interface ServiceKeyEntry {
 
 type SessionSandboxProxyRow = {
   sandboxId: string;
+  projectId: string;
   status: string;
   config: Record<string, unknown> | null;
 };
@@ -86,6 +88,7 @@ async function loadSessionSandboxForProxy(sandboxId: string): Promise<SessionSan
   const [row] = await db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
+      projectId: sessionSandboxes.projectId,
       status: sessionSandboxes.status,
       config: sessionSandboxes.config,
     })
@@ -232,6 +235,44 @@ async function resolvePreviewLink(
   return { url, token };
 }
 
+function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: string): boolean {
+  if (port !== 8000) return false;
+  if (method.toUpperCase() !== 'POST') return false;
+  return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
+}
+
+async function syncProjectEnvToSandbox(input: {
+  projectId: string;
+  previewUrl: string;
+  previewToken: string | null;
+  serviceKey: string | null;
+}): Promise<void> {
+  if (!input.serviceKey) return;
+
+  const snapshot = await listProjectSecretsSnapshot(input.projectId);
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${input.serviceKey}`,
+    'X-Daytona-Skip-Preview-Warning': 'true',
+    'X-Daytona-Disable-CORS': 'true',
+  };
+  if (input.previewToken) {
+    headers['X-Daytona-Preview-Token'] = input.previewToken;
+  }
+
+  const res = await fetch(`${input.previewUrl.replace(/\/$/, '')}/kortix/env`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(snapshot),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`project env sync failed: ${res.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
+  }
+}
+
 // === Wake sandbox (called only when proxy fails with connection error) ===
 
 async function wakeSandbox(sandboxId: string): Promise<void> {
@@ -314,6 +355,7 @@ export async function proxyToDaytona(
   const access = await validateSandboxProxyAccess(sandboxId, userId);
   if (!access.ok) return access.response;
   const serviceKey = access.serviceKey ?? await resolveServiceKey(sandboxId);
+  const sandboxRow = await loadSessionSandboxForProxy(sandboxId);
 
   // 2. Proxy with auto-wake retry
   const MAX_RETRIES = 3;
@@ -325,6 +367,21 @@ export async function proxyToDaytona(
       // Resolve preview link (cached on happy path = zero overhead)
       const { url: previewUrl, token: previewToken } = await resolvePreviewLink(sandboxId, port);
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
+
+      if (sandboxRow?.projectId && shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
+        try {
+          await syncProjectEnvToSandbox({
+            projectId: sandboxRow.projectId,
+            previewUrl,
+            previewToken,
+            serviceKey,
+          });
+        } catch (err) {
+          throw new HTTPException(502, {
+            message: (err as Error).message || 'project env sync failed',
+          });
+        }
+      }
 
       // Build forwarding headers — strip user's JWT, inject sandbox service key
       const headers = new Headers();

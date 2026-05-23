@@ -8,8 +8,10 @@ import { createHealthRouter, type SandboxBootState } from './routes/health'
 import { createRefreshRouter } from './routes/refresh'
 import { createPromptRouter } from './routes/prompt'
 import { createAbortRouter } from './routes/abort'
+import { createEnvRouter } from './routes/env'
 import { createPortProxyRouter } from './routes/port-proxy'
 import webProxyRouter from './routes/web-proxy'
+import type { ProjectEnvStore } from './project-env'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -30,6 +32,7 @@ export function buildOpencodeApp(
   opencode: Opencode,
   bootTime: number,
   bootState: SandboxBootState = { repoMaterializationError: null },
+  projectEnv?: ProjectEnvStore,
 ): Hono {
   const app = new Hono()
 
@@ -42,6 +45,7 @@ export function buildOpencodeApp(
   const refreshRouter = createRefreshRouter(cfg, opencode)
   const promptRouter = createPromptRouter(cfg)
   const abortRouter = createAbortRouter(cfg)
+  const envRouter = projectEnv ? createEnvRouter(cfg, opencode, projectEnv) : null
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
@@ -50,6 +54,10 @@ export function buildOpencodeApp(
   kortixRouter.route('/prompt/', promptRouter)
   kortixRouter.route('/abort', abortRouter)
   kortixRouter.route('/abort/', abortRouter)
+  if (envRouter) {
+    kortixRouter.route('/env', envRouter)
+    kortixRouter.route('/env/', envRouter)
+  }
 
   app.route('/kortix', kortixRouter)
 
@@ -179,8 +187,9 @@ export function startProxy(
   opencode: Opencode,
   bootTime: number,
   bootState: SandboxBootState = { repoMaterializationError: null },
+  projectEnv?: ProjectEnvStore,
 ): ProxyServer {
-  const app = buildOpencodeApp(cfg, opencode, bootTime, bootState)
+  const app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv)
 
   const server = Bun.serve({
     port: cfg.servicePort,

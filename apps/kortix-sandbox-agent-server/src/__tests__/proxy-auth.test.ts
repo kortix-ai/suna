@@ -18,6 +18,7 @@ import { describe, expect, it } from 'bun:test'
 import { loadConfig, type Config } from '../config'
 import type { Opencode } from '../opencode'
 import { buildOpencodeApp } from '../proxy'
+import { createProjectEnvStore, mergeProjectEnv } from '../project-env'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { buildGitAuthArgs, materializeRepo } from '../git'
 
@@ -353,6 +354,86 @@ describe('daemon proxy auth gate', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  it('syncs project env through /kortix/env and restarts opencode only on changes', async () => {
+    let restartCalls = 0
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRET_NAMES: 'OLD_SECRET,REMOVED_SECRET',
+      OLD_SECRET: 'old',
+      REMOVED_SECRET: 'gone',
+    } as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
+      Date.now(),
+      { repoMaterializationError: null },
+      store,
+    )
+
+    const res = await app.request('/kortix/env', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TEST_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        revision: 'rev-1',
+        env: { OLD_SECRET: 'new', NEW_SECRET: 'fresh', KORTIX_TOKEN: 'blocked' },
+        names: ['OLD_SECRET', 'NEW_SECRET', 'REMOVED_SECRET'],
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      changed: true,
+      revision: 'rev-1',
+      names: ['NEW_SECRET', 'OLD_SECRET', 'REMOVED_SECRET'],
+    })
+    expect(restartCalls).toBe(1)
+    expect(mergeProjectEnv({
+      OLD_SECRET: 'old-process',
+      REMOVED_SECRET: 'gone-process',
+      KEEP: 'yes',
+    } as NodeJS.ProcessEnv, store)).toEqual({
+      OLD_SECRET: 'new',
+      NEW_SECRET: 'fresh',
+      KEEP: 'yes',
+    })
+
+    const replay = await app.request('/kortix/env', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TEST_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        revision: 'rev-1',
+        env: { OLD_SECRET: 'new', NEW_SECRET: 'fresh' },
+        names: ['OLD_SECRET', 'NEW_SECRET', 'REMOVED_SECRET'],
+      }),
+    })
+    expect(replay.status).toBe(200)
+    expect(await replay.json()).toMatchObject({ ok: true, changed: false })
+    expect(restartCalls).toBe(1)
+  })
+
+  it('rejects /kortix/env without sandbox service bearer token', async () => {
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok'),
+      Date.now(),
+      { repoMaterializationError: null },
+      createProjectEnvStore(),
+    )
+
+    const res = await app.request('/kortix/env', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revision: 'rev', env: {} }),
+    })
+    expect(res.status).toBe(401)
   })
 
   it('does not delete an existing workspace when the initial clone fails', async () => {

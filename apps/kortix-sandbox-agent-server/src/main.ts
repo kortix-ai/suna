@@ -5,6 +5,7 @@ import { materializeRepo } from './git'
 import { logger } from './logger'
 import { createOpencodeSupervisor, waitForOpencodeReady } from './opencode'
 import { startOpencodeEventLoop, type QuestionRequest } from './opencode-events'
+import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
@@ -39,7 +40,8 @@ async function main() {
   const opencodeConfigDir = await resolveOpencodeConfigDir(cfg)
   logger.info('[boot] resolved opencode config dir', { opencodeConfigDir })
 
-  const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir)
+  const projectEnv = createProjectEnvStore()
+  const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
 
   // Start opencode in the background. It's non-fatal if it never becomes ready:
   // /kortix/health will report `opencode: starting` and the reverse proxy will
@@ -51,7 +53,7 @@ async function main() {
     await opencode.start()
   }
 
-  const server = startProxy(cfg, opencode, bootTime, bootState)
+  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv)
   installShutdownHandlers(opencode, server)
 
   logger.info('[boot] proxy up; waiting for opencode readiness in background', {

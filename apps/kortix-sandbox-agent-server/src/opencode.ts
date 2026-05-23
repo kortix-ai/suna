@@ -4,6 +4,7 @@ import { access, constants, stat } from 'node:fs/promises'
 
 import type { Config } from './config'
 import { logger } from './logger'
+import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
 
 const READY_POLL_MS = 250
 const READY_TIMEOUT_MS = 20_000
@@ -73,7 +74,11 @@ export type Opencode = {
  * - `start()` is non-fatal: if the binary is missing or the child won't bind,
  *   the daemon stays up and reports `opencode: 'starting'` (or `down` after stop).
  */
-export function createOpencodeSupervisor(cfg: Config, opencodeConfigDir: string): Opencode {
+export function createOpencodeSupervisor(
+  cfg: Config,
+  opencodeConfigDir: string,
+  projectEnv?: ProjectEnvStore,
+): Opencode {
   let child: ChildProcess | null = null
   let binaryPath: string | null = null
   let stopping = false
@@ -115,7 +120,7 @@ export function createOpencodeSupervisor(cfg: Config, opencodeConfigDir: string)
       })
     }
     const env: NodeJS.ProcessEnv = {
-      ...process.env,
+      ...(projectEnv ? mergeProjectEnv(process.env, projectEnv) : process.env),
       HOME: opencodeHome,
       OPENCODE_CONFIG_DIR: opencodeConfigDir,
       // Clear inherited PORT/APP_PORT — opencode launches user shells; we

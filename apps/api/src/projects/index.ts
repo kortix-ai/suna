@@ -110,7 +110,7 @@ import {
   encryptProjectSecret,
   getProjectSecretValue,
   isValidSecretName,
-  listProjectSecrets,
+  listProjectSecretsSnapshot,
 } from './secrets';
 import {
   effectiveProjectRole,
@@ -1418,12 +1418,14 @@ async function buildSessionSandboxEnvVars(input: {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
   // then reused by the daemon for both API calls and proxy HMAC validation.
-  const runtimeSecrets = await listProjectSecrets(input.projectId);
+  const runtimeSecrets = await listProjectSecretsSnapshot(input.projectId);
   // The Slack signing secret only verifies inbound webhooks (an apps/api job).
   // The in-sandbox agent never needs it — keep it out of the sandbox env.
-  delete runtimeSecrets.SLACK_SIGNING_SECRET;
+  delete runtimeSecrets.env.SLACK_SIGNING_SECRET;
   return {
-    ...runtimeSecrets,
+    ...runtimeSecrets.env,
+    KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
+    KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     KORTIX_PROJECT_AUTO_CLONE: '1',
     KORTIX_REPO_URL: input.repoUrl,
     KORTIX_DEFAULT_BRANCH: input.baseRef,
