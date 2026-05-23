@@ -19,9 +19,22 @@ function randomAlphanum(len: number): string {
   // Avoid 0/O/1/I to keep tokens human-recognisable; matches what most
   // SaaS API key generators do.
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const bytes = randomBytes(len);
+  // Rejection sampling to avoid modulo bias: 256 % 56 = 32, so the naive
+  // `byte % 56` would make indices 0..31 ~25% more likely. We accept only
+  // bytes in [0, max) where max is the largest multiple of `alphabet.length`
+  // that fits in a byte, and redraw otherwise.
+  const max = 256 - (256 % alphabet.length);
   let out = '';
-  for (let i = 0; i < len; i++) out += alphabet[bytes[i]! % alphabet.length];
+  while (out.length < len) {
+    const need = len - out.length;
+    // Overdraw to amortise the cost of a draw across the expected rejection
+    // rate (~12.5% with this alphabet). Worst case we just loop again.
+    const bytes = randomBytes(Math.ceil(need * 1.2));
+    for (let i = 0; i < bytes.length && out.length < len; i++) {
+      const b = bytes[i]!;
+      if (b < max) out += alphabet[b % alphabet.length];
+    }
+  }
   return out;
 }
 

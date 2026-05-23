@@ -213,17 +213,17 @@ scimRouter.get('/accounts/:accountId/Users', async (c) => {
   // Only `userName eq` / `id eq` / `externalId eq` are interesting in
   // practice. Anything else returns an empty list rather than 400 — the
   // IdP can fall back to listing.
-  let filtered = allResources;
-  if (filter.attr === 'userName') {
-    const v = filter.value.toLowerCase();
-    filtered = allResources.filter((u) => u.userName.toLowerCase() === v);
-  } else if (filter.attr === 'id') {
-    filtered = allResources.filter((u) => u.id === filter.value);
-  } else if (filter.attr === 'externalId') {
-    filtered = allResources.filter((u) => u.externalId === filter.value);
-  } else {
-    filtered = [];
-  }
+  const filtered: UserShape[] =
+    filter.attr === 'userName'
+      ? (() => {
+          const v = filter.value.toLowerCase();
+          return allResources.filter((u) => u.userName.toLowerCase() === v);
+        })()
+      : filter.attr === 'id'
+        ? allResources.filter((u) => u.id === filter.value)
+        : filter.attr === 'externalId'
+          ? allResources.filter((u) => u.externalId === filter.value)
+          : [];
 
   return c.json(listResponse(filtered));
 });

@@ -56,11 +56,6 @@ const GROUP_EDITORS = '00000000-0000-4000-b000-000000000200';
 const TOKEN_INHERIT = '00000000-0000-4000-b000-000000000300'; // no policies
 const TOKEN_NARROW  = '00000000-0000-4000-b000-000000000301'; // viewer on A only
 
-const ALL_USERS = [
-  USER_SUPER, USER_OWNER, USER_ADMIN, USER_PLAIN_MEMBER,
-  USER_POLICY_MEMBER, USER_GROUP_MEMBER, USER_PROJECT_BRIDGE, USER_DENY_MEMBER,
-];
-
 async function cleanup() {
   const db = getTestDb();
   // Tokens first (FK → accounts cascades, but be explicit so reruns are fast).
