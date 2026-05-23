@@ -175,11 +175,16 @@ function sanitizeRedirectLocation(
   try {
     const target = new URL(location, previewUrl);
     const preview = new URL(previewUrl);
-    if (target.origin === preview.origin) {
+    // Treat as "the app redirecting to itself" when it points at the upstream
+    // origin OR at loopback (apps often emit absolute self-redirects built from
+    // the Host they received, e.g. http://localhost:<port>/...). Keep those on
+    // the preview.
+    const selfHost = ['localhost', '127.0.0.1', '0.0.0.0'].includes(target.hostname);
+    if (target.origin === preview.origin || selfHost) {
       return `${redirectPrefix}${target.pathname}${target.search}${target.hash}`;
     }
-    // External origin — let the browser follow it (proxy uses redirect:'manual',
-    // so it never follows the redirect itself).
+    // Genuinely external origin — let the browser follow it (proxy uses
+    // redirect:'manual', so it never follows the redirect itself).
     return location;
   } catch {
     return null;

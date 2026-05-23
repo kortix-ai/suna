@@ -56,6 +56,7 @@ import {
 
   // Preferences
   Palette,
+  Volume2,
   Keyboard,
 
   // Account
@@ -750,6 +751,16 @@ export const menuRegistry: MenuItemDef[] = [
     settingsTab: 'appearance',
     keywords: 'appearance theme color mode wallpaper',
   },
+  {
+    id: 'pref-sounds',
+    label: 'Sounds',
+    icon: Volume2,
+    group: 'preferences',
+    showIn: ['commandPalette'],
+    kind: 'settings',
+    settingsTab: 'sounds',
+    keywords: 'sounds audio volume notification sound effects mute',
+  },
 
   {
     id: 'pref-shortcuts',
@@ -942,7 +953,7 @@ export interface SettingsTab {
 
 /** Preference tabs for the settings modal */
 export function getPreferenceTabs(): SettingsTab[] {
-  const preferenceIds: SettingsTabId[] = ['general', 'appearance', 'shortcuts'];
+  const preferenceIds: SettingsTabId[] = ['general', 'appearance', 'sounds', 'shortcuts'];
   return preferenceIds.map((tabId) => {
     const item = menuRegistry.find(
       (i) => i.kind === 'settings' && i.settingsTab === tabId,
