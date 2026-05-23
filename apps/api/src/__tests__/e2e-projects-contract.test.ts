@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { accountMembers, projectMembers, projects } from '@kortix/db';
+import {
+  accountGithubInstallations,
+  accountMembers,
+  projectGitConnections,
+  projectMembers,
+  projects,
+} from '@kortix/db';
 
 const OWNER_ID = '00000000-0000-4000-a000-000000000001';
 const MEMBER_ID = '00000000-0000-4000-a000-000000000002';
@@ -59,6 +66,8 @@ let currentUserEmail: string;
 let accountMemberRows: AccountMemberRow[];
 let projectRows: ProjectRow[];
 let projectMemberRows: ProjectMemberRow[];
+let installationRow: typeof accountGithubInstallations.$inferSelect | null;
+let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let nextProjectId: string;
 let commitCalls: any[];
 let listRepoFileCalls: any[];
@@ -113,6 +122,19 @@ function resetState() {
     }),
   ];
   projectMemberRows = [];
+  installationRow = {
+    installationRowId: '00000000-0000-4000-a000-000000000041',
+    accountId: ACCOUNT_ID,
+    installationId: '42',
+    ownerLogin: 'kortix-org',
+    ownerType: 'Organization',
+    repositorySelection: 'all',
+    permissions: { contents: 'write' },
+    metadata: {},
+    createdAt: baseDate,
+    updatedAt: baseDate,
+  };
+  gitConnectionRows = [];
   nextProjectId = NEW_PROJECT_ID;
   commitCalls = [];
   listRepoFileCalls = [];
@@ -168,6 +190,17 @@ function selectRows(table: unknown, fields: Record<string, unknown> | undefined,
         (!projectId || row.projectId === projectId) &&
         (!userId || row.userId === userId)
       );
+  }
+
+  if (table === accountGithubInstallations) {
+    return installationRow ? [installationRow] : [];
+  }
+
+  if (table === projectGitConnections) {
+    return gitConnectionRows.filter((row) =>
+      (!accountId || row.accountId === accountId) &&
+      (!projectId || row.projectId === projectId)
+    );
   }
 
   if (table === projects) {
@@ -242,6 +275,30 @@ function grantProjectRole(values: any, set?: Partial<ProjectMemberRow>) {
   return row;
 }
 
+mock.module('../iam/engine', () => {
+  // Mirror the legacy role gate against the test's mocked membership rows so
+  // viewer/non-member denial is still exercised after the IAM-engine switch.
+  const decide = (userId: string, action: string): boolean => {
+    const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
+    if (!am) return false;
+    if (am.accountRole === 'owner' || am.accountRole === 'admin') return true;
+    const pm = projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
+    const pr = pm?.projectRole ?? null;
+    if (action === 'project.read') return pr === 'viewer' || pr === 'editor' || pr === 'manager';
+    if (action === 'project.write') return pr === 'editor' || pr === 'manager';
+    return pr === 'manager';
+  };
+  return {
+    authorize: async (userId: string, _a: unknown, action: string) => ({ allowed: decide(userId, action) }),
+    assertAuthorized: async (userId: string, _a: unknown, action: string) => {
+      if (!decide(userId, action)) throw new HTTPException(403, { message: 'Forbidden' });
+    },
+    listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
+  };
+});
+
+mockIamMembershipSyncNoop();
+
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -252,6 +309,8 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
   listRepoFiles: async (project: ProjectRow, ref: string, path?: string) => {
     listRepoFileCalls.push({ projectId: project.projectId, ref, path: path ?? null });
@@ -323,6 +382,18 @@ mock.module('../projects/github', () => ({
     repository_selection: 'all',
     permissions: {},
   }),
+  getRepo: async () => ({
+    id: 7,
+    name: 'new-project',
+    full_name: 'kortix-org/new-project',
+    private: true,
+    html_url: 'https://github.com/kortix-org/new-project',
+    clone_url: 'https://github.com/kortix-org/new-project.git',
+    ssh_url: 'git@github.com:kortix-org/new-project.git',
+    default_branch: 'main',
+    description: null,
+  }),
+  listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
 }));
@@ -362,6 +433,38 @@ mock.module('../shared/db', () => ({
         onConflictDoUpdate: ({ set }: { set?: Record<string, unknown> }) => ({
           returning: async () => {
             if (table === projects) return [upsertProject(values, set as Partial<ProjectRow>)];
+            if (table === projectGitConnections) {
+              const existingIndex = gitConnectionRows.findIndex((row) => row.projectId === values.projectId);
+              const row = {
+                connectionId: existingIndex >= 0
+                  ? gitConnectionRows[existingIndex]!.connectionId
+                  : '00000000-0000-4000-a000-000000000501',
+                accountId: values.accountId,
+                projectId: values.projectId,
+                provider: values.provider,
+                repoUrl: values.repoUrl,
+                repoOwner: values.repoOwner ?? null,
+                repoName: values.repoName ?? null,
+                externalRepoId: values.externalRepoId ?? null,
+                defaultBranch: values.defaultBranch,
+                authMethod: values.authMethod,
+                installationId: values.installationId ?? null,
+                credentialRef: values.credentialRef ?? null,
+                permissions: values.permissions ?? {},
+                visibility: values.visibility ?? null,
+                webhookId: values.webhookId ?? null,
+                status: values.status ?? 'connected',
+                lastValidatedAt: values.lastValidatedAt ?? baseDate,
+                lastErrorCode: values.lastErrorCode ?? null,
+                lastErrorMessage: values.lastErrorMessage ?? null,
+                metadata: values.metadata ?? {},
+                createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : baseDate,
+                updatedAt: values.updatedAt ?? baseDate,
+              } as typeof projectGitConnections.$inferSelect;
+              if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
+              else gitConnectionRows.push(row);
+              return [row];
+            }
             return [];
           },
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
@@ -440,7 +543,7 @@ describe('projects API contract', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         account_id: ACCOUNT_ID,
-        repo_url: 'https://github.com/kortix/new-project.git/',
+        repo_url: 'https://github.com/kortix-org/new-project.git/',
         name: 'New Project',
         default_branch: 'trunk',
         manifest_path: 'config/kortix.toml',
@@ -451,7 +554,7 @@ describe('projects API contract', () => {
       project_id: NEW_PROJECT_ID,
       account_id: ACCOUNT_ID,
       name: 'New Project',
-      repo_url: 'https://github.com/kortix/new-project.git',
+      repo_url: 'https://github.com/kortix-org/new-project.git',
       default_branch: 'trunk',
       manifest_path: 'config/kortix.toml',
       status: 'active',
@@ -459,6 +562,18 @@ describe('projects API contract', () => {
       effective_project_role: 'manager',
     });
     expect(commitCalls).toHaveLength(0);
+    expect(gitConnectionRows).toContainEqual(expect.objectContaining({
+      projectId: NEW_PROJECT_ID,
+      provider: 'github',
+      repoUrl: 'https://github.com/kortix-org/new-project.git',
+      repoOwner: 'kortix-org',
+      repoName: 'new-project',
+      externalRepoId: '7',
+      authMethod: 'github_app',
+      installationId: '42',
+      visibility: 'private',
+      status: 'connected',
+    }));
     expect(projectMemberRows).toContainEqual(expect.objectContaining({
       projectId: NEW_PROJECT_ID,
       userId: OWNER_ID,

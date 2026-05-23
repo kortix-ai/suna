@@ -28,6 +28,7 @@ import {
     Key,
     Camera,
     Upload,
+    type LucideIcon,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
@@ -69,6 +70,7 @@ import {
 import { billingApi } from '@/lib/api/billing';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -118,7 +120,7 @@ type TabId = SettingsTabId;
 interface Tab {
     id: TabId;
     label: string;
-    icon: React.ComponentType<{ className?: string }>;
+    icon: LucideIcon;
     disabled?: boolean;
 }
 
@@ -158,11 +160,15 @@ export function UserSettingsModal({
     // Tab definitions from the central menu registry (single source of truth).
     // Account-level tabs (Billing, Transactions) now live in AccountSettingsModal —
     // this modal is for user preferences and the currently-scoped instance.
-    const preferenceTabs: Tab[] = getPreferenceTabs();
-    const instanceTabs: Tab[] = hasInstance ? getInstanceTabs() : [];
-    const accountTabs: Tab[] = [
-        { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
-    ];
+    const preferenceTabs: Tab[] = React.useMemo(() => getPreferenceTabs(), []);
+    const instanceTabs: Tab[] = React.useMemo(
+        () => (hasInstance ? getInstanceTabs() : []),
+        [hasInstance],
+    );
+    const accountTabs: Tab[] = React.useMemo(
+        () => [{ id: 'tokens', label: 'CLI tokens', icon: KeyRound }],
+        [],
+    );
 
     const instanceLoading =
         open && !!currentInstanceId && !hasInstance && instanceSandboxQuery.isLoading;
@@ -178,20 +184,23 @@ export function UserSettingsModal({
               : []),
     ];
 
-    const allTabs = [...preferenceTabs, ...accountTabs, ...instanceTabs];
+    const allTabs = React.useMemo(
+        () => [...preferenceTabs, ...accountTabs, ...instanceTabs],
+        [preferenceTabs, accountTabs, instanceTabs],
+    );
+    const activeContentTab: TabId = allTabs.some((tab) => tab.id === activeTab)
+        ? activeTab
+        : 'general';
 
     useEffect(() => {
         setActiveTab(defaultTab);
     }, [defaultTab]);
 
     useEffect(() => {
-        if (
-            activeTab === 'instance-members' &&
-            !hasInstance
-        ) {
+        if (!allTabs.some((tab) => tab.id === activeTab)) {
             setActiveTab('general');
         }
-    }, [activeTab, hasInstance]);
+    }, [activeTab, allTabs]);
 
     const handleTabClick = (tabId: TabId) => {
         setActiveTab(tabId);
@@ -232,13 +241,13 @@ export function UserSettingsModal({
                             <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                                 {instanceLoading ? (
                                     <>
-                                        <Skeleton className="h-9 w-24 rounded-md" />
-                                        <Skeleton className="h-9 w-24 rounded-md" />
+                                        <Skeleton className="h-9 w-24 rounded-full" />
+                                        <Skeleton className="h-9 w-24 rounded-full" />
                                     </>
                                 ) : null}
                                 {allTabs.map((tab) => {
                                     const Icon = tab.icon;
-                                    const isActive = activeTab === tab.id;
+                                    const isActive = activeContentTab === tab.id;
 
                                     return (
                                         <Button
@@ -262,13 +271,13 @@ export function UserSettingsModal({
                         {/* Mobile Content - Scrollable */}
                         <div className="flex-1 overflow-x-hidden overflow-y-auto">
                             <div className="w-full max-w-full">
-                                {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                                {activeTab === 'appearance' && <AppearanceTab />}
-                                {activeTab === 'sounds' && <SoundsTab />}
-                                {activeTab === 'notifications' && <NotificationsTab />}
-                                {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
-                                {activeTab === 'tokens' && <CliTokensTab />}
-                                {activeTab === 'instance-members' && instanceSandbox && (
+                                {activeContentTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
+                                {activeContentTab === 'appearance' && <AppearanceTab />}
+                                {activeContentTab === 'sounds' && <SoundsTab />}
+                                {activeContentTab === 'notifications' && <NotificationsTab />}
+                                {activeContentTab === 'shortcuts' && <KeyboardShortcutsTab />}
+                                {activeContentTab === 'tokens' && <CliTokensTab />}
+                                {activeContentTab === 'instance-members' && instanceSandbox && (
                                     <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
                                 )}
                             </div>
@@ -304,13 +313,13 @@ export function UserSettingsModal({
                                         <div className="flex flex-col gap-0.5">
                                             {group.skeleton ? (
                                                 <>
-                                                    <Skeleton className="mx-2 h-9 rounded-md" />
-                                                    <Skeleton className="mx-2 h-9 rounded-md" />
+                                                    <Skeleton className="mx-2 h-9 rounded-full" />
+                                                    <Skeleton className="mx-2 h-9 rounded-full" />
                                                 </>
                                             ) : (
                                                 group.tabs.map((tab) => {
                                                 const Icon = tab.icon;
-                                                const isActive = activeTab === tab.id;
+                                                const isActive = activeContentTab === tab.id;
 
                                                 return (
                                                     <Button
@@ -339,13 +348,13 @@ export function UserSettingsModal({
 
                         {/* Desktop Content */}
                         <div className="flex-1 overflow-y-auto min-h-0 w-full max-w-full">
-                            {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                            {activeTab === 'appearance' && <AppearanceTab />}
-                            {activeTab === 'sounds' && <SoundsTab />}
-                            {activeTab === 'notifications' && <NotificationsTab />}
-                            {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
-                            {activeTab === 'tokens' && <CliTokensTab />}
-                            {activeTab === 'instance-members' && instanceSandbox && (
+                            {activeContentTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
+                            {activeContentTab === 'appearance' && <AppearanceTab />}
+                            {activeContentTab === 'sounds' && <SoundsTab />}
+                            {activeContentTab === 'notifications' && <NotificationsTab />}
+                            {activeContentTab === 'shortcuts' && <KeyboardShortcutsTab />}
+                            {activeContentTab === 'tokens' && <CliTokensTab />}
+                            {activeContentTab === 'instance-members' && instanceSandbox && (
                                 <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
                             )}
                         </div>
@@ -428,37 +437,30 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         }
     };
 
-    const uploadAvatar = async (userId: string): Promise<string | null> => {
+    // Uploads to `${userId}/<file>` so the per-user RLS policy on the public
+    // "avatars" bucket allows it. Throws on failure so the caller can abort.
+    const uploadAvatar = async (userId: string): Promise<string> => {
         if (!avatarFile) return avatarUrl;
 
         setIsUploadingAvatar(true);
         try {
-            const fileExt = avatarFile.name.split('.').pop();
-            const fileName = `${userId}-${Date.now()}.${fileExt}`;
+            const fileExt = (avatarFile.name.split('.').pop() || 'png').toLowerCase();
+            const filePath = `${userId}/${Date.now()}.${fileExt}`;
 
-            // Upload to Supabase Storage
             const { error: uploadError } = await supabase.storage
                 .from('avatars')
-                .upload(fileName, avatarFile, {
+                .upload(filePath, avatarFile, {
                     cacheControl: '3600',
                     upsert: true,
                 });
 
-            if (uploadError) {
-                console.error('Upload error:', uploadError);
-                throw uploadError;
-            }
+            if (uploadError) throw uploadError;
 
-            // Get public URL
             const { data: { publicUrl } } = supabase.storage
                 .from('avatars')
-                .getPublicUrl(fileName);
+                .getPublicUrl(filePath);
 
             return publicUrl;
-        } catch (error) {
-            console.error('Avatar upload failed:', error);
-            toast.error(t('profilePicture.uploadFailed'));
-            return null;
         } finally {
             setIsUploadingAvatar(false);
         }
@@ -469,23 +471,18 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         try {
             const { data: userData } = await supabase.auth.getUser();
             const userId = userData.user?.id;
-            
+
             if (!userId) throw new Error('User not found');
 
-            // Upload avatar if a new one was selected
-            let newAvatarUrl = avatarUrl;
-            if (avatarFile) {
-                const uploadedUrl = await uploadAvatar(userId);
-                if (uploadedUrl) {
-                    newAvatarUrl = uploadedUrl;
-                }
-            }
+            // Upload the new avatar first — if this throws (e.g. storage not
+            // provisioned), we abort below WITHOUT saving or reloading.
+            const newAvatarUrl = avatarFile ? await uploadAvatar(userId) : avatarUrl;
 
-            const { data, error } = await supabase.auth.updateUser({
-                data: { 
+            const { error } = await supabase.auth.updateUser({
+                data: {
                     name: userName,
                     avatar_url: newAvatarUrl,
-                }
+                },
             });
 
             if (error) throw error;
@@ -498,14 +495,14 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
             setAvatarFile(null);
             setAvatarUrl(newAvatarUrl);
 
+            // No reload: updateUser fires a Supabase `USER_UPDATED` event, and
+            // AuthProvider re-renders every avatar consumer (header, sidebar)
+            // live. The old window.location.reload() was the "hard reload".
             toast.success(t('profileUpdated'));
-
-            setTimeout(() => {
-                window.location.reload();
-            }, 500);
         } catch (error) {
             console.error('Error updating profile:', error);
-            toast.error(t('profileUpdateFailed'));
+            const message = error instanceof Error && error.message ? error.message : '';
+            toast.error(message || t('profileUpdateFailed'));
         } finally {
             setIsSaving(false);
         }
@@ -679,21 +676,19 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                         </div>
 
                         {deletionStatus?.has_pending_deletion ? (
-                            <Alert className="shadow-none border-amber-500/30 bg-amber-500/5">
-                                <Clock className="h-4 w-4 text-amber-600" />
-                                <AlertDescription>
-                                    <div className="text-sm">
-                                        <strong className="text-foreground">{t('deleteAccount.scheduled')}</strong>
-                                        <p className="mt-1 text-muted-foreground">
-                                            {t('deleteAccount.scheduledDescription', {
-                                                date: formatDate(deletionStatus.deletion_scheduled_for)
-                                            })}
-                                        </p>
-                                        <p className="mt-2 text-muted-foreground">
-                                            {t('deleteAccount.canCancel')}
-                                        </p>
-                                    </div>
-                                </AlertDescription>
+                            <InfoBanner
+                                tone="warning"
+                                icon={Clock}
+                                title={t('deleteAccount.scheduled')}
+                            >
+                                <p className="mt-1 text-muted-foreground">
+                                    {t('deleteAccount.scheduledDescription', {
+                                        date: formatDate(deletionStatus.deletion_scheduled_for)
+                                    })}
+                                </p>
+                                <p className="mt-2 text-muted-foreground">
+                                    {t('deleteAccount.canCancel')}
+                                </p>
                                 <div className="mt-3">
                                     <Button
                                         variant="outline"
@@ -704,7 +699,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         {t('deleteAccount.cancelButton')}
                                     </Button>
                                 </div>
-                            </Alert>
+                            </InfoBanner>
                         ) : (
                             <Button
                                 variant="outline"
@@ -723,29 +718,18 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                             setDeletionType('grace-period');
                         }
                     }}>
-                        <DialogContent className="max-w-md max-h-[90vh] sm:max-h-[85vh] overflow-y-auto p-4 sm:p-6">
-                            <DialogHeader>
-                                <DialogTitle className="text-base sm:text-lg">{t('deleteAccount.dialogTitle')}</DialogTitle>
+                        <DialogContent className="max-w-md max-h-[90vh] sm:max-h-[85vh] gap-0 overflow-hidden p-0">
+                            <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
+                                <DialogTitle className="text-lg font-semibold tracking-tight">{t('deleteAccount.dialogTitle')}</DialogTitle>
                             </DialogHeader>
-                            <div className="space-y-4">
-                                <Alert className={cn(
-                                    "shadow-none",
-                                    deletionType === 'immediate' 
-                                        ? "border-red-500/30 bg-red-500/5" 
-                                        : "border-amber-500/30 bg-amber-500/5"
-                                )}>
-                                    <AlertTriangle className={cn(
-                                        "h-4 w-4 flex-shrink-0",
-                                        deletionType === 'immediate' ? "text-red-600" : "text-amber-600"
-                                    )} />
-                                    <AlertDescription>
-                                        <strong className="text-foreground text-sm sm:text-base">
-                                            {deletionType === 'immediate' 
-                                                ? t('deleteAccount.warningImmediate')
-                                                : t('deleteAccount.warningGracePeriod')}
-                                        </strong>
-                                    </AlertDescription>
-                                </Alert>
+                            <div className="space-y-4 overflow-y-auto px-6 py-5">
+                                <InfoBanner tone="warning" icon={AlertTriangle}>
+                                    <strong className="text-foreground text-sm sm:text-base">
+                                        {deletionType === 'immediate'
+                                            ? t('deleteAccount.warningImmediate')
+                                            : t('deleteAccount.warningGracePeriod')}
+                                    </strong>
+                                </InfoBanner>
                                 
                                 <div>
                                     <p className="text-sm font-medium mb-2">
@@ -777,10 +761,10 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                                 </p>
                                             </div>
                                         </div>
-                                        <div className="flex items-start gap-2 sm:gap-3 rounded-2xl border border-red-500/30 p-3 sm:p-4">
+                                        <div className="flex items-start gap-2 sm:gap-3 rounded-2xl border p-3 sm:p-4">
                                             <RadioGroupItem value="immediate" id="immediate" className="mt-0.5 flex-shrink-0" />
                                             <div className="space-y-1 flex-1 min-w-0">
-                                                <Label htmlFor="immediate" className="font-medium cursor-pointer text-sm sm:text-base text-red-600 block">
+                                                <Label htmlFor="immediate" className="font-medium cursor-pointer text-sm sm:text-base block">
                                                     {t('deleteAccount.immediateOption')}
                                                 </Label>
                                                 <p className="text-xs sm:text-sm text-muted-foreground">
@@ -800,33 +784,33 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         value={deleteConfirmText}
                                         onChange={(e) => setDeleteConfirmText(e.target.value)}
                                         placeholder={t('deleteAccount.confirmPlaceholder')}
-                                        className="shadow-none text-sm sm:text-base"
+                                        className="text-sm sm:text-base"
                                         autoComplete="off"
                                     />
                                 </div>
-                                
-                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
-                                    <Button variant="outline" onClick={() => {
-                                        setShowDeleteDialog(false);
-                                        setDeleteConfirmText('');
-                                        setDeletionType('grace-period');
-                                    }} className="w-full sm:w-auto">
-                                        {t('deleteAccount.keepAccount')}
-                                    </Button>
-                                    <Button 
-                                        variant="destructive" 
-                                        onClick={handleRequestDeletion} 
-                                        disabled={
-                                            (requestDeletion.isPending || deleteImmediately.isPending) || 
-                                            deleteConfirmText !== 'delete'
-                                        }
-                                        className="w-full sm:w-auto"
-                                    >
-                                        {(requestDeletion.isPending || deleteImmediately.isPending) 
-                                            ? tCommon('processing') 
-                                            : t('deleteAccount.button')}
-                                    </Button>
-                                </div>
+                            </div>
+
+                            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+                                <Button variant="ghost" onClick={() => {
+                                    setShowDeleteDialog(false);
+                                    setDeleteConfirmText('');
+                                    setDeletionType('grace-period');
+                                }} className="w-full sm:w-auto">
+                                    {t('deleteAccount.keepAccount')}
+                                </Button>
+                                <Button
+                                    variant="destructive"
+                                    onClick={handleRequestDeletion}
+                                    disabled={
+                                        (requestDeletion.isPending || deleteImmediately.isPending) ||
+                                        deleteConfirmText !== 'delete'
+                                    }
+                                    className="w-full sm:w-auto"
+                                >
+                                    {(requestDeletion.isPending || deleteImmediately.isPending)
+                                        ? tCommon('processing')
+                                        : t('deleteAccount.button')}
+                                </Button>
                             </div>
                         </DialogContent>
                     </Dialog>
@@ -1188,7 +1172,7 @@ function NotificationsTab() {
 }
 
 interface NotificationToggleProps {
-    icon: React.ComponentType<{ className?: string }>;
+    icon: LucideIcon;
     label: string;
     description: string;
     enabled: boolean;
@@ -1286,7 +1270,7 @@ function InstancesSection({ accountState, onRefetch }: { accountState: any; onRe
                                     <div className="flex items-center gap-2">
                                         <span className="text-sm font-medium truncate">{inst.name}</span>
                                         {isCancelling && (
-                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-600 dark:text-red-400 font-medium shrink-0">Cancelling</span>
+                                            <Badge variant="destructive" size="sm">Cancelling</Badge>
                                         )}
                                     </div>
                                     <p className="text-xs text-muted-foreground mt-0.5">
@@ -1308,7 +1292,7 @@ function InstancesSection({ accountState, onRefetch }: { accountState: any; onRe
                                         </Button>
                                     )}
                                     {hasSub && !isCancelling && (
-                                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive" onClick={() => handleCancel(inst.sandbox_id)} disabled={loading === inst.sandbox_id}>
+                                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => handleCancel(inst.sandbox_id)} disabled={loading === inst.sandbox_id}>
                                             {loading === inst.sandbox_id ? '...' : 'Cancel'}
                                         </Button>
                                     )}
@@ -1569,17 +1553,11 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
 
             {/* ── Insufficient credits alert (routed here from 402 errors) ── */}
             {highlight === 'credits' && totalCredits <= 0 && (
-                <Alert className="border-amber-500/40 bg-amber-500/5">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    <AlertDescription>
-                        <div className="text-sm font-medium text-foreground">You ran out of credits.</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                            {canPurchaseCredits
-                                ? 'Buy credits below or enable auto top-up so it never happens again.'
-                                : 'Subscribe to continue using the assistant.'}
-                        </div>
-                    </AlertDescription>
-                </Alert>
+                <InfoBanner tone="warning" icon={AlertTriangle} title="You ran out of credits.">
+                    {canPurchaseCredits
+                        ? 'Buy credits below or enable auto top-up so it never happens again.'
+                        : 'Subscribe to continue using the assistant.'}
+                </InfoBanner>
             )}
 
             {/* ── Credit Balance ── */}

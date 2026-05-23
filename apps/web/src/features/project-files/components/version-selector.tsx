@@ -79,7 +79,7 @@ export function VersionSelector() {
         <button
           type="button"
           className={cn(
-            'group inline-flex items-center gap-2 h-8 pl-2 pr-1.5 rounded-md',
+            'group inline-flex items-center gap-2 h-8 pl-2 pr-1.5 rounded-2xl',
             'border border-border/60 bg-background hover:bg-muted/40',
             'transition-colors',
             'text-[12.5px] font-medium',
@@ -90,7 +90,7 @@ export function VersionSelector() {
           <GitBranch className="h-3.5 w-3.5 text-muted-foreground/80 shrink-0" />
           <span className="truncate">{activeRef || 'Version'}</span>
           {isOnMain && (
-            <span className="hidden sm:inline-flex items-center rounded bg-muted px-1 py-px text-[9.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="hidden sm:inline-flex items-center rounded-full bg-muted px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wider text-muted-foreground">
               Main
             </span>
           )}

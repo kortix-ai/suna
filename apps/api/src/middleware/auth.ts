@@ -97,6 +97,10 @@ export async function apiKeyAuth(c: Context, next: Next) {
  * a real user_id from the account_tokens table, so the rest of the
  * pipeline (resolveAccountId, project access checks, etc.) works
  * unchanged.
+ *
+ * The one sandbox-token exception is the runtime clone-credential endpoint:
+ * a session sandbox calls it with its sandbox-scoped KORTIX_TOKEN so it does
+ * not need a second project PAT or raw Git token in env.
  */
 export async function supabaseAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
@@ -175,6 +179,27 @@ export async function supabaseAuth(c: Context, next: Next) {
       authType: 'pat',
       metadata: result.projectId ? { project_id: result.projectId } : undefined,
     });
+    await next();
+    return;
+  }
+
+  if (isKortixToken(token) && c.req.path.endsWith('/git/clone-credential')) {
+    const result = await validateSecretKey(token);
+    if (!result.isValid) {
+      throw new HTTPException(401, { message: result.error || 'Invalid Kortix token' });
+    }
+    if (result.type !== 'sandbox' || !result.sandboxId) {
+      throw new HTTPException(403, { message: 'Clone credentials require a sandbox token' });
+    }
+    c.set('userId', result.accountId || '');
+    c.set('userEmail', '');
+    c.set('authType', 'apiKey');
+    c.set('apiKeyType', result.type);
+    if (result.accountId) c.set('accountId', result.accountId);
+    if (result.keyId) c.set('keyId', result.keyId);
+    c.set('sandboxId', result.sandboxId);
+    setSentryUser({ id: result.accountId || 'unknown', accountId: result.accountId });
+    setContextField('accountId', result.accountId || 'unknown');
     await next();
     return;
   }

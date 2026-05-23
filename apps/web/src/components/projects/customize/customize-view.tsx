@@ -40,7 +40,7 @@ interface CustomizeViewProps {
 
 export function CustomizeView({ projectId, section }: CustomizeViewProps) {
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col md:flex-row">
       <CustomizeRail projectId={projectId} />
       <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
         <SectionContent section={section} projectId={projectId} />

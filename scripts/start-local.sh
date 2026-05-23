@@ -36,7 +36,7 @@ PY
   export KORTIX_LOCAL_DEV=1
   export ENV_MODE=local
   export ALLOWED_SANDBOX_PROVIDERS="local_docker"
-  export KORTIX_URL="http://localhost:8008/v1/router"
+  export KORTIX_URL="http://localhost:8008"
   export NEXT_PUBLIC_BACKEND_URL="http://localhost:8008/v1"
   export KORTIX_PUBLIC_BACKEND_URL="http://localhost:8008/v1"
   export BACKEND_URL="http://localhost:8008/v1"

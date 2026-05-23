@@ -101,7 +101,7 @@ function ParentDropTarget({
         onDropMove(sourcePath, parentPath === '.' ? '' : parentPath);
       }}
       className={cn(
-        'flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left rounded-md transition-colors cursor-pointer',
+        'flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left rounded-lg transition-colors cursor-pointer',
         'hover:bg-muted/80 text-muted-foreground',
         isDragOver && 'bg-primary/15 ring-1 ring-primary/40',
       )}
@@ -682,7 +682,7 @@ export function FileBrowser() {
         {isLoading && (
           <div className="p-3 space-y-1.5">
             {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-full rounded-md" />
+              <Skeleton key={i} className="h-8 w-full rounded-lg" />
             ))}
           </div>
         )}
@@ -741,15 +741,13 @@ export function FileBrowser() {
                           }
                         }}
                         className={cn(
-                          'flex-1 text-sm bg-transparent border rounded px-1.5 py-0.5 outline-none selection:bg-primary/15 selection:text-foreground',
-                          folderNameExists
-                            ? 'border-red-500/60'
-                            : 'border-primary',
+                          'flex-1 h-7 text-sm bg-card border rounded-2xl px-3 outline-none focus:ring-2 focus:ring-primary/50 selection:bg-primary/15 selection:text-foreground',
+                          folderNameExists && 'border-destructive focus:ring-destructive/30',
                         )}
                       />
                     </div>
                     {folderNameExists && (
-                      <p className="text-[11px] text-red-400 pl-6">
+                      <p className="text-[11px] text-destructive pl-6">
                         A file or folder with that name already exists
                       </p>
                     )}
@@ -781,15 +779,13 @@ export function FileBrowser() {
                           }
                         }}
                         className={cn(
-                          'flex-1 text-sm bg-transparent border rounded px-1.5 py-0.5 outline-none selection:bg-primary/15 selection:text-foreground',
-                          fileNameExists
-                            ? 'border-red-500/60'
-                            : 'border-primary',
+                          'flex-1 h-7 text-sm bg-card border rounded-2xl px-3 outline-none focus:ring-2 focus:ring-primary/50 selection:bg-primary/15 selection:text-foreground',
+                          fileNameExists && 'border-destructive focus:ring-destructive/30',
                         )}
                       />
                     </div>
                     {fileNameExists && (
-                      <p className="text-[11px] text-red-400 pl-6">
+                      <p className="text-[11px] text-destructive pl-6">
                         A file or folder with that name already exists
                       </p>
                     )}

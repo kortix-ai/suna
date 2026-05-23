@@ -168,7 +168,6 @@ export function AgentSelector({
   const prevAgentRef = useRef(selectedAgent);
 
   const primaryAgents = useMemo(() => agents.filter((a) => !a.hidden && a.mode !== 'subagent'), [agents]);
-  const subAgents = useMemo(() => agents.filter((a) => !a.hidden && a.mode === 'subagent'), [agents]);
 
   // Flash highlight when agent changes (e.g. via Tab cycling)
   useEffect(() => {
@@ -198,15 +197,7 @@ export function AgentSelector({
     );
   }, [primaryAgents, search]);
 
-  const filteredSub = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    if (!q) return subAgents;
-    return subAgents.filter((a) =>
-      a.name.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q),
-    );
-  }, [subAgents, search]);
-
-  const currentAgent = agents.find((a) => a.name === selectedAgent) || agents.filter((a) => !a.hidden)[0];
+  const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
   const displayName = currentAgent?.name || 'Agent';
 
   return (
@@ -218,7 +209,7 @@ export function AgentSelector({
               type="button"
               aria-label="Agent picker"
               className={cn(
-                'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-200 capitalize cursor-pointer',
+                'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-200 capitalize cursor-pointer',
                 flash && 'bg-primary/10 text-foreground',
                 open && 'bg-muted text-foreground',
               )}
@@ -246,7 +237,7 @@ export function AgentSelector({
           {filteredPrimary.length > 0 && (
             <CommandGroup heading="Agents" forceMount>
               {filteredPrimary.map((agent) => {
-                const isSelected = selectedAgent === agent.name || (!selectedAgent && agent === agents[0]);
+                const isSelected = selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
                 return (
                   <CommandItem
                     key={agent.name}
@@ -275,41 +266,8 @@ export function AgentSelector({
             </CommandGroup>
           )}
 
-          {/* Sub-agents */}
-          {filteredSub.length > 0 && (
-            <CommandGroup heading="Sub-agents" forceMount>
-              {filteredSub.map((agent) => {
-                const isSelected = selectedAgent === agent.name;
-                return (
-                  <CommandItem
-                    key={agent.name}
-                    value={`subagent-${agent.name}`}
-                    className={isSelected ? 'bg-foreground/[0.06]' : undefined}
-                    onSelect={() => {
-                      onSelect(agent.name);
-                      setOpen(false);
-                    }}
-                  >
-                    <div className="min-w-0 flex-1 py-0.5">
-                      <div className={cn(
-                        'truncate text-[13px] leading-tight capitalize',
-                        isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
-                      )}>
-                        {agent.name}
-                      </div>
-                      {agent.description && (
-                        <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-1">{agent.description}</p>
-                      )}
-                    </div>
-                    {isSelected && <Check className="text-foreground shrink-0" />}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          )}
-
           {/* No results */}
-          {filteredPrimary.length === 0 && filteredSub.length === 0 && search.trim() && (
+          {filteredPrimary.length === 0 && search.trim() && (
             <div className="py-8 text-center text-xs text-muted-foreground/50">
               No agents match &ldquo;{search.trim()}&rdquo;
             </div>
@@ -352,7 +310,7 @@ function VariantSelector({
           type="button"
           onClick={cycle}
           className={cn(
-            "inline-flex items-center gap-1 h-8 px-2.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer capitalize",
+            "inline-flex items-center gap-1 h-8 px-2.5 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer capitalize",
             selectedVariant && "text-foreground",
           )}
         >
@@ -539,7 +497,7 @@ function AutoContinueSelector({
               type="button"
               onClick={() => setOpen(!open)}
               className={cn(
-                'inline-flex items-center gap-1 h-8 px-2 rounded-xl text-xs font-medium transition-colors duration-200 cursor-pointer',
+                'inline-flex items-center gap-1 h-8 px-2 rounded-full text-xs font-medium transition-colors duration-200 cursor-pointer',
                 isActive
                   ? 'text-primary bg-primary/10 hover:bg-primary/15'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted',
@@ -1391,6 +1349,7 @@ export function SessionChatInput({
   const pathname = normalizeAppPathname(usePathname());
   const isOnboarding = pathname?.startsWith('/onboarding');
   const dragDepthRef = useRef(0);
+  const primaryAgents = useMemo(() => agents.filter((a) => !a.hidden && a.mode !== 'subagent'), [agents]);
 
   // File search: use provided callback or fall back to the SDK directly
   const fileSearchFn = useMemo(() => {
@@ -1957,11 +1916,11 @@ export function SessionChatInput({
     }
 
     // Tab cycles through agents when no popover is open
-    if (e.key === 'Tab' && agents.length > 1 && onAgentChange) {
+    if (e.key === 'Tab' && primaryAgents.length > 1 && onAgentChange) {
       e.preventDefault();
-      const currentIdx = agents.findIndex((a) => a.name === selectedAgent);
-      const nextIdx = (currentIdx + 1) % agents.length;
-      onAgentChange(agents[nextIdx].name);
+      const currentIdx = primaryAgents.findIndex((a) => a.name === selectedAgent);
+      const nextIdx = (currentIdx + 1) % primaryAgents.length;
+      onAgentChange(primaryAgents[nextIdx].name);
       return;
     }
 
@@ -2126,7 +2085,7 @@ export function SessionChatInput({
                 <button
                   onClick={threadContext.onBackToParent}
                   className={cn(
-                    'flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer',
+                    'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer',
                   )}
                 >
                   <ArrowUpLeft className="size-3.5 text-muted-foreground group-hover:-translate-x-0.5 group-hover:-translate-y-0.5 transition-transform flex-shrink-0" />
@@ -2284,7 +2243,7 @@ export function SessionChatInput({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center justify-center h-8 w-8 rounded-xl transition-colors text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+                    className="inline-flex items-center justify-center h-8 w-8 rounded-full transition-colors text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
                   >
                     <Paperclip className="h-4 w-4" strokeWidth={2} />
                   </button>
@@ -2292,9 +2251,9 @@ export function SessionChatInput({
                 <TooltipContent side="top"><p>Attach files</p></TooltipContent>
               </Tooltip>
 
-              {agents.length > 0 && onAgentChange && (
+              {primaryAgents.length > 0 && onAgentChange && (
                 <AgentSelector
-                  agents={agents}
+                  agents={primaryAgents}
                   selectedAgent={selectedAgent}
                   onSelect={onAgentChange}
                 />

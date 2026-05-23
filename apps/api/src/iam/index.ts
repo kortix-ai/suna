@@ -17,7 +17,6 @@ export { requirePermission } from './middleware';
 export {
   ACCOUNT_ACTIONS,
   PROJECT_ACTIONS,
-  SANDBOX_ACTIONS,
   TRIGGER_ACTIONS,
   CHANNEL_ACTIONS,
   ALL_ACTIONS,

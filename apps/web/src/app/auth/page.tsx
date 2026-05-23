@@ -215,7 +215,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           placeholder="Email address"
           required
           autoComplete="email"
-          className="h-11 text-[15px] bg-foreground/[0.04] border-foreground/[0.08] rounded-xl shadow-none"
+          className="text-[15px]"
         />
         <Input
           id="password"
@@ -224,7 +224,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           placeholder="Password"
           required
           autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-          className="h-11 text-[15px] bg-foreground/[0.04] border-foreground/[0.08] rounded-xl shadow-none"
+          className="text-[15px]"
         />
         {mode === 'signup' && (
           <Input
@@ -234,14 +234,15 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             placeholder="Confirm password"
             required
             autoComplete="new-password"
-            className="h-11 text-[15px] bg-foreground/[0.04] border-foreground/[0.08] rounded-xl shadow-none"
+            className="text-[15px]"
           />
         )}
 
         <Button
           type="submit"
+          size="lg"
           disabled={pending}
-          className="w-full h-11 text-[13px] rounded-xl shadow-none"
+          className="w-full text-[13px]"
         >
           {pending
             ? mode === 'signup'
@@ -270,7 +271,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
       {mode === 'signin' && (
         <div className="mt-5 text-center">
           <Link
-            href="/auth/reset-password"
+            href="/auth/forgot-password"
             className="text-[12px] text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
           >
             Forgot your password?

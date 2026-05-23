@@ -55,6 +55,27 @@ export function postgresTimestampParam(date: Date): string {
   return date.toISOString();
 }
 
+/**
+ * Daytona auto-stops idle sandboxes on its own (autoStopInterval), so by the
+ * time this hourly idle GC runs the sandbox is frequently already stopped,
+ * archived, or deleted. Those are the desired end state — not failures — so we
+ * reconcile our row quietly instead of logging a stack trace per sandbox.
+ */
+function isAlreadyNotRunning(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes('not started') ||
+    msg.includes('not running') ||
+    msg.includes('already stopped') ||
+    msg.includes('not found')
+  );
+}
+
+function isLifecycleTransitionInProgress(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return msg.includes('state change in progress') || msg.includes('transition in progress');
+}
+
 export async function hibernateIdleSessionSandboxes(now = new Date()): Promise<{
   candidates: number;
   stopped: number;
@@ -113,8 +134,28 @@ export async function hibernateIdleSessionSandboxes(now = new Date()): Promise<{
 
       stopped += 1;
     } catch (err) {
+      // Already stopped/archived/gone on Daytona's side — that's success.
+      // Reconcile our row to match and move on without the noisy stack trace.
+      if (isAlreadyNotRunning(err)) {
+        const reconciledAt = new Date();
+        await db
+          .update(sessionSandboxes)
+          .set({ status: 'stopped', updatedAt: reconciledAt })
+          .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+        await db
+          .update(projectSessions)
+          .set({ status: 'stopped', updatedAt: reconciledAt })
+          .where(eq(projectSessions.sessionId, row.sessionId));
+        invalidateProviderCache(row.externalId);
+        stopped += 1;
+        continue;
+      }
+      if (isLifecycleTransitionInProgress(err)) {
+        skipped += 1;
+        continue;
+      }
       errors += 1;
-      console.error(`[project-maintenance] Failed to hibernate sandbox ${row.sandboxId}:`, err);
+      console.error(`[project-maintenance] Failed to hibernate sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`);
     }
   }
 

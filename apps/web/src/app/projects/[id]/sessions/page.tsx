@@ -136,7 +136,7 @@ function SessionRow({
               <DropdownMenuItem
                 onSelect={onDelete}
                 disabled={deleting}
-                className="gap-2 text-destructive focus:text-destructive"
+                className="gap-2 text-muted-foreground focus:text-foreground"
               >
                 {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                 Delete

@@ -2,7 +2,14 @@
 
 import { FormEvent, use, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Github, Loader2, Settings, Trash2 } from 'lucide-react';
+import {
+  ExternalLink,
+  GitBranch,
+  Github,
+  Loader2,
+  Settings,
+  Trash2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -59,7 +66,8 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setArchiveOpen(false);
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to archive project'),
+    onError: (error: Error) =>
+      toast.error(error.message || 'Failed to archive project'),
   });
 
   return (
@@ -78,7 +86,11 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
             title="Failed to load project"
             description={(projectQuery.error as Error).message}
           >
-            <Button variant="outline" size="sm" onClick={() => projectQuery.refetch()}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => projectQuery.refetch()}
+            >
               Retry
             </Button>
           </SectionCard>
@@ -88,7 +100,10 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
           <>
             <GeneralProjectCard project={project} canManage={!!canManage} />
             <RepositoryCard repoUrl={project.repo_url} />
-            <SandboxSnapshotCard projectId={projectId} canManage={!!canManage} />
+            <SandboxSnapshotCard
+              projectId={projectId}
+              canManage={!!canManage}
+            />
             {canManage && (
               <SectionCard
                 tone="destructive"
@@ -97,7 +112,9 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">Archive project</p>
+                    <p className="text-sm font-medium text-foreground">
+                      Archive project
+                    </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       Hide this project from the active project list.
                     </p>
@@ -121,7 +138,11 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
         title="Archive project"
-        description={project ? `Archive ${project.name}? Current sessions remain recoverable.` : ''}
+        description={
+          project
+            ? `Archive ${project.name}? Current sessions remain recoverable.`
+            : ''
+        }
         confirmLabel="Archive"
         onConfirm={() => archiveMutation.mutate()}
         isPending={archiveMutation.isPending}
@@ -131,35 +152,31 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
 }
 
 function RepositoryCard({ repoUrl }: { repoUrl: string | null | undefined }) {
-  // Clone URL → human-friendly browser URL.
-  const webUrl = (() => {
-    if (!repoUrl) return null;
-    return repoUrl
-      .replace(/^git@github\.com:/, 'https://github.com/')
-      .replace(/\.git$/, '');
-  })();
-  const slug = webUrl?.replace('https://github.com/', '');
+  const githubUrl = githubRepoWebUrl(repoUrl);
+  const repoLabel =
+    githubUrl?.replace('https://github.com/', '') || repoUrl || '-';
+  const RepoIcon = githubUrl ? Github : GitBranch;
 
   return (
     <SectionCard
       title="Repository"
-      description="The Git repo backing this project — every session pushes a branch here."
+      description="The Git repo backing this project. Every session pushes a branch here."
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex items-center gap-2.5">
-          <Github className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <RepoIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="truncate text-sm font-mono text-foreground">
-            {slug || repoUrl || '—'}
+            {repoLabel}
           </span>
         </div>
-        {webUrl && (
+        {githubUrl && (
           <Button
             asChild
             variant="outline"
             size="sm"
             className="shrink-0 gap-1.5"
           >
-            <a href={webUrl} target="_blank" rel="noopener noreferrer">
+            <a href={githubUrl} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="h-3.5 w-3.5" />
               Open on GitHub
             </a>
@@ -168,6 +185,26 @@ function RepositoryCard({ repoUrl }: { repoUrl: string | null | undefined }) {
       </div>
     </SectionCard>
   );
+}
+
+function githubRepoWebUrl(repoUrl: string | null | undefined): string | null {
+  const normalized = repoUrl
+    ?.trim()
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '');
+  if (!normalized) return null;
+
+  const ssh = normalized.match(/^git@github\.com:([^/]+)\/([^/]+)$/i);
+  if (ssh?.[1] && ssh[2]) {
+    return `https://github.com/${ssh[1]}/${ssh[2]}`;
+  }
+
+  const https = normalized.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/i);
+  if (https?.[1] && https[2]) {
+    return `https://github.com/${https[1]}/${https[2]}`;
+  }
+
+  return null;
 }
 
 function GeneralProjectCard({
@@ -200,7 +237,8 @@ function GeneralProjectCard({
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to update project'),
+    onError: (error: Error) =>
+      toast.error(error.message || 'Failed to update project'),
   });
 
   const dirty =
@@ -249,11 +287,12 @@ function GeneralProjectCard({
             />
           </div>
         </div>
-        <div className="flex items-center justify-between border-t border-border/60 pt-4">
-          <p className="truncate text-xs text-muted-foreground">
-            {project.repo_url}
-          </p>
-          <Button type="submit" disabled={!dirty || !canManage || mutation.isPending} className="gap-1.5">
+        <div className="flex justify-end border-t border-border/60 pt-4">
+          <Button
+            type="submit"
+            disabled={!dirty || !canManage || mutation.isPending}
+            className="gap-1.5"
+          >
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             Save
           </Button>

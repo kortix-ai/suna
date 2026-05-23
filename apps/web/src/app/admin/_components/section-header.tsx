@@ -2,6 +2,7 @@
 
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { cn } from '@/lib/utils';
 
 export function SectionHeader({
@@ -18,9 +19,7 @@ export function SectionHeader({
   return (
     <div className="flex flex-col gap-3 border-b border-border/60 pb-5 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex items-start gap-3 min-w-0">
-        <div className="hidden sm:flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted">
-          <Icon className="h-5 w-5 text-muted-foreground" />
-        </div>
+        <EntityAvatar icon={Icon} size="lg" className="hidden sm:inline-flex" />
         <div className="min-w-0 space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
           {description && (

@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { buttonVariants } from '@/components/ui/button';
 
 import {
   AlertDialog,
@@ -59,7 +60,7 @@ export function DeleteConfirmationDialog({
               onConfirm();
             }}
             disabled={isDeleting}
-            className="bg-destructive text-white hover:bg-destructive/90"
+            className={buttonVariants({ variant: 'destructive' })}
           >
             {isDeleting ? (
               <>

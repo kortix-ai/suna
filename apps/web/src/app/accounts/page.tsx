@@ -54,7 +54,7 @@ export default function AccountsPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <AppHeader user={user} />
+      <AppHeader user={user} breadcrumb="Accounts" />
       <main className="flex-1 px-4 py-8">
         <div className="mx-auto w-full max-w-4xl space-y-8">
           <button

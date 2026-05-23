@@ -11,6 +11,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Loader2, KeyRound, ExternalLink } from 'lucide-react';
 import { useSetSecret } from '@/hooks/secrets/use-secrets';
 import { deploymentKeys } from '@/hooks/deployments/use-deployments';
@@ -73,14 +74,14 @@ export function FreestyleApiKeyDialog({
         <div className="space-y-4 py-2">
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">
-              API Key <span className="text-red-500">*</span>
+              API Key <span className="text-destructive">*</span>
             </label>
-            <input
+            <Input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="fs_..."
-              className="h-9 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 font-mono"
+              className="font-mono"
               autoComplete="off"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !setSecret.isPending) handleSave();

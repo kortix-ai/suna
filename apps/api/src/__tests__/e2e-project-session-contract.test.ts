@@ -1,18 +1,40 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { accountMembers, projectMembers, projectSecrets, projectSessions, projects } from '@kortix/db';
+import {
+  accountMembers,
+  projectGitConnections,
+  projectGitCredentials,
+  projectMembers,
+  projectSecrets,
+  projectSessions,
+  projects,
+  sessionSandboxes,
+} from '@kortix/db';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const SESSION_ID = '00000000-0000-4000-a000-000000000301';
+const TEST_GITHUB_OWNER = 'kortix-org';
+const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
+const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
+const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
+const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
+
+process.env.KORTIX_GITHUB_OWNER = TEST_GITHUB_OWNER;
+process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
+let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
+let secretValues: Map<string, string>;
+let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
+let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
@@ -27,11 +49,11 @@ const projectRow: typeof projects.$inferSelect = {
   projectId: PROJECT_ID,
   accountId: ACCOUNT_ID,
   name: 'Contract Project',
-  repoUrl: 'https://github.com/kortix-ai/contract-project.git',
+  repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,
   defaultBranch: 'main',
   manifestPath: 'kortix.toml',
   status: 'active',
-  metadata: { github: { auth_source: 'pat', full_name: 'kortix-ai/contract-project' } },
+  metadata: { github: { auth_source: 'pat', full_name: `${TEST_GITHUB_OWNER}/contract-project` } },
   lastOpenedAt: null,
   createdAt: new Date('2026-01-01T00:00:00Z'),
   updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -42,6 +64,9 @@ function resetState() {
   sandboxProvisionCalls = 0;
   activeSessionCount = 0;
   lastProvisionInput = null;
+  projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
+  projectRow.defaultBranch = 'main';
+  projectRow.metadata = { github: { auth_source: 'pat', full_name: `${TEST_GITHUB_OWNER}/contract-project` } };
   sessionRow = {
     sessionId: SESSION_ID,
     accountId: ACCOUNT_ID,
@@ -59,13 +84,38 @@ function resetState() {
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
   };
+  sessionSandboxRows = [];
   secretRows = [];
+  secretValues = new Map();
+  gitConnectionRows = [];
+  gitCredentialRows = [];
 }
 
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
+    if (c.req.header('Authorization') === `Bearer ${PROJECT_SANDBOX_TOKEN}`) {
+      c.set('userId', ACCOUNT_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'apiKey');
+      c.set('apiKeyType', 'sandbox');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('sandboxId', SESSION_ID);
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${PROJECT_RUNTIME_PAT}`) {
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000901');
+      await next();
+      return;
+    }
     c.set('userId', USER_ID);
     c.set('userEmail', 'contract@example.test');
+    c.set('authType', 'supabase');
     await next();
   },
 }));
@@ -77,6 +127,8 @@ mock.module('../projects/git', () => ({
   archiveRepoSubtree: async () => undefined,
   deleteRemoteSessionBranch: async () => undefined,
   listRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
+  grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
   invalidateProjectMirror: () => {},
@@ -124,6 +176,18 @@ mock.module('../projects/github', () => ({
     repository_selection: 'all',
     permissions: {},
   }),
+  getRepo: async () => ({
+    id: 7,
+    name: 'contract-project',
+    full_name: 'kortix-org/contract-project',
+    private: true,
+    html_url: 'https://github.com/kortix-org/contract-project',
+    clone_url: 'https://github.com/kortix-org/contract-project.git',
+    ssh_url: 'git@github.com:kortix-org/contract-project.git',
+    default_branch: 'main',
+    description: null,
+  }),
+  listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
 }));
@@ -137,6 +201,101 @@ mock.module('../platform/services/session-sandbox', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
+}));
+
+mock.module('../vault', () => ({
+  upsertProjectItem: async (input: {
+    projectId: string;
+    name: string;
+    value: string;
+    kind?: string;
+    ownerUserId?: string | null;
+    createdBy: string;
+  }) => {
+    const existingIndex = secretRows.findIndex((row) =>
+      row.projectId === input.projectId &&
+      row.name === input.name &&
+      (row as any).ownerUserId === (input.ownerUserId ?? null),
+    );
+    const now = new Date('2026-01-02T00:00:00Z');
+    const row = {
+      secretId: existingIndex >= 0
+        ? secretRows[existingIndex]!.secretId
+        : `00000000-0000-4000-a000-${String(401 + secretRows.length).padStart(12, '0')}`,
+      projectId: input.projectId,
+      name: input.name,
+      valueEnc: `enc:${Buffer.from(input.value).toString('base64url')}`,
+      createdBy: input.createdBy,
+      createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
+      updatedAt: now,
+      ownerUserId: input.ownerUserId ?? null,
+    } as typeof projectSecrets.$inferSelect & { ownerUserId: string | null };
+    if (existingIndex >= 0) secretRows[existingIndex] = row;
+    else secretRows.push(row);
+    secretValues.set(row.secretId, input.value);
+    return {
+      itemId: row.secretId,
+      projectId: row.projectId,
+      kind: input.kind ?? 'env',
+      name: row.name,
+      ownerUserId: row.ownerUserId,
+      providerId: null,
+      createdBy: row.createdBy,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  },
+  listProjectItems: async (projectId: string) =>
+    secretRows
+      .filter((row) => row.projectId === projectId)
+      .map((row: any) => ({
+        itemId: row.secretId,
+        projectId: row.projectId,
+        kind: 'env',
+        name: row.name,
+        ownerUserId: row.ownerUserId ?? null,
+        providerId: null,
+        createdBy: row.createdBy,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        grantUserIds: [],
+      })),
+  deleteProjectItemByScope: async (projectId: string, name: string, ownerUserId: string | null) => {
+    const removed = secretRows.filter((row: any) =>
+      row.projectId === projectId &&
+      row.name === name &&
+      (row.ownerUserId ?? null) === ownerUserId,
+    );
+    for (const row of removed) secretValues.delete(row.secretId);
+    secretRows = secretRows.filter((row: any) =>
+      row.projectId !== projectId ||
+      row.name !== name ||
+      (row.ownerUserId ?? null) !== ownerUserId,
+    );
+  },
+  setItemGrants: async () => {},
+  visibilityOf: (item: { ownerUserId: string | null }, grantCount: number) =>
+    item.ownerUserId ? 'private' : grantCount > 0 ? 'select' : 'everyone',
+  resolveVaultForActor: async ({ projectId }: { projectId: string }) =>
+    Object.fromEntries(
+      secretRows
+        .filter((row) => row.projectId === projectId)
+        .map((row) => [row.name, secretValues.get(row.secretId) ?? '']),
+    ),
+  resolveProjectGlobalSecret: async (projectId: string, name: string) => {
+    const row = secretRows.find((item) => item.projectId === projectId && item.name === name);
+    return row ? secretValues.get(row.secretId) ?? null : null;
+  },
+}));
+
+mockIamEngineAllowAll();
+
+mockIamMembershipSyncNoop();
+
+mock.module('../repositories/account-tokens', () => ({
+  createAccountToken: async () => ({ secretKey: PROJECT_RUNTIME_PAT }),
+  listAccountTokens: async () => [],
+  revokeAccountToken: async () => true,
 }));
 
 // Pin the concurrent-session cap to 1 regardless of env mode so this test
@@ -171,9 +330,15 @@ mock.module('../shared/db', () => ({
             if (table === projectSecrets) return secretRows;
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             return [];
-          },
-          limit: async () => {
+	          },
+	          limit: async () => {
             if (fields && Object.keys(fields).includes('activeCount')) return [{ activeCount: activeSessionCount }];
+            if (table === projectSecrets) {
+              return secretRows.filter((row) => row.name === 'KORTIX_GIT_AUTH_TOKEN').slice(0, 1);
+            }
+            if (table === projectGitConnections) return gitConnectionRows.slice(0, 1);
+            if (table === projectGitCredentials) return gitCredentialRows.slice(0, 1);
+            if (table === sessionSandboxes) return sessionSandboxRows.slice(0, 1);
             if (table === projects) return [projectRow];
             if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
             if (table === projectMembers) return [];
@@ -191,6 +356,61 @@ mock.module('../shared/db', () => ({
     insert: (table: unknown) => ({
       values: (values: any) => ({
         returning: async () => {
+          if (table === projectGitConnections) {
+            const existingIndex = gitConnectionRows.findIndex((row) => row.projectId === values.projectId);
+            const now = new Date('2026-01-02T00:00:00Z');
+            const row = {
+              connectionId: existingIndex >= 0
+                ? gitConnectionRows[existingIndex]!.connectionId
+                : '00000000-0000-4000-a000-000000000501',
+              accountId: values.accountId,
+              projectId: values.projectId,
+              provider: values.provider,
+              repoUrl: values.repoUrl,
+              repoOwner: values.repoOwner ?? null,
+              repoName: values.repoName ?? null,
+              externalRepoId: values.externalRepoId ?? null,
+              defaultBranch: values.defaultBranch,
+              authMethod: values.authMethod,
+              installationId: values.installationId ?? null,
+              credentialRef: values.credentialRef ?? null,
+              permissions: values.permissions ?? {},
+              visibility: values.visibility ?? null,
+              webhookId: values.webhookId ?? null,
+              status: values.status ?? 'connected',
+              lastValidatedAt: values.lastValidatedAt ?? now,
+              lastErrorCode: values.lastErrorCode ?? null,
+              lastErrorMessage: values.lastErrorMessage ?? null,
+              metadata: values.metadata ?? {},
+              createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
+              updatedAt: values.updatedAt ?? now,
+            } as typeof projectGitConnections.$inferSelect;
+            if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
+            else gitConnectionRows.push(row);
+            return [row];
+          }
+          if (table === projectGitCredentials) {
+            const existingIndex = gitCredentialRows.findIndex((row) =>
+              row.projectId === values.projectId && row.provider === values.provider,
+            );
+            const now = new Date('2026-01-02T00:00:00Z');
+            const row = {
+              credentialId: existingIndex >= 0
+                ? gitCredentialRows[existingIndex]!.credentialId
+                : '00000000-0000-4000-a000-000000000601',
+              accountId: values.accountId,
+              projectId: values.projectId,
+              provider: values.provider,
+              authMethod: values.authMethod ?? 'token',
+              valueEnc: values.valueEnc,
+              createdBy: values.createdBy ?? null,
+              createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
+              updatedAt: values.updatedAt ?? now,
+            } as typeof projectGitCredentials.$inferSelect;
+            if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
+            else gitCredentialRows.push(row);
+            return [row];
+          }
           if (table !== projectSessions) return [];
           sessionRow = {
             sessionId: values.sessionId,
@@ -213,6 +433,61 @@ mock.module('../shared/db', () => ({
         },
         onConflictDoUpdate: ({ set }: { set: Partial<typeof projectSecrets.$inferInsert> }) => ({
           returning: async () => {
+            if (table === projectGitConnections) {
+              const existingIndex = gitConnectionRows.findIndex((row) => row.projectId === values.projectId);
+              const now = new Date('2026-01-02T00:00:00Z');
+              const row = {
+                connectionId: existingIndex >= 0
+                  ? gitConnectionRows[existingIndex]!.connectionId
+                  : '00000000-0000-4000-a000-000000000501',
+                accountId: values.accountId,
+                projectId: values.projectId,
+                provider: values.provider,
+                repoUrl: values.repoUrl,
+                repoOwner: values.repoOwner ?? null,
+                repoName: values.repoName ?? null,
+                externalRepoId: values.externalRepoId ?? null,
+                defaultBranch: values.defaultBranch,
+                authMethod: values.authMethod,
+                installationId: values.installationId ?? null,
+                credentialRef: values.credentialRef ?? null,
+                permissions: values.permissions ?? {},
+                visibility: values.visibility ?? null,
+                webhookId: values.webhookId ?? null,
+                status: values.status ?? 'connected',
+                lastValidatedAt: values.lastValidatedAt ?? now,
+                lastErrorCode: values.lastErrorCode ?? null,
+                lastErrorMessage: values.lastErrorMessage ?? null,
+                metadata: values.metadata ?? {},
+                createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
+                updatedAt: values.updatedAt ?? now,
+              } as typeof projectGitConnections.$inferSelect;
+              if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
+              else gitConnectionRows.push(row);
+              return [row];
+            }
+            if (table === projectGitCredentials) {
+              const existingIndex = gitCredentialRows.findIndex((row) =>
+                row.projectId === values.projectId && row.provider === values.provider,
+              );
+              const now = new Date('2026-01-02T00:00:00Z');
+              const row = {
+                credentialId: existingIndex >= 0
+                  ? gitCredentialRows[existingIndex]!.credentialId
+                  : '00000000-0000-4000-a000-000000000601',
+                accountId: values.accountId,
+                projectId: values.projectId,
+                provider: values.provider,
+                authMethod: values.authMethod ?? 'token',
+                valueEnc: values.valueEnc,
+                createdBy: values.createdBy ?? null,
+                createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
+                updatedAt: values.updatedAt ?? now,
+              } as typeof projectGitCredentials.$inferSelect;
+              if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
+              else gitCredentialRows.push(row);
+              return [row];
+            }
             if (table !== projectSecrets) return [];
             const existingIndex = secretRows.findIndex((row) =>
               row.projectId === values.projectId && row.name === values.name,
@@ -258,7 +533,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { projectsApp, buildProjectLlmBaseUrl } = await import('../projects/index');
+const { projectsApp } = await import('../projects/index');
 
 function createApp() {
   const app = new Hono();
@@ -272,15 +547,31 @@ function createApp() {
   return app;
 }
 
-describe('project session API contract', () => {
-  beforeEach(() => resetState());
+/** Poll until predicate holds (or timeout) — robustly flushes the
+ *  fire-and-forget sandbox-provision IIFE instead of a single racy tick. */
+async function flushUntil(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+  const start = Date.now();
+  while (!predicate() && Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
 
-  test('builds the session LLM router URL from common API URL shapes', () => {
-    expect(buildProjectLlmBaseUrl('https://api.kortix.com')).toBe('https://api.kortix.com/v1/router/llm');
-    expect(buildProjectLlmBaseUrl('https://api.kortix.com/v1')).toBe('https://api.kortix.com/v1/router/llm');
-    expect(buildProjectLlmBaseUrl('https://api.kortix.com/v1/router')).toBe('https://api.kortix.com/v1/router/llm');
-    expect(buildProjectLlmBaseUrl('https://api.kortix.com/v1/router/')).toBe('https://api.kortix.com/v1/router/llm');
+describe('project session API contract', () => {
+  afterAll(() => {
+    mock.restore();
+    if (ORIGINAL_KORTIX_GITHUB_OWNER === undefined) {
+      delete process.env.KORTIX_GITHUB_OWNER;
+    } else {
+      process.env.KORTIX_GITHUB_OWNER = ORIGINAL_KORTIX_GITHUB_OWNER;
+    }
+    if (ORIGINAL_API_KEY_SECRET === undefined) {
+      delete process.env.API_KEY_SECRET;
+    } else {
+      process.env.API_KEY_SECRET = ORIGINAL_API_KEY_SECRET;
+    }
   });
+
+  beforeEach(() => resetState());
 
   test('upserts and lists project secrets without exposing secret values', async () => {
     const app = createApp();
@@ -305,10 +596,12 @@ describe('project session API contract', () => {
     const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`);
     expect(listRes.status).toBe(200);
     const listed = await listRes.json();
-    expect(listed.items).toHaveLength(1);
-    expect(listed.items[0].name).toBe('OPENAI_API_KEY');
-    expect(listed.items[0].value).toBeUndefined();
-    expect(listed.items[0].value_enc).toBeUndefined();
+    const openAiSecret = listed.items.find((item: any) => item.name === 'OPENAI_API_KEY');
+    const gitAuthSecret = listed.items.find((item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN');
+    expect(openAiSecret).toBeTruthy();
+    expect(openAiSecret.value).toBeUndefined();
+    expect(openAiSecret.value_enc).toBeUndefined();
+    expect(gitAuthSecret).toBeUndefined();
     expect(Array.isArray(listed.required)).toBe(true);
     expect(Array.isArray(listed.optional)).toBe(true);
 
@@ -318,6 +611,90 @@ describe('project session API contract', () => {
     expect(deleteRes.status).toBe(200);
     expect(await deleteRes.json()).toEqual({ ok: true });
     expect(secretRows).toHaveLength(0);
+  });
+
+  test('stores provider-neutral git credentials outside runtime project secrets', async () => {
+    projectRow.repoUrl = 'https://gitlab.com/acme/private-project.git';
+    projectRow.metadata = { git: { provider: 'gitlab', auth: { method: 'none' } } };
+    const app = createApp();
+
+    const before = await app.request(`/v1/projects/${PROJECT_ID}/secrets`);
+    expect(before.status).toBe(200);
+    const beforeBody = await before.json();
+    expect(beforeBody.items.find((item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN')).toBeUndefined();
+
+    const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/git-credential`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'gitlab-project-token' }),
+    });
+    expect(writeRes.status).toBe(200);
+    const written = await writeRes.json();
+    expect(written).toMatchObject({
+      configured: true,
+      provider: 'gitlab',
+      git_connection: {
+        provider: 'gitlab',
+        repo_url: 'https://gitlab.com/acme/private-project.git',
+        auth_method: 'project_credential',
+        status: 'connected',
+      },
+    });
+    expect(written.value).toBeUndefined();
+    expect(written.value_enc).toBeUndefined();
+    expect(secretRows).toHaveLength(0);
+    expect(gitCredentialRows).toHaveLength(1);
+    expect(gitConnectionRows).toHaveLength(1);
+
+    const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/KORTIX_GIT_AUTH_TOKEN`, {
+      method: 'DELETE',
+    });
+    expect(deleteRes.status).toBe(403);
+    expect(secretRows).toHaveLength(0);
+
+    const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(createRes.status).toBe(201);
+
+    await flushUntil(() => lastProvisionInput !== null);
+    const env = lastProvisionInput!.extraEnvVars ?? {};
+    expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
+    expect(env.KORTIX_GITHUB_TOKEN).toBeUndefined();
+    expect(env.KORTIX_CLI_TOKEN).toBeUndefined();
+    expect(env.KORTIX_TOKEN).toBeUndefined();
+
+    sessionSandboxRows = [{
+      sandboxId: SESSION_ID,
+      sessionId: sessionRow!.sessionId,
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      provider: 'daytona',
+      externalId: null,
+      baseUrl: null,
+      status: 'provisioning',
+      config: {},
+      metadata: {},
+      lastUsedAt: null,
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z'),
+    }];
+
+    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+    });
+    expect(cloneRes.status).toBe(200);
+    expect(await cloneRes.json()).toMatchObject({
+      repo_url: 'https://gitlab.com/acme/private-project.git',
+      source: 'project_credential',
+      auth: {
+        username: 'x-access-token',
+        token: 'gitlab-project-token',
+        type: 'basic',
+      },
+    });
   });
 
   test('rejects reserved platform secret names', async () => {
@@ -469,7 +846,7 @@ describe('project session API contract', () => {
     expect(createRes.status).toBe(201);
 
     // 3. Flush the fire-and-forget IIFE that calls provisionSessionSandbox.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionInput).not.toBeNull();
 
@@ -479,12 +856,22 @@ describe('project session API contract', () => {
     expect(env.STRIPE_SECRET).toBe('sk_test_stripe_live');
 
     // 5. Platform KORTIX_* envelope is still present alongside user secrets.
+    // Git provider credentials are deliberately absent; provisionSessionSandbox
+    // injects the single sandbox KORTIX_TOKEN at the provider boundary.
     expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
     expect(env.KORTIX_REPO_URL).toBe(projectRow.repoUrl);
     expect(env.KORTIX_BASE_REF).toBe('main');
-    expect(env.KORTIX_LLM_TOKEN).toBeTruthy();
-    expect(env.KORTIX_LLM_BASE_URL).toContain('/v1/router/llm');
+    // LLM/tool-router URLs are no longer injected — the sandbox derives any
+    // router endpoint it needs from KORTIX_API_URL.
+    expect(env.KORTIX_LLM_TOKEN).toBeUndefined();
+    expect(env.KORTIX_LLM_BASE_URL).toBeUndefined();
+    expect(env.TAVILY_API_URL).toBeUndefined();
+    expect(env.KORTIX_CLI_TOKEN).toBeUndefined();
+    expect(env.KORTIX_TOKEN).toBeUndefined();
+    expect(env.KORTIX_API_URL).toBeTruthy();
+    expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
+    expect(env.KORTIX_GITHUB_TOKEN).toBeUndefined();
 
     // 6. User can't shadow a platform var — POST /secrets rejects KORTIX_*.
     // This protects the env-var precedence: user secrets are merged before
@@ -524,7 +911,30 @@ describe('project session API contract', () => {
     expect(body.name).toBe('Contract session');
     expect(branchCreateCalls).toBe(1);
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(sandboxProvisionCalls).toBe(1);
+  });
+
+  test('accepts a client-created session branch without recreating it server-side', async () => {
+    const app = createApp();
+    const clientSessionId = '11111111-1111-4111-a111-111111111111';
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: clientSessionId,
+        branch_already_created: true,
+        base_ref: 'main',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.session_id).toBe(clientSessionId);
+    expect(body.branch_name).toBe(clientSessionId);
+    expect(branchCreateCalls).toBe(0);
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
   });
 

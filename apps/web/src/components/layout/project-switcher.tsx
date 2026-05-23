@@ -153,7 +153,7 @@ export function ProjectSwitcher({
       <button
         type="button"
         className={cn(
-          'flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-foreground transition-colors',
+          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-foreground transition-colors',
           'hover:bg-muted/50 data-[state=open]:bg-muted/60',
           className,
         )}
@@ -196,7 +196,7 @@ export function ProjectSwitcher({
         sideOffset={6}
         className={cn(
           'overflow-hidden rounded-2xl border-border/60 p-0',
-          variant === 'sidebar' ? 'w-(--radix-dropdown-menu-trigger-width) shadow-none' : 'w-64',
+          variant === 'sidebar' ? 'w-(--radix-dropdown-menu-trigger-width) min-w-56 shadow-none' : 'w-64',
         )}
       >
         {showSearch && (
@@ -208,7 +208,7 @@ export function ProjectSwitcher({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Find project…"
-                className="h-7 rounded-md border-transparent bg-muted/40 pl-7 pr-2 text-[12px] placeholder:text-muted-foreground/50 focus-visible:border-border/60 focus-visible:bg-background focus-visible:ring-0"
+                className="h-7 pl-7 pr-2 text-[12px] placeholder:text-muted-foreground/50"
               />
             </div>
           </div>
@@ -240,7 +240,7 @@ export function ProjectSwitcher({
                     disabled={loading}
                     onSelect={() => switchProject(project)}
                     className={cn(
-                      'flex h-9 cursor-pointer items-center gap-2.5 rounded-md px-2 py-0',
+                      'flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2 py-0',
                       active && 'bg-muted/60',
                       loading && 'pointer-events-none opacity-60',
                     )}
@@ -274,7 +274,7 @@ export function ProjectSwitcher({
               close();
               router.push('/projects');
             }}
-            className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 py-0 [&_svg]:!text-muted-foreground/70"
+            className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <ArrowUpRight className="size-3.5" />
             <span className="flex-1 truncate text-[12.5px] font-medium text-foreground/80">
@@ -286,7 +286,7 @@ export function ProjectSwitcher({
               close();
               router.push('/projects?new=1');
             }}
-            className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 py-0 [&_svg]:!text-muted-foreground/70"
+            className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <Plus className="size-3.5" />
             <span className="flex-1 truncate text-[12.5px] font-medium text-foreground/80">

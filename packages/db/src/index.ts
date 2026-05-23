@@ -32,11 +32,10 @@ export {
   usageEvents,
   // Kortix tables
   projects,
+  projectGitConnections,
+  projectGitCredentials,
   projectMembers,
   projectSecrets,
-  vaultItems,
-  vaultItemGrants,
-  vaultItemKindEnum,
   projectTriggers,
   projectTriggerEvents,
   projectTriggerRuntime,
@@ -58,6 +57,8 @@ export {
   serverEntries,
   // Relations
   projectsRelations,
+  projectGitConnectionsRelations,
+  projectGitCredentialsRelations,
   projectMembersRelations,
   projectSecretsRelations,
   projectTriggersRelations,

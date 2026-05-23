@@ -9,6 +9,8 @@ import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PoliciesTable } from '@/components/iam/policies-table';
 import { accountTokensApi } from '@/lib/api/account-tokens';
@@ -103,9 +105,7 @@ export default function TokenDetailPage() {
               )}
             </div>
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-muted/40 text-muted-foreground">
-                <KeyRound className="h-5 w-5" />
-              </div>
+              <EntityAvatar icon={KeyRound} size="lg" />
               <div>
                 <h1 className="text-2xl font-semibold tracking-tight text-foreground">
                   {tokensQuery.isLoading ? (
@@ -118,7 +118,8 @@ export default function TokenDetailPage() {
                   <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                     <Badge
                       variant={token.status === 'active' ? 'outline' : 'destructive'}
-                      className="h-5 rounded-md px-1.5 text-[10px] font-normal capitalize"
+                      size="sm"
+                      className="font-normal capitalize"
                     >
                       {token.status}
                     </Badge>
@@ -132,27 +133,20 @@ export default function TokenDetailPage() {
           </div>
 
           {!tokensQuery.isLoading && !token && tokenId && (
-            <div className="rounded-xl border border-border/70 bg-card p-6">
-              <p className="text-sm text-muted-foreground">
-                This token doesn&apos;t exist or has been revoked.
-              </p>
-            </div>
+            <InfoBanner tone="neutral">
+              This token doesn&apos;t exist or has been revoked.
+            </InfoBanner>
           )}
 
           {token && accountId && (
             <>
-              <section className="rounded-xl border border-border/70 bg-muted/20 px-5 py-4 text-sm">
-                <p className="font-medium text-foreground">
-                  Narrow what this token can do
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  By default a token inherits its creator&apos;s permissions. Attach
-                  one or more policies below to restrict it — once any policy is
-                  attached, the token can <strong>only</strong> do what those policies
-                  allow. The creator&apos;s super-admin status and group memberships
-                  no longer apply.
-                </p>
-              </section>
+              <InfoBanner tone="info" title="Narrow what this token can do">
+                By default a token inherits its creator&apos;s permissions. Attach
+                one or more policies below to restrict it — once any policy is
+                attached, the token can <strong>only</strong> do what those policies
+                allow. The creator&apos;s super-admin status and group memberships
+                no longer apply.
+              </InfoBanner>
 
               <PoliciesTable
                 accountId={accountId}

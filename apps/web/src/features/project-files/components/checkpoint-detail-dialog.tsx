@@ -25,7 +25,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -61,17 +63,6 @@ function formatFull(timestamp: number): string {
   });
 }
 
-function initials(name: string): string {
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase() ?? '')
-      .join('') || '?'
-  );
-}
-
 function statusIconFor(status: ProjectCommitFile['status'], className = 'size-3.5') {
   switch (status) {
     case 'added':
@@ -87,24 +78,22 @@ function statusIconFor(status: ProjectCommitFile['status'], className = 'size-3.
 }
 
 function statusBadgeFor(status: ProjectCommitFile['status']) {
-  const map: Record<ProjectCommitFile['status'], { text: string; classes: string }> = {
-    added:     { text: 'Added',     classes: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
-    modified:  { text: 'Modified',  classes: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
-    deleted:   { text: 'Deleted',   classes: 'bg-red-500/10 text-red-600 dark:text-red-400' },
-    renamed:   { text: 'Renamed',   classes: 'bg-orange-500/10 text-orange-600 dark:text-orange-400' },
-    copied:    { text: 'Copied',    classes: 'bg-orange-500/10 text-orange-600 dark:text-orange-400' },
-    typechange:{ text: 'Changed',   classes: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+  const map: Record<
+    ProjectCommitFile['status'],
+    { text: string; variant: React.ComponentProps<typeof Badge>['variant'] }
+  > = {
+    added:     { text: 'Added',     variant: 'success' },
+    modified:  { text: 'Modified',  variant: 'info' },
+    deleted:   { text: 'Deleted',   variant: 'destructive' },
+    renamed:   { text: 'Renamed',   variant: 'warning' },
+    copied:    { text: 'Copied',    variant: 'warning' },
+    typechange:{ text: 'Changed',   variant: 'secondary' },
   };
-  const { text, classes } = map[status];
+  const { text, variant } = map[status];
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider',
-        classes,
-      )}
-    >
+    <Badge variant={variant} size="sm" className="uppercase tracking-wider">
       {text}
-    </span>
+    </Badge>
   );
 }
 
@@ -466,9 +455,11 @@ export function CheckpointDetailDialog({
                 className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-muted/60 pr-2 pl-0.5 py-0.5 text-[11px]"
                 title={`${data.author_name} <${data.author_email}>`}
               >
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-[9px] font-semibold text-primary">
-                  {initials(data.author_name)}
-                </span>
+                <UserAvatar
+                  email={data.author_email}
+                  name={data.author_name}
+                  size="xs"
+                />
                 <span className="truncate max-w-[120px]">{data.author_name}</span>
               </span>
 

@@ -1,9 +1,10 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
+import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from './github';
 
 const execFileAsync = promisify(execFile);
 
@@ -44,6 +45,17 @@ function cacheRoot() {
 function repoCachePath(project: GitBackedProject) {
   const id = createHash('sha256').update(project.projectId).digest('hex').slice(0, 32);
   return join(cacheRoot(), `${id}.git`);
+}
+
+function sessionBranchWorkRoot() {
+  return process.env.KORTIX_GIT_BRANCH_WORK_DIR || join(dirname(cacheRoot()), 'git-session-branches');
+}
+
+async function makeSessionBranchRepo(projectId: string) {
+  const root = sessionBranchWorkRoot();
+  await mkdir(root, { recursive: true });
+  const id = createHash('sha256').update(projectId).digest('hex').slice(0, 12);
+  return mkdtemp(join(root, `${id}-`));
 }
 
 /**
@@ -466,12 +478,57 @@ export async function createRemoteSessionBranch(
   branchName: string,
   baseRef?: string,
 ) {
-  const base = baseRef || project.defaultBranch;
+  const base = validateRef(baseRef || project.defaultBranch);
+  const branch = validateRef(branchName);
+  const githubRepo = parseGitHubRepoUrl(project.repoUrl);
+  if (githubRepo && project.gitAuthToken) {
+    const auth = { token: project.gitAuthToken };
+    const sha = await getBranchCommitSha({
+      owner: githubRepo.owner,
+      repo: githubRepo.repo,
+      branch: base,
+      auth,
+    });
+    await createBranchRef({
+      owner: githubRepo.owner,
+      repo: githubRepo.repo,
+      branch,
+      sha,
+      auth,
+    });
+    invalidateProjectMirror(project.projectId);
+    return;
+  }
+
   const authHost = hostFromRepoUrl(project.repoUrl);
-  const repoPath = await refreshMirror(project, true);
-  await runGit(['fetch', 'origin', `+refs/heads/${base}:refs/heads/${base}`], repoPath, true, project.gitAuthToken, undefined, authHost);
-  await runGit(['update-ref', `refs/heads/${branchName}`, `refs/heads/${base}`], repoPath, false);
-  await runGit(['push', 'origin', `refs/heads/${branchName}:refs/heads/${branchName}`], repoPath, true, project.gitAuthToken, undefined, authHost);
+  const repoPath = await makeSessionBranchRepo(project.projectId);
+
+  try {
+    // Session start only needs the base branch tip so it can push a new branch.
+    // Avoid the shared full bare mirror here: first-session startup should not
+    // block on cloning every branch and all history from large repos.
+    await runGit(['init', '--bare', repoPath], undefined, false);
+    await runGit(['remote', 'add', 'origin', project.repoUrl], repoPath, false);
+    await runGit(
+      ['fetch', '--no-tags', '--depth=1', 'origin', `+refs/heads/${base}:refs/heads/${base}`],
+      repoPath,
+      true,
+      project.gitAuthToken,
+      undefined,
+      authHost,
+    );
+    await runGit(
+      ['push', 'origin', `refs/heads/${base}:refs/heads/${branch}`],
+      repoPath,
+      true,
+      project.gitAuthToken,
+      undefined,
+      authHost,
+    );
+    invalidateProjectMirror(project.projectId);
+  } finally {
+    await rm(repoPath, { recursive: true, force: true });
+  }
 }
 
 export async function deleteRemoteSessionBranch(

@@ -36,7 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -340,7 +340,7 @@ function ConnectedTab({
             disabled={disconnect.isPending}
             variant="ghost"
             size="icon-sm"
-            className="ml-auto shrink-0 text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive"
+            className="ml-auto shrink-0 text-muted-foreground/40 hover:bg-muted hover:text-foreground"
             title="Disconnect"
           >
             {disconnect.isPending && disconnect.variables?.id === provider.id ? (
@@ -394,7 +394,7 @@ function ConnectedTab({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => confirmProvider && disconnect.mutate(confirmProvider)}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className={buttonVariants({ variant: 'destructive' })}
             >
               Disconnect
             </AlertDialogAction>
@@ -809,7 +809,7 @@ function ApiKeyConnectForm({
                 setValues((current) => ({ ...current, [envVar]: e.target.value }))
               }
               placeholder={envVarPlaceholder(provider, envVar)}
-              className="h-9 rounded-xl border-border/50 bg-background text-sm"
+              className="h-9 text-sm"
               autoFocus={index === 0}
               autoComplete="off"
             />
@@ -1011,7 +1011,7 @@ function CustomProviderForm({
                 )
               }
               placeholder="my-llm"
-              className="h-9 rounded-xl border-border/50 bg-background font-mono text-xs"
+              className="h-9 font-mono text-xs"
               autoFocus
             />
           </div>
@@ -1024,7 +1024,7 @@ function CustomProviderForm({
               value={form.name}
               onChange={(e) => setField('name', e.target.value)}
               placeholder="My LLM"
-              className="h-9 rounded-xl border-border/50 bg-background text-sm"
+              className="h-9 text-sm"
             />
           </div>
         </div>
@@ -1037,7 +1037,7 @@ function CustomProviderForm({
             value={form.baseURL}
             onChange={(e) => setField('baseURL', e.target.value)}
             placeholder="https://api.example.com/v1"
-            className="h-9 rounded-xl border-border/50 bg-background font-mono text-xs"
+            className="h-9 font-mono text-xs"
           />
         </div>
         <div>
@@ -1050,7 +1050,7 @@ function CustomProviderForm({
             value={form.apiKey}
             onChange={(e) => setField('apiKey', e.target.value)}
             placeholder="sk-… (saved as a project secret)"
-            className="h-9 rounded-xl border-border/50 bg-background font-mono text-xs"
+            className="h-9 font-mono text-xs"
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -1063,7 +1063,7 @@ function CustomProviderForm({
               value={form.modelId}
               onChange={(e) => setField('modelId', e.target.value)}
               placeholder="my-llm/foo-7b"
-              className="h-9 rounded-xl border-border/50 bg-background font-mono text-xs"
+              className="h-9 font-mono text-xs"
             />
           </div>
           <div>
@@ -1075,7 +1075,7 @@ function CustomProviderForm({
               value={form.modelName}
               onChange={(e) => setField('modelName', e.target.value)}
               placeholder="Foo 7B"
-              className="h-9 rounded-xl border-border/50 bg-background text-sm"
+              className="h-9 text-sm"
             />
           </div>
         </div>

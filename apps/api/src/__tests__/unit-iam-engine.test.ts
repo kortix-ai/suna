@@ -4,7 +4,6 @@ import {
   CHANNEL_ACTIONS,
   PROJECT_ACTIONS,
   RESOURCE_TYPES,
-  SANDBOX_ACTIONS,
   TRIGGER_ACTIONS,
   resourceTypeForAction,
   type ResourceType,
@@ -36,7 +35,6 @@ describe('resourceTypeForAction', () => {
   });
 
   test('sandbox/trigger/channel actions resolve to their own type', () => {
-    expect(resourceTypeForAction(SANDBOX_ACTIONS.SANDBOX_EXEC)).toBe('sandbox');
     expect(resourceTypeForAction(TRIGGER_ACTIONS.TRIGGER_FIRE)).toBe('trigger');
     expect(resourceTypeForAction(CHANNEL_ACTIONS.CHANNEL_SEND)).toBe('channel');
   });
@@ -124,7 +122,6 @@ describe('system role catalog', () => {
     const all = new Set<string>([
       ...Object.values(ACCOUNT_ACTIONS),
       ...Object.values(PROJECT_ACTIONS),
-      ...Object.values(SANDBOX_ACTIONS),
       ...Object.values(TRIGGER_ACTIONS),
       ...Object.values(CHANNEL_ACTIONS),
     ]);

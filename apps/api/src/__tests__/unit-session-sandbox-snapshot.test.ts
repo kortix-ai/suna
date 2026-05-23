@@ -9,12 +9,13 @@
  *   1. When a `ready` snapshot exists for the project's default branch,
  *      session boot uses *that* snapshot id (not any env-derived name).
  *
- *   2. When no `ready` snapshot exists, the session is marked `error`
- *      with the explicit "still building" message — no provider create
- *      is ever attempted, no env-var name is plumbed through.
+ *   2. When no `ready` snapshot exists, provisioning starts or joins the
+ *      project snapshot build and waits for a ready image instead of failing
+ *      immediately.
  *
- *   3. The fire-and-forget `ensureBuildForLatestCommit` always runs, so
- *      the next session attempt sees the new commit once it lands.
+ *   3. If the snapshot still does not become ready inside the wait budget,
+ *      the session is marked `error` with the explicit "still building"
+ *      message — no provider create is attempted, no env-var fallback is used.
  */
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -31,7 +32,12 @@ let sandboxRow: any = null;
 let sessionStatus: { status: string; error?: string | null; metadata?: any } = { status: 'provisioning' };
 let projectSessionStatus: { status: string; error?: string | null } = { status: 'provisioning' };
 let latestReadyResult: { snapshotId: string | null; commitSha: string } | null = null;
+let readyForCommitResult: { snapshotId: string | null; commitSha: string } | null = null;
 let ensureBuildCalls: any[] = [];
+let completeBuildOnEnsure = false;
+
+process.env.KORTIX_SESSION_SNAPSHOT_READY_WAIT_MS = '1';
+process.env.KORTIX_SESSION_SNAPSHOT_READY_POLL_MS = '1';
 
 mock.module('../shared/db', () => ({
   db: {
@@ -95,8 +101,16 @@ mock.module('../platform/providers', () => {
 
 mock.module('../snapshots/builder', () => ({
   getLatestReadySnapshot: async () => latestReadyResult,
+  getReadySnapshotForCommit: async () => readyForCommitResult,
+  getSnapshotForCommit: async () => null,
   ensureBuildForLatestCommit: async (project: any, opts: any) => {
     ensureBuildCalls.push({ projectId: project.projectId, branch: opts.branch, source: opts.source });
+    if (completeBuildOnEnsure) {
+      readyForCommitResult = {
+        snapshotId: 'kortix-snap-built-after-wait',
+        commitSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      };
+    }
     return { status: 'started', commitSha: 'aaaaaaaa' };
   },
 }));
@@ -160,7 +174,9 @@ beforeEach(() => {
   sessionStatus = { status: 'provisioning' };
   projectSessionStatus = { status: 'provisioning' };
   latestReadyResult = null;
+  readyForCommitResult = null;
   ensureBuildCalls = [];
+  completeBuildOnEnsure = false;
 });
 
 describe('provisionSessionSandbox snapshot resolution', () => {
@@ -179,7 +195,35 @@ describe('provisionSessionSandbox snapshot resolution', () => {
     expect(ensureBuildCalls[0].source).toBe('session-start');
   });
 
-  test('fails the session with explicit message when no ready snapshot exists (no fallback)', async () => {
+  test('boots from a ready commit snapshot even when the branch row is absent', async () => {
+    latestReadyResult = null;
+    readyForCommitResult = {
+      snapshotId: 'kortix-snap-feature-commit-built-on-main',
+      commitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    };
+
+    await callProvision();
+    await flush();
+
+    expect(providerCreateCalls).toHaveLength(1);
+    expect(providerCreateCalls[0].snapshot).toBe('kortix-snap-feature-commit-built-on-main');
+    expect(projectSessionStatus.status).toBe('running');
+  });
+
+  test('waits for a snapshot kicked by ensureBuildForLatestCommit before provider create', async () => {
+    latestReadyResult = null;
+    completeBuildOnEnsure = true;
+
+    await callProvision();
+    await flush();
+
+    expect(ensureBuildCalls).toHaveLength(1);
+    expect(providerCreateCalls).toHaveLength(1);
+    expect(providerCreateCalls[0].snapshot).toBe('kortix-snap-built-after-wait');
+    expect(projectSessionStatus.status).toBe('running');
+  });
+
+  test('fails the session with explicit message when no ready snapshot appears (no fallback)', async () => {
     latestReadyResult = null;
 
     await callProvision();
@@ -189,8 +233,6 @@ describe('provisionSessionSandbox snapshot resolution', () => {
     expect(sessionStatus.status).toBe('error');
     const lastError = sessionStatus.metadata?.lastError ?? '';
     expect(lastError).toContain('still building');
-    // ensureBuildForLatestCommit must still run so the user's *next*
-    // attempt finds a ready snapshot (or at least a building one).
     expect(ensureBuildCalls).toHaveLength(1);
   });
 });

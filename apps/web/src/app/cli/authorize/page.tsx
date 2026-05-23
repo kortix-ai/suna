@@ -207,7 +207,7 @@ function ConsentCard({
     <div className="rounded-2xl border bg-background shadow-sm">
       <div className="p-7">
         <div className="mb-6 flex items-center gap-3">
-          <div className="grid size-11 place-items-center rounded-lg border bg-muted/40">
+          <div className="grid size-11 place-items-center rounded-2xl border bg-muted/40">
             <TerminalSquare className="size-5" />
           </div>
           <div>
@@ -281,7 +281,7 @@ function Row({ label, value }: { label: string; value: string }) {
 function SuccessCard() {
   return (
     <div className="rounded-2xl border bg-background p-7 shadow-sm text-center">
-      <div className="mx-auto grid size-12 place-items-center rounded-full bg-green-500/10 text-green-600">
+      <div className="mx-auto grid size-12 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
         <CheckCircle2 className="size-6" />
       </div>
       <div className="mt-4 text-base font-semibold">CLI authorized</div>

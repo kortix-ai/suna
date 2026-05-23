@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { InfoBanner } from '@/components/ui/info-banner';
 import {
   Select,
   SelectContent,
@@ -232,7 +233,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted">
+          <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-muted">
             {trigger.type === 'cron' ? <Timer className="h-5 w-5" /> : <Webhook className="h-5 w-5" />}
           </div>
           <div>
@@ -281,7 +282,6 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
                 id="edit-name"
                 value={name}
                 onChange={(e) => { setName(e.target.value); markDirty(); }}
-                className="rounded-xl"
               />
             </div>
 
@@ -333,7 +333,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
 
                 <div className="space-y-2">
                   <Label>Secret</Label>
-                  <div className="h-9 px-3 flex items-center rounded-xl border border-input bg-muted/50 text-sm text-muted-foreground">
+                  <div className="h-9 px-3 flex items-center rounded-2xl border bg-muted/50 text-sm text-muted-foreground">
                     {trigger.webhook?.secretProtected ? 'Protected' : 'None'}
                   </div>
                 </div>
@@ -350,7 +350,6 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
                 onChange={(e) => { setPrompt(e.target.value); markDirty(); }}
                 placeholder="The instruction sent to your agent..."
                 rows={4}
-                className="rounded-xl"
               />
             </div>
             )}
@@ -467,7 +466,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
               )}
               {trigger.triggerId && (
               <Button
-                variant="destructive"
+                variant="outline"
                 onClick={handleDelete}
                 disabled={deleteMutation.isPending}
                 className="w-full cursor-pointer "
@@ -559,9 +558,9 @@ function ExecutionItem({
         </div>
       )}
       {expanded && execution.errorMessage && (
-        <div className="mt-2 p-2 rounded bg-red-50 dark:bg-red-950/30 text-xs text-red-700 dark:text-red-300 whitespace-pre-wrap">
-          {execution.errorMessage}
-        </div>
+        <InfoBanner tone="destructive" icon={AlertTriangle} className="mt-2">
+          <span className="whitespace-pre-wrap">{execution.errorMessage}</span>
+        </InfoBanner>
       )}
     </div>
   );

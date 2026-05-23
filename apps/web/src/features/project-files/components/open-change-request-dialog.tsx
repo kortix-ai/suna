@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { GitBranch, GitPullRequest, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -90,9 +91,9 @@ function BranchRow({ branch }: { branch: ProjectBranch }) {
           {displayBranchName(branch.name)}
         </span>
         {branch.is_default && (
-          <span className="rounded bg-muted px-1 py-0 text-[9px] text-muted-foreground shrink-0">
+          <Badge variant="secondary" size="sm" className="shrink-0">
             default
-          </span>
+          </Badge>
         )}
       </div>
       {branch.subject && (

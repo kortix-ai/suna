@@ -15,6 +15,7 @@ import {
 import { ToolViewProps } from '../types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
@@ -176,9 +177,9 @@ export function OcPresentationGenToolView({
             {parsed?.success && action === 'create_slide' && (
               <div className="space-y-3">
                 <div className="flex items-center gap-3 p-3 rounded-2xl border border-border/50 bg-foreground/[0.02]">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] text-foreground/80 border border-border/50 font-semibold text-lg flex-shrink-0">
+                  <span className="inline-flex shrink-0 items-center justify-center size-10 rounded-lg border border-border/70 bg-muted/40 font-semibold text-lg text-foreground/80">
                     {parsed.slide_number || '?'}
-                  </div>
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground truncate">
                       {parsed.slide_title || slideTitle || 'Untitled Slide'}
@@ -213,9 +214,7 @@ export function OcPresentationGenToolView({
                     rel="noopener noreferrer"
                     className="flex items-center gap-3 p-3 rounded-2xl border border-border/50 bg-foreground/[0.02] hover:bg-muted transition-colors"
                   >
-                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] border border-border/50 flex-shrink-0">
-                      <Eye className="w-5 h-5 text-foreground/80" />
-                    </div>
+                    <EntityAvatar icon={Eye} size="lg" />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground">Open Presentation Viewer</p>
                       <p className="text-xs text-muted-foreground font-mono truncate">
@@ -234,9 +233,7 @@ export function OcPresentationGenToolView({
             {/* Success: Export */}
             {parsed?.success && (action === 'export_pdf' || action === 'export_pptx') && (
               <div className="flex items-center gap-3 p-3 rounded-2xl border border-border/50 bg-foreground/[0.02]">
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] border border-border/50 flex-shrink-0">
-                  <Download className="w-5 h-5 text-foreground/80" />
-                </div>
+                <EntityAvatar icon={Download} size="lg" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground">
                     Exported to {action === 'export_pdf' ? 'PDF' : 'PPTX'}
@@ -253,9 +250,9 @@ export function OcPresentationGenToolView({
             {parsed?.success && action === 'validate_slide' && (
               <div className="space-y-3">
                 <div className="flex items-center gap-3 p-3 rounded-2xl border border-border/50 bg-foreground/[0.02]">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] border border-border/50 text-foreground/80 font-semibold text-lg flex-shrink-0">
+                  <span className="inline-flex shrink-0 items-center justify-center size-10 rounded-lg border border-border/70 bg-muted/40 font-semibold text-lg text-foreground/80">
                     {parsed.slide_number || slideNumber || '?'}
-                  </div>
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">
                       Slide {parsed.slide_number || slideNumber || '?'} validated

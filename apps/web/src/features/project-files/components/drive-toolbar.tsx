@@ -17,6 +17,7 @@ import {
   GitPullRequest,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -180,7 +181,7 @@ export function DriveToolbar({
               if (e.key === 'Escape') setIsEditing(false);
             }}
             onBlur={() => setIsEditing(false)}
-            className="flex-1 min-w-0 h-8 px-3 text-sm bg-muted/40 border border-border/60 rounded-lg outline-none focus:ring-1 focus:ring-primary font-mono"
+            className="flex-1 min-w-0 h-8 px-3 text-sm bg-card border rounded-2xl outline-none focus:ring-2 focus:ring-primary/50 font-mono"
             placeholder={homePath}
           />
         ) : (
@@ -338,19 +339,18 @@ export function DriveToolbar({
         {openChangeRequestAction && (
           <>
             <div className="h-4 w-px bg-border/50 mx-1 shrink-0" />
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={openChangeRequestAction.onClick}
               disabled={openChangeRequestAction.disabled}
               title="Open a new change request"
-              className={cn(
-                'inline-flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium cursor-pointer',
-                'transition-colors text-muted-foreground hover:text-foreground hover:bg-muted/60',
-              )}
+              className="h-8 text-xs text-muted-foreground hover:text-foreground"
             >
               <GitPullRequest className="h-3.5 w-3.5" />
               <span>Open CR</span>
-            </button>
+            </Button>
           </>
         )}
 
@@ -358,21 +358,20 @@ export function DriveToolbar({
         {checkpointsToggle && (
           <>
             <div className="h-4 w-px bg-border/50 mx-1 shrink-0" />
-            <button
+            <Button
               type="button"
+              variant={checkpointsToggle.open ? 'secondary' : 'ghost'}
+              size="sm"
               onClick={checkpointsToggle.onToggle}
               title="Toggle Checkpoints panel"
               className={cn(
-                'inline-flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium cursor-pointer',
-                'transition-colors',
-                checkpointsToggle.open
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+                'h-8 text-xs',
+                !checkpointsToggle.open && 'text-muted-foreground hover:text-foreground',
               )}
             >
               <GitCommitHorizontal className="h-3.5 w-3.5" />
               <span>Checkpoints</span>
-            </button>
+            </Button>
           </>
         )}
 
@@ -383,8 +382,10 @@ export function DriveToolbar({
           const count = changeRequestsToggle.openCount ?? 0;
           const hasOpen = count > 0;
           return (
-            <button
+            <Button
               type="button"
+              variant={changeRequestsToggle.open ? 'secondary' : 'ghost'}
+              size="sm"
               onClick={changeRequestsToggle.onToggle}
               title={
                 hasOpen
@@ -392,13 +393,11 @@ export function DriveToolbar({
                   : 'Toggle Change Requests panel'
               }
               className={cn(
-                'inline-flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium cursor-pointer',
-                'transition-colors ml-1',
-                changeRequestsToggle.open
-                  ? 'bg-muted text-foreground'
-                  : hasOpen
-                    ? 'text-foreground hover:bg-muted/60'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+                'h-8 text-xs ml-1',
+                !changeRequestsToggle.open &&
+                  (hasOpen
+                    ? 'text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'),
               )}
             >
               <span className="relative inline-flex">
@@ -412,16 +411,11 @@ export function DriveToolbar({
               </span>
               <span>Change requests</span>
               {hasOpen && (
-                <span
-                  className={cn(
-                    'ml-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full',
-                    'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-[10px] font-semibold tabular-nums',
-                  )}
-                >
+                <Badge variant="success" size="sm" className="ml-0.5 tabular-nums">
                   {count}
-                </span>
+                </Badge>
               )}
-            </button>
+            </Button>
           );
         })()}
       </div>

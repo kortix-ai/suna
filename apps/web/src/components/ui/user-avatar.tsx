@@ -1,25 +1,18 @@
 'use client';
 
+/**
+ * UserAvatar — a person (round). The squared counterpart is <EntityAvatar>.
+ *
+ * Renders the supabase profile picture when one is available (avatar_url /
+ * picture, served with referrerPolicy="no-referrer" so Google-hosted images
+ * load), and falls back to neutral monochrome initials otherwise. People and
+ * things share the same neutral material and size scale — only the shape
+ * differs (round vs square). No colored backgrounds: simplicity is the brand.
+ */
+
 import * as React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-
-const PALETTE = [
-  'oklch(0.72 0.10 25)',
-  'oklch(0.72 0.10 55)',
-  'oklch(0.70 0.10 140)',
-  'oklch(0.70 0.10 180)',
-  'oklch(0.68 0.11 230)',
-  'oklch(0.66 0.12 270)',
-  'oklch(0.68 0.12 300)',
-  'oklch(0.70 0.11 350)',
-] as const;
-
-function hashCode(s: string): number {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
 
 function initialsFromIdentity(name: string | undefined, email: string): string {
   const source = (name || '').trim();
@@ -69,10 +62,6 @@ export function UserAvatar({
     () => initialsFromIdentity(name ?? undefined, email || ''),
     [name, email],
   );
-  const bg = React.useMemo(() => {
-    const key = (email || name || 'anon').toLowerCase();
-    return PALETTE[hashCode(key) % PALETTE.length];
-  }, [email, name]);
 
   return (
     <Avatar
@@ -84,10 +73,7 @@ export function UserAvatar({
       )}
     >
       {avatarUrl ? <AvatarImage src={avatarUrl} alt={name || email} /> : null}
-      <AvatarFallback
-        className="text-white"
-        style={{ backgroundColor: bg }}
-      >
+      <AvatarFallback className="border border-border/70 bg-muted/40 font-semibold text-foreground/80">
         {initials || '?'}
       </AvatarFallback>
     </Avatar>

@@ -6,22 +6,18 @@ import {
   AlertTriangle,
   Check,
   FileWarning,
-  Globe,
   KeyRound,
   Loader2,
-  Lock,
   Pencil,
   Plug,
   Plus,
   Search,
   ShieldAlert,
   Trash2,
-  Users,
   X,
 } from 'lucide-react';
 
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
-import { VisibilityPicker } from '@/components/vault/visibility-picker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -45,12 +41,10 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
   deleteProjectSecret,
-  listProjectAccess,
   listProjectSecrets,
   upsertProjectSecret,
   type ProjectSecret,
   type ProjectSecretsResponse,
-  type ProjectSecretVisibility,
 } from '@/lib/projects-client';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
@@ -64,41 +58,11 @@ interface SecretRow {
   isSet: boolean;
   requirement: Requirement;
   updatedAt: string | null;
-  visibility: ProjectSecretVisibility | null;
-  grantUserIds: string[];
-}
-
-/** Per-row visibility badge. Replaces the one that lived in the deleted
- *  account vault-tab; project secrets use 'everyone' | 'private' | 'select'. */
-function VisibilityBadge({
-  visibility,
-  grantCount,
-}: {
-  visibility: ProjectSecretVisibility;
-  grantCount: number;
-}) {
-  if (visibility === 'everyone') {
-    return (
-      <Badge variant="outline" size="sm" className="gap-1">
-        <Globe className="h-2.5 w-2.5" />
-        Everyone
-      </Badge>
-    );
-  }
-  if (visibility === 'private') {
-    return (
-      <Badge variant="outline" size="sm" className="gap-1">
-        <Lock className="h-2.5 w-2.5" />
-        Only me
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="outline" size="sm" className="gap-1">
-      <Users className="h-2.5 w-2.5" />
-      Select {grantCount}
-    </Badge>
-  );
+  system: boolean;
+  readonly: boolean;
+  purpose: string | null;
+  canRotate: boolean;
+  managedBy: string | null;
 }
 
 export default function ProjectSecretsPage({
@@ -202,11 +166,14 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
     rows.push({
       name,
       secretId: stored?.secret_id ?? null,
-      isSet: Boolean(stored),
+      isSet: stored ? stored.configured ?? true : false,
       requirement,
       updatedAt: stored?.updated_at ?? null,
-      visibility: stored?.visibility ?? null,
-      grantUserIds: stored?.grant_user_ids ?? [],
+      system: Boolean(stored?.system),
+      readonly: Boolean(stored?.readonly),
+      purpose: stored?.purpose ?? null,
+      canRotate: Boolean(stored?.can_rotate),
+      managedBy: stored?.managed_by ?? null,
     });
     seen.add(name);
   }
@@ -217,11 +184,14 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
     rows.push({
       name: item.name,
       secretId: item.secret_id,
-      isSet: true,
+      isSet: item.configured ?? true,
       requirement: null,
       updatedAt: item.updated_at,
-      visibility: item.visibility ?? null,
-      grantUserIds: item.grant_user_ids ?? [],
+      system: Boolean(item.system),
+      readonly: Boolean(item.readonly),
+      purpose: item.purpose ?? null,
+      canRotate: Boolean(item.can_rotate),
+      managedBy: item.managed_by ?? null,
     });
   }
 
@@ -252,20 +222,6 @@ function SecretsCard({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogRow, setDialogRow] = useState<SecretRow | null>(null);
 
-  // Project members power the "select members" visibility option.
-  const membersQuery = useQuery({
-    queryKey: ['project-access', projectId],
-    queryFn: () => listProjectAccess(projectId),
-    staleTime: 30_000,
-  });
-  const members = useMemo(
-    () =>
-      (membersQuery.data?.members ?? []).map((m) => ({
-        user_id: m.user_id,
-        email: m.email,
-      })),
-    [membersQuery.data],
-  );
 
   const remove = useMutation({
     mutationFn: ({ name }: { name: string }) => deleteProjectSecret(projectId, name),
@@ -405,11 +361,24 @@ function SecretsCard({
                           Optional
                         </Badge>
                       )}
+                      {row.system && (
+                        <Badge variant="outline" size="sm">
+                          Managed
+                        </Badge>
+                      )}
                     </>
                   }
                   subtitle={
                     isConfirmingDelete ? (
                       <span className="text-xs text-muted-foreground">Remove this secret?</span>
+                    ) : row.system && row.purpose === 'git_auth' ? (
+                      <span className="truncate text-xs text-muted-foreground">
+                        {row.isSet
+                          ? row.canRotate
+                            ? 'Git clone credential stored for this project'
+                            : 'Git clone credential managed by Kortix'
+                          : 'Add a private git clone credential for this project'}
+                      </span>
                     ) : row.isSet ? (
                       <code className="truncate font-mono text-xs text-muted-foreground">
                         ••••••••
@@ -419,7 +388,7 @@ function SecretsCard({
                         className={cn(
                           'text-xs italic',
                           row.requirement === 'required'
-                            ? 'text-amber-700 dark:text-amber-500'
+                            ? 'text-amber-600 dark:text-amber-400'
                             : 'text-muted-foreground/60',
                         )}
                       >
@@ -429,12 +398,6 @@ function SecretsCard({
                   }
                   trailing={
                     <>
-                      {row.isSet && row.visibility && !isConfirmingDelete && (
-                        <VisibilityBadge
-                          visibility={row.visibility}
-                          grantCount={row.grantUserIds.length}
-                        />
-                      )}
                       <div className="flex w-[88px] flex-shrink-0 items-center justify-end gap-0.5">
                         {isConfirmingDelete ? (
                           <>
@@ -460,6 +423,29 @@ function SecretsCard({
                               <X className="h-3.5 w-3.5" />
                             </Button>
                           </>
+                        ) : row.system && row.purpose === 'git_auth' && row.canRotate ? (
+                          row.isSet ? (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+                              onClick={() => openEdit(row)}
+                              aria-label="Rotate git credential"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => openEdit(row)}
+                            >
+                              Set
+                            </Button>
+                          )
+                        ) : row.isSet && row.readonly ? (
+                          <ShieldAlert className="h-3.5 w-3.5 text-muted-foreground" />
                         ) : row.isSet ? (
                           <>
                             <Button
@@ -506,21 +492,19 @@ function SecretsCard({
         onOpenChange={setDialogOpen}
         projectId={projectId}
         row={dialogRow}
-        members={members}
         onSaved={() => queryClient.invalidateQueries({ queryKey })}
       />
     </div>
   );
 }
 
-// ─── Add / Set / rotate secret dialog (with visibility picker) ───────────────
+// ─── Add / Set / rotate secret dialog ───────────────────────────────────────
 
 function SecretDialog({
   open,
   onOpenChange,
   projectId,
   row,
-  members,
   onSaved,
 }: {
   open: boolean;
@@ -528,7 +512,6 @@ function SecretDialog({
   projectId: string;
   /** null = create a brand-new secret; otherwise set/rotate this row. */
   row: SecretRow | null;
-  members: import('@/components/vault/visibility-picker').VisibilityPickerMember[];
   onSaved: () => void;
 }) {
   // For a manifest-declared row the name is fixed; only free-form adds let the
@@ -536,15 +519,11 @@ function SecretDialog({
   const fixedName = row?.name ?? null;
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
-  const [visibility, setVisibility] = useState<ProjectSecretVisibility>('everyone');
-  const [grantUserIds, setGrantUserIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
     setName(row?.name ?? '');
     setValue('');
-    setVisibility(row?.visibility ?? 'everyone');
-    setGrantUserIds(row?.grantUserIds ?? []);
   }, [open, row]);
 
   const save = useMutation({
@@ -553,14 +532,15 @@ function SecretDialog({
       if (!SECRET_NAME_REGEX.test(finalName)) {
         throw new Error('Use A-Z, 0-9, _ only. Must start with a letter or _. Max 64 chars.');
       }
+      if (!value.trim()) {
+        throw new Error('Value is required.');
+      }
       if (finalName.startsWith('KORTIX_')) {
         throw new Error('KORTIX_* names are reserved for platform variables');
       }
       return upsertProjectSecret(projectId, {
         name: finalName,
         value,
-        visibility,
-        grant_user_ids: visibility === 'select' ? grantUserIds : undefined,
       });
     },
     onSuccess: () => {
@@ -575,10 +555,6 @@ function SecretDialog({
     event.preventDefault();
     if (save.isPending) return;
     if (!fixedName && !name.trim()) return;
-    if (visibility === 'select' && grantUserIds.length === 0) {
-      toast.error('Pick at least one member, or choose another visibility.');
-      return;
-    }
     save.mutate();
   }
 
@@ -596,8 +572,7 @@ function SecretDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Injected as an environment variable into every new session sandbox.
-            Choose who on the project can use it.
+            Runtime environment variable for new session sandboxes.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
@@ -609,7 +584,7 @@ function SecretDialog({
             <Label htmlFor="secret-dialog-name">Name</Label>
             <Input
               id="secret-dialog-name"
-              name="vault-secret-name"
+              name="kortix-secret-name"
               value={fixedName ?? name}
               onChange={(e) =>
                 setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))
@@ -632,7 +607,7 @@ function SecretDialog({
                 <>
                   New value{' '}
                   <span className="text-xs font-normal text-muted-foreground">
-                    (leave blank to keep current)
+                    (replaces current value)
                   </span>
                 </>
               ) : (
@@ -641,7 +616,7 @@ function SecretDialog({
             </Label>
             <Input
               id="secret-dialog-value"
-              name="vault-secret-value"
+              name="kortix-secret-value"
               type="password"
               value={value}
               onChange={(e) => setValue(e.target.value)}
@@ -656,16 +631,6 @@ function SecretDialog({
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Who can use this?</Label>
-            <VisibilityPicker
-              visibility={visibility}
-              onVisibilityChange={setVisibility}
-              grantUserIds={grantUserIds}
-              onGrantsChange={setGrantUserIds}
-              members={members}
-            />
-          </div>
 
           <DialogFooter>
             <Button
@@ -678,7 +643,7 @@ function SecretDialog({
             </Button>
             <Button
               type="submit"
-              disabled={(!fixedName && !name.trim()) || save.isPending}
+              disabled={(!fixedName && !name.trim()) || !value.trim() || save.isPending}
               className="gap-1.5"
             >
               {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -746,15 +711,13 @@ function ManifestStatusBanner({
         title={
           <>
             Couldn't read{' '}
-            <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code>
+            <code className="rounded bg-background px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code>
           </>
         }
       >
         {error && <p className="opacity-80 break-all">{error}</p>}
         <p className="opacity-80">
-          Check the repo is reachable and the server has{' '}
-          <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">KORTIX_GITHUB_TOKEN</code>{' '}
-          set if it's private.
+          Check the repo is reachable and linked through Project settings.
         </p>
       </InfoBanner>
     );
@@ -766,8 +729,8 @@ function ManifestStatusBanner({
     <InfoBanner tone="warning" icon={AlertTriangle} title="Manifest status unavailable">
       <p className="opacity-80">
         The API isn't returning manifest info — restart the API server
-        (<code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">apps/api</code>) to pick up
-        required/optional keys from your <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">kortix.toml</code>.
+        (<code className="rounded bg-background px-1 py-0.5 font-mono">apps/api</code>) to pick up
+        required/optional keys from your <code className="rounded bg-background px-1 py-0.5 font-mono">kortix.toml</code>.
       </p>
     </InfoBanner>
   );

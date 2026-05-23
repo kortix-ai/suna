@@ -14,7 +14,6 @@ import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { parseConnectorGetOutput, type ConnectorGetData } from '@/lib/utils/kortix-tool-output';
-import { cn } from '@/lib/utils';
 
 export function OcConnectorGetToolView({
   toolCall,
@@ -65,17 +64,7 @@ export function OcConnectorGetToolView({
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <Badge 
-                  variant="outline" 
-                  className={cn(
-                    "h-6 py-0 capitalize",
-                    data.source === 'api-key' && 'border-amber-500 text-amber-600 dark:text-amber-400',
-                    data.source === 'cli' && 'border-gray-500 text-gray-600 dark:text-gray-400',
-                    data.source === 'channel' && 'border-emerald-500 text-emerald-600 dark:text-emerald-400',
-                    data.source === 'custom' && 'border-purple-500 text-purple-600 dark:text-purple-400',
-                    data.source === 'file' && 'border-slate-500 text-slate-600 dark:text-slate-400',
-                  )}
-                >
+                <Badge variant="outline" className="h-6 py-0 capitalize">
                   {data.source}
                 </Badge>
               </div>

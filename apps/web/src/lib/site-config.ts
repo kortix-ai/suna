@@ -2,9 +2,9 @@ export const siteConfig = {
   url: process.env.KORTIX_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_URL || 'http://localhost:3000',
   nav: {
     links: [
-      { id: 1, name: 'Home', href: '/' },
       { id: 2, name: 'Use cases', href: '/use-cases' },
       { id: 3, name: 'Technology', href: '/technology' },
+      { id: 4, name: 'Pricing', href: '/pricing' },
     ],
   },
   hero: {

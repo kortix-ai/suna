@@ -137,12 +137,12 @@ function CheckoutContent() {
         }}
       />
 
-      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
         {error ? (
-          <Card className="w-full max-w-md bg-white">
+          <Card className="w-full max-w-md">
             <CardHeader className="text-center">
-              <CardTitle className="text-gray-900">Checkout Error</CardTitle>
-              <CardDescription className="text-gray-600">Unable to load checkout</CardDescription>
+              <CardTitle className="text-foreground">Checkout Error</CardTitle>
+              <CardDescription className="text-muted-foreground">Unable to load checkout</CardDescription>
             </CardHeader>
             <CardContent>
               <Alert variant="destructive">
@@ -155,7 +155,7 @@ function CheckoutContent() {
         ) : isLoading ? (
           <div className="flex flex-col items-center gap-4">
             <KortixLoader size="xlarge" />
-            <p className="text-gray-600 text-sm">Loading secure checkout...</p>
+            <p className="text-muted-foreground text-sm">Loading secure checkout...</p>
           </div>
         ) : (
           // Embedded checkout container
@@ -171,7 +171,7 @@ function CheckoutContent() {
 export default function CheckoutPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <KortixLoader size="large" forceTheme="light" />
       </div>
     }>

@@ -12,6 +12,7 @@ import {
 } from '@/hooks/deployments/use-deployments';
 import { useSecrets } from '@/hooks/secrets/use-secrets';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -53,28 +54,12 @@ const filterTabs: Array<{ label: string; value: DeploymentStatus | undefined }> 
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
-const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
-  <div className="bg-muted/20 rounded-3xl border flex flex-col items-center justify-center py-16 px-4">
-    <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4">
-      <Rocket className="h-6 w-6 text-muted-foreground" />
-    </div>
-    <h3 className="text-base font-semibold text-foreground mb-2">Deploy your first app</h3>
-    <p className="text-sm text-muted-foreground text-center max-w-sm mb-6">
-      Deploy applications to production with a single click. Supports Git repos, inline code, file uploads, and tarballs.
-    </p>
-    <Button onClick={onCreateClick} size="sm">
-      <Plus className="h-4 w-4 mr-2" />
-      New Deployment
-    </Button>
-  </div>
-);
-
 const LoadingSkeleton = () => (
   <div className="space-y-4">
     {[1, 2, 3].map((i) => (
       <div key={i} className="rounded-2xl border dark:bg-card px-5 py-4">
         <div className="flex items-center gap-4">
-          <Skeleton className="h-12 w-12 rounded-xl" />
+          <Skeleton className="h-12 w-12 rounded-2xl" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-4 w-48" />
             <Skeleton className="h-3 w-64" />
@@ -260,15 +245,27 @@ export function DeploymentsPage() {
             <LoadingSkeleton />
           ) : groupedDeployments.length === 0 ? (
             deployments.length === 0 && !statusFilter ? (
-              <EmptyState onCreateClick={handleNewDeployment} />
+              <EmptyState
+                icon={Rocket}
+                title="Deploy your first app"
+                description="Deploy applications to production with a single click. Supports Git repos, inline code, file uploads, and tarballs."
+                action={
+                  <Button onClick={handleNewDeployment} size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Deployment
+                  </Button>
+                }
+              />
             ) : (
-              <div className="bg-muted/20 rounded-3xl border flex flex-col items-center justify-center py-12 px-4">
-                <p className="text-sm text-muted-foreground">
-                  {searchQuery
+              <EmptyState
+                icon={Search}
+                title={searchQuery ? 'No matches' : 'No deployments found'}
+                description={
+                  searchQuery
                     ? `No deployments match "${searchQuery}"`
-                    : `No ${statusFilter || ''} deployments found`}
-                </p>
-              </div>
+                    : `No ${statusFilter || ''} deployments found`
+                }
+              />
             )
           ) : (
             <div className="space-y-4">

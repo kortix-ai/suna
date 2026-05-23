@@ -128,7 +128,7 @@ export function LLMAnalysisPanel() {
               {/* Summary Card */}
               <div className="rounded-2xl border bg-secondary/5 p-5">
                 <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-secondary/10">
+                  <div className="p-2 rounded-2xl bg-secondary/10">
                     <Target className="h-5 w-5 text-secondary" />
                   </div>
                   <div className="flex-1">
@@ -266,9 +266,9 @@ export function LLMAnalysisPanel() {
                         className="group rounded-2xl border bg-card p-4 hover:border-secondary/50 transition-colors"
                       >
                         <div className="flex items-start gap-4">
-                          <div className={cn('p-2 rounded-lg shrink-0', 
-                            rec.priority === 'high' 
-                              ? 'bg-destructive/10 text-destructive' 
+                          <div className={cn('p-2 rounded-2xl shrink-0',
+                            rec.priority === 'high'
+                              ? 'bg-destructive/10 text-destructive'
                               : 'bg-secondary/10 text-secondary'
                           )}>
                             {rec.priority === 'high' ? (

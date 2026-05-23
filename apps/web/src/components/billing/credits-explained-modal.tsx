@@ -11,7 +11,7 @@ import {
   Card,
   CardContent,
 } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { InfoBanner } from '@/components/ui/info-banner';
 
 interface CreditsExplainedModalProps {
   open: boolean;
@@ -21,12 +21,12 @@ interface CreditsExplainedModalProps {
 export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-medium">What are Credits?</DialogTitle>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl max-h-[85vh]">
+        <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
+          <DialogTitle className="text-lg font-semibold tracking-tight">What are Credits?</DialogTitle>
         </DialogHeader>
-        
-        <div className="space-y-8 py-4">
+
+        <div className="space-y-8 overflow-y-auto px-6 py-5">
           {/* Introduction */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -140,10 +140,10 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
             {/* Credit Types Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* Daily Credits */}
-              <Card className="border-blue-500/20 bg-gradient-to-br from-blue-500/5 to-transparent">
+              <Card>
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <RotateCcw className="h-4 w-4 text-blue-500" />
+                    <RotateCcw className="h-4 w-4 text-muted-foreground" />
                     <h3 className="font-semibold text-sm">Daily</h3>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -153,10 +153,10 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
               </Card>
 
               {/* Monthly Credits */}
-              <Card className="border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-transparent">
+              <Card>
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <Clock className="h-4 w-4 text-orange-500" />
+                    <Clock className="h-4 w-4 text-muted-foreground" />
                     <h3 className="font-semibold text-sm">Monthly</h3>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -166,7 +166,7 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
               </Card>
 
               {/* Extra Credits */}
-              <Card className="border-border">
+              <Card>
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Infinity className="h-4 w-4 text-muted-foreground" />
@@ -181,21 +181,15 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
           </div>
 
           {/* Priority Order Info */}
-          <Alert className="border-blue-500/20 bg-blue-500/5">
-            <Info className="h-4 w-4" />
-            <AlertDescription className="text-sm">
-              <strong>Credit priority:</strong> We use expiring credits first (daily → monthly) before extra credits, 
-              so you get the most value from all your credits.
-            </AlertDescription>
-          </Alert>
+          <InfoBanner tone="info" icon={Info}>
+            <strong>Credit priority:</strong> We use expiring credits first (daily → monthly) before extra credits,
+            so you get the most value from all your credits.
+          </InfoBanner>
 
           {/* Refund Policy */}
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription className="text-sm">
-              If a task fails due to a system error, we automatically refund all credits used for that task.
-            </AlertDescription>
-          </Alert>
+          <InfoBanner tone="neutral" icon={Info}>
+            If a task fails due to a system error, we automatically refund all credits used for that task.
+          </InfoBanner>
         </div>
       </DialogContent>
     </Dialog>

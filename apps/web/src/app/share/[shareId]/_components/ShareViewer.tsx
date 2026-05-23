@@ -16,6 +16,7 @@ import {
   Menu,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
   TooltipContent,
@@ -226,9 +227,9 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
         <div className="flex items-center gap-1 min-w-0 flex-1">
           <div className="text-sm font-medium text-muted-foreground flex items-center gap-2 min-w-0">
             <span className="truncate max-w-[140px] sm:max-w-none">{sessionTitle}</span>
-            <span className="text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-md shrink-0 font-medium">
+            <Badge size="sm" variant="secondary" className="shrink-0">
               Shared
-            </span>
+            </Badge>
           </div>
         </div>
 

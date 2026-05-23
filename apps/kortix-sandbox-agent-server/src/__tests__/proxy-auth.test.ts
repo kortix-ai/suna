@@ -11,14 +11,15 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHmac } from 'crypto'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'bun:test'
-import type { Config } from '../config'
+import { loadConfig, type Config } from '../config'
 import type { Opencode } from '../opencode'
 import { buildOpencodeApp } from '../proxy'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import { buildGitAuthArgs, materializeRepo } from '../git'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
@@ -33,9 +34,10 @@ function baseConfig(over: Partial<Config> = {}): Config {
     branchFetchDelaySec: 0.25,
     defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
+    projectId: undefined,
+    apiUrl: undefined,
     repoUrl: undefined,
     branchName: undefined,
-    githubToken: undefined,
     kortixToken: TEST_TOKEN,
     ...over,
   }
@@ -88,6 +90,75 @@ function git(args: string[], cwd?: string) {
 }
 
 describe('daemon proxy auth gate', () => {
+  it('uses KORTIX_TOKEN as the only sandbox auth token', () => {
+    const cfg = loadConfig({
+      KORTIX_TOKEN: TEST_TOKEN,
+      KORTIX_CLI_TOKEN: 'legacy-project-pat-that-must-not-shadow',
+    } as NodeJS.ProcessEnv)
+
+    expect(cfg.kortixToken).toBe(TEST_TOKEN)
+    expect('apiToken' in cfg).toBe(false)
+  })
+
+  it('scopes git auth headers to the project repo host', () => {
+    const encoded = Buffer.from('x-access-token:secret-token').toString('base64')
+
+    expect(buildGitAuthArgs(undefined, undefined)).toEqual([])
+    expect(buildGitAuthArgs('https://git.freestyle.sh/repo-id', 'secret-token')).toEqual([
+      '-c',
+      `http.https://git.freestyle.sh/.extraheader=AUTHORIZATION: basic ${encoded}`,
+    ])
+    expect(buildGitAuthArgs('https://github.com/kortix/suna.git', 'secret-token')).toEqual([
+      '-c',
+      `http.https://github.com/.extraheader=AUTHORIZATION: basic ${encoded}`,
+    ])
+  })
+
+  it('fetches clone credentials from the API v1 project endpoint', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-clone-credential-'))
+    const originalFetch = globalThis.fetch
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+    try {
+      const remote = join(root, 'remote.git')
+      const seed = join(root, 'seed')
+      const target = join(root, 'workspace')
+      git(['init', '--bare', remote])
+      mkdirSync(seed)
+      git(['init'], seed)
+      git(['checkout', '-b', 'main'], seed)
+      writeFileSync(join(seed, 'README.md'), 'v1\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v1'], seed)
+      git(['remote', 'add', 'origin', remote], seed)
+      git(['push', '-u', 'origin', 'main'], seed)
+
+      globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+        const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url
+        requests.push({ url: href, init })
+        return new Response(JSON.stringify({ auth: { token: 'clone-token' } }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }) as unknown as typeof fetch
+
+      await materializeRepo(baseConfig({
+        autoClone: true,
+        projectId: 'project-123',
+        apiUrl: 'http://api.local/v1/router',
+        projectTarget: target,
+        repoUrl: remote,
+        defaultBranch: 'main',
+      }))
+
+      expect(requests).toHaveLength(1)
+      expect(requests[0]!.url).toBe('http://api.local/v1/projects/project-123/git/clone-credential')
+      expect((requests[0]!.init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${TEST_TOKEN}`)
+      expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('v1\n')
+    } finally {
+      globalThis.fetch = originalFetch
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('lets /kortix/health through with no header', async () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode(), Date.now())
     const res = await app.request('/kortix/health')
@@ -102,6 +173,57 @@ describe('daemon proxy auth gate', () => {
     const res = await app.request('/kortix/health')
     const body = (await res.json()) as { auth: string }
     expect(body.auth).toBe('unconfigured')
+  })
+
+  it('reports runtime not ready and blocks OpenCode proxy when repo materialization failed', async () => {
+    const app = buildOpencodeApp(
+      baseConfig({ autoClone: true }),
+      fakeOpencode('ok'),
+      Date.now(),
+      { repoMaterializationError: 'git clone failed: authentication required' },
+    )
+
+    const health = await app.request('/kortix/health')
+    expect(health.status).toBe(200)
+    const healthBody = (await health.json()) as {
+      status: string
+      runtimeReady: boolean
+      repo_ready: boolean
+      boot_error: string
+    }
+    expect(healthBody.status).toBe('error')
+    expect(healthBody.runtimeReady).toBe(false)
+    expect(healthBody.repo_ready).toBe(false)
+    expect(healthBody.boot_error).toContain('git clone failed')
+
+    const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+    const res = await app.request('/session?directory=%2Fworkspace', {
+      headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+    })
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as { error: string; reason: string }
+    expect(body.error).toBe('sandbox runtime not ready')
+    expect(body.reason).toBe('repo_materialization_failed')
+  })
+
+  it('keeps OpenCode proxy disabled when auto-clone is enabled but no repo is present', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-empty-workspace-'))
+    try {
+      const app = buildOpencodeApp(
+        baseConfig({ autoClone: true, projectTarget: root }),
+        fakeOpencode('ok'),
+        Date.now(),
+      )
+      const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+      const res = await app.request('/session?directory=%2Fworkspace', {
+        headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+      })
+      expect(res.status).toBe(503)
+      const body = (await res.json()) as { reason: string }
+      expect(body.reason).toBe('repo_not_materialized')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('rejects proxied request without X-Kortix-User-Context → 401', async () => {
@@ -228,6 +350,34 @@ describe('daemon proxy auth gate', () => {
       const body = (await res.json()) as { ok: boolean; repo: { before: { commit: string }; after: { commit: string } } }
       expect(body.ok).toBe(true)
       expect(body.repo.before.commit).not.toBe(body.repo.after.commit)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not delete an existing workspace when the initial clone fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-clone-fail-'))
+    try {
+      const target = join(root, 'workspace')
+      mkdirSync(target)
+      const marker = join(target, 'keep.txt')
+      writeFileSync(marker, 'do not delete\n')
+
+      let error: Error | null = null
+      try {
+        await materializeRepo(baseConfig({
+          autoClone: true,
+          projectTarget: target,
+          repoUrl: join(root, 'missing.git'),
+          defaultBranch: 'main',
+        }))
+      } catch (err) {
+        error = err as Error
+      }
+
+      expect(error?.message).toContain('git clone failed')
+      expect(readFileSync(marker, 'utf8')).toBe('do not delete\n')
+      expect(existsSync(join(target, '.git'))).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

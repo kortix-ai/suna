@@ -12,7 +12,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
 import { DateTimePicker } from "./date-time-picker";
@@ -64,13 +63,13 @@ export function MaintenanceConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] gap-0 overflow-hidden p-0">
+        <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
+          <DialogTitle className="flex items-center gap-2 text-lg font-semibold tracking-tight">
             {Icon && <Icon className={cn('w-5 h-5', levelConfig?.color)} />}
             Configure {levelConfig?.label || 'Maintenance'}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-sm text-muted-foreground">
             {isNone
               ? 'This will clear all active maintenance notifications.'
               : `Set up the ${levelConfig?.label?.toLowerCase()} notification that users will see.`}
@@ -78,7 +77,7 @@ export function MaintenanceConfigDialog({
         </DialogHeader>
 
         {!isNone && (
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 overflow-y-auto px-6 py-5">
             <div className="space-y-2">
               <Label htmlFor="m-title">Title</Label>
               <Input
@@ -161,15 +160,15 @@ export function MaintenanceConfigDialog({
         )}
 
         {isNone && (
-          <div className="py-4">
+          <div className="px-6 py-5">
             <p className="text-sm text-muted-foreground">
               Clicking save will clear all maintenance notifications and restore normal access.
             </p>
           </div>
         )}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
@@ -180,7 +179,7 @@ export function MaintenanceConfigDialog({
             {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             {isNone ? 'Clear & Save' : 'Activate'}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

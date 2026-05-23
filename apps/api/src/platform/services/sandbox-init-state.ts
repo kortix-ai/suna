@@ -5,9 +5,19 @@ export type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown'
 
 export const SANDBOX_INIT_MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 2_000;
+const SNAPSHOT_BUILDING_MAX_ATTEMPTS = 30;
+const SNAPSHOT_BUILDING_RETRY_DELAY_MS = 10_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isSnapshotStillBuilding(error: unknown): boolean {
+  return /snapshot .+ is building/i.test(errorMessage(error));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -131,7 +141,7 @@ export function buildSandboxInitFailureMetadata(
   attempt: number,
   willRetry: boolean,
 ): Record<string, unknown> {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   const now = new Date().toISOString();
   const next = stripSandboxInitFailureMetadata(metadata);
   if (willRetry) {
@@ -171,17 +181,21 @@ export async function retrySandboxProvisionCreate(
   } = {},
 ): Promise<{ result: ProvisionResult; attempts: number }> {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= SANDBOX_INIT_MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= SNAPSHOT_BUILDING_MAX_ATTEMPTS; attempt++) {
     await hooks.onAttemptStart?.(attempt);
     try {
       const result = await provider.create(createOpts);
       return { result, attempts: attempt };
     } catch (error) {
       lastError = error;
-      const willRetry = attempt < SANDBOX_INIT_MAX_ATTEMPTS;
+      const snapshotStillBuilding = isSnapshotStillBuilding(error);
+      const maxAttempts = snapshotStillBuilding
+        ? SNAPSHOT_BUILDING_MAX_ATTEMPTS
+        : SANDBOX_INIT_MAX_ATTEMPTS;
+      const willRetry = attempt < maxAttempts;
       await hooks.onAttemptFailure?.(attempt, error, willRetry);
       if (!willRetry) throw error;
-      await sleep(RETRY_DELAY_MS);
+      await sleep(snapshotStillBuilding ? SNAPSHOT_BUILDING_RETRY_DELAY_MS : RETRY_DELAY_MS);
     }
   }
   throw lastError instanceof Error ? lastError : new Error('Sandbox initialization failed');

@@ -50,6 +50,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useRightSidebarSafe } from '@/components/ui/sidebar-right-provider';
 import { isDesktop, desktopPlatform } from '@/lib/desktop';
@@ -275,9 +277,9 @@ function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, ge
         {tab.pinned && <Pin className="h-2.5 w-2.5 flex-shrink-0 text-muted-foreground/50 -rotate-[20deg]" />}
         {tab.dirty && <span className="flex-shrink-0 h-1.5 w-1.5 rounded-full bg-amber-500" />}
         {pendingCount > 0 && (
-          <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-[10px] font-medium flex items-center justify-center">
+          <Badge size="sm" variant="warning" className="flex-shrink-0">
             {pendingCount}
-          </span>
+          </Badge>
         )}
         {isActive && (
           <div className="flex-shrink-0 h-1.5 w-1.5 rounded-full bg-primary" />
@@ -302,14 +304,14 @@ function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, ge
       <DropdownMenuContent align="end" className="min-w-[240px] max-w-[340px] max-h-[460px] flex flex-col p-0">
         {tabs.length > 3 && (
           <div className="px-2 pt-2 pb-1">
-            <input
+            <Input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.stopPropagation()}
               placeholder="Filter tabs..."
               autoFocus
-              className="w-full px-2.5 py-1.5 text-xs rounded-md bg-muted/50 border border-border/50 placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+              className="h-8 text-xs"
             />
           </div>
         )}

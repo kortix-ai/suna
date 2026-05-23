@@ -743,7 +743,7 @@ function FiltersPanel({
           {TIER_OPTIONS.map((t) => (
             <label
               key={t.value}
-              className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
+              className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
             >
               <Checkbox
                 checked={filters.tier.includes(t.value)}
@@ -775,7 +775,7 @@ function FiltersPanel({
           {PAYMENT_STATUS_OPTIONS.map((p) => (
             <label
               key={p.value}
-              className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
+              className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
             >
               <Checkbox
                 checked={filters.paymentStatus.includes(p.value)}
@@ -1019,7 +1019,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
                 href={a.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted/40"
+                className="group inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted/40"
               >
                 <ServiceFavicon domain={a.domain} />
                 {a.label}
@@ -1449,7 +1449,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
               href={a.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="group inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/40"
+              className="group inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/40"
             >
               <ServiceFavicon domain={a.domain} />
               {a.label}
@@ -1491,7 +1491,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground shrink-0"
+                    className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground shrink-0"
                     title="Open in Stripe"
                   >
                     <ServiceFavicon domain="stripe.com" className="h-3 w-3" />

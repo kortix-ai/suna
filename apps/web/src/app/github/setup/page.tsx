@@ -10,7 +10,11 @@ import { saveGitHubInstallation } from '@/lib/projects-client';
 
 export default function GitHubSetupPage() {
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Connecting GitHub" />}>
+    <Suspense
+      fallback={
+        <ConnectingScreen forceConnecting minimal title="Connecting GitHub" />
+      }
+    >
       <GitHubSetup />
     </Suspense>
   );
@@ -30,7 +34,9 @@ function GitHubSetup() {
   useEffect(() => {
     if (!isLoading && !user) {
       const currentUrl = new URL(window.location.href);
-      router.replace(`/auth?returnUrl=${encodeURIComponent(currentUrl.pathname + currentUrl.search)}`);
+      router.replace(
+        `/auth?returnUrl=${encodeURIComponent(currentUrl.pathname + currentUrl.search)}`,
+      );
     }
   }, [user, isLoading, router]);
 
@@ -58,8 +64,15 @@ function GitHubSetup() {
       .then((status) => {
         if (cancelled) return;
         setState('done');
-        setMessage(status.owner_login ? `Connected ${status.owner_login}` : 'GitHub connected');
-        window.setTimeout(() => router.replace('/projects?new=1'), 900);
+        setMessage(
+          status.owner_login
+            ? `Connected ${status.owner_login}`
+            : 'GitHub connected',
+        );
+        window.setTimeout(
+          () => router.replace(consumeGitHubSetupReturn() ?? '/projects?new=1'),
+          900,
+        );
       })
       .catch((error: Error) => {
         if (cancelled) return;
@@ -73,10 +86,17 @@ function GitHubSetup() {
   }, [installState, installationId, isLoading, router, setupAction, user]);
 
   if (isLoading || !user) {
-    return <ConnectingScreen forceConnecting minimal title="Connecting GitHub" />;
+    return (
+      <ConnectingScreen forceConnecting minimal title="Connecting GitHub" />
+    );
   }
 
-  const Icon = state === 'saving' ? Loader2 : state === 'done' ? CheckCircle2 : AlertCircle;
+  const Icon =
+    state === 'saving'
+      ? Loader2
+      : state === 'done'
+        ? CheckCircle2
+        : AlertCircle;
 
   return (
     <div className="fixed inset-0 bg-background flex items-center justify-center px-4">
@@ -95,7 +115,10 @@ function GitHubSetup() {
           <p className="text-sm text-muted-foreground">{message}</p>
         </div>
         {state === 'error' ? (
-          <Button onClick={() => router.replace('/projects')} className="gap-1.5">
+          <Button
+            onClick={() => router.replace('/projects')}
+            className="gap-1.5"
+          >
             <Github className="h-4 w-4" />
             Back to projects
           </Button>
@@ -103,4 +126,15 @@ function GitHubSetup() {
       </div>
     </div>
   );
+}
+
+function consumeGitHubSetupReturn(): string | null {
+  try {
+    const value = window.localStorage.getItem('kortix:github_setup_return');
+    window.localStorage.removeItem('kortix:github_setup_return');
+    if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
+    return value;
+  } catch {
+    return null;
+  }
 }

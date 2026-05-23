@@ -1027,6 +1027,7 @@ export default function BrandPage() {
                     There are only two radii: pills (buttons, badges) use <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-full</code>;
                     every container (cards, dialogs, inputs, textareas, selects, info banners, alerts) uses <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-2xl</code>.
                     Never put <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-sm/md/lg/xl</code> on a box.
+                    The <code className="font-mono text-[11px] bg-muted px-1 rounded">destructive</code> variant is reserved for the <strong>one irreversible confirm</strong> (a ConfirmDialog&apos;s primary action, the Danger Zone) — never for routine actions like Log out or Cancel.
                   </ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-6">
@@ -1521,7 +1522,10 @@ export default function BrandPage() {
                 <div id="comp-dropdown" className="mb-12">
                   <ComponentLabel>Dropdown Menu</ComponentLabel>
                   <ComponentDesc>
-                    Contextual menu triggered by a button.
+                    Contextual menu triggered by a button. Rows stay{' '}
+                    <strong>neutral</strong> — even destructive ones like Delete or
+                    Remove. Red is the brake, not the paint: it appears only on the
+                    final confirm button, never on a menu row.
                   </ComponentDesc>
                   <DemoContainer>
                     <DropdownMenu>
@@ -1538,9 +1542,7 @@ export default function BrandPage() {
                         <DropdownMenuItem>Duplicate</DropdownMenuItem>
                         <DropdownMenuItem>Archive</DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive">
-                          Delete
-                        </DropdownMenuItem>
+                        <DropdownMenuItem>Delete</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </DemoContainer>
@@ -2261,7 +2263,10 @@ export default function BrandPage() {
                   surface needs: title, muted count, description, trailing
                   action. Use <code>flush</code> to seat a List edge-to-edge, and{' '}
                   <code>tone=&quot;destructive&quot;</code> for danger zones — no
-                  separate component.
+                  separate component. A danger zone stays calm: a neutral panel
+                  with a faint warm edge and a <strong>neutral</strong> trigger.
+                  Red is the brake, not the paint — it shows up only on the final
+                  confirm (the ConfirmDialog button), never on the panel.
                 </ComponentDesc>
                 <DemoContainer className="space-y-4">
                   <SectionCard
@@ -2285,8 +2290,15 @@ export default function BrandPage() {
                     description="Irreversible actions live here."
                   >
                     <div className="flex items-center justify-between gap-4">
-                      <p className="text-sm text-foreground">Delete this account</p>
-                      <Button variant="destructive" size="sm" className="shrink-0">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">
+                          Delete this account
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Permanently removes the account and all its data.
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm" className="shrink-0">
                         Delete
                       </Button>
                     </div>
@@ -2299,11 +2311,13 @@ export default function BrandPage() {
                 <ComponentLabel>Avatars</ComponentLabel>
                 <ComponentDesc>
                   One rule: <strong>people are round, things are square</strong>.{' '}
-                  <code>UserAvatar</code> renders a circular, deterministically
-                  coloured avatar for a person (by email/name). <code>EntityAvatar</code>{' '}
-                  renders a rounded-square tile for accounts, projects, groups and
-                  other non-person entities — an initial or an icon. Both share the
-                  same size scale so they align on a row.
+                  <code>UserAvatar</code> renders a circular avatar for a person —
+                  the supabase profile picture when present, otherwise{' '}
+                  <strong>neutral monochrome initials</strong> (no coloured
+                  backgrounds). <code>EntityAvatar</code> renders a rounded-square
+                  tile for accounts, projects, groups and other non-person entities
+                  — an initial or an icon. Both share the same neutral material and
+                  size scale so they align on a row.
                 </ComponentDesc>
                 <DemoContainer className="space-y-5">
                   <div className="flex items-center gap-4">

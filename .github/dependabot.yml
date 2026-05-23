@@ -1,0 +1,31 @@
+# Dependabot — automated dependency updates + security PRs.
+# Supports SOC 2 CC7.1 (vulnerability management). Security updates for
+# vulnerable deps are opened regardless of the schedule below.
+version: 2
+updates:
+  # JS/TS dependencies (pnpm uses the npm ecosystem).
+  - package-ecosystem: "npm"
+    directory: "/"
+    # Active development happens on newer-kortix, not the default branch (main).
+    # PRs must target it so they land on the trunk AND get CI-gated (the
+    # typecheck/gitleaks/codeql workflows live on newer-kortix).
+    target-branch: "newer-kortix"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 20
+    labels: ["dependencies"]
+    groups:
+      # Batch low-risk minor/patch bumps into one PR to cut review noise.
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Keep GitHub Actions pinned and current (supply-chain hygiene).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "newer-kortix"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels: ["dependencies", "github-actions"]

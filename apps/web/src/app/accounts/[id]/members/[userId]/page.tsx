@@ -12,8 +12,10 @@ import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { PoliciesTable } from '@/components/iam/policies-table';
 import { PermissionBoundaryCard } from '@/components/iam/permission-boundary-card';
 import {
@@ -141,33 +143,41 @@ export default function MemberDetailPage() {
               )}
             </div>
             <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                  {memberLabel}
-                </h1>
-                {member && (
-                  <div className="mt-1 flex items-center gap-2">
-                    <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-normal">
-                      {ROLE_LABEL[member.account_role] ?? member.account_role}
-                    </Badge>
-                    {member.is_super_admin && (
-                      <Badge className="h-5 gap-1 rounded-md px-1.5 text-[10px] font-normal">
-                        <Shield className="h-2.5 w-2.5" />
-                        Super-admin
+              <div className="flex items-start gap-3">
+                <UserAvatar
+                  email={member?.email ?? memberLabel}
+                  name={member?.email ?? undefined}
+                  size="lg"
+                  className="mt-0.5"
+                />
+                <div>
+                  <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                    {memberLabel}
+                  </h1>
+                  {member && (
+                    <div className="mt-1 flex items-center gap-2">
+                      <Badge variant="outline" size="sm">
+                        {ROLE_LABEL[member.account_role] ?? member.account_role}
                       </Badge>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      Joined {new Date(member.joined_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                )}
+                      {member.is_super_admin && (
+                        <Badge variant="secondary" size="sm" className="gap-1">
+                          <Shield className="h-2.5 w-2.5" />
+                          Super-admin
+                        </Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        Joined {new Date(member.joined_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
               {canPromoteSuperAdmin && memberUserId !== user.id && member?.is_super_admin && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setRevokeConfirmOpen(true)}
-                  className="gap-1.5 text-destructive hover:text-destructive"
+                  className="gap-1.5"
                   disabled={setSuperAdminMutation.isPending}
                 >
                   <ShieldOff className="h-3.5 w-3.5" />
@@ -190,20 +200,15 @@ export default function MemberDetailPage() {
           </div>
 
           {membersQuery.isError && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
-              <p className="text-sm font-medium text-destructive">Failed to load member</p>
-              <p className="mt-1 text-xs text-destructive/80">
-                {(membersQuery.error as Error).message}
-              </p>
-            </div>
+            <InfoBanner tone="destructive" title="Failed to load member">
+              {(membersQuery.error as Error).message}
+            </InfoBanner>
           )}
 
           {!membersQuery.isLoading && !member && memberUserId && (
-            <div className="rounded-xl border border-border/70 bg-card p-6">
-              <p className="text-sm text-muted-foreground">
-                This user is not a member of this account.
-              </p>
-            </div>
+            <InfoBanner tone="neutral">
+              This user is not a member of this account.
+            </InfoBanner>
           )}
 
           {account && member && (

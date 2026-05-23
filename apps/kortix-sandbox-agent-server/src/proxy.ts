@@ -3,7 +3,8 @@ import { Hono } from 'hono'
 import type { Config } from './config'
 import { logger } from './logger'
 import type { Opencode } from './opencode'
-import { createHealthRouter } from './routes/health'
+import { isRepoMaterialized } from './git'
+import { createHealthRouter, type SandboxBootState } from './routes/health'
 import { createRefreshRouter } from './routes/refresh'
 import { createPromptRouter } from './routes/prompt'
 import { createPortProxyRouter } from './routes/port-proxy'
@@ -23,7 +24,12 @@ const STRIP_REQUEST_HEADERS = new Set([
 
 const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection'])
 
-export function buildOpencodeApp(cfg: Config, opencode: Opencode, bootTime: number): Hono {
+export function buildOpencodeApp(
+  cfg: Config,
+  opencode: Opencode,
+  bootTime: number,
+  bootState: SandboxBootState = { repoMaterializationError: null },
+): Hono {
   const app = new Hono()
 
   // The daemon owns a small Kortix-namespaced control surface. Everything else is
@@ -31,7 +37,7 @@ export function buildOpencodeApp(cfg: Config, opencode: Opencode, bootTime: numb
   // a trailing slash doesn't fall through to the reverse proxy.
   // Health bypasses auth — it's how the cloud probes liveness mid-boot.
   const kortixRouter = new Hono()
-  const healthRouter = createHealthRouter(cfg, opencode, bootTime)
+  const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState)
   const refreshRouter = createRefreshRouter(cfg, opencode)
   const promptRouter = createPromptRouter(cfg)
   kortixRouter.route('/health', healthRouter)
@@ -87,6 +93,27 @@ export function buildOpencodeApp(cfg: Config, opencode: Opencode, bootTime: numb
   // attempting a fetch — surfaces the situation clearly to the client and
   // prevents noisy ECONNREFUSED loops.
   app.all('*', async (c) => {
+    if (bootState.repoMaterializationError) {
+      return c.json(
+        {
+          error: 'sandbox runtime not ready',
+          reason: 'repo_materialization_failed',
+          message: bootState.repoMaterializationError,
+        },
+        503,
+      )
+    }
+
+    if (cfg.autoClone && !(await isRepoMaterialized(cfg.projectTarget))) {
+      return c.json(
+        {
+          error: 'sandbox runtime not ready',
+          reason: 'repo_not_materialized',
+        },
+        503,
+      )
+    }
+
     if (opencode.getState() !== 'ok') {
       return c.json(
         {
@@ -143,8 +170,13 @@ export type ProxyServer = {
   port: number
 }
 
-export function startProxy(cfg: Config, opencode: Opencode, bootTime: number): ProxyServer {
-  const app = buildOpencodeApp(cfg, opencode, bootTime)
+export function startProxy(
+  cfg: Config,
+  opencode: Opencode,
+  bootTime: number,
+  bootState: SandboxBootState = { repoMaterializationError: null },
+): ProxyServer {
+  const app = buildOpencodeApp(cfg, opencode, bootTime, bootState)
 
   const server = Bun.serve({
     port: cfg.servicePort,

@@ -15,9 +15,12 @@ import {
   X,
   Loader2,
   Search,
+  KeyRound,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { List } from '@/components/ui/list';
 import { useSecrets, useSetSecret, useDeleteSecret } from '@/hooks/secrets/use-secrets';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -113,7 +116,7 @@ export function SecretsManager() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter keys..."
-              className="h-8 pl-8 text-xs shadow-none"
+              className="h-8 pl-8 text-xs"
             />
           </div>
           <Button
@@ -133,14 +136,14 @@ export function SecretsManager() {
               value={newKey}
               onChange={(e) => setNewKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
               placeholder="KEY_NAME"
-              className="h-7 text-xs font-mono w-[220px] shadow-none"
+              className="h-7 text-xs font-mono w-[220px]"
               autoFocus
             />
             <Input type="text"
               value={newValue}
               onChange={(e) => setNewValue(e.target.value)}
               placeholder="value"
-              className="h-7 text-xs font-mono flex-1 shadow-none"
+              className="h-7 text-xs font-mono flex-1"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleAddNew();
                 if (e.key === 'Escape') { setAddingNew(false); setNewKey(''); setNewValue(''); }
@@ -165,14 +168,14 @@ export function SecretsManager() {
         )}
 
         {/* Rows */}
-        <div>
+        <List className="divide-y-0">
           {rows.map((row) => {
             const isEditing = editingKey === row.key;
             const isRevealed = revealedKeys.has(row.key);
             const isConfirmingDelete = confirmDeleteKey === row.key;
 
             return (
-              <div
+              <li
                 key={row.key}
                 className="flex items-center gap-3 px-3 py-2 group hover:bg-muted/30 transition-colors"
               >
@@ -191,7 +194,7 @@ export function SecretsManager() {
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
                       placeholder="Enter value..."
-                      className="h-7 text-xs font-mono shadow-none"
+                      className="h-7 text-xs font-mono"
                       autoFocus
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') handleSave(row.key, editValue);
@@ -209,12 +212,14 @@ export function SecretsManager() {
                         {row.hasValue ? (isRevealed ? row.value : '········') : 'empty'}
                       </code>
                       {row.hasValue && (
-                        <button
+                        <Button
+                          size="icon"
+                          variant="ghost"
                           onClick={() => toggleReveal(row.key)}
-                          className="text-muted-foreground/50 hover:text-foreground flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="h-6 w-6 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           {isRevealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                        </button>
+                        </Button>
                       )}
                     </div>
                   )}
@@ -273,16 +278,21 @@ export function SecretsManager() {
                     </>
                   )}
                 </div>
-              </div>
+              </li>
             );
           })}
+        </List>
 
-          {rows.length === 0 && !addingNew && (
-            <div className="px-3 py-12 text-center text-xs text-muted-foreground">
-              {search ? 'No matching secrets.' : 'No secrets configured yet.'}
-            </div>
-          )}
-        </div>
+        {rows.length === 0 && !addingNew && (
+          <EmptyState
+            icon={KeyRound}
+            size="sm"
+            title={search ? 'No matches' : 'No secrets yet'}
+            description={
+              search ? 'No secrets match your filter.' : 'No secrets configured yet.'
+            }
+          />
+        )}
       </div>
     </div>
   );

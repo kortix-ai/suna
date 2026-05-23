@@ -1,9 +1,17 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Check,
+  ChevronsUpDown,
+  ExternalLink,
+  GitBranch,
+  Github,
+  Loader2,
+  Plus,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -12,10 +20,34 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { Label } from '@/components/ui/label';
-import { provisionProject } from '@/lib/projects-client';
+import { List, ListRow } from '@/components/ui/list';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  linkRepository,
+  type GitHubRepository,
+  listGitHubInstallations,
+  listGitHubRepositories,
+  provisionProject,
+} from '@/lib/projects-client';
+import { cn } from '@/lib/utils';
 
 interface ProjectCreateModalProps {
   open: boolean;
@@ -23,88 +55,597 @@ interface ProjectCreateModalProps {
   accountId: string | null;
 }
 
+function rememberGitHubSetupReturn(path: string) {
+  try {
+    window.localStorage.setItem('kortix:github_setup_return', path);
+  } catch {
+    // Non-critical: the setup page still falls back to the projects flow.
+  }
+}
+
 /**
- * New project = a managed Kortix git repo (Freestyle) seeded with the starter.
- * No GitHub account, no repo-name uniqueness, no import dance — the project is
- * live and bootable the moment it's created. (Bringing your own / external
- * repos with auth is handled separately via the vault-backed git remote model,
- * not this dialog.)
+ * New project defaults to a managed Kortix git repo, with an explicit GitHub
+ * import path backed by the GitHub App installation.
  */
-export function ProjectCreateModal({ open, onOpenChange, accountId }: ProjectCreateModalProps) {
+export function ProjectCreateModal({
+  open,
+  onOpenChange,
+  accountId,
+}: ProjectCreateModalProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  const [mode, setMode] = useState<'managed' | 'github'>('managed');
   const [newName, setNewName] = useState('');
+  const [selectedInstallationId, setSelectedInstallationId] = useState('');
+  const [selectedRepo, setSelectedRepo] = useState('');
+  const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
 
   function resetAndClose() {
+    setMode('managed');
     setNewName('');
+    setSelectedInstallationId('');
+    setSelectedRepo('');
     onOpenChange(false);
   }
 
   const createMutation = useMutation({
     mutationFn: provisionProject,
     onSuccess: (project) => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
       toast.success('Project created');
+      router.replace(`/projects/${project.project_id}`);
       resetAndClose();
-      router.push(`/projects/${project.project_id}`);
+      void queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to create project');
     },
   });
 
+  const githubInstallationsQuery = useQuery({
+    queryKey: ['github-installations', accountId],
+    queryFn: () => listGitHubInstallations(accountId!),
+    enabled: open && mode === 'github' && !!accountId,
+    staleTime: 0,
+  });
+
+  const githubInstallations =
+    githubInstallationsQuery.data?.installations ?? [];
+  const selectedInstallation =
+    githubInstallations.find(
+      (installation) => installation.installation_id === selectedInstallationId,
+    ) ?? null;
+
+  const githubReposQuery = useQuery({
+    queryKey: ['github-repositories', accountId, selectedInstallationId],
+    queryFn: () => listGitHubRepositories(accountId!, selectedInstallationId),
+    enabled:
+      open && mode === 'github' && !!accountId && !!selectedInstallationId,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (!open || mode !== 'github') return;
+    if (
+      selectedInstallationId &&
+      githubInstallations.some(
+        (installation) =>
+          installation.installation_id === selectedInstallationId,
+      )
+    ) {
+      return;
+    }
+    const first = githubInstallations[0]?.installation_id;
+    setSelectedInstallationId(first ?? '');
+  }, [githubInstallations, mode, open, selectedInstallationId]);
+
+  useEffect(() => {
+    setSelectedRepo('');
+  }, [selectedInstallationId]);
+
+  const linkMutation = useMutation({
+    mutationFn: linkRepository,
+    onSuccess: (result) => {
+      toast.success('Repository linked');
+      router.replace(`/projects/${result.project.project_id}`);
+      resetAndClose();
+      void queryClient.invalidateQueries({ queryKey: ['projects'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to link repository');
+    },
+  });
+
   function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!accountId) return toast.error('Select an account first');
-    const name = newName.trim();
+    // Strip disallowed characters instead of rejecting; the backend derives a
+    // safe repo slug from whatever clean name we send.
+    const name = newName.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
     if (!name) return toast.error('Project name is required');
-    if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
-      return toast.error('Use letters, numbers, spaces, hyphens, underscores, or dots only');
-    }
     createMutation.mutate({ account_id: accountId, name });
   }
 
-  const submitting = createMutation.isPending;
+  function handleLinkGitHub(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!accountId) return toast.error('Select an account first');
+    const repoFullName = selectedRepo.trim();
+    if (!selectedInstallationId) return toast.error('Select a GitHub account');
+    if (!repoFullName) return toast.error('Select a GitHub repository');
+    linkMutation.mutate({
+      account_id: accountId,
+      installation_id: selectedInstallationId,
+      repo_full_name: repoFullName,
+      ...(newName.trim() ? { name: newName.trim() } : {}),
+    });
+  }
+
+  async function handleConnectGitHub() {
+    if (!accountId) {
+      toast.error('Select an account first');
+      return;
+    }
+
+    setIsConnectingGitHub(true);
+    try {
+      const result = await githubInstallationsQuery.refetch();
+      if (result.error) throw result.error;
+
+      const freshInstallUrl = result.data?.install_url;
+      if (!freshInstallUrl) {
+        toast.error(
+          result.data?.configured === false
+            ? 'GitHub App is not configured'
+            : 'GitHub install URL unavailable',
+        );
+        return;
+      }
+
+      rememberGitHubSetupReturn('/projects?new=1');
+      window.location.assign(freshInstallUrl);
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to start GitHub setup');
+    } finally {
+      setIsConnectingGitHub(false);
+    }
+  }
+
+  const submitting = createMutation.isPending || linkMutation.isPending;
+  const installUrl = githubInstallationsQuery.data?.install_url;
+  const repos = githubReposQuery.data?.repositories ?? [];
+  const selectedRepository = repos.find(
+    (repo) => repo.full_name === selectedRepo,
+  );
 
   return (
-    <Dialog open={open} onOpenChange={(o) => (!o ? resetAndClose() : onOpenChange(o))}>
-      <DialogContent className="sm:max-w-md p-0 overflow-hidden gap-0">
-        <DialogHeader className="px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">New project</DialogTitle>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => (!o ? resetAndClose() : onOpenChange(o))}
+    >
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
+          <DialogTitle className="text-lg font-semibold tracking-tight">
+            New project
+          </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            A fresh workspace on Kortix — its own git repo, ready in seconds.
+            Start with a private managed repo. Existing GitHub repos can be
+            imported instead.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleCreate} className="px-6 pb-6 space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="new-name" className="text-xs font-medium text-muted-foreground">
-              Project name
-            </Label>
-            <Input
-              id="new-name"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="my-agi-company"
-              autoCapitalize="none"
-              autoCorrect="off"
-              className="font-mono text-sm h-10"
-              autoFocus
-            />
-          </div>
+        {mode === 'managed' ? (
+          <form onSubmit={handleCreate}>
+            <div className="space-y-5 px-6 py-5">
+              <InfoBanner
+                tone="neutral"
+                icon={GitBranch}
+                title="Kortix-managed repository"
+              >
+                Creates a private managed repo, seeds the starter project, and
+                builds the first sandbox snapshot from the default branch.
+              </InfoBanner>
 
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <Button type="button" variant="ghost" onClick={resetAndClose} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button type="submit" className="gap-1.5" disabled={submitting || !accountId}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Create project
-            </Button>
-          </div>
-        </form>
+              <div className="space-y-1.5">
+                <Label htmlFor="new-name">Project name</Label>
+                <Input
+                  id="new-name"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="my-agi-company"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  className="font-mono"
+                  autoFocus
+                />
+              </div>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 w-fit gap-1.5 px-2 text-xs text-muted-foreground"
+                disabled={submitting}
+                onClick={() => setMode('github')}
+              >
+                <Github className="h-3.5 w-3.5" />
+                Import existing GitHub repo
+              </Button>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={resetAndClose}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="gap-1.5"
+                disabled={submitting || !accountId}
+              >
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                Create project
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleLinkGitHub}>
+            <div className="min-h-[430px] space-y-5 px-6 py-5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-base font-semibold">
+                    Import GitHub repository
+                  </h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Pick a connected GitHub account, then search its repos.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={submitting}
+                  onClick={() => setMode('managed')}
+                >
+                  <GitBranch className="h-4 w-4" />
+                  Managed repo
+                </Button>
+              </div>
+
+              {githubInstallationsQuery.isLoading ? (
+                <div className="flex h-28 items-center justify-center text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading GitHub connections
+                </div>
+              ) : githubInstallations.length === 0 ? (
+                <InfoBanner
+                  tone={
+                    githubInstallationsQuery.data?.configured === false
+                      ? 'warning'
+                      : 'info'
+                  }
+                  icon={Github}
+                  title="Connect the Kortix GitHub App"
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={
+                        isConnectingGitHub ||
+                        (!installUrl && githubInstallationsQuery.isFetching)
+                      }
+                      onClick={handleConnectGitHub}
+                    >
+                      {isConnectingGitHub ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Github className="h-4 w-4" />
+                      )}
+                      {isConnectingGitHub ? 'Connecting' : 'Connect'}
+                    </Button>
+                  }
+                >
+                  Kortix uses the GitHub App to list repositories and mint
+                  short-lived clone tokens. Git credentials are not stored as
+                  project environment secrets.
+                </InfoBanner>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label htmlFor="github-installation">Git account</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                        disabled={isConnectingGitHub}
+                        onClick={handleConnectGitHub}
+                      >
+                        {isConnectingGitHub ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Github className="h-4 w-4" />
+                        )}
+                        Add account
+                      </Button>
+                    </div>
+                    <Select
+                      value={selectedInstallationId}
+                      onValueChange={setSelectedInstallationId}
+                      disabled={submitting || githubInstallations.length < 2}
+                    >
+                      <SelectTrigger
+                        id="github-installation"
+                        className="w-full"
+                      >
+                        <SelectValue placeholder="Select a GitHub account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {githubInstallations.map((installation) => (
+                          <SelectItem
+                            key={installation.installation_id}
+                            value={installation.installation_id ?? ''}
+                          >
+                            <Github className="h-4 w-4" />
+                            <span>{installation.owner_login}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="min-h-4">
+                      <InlineMeta>
+                        {selectedInstallation?.owner_type ? (
+                          <span>{selectedInstallation.owner_type}</span>
+                        ) : null}
+                        {selectedInstallation?.repository_selection ? (
+                          <span>
+                            {selectedInstallation.repository_selection ===
+                            'selected'
+                              ? 'Selected repositories'
+                              : 'All repositories'}
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+                          onClick={() =>
+                            router.push(`/accounts/${accountId}?tab=git`)
+                          }
+                        >
+                          Manage Git connections
+                        </button>
+                      </InlineMeta>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="github-repo">Repository</Label>
+                    <RepositoryPicker
+                      value={selectedRepo}
+                      onValueChange={setSelectedRepo}
+                      repos={repos}
+                      loading={githubReposQuery.isLoading}
+                      disabled={githubReposQuery.isLoading || submitting}
+                    />
+                    <div className="min-h-4">
+                      {selectedRepository ? (
+                        <InlineMeta>
+                          <span>{selectedRepository.default_branch}</span>
+                          <span>
+                            {selectedRepository.private ? 'Private' : 'Public'}
+                          </span>
+                          <span className="font-mono">
+                            {selectedRepository.full_name}
+                          </span>
+                        </InlineMeta>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {repos.length === 0 && !githubReposQuery.isLoading ? (
+                    <EmptyState
+                      icon={Github}
+                      title="No repositories available"
+                      description="Update the GitHub App installation to grant Kortix access to at least one repository."
+                      size="sm"
+                      action={
+                        selectedInstallation?.installation_url ? (
+                          <Button
+                            asChild
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                          >
+                            <a
+                              href={selectedInstallation.installation_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              Configure
+                            </a>
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+                  ) : null}
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="github-project-name">Project name</Label>
+                    <Input
+                      id="github-project-name"
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      placeholder="Use repository name"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={resetAndClose}
+                disabled={submitting || isConnectingGitHub}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="gap-1.5"
+                disabled={
+                  submitting ||
+                  !accountId ||
+                  !selectedInstallationId ||
+                  !selectedRepo
+                }
+              >
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Github className="h-4 w-4" />
+                )}
+                Import repo
+              </Button>
+            </div>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function RepositoryPicker({
+  value,
+  repos,
+  loading,
+  disabled,
+  onValueChange,
+}: {
+  value: string;
+  repos: GitHubRepository[];
+  loading: boolean;
+  disabled: boolean;
+  onValueChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const selectedRepository = repos.find((repo) => repo.full_name === value);
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredRepos = normalizedSearch
+    ? repos.filter((repo) =>
+        [repo.full_name, repo.name, repo.default_branch, repo.description ?? '']
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedSearch),
+      )
+    : repos;
+
+  useEffect(() => {
+    if (!open) setSearch('');
+  }, [open]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen} modal={false}>
+      <PopoverTrigger asChild>
+        <Button
+          id="github-repo"
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className="h-10 w-full justify-between gap-2 px-3 font-normal"
+        >
+          <span
+            className={cn(
+              'min-w-0 truncate text-left',
+              !selectedRepository && 'text-muted-foreground',
+            )}
+          >
+            {loading
+              ? 'Loading repositories...'
+              : (selectedRepository?.full_name ?? 'Search repositories')}
+          </span>
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="start"
+        className="w-[var(--radix-popover-trigger-width)] overflow-hidden p-0"
+      >
+        <div className="border-b border-border/60 p-2">
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search repositories..."
+            autoCapitalize="none"
+            autoCorrect="off"
+            autoFocus
+          />
+        </div>
+        {filteredRepos.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            No repositories found
+          </div>
+        ) : (
+          <List className="max-h-[min(50vh,360px)] overflow-y-auto">
+            {filteredRepos.map((repo) => {
+              const selected = repo.full_name === value;
+              return (
+                <ListRow
+                  key={repo.id}
+                  onClick={() => {
+                    onValueChange(repo.full_name);
+                    setOpen(false);
+                  }}
+                  leading={
+                    <Check
+                      className={cn(
+                        'h-4 w-4',
+                        selected ? 'opacity-100' : 'opacity-0',
+                      )}
+                    />
+                  }
+                  title={<span className="font-mono">{repo.full_name}</span>}
+                  badges={
+                    repo.private ? (
+                      <Badge variant="outline" size="sm">
+                        Private
+                      </Badge>
+                    ) : null
+                  }
+                  subtitle={
+                    <InlineMeta>
+                      <span>{repo.default_branch}</span>
+                      {repo.description ? (
+                        <span className="truncate">{repo.description}</span>
+                      ) : null}
+                    </InlineMeta>
+                  }
+                  className={cn(selected && 'bg-muted/50')}
+                />
+              );
+            })}
+          </List>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }

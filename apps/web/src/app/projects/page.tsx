@@ -98,7 +98,7 @@ function ProjectCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 rounded-md bg-background/80 backdrop-blur text-muted-foreground hover:bg-background hover:text-foreground"
+              className="h-7 w-7 bg-background/80 backdrop-blur text-muted-foreground hover:bg-background hover:text-foreground"
               onClick={(e) => e.stopPropagation()}
               aria-label="Project actions"
             >
@@ -111,7 +111,7 @@ function ProjectCard({
             <DropdownMenuItem
               onSelect={onArchive}
               disabled={archiving || !canManageProject}
-              className="gap-2 text-destructive focus:text-destructive"
+              className="gap-2 text-muted-foreground focus:text-foreground"
             >
               {archiving ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -204,7 +204,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <AppHeader user={user} />
+      <AppHeader user={user} breadcrumb="Projects" />
       <main className="flex-1 px-4 py-10 sm:py-12">
         <div className="mx-auto w-full max-w-6xl space-y-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

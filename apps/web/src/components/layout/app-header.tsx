@@ -4,8 +4,9 @@
  * AppHeader — the canonical top bar used outside the (dashboard) shell.
  *
  * Layout:
- *  - LEFT:  KortixLogo + ProjectSwitcher (which project, scoped to account).
- *  - RIGHT: optional `actions` slot + UserMenu (account · you + settings).
+ *  - LEFT:  KortixLogo + AccountSwitcher (which account / workspace) + an
+ *           optional `breadcrumb` crumb for the current section ("Projects").
+ *  - RIGHT: optional `actions` slot + UserMenu (you + settings).
  *
  * Variants:
  *  - default  — renders as an in-flow header (use inside a flex column page).
@@ -14,34 +15,34 @@
  */
 
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
 import { ArrowLeftRight } from 'lucide-react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { UserMenu } from '@/components/layout/user-menu';
-import { ProjectSwitcher } from '@/components/layout/project-switcher';
+import { AccountSwitcher } from '@/components/layout/account-switcher';
 import { CommandPalette } from '@/components/command-palette';
 import { cn } from '@/lib/utils';
 
 export function AppHeader({
   user,
   leading,
+  breadcrumb,
   actions,
   variant = 'default',
   logoHref = '/projects',
 }: {
   user: User;
   leading?: React.ReactNode;
+  /** Current-section crumb shown after the account pill (e.g. "Projects"). */
+  breadcrumb?: React.ReactNode;
   actions?: React.ReactNode;
   variant?: 'default' | 'overlay';
   /** Where the logo navigates on click. Defaults to /projects (the main app
    * landing). Pass an explicit href to override on a specific surface. */
   logoHref?: string;
 }) {
-  const pathname = usePathname();
-  const onProjectsRoute = pathname?.startsWith('/projects') ?? false;
-
   const displayName =
     (user.user_metadata?.name as string | undefined) ||
     user.email?.split('@')[0] ||
@@ -73,12 +74,17 @@ export function AppHeader({
         >
           <KortixLogo size={20} />
         </Link>
-        {/* Vercel-style breadcrumb: the project switcher (account context
-            lives in the Account·You menu), separated by a skewed divider. */}
-        {onProjectsRoute && (
+        {/* Vercel-style breadcrumb: the account is the workspace your projects
+            live under, so it's the first pill (which project lives in the
+            project shell's sidebar). An optional section crumb follows. */}
+        <BreadcrumbDivider />
+        <AccountSwitcher variant="header" />
+        {breadcrumb != null && (
           <>
             <BreadcrumbDivider />
-            <ProjectSwitcher variant="header" />
+            <span className="select-none px-2 text-[13px] font-medium text-foreground">
+              {breadcrumb}
+            </span>
           </>
         )}
         {leading}

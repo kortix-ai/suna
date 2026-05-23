@@ -3,10 +3,12 @@ import { getTraceHeaders } from '../lib/request-context';
 
 const GITHUB_API = 'https://api.github.com';
 
-// 'managed' = a Kortix-managed Freestyle git token (not GitHub). It rides the
-// same auth context because callers only consume `.token` for git transport;
-// GitHub API calls (ghFetch) are only made for actual GitHub repos.
-export type GitHubAuthSource = 'app_installation' | 'pat' | 'managed';
+// 'managed' = a Kortix-managed Freestyle git token (not GitHub).
+// 'project_credential' = provider-neutral git credential stored outside
+// user-readable runtime secrets.
+// Both ride this auth context because callers only consume `.token` for git
+// transport; GitHub API calls (ghFetch) are only made for actual GitHub repos.
+export type GitHubAuthSource = 'app_installation' | 'pat' | 'managed' | 'project_credential';
 
 export interface GitHubAuthContext {
   token: string;
@@ -26,6 +28,19 @@ export interface GitHubRepo {
   ssh_url: string;
   default_branch: string;
   description: string | null;
+}
+
+export interface GitHubInstallationRepositories {
+  total_count: number;
+  repositories: GitHubRepo[];
+}
+
+export function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | null {
+  const m =
+    repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i) ??
+    repoUrl.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i);
+  if (!m) return null;
+  return { owner: m[1]!, repo: m[2]! };
 }
 
 export interface GitHubInstallationToken {
@@ -271,6 +286,43 @@ export async function createInstallationToken(installationId: string): Promise<G
   );
 }
 
+export async function listInstallationRepositories(
+  installationId: string,
+): Promise<GitHubRepo[]> {
+  const token = await createInstallationToken(installationId);
+  const perPage = 100;
+  const repositories: GitHubRepo[] = [];
+  let page = 1;
+  let totalCount: number | null = null;
+
+  do {
+    const body = await ghFetch<GitHubInstallationRepositories>(
+      `/installation/repositories?per_page=${perPage}&page=${page}`,
+      { method: 'GET' },
+      { token: token.token },
+    );
+    totalCount = body.total_count;
+    const pageRepositories = body.repositories ?? [];
+    if (pageRepositories.length === 0) break;
+    repositories.push(...pageRepositories);
+    page += 1;
+  } while (totalCount !== null && repositories.length < totalCount);
+
+  return repositories;
+}
+
+export async function getRepo(opts: {
+  owner: string;
+  repo: string;
+  auth?: Pick<GitHubAuthContext, 'token'>;
+}): Promise<GitHubRepo> {
+  return ghFetch<GitHubRepo>(
+    `/repos/${encodeURIComponent(opts.owner)}/${encodeURIComponent(opts.repo)}`,
+    { method: 'GET' },
+    opts.auth,
+  );
+}
+
 async function resolveDefaultOwner(auth?: GitHubAuthContext): Promise<{ owner: string; isOrg: boolean }> {
   if (auth?.owner) {
     return { owner: auth.owner, isOrg: auth.ownerType !== 'User' };
@@ -309,6 +361,41 @@ export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
     method: 'POST',
     body: JSON.stringify(body),
   }, input.auth);
+}
+
+export async function getBranchCommitSha(opts: {
+  owner: string;
+  repo: string;
+  branch: string;
+  auth?: Pick<GitHubAuthContext, 'token'>;
+}): Promise<string> {
+  const ref = encodeURIComponent(`heads/${opts.branch}`);
+  const body = await ghFetch<{ object?: { sha?: string; type?: string } }>(
+    `/repos/${opts.owner}/${opts.repo}/git/ref/${ref}`,
+    undefined,
+    opts.auth,
+  );
+  const sha = body.object?.sha;
+  if (!sha || !/^[0-9a-f]{40}$/i.test(sha)) {
+    throw new Error(`GitHub branch ${opts.branch} did not resolve to a commit SHA`);
+  }
+  return sha;
+}
+
+export async function createBranchRef(opts: {
+  owner: string;
+  repo: string;
+  branch: string;
+  sha: string;
+  auth?: Pick<GitHubAuthContext, 'token'>;
+}): Promise<void> {
+  await ghFetch(`/repos/${opts.owner}/${opts.repo}/git/refs`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ref: `refs/heads/${opts.branch}`,
+      sha: opts.sha,
+    }),
+  }, opts.auth);
 }
 
 /**

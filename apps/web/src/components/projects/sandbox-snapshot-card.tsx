@@ -6,6 +6,7 @@ import { useMemo } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { List } from '@/components/ui/list';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   listProjectSnapshots,
@@ -262,7 +263,7 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
               it typically completes within a few minutes.
             </p>
           ) : (
-            <ul className="divide-y divide-border/50 rounded-2xl border border-border/60">
+            <List className="rounded-2xl border border-border/60">
               {data.items.slice(0, 10).map((snap) => (
                 <li key={snap.snapshot_row_id} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
                   <code className="font-mono text-xs">{shortSha(snap.commit_sha)}</code>
@@ -285,7 +286,7 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
                   )}
                 </li>
               ))}
-            </ul>
+            </List>
           )}
         </div>
       </div>

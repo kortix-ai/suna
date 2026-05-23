@@ -32,6 +32,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -45,7 +46,7 @@ import {
   IconMore,
   IconUsers,
 } from '@/components/ui/kortix-icons';
-import { User } from 'lucide-react';
+import { User, AlertCircle } from 'lucide-react';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -148,11 +149,11 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
           <IconLoader className="h-4 w-4 animate-spin" /> Loading team…
         </div>
       ) : membersQuery.error ? (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+        <InfoBanner tone="warning" icon={AlertCircle} title="Failed to load members">
           {membersQuery.error instanceof Error
             ? membersQuery.error.message
             : 'Failed to load members.'}
-        </div>
+        </InfoBanner>
       ) : members.length === 0 && pending.length === 0 ? (
         <EmptyState
           icon={IconUsers}
@@ -339,7 +340,7 @@ function PendingSection({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="text-muted-foreground hover:text-destructive h-7 w-7"
+                    className="text-muted-foreground h-7 w-7"
                     onClick={() => onRevoke(invite)}
                     aria-label="Revoke invite"
                   >
@@ -436,10 +437,7 @@ function MemberRowActions({
         {removable ? (
           <>
             {roleEditable ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuItem
-              onSelect={onRemove}
-              className="focus:text-destructive focus:bg-destructive/10"
-            >
+            <DropdownMenuItem onSelect={onRemove}>
               <IconDelete className="h-3.5 w-3.5" />
               Remove
             </DropdownMenuItem>

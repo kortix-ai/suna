@@ -5,6 +5,7 @@ import { materializeRepo } from './git'
 import { logger } from './logger'
 import { createOpencodeSupervisor, waitForOpencodeReady } from './opencode'
 import { startProxy } from './proxy'
+import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 
 // Pin file for the opencode session created from KORTIX_INITIAL_PROMPT.
@@ -16,6 +17,7 @@ export const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
 async function main() {
   const bootTime = Date.now()
   const cfg = loadConfig()
+  const bootState: SandboxBootState = { repoMaterializationError: null }
   logger.info('[boot] kortix-sandbox-agent-server starting', {
     servicePort: cfg.servicePort,
     opencodeInternalPort: cfg.opencodeInternalPort,
@@ -26,8 +28,9 @@ async function main() {
     try {
       await materializeRepo(cfg)
     } catch (err) {
-      // Repo materialization failures are loud but non-fatal — the daemon
-      // can still serve /kortix/health so callers can diagnose the failure.
+      // Keep the daemon up so /kortix/health can explain the boot failure,
+      // but do not present OpenCode as usable against an empty workspace.
+      bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
       logger.error('[boot] repo materialization failed', err)
     }
   }
@@ -41,14 +44,20 @@ async function main() {
   // /kortix/health will report `opencode: starting` and the reverse proxy will
   // return 503 instead of crashing the daemon. This is what lets us boot
   // locally (where the opencode binary may be missing) for smoke tests.
-  await opencode.start()
+  if (bootState.repoMaterializationError) {
+    logger.warn('[boot] skipping opencode start because repo materialization failed')
+  } else {
+    await opencode.start()
+  }
 
-  const server = startProxy(cfg, opencode, bootTime)
+  const server = startProxy(cfg, opencode, bootTime, bootState)
   installShutdownHandlers(opencode, server)
 
   logger.info('[boot] proxy up; waiting for opencode readiness in background', {
     servicePort: cfg.servicePort,
   })
+
+  if (bootState.repoMaterializationError) return
 
   void (async () => {
     const ready = await waitForOpencodeReady(opencode)

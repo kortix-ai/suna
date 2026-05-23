@@ -14,6 +14,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { runWithContext } from '../lib/request-context';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
@@ -41,6 +42,7 @@ let mockWakeCalls: string[] = [];
 let mockFetchResponses: Array<{ status: number; body: string; headers?: Record<string, string> }> = [];
 let mockFetchCallCount = 0;
 let mockFetchCalls: Array<{ url: string; method: string; headers: Record<string, string> }> = [];
+let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
@@ -97,6 +99,13 @@ mock.module('../shared/db', () => {
           }),
         };
       },
+      update: (table: unknown) => ({
+        set: (updates: Record<string, unknown>) => ({
+          where: async () => {
+            mockDbUpdateCalls.push({ table, updates });
+          },
+        }),
+      }),
     },
   };
 });
@@ -211,6 +220,7 @@ function createProxyTestApp() {
 beforeEach(() => {
   mockDbSandbox = {
     sandboxId: TEST_SESSION_SANDBOX_ID,
+    sessionId: '22222222-2222-4222-8222-222222222222',
     accountId: 'account-001',
     status: 'active',
     config: { serviceKey: TEST_SERVICE_KEY },
@@ -226,6 +236,7 @@ beforeEach(() => {
   mockFetchResponses = [{ status: 200, body: 'Hello from upstream' }];
   mockFetchCallCount = 0;
   mockFetchCalls = [];
+  mockDbUpdateCalls = [];
 
   // Install mock fetch
   globalThis.fetch = mockFetch as any;
@@ -431,6 +442,24 @@ describe('Preview proxy: forwarding', () => {
         scopes: ['*'],
       });
     }
+  });
+
+  test('marks proxied session sandbox and owning session as active usage', async () => {
+    mockFetchResponses = [{ status: 200, body: 'OK' }];
+    const sandboxId = 'touch-sandbox-001';
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${sandboxId}/${TEST_PORT}/kortix/health`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.status).toBe(200);
+    expect(mockDbUpdateCalls.some((call) =>
+      call.table === sessionSandboxes && call.updates.lastUsedAt instanceof Date,
+    )).toBe(true);
+    expect(mockDbUpdateCalls.some((call) =>
+      call.table === projectSessions && call.updates.status === 'running',
+    )).toBe(true);
   });
 
   test('surfaces daemon signed-context rejection as 502', async () => {

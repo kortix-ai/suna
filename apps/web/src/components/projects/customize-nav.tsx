@@ -124,7 +124,7 @@ function CustomizeNavLink({
       href={href}
       title={item.hint}
       className={cn(
-        'group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] font-medium transition-colors',
+        'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium transition-colors',
         active
           ? 'bg-muted/70 text-foreground'
           : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',

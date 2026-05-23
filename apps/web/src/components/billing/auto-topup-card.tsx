@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
 import { configureAutoTopup, getAutoTopupSettings, getAutoTopupSetupStatus, type AutoTopupConfig } from '@/lib/api/billing';
@@ -190,26 +191,26 @@ export function AutoTopupCard({
             <span className="text-xs text-muted-foreground shrink-0">Add</span>
             <div className="relative flex-1">
               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
-              <input
+              <Input
                 type="number"
                 min={1}
                 step={1}
                 value={amount}
                 onChange={(e) => { setAmount(e.target.value); setDirty(true); setSaveResult(null); }}
-                className="w-full h-8 rounded-lg border border-border bg-background pl-6 pr-2 text-xs tabular-nums text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-foreground/30 transition-colors"
+                className="h-8 pl-6 pr-2 text-xs tabular-nums"
                 placeholder={String(AUTO_TOPUP_DEFAULT_AMOUNT)}
               />
             </div>
             <span className="text-xs text-muted-foreground shrink-0">when below</span>
             <div className="relative flex-1">
               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
-              <input
+              <Input
                 type="number"
                 min={AUTO_TOPUP_MIN_THRESHOLD}
                 step={1}
                 value={threshold}
                 onChange={(e) => { setThreshold(e.target.value); setDirty(true); setSaveResult(null); }}
-                className="w-full h-8 rounded-lg border border-border bg-background pl-6 pr-2 text-xs tabular-nums text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-foreground/30 transition-colors"
+                className="h-8 pl-6 pr-2 text-xs tabular-nums"
                 placeholder={String(AUTO_TOPUP_DEFAULT_THRESHOLD)}
               />
             </div>

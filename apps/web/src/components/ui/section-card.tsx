@@ -53,29 +53,23 @@ export function SectionCard({
   const destructive = tone === 'destructive';
   const hasHeader = title != null || description != null || action != null;
 
+  // Danger zones stay calm: red is the brake, not the paint. The panel is a
+  // neutral surface with only a faint warm hairline to mark it — the title and
+  // description read normally, and the single red action lives on the final
+  // confirm (a ConfirmDialog/AlertDialog), never on the panel itself.
   return (
     <Card
       className={cn(
         'gap-0 overflow-hidden py-0',
-        destructive && 'border-destructive/30 bg-destructive/5',
+        destructive && 'border-destructive/25',
         className,
       )}
     >
       {hasHeader && (
-        <div
-          className={cn(
-            'flex items-start justify-between gap-3 border-b px-6 py-4',
-            destructive ? 'border-destructive/20' : 'border-border/60',
-          )}
-        >
+        <div className="flex items-start justify-between gap-3 border-b border-border/60 px-6 py-4">
           <div className="min-w-0">
             {title != null && (
-              <h2
-                className={cn(
-                  'text-base font-semibold',
-                  destructive ? 'text-red-600 dark:text-red-400' : 'text-foreground',
-                )}
-              >
+              <h2 className="text-base font-semibold text-foreground">
                 {title}
                 {count != null && (
                   <span className="font-normal text-muted-foreground"> ({count})</span>
@@ -83,14 +77,7 @@ export function SectionCard({
               </h2>
             )}
             {description != null && (
-              <p
-                className={cn(
-                  'mt-0.5 text-xs',
-                  destructive
-                    ? 'text-red-600/80 dark:text-red-400/80'
-                    : 'text-muted-foreground',
-                )}
-              >
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 {description}
               </p>
             )}

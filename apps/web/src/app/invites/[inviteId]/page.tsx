@@ -9,9 +9,9 @@ import { Clock, Loader2 } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { cn } from '@/lib/utils';
 import {
   acceptAccountInvite,
   declineAccountInvite,
@@ -188,7 +188,7 @@ export default function InvitePage() {
         )}
 
         <div className="mt-5 flex items-center gap-3 rounded-2xl border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-3.5">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05] text-foreground/60">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-foreground/[0.05] text-foreground/60">
             <KortixLogo size={16} />
           </div>
           <div className="min-w-0 flex-1">
@@ -207,45 +207,39 @@ export default function InvitePage() {
         </p>
 
         {errorMessage ? (
-          <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/[0.08] px-3.5 py-2.5 text-[12px] text-red-300">
+          <InfoBanner tone="destructive" className="mt-4">
             {errorMessage}
-          </div>
+          </InfoBanner>
         ) : null}
 
         <div className="mt-6 flex gap-2">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="lg"
             onClick={() => declineMutation.mutate()}
             disabled={anyPending}
-            className={cn(
-              'flex-1 h-10 rounded-xl text-[13px] font-medium transition-colors',
-              'bg-foreground/[0.04] hover:bg-foreground/[0.08] border border-foreground/[0.08]',
-              'text-foreground/60 hover:text-foreground/80',
-              'disabled:opacity-40 disabled:pointer-events-none',
-            )}
+            className="flex-1 text-[13px]"
           >
             {declinePending ? (
               <Loader2 className="h-4 w-4 animate-spin mx-auto" />
             ) : (
               'Decline'
             )}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            size="lg"
             onClick={() => acceptMutation.mutate()}
             disabled={anyPending}
-            className={cn(
-              'flex-1 h-10 rounded-xl text-[13px] font-medium transition-colors',
-              'bg-foreground text-background hover:bg-foreground/90',
-              'disabled:opacity-40 disabled:pointer-events-none',
-            )}
+            className="flex-1 text-[13px]"
           >
             {acceptPending ? (
               <Loader2 className="h-4 w-4 animate-spin mx-auto" />
             ) : (
               'Accept'
             )}
-          </button>
+          </Button>
         </div>
       </InviteCard>
     </BrandSurface>
@@ -282,7 +276,7 @@ function InviteCard({
     >
       <div className="flex flex-col items-center gap-5">
         <KortixLogo size={26} />
-        <div className="w-full bg-background/80 dark:bg-background/75 backdrop-blur-2xl border border-foreground/[0.06] rounded-[20px] px-7 py-7">
+        <div className="w-full bg-background/80 dark:bg-background/75 backdrop-blur-2xl border border-foreground/[0.06] rounded-2xl px-7 py-7">
           <p className="text-[11px] text-foreground/30 tracking-[0.2em] uppercase mb-5">
             {kicker}
           </p>
@@ -317,7 +311,7 @@ function GhostAction({
   return (
     <Button
       variant="ghost"
-      className="mt-6 h-10 px-4 rounded-xl text-[13px] text-foreground/60 hover:text-foreground/90 hover:bg-foreground/[0.05]"
+      className="mt-6 h-10 px-4 text-[13px] text-foreground/60 hover:text-foreground/90 hover:bg-foreground/[0.05]"
       onClick={onClick}
     >
       {children}

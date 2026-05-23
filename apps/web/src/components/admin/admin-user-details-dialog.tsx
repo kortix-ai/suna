@@ -8,8 +8,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Tabs,
@@ -19,6 +17,7 @@ import {
 } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -193,7 +192,7 @@ export function AdminUserDetailsDialog({
   const getTransactionColor = (type: string) => {
     switch (type) {
       case 'usage':
-        return 'text-red-600';
+        return 'text-destructive';
       case 'admin_grant':
         return 'text-green-600';
       case 'tier_grant':
@@ -211,18 +210,18 @@ export function AdminUserDetailsDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle className="flex items-center gap-2">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="flex-shrink-0 border-b border-border/60 px-6 pt-6 pb-4">
+          <DialogTitle className="flex items-center gap-2 text-lg font-semibold tracking-tight">
             <User className="h-5 w-5" />
             User Details - {user.email}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-sm text-muted-foreground">
             Manage user account, billing, and perform admin actions
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto px-6 py-5">
           {isLoading ? (
             <div className="space-y-4 p-1">
               <Skeleton className="h-32 w-full" />
@@ -502,7 +501,7 @@ export function AdminUserDetailsDialog({
                                 {formatDate(activity.created_at)} • Thread: {activity.thread_name || activity.thread_id.slice(-8)}
                               </p>
                               {activity.error && (
-                                <p className="text-xs text-red-600 mt-1 truncate">
+                                <p className="text-xs text-destructive mt-1 truncate">
                                   Error: {activity.error}
                                 </p>
                               )}
@@ -556,14 +555,9 @@ export function AdminUserDetailsDialog({
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="p-3 border border-red-200 dark:border-red-950 bg-red-50 dark:bg-red-950/20 rounded-2xl">
-                        <div className="flex items-start gap-2">
-                          <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
-                          <p className="text-sm text-red-700">
-                            Refunds assigns credits back to the user's account.
-                          </p>
-                        </div>
-                      </div>
+                      <InfoBanner tone="neutral" icon={AlertCircle}>
+                        Refunds assigns credits back to the user's account.
+                      </InfoBanner>
                       <div>
                         <Label htmlFor="refund-amount">Refund Amount (USD)</Label>
                         <Input
@@ -632,11 +626,11 @@ export function AdminUserDetailsDialog({
           )}
         </div>
 
-        <DialogFooter className="flex-shrink-0">
-          <Button variant="outline" onClick={onClose}>
+        <div className="flex-shrink-0 flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+          <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

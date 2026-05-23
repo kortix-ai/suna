@@ -55,12 +55,6 @@ export const ACCOUNT_ACTIONS = {
   TOKEN_CREATE: 'token.create',
   TOKEN_REVOKE: 'token.revoke',
 
-  // Vault (account-owned secrets / credentials). Reading/using a specific
-  // item is governed by the vault's own grants (vault_item_grants), not these.
-  // These gate MANAGEMENT of shared items at the account level.
-  SECRET_READ: 'secret.read',
-  SECRET_WRITE: 'secret.write',
-  SECRET_SHARE: 'secret.share',
 
   // "Create a brand-new project" must live at account scope (the project
   // doesn't exist yet to scope to).
@@ -92,17 +86,6 @@ export const PROJECT_ACTIONS = {
   PROJECT_TRIGGER_FIRE: 'project.trigger.fire',
 } as const;
 
-// ─── Sandbox-scoped actions ────────────────────────────────────────────────
-
-export const SANDBOX_ACTIONS = {
-  SANDBOX_READ: 'sandbox.read',
-  SANDBOX_START: 'sandbox.start',
-  SANDBOX_STOP: 'sandbox.stop',
-  SANDBOX_EXEC: 'sandbox.exec',
-  SANDBOX_SNAPSHOT: 'sandbox.snapshot',
-  SANDBOX_DELETE: 'sandbox.delete',
-} as const;
-
 // ─── Trigger-scoped actions (when scoped to an individual trigger) ─────────
 
 export const TRIGGER_ACTIONS = {
@@ -126,7 +109,6 @@ export const CHANNEL_ACTIONS = {
 export const ALL_ACTIONS = {
   ...ACCOUNT_ACTIONS,
   ...PROJECT_ACTIONS,
-  ...SANDBOX_ACTIONS,
   ...TRIGGER_ACTIONS,
   ...CHANNEL_ACTIONS,
 } as const;
@@ -139,7 +121,6 @@ export type Action = (typeof ALL_ACTIONS)[keyof typeof ALL_ACTIONS];
 export const VALID_ACTIONS: ReadonlySet<string> = new Set([
   ...Object.values(ACCOUNT_ACTIONS),
   ...Object.values(PROJECT_ACTIONS),
-  ...Object.values(SANDBOX_ACTIONS),
   ...Object.values(TRIGGER_ACTIONS),
   ...Object.values(CHANNEL_ACTIONS),
 ]);
@@ -168,11 +149,6 @@ export const ACTION_CATALOG: ActionCatalogEntry[] = [
     resourceType: resourceTypeForAction(a),
   })),
   ...Object.values(PROJECT_ACTIONS).map((a) => ({
-    action: a,
-    label: label(a),
-    resourceType: resourceTypeForAction(a),
-  })),
-  ...Object.values(SANDBOX_ACTIONS).map((a) => ({
     action: a,
     label: label(a),
     resourceType: resourceTypeForAction(a),
@@ -210,7 +186,6 @@ export function resourceTypeForAction(action: string): ResourceType {
     action.startsWith('token.') ||
     action.startsWith('billing.') ||
     action.startsWith('audit.') ||
-    action.startsWith('secret.') ||
     action === 'project.create'
   ) {
     return 'account';

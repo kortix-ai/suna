@@ -105,8 +105,8 @@ export function HelpSearchModal({ open, onOpenChange }: HelpSearchModalProps) {
                                             >
                                                 <SpotlightCard className="w-full cursor-pointer">
                                                     <div className="flex items-start gap-3 px-3 py-2.5">
-                                                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/5 border border-primary/10 shrink-0 mt-0.5">
-                                                            <Icon className="h-4 w-4 text-primary" />
+                                                        <div className="flex items-center justify-center w-9 h-9 rounded-2xl bg-muted border border-border shrink-0 mt-0.5">
+                                                            <Icon className="h-4 w-4 text-muted-foreground" />
                                                         </div>
                                                         <div className="flex-1 min-w-0">
                                                             <div className="text-sm font-medium truncate">{page.title}</div>

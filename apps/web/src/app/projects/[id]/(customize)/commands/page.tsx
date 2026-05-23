@@ -86,8 +86,8 @@ export function CommandsView({ projectId }: { projectId: string }) {
   const selected = commands.find((c) => c.path === selectedPath) ?? null;
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="flex w-[300px] shrink-0 flex-col border-r border-border/60 bg-background">
+    <div className="flex h-full min-h-0 flex-col md:flex-row">
+      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[300px] md:border-b-0 md:border-r">
         <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
           <TerminalSquare className="h-4 w-4 text-muted-foreground" />
           <h1 className="flex-1 text-sm font-semibold text-foreground">
@@ -107,7 +107,7 @@ export function CommandsView({ projectId }: { projectId: string }) {
               placeholder="Search commands"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-8 rounded-md border-border/60 bg-background pl-7 text-[12.5px] placeholder:text-muted-foreground/60"
+              className="h-8 pl-8 text-[12.5px] placeholder:text-muted-foreground/60"
             />
           </div>
         </div>
@@ -171,7 +171,7 @@ function CommandRow({
       type="button"
       onClick={onSelect}
       className={cn(
-        'group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors',
+        'group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
         active
           ? 'bg-muted/70 text-foreground'
           : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',

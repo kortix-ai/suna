@@ -349,7 +349,7 @@ export default function TemplateSharePage() {
                   variant="ghost"
                   size="icon"
                   onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-                  className="h-8 w-8 rounded-md"
+                  className="h-8 w-8"
                 >
                   <Sun className="h-4 w-4 rotate-0 scale-100 transition-colors dark:-rotate-90 dark:scale-0" />
                   <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-colors dark:rotate-0 dark:scale-100" />
@@ -359,14 +359,16 @@ export default function TemplateSharePage() {
                   variant="ghost"
                   size="icon"
                   onClick={handleShare}
-                  className="h-8 w-8 rounded-md"
+                  className="h-8 w-8"
                 >
                   <Share2 className="h-4 w-4" />
                   <span className="sr-only">Share</span>
                 </Button>
                 <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={handleInstall}
-                  className="bg-secondary h-8 flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                  className="font-normal tracking-wide"
                 >
                   <Sparkles className="h-3 w-3 mr-2" />
                   Install Agent
@@ -421,7 +423,7 @@ export default function TemplateSharePage() {
                 <div>
                   <h1 className="text-3xl font-medium tracking-tight">{template.name}</h1>
                   {template.is_kortix_team && (
-                    <Badge variant="secondary" className="mt-2 bg-primary/10 text-primary">
+                    <Badge variant="highlight" className="mt-2">
                       <Sparkles className="w-3 h-3 mr-1" />
                       Official Template
                     </Badge>

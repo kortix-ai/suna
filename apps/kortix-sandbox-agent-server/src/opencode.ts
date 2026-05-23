@@ -96,9 +96,27 @@ export function createOpencodeSupervisor(cfg: Config, opencodeConfigDir: string)
   }
 
   function spawnChild(bin: string) {
+    // Keep opencode's data store OUT of the project workspace. opencode writes
+    // a git-backed snapshot object store (file history) plus caches/logs under
+    // $HOME/.local/share/opencode + $HOME/.config. If HOME points at
+    // /workspace, that store lands inside the project dir and grows one loose
+    // object per file version — so every ls/glob/list the agent runs walks
+    // thousands of .local/share/opencode/snapshot/objects/* paths, ballooning
+    // tool output (multi-MB) until the next turn stalls. A dedicated home keeps
+    // /workspace = project files only. OPENCODE_CONFIG_DIR still points at the
+    // project's .kortix/opencode so user config/agents/skills load normally.
+    const opencodeHome = '/opt/kortix/home'
+    try {
+      mkdirSync(opencodeHome, { recursive: true })
+    } catch (err) {
+      logger.warn('[opencode] could not create home dir; falling back to inherited HOME', {
+        opencodeHome,
+        err: (err as Error).message,
+      })
+    }
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      HOME: cfg.workspace,
+      HOME: opencodeHome,
       OPENCODE_CONFIG_DIR: opencodeConfigDir,
       // Clear inherited PORT/APP_PORT — opencode launches user shells; we
       // don't want to leak the service port as a generic app port.
@@ -143,16 +161,13 @@ export function createOpencodeSupervisor(cfg: Config, opencodeConfigDir: string)
   }
 
   async function checkReady(): Promise<boolean> {
-    // Probe /global/health, NOT /app. opencode 1.14.x's /app route (the web
-    // UI HTML) returns HTTP 500 once the sqlite migration finishes, so it
-    // can't be used as a liveness signal — the daemon would sit forever in
-    // `starting` even though opencode is actually serving traffic.
-    // /global/health is the canonical liveness endpoint and returns
-    // 200 {"healthy":true,"version":"…"} as soon as the HTTP server is
-    // bound + DB migrated. Verified end-to-end against opencode-ai@1.14.28
-    // both locally and in the Daytona sandbox image.
+    // A bound HTTP server is not enough. When the project workspace is
+    // missing or OpenCode inherited a bad cwd, /global/health can still
+    // return 200 while every real OpenCode API route returns 500. Probe the
+    // same session API the app needs before reporting `opencode: ok`.
     try {
-      const res = await fetch(`http://127.0.0.1:${cfg.opencodeInternalPort}/global/health`, {
+      const directory = encodeURIComponent(cfg.projectTarget)
+      const res = await fetch(`http://127.0.0.1:${cfg.opencodeInternalPort}/session?directory=${directory}`, {
         signal: AbortSignal.timeout(2_000),
       })
       return res.status >= 200 && res.status < 400

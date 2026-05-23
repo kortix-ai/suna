@@ -224,6 +224,7 @@ function ActiveSessionChat({
   const runtimeReady = useSandboxConnectionStore(
     (s) => s.status === 'connected' && s.healthy === true,
   );
+  const runtimeBootError = useSandboxConnectionStore((s) => s.runtimeError);
   const sessionsQuery = useOpenCodeSessions();
   const createMutation = useCreateOpenCodeSession();
   const queryClient = useQueryClient();
@@ -279,7 +280,50 @@ function ActiveSessionChat({
     ]).catch(() => {});
   }, [chatSessionId, activeTitle]);
 
+  // First-message handoff from the project index composer (/projects/[id]). It
+  // stashes the prompt under the PROJECT session id because the opencode
+  // session id doesn't exist yet at navigation time. Once the chat session is
+  // created, move it onto the `opencode_pending_prompt:<chatSessionId>` key that
+  // SessionChat's pending-prompt effect consumes (its 250ms retry loop covers
+  // the brief gap before this runs). Files ride along via usePendingFilesStore.
+  const promptMovedRef = useRef(false);
+  useEffect(() => {
+    if (!chatSessionId || promptMovedRef.current) return;
+    if (typeof window === 'undefined') return;
+    const key = `project_pending_prompt:${sessionId}`;
+    const pending = sessionStorage.getItem(key);
+    if (!pending) return;
+    promptMovedRef.current = true;
+    sessionStorage.setItem(`opencode_pending_prompt:${chatSessionId}`, pending);
+    sessionStorage.removeItem(key);
+  }, [chatSessionId, sessionId]);
+
   const runtimeError = sessionsQuery.error ?? createMutation.error;
+  if (!runtimeReady && runtimeBootError) {
+    return (
+      <InlineSessionError
+        title="OpenCode runtime is not ready"
+        message="The sandbox booted, but the project runtime did not become usable."
+        detail={runtimeBootError}
+        action={
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => restartMutation.mutate()}
+            disabled={restartMutation.isPending}
+          >
+            {restartMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3.5 w-3.5" />
+            )}
+            Restart session
+          </Button>
+        }
+      />
+    );
+  }
+
   if (runtimeError) {
     const formatted = formatOpenCodeRuntimeError(runtimeError);
     const restartError = restartMutation.error

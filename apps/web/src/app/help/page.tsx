@@ -28,8 +28,8 @@ export default function HelpCenterPage() {
             <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <Coins className="h-5 w-5 text-primary" />
+                  <div className="p-2 rounded-2xl bg-muted">
+                    <Coins className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
                     <CardTitle>What are Credits?</CardTitle>

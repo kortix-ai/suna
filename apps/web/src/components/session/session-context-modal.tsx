@@ -104,11 +104,11 @@ interface BreakdownSegment {
 }
 
 const BREAKDOWN_COLORS: Record<BreakdownKey, string> = {
-  system: '#60a5fa',   // blue
-  user: '#34d399',     // green
-  assistant: '#a78bfa', // purple
-  tool: '#fbbf24',     // yellow
-  other: '#9ca3af',    // gray
+  system: 'var(--color-blue-400)',      // blue
+  user: 'var(--color-emerald-400)',     // green
+  assistant: 'var(--color-violet-400)', // purple
+  tool: 'var(--color-amber-400)',       // yellow
+  other: 'var(--color-muted-foreground)', // gray
 };
 
 const BREAKDOWN_LABELS: Record<BreakdownKey, string> = {

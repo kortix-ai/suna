@@ -34,7 +34,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -399,7 +398,7 @@ export function PoliciesTable({
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onSelect={() => setDeleteTarget(p)}
-                            className="gap-2 text-destructive focus:text-destructive"
+                            className="gap-2"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                             Remove policy
@@ -1186,17 +1185,19 @@ function CreatePolicyDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{isEditing ? 'Edit policy' : 'Create policy'}</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
+          <DialogTitle className="text-lg font-semibold tracking-tight">
+            {isEditing ? 'Edit policy' : 'Create policy'}
+          </DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">
             {isEditing
               ? 'Change the scope, role, or effect. The principal stays the same.'
               : 'Grant access to a scope. One policy is created per role.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5">
+        <div className="space-y-5 px-6 py-5">
           {/* ── Step 1: Scope (always visible) ─────────────────────── */}
           <div className="space-y-1.5">
             <Label>Scope</Label>
@@ -1416,7 +1417,7 @@ function CreatePolicyDialog({
                             role={isEditing ? 'radio' : 'checkbox'}
                             aria-checked={checked}
                             onClick={() => toggleRole(r.role_id)}
-                            className={`flex w-full cursor-pointer items-start gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                            className={`flex w-full cursor-pointer items-start gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
                               checked ? 'bg-primary/5' : 'hover:bg-muted/40'
                             }`}
                             disabled={createMutation.isPending}
@@ -1438,7 +1439,7 @@ function CreatePolicyDialog({
                                   {r.name}
                                 </span>
                                 {r.is_system && (
-                                  <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
+                                  <Badge variant="outline" size="sm" className="font-normal">
                                     system
                                   </Badge>
                                 )}
@@ -1692,10 +1693,10 @@ function CreatePolicyDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             onClick={() => onOpenChange(false)}
             disabled={createMutation.isPending}
           >
@@ -1715,7 +1716,7 @@ function CreatePolicyDialog({
                 ? 'Create deny policy'
                 : 'Create policy'}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

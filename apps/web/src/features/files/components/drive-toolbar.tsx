@@ -153,7 +153,7 @@ export function DriveToolbar({
               if (e.key === 'Escape') setIsEditing(false);
             }}
             onBlur={() => setIsEditing(false)}
-            className="flex-1 min-w-0 h-8 px-3 text-sm bg-muted/40 border border-border/60 rounded-lg outline-none focus:ring-1 focus:ring-primary font-mono"
+            className="flex-1 min-w-0 h-8 px-3 text-sm bg-card border rounded-2xl outline-none focus:ring-2 focus:ring-primary/50 font-mono"
             placeholder={homePath}
           />
         ) : (

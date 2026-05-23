@@ -56,8 +56,6 @@ import {
 
   // Preferences
   Palette,
-  Volume2,
-  Bell,
   Keyboard,
 
   // Account
@@ -754,26 +752,6 @@ export const menuRegistry: MenuItemDef[] = [
   },
 
   {
-    id: 'pref-sounds',
-    label: 'Sounds',
-    icon: Volume2,
-    group: 'preferences',
-    showIn: ['commandPalette'],
-    kind: 'settings',
-    settingsTab: 'sounds',
-    keywords: 'sounds audio volume notification sound effects mute',
-  },
-  {
-    id: 'pref-notifications',
-    label: 'Notifications',
-    icon: Bell,
-    group: 'preferences',
-    showIn: ['commandPalette'],
-    kind: 'settings',
-    settingsTab: 'notifications',
-    keywords: 'notifications alerts push web browser desktop',
-  },
-  {
     id: 'pref-shortcuts',
     label: 'Shortcuts',
     icon: Keyboard,
@@ -964,7 +942,7 @@ export interface SettingsTab {
 
 /** Preference tabs for the settings modal */
 export function getPreferenceTabs(): SettingsTab[] {
-  const preferenceIds: SettingsTabId[] = ['general', 'appearance', 'sounds', 'notifications', 'shortcuts'];
+  const preferenceIds: SettingsTabId[] = ['general', 'appearance', 'shortcuts'];
   return preferenceIds.map((tabId) => {
     const item = menuRegistry.find(
       (i) => i.kind === 'settings' && i.settingsTab === tabId,

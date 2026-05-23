@@ -22,6 +22,7 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -42,7 +43,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -81,9 +81,9 @@ function StatusBadge({ status }: { status: string | null }) {
     case 'running':
       return <Badge variant="highlight">{status}</Badge>;
     case 'pooled':
-      return <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/30 gap-1">{status}</Badge>;
+      return <Badge variant="info" className="gap-1">{status}</Badge>;
     case 'provisioning':
-      return <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 gap-1">{status}</Badge>;
+      return <Badge variant="warning" className="gap-1">{status}</Badge>;
     case 'stopped':
     case 'paused':
     case 'archived':
@@ -237,7 +237,7 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => router.push(`/instances/${sandbox.sandboxId}`)}>Connect</Button>
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-500 hover:bg-red-500/10" onClick={() => setConfirmDelete(sandbox)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground" onClick={() => setConfirmDelete(sandbox)}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -260,10 +260,10 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
         )}
 
         <Dialog open={!!confirmDelete} onOpenChange={() => setConfirmDelete(null)}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Delete Instance</DialogTitle><DialogDescription>Permanently delete <span className="font-mono text-foreground">{confirmDelete?.sandboxId.slice(0, 8)}</span>{confirmDelete?.provider === 'justavps' && ' and terminate the JustaVPS machine'}. This cannot be undone.</DialogDescription></DialogHeader>
-            {confirmDelete && <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-3 space-y-1.5 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Account</span><span>{confirmDelete.accountName ?? '—'}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Provider</span><span className="capitalize">{confirmDelete.provider ?? '—'}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Status</span><span>{confirmDelete.status ?? '—'}</span></div></div>}
-            <DialogFooter><Button variant="outline" onClick={() => setConfirmDelete(null)} disabled={deleteMutation.isPending}>Cancel</Button><Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>{deleteMutation.isPending ? 'Deleting…' : 'Delete'}</Button></DialogFooter>
+          <DialogContent className="gap-0 overflow-hidden p-0">
+            <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4"><DialogTitle className="text-lg font-semibold tracking-tight">Delete Instance</DialogTitle><DialogDescription className="text-sm text-muted-foreground">Permanently delete <span className="font-mono text-foreground">{confirmDelete?.sandboxId.slice(0, 8)}</span>{confirmDelete?.provider === 'justavps' && ' and terminate the JustaVPS machine'}. This cannot be undone.</DialogDescription></DialogHeader>
+            {confirmDelete && <div className="px-6 py-5"><div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-3 space-y-1.5 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Account</span><span>{confirmDelete.accountName ?? '—'}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Provider</span><span className="capitalize">{confirmDelete.provider ?? '—'}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Status</span><span>{confirmDelete.status ?? '—'}</span></div></div></div>}
+            <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3"><Button variant="ghost" onClick={() => setConfirmDelete(null)} disabled={deleteMutation.isPending}>Cancel</Button><Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>{deleteMutation.isPending ? 'Deleting…' : 'Delete'}</Button></div>
           </DialogContent>
         </Dialog>
 
@@ -340,10 +340,10 @@ export function AdminAccountsSection({ embedded = false }: { embedded?: boolean 
         )}
 
         <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader><DialogTitle>{selected?.name || 'Account'}</DialogTitle><DialogDescription>{selected?.ownerEmail || 'No owner email'} · {selected?.accountId}</DialogDescription></DialogHeader>
+          <DialogContent className="max-w-3xl gap-0 overflow-hidden p-0">
+            <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4"><DialogTitle className="text-lg font-semibold tracking-tight">{selected?.name || 'Account'}</DialogTitle><DialogDescription className="text-sm text-muted-foreground">{selected?.ownerEmail || 'No owner email'} · {selected?.accountId}</DialogDescription></DialogHeader>
             {selected && (
-              <div className="space-y-6">
+              <div className="space-y-6 px-6 py-5">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="rounded-2xl border p-3"><div className="text-xs text-muted-foreground">Total credits</div><div className="text-lg font-semibold">{formatCredits(selected.balance)}</div></div>
                   <div className="rounded-2xl border p-3"><div className="text-xs text-muted-foreground">Expiring</div><div className="text-lg font-semibold">{formatCredits(selected.expiringCredits)}</div></div>
@@ -370,7 +370,7 @@ export function AdminAccountsSection({ embedded = false }: { embedded?: boolean 
                       <div className="text-sm font-medium">Grant credits</div>
                       <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount (e.g. 25)" />
                       <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Reason / note" />
-                      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isExpiring} onChange={(e) => setIsExpiring(e.target.checked)} />Grant as expiring credits</label>
+                      <label className="flex items-center gap-2 text-sm"><Checkbox checked={isExpiring} onCheckedChange={(checked) => setIsExpiring(checked === true)} />Grant as expiring credits</label>
                       <Button onClick={handleGrantCredits} disabled={grantCredits.isPending} className="w-full">{grantCredits.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Add credits</Button>
                     </div>
                   </div>
@@ -485,9 +485,9 @@ export function AdminAccessRequestsSection({ embedded = false }: { embedded?: bo
         )}
 
         <Dialog open={!!confirmDialog} onOpenChange={() => setConfirmDialog(null)}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>{confirmDialog?.action === 'approve' ? 'Approve request?' : 'Reject request?'}</DialogTitle><DialogDescription>{confirmDialog?.request.email}</DialogDescription></DialogHeader>
-            <DialogFooter><Button variant="outline" onClick={() => setConfirmDialog(null)} disabled={isActioning}>Cancel</Button><Button onClick={handleAction} disabled={isActioning}>{isActioning ? 'Working…' : confirmDialog?.action === 'approve' ? 'Approve' : 'Reject'}</Button></DialogFooter>
+          <DialogContent className="gap-0 overflow-hidden p-0">
+            <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4"><DialogTitle className="text-lg font-semibold tracking-tight">{confirmDialog?.action === 'approve' ? 'Approve request?' : 'Reject request?'}</DialogTitle><DialogDescription className="text-sm text-muted-foreground">{confirmDialog?.request.email}</DialogDescription></DialogHeader>
+            <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3"><Button variant="ghost" onClick={() => setConfirmDialog(null)} disabled={isActioning}>Cancel</Button><Button onClick={handleAction} disabled={isActioning}>{isActioning ? 'Working…' : confirmDialog?.action === 'approve' ? 'Approve' : 'Reject'}</Button></div>
           </DialogContent>
         </Dialog>
       </div>
