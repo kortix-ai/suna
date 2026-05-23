@@ -749,7 +749,12 @@ function iamActionForProjectAccess(action: ProjectAccessAction): string {
     case 'write':
       return 'project.write';
     case 'manage':
-      return 'project.members.manage';
+      // 'manage' historically meant "admin-tier write" — covers triggers,
+      // secrets, snapshots, CLI tokens, etc. Map to project.write (which
+      // Project Editor has) so editors aren't accidentally locked out.
+      // Routes that need the stricter `project.members.manage` gate add
+      // an explicit assertAuthorized() on top of loadProjectForUser.
+      return 'project.write';
   }
 }
 
@@ -2634,6 +2639,8 @@ projectsApp.post('/:projectId/triggers', async (c) => {
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Specific IAM gate so the audit trail records the precise action.
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, { type: 'project', id: projectId });
 
   const draft = parseTriggerDraft(body, { existingSlug: null });
   if ('error' in draft) return c.json({ error: draft.error }, 400);
@@ -2667,6 +2674,7 @@ projectsApp.patch('/:projectId/triggers/:slug', async (c) => {
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE, { type: 'project', id: projectId });
 
   let manifest: ParsedManifest;
   try {
@@ -2700,6 +2708,7 @@ projectsApp.delete('/:projectId/triggers/:slug', async (c) => {
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE, { type: 'project', id: projectId });
 
   if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
     return c.json({ error: 'Invalid slug' }, 400);
@@ -3543,6 +3552,10 @@ projectsApp.delete('/:projectId', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Deletion is admin-only. Project Editor explicitly excludes
+  // project.delete; loadProjectForUser('manage') would otherwise let
+  // editors through via project.write.
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_DELETE, { type: 'project', id: projectId });
 
   const [row] = await db
     .update(projects)
@@ -3626,6 +3639,10 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
   const targetUserId = c.req.param('userId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Member management is admin-only; loadProjectForUser('manage') now
+  // resolves to project.write (editor-tier), so we add an explicit
+  // stricter gate here.
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
 
   const body = await readBody(c);
   const role = parseProjectRole(body.role);
@@ -3683,6 +3700,7 @@ projectsApp.delete('/:projectId/access/:userId', async (c) => {
   const targetUserId = c.req.param('userId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
 
   const targetMembership = await getAccountMembership(targetUserId, loaded.row.accountId);
   if (!targetMembership) {

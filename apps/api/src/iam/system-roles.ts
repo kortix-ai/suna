@@ -161,7 +161,7 @@ const PROJECT_ADMIN: SystemRoleSpec = {
 const PROJECT_EDITOR: SystemRoleSpec = {
   key: 'project_editor',
   name: 'Project Editor',
-  description: 'Read and write within the project. Cannot manage members or delete it.',
+  description: 'Read and write within the project, including triggers and webhooks. Cannot manage members or delete the project.',
   resourceType: 'project',
   actions: [
     PROJECT_ACTIONS.PROJECT_READ,
@@ -173,6 +173,12 @@ const PROJECT_EDITOR: SystemRoleSpec = {
     PROJECT_ACTIONS.PROJECT_SESSION_STOP,
     PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
     PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+    // Triggers/webhooks are project content — an editor managing the
+    // project's automation surface needs to create, update, and delete
+    // them. Members management + project deletion stay admin-only.
+    PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+    PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+    PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
     PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
     SANDBOX_ACTIONS.SANDBOX_READ,
     SANDBOX_ACTIONS.SANDBOX_START,
