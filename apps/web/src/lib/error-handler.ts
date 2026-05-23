@@ -96,6 +96,30 @@ const shouldShowError = (error: any, context?: ErrorContext): boolean => {
   return true;
 };
 
+// Suppress duplicate toasts when the same error fires repeatedly — typically
+// a polling query (sessions list, project metadata) hitting a 403/5xx every
+// few seconds. We keep one toast per (status, message) per dedupe window;
+// after the window passes, a fresh toast can fire as a reminder.
+const TOAST_DEDUPE_MS = 30_000;
+const recentToasts = new Map<string, number>();
+
+const shouldSuppressDuplicate = (status: number | undefined, message: string): boolean => {
+  const key = `${status ?? 'x'}:${message}`;
+  const now = Date.now();
+  const lastShown = recentToasts.get(key);
+  if (lastShown && now - lastShown < TOAST_DEDUPE_MS) {
+    return true;
+  }
+  recentToasts.set(key, now);
+  // Opportunistically prune so the map doesn't grow unbounded across a session.
+  if (recentToasts.size > 50) {
+    for (const [k, t] of recentToasts) {
+      if (now - t >= TOAST_DEDUPE_MS) recentToasts.delete(k);
+    }
+  }
+  return false;
+};
+
 const formatErrorMessage = (message: string, context?: ErrorContext): string => {
   if (!context?.operation && !context?.resource) {
     return message;
@@ -183,6 +207,10 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
         alertTitle: errorUI.alertTitle,
       });
     }
+    return;
+  }
+
+  if (shouldSuppressDuplicate(status, formattedMessage)) {
     return;
   }
 

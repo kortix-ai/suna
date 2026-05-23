@@ -73,7 +73,7 @@ export function SectionCard({
               <h2
                 className={cn(
                   'text-base font-semibold',
-                  destructive ? 'text-destructive' : 'text-foreground',
+                  destructive ? 'text-red-600 dark:text-red-400' : 'text-foreground',
                 )}
               >
                 {title}
@@ -86,7 +86,9 @@ export function SectionCard({
               <p
                 className={cn(
                   'mt-0.5 text-xs',
-                  destructive ? 'text-destructive/80' : 'text-muted-foreground',
+                  destructive
+                    ? 'text-red-600/80 dark:text-red-400/80'
+                    : 'text-muted-foreground',
                 )}
               >
                 {description}
