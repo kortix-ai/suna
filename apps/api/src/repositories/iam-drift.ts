@@ -51,7 +51,11 @@ export async function computeDriftReport(args: {
   lookbackDays?: number;
 }): Promise<DriftReport> {
   const lookback = args.lookbackDays ?? DEFAULT_UNUSED_LOOKBACK_DAYS;
-  const cutoff = new Date(Date.now() - lookback * 24 * 60 * 60 * 1000);
+  // Compute the cutoff in SQL via `now() - interval` to avoid JS-Date
+  // serialisation issues — drizzle + postgres.js will send a raw
+  // Date as `toString()` output ("Tue Mar 24 …"), which Postgres
+  // can't compare to a timestamptz. Bind the day count as an integer
+  // and cast to interval server-side.
 
   // 1. Unused policies. Definition: a policy whose role grants actions
   // none of which have been observed for the policy's principal within
@@ -68,8 +72,8 @@ export async function computeDriftReport(args: {
     principal_id: string;
     scope_type: string;
     scope_id: string | null;
-    created_at: Date;
-    last_used_at: Date | null;
+    created_at: Date | string;
+    last_used_at: Date | string | null;
   }>(sql`
     SELECT
       p.policy_id::text,
@@ -89,14 +93,14 @@ export async function computeDriftReport(args: {
     FROM kortix.iam_policies p
     INNER JOIN kortix.iam_roles r ON r.role_id = p.role_id
     WHERE p.account_id = ${args.accountId}::uuid
-      AND p.created_at < ${cutoff}
+      AND p.created_at < now() - (${lookback}::int * interval '1 day')
       AND (
         NOT EXISTS (
           SELECT 1
           FROM kortix.iam_action_usage u
           WHERE u.account_id = p.account_id
             AND u.principal_id = p.principal_id
-            AND u.last_used_at >= ${cutoff}
+            AND u.last_used_at >= now() - (${lookback}::int * interval '1 day')
         )
       )
     ORDER BY p.created_at ASC
@@ -187,13 +191,11 @@ export async function computeDriftReport(args: {
       principal_id: r.principal_id,
       scope_type: r.scope_type,
       scope_id: r.scope_id,
-      created_at:
-        typeof r.created_at === 'string' ? r.created_at : r.created_at.toISOString(),
-      last_used_at: r.last_used_at
-        ? typeof r.last_used_at === 'string'
-          ? r.last_used_at
-          : r.last_used_at.toISOString()
-        : null,
+      // postgres.js may return timestamps as strings or Dates depending
+      // on driver config. Normalise via Date() so the response shape
+      // is always ISO-8601.
+      created_at: new Date(r.created_at).toISOString(),
+      last_used_at: r.last_used_at ? new Date(r.last_used_at).toISOString() : null,
     })),
     empty_groups: emptyRows.map((r) => ({
       group_id: r.groupId,

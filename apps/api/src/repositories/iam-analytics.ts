@@ -96,10 +96,13 @@ export async function analyseRoleUsage(args: {
 
   return {
     actionsInRole,
+    // postgres.js returns MAX(timestamptz) as a string at runtime even
+    // though our `sql<Date>` annotation claims Date. Coerce so callers
+    // can safely call .toISOString() / Date methods.
     usedCounts: usedRows.map((r) => ({
       action: r.action,
       callCount: r.callCount,
-      lastUsedAt: r.lastUsedAt,
+      lastUsedAt: new Date(r.lastUsedAt as unknown as string | Date),
     })),
     unusedActions,
   };
@@ -135,5 +138,8 @@ export async function topPrincipals(
   return rows.map((r) => ({
     ...r,
     principalKind: r.principalKind as 'user' | 'token',
+    // Same Date coercion as analyseRoleUsage — MAX() comes back as
+    // string from postgres.js.
+    lastUsedAt: new Date(r.lastUsedAt as unknown as string | Date),
   }));
 }
