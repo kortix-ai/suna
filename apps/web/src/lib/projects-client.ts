@@ -34,6 +34,10 @@ export interface AccountDetail {
   account_id: string;
   name: string;
   personal_account: boolean;
+  /** When true the account is on the simplified IAM V2 model (3 account
+   *  roles + 3 project roles, no DB-driven policies). Drives whether the
+   *  frontend shows the V1 Policies/Roles tabs or the V2 simple UI. */
+  iam_v2_enabled?: boolean;
   member_count: number;
   project_count: number;
   role: AccountRole;

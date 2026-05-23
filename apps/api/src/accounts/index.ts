@@ -288,6 +288,11 @@ function serializeAccount(row: typeof accounts.$inferSelect) {
     name: row.name,
     slug: row.accountId.slice(0, 8),
     personal_account: row.personalAccount,
+    // V2 rollout flag. The frontend reads this to decide whether to show
+    // the simplified members/groups UI (V2) or the legacy policies+roles
+    // tabs (V1). When false, every IAM check still routes through the
+    // V1 engine; flipping this requires running the migration script first.
+    iam_v2_enabled: row.iamV2Enabled,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
@@ -514,6 +519,7 @@ accountsRouter.get('/:accountId', async (c) => {
     account_id: row.accountId,
     name: row.name,
     personal_account: row.personalAccount,
+    iam_v2_enabled: row.iamV2Enabled,
     member_count: Number(memberCountRow?.n ?? 0),
     project_count: Number(projectCountRow?.n ?? 0),
     role: membership.accountRole,
