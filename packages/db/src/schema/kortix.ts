@@ -1840,6 +1840,37 @@ export const accountGroupMembers = kortixSchema.table(
   ],
 );
 
+/**
+ * IAM V2 bulk-access channel. Attaches an account_group to a project with
+ * a project_role. Every user in the group inherits that role on that
+ * project. This is what SCIM/SAML-pushed groups land on once an admin
+ * picks the project + role binding.
+ */
+export const projectGroupGrants = kortixSchema.table(
+  'project_group_grants',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => accountGroups.groupId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    role: projectRoleEnum('role').default('viewer').notNull(),
+    grantedBy: uuid('granted_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.groupId] }),
+    index('idx_project_group_grants_project').on(table.projectId),
+    index('idx_project_group_grants_group').on(table.groupId),
+    index('idx_project_group_grants_account').on(table.accountId),
+  ],
+);
+
 export const iamRoles = kortixSchema.table(
   'iam_roles',
   {
