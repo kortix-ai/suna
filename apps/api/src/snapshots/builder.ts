@@ -29,8 +29,11 @@
 
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { copyFile, cp, rm, stat } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pipeline } from 'node:stream/promises';
+import { createGzip } from 'node:zlib';
 import { Image } from '@daytonaio/sdk';
 import { projectRuntimeSnapshots } from '@kortix/db';
 import { db } from '../shared/db';
@@ -60,6 +63,8 @@ const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/agent-cli');
+const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
+  || resolve(REPO_ROOT, 'packages/executor-sdk');
 import {
   materializeRepoContext,
   readRepoFile,
@@ -78,6 +83,8 @@ import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 
 /** Cap how long the Daytona-side snapshot build is allowed to take. */
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
+const SNAPSHOT_LOG_TAIL_LIMIT = 20;
+const RUNTIME_LAYER_VERSION = 'agent-gzip-v1';
 
 /**
  * Default retention: how many `ready` snapshots we keep per
@@ -656,9 +663,38 @@ async function runBuild(
         };
       }
     } catch { /* not present — proceed with build */ }
+    await updateBuildingSnapshotStage(project.projectId, commitSha, provider, {
+      snapshotId: ctx.snapshotName,
+      stage: 'uploading-context',
+      contentHash: ctx.contentHash,
+      shortHash: ctx.shortHash,
+      runtimeFingerprint: ctx.runtimeFingerprint,
+      message: 'Uploading Daytona snapshot build context',
+    });
+    const buildLogs: string[] = [];
     await daytona.snapshot.create(
       { name: ctx.snapshotName, image: Image.fromDockerfile(ctx.composedPath) },
-      { timeout: Math.floor(BUILD_TIMEOUT_MS / 1000) },
+      {
+        timeout: Math.floor(BUILD_TIMEOUT_MS / 1000),
+        onLogs: (chunk) => {
+          const line = chunk.trim();
+          if (!line) return;
+          buildLogs.push(line);
+          if (buildLogs.length > SNAPSHOT_LOG_TAIL_LIMIT) {
+            buildLogs.splice(0, buildLogs.length - SNAPSHOT_LOG_TAIL_LIMIT);
+          }
+          console.info(`[snapshots] ${ctx.snapshotName}: ${line}`);
+          void updateBuildingSnapshotStage(project.projectId, commitSha, provider, {
+            snapshotId: ctx.snapshotName,
+            stage: 'building-image',
+            contentHash: ctx.contentHash,
+            shortHash: ctx.shortHash,
+            runtimeFingerprint: ctx.runtimeFingerprint,
+            message: line,
+            logs: buildLogs,
+          });
+        },
+      },
     );
     return {
       daytonaName: ctx.snapshotName,
@@ -670,6 +706,49 @@ async function runBuild(
   } finally {
     await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+async function updateBuildingSnapshotStage(
+  projectId: string,
+  commitSha: string,
+  provider: SandboxProviderName,
+  build: {
+    snapshotId: string;
+    stage: 'uploading-context' | 'building-image';
+    contentHash: string;
+    shortHash: string;
+    runtimeFingerprint: string;
+    message: string;
+    logs?: string[];
+  },
+): Promise<void> {
+  const metadata: Record<string, unknown> = {
+    stage: build.stage,
+    contentHash: build.contentHash,
+    shortHash: build.shortHash,
+    runtimeFingerprint: build.runtimeFingerprint,
+    sandboxVersion: SANDBOX_VERSION,
+    lastMessage: build.message,
+    updatedAt: new Date().toISOString(),
+  };
+  if (build.logs?.length) {
+    metadata.logs = build.logs;
+  }
+  await db
+    .update(projectRuntimeSnapshots)
+    .set({
+      snapshotId: build.snapshotId,
+      metadata,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.commitSha, commitSha),
+        eq(projectRuntimeSnapshots.provider, provider),
+      ),
+    )
+    .catch(() => {});
 }
 
 async function recoverInProgressSnapshotRow(
@@ -738,6 +817,7 @@ async function prepareBuildContext(
   await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
   await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
+  await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
 
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   const hash = computeSnapshotHash({
@@ -752,17 +832,19 @@ async function prepareBuildContext(
     commitSha,
     sandboxPaths.context === '.' ? null : sandboxPaths.context,
   );
-  await copyFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent'));
+  await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
   await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
+  await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), { recursive: true });
 
   const composedPath = join(contextDir, '.kortix-snapshot.Dockerfile');
   const composed = buildLayeredDockerfile({
     userDockerfile,
     opencodeVersion: OPENCODE_VERSION,
-    agentBinaryPath: 'kortix-agent',
+    agentBinaryPath: 'kortix-agent.gz',
     entrypointScriptPath: 'kortix-entrypoint',
     agentCliPath: 'kortix-agent-cli',
+    executorSdkPath: 'kortix-executor-sdk',
   });
   await Bun.write(composedPath, composed);
 
@@ -778,12 +860,13 @@ async function prepareBuildContext(
 
 async function currentRuntimeArtifactFingerprint(): Promise<string> {
   return buildRuntimeArtifactFingerprint({
-    sandboxVersion: SANDBOX_VERSION,
+    sandboxVersion: `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}`,
     opencodeVersion: OPENCODE_VERSION,
     artifacts: [
       { label: 'kortix-agent', path: AGENT_BIN_PATH },
       { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
       { label: 'kortix-agent-cli', path: AGENT_CLI_SRC_PATH },
+      { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH },
     ],
   });
 }
@@ -887,6 +970,14 @@ async function findSnapshotRow(
     )
     .limit(1);
   return row ?? null;
+}
+
+async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
+  await pipeline(
+    createReadStream(sourcePath),
+    createGzip({ level: 9 }),
+    createWriteStream(targetPath),
+  );
 }
 
 function extractMetadataHash(metadata: unknown): string | null {

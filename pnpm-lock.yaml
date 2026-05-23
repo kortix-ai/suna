@@ -18,7 +18,7 @@ overrides:
   icu-minify@>=4.0.0 <4.9.2: 4.9.2
   uuid@>=13.0.0 <13.0.1: 13.0.1
   postcss@>=8.0.0 <8.5.10: 8.5.10
-  fast-xml-parser@>=5.0.0 <5.7.0: 5.7.0
+  fast-xml-parser@>=5.0.0 <5.7.0: 5.7.2
   '@xmldom/xmldom@>=0.0.0 <0.8.13': 0.8.13
   dompurify@>=3.0.0 <3.4.0: 3.4.0
   follow-redirects@>=1.0.0 <1.16.0: 1.16.0
@@ -1995,7 +1995,7 @@ packages:
     engines: {node: '>=20.0.0'}
     dependencies:
       '@smithy/types': 4.12.0
-      fast-xml-parser: 5.7.0
+      fast-xml-parser: 5.7.2
       tslib: 2.8.1
     dev: false
 
@@ -21445,8 +21445,8 @@ packages:
       xml-naming: 0.1.0
     dev: false
 
-  /fast-xml-parser@5.7.0:
-    resolution: {integrity: sha512-MTcrUoRQ1GSQ9iG3QJzBGquYYYeA7piZaJoIWbPFGbRn6Jj6z7xgoAyi4DrZX4y2ZIQQBF59gc/zmvvejjgoFQ==}
+  /fast-xml-parser@5.7.2:
+    resolution: {integrity: sha512-P7oW7tLbYnhOLQk/Gv7cZgzgMPP/XN03K02/Jy6Y/NHzyIAIpxuZIM/YqAkfiXFPxA2CTm7NtCijK9EDu09u2w==}
     hasBin: true
     dependencies:
       '@nodable/entities': 2.1.0

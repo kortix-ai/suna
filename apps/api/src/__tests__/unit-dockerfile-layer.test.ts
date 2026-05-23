@@ -7,9 +7,10 @@ import {
 
 const COMMON = {
   opencodeVersion: '1.14.28',
-  agentBinaryPath: 'kortix-agent',
+  agentBinaryPath: 'kortix-agent.gz',
   entrypointScriptPath: 'kortix-entrypoint',
   agentCliPath: 'kortix-agent-cli',
+  executorSdkPath: 'kortix-executor-sdk',
 };
 
 describe('buildLayeredDockerfile', () => {
@@ -19,7 +20,13 @@ describe('buildLayeredDockerfile', () => {
     expect(merged.startsWith('FROM ubuntu:24.04\nRUN apt-get install -y foo')).toBe(true);
     expect(merged).toContain('Kortix runtime layer (auto-injected)');
     expect(merged).toContain('opencode-ai@1.14.28');
-    expect(merged).toContain('COPY kortix-agent /usr/local/bin/kortix-agent');
+    expect(merged).toContain('COPY kortix-agent.gz /tmp/kortix-agent.gz');
+    expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
+    expect(merged).toContain('COPY kortix-agent-cli/ /opt/kortix/apps/sandbox/agent-cli/');
+    expect(merged).toContain('COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/');
+    expect(merged).toContain(
+      'bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli',
+    );
     expect(merged).toContain('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
   });
 

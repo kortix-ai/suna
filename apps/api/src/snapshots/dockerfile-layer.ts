@@ -21,22 +21,36 @@ export interface BuildLayeredDockerfileOpts {
   userDockerfile: string;
   /** Pinned opencode CLI version (matches platform-wide `OPENCODE_VERSION`). */
   opencodeVersion: string;
-  /** Path the snapshot builder will reference for the kortix-agent binary. */
+  /** Path the snapshot builder will reference for the gzipped kortix-agent binary. */
   agentBinaryPath: string;
   /** Path the snapshot builder will reference for the entrypoint script. */
   entrypointScriptPath: string;
   /**
    * Path the snapshot builder will reference for the agent-cli source tree
-   * (apps/sandbox/agent-cli). The layer COPYs it into /opt/kortix/agent-cli
+   * (apps/sandbox/agent-cli). The layer COPYs it into
+   * /opt/kortix/apps/sandbox/agent-cli
    * and runs install-shims.sh to wire each *.ts (excluding lib/) as a
    * /usr/local/bin/<name> shim — that's how `slack`, `kchannel`, … land on
    * PATH for the agent to invoke from inside the sandbox.
    */
   agentCliPath: string;
+  /**
+   * Path the snapshot builder will reference for packages/executor-sdk.
+   * The agent CLI imports it via the same repo-relative path in dev and in
+   * real snapshots.
+   */
+  executorSdkPath: string;
 }
 
 export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string {
-  const { userDockerfile, opencodeVersion, agentBinaryPath, entrypointScriptPath, agentCliPath } = opts;
+  const {
+    userDockerfile,
+    opencodeVersion,
+    agentBinaryPath,
+    entrypointScriptPath,
+    agentCliPath,
+    executorSdkPath,
+  } = opts;
   const trimmed = userDockerfile.trimEnd();
 
   const kortixLayer = [
@@ -50,7 +64,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // in a detached session that survives the agent\'s bash tool call.
     'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
-    '        ca-certificates curl git nodejs npm unzip tmux \\',
+    '        ca-certificates curl git gzip nodejs npm unzip tmux \\',
     '    && rm -rf /var/lib/apt/lists/*',
     '',
     `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
@@ -73,12 +87,16 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     'RUN curl -fsSL https://kortix.com/install | bash \\',
     '    || echo "kortix CLI not yet available — sandbox will boot without it"',
     '',
-    `COPY ${agentBinaryPath} /usr/local/bin/kortix-agent`,
+    `COPY ${agentBinaryPath} /tmp/kortix-agent.gz`,
     `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,
-    `COPY ${agentCliPath}/ /opt/kortix/agent-cli/`,
-    'RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix-entrypoint \\',
-    '        /opt/kortix/agent-cli/install-shims.sh \\',
-    '    && bash /opt/kortix/agent-cli/install-shims.sh /opt/kortix/agent-cli',
+    // Keep the repo-relative layout so CLIs can import shared packages.
+    `COPY ${agentCliPath}/ /opt/kortix/apps/sandbox/agent-cli/`,
+    `COPY ${executorSdkPath}/ /opt/kortix/packages/executor-sdk/`,
+    'RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\',
+    '    && rm /tmp/kortix-agent.gz \\',
+    '    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix-entrypoint \\',
+    '        /opt/kortix/apps/sandbox/agent-cli/install-shims.sh \\',
+    '    && bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli',
     '',
     // Pre-seed /workspace with a sentinel file. Daytona\'s runtime appears
     // to clean up *empty* /workspace directories shortly after the
