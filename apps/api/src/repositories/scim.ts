@@ -5,7 +5,7 @@
 // The actual SCIM protocol mapping (request shapes, error envelopes) lives
 // in the route handler — this file is plain Drizzle.
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomInt } from 'node:crypto';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { scimTokens } from '@kortix/db';
 import { db } from '../shared/db';
@@ -17,24 +17,12 @@ const SCIM_TOKEN_BODY_LEN = 40; // base32-ish alphanumeric, ~200 bits of entropy
 
 function randomAlphanum(len: number): string {
   // Avoid 0/O/1/I to keep tokens human-recognisable; matches what most
-  // SaaS API key generators do.
+  // SaaS API key generators do. `crypto.randomInt` is unbiased (Node
+  // does the rejection sampling internally), so we sidestep the modulo
+  // bias that `randomBytes(...) % N` would have when N doesn't divide 256.
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  // Rejection sampling to avoid modulo bias: 256 % 56 = 32, so the naive
-  // `byte % 56` would make indices 0..31 ~25% more likely. We accept only
-  // bytes in [0, max) where max is the largest multiple of `alphabet.length`
-  // that fits in a byte, and redraw otherwise.
-  const max = 256 - (256 % alphabet.length);
   let out = '';
-  while (out.length < len) {
-    const need = len - out.length;
-    // Overdraw to amortise the cost of a draw across the expected rejection
-    // rate (~12.5% with this alphabet). Worst case we just loop again.
-    const bytes = randomBytes(Math.ceil(need * 1.2));
-    for (let i = 0; i < bytes.length && out.length < len; i++) {
-      const b = bytes[i]!;
-      if (b < max) out += alphabet[b % alphabet.length];
-    }
-  }
+  for (let i = 0; i < len; i++) out += alphabet[randomInt(alphabet.length)]!;
   return out;
 }
 
