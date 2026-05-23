@@ -135,6 +135,12 @@ describe('performRequest', () => {
     const txt = recordingFetch(500, 'boom');
     expect(await performRequest({ url: 'u', method: 'GET', headers: {} }, txt.fetchImpl)).toEqual({ status: 500, ok: false, data: 'boom' });
   });
+
+  test('parses SSE-framed JSON (MCP streamable-HTTP)', async () => {
+    const sse = recordingFetch(200, 'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"hi"}]}}\n\n');
+    const res = await performRequest({ url: 'u', method: 'POST', headers: {} }, sse.fetchImpl);
+    expect((res.data as any).result.content[0].text).toBe('hi');
+  });
 });
 
 describe('executeCall dispatch', () => {

@@ -228,17 +228,35 @@ export type FetchImpl = (url: string, init: { method: string; headers: Record<st
   text: () => Promise<string>;
 }>;
 
-/** Perform a built request and parse the response (JSON when possible). */
+/** Parse a response body: JSON, or SSE-framed JSON (MCP streamable-HTTP), else raw text. */
+export function parseResponseBody(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    /* not plain JSON — try SSE */
+  }
+  // SSE: `event: message\ndata: {...}` — take the last data: line that parses as JSON.
+  const dataLines = text
+    .split(/\r?\n/)
+    .filter((l) => l.startsWith('data:'))
+    .map((l) => l.slice(5).trim())
+    .filter(Boolean);
+  for (let i = dataLines.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(dataLines[i]!);
+    } catch {
+      /* keep scanning */
+    }
+  }
+  return text;
+}
+
+/** Perform a built request and parse the response (JSON or SSE-framed JSON). */
 export async function performRequest(req: BuiltRequest, fetchImpl: FetchImpl): Promise<ExecResult> {
   const res = await fetchImpl(req.url, { method: req.method, headers: req.headers, body: req.body });
   const text = await res.text();
-  let data: unknown = text;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    /* keep raw text */
-  }
-  return { status: res.status, ok: res.ok, data };
+  return { status: res.status, ok: res.ok, data: parseResponseBody(text) };
 }
 
 /**

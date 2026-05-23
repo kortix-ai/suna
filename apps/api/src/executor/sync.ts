@@ -28,6 +28,7 @@ import {
   normalizePipedream,
 } from './normalize';
 import type { NormalizedAction, HttpRouteSpec } from './types';
+import { parseResponseBody } from './execute';
 import { connectorConfig, toPolicyRows } from './materialize';
 import { pipedreamCatalog, pipedreamConfigured } from './pipedream';
 
@@ -174,7 +175,12 @@ export async function resolveCatalog(project: GitBackedProject, spec: ConnectorS
     switch (spec.provider) {
       case 'openapi': {
         const doc = await loadSpecDoc(project, spec.spec!);
-        const server = Array.isArray(doc?.servers) && doc.servers[0]?.url ? String(doc.servers[0].url) : null;
+        let server = Array.isArray(doc?.servers) && doc.servers[0]?.url ? String(doc.servers[0].url) : null;
+        // Specs often use a relative server (e.g. Petstore's "/api/v3"); resolve
+        // it against the spec URL's origin so the gateway has an absolute base.
+        if (server && server.startsWith('/') && /^https?:\/\//i.test(spec.spec!)) {
+          try { server = new URL(server, spec.spec!).href.replace(/\/$/, ''); } catch { /* keep */ }
+        }
         return { actions: normalizeOpenApi(doc), server };
       }
       case 'http': {
@@ -240,6 +246,7 @@ async function listMcpTools(url: string): Promise<any[]> {
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
   });
-  const json: any = await res.json();
+  // Streamable-HTTP MCP responds with SSE-framed JSON, not plain JSON.
+  const json: any = parseResponseBody(await res.text());
   return json?.result?.tools ?? [];
 }
