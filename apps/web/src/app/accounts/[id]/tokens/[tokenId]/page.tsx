@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
@@ -25,6 +27,7 @@ function formatDate(iso: string | null | undefined) {
 }
 
 export default function TokenDetailPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useParams<{ id: string; tokenId: string }>();
   const accountId = params?.id;
@@ -74,9 +77,7 @@ export default function TokenDetailPage() {
               onClick={() => router.push('/projects')}
               className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to projects
-            </button>
+              <ArrowLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line78JsxTextBackToProjects')}</button>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <button
                 type="button"
@@ -94,7 +95,7 @@ export default function TokenDetailPage() {
                 {accountQuery.data?.name ?? 'Account'}
               </button>
               <span className="text-muted-foreground/40">/</span>
-              <span>CLI tokens</span>
+              <span>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line97JsxTextCliTokens')}</span>
               <span className="text-muted-foreground/40">/</span>
               {tokensQuery.isLoading ? (
                 <Skeleton className="h-4 w-24" />
@@ -125,7 +126,7 @@ export default function TokenDetailPage() {
                     </Badge>
                     <span>Created {formatDate(token.created_at)}</span>
                     <span className="text-muted-foreground/40">·</span>
-                    <span>Last used {formatDate(token.last_used_at)}</span>
+                    <span>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line128JsxTextLastUsed')}{formatDate(token.last_used_at)}</span>
                   </div>
                 )}
               </div>
@@ -133,20 +134,12 @@ export default function TokenDetailPage() {
           </div>
 
           {!tokensQuery.isLoading && !token && tokenId && (
-            <InfoBanner tone="neutral">
-              This token doesn&apos;t exist or has been revoked.
-            </InfoBanner>
+            <InfoBanner tone="neutral">{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line137JsxTextThisTokenDoesnAposTExistOrHas')}</InfoBanner>
           )}
 
           {token && accountId && (
             <>
-              <InfoBanner tone="info" title="Narrow what this token can do">
-                By default a token inherits its creator&apos;s permissions. Attach
-                one or more policies below to restrict it — once any policy is
-                attached, the token can <strong>only</strong> do what those policies
-                allow. The creator&apos;s super-admin status and group memberships
-                no longer apply.
-              </InfoBanner>
+              <InfoBanner tone="info" title={tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line143JsxAttrTitleNarrowWhatThisTokenCanDo')}>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line144JsxTextByDefaultATokenInheritsItsCreatorApos')}<strong>only</strong>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line146JsxTextDoWhatThosePoliciesAllowTheCreatorApos')}</InfoBanner>
 
               <PoliciesTable
                 accountId={accountId}

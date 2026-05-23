@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Project About — single-column, centered, Context is the main thing.
  *
@@ -32,6 +34,7 @@ interface ProjectAboutProps {
 }
 
 export function ProjectAbout({ project }: ProjectAboutProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // ── CONTEXT.md file path ─────────────────────────────────
   const contextPath = project?.path && project.path !== '/'
     ? `${project.path.replace(/\/+$/, '')}/.kortix/CONTEXT.md`
@@ -162,7 +165,7 @@ export function ProjectAbout({ project }: ProjectAboutProps) {
           {contextLoading ? (
             <div className="rounded-2xl border border-border/40 bg-card flex items-center gap-2 justify-center py-12 text-muted-foreground/40">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-[13px]">Loading CONTEXT.md…</span>
+              <span className="text-[13px]">{tHardcodedUi.raw('componentsKortixProjectAbout.line165JsxTextLoadingContextMd')}</span>
             </div>
           ) : editing ? (
             <textarea
@@ -188,7 +191,7 @@ export function ProjectAbout({ project }: ProjectAboutProps) {
                 'focus:border-primary/30 focus:ring-1 focus:ring-primary/20',
                 'p-5 transition-colors',
               )}
-              placeholder="# Project Context&#10;&#10;Mission, architecture, key decisions, open questions — the durable project memory every agent reads first."
+              placeholder={tHardcodedUi.raw('componentsKortixProjectAbout.line191JsxAttrPlaceholderProjectContext1010MissionArchitectureKeyDecisions')}
             />
           ) : contextError || !contextContent ? (
             <button
@@ -196,16 +199,12 @@ export function ProjectAbout({ project }: ProjectAboutProps) {
               className="w-full rounded-2xl border border-dashed border-border/60 p-10 text-center hover:border-primary/40 hover:bg-primary/[0.02] transition-colors cursor-pointer group"
             >
               <AlertCircle className="h-5 w-5 text-muted-foreground/25 mx-auto mb-3 group-hover:text-primary/50 transition-colors" />
-              <p className="text-[13px] text-foreground/70 mb-1 font-medium">
-                No CONTEXT.md yet
-              </p>
-              <p className="text-[12px] text-muted-foreground/40 max-w-[380px] mx-auto leading-relaxed">
-                Click to create{' '}
+              <p className="text-[13px] text-foreground/70 mb-1 font-medium">{tHardcodedUi.raw('componentsKortixProjectAbout.line200JsxTextNoContextMdYet')}</p>
+              <p className="text-[12px] text-muted-foreground/40 max-w-[380px] mx-auto leading-relaxed">{tHardcodedUi.raw('componentsKortixProjectAbout.line203JsxTextClickToCreate')}{' '}
                 <code className="font-mono text-[11px] bg-muted/40 px-1.5 py-0.5 rounded">
                   .kortix/CONTEXT.md
                 </code>
-                {' '}— the durable project memory every agent reads first.
-              </p>
+                {' '}{tHardcodedUi.raw('componentsKortixProjectAbout.line207JsxTextTheDurableProjectMemoryEveryAgentReadsFirst')}</p>
             </button>
           ) : (
             <div className="rounded-2xl border border-border/40 bg-card px-5 sm:px-6 py-5">
@@ -227,7 +226,7 @@ export function ProjectAbout({ project }: ProjectAboutProps) {
                 <button
                   onClick={copyPath}
                   className="text-[12px] font-mono text-foreground/75 hover:text-foreground inline-flex items-center gap-1.5 transition-colors cursor-pointer max-w-full min-w-0"
-                  title="Copy path"
+                  title={tHardcodedUi.raw('componentsKortixProjectAbout.line230JsxAttrTitleCopyPath')}
                 >
                   <span className="truncate">{project?.path || '—'}</span>
                   {pathCopied ? (

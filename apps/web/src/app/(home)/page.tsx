@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
@@ -109,6 +110,7 @@ function LogoMarquee({ items, reverse = false }: { items: string[]; reverse?: bo
 }
 
 export default function Home() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [showFloatingCta, setShowFloatingCta] = useState(false);
   const { user } = useAuth();
   const { formattedStars } = useGitHubStars('kortix-ai', 'kortix');
@@ -135,18 +137,17 @@ export default function Home() {
           {/* hero copy */}
           <div className="relative z-10 mx-auto flex max-w-3xl flex-col items-center text-center">
             <h1 className="text-4xl font-medium leading-[1.04] tracking-tight text-foreground sm:text-5xl md:text-6xl">
-              The AI command center<br />
-              <span className="text-muted-foreground">for your company</span>
+              {tHardcodedUi.raw('appHomePage.line138JsxTextTheAICommandCenter')}<br />
+              <span className="text-muted-foreground">{tHardcodedUi.raw('appHomePage.line139JsxTextForYourCompany')}</span>
             </h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-              Run your company on AI. Every agent, trigger, integration, and memory your teams need — in one place you control.
-            </p>
+              {tHardcodedUi.raw('appHomePage.line142JsxTextRunYourCompanyOnAIEveryAgentTrigger')}</p>
             <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
               <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={handleLaunch}>
-                Get started<ArrowRight className="ml-1.5 size-3.5" />
+                {tHardcodedUi.raw('appHomePage.line146JsxTextGetStarted')}<ArrowRight className="ml-1.5 size-3.5" />
               </Button>
               <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm">
-                <Link href={DEMO_URL}>Talk to sales</Link>
+                <Link href={DEMO_URL}>{tHardcodedUi.raw('appHomePage.line149JsxTextTalkToSales')}</Link>
               </Button>
             </div>
           </div>
@@ -160,8 +161,7 @@ export default function Home() {
         {/* ═══════════════ INTEGRATIONS MARQUEE ═══════════════ */}
         <section className="border-y border-border/60 bg-muted/20 py-10">
           <p className="mb-7 text-center text-sm text-muted-foreground">
-            Connects to the <span className="font-medium text-foreground">3,000+ Apps</span> your company already runs on
-          </p>
+            {tHardcodedUi.raw('appHomePage.line163JsxTextConnectsToThe')}<span className="font-medium text-foreground">{tHardcodedUi.raw('appHomePage.line163JsxText3000Apps')}</span> {tHardcodedUi.raw('appHomePage.line163JsxTextYourCompanyAlreadyRunsOn')}</p>
           <LogoMarquee items={INTEGRATIONS} />
         </section>
 
@@ -190,11 +190,9 @@ export default function Home() {
             <div className="mb-14 max-w-2xl">
               <Eyebrow>Rollout</Eyebrow>
               <h2 className="mt-3 text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl md:text-4xl">
-                Live across your company in weeks.
-              </h2>
+                {tHardcodedUi.raw('appHomePage.line193JsxTextLiveAcrossYourCompanyInWeeks')}</h2>
               <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-                No rip-and-replace. Stand up your first agent in an afternoon, then scale department by department.
-              </p>
+                {tHardcodedUi.raw('appHomePage.line196JsxTextNoRipAndReplaceStandUpYourFirst')}</p>
             </div>
           </Reveal>
           <Reveal delay={0.1}>
@@ -222,13 +220,11 @@ export default function Home() {
         <section className="mx-auto max-w-6xl px-6 py-16 sm:py-24">
           <Reveal>
             <div className="mb-12 max-w-2xl">
-              <Eyebrow>Open &amp; code-native</Eyebrow>
+              <Eyebrow>{tHardcodedUi.raw('appHomePage.line225JsxTextOpenCodeNative')}</Eyebrow>
               <h2 className="mt-3 text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl md:text-4xl">
-                Your whole company, as code.
-              </h2>
+                {tHardcodedUi.raw('appHomePage.line227JsxTextYourWholeCompanyAsCode')}</h2>
               <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-                Every agent, skill, trigger, and policy is plain code in a git repo — diff it, review it, roll it back. Built on the open <span className="font-medium text-foreground">opencode</span> agent runtime. Self-host anywhere. No black box, no lock-in.
-              </p>
+                {tHardcodedUi.raw('appHomePage.line230JsxTextEveryAgentSkillTriggerAndPolicyIsPlain')}<span className="font-medium text-foreground">opencode</span> {tHardcodedUi.raw('appHomePage.line230JsxTextAgentRuntimeSelfHostAnywhereNoBlackBox')}</p>
             </div>
           </Reveal>
 
@@ -264,9 +260,8 @@ export default function Home() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
                       <Star className="size-3.5 fill-current text-amber-500" />
-                      {formattedStars} stars on GitHub
-                    </div>
-                    <div className="mt-0.5 text-sm text-muted-foreground">A leading open-source AI workspace.</div>
+                      {formattedStars} {tHardcodedUi.raw('appHomePage.line267JsxTextStarsOnGitHub')}</div>
+                    <div className="mt-0.5 text-sm text-muted-foreground">{tHardcodedUi.raw('appHomePage.line269JsxTextALeadingOpenSourceAIWorkspace')}</div>
                   </div>
                   <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:text-foreground" />
                 </a>
@@ -281,11 +276,9 @@ export default function Home() {
             <div className="mb-12 max-w-2xl">
               <Eyebrow>Enterprise</Eyebrow>
               <h2 className="mt-3 text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl md:text-4xl">
-                Secure enough to run the whole company.
-              </h2>
+                {tHardcodedUi.raw('appHomePage.line284JsxTextSecureEnoughToRunTheWholeCompany')}</h2>
               <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-                Fine-grained control over who — and which agent — can do what, with hard isolation around every single run.
-              </p>
+                {tHardcodedUi.raw('appHomePage.line287JsxTextFineGrainedControlOverWhoAndWhichAgent')}</p>
             </div>
           </Reveal>
           <Reveal delay={0.1}>
@@ -311,11 +304,10 @@ export default function Home() {
           <Reveal delay={0.15}>
             <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2">
               <Link href={DEMO_URL} className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground transition-all hover:gap-2.5">
-                Talk to sales<ArrowRight className="size-4" />
+                {tHardcodedUi.raw('appHomePage.line314JsxTextTalkToSales')}<ArrowRight className="size-4" />
               </Link>
               <Link href="/technology" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-                See how it works
-              </Link>
+                {tHardcodedUi.raw('appHomePage.line317JsxTextSeeHowItWorks')}</Link>
             </div>
           </Reveal>
         </section>
@@ -326,21 +318,18 @@ export default function Home() {
             <div className="relative overflow-hidden rounded-[28px] border border-border bg-card px-6 py-20 text-center sm:py-28">
               <div className="absolute inset-0 z-0 opacity-50"><WallpaperBackground wallpaperId="brandmark" /></div>
               <div className="relative z-10">
-                <Eyebrow>Get started</Eyebrow>
+                <Eyebrow>{tHardcodedUi.raw('appHomePage.line329JsxTextGetStarted')}</Eyebrow>
                 <h2 className="mx-auto mt-3 max-w-2xl text-3xl font-medium leading-tight tracking-tight text-foreground sm:text-4xl md:text-5xl">
-                  Give your company a workforce.
-                </h2>
+                  {tHardcodedUi.raw('appHomePage.line331JsxTextGiveYourCompanyAWorkforce')}</h2>
                 <p className="mx-auto mt-4 max-w-xl text-base text-muted-foreground sm:text-lg">
-                  Free to self-host. Managed cloud from $20 / seat + usage. Spin up your first agent today — or have us map it to your workflows in a live demo.
-                </p>
+                  {tHardcodedUi.raw('appHomePage.line334JsxTextFreeToSelfHostManagedCloudFrom20')}</p>
                 <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                  <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={handleLaunch}>Get started<ArrowRight className="ml-1.5 size-3.5" /></Button>
-                  <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm"><Link href={DEMO_URL}>Talk to sales</Link></Button>
-                  <Button asChild size="lg" variant="ghost" className="h-12 rounded-full px-7 text-sm"><Link href="/pricing">See pricing</Link></Button>
+                  <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={handleLaunch}>{tHardcodedUi.raw('appHomePage.line337JsxTextGetStarted')}<ArrowRight className="ml-1.5 size-3.5" /></Button>
+                  <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm"><Link href={DEMO_URL}>{tHardcodedUi.raw('appHomePage.line338JsxTextTalkToSales')}</Link></Button>
+                  <Button asChild size="lg" variant="ghost" className="h-12 rounded-full px-7 text-sm"><Link href="/pricing">{tHardcodedUi.raw('appHomePage.line339JsxTextSeePricing')}</Link></Button>
                 </div>
                 <p className="mt-7 inline-flex items-center gap-2 text-xs text-muted-foreground">
-                  <GitBranch className="size-3.5" /> Open source · SSO, RBAC &amp; on-prem · No lock-in
-                </p>
+                  <GitBranch className="size-3.5" /> {tHardcodedUi.raw('appHomePage.line342JsxTextOpenSourceSSORBACOnPremNoLock')}</p>
               </div>
             </div>
           </Reveal>
@@ -353,7 +342,7 @@ export default function Home() {
           <Link href="/technology" className="hidden h-8 items-center rounded-full px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:flex">Technical</Link>
           <span className="hidden h-5 w-px bg-border sm:block" />
           <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="flex size-8 items-center justify-center rounded-full transition-colors hover:bg-foreground/[0.08]"><Github className="size-4" /></a>
-          <Button size="sm" className="rounded-full px-5 text-xs font-medium" onClick={handleLaunch}>Get started<ArrowRight className="ml-1.5 size-3" /></Button>
+          <Button size="sm" className="rounded-full px-5 text-xs font-medium" onClick={handleLaunch}>{tHardcodedUi.raw('appHomePage.line356JsxTextGetStarted')}<ArrowRight className="ml-1.5 size-3" /></Button>
         </div>
       </div>
     </BackgroundAALChecker>

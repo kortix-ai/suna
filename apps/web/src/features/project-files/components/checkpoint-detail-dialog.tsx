@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
@@ -154,6 +156,7 @@ function MainDiffColumn({
   sha: string;
   file: ProjectCommitFile | null;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data, isLoading, error } = useCommitDiff(sha, {
     path: file?.path,
     enabled: Boolean(file),
@@ -163,7 +166,7 @@ function MainDiffColumn({
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
         <GitCommitHorizontal className="h-10 w-10 text-muted-foreground/20" />
-        <p className="text-sm text-muted-foreground">Select a file to view the diff</p>
+        <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line166JsxTextSelectAFileToViewTheDiff')}</p>
       </div>
     );
   }
@@ -217,16 +220,14 @@ function MainDiffColumn({
         {error && !isLoading && (
           <div className="flex flex-col items-center justify-center gap-2 p-10 text-center">
             <AlertCircle className="h-6 w-6 text-muted-foreground/30" />
-            <p className="text-xs text-muted-foreground">Failed to load diff</p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line220JsxTextFailedToLoadDiff')}</p>
           </div>
         )}
         {data && !data.patch && !isLoading && (
           <div className="flex flex-col items-center justify-center gap-2 p-10 text-center">
             <GitCommitHorizontal className="h-6 w-6 text-muted-foreground/30" />
-            <p className="text-xs text-muted-foreground">No textual diff</p>
-            <p className="text-xs text-muted-foreground/60">
-              File may be binary or unchanged in this checkpoint.
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line226JsxTextNoTextualDiff')}</p>
+            <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line228JsxTextFileMayBeBinaryOrUnchangedInThis')}</p>
           </div>
         )}
         {data?.patch && (
@@ -257,6 +258,7 @@ export function CheckpointDetailDialog({
   onSelectSha,
   onClose,
 }: CheckpointDetailDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const ctx = useProjectContext();
   const activeRef = ctx?.ref ?? '';
 
@@ -404,7 +406,7 @@ export function CheckpointDetailDialog({
                 className="h-8 w-8"
                 disabled={!hasPrevSha}
                 onClick={gotoPrevSha}
-                title="Previous checkpoint (←)"
+                title={tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line407JsxAttrTitlePreviousCheckpoint')}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -414,7 +416,7 @@ export function CheckpointDetailDialog({
                 className="h-8 w-8"
                 disabled={!hasNextSha}
                 onClick={gotoNextSha}
-                title="Next checkpoint (→)"
+                title={tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line417JsxAttrTitleNextCheckpoint')}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -479,7 +481,7 @@ export function CheckpointDetailDialog({
                   'inline-flex items-center gap-1.5 rounded-full bg-muted/60 hover:bg-muted px-2 py-1 text-xs',
                   'font-mono tabular-nums transition-colors',
                 )}
-                title="Copy checkpoint id"
+                title={tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line482JsxAttrTitleCopyCheckpointId')}
               >
                 {copied ? (
                   <Check className="h-3 w-3 text-emerald-500" />
@@ -525,7 +527,7 @@ export function CheckpointDetailDialog({
                 <Input
                   value={fileFilter}
                   onChange={(e) => setFileFilter(e.target.value)}
-                  placeholder="Filter files"
+                  placeholder={tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line528JsxAttrPlaceholderFilterFiles')}
                   className="h-7 pl-7 text-xs"
                 />
               </div>
@@ -542,9 +544,7 @@ export function CheckpointDetailDialog({
               {error && !isLoading && (
                 <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
                   <AlertCircle className="h-5 w-5 text-muted-foreground/30" />
-                  <p className="text-xs text-muted-foreground">
-                    Failed to load checkpoint
-                  </p>
+                  <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line546JsxTextFailedToLoadCheckpoint')}</p>
                 </div>
               )}
               {data && filteredFiles.length === 0 && !isLoading && (
@@ -572,7 +572,7 @@ export function CheckpointDetailDialog({
             {isLoading && !data && (
               <div className="flex flex-col items-center justify-center h-full gap-2">
                 <Loader2 className="h-5 w-5 text-muted-foreground/40 animate-spin" />
-                <p className="text-xs text-muted-foreground">Loading checkpoint…</p>
+                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line575JsxTextLoadingCheckpoint')}</p>
               </div>
             )}
             {sha && (data || !isLoading) && (

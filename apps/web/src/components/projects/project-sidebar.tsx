@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import * as React from 'react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -225,6 +227,7 @@ function directSubsessions(session: ProjectSession): ProjectOpenCodeSession[] {
 }
 
 function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -256,9 +259,9 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
   return (
     <div className="overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       {isLoading ? (
-        <div className="px-3 py-6 text-center text-xs text-muted-foreground">Loading…</div>
+        <div className="px-3 py-6 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectSidebar.line259JsxTextLoading')}</div>
       ) : sessions.length === 0 ? (
-        <div className="px-3 py-8 text-center text-xs text-muted-foreground">No sessions yet</div>
+        <div className="px-3 py-8 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectSidebar.line261JsxTextNoSessionsYet')}</div>
       ) : (
         sessions.map((session) => {
           const href = `/projects/${projectId}/sessions/${session.session_id}`;
@@ -351,6 +354,7 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
 }
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const pathname = usePathname();
   const { state, setOpen, setOpenMobile } = useSidebar();
@@ -507,7 +511,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               icon={createSession.isPending
                 ? <Loader2 className="h-4 w-4 animate-spin" />
                 : <SquarePen className="h-4 w-4" />}
-              label="New session"
+              label={tHardcodedUi.raw('componentsProjectsProjectSidebar.line510JsxAttrLabelNewSession')}
               onClick={handleNewSession}
               disabled={createSession.isPending}
             />

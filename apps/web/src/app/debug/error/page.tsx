@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState } from 'react';
 
 type CrashMode = 'reference' | 'type' | 'custom' | 'long' | 'nostack';
@@ -37,6 +39,7 @@ function triggerCrash(mode: CrashMode): never {
 }
 
 export default function DebugErrorPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [mode, setMode] = useState<CrashMode | null>(null);
 
   if (mode) {
@@ -64,12 +67,8 @@ export default function DebugErrorPage() {
       }}
     >
       <div style={{ maxWidth: 520, width: '100%' }}>
-        <h1 style={{ fontSize: 20, marginBottom: 8 }}>Global error boundary preview</h1>
-        <p style={{ fontSize: 13, opacity: 0.7, lineHeight: 1.6, marginTop: 0 }}>
-          Click a button to trigger a render-time crash. In production this renders
-          <code> app/global-error.tsx</code>. In <code>next dev</code> the Next.js dev overlay
-          appears first — dismiss it (Esc / the <b>×</b>) to see the real boundary underneath.
-        </p>
+        <h1 style={{ fontSize: 20, marginBottom: 8 }}>{tHardcodedUi.raw('appDebugErrorPage.line67JsxTextGlobalErrorBoundaryPreview')}</h1>
+        <p style={{ fontSize: 13, opacity: 0.7, lineHeight: 1.6, marginTop: 0 }}>{tHardcodedUi.raw('appDebugErrorPage.line69JsxTextClickAButtonToTriggerARenderTime')}<code> app/global-error.tsx</code>{tHardcodedUi.raw('appDebugErrorPage.line70JsxTextIn')}<code>{tHardcodedUi.raw('appDebugErrorPage.line70JsxTextNextDev')}</code>{tHardcodedUi.raw('appDebugErrorPage.line70JsxTextTheNextJsDevOverlayAppearsFirstDismiss')}<b>×</b>{tHardcodedUi.raw('appDebugErrorPage.line71JsxTextToSeeTheRealBoundaryUnderneath')}</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
           {buttons.map((b) => (
             <button

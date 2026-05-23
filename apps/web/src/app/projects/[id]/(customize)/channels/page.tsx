@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Check, Slack } from 'lucide-react';
@@ -16,6 +18,7 @@ export default function ProjectChannelsPage() {
 }
 
 export function ChannelsView({ projectId }: { projectId: string | null }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const { data: install, isLoading } = useSlackInstall(projectId);
 
@@ -42,33 +45,25 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                   </Button>
                 }
               >
-                Bot <code className="font-mono">{install.botUserId ?? '—'}</code> · team{' '}
+                Bot <code className="font-mono">{install.botUserId ?? '—'}</code>{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line45JsxTextTeam')}{' '}
                 <code className="font-mono">{install.workspaceId}</code>
               </InfoBanner>
 
               <div className="rounded-2xl border border-border/60 bg-card p-4">
-                <p className="text-sm font-medium text-foreground">Enable the bot for this project</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Add a <code className="font-mono text-xs">[[channels]]</code> entry with{' '}
-                  <code className="font-mono text-xs">platform = "slack"</code> to this project's{' '}
-                  <code className="font-mono text-xs">kortix.toml</code>. Invite the bot to any channel in
-                  your workspace, then <code className="font-mono text-xs">@kortix</code> — it'll respond
-                  there.
-                </p>
+                <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line50JsxTextEnableTheBotForThisProject')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line52JsxTextAddA')}<code className="font-mono text-xs">[[channels]]</code>{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line52JsxTextEntryWith')}{' '}
+                  <code className="font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line53JsxTextPlatformSlack')}</code>{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line53JsxTextToThisProjectS')}{' '}
+                  <code className="font-mono text-xs">kortix.toml</code>{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line54JsxTextInviteTheBotToAnyChannelInYour')}<code className="font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line55JsxTextKortix')}</code>{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line55JsxTextItLlRespondThere')}</p>
               </div>
             </div>
           ) : (
             <div className="space-y-4">
               <div className="rounded-2xl border border-border/70 bg-card p-5">
-                <p className="text-sm font-medium text-foreground">Slack isn't connected yet</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Connect a Slack workspace to this project. Tokens are stored encrypted in this project's
-                  secrets manager — no env vars required.
-                </p>
+                <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line63JsxTextSlackIsnTConnectedYet')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line65JsxTextConnectASlackWorkspaceToThisProjectTokens')}</p>
                 <div className="mt-4">
                   <Button onClick={() => setOpen(true)} className="gap-2">
-                    <Slack className="h-4 w-4" /> Connect Slack
-                  </Button>
+                    <Slack className="h-4 w-4" />{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line70JsxTextConnectSlack')}</Button>
                 </div>
               </div>
             </div>

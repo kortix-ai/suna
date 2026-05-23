@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Session controls on the Settings tab: per-account max-lifetime + idle
 // timeout, plus an "active sessions" panel with force-logout. PATs are
 // not represented here — they have their own lifecycle policies.
@@ -33,6 +34,7 @@ interface SessionControlsCardProps {
 }
 
 export function SessionControlsCard({ accountId, canManage }: SessionControlsCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [revokeTarget, setRevokeTarget] = useState<ActiveSession | null>(null);
 
@@ -142,13 +144,9 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
       <header className="border-b border-border/60 px-6 py-4">
         <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
           <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-          Session controls
-        </h2>
+          {tHardcodedUi.raw('componentsIamSessionControlsCard.line145JsxTextSessionControls')}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Cap how long a browser session lives, force re-sign-in after idle
-          periods, and force-logout specific sessions. Personal Access Tokens
-          are not affected.
-        </p>
+          {tHardcodedUi.raw('componentsIamSessionControlsCard.line148JsxTextCapHowLongABrowserSessionLivesForce')}</p>
       </header>
 
       {/* Policy form */}
@@ -158,32 +156,28 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
         ) : (
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">Max session lifetime (minutes)</Label>
+              <Label className="text-xs">{tHardcodedUi.raw('componentsIamSessionControlsCard.line161JsxTextMaxSessionLifetimeMinutes')}</Label>
               <Input
                 value={maxLifetime}
                 onChange={(e) => setMaxLifetime(e.target.value)}
-                placeholder="leave blank for no max"
+                placeholder={tHardcodedUi.raw('componentsIamSessionControlsCard.line165JsxAttrPlaceholderLeaveBlankForNoMax')}
                 inputMode="numeric"
                 disabled={!canManage || saveMutation.isPending}
               />
               <p className="text-[11px] text-muted-foreground">
-                Forces a fresh sign-in after this many minutes, measured
-                from when the access token was issued.
-              </p>
+                {tHardcodedUi.raw('componentsIamSessionControlsCard.line170JsxTextForcesAFreshSignInAfterThisMany')}</p>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Idle timeout (minutes)</Label>
+              <Label className="text-xs">{tHardcodedUi.raw('componentsIamSessionControlsCard.line175JsxTextIdleTimeoutMinutes')}</Label>
               <Input
                 value={idleTimeout}
                 onChange={(e) => setIdleTimeout(e.target.value)}
-                placeholder="leave blank for no idle gate"
+                placeholder={tHardcodedUi.raw('componentsIamSessionControlsCard.line179JsxAttrPlaceholderLeaveBlankForNoIdleGate')}
                 inputMode="numeric"
                 disabled={!canManage || saveMutation.isPending}
               />
               <p className="text-[11px] text-muted-foreground">
-                Kills the session after this many minutes of no activity
-                against this account.
-              </p>
+                {tHardcodedUi.raw('componentsIamSessionControlsCard.line184JsxTextKillsTheSessionAfterThisManyMinutesOf')}</p>
             </div>
           </div>
         )}
@@ -199,8 +193,7 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
               className="gap-1.5"
             >
               {saveMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Save policy
-            </Button>
+              {tHardcodedUi.raw('componentsIamSessionControlsCard.line202JsxTextSavePolicy')}</Button>
           </div>
         )}
       </div>
@@ -209,15 +202,12 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
       <div className="px-6 py-5">
         <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
           <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-          Active sessions
-        </h3>
+          {tHardcodedUi.raw('componentsIamSessionControlsCard.line212JsxTextActiveSessions')}</h3>
         {sessionsQuery.isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : partitioned.live.length === 0 && partitioned.revoked.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No sessions tracked yet. Sessions show up here the first time a
-            member hits an account-scoped route while a policy is configured.
-          </p>
+            {tHardcodedUi.raw('componentsIamSessionControlsCard.line218JsxTextNoSessionsTrackedYetSessionsShowUpHere')}</p>
         ) : (
           <div className="space-y-3">
             <SessionsTable
@@ -230,7 +220,7 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
             {partitioned.revoked.length > 0 && (
               <details className="rounded-md border border-border/60 px-3 py-2 text-xs">
                 <summary className="cursor-pointer text-muted-foreground">
-                  Revoked / expired ({partitioned.revoked.length})
+                  {tHardcodedUi.raw('componentsIamSessionControlsCard.line233JsxTextRevokedExpired')}{partitioned.revoked.length})
                 </summary>
                 <div className="mt-3">
                   <SessionsTable
@@ -252,7 +242,7 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
         onOpenChange={(o) => {
           if (!o) setRevokeTarget(null);
         }}
-        title="Force-logout this session?"
+        title={tHardcodedUi.raw('componentsIamSessionControlsCard.line255JsxAttrTitleForceLogoutThisSession')}
         description={
           revokeTarget
             ? `The user (${emailByUserId.get(revokeTarget.user_id) ?? revokeTarget.user_id}) will get 401 on their next request to this account and must sign in again.`
@@ -284,9 +274,10 @@ function SessionsTable({
   onRevoke: (s: ActiveSession) => void;
   muted: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   if (rows.length === 0) {
     return (
-      <p className="text-xs text-muted-foreground">No active sessions.</p>
+      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamSessionControlsCard.line289JsxTextNoActiveSessions')}</p>
     );
   }
 
@@ -295,7 +286,7 @@ function SessionsTable({
       <thead>
         <tr className="border-b border-border/60 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           <th className="py-2 font-medium">Member</th>
-          <th className="py-2 font-medium">Last seen</th>
+          <th className="py-2 font-medium">{tHardcodedUi.raw('componentsIamSessionControlsCard.line298JsxTextLastSeen')}</th>
           <th className="py-2 font-medium">IP</th>
           <th className="py-2 font-medium">Status</th>
           <th className="w-16 py-2" />

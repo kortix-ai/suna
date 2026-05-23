@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, CheckCircle2, Github, Loader2 } from 'lucide-react';
@@ -9,10 +11,11 @@ import { Button } from '@/components/ui/button';
 import { saveGitHubInstallation } from '@/lib/projects-client';
 
 export default function GitHubSetupPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <Suspense
       fallback={
-        <ConnectingScreen forceConnecting minimal title="Connecting GitHub" />
+        <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appGithubSetupPage.line15JsxAttrTitleConnectingGithub')} />
       }
     >
       <GitHubSetup />
@@ -21,6 +24,7 @@ export default function GitHubSetupPage() {
 }
 
 function GitHubSetup() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading } = useAuth();
@@ -87,7 +91,7 @@ function GitHubSetup() {
 
   if (isLoading || !user) {
     return (
-      <ConnectingScreen forceConnecting minimal title="Connecting GitHub" />
+      <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appGithubSetupPage.line90JsxAttrTitleConnectingGithub')} />
     );
   }
 
@@ -111,7 +115,7 @@ function GitHubSetup() {
           )}
         </div>
         <div className="space-y-2">
-          <h1 className="text-xl font-semibold tracking-tight">GitHub setup</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{tHardcodedUi.raw('appGithubSetupPage.line114JsxTextGithubSetup')}</h1>
           <p className="text-sm text-muted-foreground">{message}</p>
         </div>
         {state === 'error' ? (
@@ -119,9 +123,7 @@ function GitHubSetup() {
             onClick={() => router.replace('/projects')}
             className="gap-1.5"
           >
-            <Github className="h-4 w-4" />
-            Back to projects
-          </Button>
+            <Github className="h-4 w-4" />{tHardcodedUi.raw('appGithubSetupPage.line123JsxTextBackToProjects')}</Button>
         ) : null}
       </div>
     </div>

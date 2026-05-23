@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useCallback } from 'react';
 import { Download, FileType, FileText, FileCode } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
@@ -46,6 +48,7 @@ export function FileDownloadButton({
   getHtmlContent,
   sandboxUrl,
 }: FileDownloadButtonProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isExporting, setIsExporting] = useState(false);
   
   // Download restriction for free tier users
@@ -213,7 +216,7 @@ export function FileDownloadButton({
             size="sm"
             className={className || "h-8 w-8 p-0"}
             disabled={disabled || isExporting || !content}
-            title="Export file"
+            title={tHardcodedUi.raw('componentsThreadToolViewsSharedFiledownloadbutton.line216JsxAttrTitleExportFile')}
           >
             {isExporting ? (
               <KortixLoader customSize={16} />
@@ -254,7 +257,7 @@ export function FileDownloadButton({
             size="sm"
             className={className || "h-8 w-8 p-0"}
             disabled={disabled || isExporting || !content}
-            title="Export file"
+            title={tHardcodedUi.raw('componentsThreadToolViewsSharedFiledownloadbutton.line257JsxAttrTitleExportFile')}
           >
             {isExporting ? (
               <KortixLoader customSize={16} />
@@ -285,7 +288,7 @@ export function FileDownloadButton({
       onClick={handleDirectDownload}
       disabled={disabled || isExporting || !content}
       className={className || "h-8 w-8 p-0"}
-      title="Download file"
+      title={tHardcodedUi.raw('componentsThreadToolViewsSharedFiledownloadbutton.line288JsxAttrTitleDownloadFile')}
     >
       {isExporting ? (
         <KortixLoader customSize={16} />

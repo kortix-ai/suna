@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo } from 'react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import {
@@ -114,6 +116,7 @@ interface ChangeRequestDetailDialogProps {
 }
 
 export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetailDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const open = crId !== null;
   const detailQuery = useChangeRequest(crId);
   const diffQuery = useChangeRequestDiff(crId);
@@ -265,13 +268,9 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             {/* Merge state banner */}
             {cr?.status === 'open' && preview && (
               preview.is_up_to_date ? (
-                <InfoBanner tone="neutral" icon={RefreshCcw} className="px-3 py-2">
-                  This version is already at the base — nothing to merge.
-                </InfoBanner>
+                <InfoBanner tone="neutral" icon={RefreshCcw} className="px-3 py-2">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line269JsxTextThisVersionIsAlreadyAtTheBaseNothing')}</InfoBanner>
               ) : preview.can_merge ? (
-                <InfoBanner tone="success" icon={Check} className="px-3 py-2">
-                  Mergeable cleanly
-                  {preview.can_fast_forward ? ' (fast-forward)' : ' (3-way merge)'}.
+                <InfoBanner tone="success" icon={Check} className="px-3 py-2">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line273JsxTextMergeableCleanly')}{preview.can_fast_forward ? ' (fast-forward)' : ' (3-way merge)'}.
                 </InfoBanner>
               ) : (
                 <InfoBanner
@@ -279,8 +278,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                   icon={AlertTriangle}
                   className="px-3 py-2"
                   title={
-                    <>
-                      Conflicts in {preview.conflicts.length} file
+                    <>{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line283JsxTextConflictsIn')}{preview.conflicts.length} file
                       {preview.conflicts.length === 1 ? '' : 's'}
                     </>
                   }
@@ -352,9 +350,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 )}
               </div>
             ) : (
-              <p className="rounded-2xl border border-dashed border-border/60 p-5 text-center text-xs text-muted-foreground">
-                No changes detected.
-              </p>
+              <p className="rounded-2xl border border-dashed border-border/60 p-5 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line356JsxTextNoChangesDetected')}</p>
             )}
           </div>
         </ScrollArea>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useMemo, useState } from 'react';
 import {
   Blocks,
@@ -131,6 +133,7 @@ function DetailSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState<string | null>(null);
 
   const copy = (text: string, label: string) => {
@@ -201,7 +204,7 @@ function DetailSheet({
                     {item.name}
                   </SheetTitle>
                   <SheetDescription className="sr-only">
-                    {kindCfg.label} details for {item.name}
+                    {kindCfg.label}{tHardcodedUi.raw('componentsPagesWorkspacePage.line204JsxTextDetailsFor')}{item.name}
                   </SheetDescription>
                   <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                     <Badge variant="secondary" className="text-xs">{kindCfg.label}</Badge>
@@ -277,7 +280,7 @@ function DetailSheet({
               {/* Empty fallback */}
               {rows.length === 0 && !content && (
                 <div className="flex flex-col items-center justify-center py-20 text-muted-foreground/30">
-                  <p className="text-xs">No additional details</p>
+                  <p className="text-xs">{tHardcodedUi.raw('componentsPagesWorkspacePage.line280JsxTextNoAdditionalDetails')}</p>
                 </div>
               )}
             </div>
@@ -334,23 +337,19 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
 // ---------------------------------------------------------------------------
 
 function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   if (hasFilters) {
     return (
-      <div className="py-12 text-center text-sm text-muted-foreground">
-        No items match your filters.{' '}
-        <Button onClick={onClear} variant="link" size="sm" className="h-auto p-0 ">
-          Clear filters
-        </Button>
+      <div className="py-12 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesWorkspacePage.line340JsxTextNoItemsMatchYourFilters')}{' '}
+        <Button onClick={onClear} variant="link" size="sm" className="h-auto p-0 ">{tHardcodedUi.raw('componentsPagesWorkspacePage.line342JsxTextClearFilters')}</Button>
       </div>
     );
   }
   return (
     <div className="flex flex-col items-center justify-center py-20 rounded-2xl border border-dashed border-border/50">
       <Blocks className="h-7 w-7 text-muted-foreground/30 mb-3" />
-      <p className="text-sm font-medium text-foreground mb-1">Nothing here yet</p>
-      <p className="text-xs text-muted-foreground text-center max-w-xs">
-        Use the actions above to add agents, skills, commands, tools, or MCP servers.
-      </p>
+      <p className="text-sm font-medium text-foreground mb-1">{tHardcodedUi.raw('componentsPagesWorkspacePage.line350JsxTextNothingHereYet')}</p>
+      <p className="text-xs text-muted-foreground text-center max-w-xs">{tHardcodedUi.raw('componentsPagesWorkspacePage.line352JsxTextUseTheActionsAboveToAddAgentsSkills')}</p>
     </div>
   );
 }
@@ -360,6 +359,7 @@ function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () 
 // ---------------------------------------------------------------------------
 
 export default function WorkspacePage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [search, setSearch] = useState('');
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
@@ -497,9 +497,7 @@ export default function WorkspacePage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-lg sm:text-xl font-semibold">Workspace</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Agents, skills, commands, tools, and MCP servers.
-              </p>
+              <p className="mt-1 text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesWorkspacePage.line501JsxTextAgentsSkillsCommandsToolsAndMcpServers')}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <DropdownMenu>
@@ -538,9 +536,7 @@ export default function WorkspacePage() {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => openSettings('mcp')}>
-                    <Plug className="mr-2 h-3.5 w-3.5" />
-                    MCP server
-                    <span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
+                    <Plug className="mr-2 h-3.5 w-3.5" />{tHardcodedUi.raw('componentsPagesWorkspacePage.line542JsxTextMcpServer')}<span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
                       {kindCounts.mcp}
                     </span>
                   </DropdownMenuItem>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo, useCallback } from 'react';
 import {
   GitCommitHorizontal,
@@ -66,10 +68,11 @@ function formatFullDate(timestamp: number): string {
 // ---------------------------------------------------------------------------
 
 function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitHash: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: diff, isLoading, error } = useFileCommitDiff(filePath, commitHash);
 
   if (isLoading) return <div className="p-2"><Skeleton className="h-16 w-full" /></div>;
-  if (error || !diff) return <div className="p-2 text-xs text-muted-foreground">Failed to load diff</div>;
+  if (error || !diff) return <div className="p-2 text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line72JsxTextFailedToLoadDiff')}</div>;
 
   const statusIcon = {
     added: <FilePlus2 className="size-3 text-emerald-500" />,
@@ -99,7 +102,7 @@ function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitH
           <DiffView patch={patchContent} layout="unified" hideFileHeader />
         </div>
       ) : (
-        <div className="p-2 text-xs text-muted-foreground text-center">No diff</div>
+        <div className="p-2 text-xs text-muted-foreground text-center">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line102JsxTextNoDiff')}</div>
       )}
     </div>
   );
@@ -110,6 +113,7 @@ function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitH
 // ---------------------------------------------------------------------------
 
 function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -157,7 +161,7 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
           variant="muted"
           size="xs"
           className="font-mono shrink-0"
-          title="Copy checkpoint id"
+          title={tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line160JsxAttrTitleCopyCheckpointId')}
         >
           {copied ? <Check className="size-2.5 text-emerald-500" /> : <Copy className="size-2.5" />}
           {commit.shortHash}
@@ -178,6 +182,7 @@ interface FileHistoryPopoverContentProps {
 }
 
 export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopoverContentProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: history, isLoading, error } = useFileHistory(filePath);
 
   const fileName = filePath.split('/').pop() || '';
@@ -212,16 +217,14 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
         {error && !isLoading && (
           <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
             <AlertCircle className="h-6 w-6 text-muted-foreground/30" />
-            <p className="text-xs text-muted-foreground">
-              Failed to load history
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line216JsxTextFailedToLoadHistory')}</p>
           </div>
         )}
 
         {!isLoading && !error && totalCheckpoints === 0 && (
           <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
             <GitCommitHorizontal className="h-6 w-6 text-muted-foreground/20" />
-            <p className="text-xs text-muted-foreground">No checkpoints yet</p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line224JsxTextNoCheckpointsYet')}</p>
           </div>
         )}
 
@@ -236,8 +239,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
             ))}
             {history?.hasMore && (
               <div className="text-center py-1">
-                <span className="text-xs text-muted-foreground/50">
-                  Showing the most recent {totalCheckpoints} checkpoints
+                <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line240JsxTextShowingTheMostRecent')}{totalCheckpoints} checkpoints
                 </span>
               </div>
             )}

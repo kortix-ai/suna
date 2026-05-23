@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useEffect } from 'react';
 import { Smartphone, Bell, Shield, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -54,6 +56,7 @@ const FEATURES = [
 ];
 
 export default function AppDownloadPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -82,13 +85,8 @@ export default function AppDownloadPage() {
               </div>
             </div>
             
-            <h1 className="text-2xl md:text-3xl font-semibold text-foreground text-center tracking-tight mb-3">
-              Kortix for Mobile
-            </h1>
-            <p className="text-base text-muted-foreground text-center max-w-xl leading-relaxed">
-              Your AI Worker, in your pocket.<br />
-              Download the app and take Kortix with you everywhere.
-            </p>
+            <h1 className="text-2xl md:text-3xl font-semibold text-foreground text-center tracking-tight mb-3">{tHardcodedUi.raw('appHomeAppPage.line86JsxTextKortixForMobile')}</h1>
+            <p className="text-base text-muted-foreground text-center max-w-xl leading-relaxed">{tHardcodedUi.raw('appHomeAppPage.line89JsxTextYourAiWorkerInYourPocket')}<br />{tHardcodedUi.raw('appHomeAppPage.line90JsxTextDownloadTheAppAndTakeKortixWithYou')}</p>
           </motion.div>
 
           {/* QR Code Card */}
@@ -106,12 +104,8 @@ export default function AppDownloadPage() {
 
               {/* Info area */}
               <div className="p-6 bg-muted/30 dark:bg-[#161618]">
-                <h3 className="text-foreground dark:text-white text-sm font-medium mb-1 text-center">
-                  Scan to download
-                </h3>
-                <p className="text-muted-foreground dark:text-white/60 text-xs text-center mb-5">
-                  Automatically opens the right store for your device
-                </p>
+                <h3 className="text-foreground dark:text-white text-sm font-medium mb-1 text-center">{tHardcodedUi.raw('appHomeAppPage.line110JsxTextScanToDownload')}</h3>
+                <p className="text-muted-foreground dark:text-white/60 text-xs text-center mb-5">{tHardcodedUi.raw('appHomeAppPage.line113JsxTextAutomaticallyOpensTheRightStoreForYourDevice')}</p>
                 
                 {/* Direct store links for desktop users */}
                 <div className="flex gap-3 max-w-sm mx-auto">
@@ -149,9 +143,7 @@ export default function AppDownloadPage() {
             transition={{ delay: 0.3, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             className="w-full"
           >
-            <h2 className="text-2xl md:text-3xl font-medium text-foreground mb-12">
-              Why you'll love it
-            </h2>
+            <h2 className="text-2xl md:text-3xl font-medium text-foreground mb-12">{tHardcodedUi.raw('appHomeAppPage.line153JsxTextWhyYouLlLoveIt')}</h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-12">
               {FEATURES.map((feature, index) => (

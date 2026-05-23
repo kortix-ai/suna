@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * AccountSettingsModal — parallel to UserSettingsModal but scoped to
  * the currently-selected account. Houses Billing and Transactions today;
@@ -49,6 +51,7 @@ export function AccountSettingsModal({
   defaultTab = 'billing',
   returnUrl = typeof window !== 'undefined' ? window?.location?.href || '/' : '/',
 }: AccountSettingsModalProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
@@ -92,7 +95,7 @@ export function AccountSettingsModal({
         )}
         hideCloseButton
       >
-        <DialogTitle className="sr-only">Account settings</DialogTitle>
+        <DialogTitle className="sr-only">{tHardcodedUi.raw('componentsSettingsAccountSettingsModal.line95JsxTextAccountSettings')}</DialogTitle>
 
         {isMobile ? (
           <div className="flex h-screen w-screen flex-col overflow-hidden">
@@ -100,7 +103,7 @@ export function AccountSettingsModal({
             <div className="flex-shrink-0 border-b border-border bg-background px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-lg font-semibold leading-tight">Account settings</div>
+                  <div className="text-lg font-semibold leading-tight">{tHardcodedUi.raw('componentsSettingsAccountSettingsModal.line103JsxTextAccountSettings')}</div>
                   <div className="truncate text-xs text-muted-foreground leading-tight">
                     {accountLabel} · {roleLine}
                   </div>

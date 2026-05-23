@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import React from 'react';
 import {
   Card,
@@ -34,6 +35,7 @@ export function DeletePresentationToolView({
   isStreaming = false,
   project,
 }: ToolViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Defensive check - handle cases where toolCall might be undefined
   if (!toolCall) {
     console.warn('DeletePresentationToolView: toolCall is undefined. Tool views should use structured props.');
@@ -125,7 +127,7 @@ export function DeletePresentationToolView({
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
-          <ToolViewIconTitle icon={FolderX} title="Delete Presentation" subtitle={deleteData ? presentationName : undefined} />
+          <ToolViewIconTitle icon={FolderX} title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeletepresentationtoolview.line128JsxAttrTitleDeletePresentation')} subtitle={deleteData ? presentationName : undefined} />
         </div>
       </CardHeader>
 
@@ -133,10 +135,10 @@ export function DeletePresentationToolView({
         {isStreaming ? (
           <LoadingState
             icon={FolderX}
-            iconColor="text-red-500 dark:text-red-400"
-            bgColor="bg-gradient-to-b from-red-100 to-red-50 shadow-inner dark:from-red-800/40 dark:to-red-900/60 dark:shadow-red-950/20"
-            title="Deleting presentation"
-            filePath="Removing all files..."
+            iconColor={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeletepresentationtoolview.line136JsxAttrIconcolorTextRed500DarkTextRed400')}
+            bgColor={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeletepresentationtoolview.line137JsxAttrBgcolorBgGradientToBFromRed100To')}
+            title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeletepresentationtoolview.line138JsxAttrTitleDeletingPresentation')}
+            filePath={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeletepresentationtoolview.line139JsxAttrFilepathRemovingAllFiles')}
             showProgress={true}
           />
         ) : error || !deleteData ? (
@@ -147,18 +149,14 @@ export function DeletePresentationToolView({
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
               {error || 'Failed to delete presentation'}
             </h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md">
-              There was an error deleting the presentation. Please try again.
-            </p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeletepresentationtoolview.line151JsxTextThereWasAnErrorDeletingThePresentationPlease')}</p>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-emerald-100 to-emerald-50 shadow-inner dark:from-emerald-800/40 dark:to-emerald-900/60">
               <CheckCircle className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
             </div>
-            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-              Presentation deleted successfully
-            </h3>
+            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeletepresentationtoolview.line160JsxTextPresentationDeletedSuccessfully')}</h3>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md mb-6">
               {deleteData.message}
             </p>
@@ -169,9 +167,7 @@ export function DeletePresentationToolView({
                   <FolderX className="h-6 w-6 text-red-600 dark:text-red-400" />
                 </div>
                 <div className="flex-1">
-                  <h4 className="font-medium text-zinc-900 dark:text-zinc-100 mb-1">
-                    Deleted Path
-                  </h4>
+                  <h4 className="font-medium text-zinc-900 dark:text-zinc-100 mb-1">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeletepresentationtoolview.line173JsxTextDeletedPath')}</h4>
                   <p className="text-sm text-zinc-600 dark:text-zinc-400 font-mono">
                     {deleteData.deleted_path}
                   </p>
@@ -179,9 +175,7 @@ export function DeletePresentationToolView({
               </div>
             </Card>
             
-            <p className="text-xs text-zinc-400 dark:text-zinc-500 text-center mt-4">
-              All slides and metadata have been permanently removed
-            </p>
+            <p className="text-xs text-zinc-400 dark:text-zinc-500 text-center mt-4">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeletepresentationtoolview.line183JsxTextAllSlidesAndMetadataHaveBeenPermanentlyRemoved')}</p>
           </div>
         )}
       </CardContent>

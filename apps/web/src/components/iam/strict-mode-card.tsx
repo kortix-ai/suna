@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Strict IAM mode toggle on the account Settings tab. Off by default:
 // legacy account_role + project_members bridges stay active. Flipping ON
 // makes IAM the single source of truth — only super-admin bypass and
@@ -38,6 +39,7 @@ interface StrictModeCardProps {
 }
 
 export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -112,13 +114,9 @@ export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
           <div>
             <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-              Strict IAM mode
-            </h2>
+              {tHardcodedUi.raw('componentsIamStrictModeCard.line115JsxTextStrictIAMMode')}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              When enabled, only super-admin bypass and explicit IAM policies grant
-              access. Legacy owner/admin/member roles and project_members rows are
-              ignored.
-            </p>
+              {tHardcodedUi.raw('componentsIamStrictModeCard.line118JsxTextWhenEnabledOnlySuperAdminBypassAndExplicit')}</p>
           </div>
           {statusQuery.isLoading ? (
             <Skeleton className="h-9 w-24 rounded-md" />
@@ -143,7 +141,7 @@ export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
           ) : enabled ? (
             <span className="font-medium text-emerald-600 dark:text-emerald-400">On</span>
           ) : (
-            <span className="font-medium text-muted-foreground">Off (legacy bridges active)</span>
+            <span className="font-medium text-muted-foreground">{tHardcodedUi.raw('componentsIamStrictModeCard.line146JsxTextOffLegacyBridgesActive')}</span>
           )}
         </p>
       </div>
@@ -157,12 +155,9 @@ export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Enable strict IAM mode?</DialogTitle>
+            <DialogTitle>{tHardcodedUi.raw('componentsIamStrictModeCard.line160JsxTextEnableStrictIAMMode')}</DialogTitle>
             <DialogDescription>
-              The legacy bridges (owner/admin/member roles, project_members rows)
-              stop granting access. Only super-admin bypass and explicit IAM
-              policies will work after this.
-            </DialogDescription>
+              {tHardcodedUi.raw('componentsIamStrictModeCard.line162JsxTextTheLegacyBridgesOwnerAdminMemberRolesProject')}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -177,9 +172,7 @@ export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
               <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <p>
-                  Nobody would retain access. Promote a super-admin or create at
-                  least one explicit policy before enabling.
-                </p>
+                  {tHardcodedUi.raw('componentsIamStrictModeCard.line180JsxTextNobodyWouldRetainAccessPromoteASuperAdmin')}</p>
               </div>
             )}
 
@@ -187,18 +180,14 @@ export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
               !previewQuery.data.will_lock_out_account &&
               previewQuery.data.losers.length === 0 && (
                 <p className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
-                  No members will lose access — every member is super-admin or
-                  has an explicit policy.
-                </p>
+                  {tHardcodedUi.raw('componentsIamStrictModeCard.line190JsxTextNoMembersWillLoseAccessEveryMemberIs')}</p>
               )}
 
             {previewQuery.data && previewQuery.data.losers.length > 0 && (
               <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-xs">
                 <p className="mb-2 font-medium text-amber-700 dark:text-amber-400">
                   {previewQuery.data.losers.length}{' '}
-                  {previewQuery.data.losers.length === 1 ? 'member' : 'members'} will
-                  lose all access:
-                </p>
+                  {previewQuery.data.losers.length === 1 ? 'member' : 'members'} {tHardcodedUi.raw('componentsIamStrictModeCard.line199JsxTextWillLoseAllAccess')}</p>
                 <ul className="max-h-40 space-y-0.5 overflow-y-auto">
                   {previewQuery.data.losers.map((l) => (
                     <li key={l.user_id} className="flex items-center gap-2">
@@ -223,11 +212,10 @@ export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
               onClick={() => backfillMutation.mutate()}
               disabled={backfillMutation.isPending || flipMutation.isPending}
               className="gap-1.5"
-              title="Mirror legacy account_role + project_members rows into IAM policies. Safe to re-run."
+              title={tHardcodedUi.raw('componentsIamStrictModeCard.line226JsxAttrTitleMirrorLegacyAccountRoleProjectMembersRowsInto')}
             >
               {backfillMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Backfill memberships
-            </Button>
+              {tHardcodedUi.raw('componentsIamStrictModeCard.line229JsxTextBackfillMemberships')}</Button>
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -244,8 +232,7 @@ export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
                 className="gap-1.5"
               >
                 {flipMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                Enable strict mode
-              </Button>
+                {tHardcodedUi.raw('componentsIamStrictModeCard.line247JsxTextEnableStrictMode')}</Button>
             </div>
           </DialogFooter>
         </DialogContent>
@@ -261,13 +248,9 @@ export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Disable strict IAM mode?</DialogTitle>
+            <DialogTitle>{tHardcodedUi.raw('componentsIamStrictModeCard.line264JsxTextDisableStrictIAMMode')}</DialogTitle>
             <DialogDescription>
-              Legacy bridges resume granting access alongside your explicit
-              policies. Owners/admins regain Administrator privileges, members
-              regain account-level reads, and project_members rows act as
-              fallbacks again. Existing policies are not affected.
-            </DialogDescription>
+              {tHardcodedUi.raw('componentsIamStrictModeCard.line266JsxTextLegacyBridgesResumeGrantingAccessAlongsideYourExplicit')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
@@ -284,8 +267,7 @@ export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
               className="gap-1.5"
             >
               {flipMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Disable strict mode
-            </Button>
+              {tHardcodedUi.raw('componentsIamStrictModeCard.line287JsxTextDisableStrictMode')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

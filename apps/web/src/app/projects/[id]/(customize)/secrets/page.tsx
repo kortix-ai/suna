@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { FormEvent, use, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -87,6 +89,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
 }
 
 function ProjectSecretsBody({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const secretsQuery = useQuery({
     queryKey: ['project-secrets', projectId],
     queryFn: () => listProjectSecrets(projectId),
@@ -101,13 +104,10 @@ function ProjectSecretsBody({ projectId }: { projectId: string }) {
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
         <header className="space-y-1">
-          <h2 className="text-base font-semibold text-foreground">Project secrets</h2>
-          <p className="text-xs text-muted-foreground">
-            Key-value pairs injected as environment variables into every new session
-            sandbox for this project. Required keys come from your{' '}
+          <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line104JsxTextProjectSecrets')}</h2>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto')}{' '}
             <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">kortix.toml</code>
-            {' '}manifest. Values are encrypted at rest.
-          </p>
+            {' '}{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line109JsxTextManifestValuesAreEncryptedAtRest')}</p>
         </header>
 
         {secretsQuery.isLoading ? (
@@ -205,6 +205,7 @@ function SecretsCard({
   projectId: string;
   data: ProjectSecretsResponse | ProjectSecret[] | null | undefined;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = ['project-secrets', projectId];
 
@@ -274,9 +275,7 @@ function SecretsCard({
           tone="warning"
           icon={AlertTriangle}
           title={`${missingRequired.length} required ${missingRequired.length === 1 ? 'secret' : 'secrets'} not set`}
-        >
-          Sessions can still start, but the agent will likely fail until these are set.
-        </InfoBanner>
+        >{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line278JsxTextSessionsCanStillStartButTheAgentWill')}</InfoBanner>
       )}
 
       <ProjectProviderModal
@@ -287,7 +286,7 @@ function SecretsCard({
 
       <SectionCard
         title="Secrets"
-        description="Key-value pairs injected into every new session sandbox."
+        description={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession')}
         flush
         action={
           <div className="flex items-center gap-2">
@@ -307,9 +306,7 @@ function SecretsCard({
               className="h-8 gap-1.5 text-xs"
               onClick={() => setProviderModalOpen(true)}
             >
-              <Plug className="h-3.5 w-3.5" />
-              Connect provider
-            </Button>
+              <Plug className="h-3.5 w-3.5" />{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line311JsxTextConnectProvider')}</Button>
             <Button
               variant="outline"
               size="sm"
@@ -370,7 +367,7 @@ function SecretsCard({
                   }
                   subtitle={
                     isConfirmingDelete ? (
-                      <span className="text-xs text-muted-foreground">Remove this secret?</span>
+                      <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line373JsxTextRemoveThisSecret')}</span>
                     ) : row.system && row.purpose === 'git_auth' ? (
                       <span className="truncate text-xs text-muted-foreground">
                         {row.isSet
@@ -391,9 +388,7 @@ function SecretsCard({
                             ? 'text-amber-600 dark:text-amber-400'
                             : 'text-muted-foreground/60',
                         )}
-                      >
-                        Not set
-                      </span>
+                      >{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line395JsxTextNotSet')}</span>
                     )
                   }
                   trailing={
@@ -430,7 +425,7 @@ function SecretsCard({
                               variant="ghost"
                               className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
                               onClick={() => openEdit(row)}
-                              aria-label="Rotate git credential"
+                              aria-label={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line433JsxAttrAriaLabelRotateGitCredential')}
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
@@ -514,6 +509,7 @@ function SecretDialog({
   row: SecretRow | null;
   onSaved: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // For a manifest-declared row the name is fixed; only free-form adds let the
   // user type it.
   const fixedName = row?.name ?? null;
@@ -571,9 +567,7 @@ function SecretDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
-            Runtime environment variable for new session sandboxes.
-          </DialogDescription>
+          <DialogDescription>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line575JsxTextRuntimeEnvironmentVariableForNewSessionSandboxes')}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
           {/* Dummy fields absorb browser autofill so the real inputs below
@@ -604,11 +598,8 @@ function SecretDialog({
           <div className="space-y-1.5">
             <Label htmlFor="secret-dialog-value">
               {row?.isSet ? (
-                <>
-                  New value{' '}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    (replaces current value)
-                  </span>
+                <>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line608JsxTextNewValue')}{' '}
+                  <span className="text-xs font-normal text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line610JsxTextReplacesCurrentValue')}</span>
                 </>
               ) : (
                 'Value'
@@ -667,12 +658,12 @@ function ManifestStatusBanner({
   error?: string;
   envCount: number;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   if (status === 'loaded') {
     // Manifest loaded and DECLARED envs — keep the banner subtle.
     if (envCount > 0) {
       return (
-        <InfoBanner tone="success" icon={Check}>
-          Manifest loaded from{' '}
+        <InfoBanner tone="success" icon={Check}>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line675JsxTextManifestLoadedFrom')}{' '}
           <code className="rounded bg-background px-1 py-0.5 font-mono">{path}</code> ·{' '}
           {envCount} env {envCount === 1 ? 'key' : 'keys'} declared
         </InfoBanner>
@@ -683,23 +674,17 @@ function ManifestStatusBanner({
       <InfoBanner
         tone="neutral"
         icon={FileWarning}
-        title="Manifest loaded but no env keys declared"
-      >
-        Add a <code className="rounded bg-background px-1 py-0.5 font-mono">[env]</code> section
-        to{' '}
+        title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line686JsxAttrTitleManifestLoadedButNoEnvKeysDeclared')}
+      >{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line688JsxTextAddA')}<code className="rounded bg-background px-1 py-0.5 font-mono">[env]</code>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line688JsxTextSectionTo')}{' '}
         <code className="rounded bg-background px-1 py-0.5 font-mono">{path}</code> with{' '}
         <code className="rounded bg-background px-1 py-0.5 font-mono">required</code> /{' '}
-        <code className="rounded bg-background px-1 py-0.5 font-mono">optional</code> string arrays.
-      </InfoBanner>
+        <code className="rounded bg-background px-1 py-0.5 font-mono">optional</code>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line692JsxTextStringArrays')}</InfoBanner>
     );
   }
 
   if (status === 'missing') {
     return (
-      <InfoBanner tone="neutral" icon={FileWarning} title="No manifest found">
-        Commit a <code className="rounded bg-background px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code> to
-        this project to declare required/optional env keys.
-      </InfoBanner>
+      <InfoBanner tone="neutral" icon={FileWarning} title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line699JsxAttrTitleNoManifestFound')}>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line700JsxTextCommitA')}<code className="rounded bg-background px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line700JsxTextToThisProjectToDeclareRequiredOptionalEnv')}</InfoBanner>
     );
   }
 
@@ -709,16 +694,13 @@ function ManifestStatusBanner({
         tone="warning"
         icon={AlertTriangle}
         title={
-          <>
-            Couldn't read{' '}
+          <>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line713JsxTextCouldnTRead')}{' '}
             <code className="rounded bg-background px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code>
           </>
         }
       >
         {error && <p className="opacity-80 break-all">{error}</p>}
-        <p className="opacity-80">
-          Check the repo is reachable and linked through Project settings.
-        </p>
+        <p className="opacity-80">{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line720JsxTextCheckTheRepoIsReachableAndLinkedThrough')}</p>
       </InfoBanner>
     );
   }
@@ -726,11 +708,8 @@ function ManifestStatusBanner({
   // Old API build that doesn't return manifest_status. Tell the user — most
   // likely they just need to restart their API dev server.
   return (
-    <InfoBanner tone="warning" icon={AlertTriangle} title="Manifest status unavailable">
-      <p className="opacity-80">
-        The API isn't returning manifest info — restart the API server
-        (<code className="rounded bg-background px-1 py-0.5 font-mono">apps/api</code>) to pick up
-        required/optional keys from your <code className="rounded bg-background px-1 py-0.5 font-mono">kortix.toml</code>.
+    <InfoBanner tone="warning" icon={AlertTriangle} title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line729JsxAttrTitleManifestStatusUnavailable')}>
+      <p className="opacity-80">{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line731JsxTextTheApiIsnTReturningManifestInfoRestart')}<code className="rounded bg-background px-1 py-0.5 font-mono">apps/api</code>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line732JsxTextToPickUpRequiredOptionalKeysFromYour')}<code className="rounded bg-background px-1 py-0.5 font-mono">kortix.toml</code>.
       </p>
     </InfoBanner>
   );
@@ -755,22 +734,22 @@ function SecretsSkeleton() {
 }
 
 function ForbiddenNotice() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <InfoBanner
       tone="warning"
       icon={ShieldAlert}
-      title="Owner or admin access required"
-    >
-      Only account owners and admins can view or manage project secrets.
-    </InfoBanner>
+      title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line762JsxAttrTitleOwnerOrAdminAccessRequired')}
+    >{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line764JsxTextOnlyAccountOwnersAndAdminsCanViewOr')}</InfoBanner>
   );
 }
 
 function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <InfoBanner
       tone="destructive"
-      title="Failed to load secrets"
+      title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line773JsxAttrTitleFailedToLoadSecrets')}
       action={
         <Button variant="outline" size="sm" onClick={onRetry}>
           Retry

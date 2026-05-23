@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useTranslations } from 'next-intl';
 
 export default function CreditsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('billing.creditsExplainedPage');
 
   return (
@@ -53,50 +54,40 @@ export default function CreditsPage() {
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">AI activity:</span> Processing requests, generating responses, making decisions, and running AI models during task execution.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line56JsxTextAiActivity')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line56JsxTextProcessingRequestsGeneratingResponsesMakingDecisionsAndRunning')}</div>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">Kortix computer:</span> The execution environment that powers code execution, browser automation, and interactive task processing.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line62JsxTextKortixComputer')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line62JsxTextTheExecutionEnvironmentThatPowersCodeExecutionBrowser')}</div>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">File storage and management:</span> Storing, organizing, and managing files created during your tasks.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line68JsxTextFileStorageAndManagement')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line68JsxTextStoringOrganizingAndManagingFilesCreatedDuringYour')}</div>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">Web search:</span> Searching the internet for information, data, and resources needed to complete tasks.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line74JsxTextWebSearch')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line74JsxTextSearchingTheInternetForInformationDataAndResources')}</div>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">People search:</span> Finding and retrieving information about people, contacts, and professional data.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line80JsxTextPeopleSearch')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line80JsxTextFindingAndRetrievingInformationAboutPeopleContactsAnd')}</div>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">Third-party services:</span> Accessing external APIs, databases, and integrated services that extend your agent's capabilities.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line86JsxTextThirdPartyServices')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line86JsxTextAccessingExternalApisDatabasesAndIntegratedServicesThat')}</div>
                 </li>
               </ul>
               <div className="mt-6 pt-6 border-t border-border">
-                <p className="text-muted-foreground leading-relaxed">
-                  Once a task completes, no further credits are consumed. Your completed work, stored files, and deployed projects remain accessible without any ongoing credit costs.
-                </p>
+                <p className="text-muted-foreground leading-relaxed">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line92JsxTextOnceATaskCompletesNoFurtherCreditsAre')}</p>
               </div>
               <Alert className="mt-4">
                 <Info className="h-4 w-4" />
-                <AlertDescription>
-                  If a task fails due to a system error on our side, we'll automatically refund all credits used for that task. We're constantly improving our infrastructure to make credit usage more efficient.
-                </AlertDescription>
+                <AlertDescription>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line98JsxTextIfATaskFailsDueToASystem')}</AlertDescription>
               </Alert>
             </CardContent>
           </Card>
@@ -109,9 +100,7 @@ export default function CreditsPage() {
             <h2 className="text-xl font-semibold">{t('howCreditsWork.pricingModel.title')}</h2>
           </div>
           
-          <p className="text-muted-foreground leading-relaxed">
-            We apply a markup on top of provider costs to cover platform infrastructure, security, and ongoing development. Rates vary by service type:
-          </p>
+          <p className="text-muted-foreground leading-relaxed">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line113JsxTextWeApplyAMarkupOnTopOfProvider')}</p>
 
           <Card>
             <CardContent className="pt-6">
@@ -119,26 +108,22 @@ export default function CreditsPage() {
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">AI models (20% markup):</span> Applied to all LLM API costs including input tokens, output tokens, and prompt caching.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line122JsxTextAiModels20Markup')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line122JsxTextAppliedToAllLlmApiCostsIncludingInput')}</div>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">Tool usage (50% markup):</span> Applied to web search, web scraping, and other third-party tool calls.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line128JsxTextToolUsage50Markup')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line128JsxTextAppliedToWebSearchWebScrapingAndOther')}</div>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">Image search (100% markup):</span> Applied to image search queries.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line134JsxTextImageSearch100Markup')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line134JsxTextAppliedToImageSearchQueries')}</div>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">Bring your own key (10% platform fee):</span> If you use your own API key, a flat 10% fee applies instead of the standard AI model markup.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line140JsxTextBringYourOwnKey10PlatformFee')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line140JsxTextIfYouUseYourOwnApiKeyA')}</div>
                 </li>
               </ul>
             </CardContent>
@@ -152,9 +137,7 @@ export default function CreditsPage() {
             <h2 className="text-xl font-semibold">{t('typesOfCredits.title')}</h2>
           </div>
 
-          <p className="text-muted-foreground leading-relaxed">
-            Credits are used to pay for LLM calls and tool usage. You get credits from purchases, auto-topup, and a one-time bonus when you provision a machine.
-          </p>
+          <p className="text-muted-foreground leading-relaxed">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line156JsxTextCreditsAreUsedToPayForLlmCalls')}</p>
 
           {/* Credit Types Visual Grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -163,11 +146,9 @@ export default function CreditsPage() {
               <CardContent className="pt-5">
                 <div className="flex items-center gap-2 mb-3">
                   <RotateCcw className="h-5 w-5 text-blue-500" />
-                  <h3 className="font-semibold text-foreground">Machine Bonus</h3>
+                  <h3 className="font-semibold text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line166JsxTextMachineBonus')}</h3>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  500 credits ($5) granted one-time when you provision a new cloud computer. These never expire.
-                </p>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line169JsxTextText500Credits5GrantedOneTimeWhenYou')}</p>
               </CardContent>
             </Card>
 
@@ -178,9 +159,7 @@ export default function CreditsPage() {
                   <Clock className="h-5 w-5 text-orange-500" />
                   <h3 className="font-semibold text-foreground">Purchased</h3>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Buy credit packs ($10–$500) or enable auto-topup to never run out. Purchased credits never expire.
-                </p>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line182JsxTextBuyCreditPacks10500OrEnableAuto')}</p>
               </CardContent>
             </Card>
 
@@ -189,36 +168,31 @@ export default function CreditsPage() {
               <CardContent className="pt-5">
                 <div className="flex items-center gap-2 mb-3">
                   <Infinity className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="font-semibold text-foreground">Monthly (Legacy)</h3>
+                  <h3 className="font-semibold text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line192JsxTextMonthlyLegacy')}</h3>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Some legacy plans include monthly credits that refresh each billing cycle. These don't roll over.
-                </p>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line195JsxTextSomeLegacyPlansIncludeMonthlyCreditsThatRefresh')}</p>
               </CardContent>
             </Card>
           </div>
 
           <div className="space-y-4">
             <div>
-              <h3 className="font-semibold text-foreground mb-3">How you get credits</h3>
+              <h3 className="font-semibold text-foreground mb-3">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line203JsxTextHowYouGetCredits')}</h3>
               <div className="space-y-3 text-muted-foreground">
                 <div className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">Machine bonus:</span> Every new cloud computer comes with 500 credits ($5) as a one-time welcome bonus.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line208JsxTextMachineBonus')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line208JsxTextEveryNewCloudComputerComesWith500Credits')}</div>
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">Credit purchases:</span> Buy packs of credits anytime. Available in $10, $25, $50, $100, $250, and $500 denominations.
-                  </div>
+                    <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line214JsxTextCreditPurchases')}</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line214JsxTextBuyPacksOfCreditsAnytimeAvailableIn10')}</div>
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">Auto-topup:</span> Automatically recharge when your balance gets low. Enabled by default — configure threshold and amount in settings.
-                  </div>
+                    <span className="font-medium text-foreground">Auto-topup:</span>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line220JsxTextAutomaticallyRechargeWhenYourBalanceGetsLowEnabled')}</div>
                 </div>
               </div>
             </div>
@@ -228,8 +202,7 @@ export default function CreditsPage() {
           <Alert className="border-blue-500/20 bg-blue-500/5">
             <Info className="h-4 w-4" />
             <AlertDescription>
-              <strong>Credit usage:</strong> Credits are deducted per LLM token used and per tool call. Costs vary by model — more capable models cost more per token.
-            </AlertDescription>
+              <strong>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line231JsxTextCreditUsage')}</strong>{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line231JsxTextCreditsAreDeductedPerLlmTokenUsedAnd')}</AlertDescription>
           </Alert>
         </div>
 

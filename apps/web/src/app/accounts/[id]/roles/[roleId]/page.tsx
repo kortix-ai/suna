@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -30,6 +32,7 @@ import { getAccount } from '@/lib/projects-client';
 import { usePermission } from '@/lib/use-permission';
 
 export default function RoleDetailPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useParams<{ id: string; roleId: string }>();
   const accountId = params?.id;
@@ -188,9 +191,7 @@ export default function RoleDetailPage() {
               onClick={() => router.push('/projects')}
               className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to projects
-            </button>
+              <ArrowLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line192JsxTextBackToProjects')}</button>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <button
                 type="button"
@@ -234,7 +235,7 @@ export default function RoleDetailPage() {
                     <Badge size="sm" className="font-normal">custom</Badge>
                   )}
                   <span className="text-muted-foreground/40">·</span>
-                  <span>Resource type: {role.resource_type}</span>
+                  <span>{tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line237JsxTextResourceType')}{role.resource_type}</span>
                   <span className="text-muted-foreground/40">·</span>
                   <span>
                     {usageQuery.isLoading
@@ -247,20 +248,15 @@ export default function RoleDetailPage() {
           </div>
 
           {!rolesQuery.isLoading && !role && roleId && (
-            <InfoBanner tone="neutral">
-              This role doesn&apos;t exist or you don&apos;t have access.
-            </InfoBanner>
+            <InfoBanner tone="neutral">{tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line251JsxTextThisRoleDoesnAposTExistOrYou')}</InfoBanner>
           )}
 
           {isSystem && (
             <InfoBanner
               tone="neutral"
               icon={ShieldAlert}
-              title="System role — read-only"
-            >
-              System roles ship with the platform. To customize, create a new
-              role with the actions you want and attach that instead.
-            </InfoBanner>
+              title={tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line259JsxAttrTitleSystemRoleReadOnly')}
+            >{tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line261JsxTextSystemRolesShipWithThePlatformToCustomize')}</InfoBanner>
           )}
 
           {/* Metadata */}
@@ -310,7 +306,7 @@ export default function RoleDetailPage() {
             <SectionCard
               title="Permissions"
               count={draftActions.size}
-              description="Actions this role grants when attached to a policy."
+              description={tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line313JsxAttrDescriptionActionsThisRoleGrantsWhenAttachedToA')}
               action={
                 editable && permsDirty && (
                   <Button
@@ -318,9 +314,7 @@ export default function RoleDetailPage() {
                     disabled={savePermsMutation.isPending || draftActions.size === 0}
                     className="gap-1.5"
                   >
-                    {savePermsMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Save changes
-                  </Button>
+                    {savePermsMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}{tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line322JsxTextSaveChanges')}</Button>
                 )
               }
               flush
@@ -338,7 +332,7 @@ export default function RoleDetailPage() {
                     <Input
                       value={actionSearch}
                       onChange={(e) => setActionSearch(e.target.value)}
-                      placeholder="Search actions..."
+                      placeholder={tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line341JsxAttrPlaceholderSearchActions')}
                       className="h-9 pl-9"
                     />
                   </div>
@@ -395,16 +389,13 @@ export default function RoleDetailPage() {
           {role && canDelete && !isSystem && (
             <SectionCard
               tone="destructive"
-              title="Danger zone"
-              description="Roles in use by any policy cannot be deleted until the referencing policies are removed."
+              title={tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line398JsxAttrTitleDangerZone')}
+              description={tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line399JsxAttrDescriptionRolesInUseByAnyPolicyCannotBe')}
               flush
             >
               <div className="flex items-center justify-between gap-3 px-6 py-4">
-                <p className="text-sm text-foreground">
-                  Delete this role
-                  {usageCount > 0 && (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      (currently used by {usageCount} {usageCount === 1 ? 'policy' : 'policies'})
+                <p className="text-sm text-foreground">{tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line404JsxTextDeleteThisRole')}{usageCount > 0 && (
+                    <span className="ml-2 text-xs text-muted-foreground">{tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line407JsxTextCurrentlyUsedBy')}{usageCount} {usageCount === 1 ? 'policy' : 'policies'})
                     </span>
                   )}
                 </p>
@@ -417,9 +408,7 @@ export default function RoleDetailPage() {
                       ? `Cannot delete: ${usageCount} ${usageCount === 1 ? 'policy still references' : 'policies still reference'} this role`
                       : undefined
                   }
-                >
-                  Delete role
-                </Button>
+                >{tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line421JsxTextDeleteRole')}</Button>
               </div>
             </SectionCard>
           )}
@@ -427,9 +416,9 @@ export default function RoleDetailPage() {
           <ConfirmDialog
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
-            title="Delete role"
+            title={tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line430JsxAttrTitleDeleteRole')}
             description={`Delete "${role?.name ?? 'this role'}"? This cannot be undone.`}
-            confirmLabel="Delete role"
+            confirmLabel={tHardcodedUi.raw('appAccountsIdRolesRoleidPage.line432JsxAttrConfirmlabelDeleteRole')}
             isPending={deleteMutation.isPending}
             onConfirm={() => deleteMutation.mutate()}
           />

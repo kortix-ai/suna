@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import * as ResizablePrimitive from 'react-resizable-panels';
 import { PreviewTabContent } from '@/components/tabs/preview-tab-content';
@@ -342,10 +343,11 @@ function PanelHeaderSwitcher({
   onChangeView: (next: SessionPanelView) => void;
   onClose: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex-shrink-0 flex items-center justify-between h-10 pl-4 pr-2 border-b border-border/40">
       {/* Plain text tabs with an underline on active — no chip, no fill. */}
-      <div role="tablist" aria-label="Side panel view" className="flex items-center gap-5">
+      <div role="tablist" aria-label={tHardcodedUi.raw('componentsSessionSessionLayout.line348JsxAttrAriaLabelSidePanelView')} className="flex items-center gap-5">
         <PanelTabButton
           active={view === 'actions'}
           onClick={() => onChangeView('actions')}
@@ -367,16 +369,14 @@ function PanelHeaderSwitcher({
           <button
             onClick={onClose}
             className="inline-flex items-center justify-center h-7 w-7 rounded-full text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
-            aria-label="Close panel"
+            aria-label={tHardcodedUi.raw('componentsSessionSessionLayout.line370JsxAttrAriaLabelClosePanel')}
           >
             <X className="w-3.5 h-3.5" />
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs">
-          Close panel
-          <kbd className="ml-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
-            ⌘I
-          </kbd>
+          {tHardcodedUi.raw('componentsSessionSessionLayout.line376JsxTextClosePanel')}<kbd className="ml-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+            {tHardcodedUi.raw('componentsSessionSessionLayout.line378JsxTextI')}</kbd>
         </TooltipContent>
       </Tooltip>
     </div>

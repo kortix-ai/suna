@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,6 +30,7 @@ export function ThreadBrowser({
   onClearTier,
   onUserClick
 }: ThreadBrowserProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [params, setParams] = useState<ThreadBrowseParams>({
     page: 1,
     page_size: 15,
@@ -179,7 +182,7 @@ export function ThreadBrowser({
                 )}
               </div>
             ) : (
-              <span className="text-muted-foreground text-sm">No messages</span>
+              <span className="text-muted-foreground text-sm">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line182JsxTextNoMessages')}</span>
             )}
           </div>
         );
@@ -228,7 +231,7 @@ export function ThreadBrowser({
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input type="text"
-                placeholder="Search by email..." autoComplete="off"
+                placeholder={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line231JsxAttrPlaceholderSearchByEmail')} autoComplete="off"
                 value={emailSearch}
                 onChange={(e) => setEmailSearch(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleEmailSearch()}
@@ -242,10 +245,10 @@ export function ThreadBrowser({
               <SelectValue placeholder="Messages" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All threads</SelectItem>
-              <SelectItem value="1">1 message</SelectItem>
-              <SelectItem value="2-3">2-3 messages</SelectItem>
-              <SelectItem value="5+">5+ messages</SelectItem>
+              <SelectItem value="all">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line245JsxTextAllThreads')}</SelectItem>
+              <SelectItem value="1">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line246JsxTextText1Message')}</SelectItem>
+              <SelectItem value="2-3">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line247JsxTextText23Messages')}</SelectItem>
+              <SelectItem value="5+">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line248JsxTextText5Messages')}</SelectItem>
             </SelectContent>
           </Select>
 
@@ -282,7 +285,7 @@ export function ThreadBrowser({
           <DataTable
             columns={columns}
             data={threadsData?.data || []}
-            emptyMessage="No threads found"
+            emptyMessage={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line285JsxAttrEmptymessageNoThreadsFound')}
             getItemId={(thread) => thread.thread_id}
           />
         )}

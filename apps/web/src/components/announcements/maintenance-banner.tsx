@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { X, ExternalLink, Info, AlertTriangle, AlertCircle, Clock } from 'lucide-react';
@@ -51,6 +53,7 @@ const levelConfig: Record<
 };
 
 export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isDismissed, setIsDismissed] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [countdown, setCountdown] = useState<string>('');
@@ -197,9 +200,7 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
                     size="icon-xs"
                     onClick={handleStatusClick}
                     className="mt-2"
-                  >
-                    View Status
-                    <ExternalLink className="h-3 w-3" />
+                  >{tHardcodedUi.raw('componentsAnnouncementsMaintenanceBanner.line201JsxTextViewStatus')}<ExternalLink className="h-3 w-3" />
                   </Button>
                 )}
               </div>

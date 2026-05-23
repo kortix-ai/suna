@@ -2,6 +2,7 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { MarkdownEditor, type MarkdownEditorControls } from './markdown-editor';
 import { UnifiedMarkdown } from '@/components/markdown';
@@ -18,10 +19,20 @@ import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { processUnicodeContent, getFileTypeFromExtension, getLanguageFromExtension } from './utils';
 
+function SpreadsheetLoading() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+
+  return (
+    <div className="flex items-center justify-center h-full text-muted-foreground">
+      {tHardcodedUi.raw('componentsFileEditorsIndex.line24JsxTextLoadingSpreadsheet')}
+    </div>
+  );
+}
+
 // Lazy load SpreadsheetViewer as it imports Syncfusion (~1-2 MB)
 const SpreadsheetViewer = dynamic(
   () => import('@/components/thread/tool-views/spreadsheet/SpreadsheetViewer').then((mod) => mod.SpreadsheetViewer),
-  { ssr: false, loading: () => <div className="flex items-center justify-center h-full text-muted-foreground">Loading spreadsheet...</div> }
+  { ssr: false, loading: () => <SpreadsheetLoading /> }
 );
 
 export type EditableFileType =

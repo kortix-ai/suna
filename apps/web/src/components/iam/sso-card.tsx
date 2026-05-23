@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // SAML SSO config on the Settings tab. The Supabase auth.sso_providers
 // row is created out-of-band (Studio or auth admin API) — admins paste
 // the resulting UUID + primary email domain here, plus the JWT claim
@@ -50,6 +51,7 @@ interface SsoCardProps {
 }
 
 export function SsoCard({ accountId, canManage }: SsoCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -100,12 +102,9 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
           <div>
             <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-              SAML SSO
-            </h2>
+              {tHardcodedUi.raw('componentsIamSsoCard.line103JsxTextSAMLSSO')}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Connect your IdP. Users signing in via SAML are auto-provisioned
-              and their IAM groups are kept in sync from a JWT claim.
-            </p>
+              {tHardcodedUi.raw('componentsIamSsoCard.line106JsxTextConnectYourIdPUsersSigningInViaSAML')}</p>
           </div>
           {canManage && (
             <Button
@@ -124,23 +123,20 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
           <Skeleton className="h-16 w-full" />
         ) : !provider ? (
           <p className="text-sm text-muted-foreground">
-            No SAML provider configured. Set up the IdP in Supabase Studio
-            (Authentication → SSO) first, then paste the resulting provider
-            UUID and your domain here.
-          </p>
+            {tHardcodedUi.raw('componentsIamSsoCard.line127JsxTextNoSAMLProviderConfiguredSetUpTheIdP')}</p>
         ) : (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
             <dt className="text-muted-foreground">Provider</dt>
             <dd className="font-medium text-foreground">{provider.name}</dd>
-            <dt className="text-muted-foreground">Primary domain</dt>
+            <dt className="text-muted-foreground">{tHardcodedUi.raw('componentsIamSsoCard.line135JsxTextPrimaryDomain')}</dt>
             <dd className="font-mono text-xs text-foreground">{provider.primary_domain}</dd>
-            <dt className="text-muted-foreground">Group claim</dt>
+            <dt className="text-muted-foreground">{tHardcodedUi.raw('componentsIamSsoCard.line137JsxTextGroupClaim')}</dt>
             <dd className="font-mono text-xs text-foreground">{provider.group_claim_name}</dd>
-            <dt className="text-muted-foreground">Auto-create members</dt>
+            <dt className="text-muted-foreground">{tHardcodedUi.raw('componentsIamSsoCard.line139JsxTextAutoCreateMembers')}</dt>
             <dd className="text-foreground">
               {provider.auto_create_members ? 'Yes' : 'No'}
             </dd>
-            <dt className="text-muted-foreground">Supabase provider id</dt>
+            <dt className="text-muted-foreground">{tHardcodedUi.raw('componentsIamSsoCard.line143JsxTextSupabaseProviderId')}</dt>
             <dd className="truncate font-mono text-[11px] text-muted-foreground">
               {provider.supabase_sso_provider_id}
             </dd>
@@ -151,7 +147,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
       {provider && (
         <>
           <header className="flex items-center justify-between border-t border-border/60 px-6 py-3">
-            <h3 className="text-sm font-medium text-foreground">Group mappings</h3>
+            <h3 className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsIamSsoCard.line154JsxTextGroupMappings')}</h3>
             {canManage && (
               <Button
                 size="sm"
@@ -160,8 +156,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 onClick={() => setMapOpen(true)}
               >
                 <Plus className="h-3.5 w-3.5" />
-                Add mapping
-              </Button>
+                {tHardcodedUi.raw('componentsIamSsoCard.line163JsxTextAddMapping')}</Button>
             )}
           </header>
           <div className="px-6 pb-5">
@@ -169,16 +164,14 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
               <Skeleton className="h-12 w-full" />
             ) : mappings.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                No mappings yet. Map IdP group/role values (from the{' '}
-                <span className="font-mono">{provider.group_claim_name}</span> claim) to
-                IAM groups so users land in the right group on sign-in.
-              </p>
+                {tHardcodedUi.raw('componentsIamSsoCard.line172JsxTextNoMappingsYetMapIdPGroupRoleValues')}{' '}
+                <span className="font-mono">{provider.group_claim_name}</span> {tHardcodedUi.raw('componentsIamSsoCard.line173JsxTextClaimToIAMGroupsSoUsersLandIn')}</p>
             ) : (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border/60 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    <th className="py-2 font-medium">Claim value</th>
-                    <th className="py-2 font-medium">→ IAM group</th>
+                    <th className="py-2 font-medium">{tHardcodedUi.raw('componentsIamSsoCard.line180JsxTextClaimValue')}</th>
+                    <th className="py-2 font-medium">{tHardcodedUi.raw('componentsIamSsoCard.line181JsxTextIAMGroup')}</th>
                     <th className="w-10 py-2" />
                   </tr>
                 </thead>
@@ -198,7 +191,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                             variant="ghost"
                             className="h-7 w-7 text-muted-foreground hover:text-destructive"
                             onClick={() => setMapDeleteTarget(m)}
-                            aria-label="Remove mapping"
+                            aria-label={tHardcodedUi.raw('componentsIamSsoCard.line201JsxAttrAriaLabelRemoveMapping')}
                           >
                             <X className="h-3.5 w-3.5" />
                           </Button>
@@ -222,8 +215,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
             onClick={() => setDeleteOpen(true)}
           >
             <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-            Remove SSO provider
-          </Button>
+            {tHardcodedUi.raw('componentsIamSsoCard.line225JsxTextRemoveSSOProvider')}</Button>
         </footer>
       )}
 
@@ -250,9 +242,9 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Remove SSO provider?"
-        description="Existing members keep their access; new sign-ins via SAML stop being provisioned and group sync no longer runs."
-        confirmLabel="Remove provider"
+        title={tHardcodedUi.raw('componentsIamSsoCard.line253JsxAttrTitleRemoveSSOProvider')}
+        description={tHardcodedUi.raw('componentsIamSsoCard.line254JsxAttrDescriptionExistingMembersKeepTheirAccessNewSignIns')}
+        confirmLabel={tHardcodedUi.raw('componentsIamSsoCard.line255JsxAttrConfirmLabelRemoveProvider')}
         confirmVariant="destructive"
         isPending={deleteMutation.isPending}
         onConfirm={() => deleteMutation.mutate()}
@@ -263,13 +255,13 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
         onOpenChange={(o) => {
           if (!o) setMapDeleteTarget(null);
         }}
-        title="Remove mapping?"
+        title={tHardcodedUi.raw('componentsIamSsoCard.line266JsxAttrTitleRemoveMapping')}
         description={
           mapDeleteTarget
             ? `Users with the "${mapDeleteTarget.claim_value}" claim will no longer auto-join "${mapDeleteTarget.group_name}".`
             : ''
         }
-        confirmLabel="Remove mapping"
+        confirmLabel={tHardcodedUi.raw('componentsIamSsoCard.line272JsxAttrConfirmLabelRemoveMapping')}
         confirmVariant="destructive"
         isPending={deleteMappingMutation.isPending}
         onConfirm={() => {
@@ -295,6 +287,7 @@ function EditProviderDialog({
   existing: SsoProvider | null;
   onSaved: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState(existing?.name ?? '');
   const [supabaseId, setSupabaseId] = useState(existing?.supabase_sso_provider_id ?? '');
   const [domain, setDomain] = useState(existing?.primary_domain ?? '');
@@ -340,14 +333,12 @@ function EditProviderDialog({
         <DialogHeader>
           <DialogTitle>{existing ? 'Edit SAML provider' : 'Configure SAML SSO'}</DialogTitle>
           <DialogDescription>
-            Create the provider in Supabase Studio (Authentication → SSO) first.
-            Paste the resulting provider UUID below.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsIamSsoCard.line343JsxTextCreateTheProviderInSupabaseStudioAuthenticationSSO')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Display name</Label>
+            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line350JsxTextDisplayName')}</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -357,7 +348,7 @@ function EditProviderDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Supabase provider UUID</Label>
+            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line360JsxTextSupabaseProviderUUID')}</Label>
             <Input
               value={supabaseId}
               onChange={(e) => setSupabaseId(e.target.value)}
@@ -368,7 +359,7 @@ function EditProviderDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Primary email domain</Label>
+            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line371JsxTextPrimaryEmailDomain')}</Label>
             <Input
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
@@ -376,12 +367,11 @@ function EditProviderDialog({
               disabled={mutation.isPending}
             />
             <p className="text-[11px] text-muted-foreground">
-              Used to route sign-in flows for this domain through your IdP.
-            </p>
+              {tHardcodedUi.raw('componentsIamSsoCard.line379JsxTextUsedToRouteSignInFlowsForThis')}</p>
           </div>
 
           <div className="space-y-1.5">
-            <Label>Group claim name</Label>
+            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line384JsxTextGroupClaimName')}</Label>
             <Input
               value={claim}
               onChange={(e) => setClaim(e.target.value)}
@@ -390,9 +380,8 @@ function EditProviderDialog({
               disabled={mutation.isPending}
             />
             <p className="text-[11px] text-muted-foreground">
-              Common values: <span className="font-mono">groups</span> (Okta),{' '}
-              <span className="font-mono">memberOf</span> (Azure AD).
-            </p>
+              {tHardcodedUi.raw('componentsIamSsoCard.line393JsxTextCommonValues')}<span className="font-mono">groups</span> {tHardcodedUi.raw('componentsIamSsoCard.line393JsxTextOkta')}{' '}
+              <span className="font-mono">memberOf</span> {tHardcodedUi.raw('componentsIamSsoCard.line394JsxTextAzureAD')}</p>
           </div>
 
           <label className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
@@ -404,11 +393,9 @@ function EditProviderDialog({
               disabled={mutation.isPending}
             />
             <span>
-              <span className="font-medium">Auto-create members</span>
+              <span className="font-medium">{tHardcodedUi.raw('componentsIamSsoCard.line407JsxTextAutoCreateMembers')}</span>
               <span className="block text-[11px] text-muted-foreground">
-                When off, only users an admin has already invited can sign in via
-                SAML. Group sync still runs for those members.
-              </span>
+                {tHardcodedUi.raw('componentsIamSsoCard.line409JsxTextWhenOffOnlyUsersAnAdminHasAlready')}</span>
             </span>
           </label>
         </div>
@@ -448,6 +435,7 @@ function AddMappingDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [claimValue, setClaimValue] = useState('');
   const [groupId, setGroupId] = useState('');
 
@@ -487,16 +475,14 @@ function AddMappingDialog({
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add group mapping</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsIamSsoCard.line490JsxTextAddGroupMapping')}</DialogTitle>
           <DialogDescription>
-            Users with this claim value in their SAML token will be added to the
-            chosen IAM group on sign-in.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsIamSsoCard.line492JsxTextUsersWithThisClaimValueInTheirSAML')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Claim value</Label>
+            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line499JsxTextClaimValue')}</Label>
             <Input
               value={claimValue}
               onChange={(e) => setClaimValue(e.target.value)}
@@ -505,26 +491,23 @@ function AddMappingDialog({
               disabled={mutation.isPending}
             />
             <p className="text-[11px] text-muted-foreground">
-              Exact, case-sensitive match against an entry in the group claim
-              your IdP sends.
-            </p>
+              {tHardcodedUi.raw('componentsIamSsoCard.line508JsxTextExactCaseSensitiveMatchAgainstAnEntryIn')}</p>
           </div>
 
           <div className="space-y-1.5">
-            <Label>IAM group</Label>
+            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line514JsxTextIAMGroup')}</Label>
             <Select
               value={groupId || undefined}
               onValueChange={setGroupId}
               disabled={mutation.isPending || groupsQuery.isLoading}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Pick a group..." />
+                <SelectValue placeholder={tHardcodedUi.raw('componentsIamSsoCard.line521JsxAttrPlaceholderPickAGroup')} />
               </SelectTrigger>
               <SelectContent>
                 {groups.length === 0 ? (
                   <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    No groups in this account yet. Create one first.
-                  </div>
+                    {tHardcodedUi.raw('componentsIamSsoCard.line526JsxTextNoGroupsInThisAccountYetCreateOne')}</div>
                 ) : (
                   groups.map((g) => (
                     <SelectItem key={g.group_id} value={g.group_id}>
@@ -551,8 +534,7 @@ function AddMappingDialog({
             className="gap-1.5"
           >
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Add mapping
-          </Button>
+            {tHardcodedUi.raw('componentsIamSsoCard.line554JsxTextAddMapping')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

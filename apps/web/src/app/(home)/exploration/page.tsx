@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useRef } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ArrowUpRight } from 'lucide-react';
@@ -169,6 +171,7 @@ function NotebookBlock({
 }
 
 export default function ExplorationPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
       <WallpaperBackground />
@@ -201,19 +204,13 @@ export default function ExplorationPage() {
               <p className="text-xs uppercase tracking-[0.32em] text-muted-foreground">
                 Exploration
               </p>
-              <h1 className="mt-4 max-w-4xl text-4xl font-medium tracking-tight text-foreground sm:text-5xl md:text-6xl">
-                A calmer way to evaluate how Kortix should explain itself.
-              </h1>
-              <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-sm">
-                This page is a working wall: architecture studies, filesystem proof,
-                integration language, and positioning lines. The goal is not to ship
-                all of it. The goal is to identify the strongest structure for the homepage.
-              </p>
+              <h1 className="mt-4 max-w-4xl text-4xl font-medium tracking-tight text-foreground sm:text-5xl md:text-6xl">{tHardcodedUi.raw('appHomeExplorationPage.line205JsxTextACalmerWayToEvaluateHowKortixShould')}</h1>
+              <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-sm">{tHardcodedUi.raw('appHomeExplorationPage.line208JsxTextThisPageIsAWorkingWallArchitectureStudies')}</p>
             </Reveal>
 
             <div className="mt-14 space-y-10">
               <Reveal delay={0.06}>
-                <SectionLabel label="Stack Studies" />
+                <SectionLabel label={tHardcodedUi.raw('appHomeExplorationPage.line216JsxAttrLabelStackStudies')} />
               </Reveal>
 
               <div className="space-y-6">
@@ -225,7 +222,7 @@ export default function ExplorationPage() {
               </div>
 
               <Reveal delay={0.06}>
-                <SectionLabel label="Proof Elements" />
+                <SectionLabel label={tHardcodedUi.raw('appHomeExplorationPage.line228JsxAttrLabelProofElements')} />
               </Reveal>
 
               <div className="grid gap-6 lg:grid-cols-2">
@@ -240,7 +237,7 @@ export default function ExplorationPage() {
                 </Reveal>
 
                 <Reveal delay={0.14}>
-                  <NotebookBlock title="Memory Model">
+                  <NotebookBlock title={tHardcodedUi.raw('appHomeExplorationPage.line243JsxAttrTitleMemoryModel')}>
                     <div className="rounded-2xl border border-border/45 bg-muted/18 p-5">
                       <div className="flex flex-wrap gap-2 text-xs font-mono text-muted-foreground">
                         {['tool call', 'observation', 'consolidation', 'long-term memory', 'future context'].map(
@@ -255,9 +252,9 @@ export default function ExplorationPage() {
                         )}
                       </div>
                       <div className="mt-5 space-y-2 text-sm text-muted-foreground">
-                        <p><span className="text-foreground">Episodic</span> - what happened and when</p>
-                        <p><span className="text-foreground">Semantic</span> - facts, systems, structure</p>
-                        <p><span className="text-foreground">Procedural</span> - workflows and how-to knowledge</p>
+                        <p><span className="text-foreground">Episodic</span>{tHardcodedUi.raw('appHomeExplorationPage.line258JsxTextWhatHappenedAndWhen')}</p>
+                        <p><span className="text-foreground">Semantic</span>{tHardcodedUi.raw('appHomeExplorationPage.line259JsxTextFactsSystemsStructure')}</p>
+                        <p><span className="text-foreground">Procedural</span>{tHardcodedUi.raw('appHomeExplorationPage.line260JsxTextWorkflowsAndHowToKnowledge')}</p>
                       </div>
                     </div>
                   </NotebookBlock>
@@ -270,7 +267,7 @@ export default function ExplorationPage() {
 
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                 <Reveal delay={0.1}>
-                  <NotebookBlock title="Positioning Lines">
+                  <NotebookBlock title={tHardcodedUi.raw('appHomeExplorationPage.line273JsxAttrTitlePositioningLines')}>
                     <div className="space-y-3">
                       {copyLines.map((line) => (
                         <div
@@ -285,7 +282,7 @@ export default function ExplorationPage() {
                 </Reveal>
 
                 <Reveal delay={0.14}>
-                  <NotebookBlock title="Integration Surface">
+                  <NotebookBlock title={tHardcodedUi.raw('appHomeExplorationPage.line288JsxAttrTitleIntegrationSurface')}>
                     <div className="rounded-2xl border border-border/45 bg-muted/18 p-5 font-mono text-xs leading-loose text-muted-foreground">
                       {integrations.map(([name, method]) => (
                         <div key={name} className="flex items-start justify-between gap-4 border-t border-border/35 py-2 first:border-t-0 first:pt-0 last:pb-0">
@@ -303,37 +300,29 @@ export default function ExplorationPage() {
           <div>
             <Reveal delay={0.08}>
               <div className="xl:sticky xl:top-24 space-y-6">
-                <NotebookBlock title="Editorial Read">
+                <NotebookBlock title={tHardcodedUi.raw('appHomeExplorationPage.line306JsxAttrTitleEditorialRead')}>
                   <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
                     <p>
-                      <span className="text-foreground">Best homepage anchor:</span>{' '}
-                      State First. It gets to the real differentiator fastest.
-                    </p>
+                      <span className="text-foreground">{tHardcodedUi.raw('appHomeExplorationPage.line309JsxTextBestHomepageAnchor')}</span>{' '}{tHardcodedUi.raw('appHomeExplorationPage.line310JsxTextStateFirstItGetsToTheRealDifferentiator')}</p>
                     <p>
-                      <span className="text-foreground">Best supporting proof:</span>{' '}
-                      filesystem + memory. Those two make the idea feel concrete.
-                    </p>
+                      <span className="text-foreground">{tHardcodedUi.raw('appHomeExplorationPage.line313JsxTextBestSupportingProof')}</span>{' '}{tHardcodedUi.raw('appHomeExplorationPage.line314JsxTextFilesystemMemoryThoseTwoMakeTheIdeaFeel')}</p>
                     <p>
-                      <span className="text-foreground">Design direction:</span>{' '}
-                      quieter, more editorial, less product-demo energy.
-                    </p>
+                      <span className="text-foreground">{tHardcodedUi.raw('appHomeExplorationPage.line317JsxTextDesignDirection')}</span>{' '}{tHardcodedUi.raw('appHomeExplorationPage.line318JsxTextQuieterMoreEditorialLessProductDemoEnergy')}</p>
                   </div>
                 </NotebookBlock>
 
-                <NotebookBlock title="Recommended Homepage Mix">
+                <NotebookBlock title={tHardcodedUi.raw('appHomeExplorationPage.line323JsxAttrTitleRecommendedHomepageMix')}>
                   <ol className="space-y-3 text-sm leading-relaxed text-muted-foreground">
-                    <li>1. Lead with a single stack graphic.</li>
-                    <li>2. Follow with one filesystem proof block.</li>
-                    <li>3. Add one line about memory and one line about integrations.</li>
-                    <li>4. Keep the page emotionally calm and technically sharp.</li>
+                    <li>{tHardcodedUi.raw('appHomeExplorationPage.line325JsxTextText1LeadWithASingleStackGraphic')}</li>
+                    <li>{tHardcodedUi.raw('appHomeExplorationPage.line326JsxTextText2FollowWithOneFilesystemProofBlock')}</li>
+                    <li>{tHardcodedUi.raw('appHomeExplorationPage.line327JsxTextText3AddOneLineAboutMemoryAndOne')}</li>
+                    <li>{tHardcodedUi.raw('appHomeExplorationPage.line328JsxTextText4KeepThePageEmotionallyCalmAndTechnically')}</li>
                   </ol>
                 </NotebookBlock>
 
-                <NotebookBlock title="Next Move">
+                <NotebookBlock title={tHardcodedUi.raw('appHomeExplorationPage.line332JsxAttrTitleNextMove')}>
                   <Button asChild className="w-full rounded-full shadow-none">
-                    <Link href="/">
-                      Bring the best study back home
-                      <ArrowUpRight className="ml-2 size-4" />
+                    <Link href="/">{tHardcodedUi.raw('appHomeExplorationPage.line335JsxTextBringTheBestStudyBackHome')}<ArrowUpRight className="ml-2 size-4" />
                     </Link>
                   </Button>
                 </NotebookBlock>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Task Kanban — proper horizontal columns.
  *
@@ -48,6 +50,7 @@ export function TaskKanban({
   onNewTask,
   onDeleteTask,
 }: TaskKanbanProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [deleteTarget, setDeleteTarget] = useState<KortixTask | null>(null);
 
   const planning = useMemo(() => tasks.filter((t) => t.status === 'todo'), [tasks]);
@@ -79,9 +82,7 @@ export function TaskKanban({
               <button
                 onClick={() => onNewTask('todo')}
                 className="w-full py-6 rounded-2xl border border-dashed border-border/50 text-[12px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
-              >
-                + Add task
-              </button>
+              >{tHardcodedUi.raw('componentsKortixTaskKanban.line83JsxTextAddTask')}</button>
             }
           >
             {planning.map((task) => (
@@ -110,7 +111,7 @@ export function TaskKanban({
             icon={<Loader2 className={`h-4 w-4 ${running.length > 0 ? 'text-blue-500 animate-spin' : 'text-muted-foreground/30'}`} />}
             label="Running"
             count={running.length}
-            emptyText="No active workers"
+            emptyText={tHardcodedUi.raw('componentsKortixTaskKanban.line113JsxAttrEmptytextNoActiveWorkers')}
           >
             {running.map((task) => (
               <RunningCard
@@ -125,9 +126,9 @@ export function TaskKanban({
           {/* Review / Input */}
           <Column
             icon={<STATUS_META.awaiting_review.icon className="h-4 w-4 text-amber-500/50" />}
-            label="Review / Input"
+            label={tHardcodedUi.raw('componentsKortixTaskKanban.line128JsxAttrLabelReviewInput')}
             count={review.length}
-            emptyText="No tasks awaiting review or input"
+            emptyText={tHardcodedUi.raw('componentsKortixTaskKanban.line130JsxAttrEmptytextNoTasksAwaitingReviewOrInput')}
           >
             {review.map((task) => (
               <TaskCard
@@ -155,7 +156,7 @@ export function TaskKanban({
             icon={<STATUS_META.completed.icon className="h-4 w-4 text-emerald-500/50" />}
             label="Done"
             count={done.length}
-            emptyText="No completed tasks"
+            emptyText={tHardcodedUi.raw('componentsKortixTaskKanban.line158JsxAttrEmptytextNoCompletedTasks')}
           >
             {done.map((task) => (
               <TaskCard
@@ -174,8 +175,8 @@ export function TaskKanban({
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        title="Delete task"
-        description={<>Are you sure you want to delete <span className="font-semibold text-foreground">&quot;{deleteTarget?.title}&quot;</span>? This action cannot be undone.</>}
+        title={tHardcodedUi.raw('componentsKortixTaskKanban.line177JsxAttrTitleDeleteTask')}
+        description={<>{tHardcodedUi.raw('componentsKortixTaskKanban.line178JsxTextAreYouSureYouWantToDelete')}<span className="font-semibold text-foreground">{tHardcodedUi.raw('componentsKortixTaskKanban.line178JsxTextQuot')}{deleteTarget?.title}{tHardcodedUi.raw('componentsKortixTaskKanban.line178JsxTextQuotfa5e6756')}</span>{tHardcodedUi.raw('componentsKortixTaskKanban.line178JsxTextThisActionCannotBeUndone')}</>}
         confirmLabel="Delete"
         onConfirm={() => { if (deleteTarget) { onDeleteTask(deleteTarget.id); setDeleteTarget(null); } }}
       />
@@ -235,6 +236,7 @@ function RunningCard({ task, onSelect, onDelete }: {
   onSelect: () => void;
   onDelete: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -278,9 +280,7 @@ function RunningCard({ task, onSelect, onDelete }: {
       <ContextMenuContent className="w-48">
         <ContextMenuItem onClick={onSelect}>Open</ContextMenuItem>
         <ContextMenuItem onClick={() => navigator.clipboard.writeText(task.id)}>
-          <Copy className="mr-2 h-3.5 w-3.5" />
-          Copy ID
-        </ContextMenuItem>
+          <Copy className="mr-2 h-3.5 w-3.5" />{tHardcodedUi.raw('componentsKortixTaskKanban.line282JsxTextCopyId')}</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={onDelete}>
           <Trash2 className="mr-2 h-3.5 w-3.5" />
@@ -301,6 +301,7 @@ function TaskCard({ task, onSelect, onDelete, action, badge, dimmed }: {
   badge?: string;
   dimmed?: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -336,9 +337,7 @@ function TaskCard({ task, onSelect, onDelete, action, badge, dimmed }: {
       <ContextMenuContent className="w-48">
         <ContextMenuItem onClick={onSelect}>Open</ContextMenuItem>
         <ContextMenuItem onClick={() => navigator.clipboard.writeText(task.id)}>
-          <Copy className="mr-2 h-3.5 w-3.5" />
-          Copy ID
-        </ContextMenuItem>
+          <Copy className="mr-2 h-3.5 w-3.5" />{tHardcodedUi.raw('componentsKortixTaskKanban.line340JsxTextCopyId')}</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={onDelete}>
           <Trash2 className="mr-2 h-3.5 w-3.5" />

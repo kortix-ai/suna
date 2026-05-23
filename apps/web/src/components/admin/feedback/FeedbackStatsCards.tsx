@@ -1,11 +1,14 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Star, MessageSquare, TrendingUp, TrendingDown, Users } from 'lucide-react';
 import { useAdminFeedbackStats, useAdminSentimentSummary } from '@/hooks/admin/use-admin-feedback';
 
 export function FeedbackStatsCards() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: stats, isLoading: statsLoading } = useAdminFeedbackStats();
   const { data: sentiment, isLoading: sentimentLoading } = useAdminSentimentSummary();
 
@@ -35,9 +38,7 @@ export function FeedbackStatsCards() {
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Average Rating
-          </CardTitle>
+          <CardTitle className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsAdminFeedbackFeedbackstatscards.line39JsxTextAverageRating')}</CardTitle>
           <Star className="h-4 w-4 text-yellow-500" />
         </CardHeader>
         <CardContent>
@@ -50,9 +51,7 @@ export function FeedbackStatsCards() {
       </Card>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Total Feedback
-          </CardTitle>
+          <CardTitle className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsAdminFeedbackFeedbackstatscards.line54JsxTextTotalFeedback')}</CardTitle>
           <Users className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
@@ -67,9 +66,7 @@ export function FeedbackStatsCards() {
       </Card>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            With Comments
-          </CardTitle>
+          <CardTitle className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsAdminFeedbackFeedbackstatscards.line71JsxTextWithComments')}</CardTitle>
           <MessageSquare className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
@@ -82,8 +79,7 @@ export function FeedbackStatsCards() {
               </div>
               {stats && stats.total_feedback > 0 && (
                 <div className="text-xs text-muted-foreground">
-                  {Math.round((stats.total_with_text / stats.total_feedback) * 100)}% of total
-                </div>
+                  {Math.round((stats.total_with_text / stats.total_feedback) * 100)}{tHardcodedUi.raw('componentsAdminFeedbackFeedbackstatscards.line85JsxTextOfTotal')}</div>
               )}
             </div>
           )}
@@ -91,9 +87,7 @@ export function FeedbackStatsCards() {
       </Card>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Positive (4-5★)
-          </CardTitle>
+          <CardTitle className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsAdminFeedbackFeedbackstatscards.line95JsxTextPositive45')}</CardTitle>
           <TrendingUp className="h-4 w-4 text-blue-500" />
         </CardHeader>
         <CardContent>
@@ -113,9 +107,7 @@ export function FeedbackStatsCards() {
       </Card>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Negative (1-2.5★)
-          </CardTitle>
+          <CardTitle className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsAdminFeedbackFeedbackstatscards.line117JsxTextNegative125')}</CardTitle>
           <TrendingDown className="h-4 w-4 text-red-500" />
         </CardHeader>
         <CardContent>

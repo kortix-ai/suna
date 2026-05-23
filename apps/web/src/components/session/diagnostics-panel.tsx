@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState, useCallback } from 'react';
 import {
   CircleAlert,
@@ -137,6 +139,7 @@ function DiagnosticRow({
   diagnostic: LspDiagnostic;
   onClick: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <button
       type="button"
@@ -149,7 +152,7 @@ function DiagnosticRow({
           {diagnostic.message}
         </p>
         <span className="text-xs text-muted-foreground/60 font-mono">
-          Ln {diagnostic.line + 1}, Col {diagnostic.column + 1}
+          Ln {diagnostic.line + 1}{tHardcodedUi.raw('componentsSessionDiagnosticsPanel.line152JsxTextCol')}{diagnostic.column + 1}
           {diagnostic.source && <span className="ml-1.5">({diagnostic.source})</span>}
         </span>
       </div>
@@ -229,6 +232,7 @@ function FileGroupSection({
 // ============================================================================
 
 export function DiagnosticsBadge() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const byFile = useDiagnosticsStore((s) => s.byFile);
   const [open, setOpen] = useState(false);
 
@@ -335,9 +339,7 @@ export function DiagnosticsBadge() {
                 />
               ))
             ) : (
-              <div className="text-xs text-center py-6 text-muted-foreground">
-                No diagnostics
-              </div>
+              <div className="text-xs text-center py-6 text-muted-foreground">{tHardcodedUi.raw('componentsSessionDiagnosticsPanel.line339JsxTextNoDiagnostics')}</div>
             )}
           </div>
         </div>
@@ -352,6 +354,7 @@ interface DiagnosticsDialogProps {
 }
 
 export function DiagnosticsDialog({ open, onOpenChange }: DiagnosticsDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const byFile = useDiagnosticsStore((s) => s.byFile);
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
 
@@ -402,7 +405,7 @@ export function DiagnosticsDialog({ open, onOpenChange }: DiagnosticsDialogProps
               </StatusBadge>
             )}
             {errorCount === 0 && warningCount === 0 && (
-              <span className="text-xs text-muted-foreground">No diagnostics</span>
+              <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionDiagnosticsPanel.line405JsxTextNoDiagnostics')}</span>
             )}
           </div>
 
@@ -417,9 +420,7 @@ export function DiagnosticsDialog({ open, onOpenChange }: DiagnosticsDialogProps
                 />
               ))
             ) : (
-              <div className="text-xs text-center py-6 text-muted-foreground">
-                No diagnostics
-              </div>
+              <div className="text-xs text-center py-6 text-muted-foreground">{tHardcodedUi.raw('componentsSessionDiagnosticsPanel.line421JsxTextNoDiagnostics')}</div>
             )}
           </div>
         </div>

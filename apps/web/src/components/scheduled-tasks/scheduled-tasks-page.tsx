@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from 'next-intl';
+
 import React, { useMemo, useState } from 'react';
 import { useTriggers, useDeleteTrigger, type Trigger } from '@/hooks/scheduled-tasks';
 import { Button } from '@/components/ui/button';
@@ -121,6 +123,7 @@ const TaskListItem = ({
   onDelete: (e: React.MouseEvent) => void;
   isDeleting: boolean;
 }) => {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const actionType = trigger.action_type ?? 'prompt';
   const actionIcon = actionType === 'command' ? <Terminal className="h-3 w-3" /> : actionType === 'http' ? <Globe className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />;
 
@@ -176,7 +179,7 @@ const TaskListItem = ({
               "opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted-foreground",
               isDeleting && "opacity-100"
             )}
-            title="Delete trigger"
+            title={tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line179JsxAttrTitleDeleteTrigger')}
           >
             <Trash2 className="h-4 w-4" />
           </Button>
@@ -206,6 +209,7 @@ const LoadingSkeleton = () => (
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export function ScheduledTasksPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: triggers = [], isLoading, error } = useTriggers();
   const [selectedTrigger, setSelectedTrigger] = useState<Trigger | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -291,9 +295,7 @@ export function ScheduledTasksPage() {
         <div className="max-w-4xl mx-auto w-full py-8 px-4">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-               Failed to load triggers. Please try refreshing the page.
-            </AlertDescription>
+            <AlertDescription>{tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line295JsxTextFailedToLoadTriggersPleaseTryRefreshingThe')}</AlertDescription>
           </Alert>
         </div>
       </div>
@@ -340,7 +342,7 @@ export function ScheduledTasksPage() {
                 <PageSearchBar
                   value={searchQuery}
                   onChange={setSearchQuery}
-                  placeholder="Search triggers..."
+                  placeholder={tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line343JsxAttrPlaceholderSearchTriggers')}
                   className="max-w-md"
                 />
                 <FilterBar className="hidden sm:inline-flex">
@@ -363,7 +365,7 @@ export function ScheduledTasksPage() {
                 onClick={() => setShowCreateDialog(true)}
               >
                 <Plus className="h-4 w-4" />
-                <span className="hidden xs:inline">Add Trigger</span>
+                <span className="hidden xs:inline">{tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line366JsxTextAddTrigger')}</span>
                 <span className="xs:hidden">Add</span>
               </Button>
             </div>
@@ -377,13 +379,11 @@ export function ScheduledTasksPage() {
               ) : filteredTriggers.length === 0 ? (
                 <EmptyState
                   icon={Calendar}
-                  title="Create a trigger"
-                  description="Automate with triggers. Schedule cron jobs, set up webhooks, run commands, or call HTTP endpoints — all from one place."
+                  title={tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line380JsxAttrTitleCreateATrigger')}
+                  description={tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line381JsxAttrDescriptionAutomateWithTriggersScheduleCronJobsSetUp')}
                   action={
                     <Button onClick={() => setShowCreateDialog(true)} size="sm">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Trigger
-                    </Button>
+                      <Plus className="h-4 w-4 mr-2" />{tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line385JsxTextAddTrigger')}</Button>
                   }
                 />
               ) : (

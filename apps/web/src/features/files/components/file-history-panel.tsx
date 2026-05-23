@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo, useCallback } from 'react';
 import {
   ArrowLeft,
@@ -111,6 +113,7 @@ function CommitDiffDetail({
   filePath: string;
   commitHash: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: diff, isLoading, error } = useFileCommitDiff(filePath, commitHash);
 
   if (isLoading) {
@@ -125,9 +128,7 @@ function CommitDiffDetail({
   if (error) {
     return (
       <div className="p-4 text-xs text-muted-foreground flex items-center gap-2">
-        <AlertCircle className="size-3.5" />
-        Failed to load diff
-      </div>
+        <AlertCircle className="size-3.5" />{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line129JsxTextFailedToLoadDiff')}</div>
     );
   }
 
@@ -178,9 +179,7 @@ function CommitDiffDetail({
           <DiffView patch={patchContent} layout="unified" hideFileHeader />
         </div>
       ) : (
-        <div className="p-4 text-sm text-muted-foreground text-center">
-          No diff content available
-        </div>
+        <div className="p-4 text-sm text-muted-foreground text-center">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line182JsxTextNoDiffContentAvailable')}</div>
       )}
     </div>
   );
@@ -201,6 +200,7 @@ function CommitCard({
   isSelected: boolean;
   onSelect: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -270,7 +270,7 @@ function CommitCard({
             'flex items-center gap-1 text-xs font-mono px-1.5 py-0.5 rounded shrink-0',
             'bg-muted/50 hover:bg-muted text-muted-foreground transition-colors',
           )}
-          title="Copy commit hash"
+          title={tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line273JsxAttrTitleCopyCommitHash')}
         >
           {copied ? (
             <Check className="size-3 text-emerald-500" />
@@ -294,6 +294,7 @@ function CommitCard({
 // ---------------------------------------------------------------------------
 
 export function FileHistoryPanel() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const historyFilePath = useFilesStore((s) => s.historyFilePath);
   const selectedCommitHash = useFilesStore((s) => s.selectedCommitHash);
   const selectCommit = useFilesStore((s) => s.selectCommit);
@@ -355,16 +356,12 @@ export function FileHistoryPanel() {
         {error && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
             <AlertCircle className="h-8 w-8 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">
-              Failed to load history
-            </p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line359JsxTextFailedToLoadHistory')}</p>
             <p className="text-xs text-muted-foreground/60 max-w-sm">
               {error instanceof Error ? error.message : 'Unknown error'}
             </p>
             {error instanceof Error && error.message.includes('not a git repository') && (
-              <p className="text-xs text-muted-foreground/60">
-                This project is not tracked by git.
-              </p>
+              <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line366JsxTextThisProjectIsNotTrackedByGit')}</p>
             )}
           </div>
         )}
@@ -373,10 +370,8 @@ export function FileHistoryPanel() {
         {!isLoading && !error && totalCommits === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
             <GitCommitHorizontal className="h-8 w-8 text-muted-foreground/20" />
-            <p className="text-sm text-muted-foreground">No commit history</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">
-              This file has no git commits yet.
-            </p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line376JsxTextNoCommitHistory')}</p>
+            <p className="text-xs text-muted-foreground/50 mt-1">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line378JsxTextThisFileHasNoGitCommitsYet')}</p>
           </div>
         )}
 
@@ -418,9 +413,7 @@ export function FileHistoryPanel() {
               {/* Load more hint */}
               {history?.hasMore && (
                 <div className="text-center py-2">
-                  <span className="text-xs text-muted-foreground/50">
-                    Showing first {totalCommits} commits — more available
-                  </span>
+                  <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line422JsxTextShowingFirst')}{totalCommits}{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line422JsxTextCommitsMoreAvailable')}</span>
                 </div>
               )}
             </div>

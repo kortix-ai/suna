@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * /projects/[id]/agents — Project agents browser.
  *
@@ -61,6 +63,7 @@ export default function ProjectAgentsPage({
 }
 
 export function AgentsView({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -115,7 +118,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <Input
-              placeholder="Search agents"
+              placeholder={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line118JsxAttrPlaceholderSearchAgents')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="h-8 pl-8 text-sm placeholder:text-muted-foreground/60"
@@ -219,6 +222,7 @@ function AgentDetail({
   agent: Agent;
   isDefault: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const fileQuery = useQuery({
     queryKey: ['project-file-source', projectId, agent.path],
     queryFn: () => readProjectFile(projectId, agent.path),
@@ -310,9 +314,7 @@ function AgentDetail({
             ) : body.trim() ? (
               <UnifiedMarkdown content={body} />
             ) : (
-              <p className="text-sm italic text-muted-foreground/60">
-                Agent body is empty. Add prompt content below the frontmatter.
-              </p>
+              <p className="text-sm italic text-muted-foreground/60">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line314JsxTextAgentBodyIsEmptyAddPromptContentBelow')}</p>
             )}
           </div>
         </div>
@@ -330,6 +332,7 @@ function DetailToolbarActions({
   fileHref: string;
   copyDisabled: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex items-center gap-0.5">
       <Tooltip>
@@ -343,9 +346,7 @@ function DetailToolbarActions({
             <Pencil className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          Inline editing coming soon
-        </TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line347JsxTextInlineEditingComingSoon')}</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -359,9 +360,7 @@ function DetailToolbarActions({
             <Copy className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          Copy source
-        </TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line363JsxTextCopySource')}</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -376,9 +375,7 @@ function DetailToolbarActions({
             </Link>
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          Open in file viewer
-        </TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line380JsxTextOpenInFileViewer')}</TooltipContent>
       </Tooltip>
     </div>
   );
@@ -424,20 +421,21 @@ function DetailBodySkeleton() {
 }
 
 function DetailEmpty() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
       icon={Bot}
-      title="Select an agent"
-      description="Pick an agent from the list to preview it."
+      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line430JsxAttrTitleSelectAnAgent')}
+      description={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line431JsxAttrDescriptionPickAnAgentFromTheListToPreview')}
     />
   );
 }
 
 function NoMatches({ query }: { query: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-6 text-center">
-      <p className="text-xs text-muted-foreground">
-        No matches for{' '}
+      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line440JsxTextNoMatchesFor')}{' '}
         <span className="font-mono text-foreground">{query}</span>.
       </p>
     </div>
@@ -445,19 +443,15 @@ function NoMatches({ query }: { query: string }) {
 }
 
 function EmptyList() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
       icon={Bot}
       size="sm"
-      title="No agents yet"
+      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line452JsxAttrTitleNoAgentsYet')}
       description={
-        <>
-          Commit a{' '}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-            .kortix/opencode/agents/&lt;name&gt;.md
-          </code>{' '}
-          and it&apos;ll show up here.
-        </>
+        <>{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line455JsxTextCommitA')}{' '}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line457JsxTextKortixOpencodeAgentsLtNameGtMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line459JsxTextAndItAposLlShowUpHere')}</>
       }
       action={
         <Button asChild variant="ghost" size="sm" className="gap-1.5">
@@ -466,9 +460,7 @@ function EmptyList() {
             target="_blank"
             rel="noopener noreferrer"
           >
-            <ExternalLink className="h-3 w-3" />
-            OpenCode agents docs
-          </a>
+            <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line470JsxTextOpencodeAgentsDocs')}</a>
         </Button>
       }
     />
@@ -482,10 +474,11 @@ function DetailError({
   message: string;
   onRetry: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <InfoBanner
       tone="destructive"
-      title="Couldn't load source"
+      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line488JsxAttrTitleCouldnTLoadSource')}
       action={
         <Button variant="outline" size="sm" onClick={onRetry}>
           Retry
@@ -498,10 +491,9 @@ function DetailError({
 }
 
 function ForbiddenNotice() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <InfoBanner icon={ShieldAlert} title="Access required">
-      No permission to read this repo.
-    </InfoBanner>
+    <InfoBanner icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line502JsxAttrTitleAccessRequired')}>{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line503JsxTextNoPermissionToReadThisRepo')}</InfoBanner>
   );
 }
 
@@ -512,9 +504,10 @@ function ErrorNotice({
   message: string;
   onRetry: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-4">
-      <p className="text-sm font-medium text-destructive">Failed to load</p>
+      <p className="text-sm font-medium text-destructive">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line517JsxTextFailedToLoad')}</p>
       <p className="mt-1 text-xs text-destructive/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry

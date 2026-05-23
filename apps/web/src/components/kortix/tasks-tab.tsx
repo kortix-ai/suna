@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Tasks tab — search + view toggle (kanban / list).
  *
@@ -60,6 +62,7 @@ export function TasksTab({
   onNewTask,
   onDeleteTask,
 }: TasksTabProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [view, setView] = useState<TasksView>('kanban');
 
   // Hydrate from localStorage after mount so SSR/CSR match.
@@ -83,7 +86,7 @@ export function TasksTab({
               ref={searchRef as React.RefObject<HTMLInputElement>}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search…"
+              placeholder={tHardcodedUi.raw('componentsKortixTasksTab.line86JsxAttrPlaceholderSearch')}
               data-slot="input"
               className="h-7 w-[160px] sm:w-[220px] pl-7 pr-7 text-[12px] bg-transparent border border-border/50 rounded-full outline-none focus:ring-2 focus:ring-primary/20 placeholder:text-muted-foreground/35 transition-[color,box-shadow]"
             />
@@ -120,32 +123,25 @@ export function TasksTab({
         {tasks.length === 0 ? (
           <EmptyState
             icon={IconInbox}
-            title="No tasks yet"
+            title={tHardcodedUi.raw('componentsKortixTasksTab.line123JsxAttrTitleNoTasksYet')}
             description={
-              <>
-                Tasks track work that needs doing. Press{' '}
-                <kbd className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded border border-border bg-muted/50 text-[11px] font-mono text-foreground/70">C</kbd>{' '}
-                any time to create one.
-              </>
+              <>{tHardcodedUi.raw('componentsKortixTasksTab.line126JsxTextTasksTrackWorkThatNeedsDoingPress')}{' '}
+                <kbd className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded border border-border bg-muted/50 text-[11px] font-mono text-foreground/70">C</kbd>{' '}{tHardcodedUi.raw('componentsKortixTasksTab.line128JsxTextAnyTimeToCreateOne')}</>
             }
             action={
               <Button size="sm" onClick={() => onNewTask()} className="h-8 px-4 text-[13px]">
-                <Plus className="h-3.5 w-3.5 mr-1.5" />
-                Create task
-              </Button>
+                <Plus className="h-3.5 w-3.5 mr-1.5" />{tHardcodedUi.raw('componentsKortixTasksTab.line134JsxTextCreateTask')}</Button>
             }
           />
         ) : filteredTasks.length === 0 ? (
           <EmptyState
             icon={IconInbox}
             size="sm"
-            title="No matches"
-            description="No tasks match your search."
+            title={tHardcodedUi.raw('componentsKortixTasksTab.line142JsxAttrTitleNoMatches')}
+            description={tHardcodedUi.raw('componentsKortixTasksTab.line143JsxAttrDescriptionNoTasksMatchYourSearch')}
             action={
               search ? (
-                <Button variant="ghost" size="sm" className="text-xs" onClick={() => setSearch('')}>
-                  Clear search
-                </Button>
+                <Button variant="ghost" size="sm" className="text-xs" onClick={() => setSearch('')}>{tHardcodedUi.raw('componentsKortixTasksTab.line147JsxTextClearSearch')}</Button>
               ) : undefined
             }
           />

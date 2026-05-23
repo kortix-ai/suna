@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 
 export function CriticalFeedbackList() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const { data: criticalFeedback, isLoading } = useAdminCriticalFeedback(10);
 
@@ -39,9 +42,9 @@ export function CriticalFeedbackList() {
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-red-500" />
-          <CardTitle className="text-base font-medium">Critical Feedback</CardTitle>
+          <CardTitle className="text-base font-medium">{tHardcodedUi.raw('componentsAdminFeedbackCriticalfeedbacklist.line42JsxTextCriticalFeedback')}</CardTitle>
         </div>
-        <CardDescription>Recent low ratings that need attention</CardDescription>
+        <CardDescription>{tHardcodedUi.raw('componentsAdminFeedbackCriticalfeedbacklist.line44JsxTextRecentLowRatingsThatNeedAttention')}</CardDescription>
       </CardHeader>
       <CardContent className="p-0">
         {isLoading ? (
@@ -52,8 +55,8 @@ export function CriticalFeedbackList() {
           </div>
         ) : !criticalFeedback || criticalFeedback.length === 0 ? (
           <div className="p-6 text-center text-muted-foreground">
-            <p className="text-sm">No critical feedback found 🎉</p>
-            <p className="text-xs mt-1">Keep up the good work!</p>
+            <p className="text-sm">{tHardcodedUi.raw('componentsAdminFeedbackCriticalfeedbacklist.line55JsxTextNoCriticalFeedbackFound')}</p>
+            <p className="text-xs mt-1">{tHardcodedUi.raw('componentsAdminFeedbackCriticalfeedbacklist.line56JsxTextKeepUpTheGoodWork')}</p>
           </div>
         ) : (
           <ScrollArea className="h-[350px]">
@@ -85,9 +88,7 @@ export function CriticalFeedbackList() {
                             className="h-6 px-2 text-xs"
                             onClick={() => router.push(`/share/${feedback.thread_id}`)}
                           >
-                            <ExternalLink className="h-3 w-3 mr-1" />
-                            View Chat
-                          </Button>
+                            <ExternalLink className="h-3 w-3 mr-1" />{tHardcodedUi.raw('componentsAdminFeedbackCriticalfeedbacklist.line89JsxTextViewChat')}</Button>
                         )}
                       </div>
                     </div>

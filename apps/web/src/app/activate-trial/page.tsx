@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CreditCard, Zap, Shield, ArrowRight, CheckCircle, LogOut } from 'lucide-react';
@@ -23,6 +25,7 @@ const MaintenancePage = lazy(() => import('@/components/maintenance/maintenance-
 
 
 export default function ActivateTrialPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const { user } = useAuth();
   const { data: accountState, isLoading: isLoadingSubscription } = useAccountState({ enabled: !!user });
@@ -80,7 +83,7 @@ export default function ActivateTrialPage() {
   // Show skeleton immediately for FCP instead of blocking loader
   if (maintenanceNotice?.enabled && !maintenanceLoading && !isCheckingAdminRole && !isAdmin) {
     return (
-      <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Loading trial" />}>
+      <Suspense fallback={<ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appActivateTrialPage.line83JsxAttrTitleLoadingTrial')} />}>
         <MaintenancePage />
       </Suspense>
     );
@@ -90,7 +93,7 @@ export default function ActivateTrialPage() {
 
   // Show skeleton during initial load
   if (isLoading) {
-    return <ConnectingScreen forceConnecting minimal title="Loading trial" />;
+    return <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appActivateTrialPage.line93JsxAttrTitleLoadingTrial')} />;
   }
 
   return (
@@ -102,43 +105,37 @@ export default function ActivateTrialPage() {
           onClick={handleLogout}
           className="gap-2"
         >
-          <LogOut className="h-4 w-4" />
-          Log Out
-        </Button>
+          <LogOut className="h-4 w-4" />{tHardcodedUi.raw('appActivateTrialPage.line106JsxTextLogOut')}</Button>
       </div>
       <Card className="w-full max-w-2xl border-2 shadow-none bg-transparent border-none">
         <CardHeader className="text-center space-y-4">
           <div>
             <CardTitle className="text-2xl font-medium flex items-center justify-center gap-2">
               <KortixLogo />
-              <span>Welcome to Kortix</span>
+              <span>{tHardcodedUi.raw('appActivateTrialPage.line114JsxTextWelcomeToKortix')}</span>
             </CardTitle>
-            <CardDescription className="mt-2">
-              Start your journey with a 7-day free trial
-            </CardDescription>
+            <CardDescription className="mt-2">{tHardcodedUi.raw('appActivateTrialPage.line117JsxTextStartYourJourneyWithA7DayFree')}</CardDescription>
           </div>
         </CardHeader>
 
         <CardContent className="space-y-6">
           <div className="bg-muted/50 rounded-2xl p-6 space-y-4">
             <h3 className="font-semibold text-lg flex items-center gap-2">
-              <Zap className="h-5 w-5 text-primary" />
-              What's included in trial:
-            </h3>
+              <Zap className="h-5 w-5 text-primary" />{tHardcodedUi.raw('appActivateTrialPage.line126JsxTextWhatSIncludedInTrial')}</h3>
 
             <div className="grid md:grid-cols-2 gap-4">
               <div className="flex items-start gap-3">
                 <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium">$5 in Credits</p>
-                  <p className="text-sm text-muted-foreground">Full access to all AI models</p>
+                  <p className="font-medium">{tHardcodedUi.raw('appActivateTrialPage.line133JsxTextText5InCredits')}</p>
+                  <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appActivateTrialPage.line134JsxTextFullAccessToAllAiModels')}</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium">7 Days Free</p>
-                  <p className="text-sm text-muted-foreground">Cancel anytime, no charge</p>
+                  <p className="font-medium">{tHardcodedUi.raw('appActivateTrialPage.line140JsxTextText7DaysFree')}</p>
+                  <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appActivateTrialPage.line141JsxTextCancelAnytimeNoCharge')}</p>
                 </div>
               </div>
             </div>
@@ -147,11 +144,8 @@ export default function ActivateTrialPage() {
             <div className="flex items-start gap-3">
               <Shield className="h-5 w-5 text-primary mt-0.5" />
               <div className="space-y-1">
-                <p className="font-medium">No charge during trial</p>
-                <p className="text-sm text-muted-foreground">
-                  Your card will only be charged after 7 days if you don't cancel.
-                  You can cancel anytime from your billing settings.
-                </p>
+                <p className="font-medium">{tHardcodedUi.raw('appActivateTrialPage.line150JsxTextNoChargeDuringTrial')}</p>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appActivateTrialPage.line152JsxTextYourCardWillOnlyBeChargedAfter7')}</p>
               </div>
             </div>
           </div>
@@ -164,27 +158,18 @@ export default function ActivateTrialPage() {
             >
               {startTrialMutation.isPending ? (
                 <>
-                  <KortixLoader size="small" />
-                  Starting trial...
-                </>
+                  <KortixLoader size="small" />{tHardcodedUi.raw('appActivateTrialPage.line168JsxTextStartingTrial')}</>
               ) : (
                 <>
-                  <CreditCard className="h-4 w-4" />
-                  Start 7-Day Free Trial
-                  <ArrowRight className="h-4 w-4" />
+                  <CreditCard className="h-4 w-4" />{tHardcodedUi.raw('appActivateTrialPage.line173JsxTextStart7DayFreeTrial')}<ArrowRight className="h-4 w-4" />
                 </>
               )}
             </Button>
           </div>
-          <div className="text-center text-sm text-muted-foreground">
-            By starting your trial, you agree to our{' '}
-            <Link href="/legal?tab=terms" className="underline hover:text-primary">
-              Terms of Service
-            </Link>{' '}
+          <div className="text-center text-sm text-muted-foreground">{tHardcodedUi.raw('appActivateTrialPage.line180JsxTextByStartingYourTrialYouAgreeToOur')}{' '}
+            <Link href="/legal?tab=terms" className="underline hover:text-primary">{tHardcodedUi.raw('appActivateTrialPage.line182JsxTextTermsOfService')}</Link>{' '}
             and{' '}
-            <Link href="/legal?tab=privacy" className="underline hover:text-primary">
-              Privacy Policy
-            </Link>
+            <Link href="/legal?tab=privacy" className="underline hover:text-primary">{tHardcodedUi.raw('appActivateTrialPage.line186JsxTextPrivacyPolicy')}</Link>
           </div>
         </CardContent>
       </Card>

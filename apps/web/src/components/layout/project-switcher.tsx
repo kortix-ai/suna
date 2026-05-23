@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * ProjectSwitcher — the standalone "which project" switcher.
  *
@@ -67,6 +69,7 @@ export function ProjectSwitcher({
   variant?: ProjectSwitcherVariant;
   className?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
@@ -207,7 +210,7 @@ export function ProjectSwitcher({
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Find project…"
+                placeholder={tHardcodedUi.raw('componentsLayoutProjectSwitcher.line210JsxAttrPlaceholderFindProject')}
                 className="h-8 pl-7 pr-2 text-sm placeholder:text-muted-foreground/50"
               />
             </div>
@@ -277,9 +280,7 @@ export function ProjectSwitcher({
             className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <ArrowUpRight className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium text-foreground/80">
-              All projects
-            </span>
+            <span className="flex-1 truncate text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsLayoutProjectSwitcher.line281JsxTextAllProjects')}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => {
@@ -289,9 +290,7 @@ export function ProjectSwitcher({
             className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <Plus className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium text-foreground/80">
-              New project
-            </span>
+            <span className="flex-1 truncate text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsLayoutProjectSwitcher.line293JsxTextNewProject')}</span>
           </DropdownMenuItem>
         </div>
       </DropdownMenuContent>

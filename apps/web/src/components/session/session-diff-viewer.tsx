@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useMemo } from 'react';
 import {
   FileCode2,
@@ -137,6 +139,7 @@ function DiffSummaryBar({
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const totals = useMemo(() => {
     let additions = 0, deletions = 0, added = 0, deleted = 0, modified = 0;
     for (const d of diffs) {
@@ -183,7 +186,7 @@ function DiffSummaryBar({
               ? 'text-foreground bg-muted/60'
               : 'text-muted-foreground/50 hover:text-muted-foreground',
           )}
-          title="Unified view"
+          title={tHardcodedUi.raw('componentsSessionSessionDiffViewer.line186JsxAttrTitleUnifiedView')}
         >
           <Rows2 className="size-3.5" />
         </button>
@@ -195,7 +198,7 @@ function DiffSummaryBar({
               ? 'text-foreground bg-muted/60'
               : 'text-muted-foreground/50 hover:text-muted-foreground',
           )}
-          title="Side-by-side view"
+          title={tHardcodedUi.raw('componentsSessionSessionDiffViewer.line198JsxAttrTitleSideBySideView')}
         >
           <Columns2 className="size-3.5" />
         </button>
@@ -311,6 +314,7 @@ interface SessionDiffViewerProps {
 }
 
 export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen }: SessionDiffViewerProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: apiDiffs, isLoading, error } = useOpenCodeSessionDiff(sessionId);
   const { data: messages } = useOpenCodeMessages(sessionId);
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
@@ -352,7 +356,7 @@ export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen 
           <span className="text-xs font-medium text-muted-foreground">Changes</span>
         </div>
         <div className="flex-1 flex items-center justify-center text-center px-6">
-          <p className="text-xs text-muted-foreground">Failed to load changes</p>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line355JsxTextFailedToLoadChanges')}</p>
         </div>
       </div>
     );
@@ -367,10 +371,8 @@ export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen 
         </div>
         <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 min-h-[200px]">
           <FileCode2 className="size-10 text-muted-foreground/20 mb-4" />
-          <p className="text-base text-muted-foreground">No changes yet</p>
-          <p className="text-sm text-muted-foreground/50 mt-1.5">
-            File changes will appear here as the session progresses
-          </p>
+          <p className="text-base text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line370JsxTextNoChangesYet')}</p>
+          <p className="text-sm text-muted-foreground/50 mt-1.5">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line372JsxTextFileChangesWillAppearHereAsTheSession')}</p>
         </div>
       </div>
     );

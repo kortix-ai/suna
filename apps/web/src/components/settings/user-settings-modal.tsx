@@ -369,6 +369,7 @@ export function UserSettingsModal({
 
 
 function GeneralTab({ onClose }: { onClose: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const t = useTranslations('settings.general');
     const tCommon = useTranslations('common');
     const [userName, setUserName] = useState('');
@@ -593,7 +594,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                             <input
                                 ref={fileInputRef}
                                 type="file"
-                                accept="image/*"
+                                accept={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line596JsxAttrAcceptImage')}
                                 onChange={handleAvatarChange}
                                 className="hidden"
                             />
@@ -850,6 +851,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 // ============================================================================
 
 function KeyboardShortcutsTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const { preferences, setKeyboardPreferences, getModifierLabel } = useUserPreferencesStore();
     const modifier = preferences.keyboard.tabSwitchModifier;
     const modLabel = getModifierLabel();
@@ -873,18 +875,14 @@ function KeyboardShortcutsTab() {
     return (
         <div className="p-4 sm:p-6 pb-12 sm:pb-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
             <div>
-                <h3 className="text-lg font-semibold mb-1">Keyboard Shortcuts</h3>
-                <p className="text-sm text-muted-foreground">
-                    View and customize keyboard shortcuts for tab navigation.
-                </p>
+                <h3 className="text-lg font-semibold mb-1">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line876JsxTextKeyboardShortcuts')}</h3>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line878JsxTextViewAndCustomizeKeyboardShortcutsForTabNavigation')}</p>
             </div>
 
             {/* Modifier key picker */}
             <div className="space-y-3">
-                <Label className="text-sm font-medium">Modifier key</Label>
-                <p className="text-xs text-muted-foreground -mt-1">
-                    Choose which modifier key is used for tab shortcuts.
-                </p>
+                <Label className="text-sm font-medium">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line884JsxTextModifierKey')}</Label>
+                <p className="text-xs text-muted-foreground -mt-1">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line886JsxTextChooseWhichModifierKeyIsUsedForTab')}</p>
                 <RadioGroup
                     value={modifier}
                     onValueChange={(val) =>
@@ -912,7 +910,7 @@ function KeyboardShortcutsTab() {
 
             {/* All shortcuts reference */}
             <div className="space-y-3">
-                <Label className="text-sm font-medium">All shortcuts</Label>
+                <Label className="text-sm font-medium">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line915JsxTextAllShortcuts')}</Label>
                 <div className="rounded-2xl border divide-y">
                     {shortcuts.map((s) => (
                         <div key={s.label} className="flex items-center justify-between px-3 py-2.5">
@@ -930,6 +928,7 @@ function KeyboardShortcutsTab() {
 
 // Sounds Tab
 function SoundsTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const preferences = useSoundStore((s) => s.preferences);
     const setPack = useSoundStore((s) => s.setPack);
     const setVolume = useSoundStore((s) => s.setVolume);
@@ -952,14 +951,12 @@ function SoundsTab() {
         <div className="p-6 space-y-6">
             <div>
                 <h3 className="text-lg font-semibold">Sounds</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                    Choose a sound pack and configure which events play sounds
-                </p>
+                <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line956JsxTextChooseASoundPackAndConfigureWhichEvents')}</p>
             </div>
 
             {/* Sound Pack Selection */}
             <div>
-                <h4 className="text-sm font-medium mb-3">Sound Pack</h4>
+                <h4 className="text-sm font-medium mb-3">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line962JsxTextSoundPack')}</h4>
                 <RadioGroup
                     value={preferences.pack}
                     onValueChange={(value) => setPack(value as SoundPack)}
@@ -1009,7 +1006,7 @@ function SoundsTab() {
 
                     {/* Sound Events */}
                     <div>
-                        <h4 className="text-sm font-medium mb-3">Sound Events</h4>
+                        <h4 className="text-sm font-medium mb-3">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1012JsxTextSoundEvents')}</h4>
                         <div className="rounded-2xl border divide-y">
                             {events.map((event) => {
                                 const enabled = preferences.events[event.id] !== false;
@@ -1046,6 +1043,7 @@ function SoundsTab() {
 
 // Notifications Tab
 function NotificationsTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const permission = useWebNotificationStore((s) => s.permission);
     const preferences = useWebNotificationStore((s) => s.preferences);
     const toggleEnabled = useWebNotificationStore((s) => s.toggleEnabled);
@@ -1071,16 +1069,12 @@ function NotificationsTab() {
         <div className="p-6 space-y-6">
             <div>
                 <h3 className="text-lg font-semibold">Notifications</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                    Configure how and when you receive notifications
-                </p>
+                <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1075JsxTextConfigureHowAndWhenYouReceiveNotifications')}</p>
             </div>
 
             {!supported ? (
                 <div className="rounded-2xl border p-4">
-                    <p className="text-sm text-muted-foreground">
-                        Your browser does not support notifications.
-                    </p>
+                    <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1082JsxTextYourBrowserDoesNotSupportNotifications')}</p>
                 </div>
             ) : (
                 <div className="space-y-6">
@@ -1088,7 +1082,7 @@ function NotificationsTab() {
                     <div className="rounded-2xl border p-4">
                         <NotificationToggle
                             icon={Bell}
-                            label="Enable Notifications"
+                            label={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1091JsxAttrLabelEnableNotifications')}
                             description={
                                 permission === 'granted'
                                     ? 'Browser permission granted'
@@ -1105,33 +1099,33 @@ function NotificationsTab() {
                         <>
                             {/* Notification types */}
                             <div>
-                                <h4 className="text-sm font-medium mb-3">Notification Types</h4>
+                                <h4 className="text-sm font-medium mb-3">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1108JsxTextNotificationTypes')}</h4>
                                 <div className="rounded-2xl border divide-y">
                                     <NotificationToggle
                                         icon={CheckCircle2}
-                                        label="Task Completions"
-                                        description="When a session finishes its task"
+                                        label={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1112JsxAttrLabelTaskCompletions')}
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1113JsxAttrDescriptionWhenASessionFinishesItsTask')}
                                         enabled={preferences.onCompletion}
                                         onToggle={(v) => setPreference('onCompletion', v)}
                                     />
                                     <NotificationToggle
                                         icon={AlertTriangle}
                                         label="Errors"
-                                        description="When a session encounters an error"
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1120JsxAttrDescriptionWhenASessionEncountersAnError')}
                                         enabled={preferences.onError}
                                         onToggle={(v) => setPreference('onError', v)}
                                     />
                                     <NotificationToggle
                                         icon={HelpCircle}
                                         label="Questions"
-                                        description="When Kortix needs your input to continue"
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1127JsxAttrDescriptionWhenKortixNeedsYourInputToContinue')}
                                         enabled={preferences.onQuestion}
                                         onToggle={(v) => setPreference('onQuestion', v)}
                                     />
                                     <NotificationToggle
                                         icon={ShieldCheck}
-                                        label="Permission Requests"
-                                        description="When Kortix needs permission to use a tool"
+                                        label={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1133JsxAttrLabelPermissionRequests')}
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1134JsxAttrDescriptionWhenKortixNeedsPermissionToUseATool')}
                                         enabled={preferences.onPermission}
                                         onToggle={(v) => setPreference('onPermission', v)}
                                     />
@@ -1144,15 +1138,15 @@ function NotificationsTab() {
                                 <div className="rounded-2xl border divide-y">
                                     <NotificationToggle
                                         icon={EyeOff}
-                                        label="Only When Tab is Hidden"
-                                        description="Only notify when you're on another tab or app"
+                                        label={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1147JsxAttrLabelOnlyWhenTabIsHidden')}
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1148JsxAttrDescriptionOnlyNotifyWhenYouReOnAnotherTab')}
                                         enabled={preferences.onlyWhenHidden}
                                         onToggle={(v) => setPreference('onlyWhenHidden', v)}
                                     />
                                     <NotificationToggle
                                         icon={Volume2}
-                                        label="Notification Sound"
-                                        description="Play a sound when a notification is sent"
+                                        label={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1154JsxAttrLabelNotificationSound')}
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1155JsxAttrDescriptionPlayASoundWhenANotificationIsSent')}
                                         enabled={preferences.playSound}
                                         onToggle={(v) => setPreference('playSound', v)}
                                     />
@@ -1160,9 +1154,7 @@ function NotificationsTab() {
                             </div>
 
                             {/* Test */}
-                            <Button onClick={handleTestNotification} variant="outline" size="sm">
-                                Send Test Notification
-                            </Button>
+                            <Button onClick={handleTestNotification} variant="outline" size="sm">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1164JsxTextSendTestNotification')}</Button>
                         </>
                     )}
                 </div>
@@ -1208,6 +1200,7 @@ function NotificationToggle({ icon: Icon, label, description, enabled, onToggle,
 // ─── Instances Section ───────────────────────────────────────────────────────
 
 function InstancesSection({ accountState, onRefetch }: { accountState: any; onRefetch: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const instances = accountState?.instances ?? [];
     const canAddInstances = accountState?.can_add_instances ?? false;
     const [loading, setLoading] = useState<string | null>(null);
@@ -1247,13 +1240,11 @@ function InstancesSection({ accountState, onRefetch }: { accountState: any; onRe
                         className="h-7 text-xs"
                         onClick={() => useNewInstanceModalStore.getState().openNewInstanceModal()}
                     >
-                        <Plus className="size-3 mr-1" />
-                        New Kortix
-                    </Button>
+                        <Plus className="size-3 mr-1" />{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1251JsxTextNewKortix')}</Button>
                 )}
             </div>
             {instances.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No instances yet.</p>
+                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1256JsxTextNoInstancesYet')}</p>
             ) : (
                 <div className="space-y-1.5">
                     {instances.map((inst: any) => {
@@ -1323,6 +1314,7 @@ const CREDIT_PACKAGES: { credits: number; price: number }[] = [
 ];
 
 export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: boolean }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const { session, isLoading: authLoading } = useAuth();
     const highlight = useUserSettingsModalStore((s) => s.highlight);
     const [selectedPackage, setSelectedPackage] = useState<(typeof CREDIT_PACKAGES)[number] | null>(null);
@@ -1548,12 +1540,12 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
             {/* ── Header ── */}
             <div>
                 <h1 className="text-lg font-medium tracking-tight">Billing</h1>
-                <p className="text-sm text-muted-foreground mt-0.5">Credits, instances, and subscription.</p>
+                <p className="text-sm text-muted-foreground mt-0.5">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1551JsxTextCreditsInstancesAndSubscription')}</p>
             </div>
 
             {/* ── Insufficient credits alert (routed here from 402 errors) ── */}
             {highlight === 'credits' && totalCredits <= 0 && (
-                <InfoBanner tone="warning" icon={AlertTriangle} title="You ran out of credits.">
+                <InfoBanner tone="warning" icon={AlertTriangle} title={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1556JsxAttrTitleYouRanOutOfCredits')}>
                     {canPurchaseCredits
                         ? 'Buy credits below or enable auto top-up so it never happens again.'
                         : 'Subscribe to continue using the assistant.'}
@@ -1577,14 +1569,13 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
             {yoloUsage && (
                 <div className="border-t border-border pt-4 space-y-2">
                     <div className="flex items-center justify-between">
-                        <p className="text-xs uppercase tracking-widest text-muted-foreground">Kortix YOLO</p>
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1580JsxTextKortixYolo')}</p>
                         <a
                             href="https://yolo.kortix.com"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-                        >
-                            Learn more <ExternalLink className="size-3" />
+                        >{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1587JsxTextLearnMore')}<ExternalLink className="size-3" />
                         </a>
                     </div>
                     <div className="text-2xl font-medium tabular-nums tracking-tight">{yoloUsage.used_percent}%</div>
@@ -1593,22 +1584,14 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                             ? `Resets ${yoloResetAt}`
                             : '5h window starts on first request'}
                     </p>
-                    <p className="text-xs text-muted-foreground/70 leading-relaxed pt-1">
-                        Every Kortix subscription includes{' '}
+                    <p className="text-xs text-muted-foreground/70 leading-relaxed pt-1">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1597JsxTextEveryKortixSubscriptionIncludes')}{' '}
                         <a
                             href="https://yolo.kortix.com"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="font-medium text-foreground/80 underline underline-offset-2 decoration-foreground/30 hover:decoration-foreground/60"
-                        >
-                            Kortix YOLO
-                        </a>{' '}—
-                        an all-you-can-use AI model subscription powered by our in-house model router.
-                        Choose between <span className="font-medium text-foreground/80">Fast</span> and{' '}
-                        <span className="font-medium text-foreground/80">Think</span> in the model selector
-                        by default. Zero credit cost; the rolling 5&nbsp;hour window resets automatically
-                        so you can keep building without thinking about usage.
-                    </p>
+                        >{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1604JsxTextKortixYolo')}</a>{' '}{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1605JsxTextAnAllYouCanUseAiModelSubscription')}<span className="font-medium text-foreground/80">Fast</span> and{' '}
+                        <span className="font-medium text-foreground/80">Think</span>{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1608JsxTextInTheModelSelectorByDefaultZeroCredit')}</p>
                 </div>
             )}
 
@@ -1617,10 +1600,8 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                 <div className="border-t border-border pt-4 space-y-3">
                     <div className="flex items-center justify-between">
                         <p className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                            <Zap className="size-3" />
-                            Auto top-up
-                        </p>
-                        <p className="text-xs text-muted-foreground/60">Never run out again</p>
+                            <Zap className="size-3" />{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1621JsxTextAutoTopUp')}</p>
+                        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1623JsxTextNeverRunOutAgain')}</p>
                     </div>
                     <AutoTopupCard fetchSettings showSaveButton />
                 </div>
@@ -1630,8 +1611,8 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
             {canPurchaseCredits && (
                 <div className="border-t border-border pt-4 space-y-3">
                     <div className="flex items-center justify-between">
-                        <p className="text-xs uppercase tracking-widest text-muted-foreground">Buy credits</p>
-                        <p className="text-xs text-muted-foreground/60">One-time top-up</p>
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1633JsxTextBuyCredits')}</p>
+                        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1634JsxTextOneTimeTopUp')}</p>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                         {CREDIT_PACKAGES.map((pkg) => {
@@ -1697,6 +1678,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
 }
 
 function CreditsHelpAlert() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <Alert>
       <AlertDescription>
@@ -1707,9 +1689,7 @@ function CreditsHelpAlert() {
             size="sm"
             className="h-7 text-muted-foreground"
             onClick={() => window.open('/help/credits', '_blank', 'noopener,noreferrer')}
-          >
-            Learn More about Credits
-          </Button>
+          >{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1711JsxTextLearnMoreAboutCredits')}</Button>
         </div>
       </AlertDescription>
     </Alert>
@@ -1717,13 +1697,12 @@ function CreditsHelpAlert() {
 }
 
 export function TransactionsTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     return (
         <div className="p-4 sm:p-6 pb-12 sm:pb-6 space-y-4 min-w-0 max-w-full overflow-x-hidden">
             <div>
-                <h3 className="text-lg font-medium tracking-tight mb-0.5">Credit ledger</h3>
-                <p className="text-sm text-muted-foreground">
-                    Ledger-backed account events from the Kortix schema: purchases, grants, usage, expirations, refunds, and bonuses.
-                </p>
+                <h3 className="text-lg font-medium tracking-tight mb-0.5">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1723JsxTextCreditLedger')}</h3>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1725JsxTextLedgerBackedAccountEventsFromTheKortixSchema')}</p>
             </div>
             <CreditTransactions />
         </div>

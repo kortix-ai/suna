@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import * as React from 'react';
 import { Check, Monitor, Sun, Moon, Palette, ImageIcon, PanelTop } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -79,6 +80,7 @@ const BASE_MODES = [
 const DARK_ONLY_WALLPAPER_IDS = new Set(['matrix', 'ascii-tunnel']);
 
 export function AppearanceTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { theme: baseMode, setTheme: setBaseMode, resolvedTheme } = useTheme();
   const wallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID
@@ -117,15 +119,13 @@ export function AppearanceTab() {
           <h3 className="text-lg font-semibold">Appearance</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Choose a color mode, wallpaper, and layout options.
-        </p>
+          {tHardcodedUi.raw('componentsSettingsAppearanceTab.line120JsxTextChooseAColorModeWallpaperAndLayoutOptions')}</p>
       </div>
 
       <div className="space-y-5 sm:space-y-6">
         <div>
           <label className="text-xs font-medium text-muted-foreground mb-2 block">
-            Color Mode
-          </label>
+            {tHardcodedUi.raw('componentsSettingsAppearanceTab.line127JsxTextColorMode')}</label>
           <FilterBar>
             {BASE_MODES.map((mode) => {
               const Icon = mode.icon;
@@ -177,10 +177,9 @@ export function AppearanceTab() {
           <div className="rounded-2xl border divide-y">
             <div className="flex items-center justify-between gap-4 px-4 py-3">
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">Session tabs</div>
+                <div className="text-sm font-medium">{tHardcodedUi.raw('componentsSettingsAppearanceTab.line180JsxTextSessionTabs')}</div>
                 <div className="text-xs text-muted-foreground">
-                  Show a tab bar at the top of projects and the dashboard to switch between open sessions.
-                </div>
+                  {tHardcodedUi.raw('componentsSettingsAppearanceTab.line182JsxTextShowATabBarAtTheTopOf')}</div>
               </div>
               <Switch
                 checked={!disableTabSelector}

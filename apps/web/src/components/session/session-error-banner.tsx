@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { AlertCircle, Loader2, CreditCard, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -47,6 +49,7 @@ function parseBalance(text: string): string | null {
 }
 
 function InsufficientCreditsCard({ errorText, className }: { errorText: string; className?: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const openAccountSettings = useAccountSettingsModalStore((s) => s.openAccountSettings);
   const balance = parseBalance(errorText);
   const openBilling = () => openAccountSettings({ tab: 'billing', highlight: 'credits' });
@@ -55,7 +58,7 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
     <InfoBanner
       tone="warning"
       icon={CreditCard}
-      title="You ran out of credits"
+      title={tHardcodedUi.raw('componentsSessionSessionErrorBanner.line58JsxAttrTitleYouRanOutOfCredits')}
       className={cn('flex-col gap-2.5', className)}
     >
       <p>
@@ -70,17 +73,13 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
           className="h-7 text-xs px-2.5"
           onClick={openBilling}
         >
-          <Zap className="size-3 mr-1" />
-          Enable auto top-up
-        </Button>
+          <Zap className="size-3 mr-1" />{tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}</Button>
         <Button
           size="sm"
           variant="outline"
           className="h-7 text-xs px-2.5"
           onClick={openBilling}
-        >
-          Buy credits
-        </Button>
+        >{tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}</Button>
       </div>
     </InfoBanner>
   );

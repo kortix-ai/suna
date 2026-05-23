@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import {
   Search,
@@ -19,6 +21,7 @@ import { getFileIcon } from './file-icon';
  * Minimal top toolbar — sidebar toggle | file path | search + refresh
  */
 export function FileExplorerToolbar() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isSidebarCollapsed = useFilesStore((s) => s.isSidebarCollapsed);
   const toggleSidebar = useFilesStore((s) => s.toggleSidebar);
   const toggleSearch = useFilesStore((s) => s.toggleSearch);
@@ -86,7 +89,7 @@ export function FileExplorerToolbar() {
           size="icon"
           className="h-7 w-7 text-muted-foreground/60 hover:text-foreground"
           onClick={toggleSearch}
-          title="Search files"
+          title={tHardcodedUi.raw('featuresFilesComponentsFileExplorerToolbar.line89JsxAttrTitleSearchFiles')}
         >
           <Search className="h-4 w-4" />
         </Button>

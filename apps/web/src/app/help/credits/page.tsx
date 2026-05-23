@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -20,34 +22,27 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
 export default function CreditsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
       <div className="mb-8">
         <Link href="/help">
           <Button variant="ghost" className="mb-4">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Help Center
-          </Button>
+            <ArrowLeft className="h-4 w-4 mr-2" />{tHardcodedUi.raw('appHelpCreditsPage.line29JsxTextBackToHelpCenter')}</Button>
         </Link>
-        <h1 className="text-4xl font-bold mb-2">What are Credits?</h1>
-        <p className="text-lg text-muted-foreground">
-          Learn how credits work and how they're consumed
-        </p>
+        <h1 className="text-4xl font-bold mb-2">{tHardcodedUi.raw('appHelpCreditsPage.line32JsxTextWhatAreCredits')}</h1>
+        <p className="text-lg text-muted-foreground">{tHardcodedUi.raw('appHelpCreditsPage.line34JsxTextLearnHowCreditsWorkAndHowTheyRe')}</p>
       </div>
 
       <div className="space-y-8">
         <section>
-          <h2 className="text-2xl font-semibold mb-4">What are credits?</h2>
-          <p className="text-lg mb-8">
-            Credits are Kortix's standard unit of measurement for platform usage. Think of them as tokens that power your AI agents - the more complex or lengthy the task, the more credits it requires.
-          </p>
+          <h2 className="text-2xl font-semibold mb-4">{tHardcodedUi.raw('appHelpCreditsPage.line40JsxTextWhatAreCredits')}</h2>
+          <p className="text-lg mb-8">{tHardcodedUi.raw('appHelpCreditsPage.line42JsxTextCreditsAreKortixSStandardUnitOfMeasurement')}</p>
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-4">Types of Credits</h2>
-          <p className="mb-6">
-            Kortix uses two types of credits to give you flexibility in how you manage your usage:
-          </p>
+          <h2 className="text-2xl font-semibold mb-4">{tHardcodedUi.raw('appHelpCreditsPage.line47JsxTextTypesOfCredits')}</h2>
+          <p className="mb-6">{tHardcodedUi.raw('appHelpCreditsPage.line49JsxTextKortixUsesTwoTypesOfCreditsToGive')}</p>
 
           <div className="grid gap-4 md:grid-cols-2 mb-8">
             <Card>
@@ -57,19 +52,13 @@ export default function CreditsPage() {
                     <Clock className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
-                    <CardTitle>Expiring Credits</CardTitle>
-                    <CardDescription>
-                      Monthly subscription credits
-                    </CardDescription>
+                    <CardTitle>{tHardcodedUi.raw('appHelpCreditsPage.line60JsxTextExpiringCredits')}</CardTitle>
+                    <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line62JsxTextMonthlySubscriptionCredits')}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  These credits are included with your paid subscription and are renewed automatically each month 
-                  on your subscription date. They expire at the end of each billing cycle and are always consumed 
-                  first before any non-expiring credits.
-                </p>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHelpCreditsPage.line69JsxTextTheseCreditsAreIncludedWithYourPaidSubscription')}</p>
               </CardContent>
             </Card>
 
@@ -80,19 +69,13 @@ export default function CreditsPage() {
                     <Infinity className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
-                    <CardTitle>Non-Expiring Credits</CardTitle>
-                    <CardDescription>
-                      Permanent credits that never expire
-                    </CardDescription>
+                    <CardTitle>{tHardcodedUi.raw('appHelpCreditsPage.line83JsxTextNonExpiringCredits')}</CardTitle>
+                    <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line85JsxTextPermanentCreditsThatNeverExpire')}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  These credits never expire and carry over month to month. They include top-up purchases, 
-                  refunds, and promotional grants. Non-expiring credits are only used after your expiring 
-                  credits have been depleted.
-                </p>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHelpCreditsPage.line92JsxTextTheseCreditsNeverExpireAndCarryOverMonth')}</p>
               </CardContent>
             </Card>
           </div>
@@ -100,17 +83,13 @@ export default function CreditsPage() {
           <Alert className="mb-8">
             <Info className="h-4 w-4" />
             <AlertDescription>
-              <strong>Credit Priority:</strong> When you use Kortix, expiring credits are consumed first. 
-              Only after your expiring credits run out will non-expiring credits be used.
-            </AlertDescription>
+              <strong>{tHardcodedUi.raw('appHelpCreditsPage.line103JsxTextCreditPriority')}</strong>{tHardcodedUi.raw('appHelpCreditsPage.line103JsxTextWhenYouUseKortixExpiringCreditsAreConsumed')}</AlertDescription>
           </Alert>
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-4">How Credits Work</h2>
-          <p className="mb-6">
-            Credits are consumed based on the resources your AI agents use:
-          </p>
+          <h2 className="text-2xl font-semibold mb-4">{tHardcodedUi.raw('appHelpCreditsPage.line110JsxTextHowCreditsWork')}</h2>
+          <p className="mb-6">{tHardcodedUi.raw('appHelpCreditsPage.line112JsxTextCreditsAreConsumedBasedOnTheResourcesYour')}</p>
 
           <div className="space-y-4 mb-8">
             <Card>
@@ -120,19 +99,13 @@ export default function CreditsPage() {
                     <Zap className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
-                    <CardTitle>AI Model Usage</CardTitle>
-                    <CardDescription>
-                      The primary driver of credit consumption
-                    </CardDescription>
+                    <CardTitle>{tHardcodedUi.raw('appHelpCreditsPage.line123JsxTextAiModelUsage')}</CardTitle>
+                    <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line125JsxTextThePrimaryDriverOfCreditConsumption')}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Different AI models have different costs based on their capabilities and token usage. 
-                  Credits are consumed for input tokens (your prompts and context), output tokens (agent responses), 
-                  and vary by model tier (GPT-4, Claude, etc.).
-                </p>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHelpCreditsPage.line132JsxTextDifferentAiModelsHaveDifferentCostsBasedOn')}</p>
               </CardContent>
             </Card>
 
@@ -143,35 +116,30 @@ export default function CreditsPage() {
                     <DollarSign className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
-                    <CardTitle>Pricing Model</CardTitle>
-                    <CardDescription>
-                      Platform rates vary by service type
-                    </CardDescription>
+                    <CardTitle>{tHardcodedUi.raw('appHelpCreditsPage.line146JsxTextPricingModel')}</CardTitle>
+                    <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line148JsxTextPlatformRatesVaryByServiceType')}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    We apply a markup on top of provider costs to cover platform infrastructure, 
-                    security, and ongoing development. Rates vary by service type:
-                  </p>
+                  <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHelpCreditsPage.line156JsxTextWeApplyAMarkupOnTopOfProvider')}</p>
                   <ul className="space-y-2 text-sm text-muted-foreground">
                     <li className="flex items-start gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
-                      <span><strong className="text-foreground">AI models:</strong> 20% markup on all LLM API costs (input/output tokens, prompt caching).</span>
+                      <span><strong className="text-foreground">{tHardcodedUi.raw('appHelpCreditsPage.line162JsxTextAiModels')}</strong>{tHardcodedUi.raw('appHelpCreditsPage.line162JsxTextText20MarkupOnAllLlmApiCostsInput')}</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
-                      <span><strong className="text-foreground">Tool usage:</strong> 50% markup on web search, web scraping, and other third-party tool calls.</span>
+                      <span><strong className="text-foreground">{tHardcodedUi.raw('appHelpCreditsPage.line166JsxTextToolUsage')}</strong>{tHardcodedUi.raw('appHelpCreditsPage.line166JsxTextText50MarkupOnWebSearchWebScrapingAnd')}</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
-                      <span><strong className="text-foreground">Image search:</strong> 100% markup on image search queries.</span>
+                      <span><strong className="text-foreground">{tHardcodedUi.raw('appHelpCreditsPage.line170JsxTextImageSearch')}</strong>{tHardcodedUi.raw('appHelpCreditsPage.line170JsxTextText100MarkupOnImageSearchQueries')}</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
-                      <span><strong className="text-foreground">Bring your own key:</strong> If you use your own API key, a flat 10% platform fee applies instead.</span>
+                      <span><strong className="text-foreground">{tHardcodedUi.raw('appHelpCreditsPage.line174JsxTextBringYourOwnKey')}</strong>{tHardcodedUi.raw('appHelpCreditsPage.line174JsxTextIfYouUseYourOwnApiKeyA')}</span>
                     </li>
                   </ul>
                 </div>
@@ -181,10 +149,8 @@ export default function CreditsPage() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-4">Getting More Credits</h2>
-          <p className="mb-6">
-            There are several ways to obtain credits in Kortix:
-          </p>
+          <h2 className="text-2xl font-semibold mb-4">{tHardcodedUi.raw('appHelpCreditsPage.line184JsxTextGettingMoreCredits')}</h2>
+          <p className="mb-6">{tHardcodedUi.raw('appHelpCreditsPage.line186JsxTextThereAreSeveralWaysToObtainCreditsIn')}</p>
 
           <div className="space-y-4 mb-8">
             <Card>
@@ -194,10 +160,8 @@ export default function CreditsPage() {
                     <RefreshCw className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
-                    <CardTitle>Monthly Subscription Credits</CardTitle>
-                    <CardDescription>
-                      Included with your paid plan and renewed automatically each month. These are expiring credits.
-                    </CardDescription>
+                    <CardTitle>{tHardcodedUi.raw('appHelpCreditsPage.line197JsxTextMonthlySubscriptionCredits')}</CardTitle>
+                    <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line199JsxTextIncludedWithYourPaidPlanAndRenewedAutomatically')}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -210,10 +174,8 @@ export default function CreditsPage() {
                     <Coins className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
-                    <CardTitle>Top-Up Credits</CardTitle>
-                    <CardDescription>
-                      Purchase additional credits when you need them. These are non-expiring and available to premium members.
-                    </CardDescription>
+                    <CardTitle>{tHardcodedUi.raw('appHelpCreditsPage.line213JsxTextTopUpCredits')}</CardTitle>
+                    <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line215JsxTextPurchaseAdditionalCreditsWhenYouNeedThemThese')}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -226,10 +188,8 @@ export default function CreditsPage() {
                     <Gift className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
-                    <CardTitle>Promotional & Event Grants</CardTitle>
-                    <CardDescription>
-                      Bonus credits from special events, promotions, or referrals. These are non-expiring.
-                    </CardDescription>
+                    <CardTitle>{tHardcodedUi.raw('appHelpCreditsPage.line229JsxTextPromotionalEventGrants')}</CardTitle>
+                    <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line231JsxTextBonusCreditsFromSpecialEventsPromotionsOrReferrals')}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -243,9 +203,7 @@ export default function CreditsPage() {
                   </div>
                   <div>
                     <CardTitle>Refunds</CardTitle>
-                    <CardDescription>
-                      Credits returned due to technical issues or failed tasks. These are non-expiring.
-                    </CardDescription>
+                    <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line247JsxTextCreditsReturnedDueToTechnicalIssuesOrFailed')}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -254,81 +212,63 @@ export default function CreditsPage() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-4">Tracking Your Usage</h2>
-          <p className="mb-6">
-            Monitor your credit consumption through the Settings panel:
-          </p>
+          <h2 className="text-2xl font-semibold mb-4">{tHardcodedUi.raw('appHelpCreditsPage.line257JsxTextTrackingYourUsage')}</h2>
+          <p className="mb-6">{tHardcodedUi.raw('appHelpCreditsPage.line259JsxTextMonitorYourCreditConsumptionThroughTheSettingsPanel')}</p>
 
           <div className="space-y-3 mb-8">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Settings → Billing</CardTitle>
-                <CardDescription>
-                  View your current credit balance and breakdown between expiring and non-expiring credits
-                </CardDescription>
+                <CardTitle className="text-base">{tHardcodedUi.raw('appHelpCreditsPage.line265JsxTextSettingsBilling')}</CardTitle>
+                <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line267JsxTextViewYourCurrentCreditBalanceAndBreakdownBetween')}</CardDescription>
               </CardHeader>
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Settings → Usage</CardTitle>
-                <CardDescription>
-                  Track credit consumption by thread and conversation to identify your most resource-intensive chats
-                </CardDescription>
+                <CardTitle className="text-base">{tHardcodedUi.raw('appHelpCreditsPage.line273JsxTextSettingsUsage')}</CardTitle>
+                <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line275JsxTextTrackCreditConsumptionByThreadAndConversationTo')}</CardDescription>
               </CardHeader>
             </Card>
           </div>
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-4">Optimizing Credit Usage</h2>
-          <p className="mb-6">
-            Make your credits go further with these optimization strategies:
-          </p>
+          <h2 className="text-2xl font-semibold mb-4">{tHardcodedUi.raw('appHelpCreditsPage.line283JsxTextOptimizingCreditUsage')}</h2>
+          <p className="mb-6">{tHardcodedUi.raw('appHelpCreditsPage.line285JsxTextMakeYourCreditsGoFurtherWithTheseOptimization')}</p>
 
           <div className="space-y-3 mb-8">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Choose Appropriate Models</CardTitle>
-                <CardDescription>
-                  Use smaller, more efficient models for simpler tasks. Save advanced models like GPT-4 for complex reasoning.
-                </CardDescription>
+                <CardTitle className="text-base">{tHardcodedUi.raw('appHelpCreditsPage.line291JsxTextChooseAppropriateModels')}</CardTitle>
+                <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line293JsxTextUseSmallerMoreEfficientModelsForSimplerTasks')}</CardDescription>
               </CardHeader>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Provide Clear Instructions</CardTitle>
-                <CardDescription>
-                  Well-defined tasks reduce back-and-forth with the agent, saving tokens and credits.
-                </CardDescription>
+                <CardTitle className="text-base">{tHardcodedUi.raw('appHelpCreditsPage.line300JsxTextProvideClearInstructions')}</CardTitle>
+                <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line302JsxTextWellDefinedTasksReduceBackAndForthWith')}</CardDescription>
               </CardHeader>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Monitor Your Usage</CardTitle>
-                <CardDescription>
-                  Regularly check the Usage tab to identify which conversations consume the most credits and adjust accordingly.
-                </CardDescription>
+                <CardTitle className="text-base">{tHardcodedUi.raw('appHelpCreditsPage.line309JsxTextMonitorYourUsage')}</CardTitle>
+                <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line311JsxTextRegularlyCheckTheUsageTabToIdentifyWhich')}</CardDescription>
               </CardHeader>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Leverage Prompt Caching</CardTitle>
-                <CardDescription>
-                  Repeated conversations in the same thread benefit from prompt caching, reducing token costs significantly.
-                </CardDescription>
+                <CardTitle className="text-base">{tHardcodedUi.raw('appHelpCreditsPage.line318JsxTextLeveragePromptCaching')}</CardTitle>
+                <CardDescription>{tHardcodedUi.raw('appHelpCreditsPage.line320JsxTextRepeatedConversationsInTheSameThreadBenefitFrom')}</CardDescription>
               </CardHeader>
             </Card>
           </div>
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-4">Need Help?</h2>
-          <p className="mb-6">
-            If you notice any discrepancies in your credit usage or have questions about billing:
-          </p>
+          <h2 className="text-2xl font-semibold mb-4">{tHardcodedUi.raw('appHelpCreditsPage.line328JsxTextNeedHelp')}</h2>
+          <p className="mb-6">{tHardcodedUi.raw('appHelpCreditsPage.line330JsxTextIfYouNoticeAnyDiscrepanciesInYourCredit')}</p>
 
           <div className="flex flex-col sm:flex-row gap-3 mb-8">
             <Button
@@ -336,25 +276,18 @@ export default function CreditsPage() {
               className="gap-2"
               onClick={() => window.location.href = 'mailto:hey@kortix.com'}
             >
-              <Mail className="h-4 w-4" />
-              Email Support
-            </Button>
+              <Mail className="h-4 w-4" />{tHardcodedUi.raw('appHelpCreditsPage.line340JsxTextEmailSupport')}</Button>
             <Button
               variant="outline"
               className="gap-2"
               onClick={() => window.open('https://discord.com/invite/RvFhXUdZ9H', '_blank', 'noopener,noreferrer')}
             >
-              <MessageCircle className="h-4 w-4" />
-              Join Discord
-            </Button>
+              <MessageCircle className="h-4 w-4" />{tHardcodedUi.raw('appHelpCreditsPage.line348JsxTextJoinDiscord')}</Button>
           </div>
 
           <Alert>
             <Info className="h-4 w-4" />
-            <AlertDescription>
-              We're committed to fair and transparent billing. If you believe there's an error in your 
-              credit usage, please contact our support team and we'll investigate promptly.
-            </AlertDescription>
+            <AlertDescription>{tHardcodedUi.raw('appHelpCreditsPage.line355JsxTextWeReCommittedToFairAndTransparentBilling')}</AlertDescription>
           </Alert>
         </section>
       </div>

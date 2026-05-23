@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo, useEffect } from 'react';
 import { DataTable, DataTableColumn } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +31,7 @@ interface AdminUserTableProps {
 }
 
 export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [searchEmail, setSearchEmail] = useState('');
@@ -141,8 +144,7 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
     return (
       <Card>
         <CardContent className="py-8">
-          <div className="text-center text-destructive">
-            Failed to load users: {error.message}
+          <div className="text-center text-destructive">{tHardcodedUi.raw('componentsAdminAdminUserTable.line145JsxTextFailedToLoadUsers')}{error.message}
           </div>
         </CardContent>
       </Card>
@@ -166,7 +168,7 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
       <div className="flex flex-col sm:flex-row gap-3">
         <Input type="text"
           id="search-email"
-          placeholder="Search by email..." autoComplete="off"
+          placeholder={tHardcodedUi.raw('componentsAdminAdminUserTable.line169JsxAttrPlaceholderSearchByEmail')} autoComplete="off"
           value={searchEmail}
           onChange={(e) => setSearchEmail(e.target.value)}
           className="flex-1"
@@ -175,7 +177,7 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
           <SelectTrigger className="w-full sm:w-[180px]">
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-muted-foreground" />
-              <SelectValue placeholder="Filter by tier" />
+              <SelectValue placeholder={tHardcodedUi.raw('componentsAdminAdminUserTable.line178JsxAttrPlaceholderFilterByTier')} />
             </div>
           </SelectTrigger>
           <SelectContent>
@@ -202,7 +204,7 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
               columns={columns}
               data={userListResponse?.data || []}
               onRowClick={onUserSelect}
-              emptyMessage="No users found matching your criteria"
+              emptyMessage={tHardcodedUi.raw('componentsAdminAdminUserTable.line205JsxAttrEmptymessageNoUsersFoundMatchingYourCriteria')}
               getItemId={(user) => user.id}
             />
           )}

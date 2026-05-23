@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { FormEvent, use, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Shield, UserPlus, Users } from 'lucide-react';
@@ -70,6 +72,7 @@ export function MembersView({ projectId }: { projectId: string }) {
 }
 
 function ProjectMembersBody({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const projectQuery = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => getProject(projectId),
@@ -89,11 +92,8 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
         <header className="space-y-1">
-          <h2 className="text-base font-semibold text-foreground">Project members</h2>
-          <p className="text-xs text-muted-foreground">
-            Control who can access this project. Account owners and admins always
-            have manager access. Invite teammates by email or change their role below.
-          </p>
+          <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}</h2>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners')}</p>
         </header>
 
         {canManage && <InviteMemberCard projectId={projectId} />}
@@ -113,6 +113,7 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
 }
 
 function InviteMemberCard({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<ProjectRole>('editor');
@@ -137,8 +138,8 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
 
   return (
     <SectionCard
-      title="Invite by email"
-      description="Add an existing Kortix user to this project."
+      title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line140JsxAttrTitleInviteByEmail')}
+      description={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject')}
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex-1 space-y-1.5">
@@ -148,7 +149,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="teammate@example.com"
+            placeholder={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line151JsxAttrPlaceholderTeammateExampleCom')}
             disabled={inviteMutation.isPending}
             autoComplete="off"
           />
@@ -204,6 +205,7 @@ function ProjectAccessCard({
   error: Error | null;
   onRetry: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
 
@@ -257,8 +259,8 @@ function ProjectAccessCard({
   return (
     <SectionCard
       flush
-      title="Project access"
-      description="Account owners and admins always have manager access."
+      title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line260JsxAttrTitleProjectAccess')}
+      description={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line261JsxAttrDescriptionAccountOwnersAndAdminsAlwaysHaveManagerAccess')}
       count={members.length}
     >
       {isLoading && (
@@ -325,7 +327,7 @@ function ProjectAccessCard({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">No access</SelectItem>
+                        <SelectItem value="none">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line328JsxTextNoAccess')}</SelectItem>
                         <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
                         <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
                         <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>

@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
@@ -6,6 +7,7 @@ interface SpreadsheetLoaderProps {
 }
 
 export function SpreadsheetLoader({ mode = 'max' }: SpreadsheetLoaderProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   if (mode === 'mini') {
     return (
       <div className="flex flex-col h-full w-full min-h-[200px] border rounded-2xl overflow-hidden bg-background">
@@ -23,7 +25,7 @@ export function SpreadsheetLoader({ mode = 'max' }: SpreadsheetLoaderProps) {
             </div>
             <div className="absolute inset-0 flex items-center justify-center">
                  <div className="flex flex-col items-center gap-2 bg-background/80 p-4 rounded-2xl backdrop-blur-sm shadow-sm">
-                    <p className="text-xs font-medium text-muted-foreground animate-pulse">Loading spreadsheet...</p>
+                    <p className="text-xs font-medium text-muted-foreground animate-pulse">{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSpreadsheetloader.line26JsxTextLoadingSpreadsheet')}</p>
                  </div>
             </div>
         </div>

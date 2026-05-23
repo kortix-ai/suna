@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -52,6 +54,7 @@ const LEGACY_ITEMS: NavItem[] = [
 ];
 
 export function AdminSidebar() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
   const router = useRouter();
 
@@ -83,7 +86,7 @@ export function AdminSidebar() {
           </div>
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight">Admin</span>
-            <span className="text-xs text-muted-foreground">Kortix console</span>
+            <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('appAdminComponentsAdminSidebar.line86JsxTextKortixConsole')}</span>
           </div>
         </Link>
       </SidebarHeader>
@@ -124,11 +127,11 @@ export function AdminSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              tooltip="Leave admin console"
+              tooltip={tHardcodedUi.raw('appAdminComponentsAdminSidebar.line127JsxAttrTooltipLeaveAdminConsole')}
               onClick={() => router.push('/projects')}
             >
               <ArrowLeft />
-              <span>Back to app</span>
+              <span>{tHardcodedUi.raw('appAdminComponentsAdminSidebar.line131JsxTextBackToApp')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * /projects/[id]/commands — Project slash commands browser.
  *
@@ -53,6 +55,7 @@ export default function ProjectCommandsPage({
 }
 
 export function CommandsView({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -104,7 +107,7 @@ export function CommandsView({ projectId }: { projectId: string }) {
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <Input
-              placeholder="Search commands"
+              placeholder={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line107JsxAttrPlaceholderSearchCommands')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="h-8 pl-8 text-sm placeholder:text-muted-foreground/60"
@@ -200,6 +203,7 @@ function CommandDetail({
   projectId: string;
   command: Command;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const fileQuery = useQuery({
     queryKey: ['project-file-source', projectId, command.path],
     queryFn: () => readProjectFile(projectId, command.path),
@@ -272,10 +276,7 @@ function CommandDetail({
             ) : body.trim() ? (
               <UnifiedMarkdown content={body} />
             ) : (
-              <p className="text-sm italic text-muted-foreground/60">
-                Command body is empty. Add the prompt content below the
-                frontmatter.
-              </p>
+              <p className="text-sm italic text-muted-foreground/60">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line276JsxTextCommandBodyIsEmptyAddThePromptContent')}</p>
             )}
           </div>
         </div>
@@ -293,6 +294,7 @@ function DetailToolbarActions({
   fileHref: string;
   copyDisabled: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex items-center gap-0.5">
       <Tooltip>
@@ -306,9 +308,7 @@ function DetailToolbarActions({
             <Pencil className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          Inline editing coming soon
-        </TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line310JsxTextInlineEditingComingSoon')}</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -322,9 +322,7 @@ function DetailToolbarActions({
             <Copy className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          Copy source
-        </TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line326JsxTextCopySource')}</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -339,9 +337,7 @@ function DetailToolbarActions({
             </Link>
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          Open in file viewer
-        </TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line343JsxTextOpenInFileViewer')}</TooltipContent>
       </Tooltip>
     </div>
   );
@@ -387,20 +383,21 @@ function DetailBodySkeleton() {
 }
 
 function DetailEmpty() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
       icon={TerminalSquare}
-      title="Select a command"
-      description="Pick a command from the list to preview it."
+      title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line393JsxAttrTitleSelectACommand')}
+      description={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line394JsxAttrDescriptionPickACommandFromTheListToPreview')}
     />
   );
 }
 
 function NoMatches({ query }: { query: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-6 text-center">
-      <p className="text-xs text-muted-foreground">
-        No matches for{' '}
+      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line403JsxTextNoMatchesFor')}{' '}
         <span className="font-mono text-foreground">{query}</span>.
       </p>
     </div>
@@ -408,19 +405,15 @@ function NoMatches({ query }: { query: string }) {
 }
 
 function EmptyList() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
       icon={TerminalSquare}
       size="sm"
-      title="No commands yet"
+      title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line415JsxAttrTitleNoCommandsYet')}
       description={
-        <>
-          Commit a{' '}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-            .opencode/command/&lt;slug&gt;.md
-          </code>{' '}
-          to add a slash command.
-        </>
+        <>{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line418JsxTextCommitA')}{' '}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line420JsxTextOpencodeCommandLtSlugGtMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line422JsxTextToAddASlashCommand')}</>
       }
       action={
         <Button asChild variant="ghost" size="sm" className="gap-1.5">
@@ -429,9 +422,7 @@ function EmptyList() {
             target="_blank"
             rel="noopener noreferrer"
           >
-            <ExternalLink className="h-3 w-3" />
-            OpenCode commands docs
-          </a>
+            <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line433JsxTextOpencodeCommandsDocs')}</a>
         </Button>
       }
     />
@@ -445,10 +436,11 @@ function DetailError({
   message: string;
   onRetry: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <InfoBanner
       tone="destructive"
-      title="Couldn't load source"
+      title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line451JsxAttrTitleCouldnTLoadSource')}
       action={
         <Button variant="outline" size="sm" onClick={onRetry}>
           Retry
@@ -461,10 +453,9 @@ function DetailError({
 }
 
 function ForbiddenNotice() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <InfoBanner icon={ShieldAlert} title="Access required">
-      No permission to read this repo.
-    </InfoBanner>
+    <InfoBanner icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line465JsxAttrTitleAccessRequired')}>{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line466JsxTextNoPermissionToReadThisRepo')}</InfoBanner>
   );
 }
 
@@ -475,9 +466,10 @@ function ErrorNotice({
   message: string;
   onRetry: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-4">
-      <p className="text-sm font-medium text-destructive">Failed to load</p>
+      <p className="text-sm font-medium text-destructive">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line480JsxTextFailedToLoad')}</p>
       <p className="mt-1 text-xs text-destructive/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -64,6 +66,7 @@ function ProjectCard({
   onArchive: () => void;
   archiving: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const updatedLabel = relativeTime(project.updated_at);
   const canManageProject = project.effective_project_role === 'manager' || !project.effective_project_role;
 
@@ -100,13 +103,13 @@ function ProjectCard({
               size="icon"
               className="h-7 w-7 bg-background/80 backdrop-blur text-muted-foreground hover:bg-background hover:text-foreground"
               onClick={(e) => e.stopPropagation()}
-              aria-label="Project actions"
+              aria-label={tHardcodedUi.raw('appProjectsPage.line103JsxAttrAriaLabelProjectActions')}
             >
               <MoreHorizontal className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onSelect={onOpen}>Open project</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onOpen}>{tHardcodedUi.raw('appProjectsPage.line109JsxTextOpenProject')}</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={onArchive}
@@ -128,6 +131,7 @@ function ProjectCard({
 }
 
 export default function ProjectsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
@@ -212,9 +216,7 @@ export default function ProjectsPage() {
               <h1 className="text-3xl font-semibold tracking-tight text-foreground">
                 Projects
               </h1>
-              <p className="text-sm text-muted-foreground">
-                Your workspaces, one place. Pick up where you left off.
-              </p>
+              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appProjectsPage.line216JsxTextYourWorkspacesOnePlacePickUpWhereYou')}</p>
             </div>
             <div className="flex w-full items-center gap-2 sm:w-auto">
               <div className="relative flex-1 sm:w-72">
@@ -222,7 +224,7 @@ export default function ProjectsPage() {
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search projects..."
+                  placeholder={tHardcodedUi.raw('appProjectsPage.line225JsxAttrPlaceholderSearchProjects')}
                   className="h-9 pl-9 text-sm"
                 />
               </div>
@@ -232,9 +234,7 @@ export default function ProjectsPage() {
                 size="sm"
                 className="h-9 gap-1.5"
               >
-                <Plus className="h-4 w-4" />
-                New project
-              </Button>
+                <Plus className="h-4 w-4" />{tHardcodedUi.raw('appProjectsPage.line236JsxTextNewProject')}</Button>
             </div>
           </div>
 
@@ -249,7 +249,7 @@ export default function ProjectsPage() {
           {projectsQuery.isError && (
             <SectionCard
               tone="destructive"
-              title="Failed to load projects"
+              title={tHardcodedUi.raw('appProjectsPage.line252JsxAttrTitleFailedToLoadProjects')}
               description={(projectsQuery.error as Error).message}
             >
               <Button variant="outline" size="sm" onClick={() => projectsQuery.refetch()}>
@@ -262,8 +262,8 @@ export default function ProjectsPage() {
             <SectionCard flush>
               <EmptyState
                 icon={FolderGit2}
-                title="Create your first project"
-                description="A project is a workspace for one company or idea. We'll set it up in seconds — no Git account required."
+                title={tHardcodedUi.raw('appProjectsPage.line265JsxAttrTitleCreateYourFirstProject')}
+                description={tHardcodedUi.raw('appProjectsPage.line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany')}
                 action={
                   <Button
                     onClick={() => setModalOpen(true)}
@@ -271,9 +271,7 @@ export default function ProjectsPage() {
                     size="sm"
                     className="gap-1.5"
                   >
-                    <Plus className="h-4 w-4" />
-                    New project
-                  </Button>
+                    <Plus className="h-4 w-4" />{tHardcodedUi.raw('appProjectsPage.line275JsxTextNewProject')}</Button>
                 }
               />
             </SectionCard>
@@ -285,7 +283,7 @@ export default function ProjectsPage() {
                 icon={Search}
                 size="sm"
                 title={`No matches for "${query}"`}
-                description="Try a different search term."
+                description={tHardcodedUi.raw('appProjectsPage.line288JsxAttrDescriptionTryADifferentSearchTerm')}
               />
             </SectionCard>
           )}

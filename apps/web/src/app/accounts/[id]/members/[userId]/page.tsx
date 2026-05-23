@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -33,6 +34,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default function MemberDetailPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useParams<{ id: string; userId: string }>();
   const accountId = params?.id;
@@ -117,8 +119,7 @@ export default function MemberDetailPage() {
               className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back to projects
-            </button>
+              {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line120JsxTextBackToProjects')}</button>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <button
                 type="button"
@@ -181,8 +182,7 @@ export default function MemberDetailPage() {
                   disabled={setSuperAdminMutation.isPending}
                 >
                   <ShieldOff className="h-3.5 w-3.5" />
-                  Revoke super-admin
-                </Button>
+                  {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line184JsxTextRevokeSuperAdmin')}</Button>
               )}
               {canPromoteSuperAdmin && memberUserId !== user.id && !member?.is_super_admin && (
                 <Button
@@ -193,22 +193,20 @@ export default function MemberDetailPage() {
                   disabled={setSuperAdminMutation.isPending}
                 >
                   <Shield className="h-3.5 w-3.5" />
-                  Grant super-admin
-                </Button>
+                  {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line196JsxTextGrantSuperAdmin')}</Button>
               )}
             </div>
           </div>
 
           {membersQuery.isError && (
-            <InfoBanner tone="destructive" title="Failed to load member">
+            <InfoBanner tone="destructive" title={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line203JsxAttrTitleFailedToLoadMember')}>
               {(membersQuery.error as Error).message}
             </InfoBanner>
           )}
 
           {!membersQuery.isLoading && !member && memberUserId && (
             <InfoBanner tone="neutral">
-              This user is not a member of this account.
-            </InfoBanner>
+              {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line210JsxTextThisUserIsNotAMemberOfThis')}</InfoBanner>
           )}
 
           {account && member && (
@@ -247,15 +245,12 @@ export default function MemberDetailPage() {
           <ConfirmDialog
             open={grantConfirmOpen}
             onOpenChange={setGrantConfirmOpen}
-            title="Grant super-admin?"
+            title={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line250JsxAttrTitleGrantSuperAdmin')}
             description={
               <span>
-                Super-admin bypasses every IAM check. <strong>{memberLabel}</strong> will be
-                able to do anything in this account, including managing billing and deleting
-                the account. Only grant this to people you fully trust.
-              </span>
+                {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line253JsxTextSuperAdminBypassesEveryIAMCheck')}<strong>{memberLabel}</strong> {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line253JsxTextWillBeAbleToDoAnythingInThis')}</span>
             }
-            confirmLabel="Grant super-admin"
+            confirmLabel={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line258JsxAttrConfirmLabelGrantSuperAdmin')}
             isPending={setSuperAdminMutation.isPending}
             onConfirm={() => setSuperAdminMutation.mutate(true)}
           />
@@ -263,15 +258,12 @@ export default function MemberDetailPage() {
           <ConfirmDialog
             open={revokeConfirmOpen}
             onOpenChange={setRevokeConfirmOpen}
-            title="Revoke super-admin?"
+            title={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line266JsxAttrTitleRevokeSuperAdmin')}
             description={
               <span>
-                <strong>{memberLabel}</strong> will lose the bypass. From now on, every
-                action they perform will go through the normal policy checks. They may
-                lose access to parts of the account if no explicit policies grant it.
-              </span>
+                <strong>{memberLabel}</strong> {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line269JsxTextWillLoseTheBypassFromNowOnEvery')}</span>
             }
-            confirmLabel="Revoke super-admin"
+            confirmLabel={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line274JsxAttrConfirmLabelRevokeSuperAdmin')}
             isPending={setSuperAdminMutation.isPending}
             onConfirm={() => setSuperAdminMutation.mutate(false)}
           />
@@ -334,6 +326,7 @@ function CapabilitiesCard({
   accountId: string;
   memberUserId: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Stable probe list — declared at module scope so the hook's queryKey is
   // identical across renders. One HTTP roundtrip resolves all 14.
   const results = usePermissionsFor(
@@ -350,8 +343,8 @@ function CapabilitiesCard({
 
   return (
     <SectionCard
-      title="What this member can do"
-      description="Computed by the IAM engine — sum of explicit policies, group inheritance, super-admin bypass, and legacy role bridges."
+      title={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line353JsxAttrTitleWhatThisMemberCanDo')}
+      description={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line354JsxAttrDescriptionComputedByTheIAMEngineSumOfExplicit')}
       flush
     >
       <div className="divide-y divide-border/60">
@@ -427,12 +420,13 @@ function MemberGroupsCard({
   memberGroups: MemberGroupSummary[];
   isLoading: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
 
   return (
     <SectionCard
       title={`Member of ${memberGroups.length} ${memberGroups.length === 1 ? 'group' : 'groups'}`}
-      description="Any policy attached to one of these groups also applies to this member."
+      description={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line435JsxAttrDescriptionAnyPolicyAttachedToOneOfTheseGroups')}
       flush
     >
       {isLoading && (
@@ -446,10 +440,9 @@ function MemberGroupsCard({
           <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground">
             <Users className="h-4 w-4" />
           </div>
-          <p className="text-sm text-foreground">Not a member of any groups</p>
+          <p className="text-sm text-foreground">{tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line449JsxTextNotAMemberOfAnyGroups')}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Add them to a group to inherit its policies.
-          </p>
+            {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line451JsxTextAddThemToAGroupToInheritIts')}</p>
         </div>
       )}
 

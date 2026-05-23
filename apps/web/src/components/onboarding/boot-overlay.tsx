@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -29,6 +31,7 @@ interface BootOverlayProps {
 }
 
 export function BootOverlay({ onComplete }: BootOverlayProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [phase, setPhase] = useState<Phase>('bios');
   const [visibleLines, setVisibleLines] = useState(0);
   const [progressFill, setProgressFill] = useState(false);
@@ -131,9 +134,7 @@ export function BootOverlay({ onComplete }: BootOverlayProps) {
                     className="font-mono text-sm sm:text-sm text-foreground/90"
                     animate={{ opacity: [1, 0.3] }}
                     transition={{ duration: 0.7, repeat: Infinity, repeatType: 'reverse' }}
-                  >
-                    Press Enter to boot...
-                  </motion.span>
+                  >{tHardcodedUi.raw('componentsOnboardingBootOverlay.line135JsxTextPressEnterToBoot')}</motion.span>
                 </motion.div>
               )}
             </div>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { ShieldCheck } from 'lucide-react';
@@ -30,6 +32,7 @@ export function AdminShell({
   children: React.ReactNode;
   initialOpen: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: adminRole, isLoading } = useAdminRole();
   const pathname = usePathname();
   const label =
@@ -52,18 +55,13 @@ export function AdminShell({
             <ShieldCheck className="h-7 w-7 text-muted-foreground" />
           </div>
           <div className="space-y-1">
-            <h1 className="text-lg font-semibold tracking-tight">Admin access required</h1>
-            <p className="text-sm text-muted-foreground">
-              Your account doesn&apos;t have admin permissions. Return to the app and contact a
-              workspace admin if this looks wrong.
-            </p>
+            <h1 className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('appAdminComponentsAdminShell.line55JsxTextAdminAccessRequired')}</h1>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAdminComponentsAdminShell.line57JsxTextYourAccountDoesnAposTHaveAdminPermissions')}</p>
           </div>
           <Link
             href="/projects"
             className="inline-flex text-sm font-medium text-foreground underline-offset-4 hover:underline"
-          >
-            Back to projects
-          </Link>
+          >{tHardcodedUi.raw('appAdminComponentsAdminShell.line65JsxTextBackToProjects')}</Link>
         </div>
       </div>
     );

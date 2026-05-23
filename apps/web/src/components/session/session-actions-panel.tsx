@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -53,6 +55,7 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
   sessionId: string;
   messages: MessageWithParts[] | undefined;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const parts = useMemo(() => collectToolParts(messages), [messages]);
   const count = parts.length;
 
@@ -148,9 +151,7 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
 
   if (count === 0) {
     return (
-      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground/70">
-        No actions yet.
-      </div>
+      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground/70">{tHardcodedUi.raw('componentsSessionSessionActionsPanel.line152JsxTextNoActionsYet')}</div>
     );
   }
 
@@ -182,7 +183,7 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
             className="size-7"
             onClick={goPrev}
             disabled={safeIndex === 0}
-            aria-label="Previous action"
+            aria-label={tHardcodedUi.raw('componentsSessionSessionActionsPanel.line185JsxAttrAriaLabelPreviousAction')}
           >
             <ChevronLeft className="size-4" />
           </Button>
@@ -208,9 +209,7 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
                 type="button"
                 onClick={jumpToLatest}
                 className="text-xs text-muted-foreground/60 underline-offset-2 transition-colors hover:text-foreground hover:underline"
-              >
-                Jump to latest
-              </button>
+              >{tHardcodedUi.raw('componentsSessionSessionActionsPanel.line212JsxTextJumpToLatest')}</button>
             )}
           </div>
 
@@ -220,7 +219,7 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
             className="size-7"
             onClick={goNext}
             disabled={atLatest}
-            aria-label="Next action"
+            aria-label={tHardcodedUi.raw('componentsSessionSessionActionsPanel.line223JsxAttrAriaLabelNextAction')}
           >
             <ChevronRight className="size-4" />
           </Button>

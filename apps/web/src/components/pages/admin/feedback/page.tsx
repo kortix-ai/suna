@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AdminFeedbackTable } from '@/components/admin/admin-feedback-table';
 import {
@@ -14,18 +16,15 @@ import { BarChart3, MessageSquare, Sparkles } from 'lucide-react';
 import { LegacyBanner } from '@/components/admin/legacy-banner';
 
 export default function AdminFeedbackPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
         <LegacyBanner feature="Feedback" />
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Feedback Analytics
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Monitor user feedback, analyze trends, and get AI-powered insights
-            </p>
+            <h1 className="text-2xl font-semibold tracking-tight">{tHardcodedUi.raw('componentsPagesAdminFeedbackPage.line24JsxTextFeedbackAnalytics')}</h1>
+            <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesAdminFeedbackPage.line27JsxTextMonitorUserFeedbackAnalyzeTrendsAndGetAi')}</p>
           </div>
         </div>
         <FeedbackStatsCards />
@@ -36,13 +35,9 @@ export default function AdminFeedbackPage() {
               Overview
             </TabsTrigger>
             <TabsTrigger value="analysis" className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
-              AI Analysis
-            </TabsTrigger>
+              <Sparkles className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesAdminFeedbackPage.line40JsxTextAiAnalysis')}</TabsTrigger>
             <TabsTrigger value="all" className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4" />
-              All Feedback
-            </TabsTrigger>
+              <MessageSquare className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesAdminFeedbackPage.line44JsxTextAllFeedback')}</TabsTrigger>
           </TabsList>
           <TabsContent value="overview" className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

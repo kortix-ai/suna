@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -23,6 +25,7 @@ const MAX_RETRIES = 3;
 const RETRY_DELAYS = [500, 1500, 3000]; // ms — escalating backoff
 
 export function ImageRenderer({ url, className, fileName }: ImageRendererProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
@@ -231,7 +234,7 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
             size="sm"
             className="h-7 w-7 p-0 hover:bg-muted"
             onClick={handleZoomOut}
-            title="Zoom out"
+            title={tHardcodedUi.raw('componentsFileRenderersImageRenderer.line234JsxAttrTitleZoomOut')}
             disabled={imgError}
           >
             <ZoomOut className="h-4 w-4" />
@@ -244,7 +247,7 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
             size="sm"
             className="h-7 w-7 p-0 hover:bg-muted"
             onClick={handleZoomIn}
-            title="Zoom in"
+            title={tHardcodedUi.raw('componentsFileRenderersImageRenderer.line247JsxAttrTitleZoomIn')}
             disabled={imgError}
           >
             <ZoomIn className="h-4 w-4" />
@@ -284,7 +287,7 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
             size="sm"
             className="h-7 w-7 p-0 hover:bg-muted"
             onClick={() => setShowInfo(!showInfo)}
-            title="Image information"
+            title={tHardcodedUi.raw('componentsFileRenderersImageRenderer.line287JsxAttrTitleImageInformation')}
           >
             <Info className="h-4 w-4" />
           </Button>
@@ -326,12 +329,8 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
       >
         {imgError ? (
           <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-            <p className="text-muted-foreground font-medium mb-2">
-              Failed to load image
-            </p>
-            <p className="text-sm text-muted-foreground">
-              The image could not be displayed
-            </p>
+            <p className="text-muted-foreground font-medium mb-2">{tHardcodedUi.raw('componentsFileRenderersImageRenderer.line330JsxTextFailedToLoadImage')}</p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersImageRenderer.line333JsxTextTheImageCouldNotBeDisplayed')}</p>
           </div>
         ) : (
           <div

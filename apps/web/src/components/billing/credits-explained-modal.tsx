@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Zap, Clock, Sparkles, Info, RotateCcw, Infinity, X, DollarSign } from 'lucide-react';
 import {
   Dialog,
@@ -19,11 +21,12 @@ interface CreditsExplainedModalProps {
 }
 
 export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedModalProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl max-h-[85vh]">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">What are Credits?</DialogTitle>
+          <DialogTitle className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line26JsxTextWhatAreCredits')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-8 overflow-y-auto px-6 py-5">
@@ -31,25 +34,19 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold">Understanding Credits</h2>
+              <h2 className="text-lg font-semibold">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line34JsxTextUnderstandingCredits')}</h2>
             </div>
-            <p className="text-muted-foreground leading-relaxed">
-              Credits are the universal currency that powers everything you do on Kortix. 
-              They're consumed when your AI agents work on tasks, and the cost varies based 
-              on the complexity and resources required.
-            </p>
+            <p className="text-muted-foreground leading-relaxed">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line37JsxTextCreditsAreTheUniversalCurrencyThatPowersEverything')}</p>
           </div>
 
           {/* How Credits Work */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Zap className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold">How Credits Work</h2>
+              <h2 className="text-lg font-semibold">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line47JsxTextHowCreditsWork')}</h2>
             </div>
             
-            <p className="text-muted-foreground leading-relaxed">
-              Credits are consumed based on the resources your AI agents use during task execution:
-            </p>
+            <p className="text-muted-foreground leading-relaxed">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line51JsxTextCreditsAreConsumedBasedOnTheResourcesYour')}</p>
 
             <Card>
               <CardContent className="pt-5">
@@ -57,26 +54,22 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
                   <li className="flex items-start gap-3">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                     <div>
-                      <span className="font-medium text-foreground">AI activity:</span> Processing requests, generating responses, and running AI models.
-                    </div>
+                      <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line60JsxTextAiActivity')}</span>{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line60JsxTextProcessingRequestsGeneratingResponsesAndRunningAiModels')}</div>
                   </li>
                   <li className="flex items-start gap-3">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                     <div>
-                      <span className="font-medium text-foreground">Kortix computer:</span> Code execution, browser automation, and interactive task processing.
-                    </div>
+                      <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line66JsxTextKortixComputer')}</span>{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line66JsxTextCodeExecutionBrowserAutomationAndInteractiveTaskProcessing')}</div>
                   </li>
                   <li className="flex items-start gap-3">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                     <div>
-                      <span className="font-medium text-foreground">Web & people search:</span> Finding information, data, and resources online.
-                    </div>
+                      <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line72JsxTextWebPeopleSearch')}</span>{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line72JsxTextFindingInformationDataAndResourcesOnline')}</div>
                   </li>
                   <li className="flex items-start gap-3">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                     <div>
-                      <span className="font-medium text-foreground">Third-party services:</span> External APIs and integrated services.
-                    </div>
+                      <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line78JsxTextThirdPartyServices')}</span>{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line78JsxTextExternalApisAndIntegratedServices')}</div>
                   </li>
                 </ul>
               </CardContent>
@@ -90,9 +83,7 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
               <h2 className="text-lg font-semibold">Pricing</h2>
             </div>
 
-            <p className="text-muted-foreground leading-relaxed text-sm">
-              Platform rates vary by service type:
-            </p>
+            <p className="text-muted-foreground leading-relaxed text-sm">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line94JsxTextPlatformRatesVaryByServiceType')}</p>
 
             <Card>
               <CardContent className="pt-5">
@@ -100,26 +91,22 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
                   <li className="flex items-start gap-3">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                     <div>
-                      <span className="font-medium text-foreground">AI models:</span> 20% markup on LLM costs.
-                    </div>
+                      <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line103JsxTextAiModels')}</span>{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line103JsxTextText20MarkupOnLlmCosts')}</div>
                   </li>
                   <li className="flex items-start gap-3">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                     <div>
-                      <span className="font-medium text-foreground">Tools:</span> 50% markup on web search, scraping, and third-party tools.
-                    </div>
+                      <span className="font-medium text-foreground">Tools:</span>{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line109JsxTextText50MarkupOnWebSearchScrapingAndThird')}</div>
                   </li>
                   <li className="flex items-start gap-3">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                     <div>
-                      <span className="font-medium text-foreground">Image search:</span> 100% markup.
-                    </div>
+                      <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line115JsxTextImageSearch')}</span>{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line115JsxTextText100Markup')}</div>
                   </li>
                   <li className="flex items-start gap-3">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                     <div>
-                      <span className="font-medium text-foreground">Own API key:</span> 10% platform fee instead.
-                    </div>
+                      <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line121JsxTextOwnApiKey')}</span>{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line121JsxTextText10PlatformFeeInstead')}</div>
                   </li>
                 </ul>
               </CardContent>
@@ -130,12 +117,10 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold">Types of Credits</h2>
+              <h2 className="text-lg font-semibold">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line133JsxTextTypesOfCredits')}</h2>
             </div>
 
-            <p className="text-muted-foreground leading-relaxed text-sm">
-              Credits are deducted in priority order: daily credits first, then monthly, then extra credits.
-            </p>
+            <p className="text-muted-foreground leading-relaxed text-sm">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line137JsxTextCreditsAreDeductedInPriorityOrderDailyCredits')}</p>
 
             {/* Credit Types Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -146,9 +131,7 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
                     <RotateCcw className="h-4 w-4 text-muted-foreground" />
                     <h3 className="font-semibold text-sm">Daily</h3>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Refresh every 24 hours. Use it or lose it.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line150JsxTextRefreshEvery24HoursUseItOrLose')}</p>
                 </CardContent>
               </Card>
 
@@ -159,9 +142,7 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
                     <Clock className="h-4 w-4 text-muted-foreground" />
                     <h3 className="font-semibold text-sm">Monthly</h3>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Included with your plan. Refresh each billing cycle.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line163JsxTextIncludedWithYourPlanRefreshEachBillingCycle')}</p>
                 </CardContent>
               </Card>
 
@@ -172,9 +153,7 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
                     <Infinity className="h-4 w-4 text-muted-foreground" />
                     <h3 className="font-semibold text-sm">Extra</h3>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Purchased or promo credits that never expire.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line176JsxTextPurchasedOrPromoCreditsThatNeverExpire')}</p>
                 </CardContent>
               </Card>
             </div>
@@ -182,14 +161,10 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
 
           {/* Priority Order Info */}
           <InfoBanner tone="info" icon={Info}>
-            <strong>Credit priority:</strong> We use expiring credits first (daily → monthly) before extra credits,
-            so you get the most value from all your credits.
-          </InfoBanner>
+            <strong>{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line185JsxTextCreditPriority')}</strong>{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line185JsxTextWeUseExpiringCreditsFirstDailyMonthlyBefore')}</InfoBanner>
 
           {/* Refund Policy */}
-          <InfoBanner tone="neutral" icon={Info}>
-            If a task fails due to a system error, we automatically refund all credits used for that task.
-          </InfoBanner>
+          <InfoBanner tone="neutral" icon={Info}>{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line191JsxTextIfATaskFailsDueToASystem')}</InfoBanner>
         </div>
       </DialogContent>
     </Dialog>

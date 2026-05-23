@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import {
   useEffect,
   useMemo,
@@ -55,6 +57,7 @@ export function ConnectingScreen({
   minimal = false,
   hideWorkspacePicker = false,
 }: ConnectingScreenProps = {}) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const status = useSandboxConnectionStore((s) => s.status);
   const wasConnected = useSandboxConnectionStore((s) => s.wasConnected);
   const initialCheckDone = useSandboxConnectionStore((s) => s.initialCheckDone);
@@ -153,7 +156,7 @@ export function ConnectingScreen({
     return (
       <>
         <HealthPill
-          title="Runtime degraded"
+          title={tHardcodedUi.raw('componentsDashboardConnectingScreen.line156JsxAttrTitleRuntimeDegraded')}
           detail={runtimeSummary}
           onSwitch={handleSwitch}
         />
@@ -408,6 +411,7 @@ function ErrorView({
   serverType?: string;
   onBack: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <>
       <div
@@ -418,8 +422,7 @@ function ErrorView({
       </div>
 
       <div className="flex flex-col items-center gap-1">
-        <h1 className="text-sm font-medium text-foreground/90">
-          Couldn&apos;t start {label}
+        <h1 className="text-sm font-medium text-foreground/90">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line422JsxTextCouldnAposTStart')}{label}
         </h1>
         {(serverType || location) && (
           <p className="font-mono text-xs text-muted-foreground/35">
@@ -455,6 +458,7 @@ function StoppedView({
   label: string;
   onBack: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <>
       <div
@@ -466,11 +470,8 @@ function StoppedView({
 
       <div className="flex flex-col items-center gap-1">
         <h1 className="text-sm font-medium text-foreground/90">
-          {label} is stopped
-        </h1>
-        <p className="max-w-[300px] text-center text-xs leading-relaxed text-muted-foreground/55">
-          Open a new session or return to projects to continue.
-        </p>
+          {label}{tHardcodedUi.raw('componentsDashboardConnectingScreen.line469JsxTextIsStopped')}</h1>
+        <p className="max-w-[300px] text-center text-xs leading-relaxed text-muted-foreground/55">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line472JsxTextOpenANewSessionOrReturnToProjects')}</p>
       </div>
 
       <div className="flex items-center gap-2">
@@ -527,6 +528,7 @@ function UnreachableView({
   onSwitch: () => void;
   sandboxId?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isLocalDocker = provider === 'local_docker';
   const isRestartRecovering = recoveryPhase !== 'idle';
   const secondsSinceRestart = restartRequestedAt ? Math.max(1, Math.floor((Date.now() - restartRequestedAt) / 1000)) : null;
@@ -561,7 +563,7 @@ function UnreachableView({
           <p className="text-xs font-mono text-muted-foreground/35">Sandbox {sandboxId.slice(0, 8)}</p>
         ) : null}
         {!isLocalDocker && isRestartRecovering && secondsSinceRestart ? (
-          <p className="text-xs font-mono text-muted-foreground/35">recovering · {secondsSinceRestart}s</p>
+          <p className="text-xs font-mono text-muted-foreground/35">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line564JsxTextRecovering')}{secondsSinceRestart}s</p>
         ) : null}
       </div>
 

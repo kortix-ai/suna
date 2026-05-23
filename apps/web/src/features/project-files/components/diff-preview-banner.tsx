@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { AlertCircle, Check, Loader2, Minus } from 'lucide-react';
 import { InfoBanner } from '@/components/ui/info-banner';
 import type { VersionDiffPreview } from '../api/change-requests';
@@ -25,13 +27,12 @@ export function DiffPreviewBanner({
   preview,
   className,
 }: DiffPreviewBannerProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   if (loading) {
     return (
       <InfoBanner tone="neutral" className={className}>
         <span className="flex items-center gap-2">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Calculating the diff…
-        </span>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />{tHardcodedUi.raw('featuresProjectFilesComponentsDiffPreviewBanner.line33JsxTextCalculatingTheDiff')}</span>
       </InfoBanner>
     );
   }
@@ -41,7 +42,7 @@ export function DiffPreviewBanner({
       <InfoBanner
         tone="warning"
         icon={AlertCircle}
-        title="Couldn't compute the diff"
+        title={tHardcodedUi.raw('featuresProjectFilesComponentsDiffPreviewBanner.line44JsxAttrTitleCouldnTComputeTheDiff')}
         className={className}
       >
         {error.message}
@@ -53,18 +54,13 @@ export function DiffPreviewBanner({
 
   if (preview.is_same_ref) {
     return (
-      <InfoBanner tone="warning" icon={Minus} className={className}>
-        Same version on both sides — pick different versions.
-      </InfoBanner>
+      <InfoBanner tone="warning" icon={Minus} className={className}>{tHardcodedUi.raw('featuresProjectFilesComponentsDiffPreviewBanner.line57JsxTextSameVersionOnBothSidesPickDifferentVersions')}</InfoBanner>
     );
   }
 
   if (preview.is_up_to_date || preview.files_changed === 0) {
     return (
-      <InfoBanner tone="warning" icon={Minus} className={className}>
-        No changes between these versions. The source needs to be ahead of the
-        target before a change request makes sense.
-      </InfoBanner>
+      <InfoBanner tone="warning" icon={Minus} className={className}>{tHardcodedUi.raw('featuresProjectFilesComponentsDiffPreviewBanner.line65JsxTextNoChangesBetweenTheseVersionsTheSourceNeeds')}</InfoBanner>
     );
   }
 

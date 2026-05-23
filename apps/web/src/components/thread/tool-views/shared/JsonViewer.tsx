@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
@@ -17,6 +18,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
   defaultExpanded = false, 
   className = "" 
 }) => {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [copied, setCopied] = useState(false);
 
@@ -116,7 +118,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
           size="sm"
           onClick={handleCopy}
           className="h-6 w-6 p-0"
-          title="Copy to clipboard"
+          title={tHardcodedUi.raw('componentsThreadToolViewsSharedJsonviewer.line119JsxAttrTitleCopyToClipboard')}
         >
           {copied ? (
             <Check className="h-3 w-3 text-muted-foreground" />

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useMemo, useState } from 'react';
 import {
   Download,
@@ -47,6 +49,7 @@ export function ExportTranscriptDialog({
   open,
   onOpenChange,
 }: ExportTranscriptDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [options, setOptions] = useState<TranscriptOptions>(DEFAULT_TRANSCRIPT_OPTIONS);
   const [copied, setCopied] = useState(false);
 
@@ -114,12 +117,8 @@ export function ExportTranscriptDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FileDown className="h-4 w-4" />
-            Export Transcript
-          </DialogTitle>
-          <DialogDescription className="text-sm leading-relaxed">
-            Export this session as a Markdown file. Configure what to include below.
-          </DialogDescription>
+            <FileDown className="h-4 w-4" />{tHardcodedUi.raw('componentsSessionExportTranscriptDialog.line118JsxTextExportTranscript')}</DialogTitle>
+          <DialogDescription className="text-sm leading-relaxed">{tHardcodedUi.raw('componentsSessionExportTranscriptDialog.line121JsxTextExportThisSessionAsAMarkdownFileConfigure')}</DialogDescription>
         </DialogHeader>
 
         {/* Options */}
@@ -127,9 +126,7 @@ export function ExportTranscriptDialog({
           <div className="flex items-center justify-between rounded-2xl border border-border/40 bg-muted/30 px-3 py-2.5">
             <div className="flex items-center gap-2.5">
               <Bot className="h-3.5 w-3.5 text-muted-foreground" />
-              <Label htmlFor="opt-metadata" className="text-sm cursor-pointer">
-                Assistant metadata
-              </Label>
+              <Label htmlFor="opt-metadata" className="text-sm cursor-pointer">{tHardcodedUi.raw('componentsSessionExportTranscriptDialog.line131JsxTextAssistantMetadata')}</Label>
             </div>
             <Switch
               id="opt-metadata"
@@ -141,9 +138,7 @@ export function ExportTranscriptDialog({
           <div className="flex items-center justify-between rounded-2xl border border-border/40 bg-muted/30 px-3 py-2.5">
             <div className="flex items-center gap-2.5">
               <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
-              <Label htmlFor="opt-tools" className="text-sm cursor-pointer">
-                Tool call details
-              </Label>
+              <Label htmlFor="opt-tools" className="text-sm cursor-pointer">{tHardcodedUi.raw('componentsSessionExportTranscriptDialog.line145JsxTextToolCallDetails')}</Label>
             </div>
             <Switch
               id="opt-tools"
@@ -155,9 +150,7 @@ export function ExportTranscriptDialog({
           <div className="flex items-center justify-between rounded-2xl border border-border/40 bg-muted/30 px-3 py-2.5">
             <div className="flex items-center gap-2.5">
               <Brain className="h-3.5 w-3.5 text-muted-foreground" />
-              <Label htmlFor="opt-thinking" className="text-sm cursor-pointer">
-                Thinking / reasoning
-              </Label>
+              <Label htmlFor="opt-thinking" className="text-sm cursor-pointer">{tHardcodedUi.raw('componentsSessionExportTranscriptDialog.line159JsxTextThinkingReasoning')}</Label>
             </div>
             <Switch
               id="opt-thinking"
@@ -172,9 +165,7 @@ export function ExportTranscriptDialog({
           <span className="text-xs text-muted-foreground">
             {isLoadingMessages ? (
               <span className="flex items-center gap-1.5">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Loading messages...
-              </span>
+                <Loader2 className="h-3 w-3 animate-spin" />{tHardcodedUi.raw('componentsSessionExportTranscriptDialog.line176JsxTextLoadingMessages')}</span>
             ) : (
               <>
                 {messageCount} message{messageCount !== 1 ? 's' : ''}
@@ -220,9 +211,7 @@ export function ExportTranscriptDialog({
               </>
             ) : (
               <>
-                <Download className="mr-2 h-3.5 w-3.5" />
-                Download .md
-              </>
+                <Download className="mr-2 h-3.5 w-3.5" />{tHardcodedUi.raw('componentsSessionExportTranscriptDialog.line224JsxTextDownloadMd')}</>
             )}
           </Button>
         </DialogFooter>

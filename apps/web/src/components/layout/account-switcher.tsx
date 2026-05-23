@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * AccountSwitcher — the standalone "which account" switcher.
  *
@@ -66,6 +68,7 @@ export function AccountSwitcher({
   variant?: AccountSwitcherVariant;
   className?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
@@ -134,7 +137,7 @@ export function AccountSwitcher({
           'hover:bg-muted/50 data-[state=open]:bg-muted/60',
           className,
         )}
-        aria-label="Switch account"
+        aria-label={tHardcodedUi.raw('componentsLayoutAccountSwitcher.line137JsxAttrAriaLabelSwitchAccount')}
       >
         {tile}
         <span className="max-w-40 truncate text-sm font-medium">{label}</span>
@@ -187,7 +190,7 @@ export function AccountSwitcher({
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Find account…"
+                placeholder={tHardcodedUi.raw('componentsLayoutAccountSwitcher.line190JsxAttrPlaceholderFindAccount')}
                 className="h-7 pl-7 pr-2 text-xs placeholder:text-muted-foreground/50"
               />
             </div>
@@ -273,18 +276,14 @@ export function AccountSwitcher({
             className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <ArrowUpRight className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium text-foreground/80">
-              All accounts
-            </span>
+            <span className="flex-1 truncate text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsLayoutAccountSwitcher.line277JsxTextAllAccounts')}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => deferAfterClose(() => setCreateOpen(true))}
             className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <Plus className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium text-foreground/80">
-              New account
-            </span>
+            <span className="flex-1 truncate text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsLayoutAccountSwitcher.line286JsxTextNewAccount')}</span>
           </DropdownMenuItem>
           {billingActive && (
             <DropdownMenuItem

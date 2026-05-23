@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { Cloud, CloudOff, Check, AlertCircle, RefreshCw } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
@@ -41,6 +42,7 @@ export function SyncStatusIndicator({
   onResolveConflict,
   className,
 }: SyncStatusIndicatorProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const getStatusConfig = () => {
     // All status indicators use consistent gray styling
     const grayStyle = { color: 'text-zinc-500', bgColor: 'bg-zinc-500/10' };
@@ -105,17 +107,13 @@ export function SyncStatusIndicator({
             size="sm"
             onClick={() => onResolveConflict?.(false)}
             className="h-6 px-2 text-xs"
-          >
-            Load External
-          </Button>
+          >{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSyncstatusindicator.line109JsxTextLoadExternal')}</Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => onResolveConflict?.(true)}
             className="h-6 px-2 text-xs"
-          >
-            Keep Mine
-          </Button>
+          >{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSyncstatusindicator.line117JsxTextKeepMine')}</Button>
         </div>
       </div>
     );
@@ -141,7 +139,7 @@ export function SyncStatusIndicator({
           <div className="flex flex-col gap-1">
             <span>{config.label}</span>
             {pendingChanges && status !== 'syncing' && (
-              <span className="text-amber-400">Unsaved changes</span>
+              <span className="text-amber-400">{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSyncstatusindicator.line144JsxTextUnsavedChanges')}</span>
             )}
             {status === 'error' && onRefresh && (
               <Button

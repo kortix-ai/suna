@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from 'next-intl';
+
 import { usePathname, useRouter } from "next/navigation";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -410,6 +412,7 @@ function SessionTabsContainer({ children }: { children: React.ReactNode }) {
 
 /* ─── Floating skip button shown during the onboarding chat session ───── */
 function OnboardingSkipButton({ onConfirm }: { onConfirm: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	return (
 		<AlertDialog>
 			<AlertDialogTrigger asChild>
@@ -417,26 +420,20 @@ function OnboardingSkipButton({ onConfirm }: { onConfirm: () => void }) {
 					variant="outline"
 					size="sm"
 					className="absolute top-3 right-3 z-20"
-				>
-					Skip onboarding
-					<ChevronRight className="h-3.5 w-3.5" />
+				>{tHardcodedUi.raw('componentsDashboardLayoutContent.line421JsxTextSkipOnboarding')}<ChevronRight className="h-3.5 w-3.5" />
 				</Button>
 			</AlertDialogTrigger>
 			<AlertDialogContent className="max-w-sm rounded-2xl">
 				<AlertDialogHeader>
-					<AlertDialogTitle className="text-base font-medium text-foreground/90">Skip onboarding?</AlertDialogTitle>
-					<AlertDialogDescription className="text-sm text-muted-foreground/60 leading-relaxed">
-						You can set up your profile anytime. Your agent will work fine — it just won&apos;t know your preferences yet.
-					</AlertDialogDescription>
+					<AlertDialogTitle className="text-base font-medium text-foreground/90">{tHardcodedUi.raw('componentsDashboardLayoutContent.line427JsxTextSkipOnboarding')}</AlertDialogTitle>
+					<AlertDialogDescription className="text-sm text-muted-foreground/60 leading-relaxed">{tHardcodedUi.raw('componentsDashboardLayoutContent.line429JsxTextYouCanSetUpYourProfileAnytimeYour')}</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter className="gap-2 sm:gap-2">
 					<AlertDialogCancel className="rounded-full text-sm">Continue</AlertDialogCancel>
 					<AlertDialogAction
 						onClick={onConfirm}
 						className="rounded-full text-sm bg-foreground text-background hover:bg-foreground/90"
-					>
-						Skip onboarding
-					</AlertDialogAction>
+					>{tHardcodedUi.raw('componentsDashboardLayoutContent.line438JsxTextSkipOnboarding')}</AlertDialogAction>
 				</AlertDialogFooter>
 			</AlertDialogContent>
 		</AlertDialog>
@@ -458,6 +455,7 @@ export default function DashboardLayoutContent({
 	children,
 	initialSidebarOpen,
 }: DashboardLayoutContentProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	const { user, isLoading } = useAuth();
 	const router = useRouter();
 	const pathname = usePathname();
@@ -1111,7 +1109,7 @@ export default function DashboardLayoutContent({
 							<div className="absolute inset-0 z-10 flex items-center justify-center bg-background">
 								<div className="flex flex-col items-center gap-3">
 									<KortixLoader size="medium" />
-									<p className="text-xs text-muted-foreground">Setting up your workspace…</p>
+									<p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsDashboardLayoutContent.line1114JsxTextSettingUpYourWorkspace')}</p>
 								</div>
 							</div>
 						)}

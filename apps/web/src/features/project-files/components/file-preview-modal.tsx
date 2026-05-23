@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useEffect, useState } from 'react';
 import {
   X,
@@ -31,6 +33,7 @@ import { toast } from '@/lib/toast';
  *  - Hairline left/right arrows for next/prev when there’s a list
  */
 export function FilePreviewModal() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const selectedFilePath = useFilesStore((s) => s.selectedFilePath);
   const panelMode = useFilesStore((s) => s.panelMode);
   const goBackToBrowser = useFilesStore((s) => s.goBackToBrowser);
@@ -177,7 +180,7 @@ export function FilePreviewModal() {
                 historyPath ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground',
               )}
               onClick={handleHistory}
-              title="Checkpoint history"
+              title={tHardcodedUi.raw('featuresProjectFilesComponentsFilePreviewModal.line179JsxAttrTitleCheckpointHistory')}
             >
               <History className="h-4 w-4" />
             </Button>
@@ -196,7 +199,7 @@ export function FilePreviewModal() {
               size="icon"
               className="h-8 w-8 text-muted-foreground hover:text-foreground"
               onClick={goBackToBrowser}
-              title="Close (Esc)"
+              title={tHardcodedUi.raw('featuresProjectFilesComponentsFilePreviewModal.line198JsxAttrTitleCloseEsc')}
             >
               <X className="h-4 w-4" />
             </Button>
@@ -215,7 +218,7 @@ export function FilePreviewModal() {
                 'shadow-sm hover:bg-background flex items-center justify-center transition-all',
                 'opacity-70 hover:opacity-100',
               )}
-              title="Previous file (←)"
+              title={tHardcodedUi.raw('featuresProjectFilesComponentsFilePreviewModal.line217JsxAttrTitlePreviousFile')}
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -231,7 +234,7 @@ export function FilePreviewModal() {
                 'shadow-sm hover:bg-background flex items-center justify-center transition-all',
                 'opacity-70 hover:opacity-100',
               )}
-              title="Next file (→)"
+              title={tHardcodedUi.raw('featuresProjectFilesComponentsFilePreviewModal.line233JsxAttrTitleNextFile')}
             >
               <ChevronRight className="h-4 w-4" />
             </button>

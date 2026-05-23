@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React from 'react';
 import {
   ExternalLink,
@@ -111,6 +113,7 @@ export function DeploymentCard({
   isDeletePending,
   compact = false,
 }: DeploymentCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const status = statusConfig[deployment.status] || statusConfig.pending;
   const SourceIcon = sourceIcons[deployment.sourceType] || FileCode2;
   const domain = deployment.domains?.[0] || null;
@@ -174,7 +177,7 @@ export function DeploymentCard({
                   </a>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">Open live URL</TooltipContent>
+              <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line177JsxTextOpenLiveUrl')}</TooltipContent>
             </Tooltip>
           )}
           <Tooltip>
@@ -187,7 +190,7 @@ export function DeploymentCard({
                 <ScrollText className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">View logs</TooltipContent>
+            <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line190JsxTextViewLogs')}</TooltipContent>
           </Tooltip>
            {canRedeploy && (
             <Tooltip>
@@ -300,7 +303,7 @@ export function DeploymentCard({
                     </a>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">Open live URL</TooltipContent>
+                <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line303JsxTextOpenLiveUrl')}</TooltipContent>
               </Tooltip>
             )}
             <Tooltip>
@@ -313,7 +316,7 @@ export function DeploymentCard({
                   <ScrollText className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">View logs</TooltipContent>
+              <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line316JsxTextViewLogs')}</TooltipContent>
             </Tooltip>
             {canRedeploy && (
               <Tooltip>
@@ -326,7 +329,7 @@ export function DeploymentCard({
                     <Pencil className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">Edit &amp; Redeploy</TooltipContent>
+                <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line329JsxTextEditAmpRedeploy')}</TooltipContent>
               </Tooltip>
             )}
             {canRedeploy && (
@@ -418,9 +421,7 @@ export function DeploymentCard({
                 size="icon-sm"
                 onClick={() => onEditRedeploy(deployment)}
               >
-                <Pencil className="h-3.5 w-3.5" />
-                Edit &amp; Redeploy
-              </Button>
+                <Pencil className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line422JsxTextEditAmpRedeploy')}</Button>
               <Button
                 variant="ghost"
                 size="icon-sm"

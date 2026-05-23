@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Unified auth — wallpaper + lock-screen UX, password-based register + login.
  *
@@ -69,6 +71,7 @@ function LiveClock() {
 /* ─── Form inside the frosted-glass card ───────────────────────────────── */
 
 function AuthCardForm({ returnUrl }: { returnUrl: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const [mode, setMode] = useState<Mode>('signin');
   const [pending, setPending] = useState(false);
@@ -163,9 +166,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
               ? 'bg-background/80 text-foreground shadow-sm'
               : 'text-foreground/50 hover:text-foreground/80',
           )}
-        >
-          Sign in
-        </button>
+        >{tHardcodedUi.raw('appAuthPage.line167JsxTextSignIn')}</button>
         <button
           type="button"
           onClick={() => {
@@ -212,7 +213,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           id="email"
           name="email"
           type="email"
-          placeholder="Email address"
+          placeholder={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
           required
           autoComplete="email"
           className="text-sm"
@@ -231,7 +232,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             id="confirmPassword"
             name="confirmPassword"
             type="password"
-            placeholder="Confirm password"
+            placeholder={tHardcodedUi.raw('appAuthPage.line234JsxAttrPlaceholderConfirmPassword')}
             required
             autoComplete="new-password"
             className="text-sm"
@@ -273,9 +274,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           <Link
             href="/auth/forgot-password"
             className="text-xs text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
-          >
-            Forgot your password?
-          </Link>
+          >{tHardcodedUi.raw('appAuthPage.line277JsxTextForgotYourPassword')}</Link>
         </div>
       )}
     </div>
@@ -285,6 +284,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
 /* ─── Lock-screen → frosted-glass form ─────────────────────────────────── */
 
 function AuthContent() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading } = useAuth();
@@ -314,7 +314,7 @@ function AuthContent() {
   }, [phase]);
 
   if (isLoading || user) {
-    return <ConnectingScreen forceConnecting minimal title="Signing in" />;
+    return <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appAuthPage.line317JsxAttrTitleSigningIn')} />;
   }
 
   return (
@@ -351,9 +351,7 @@ function AuthContent() {
             >
               <div className="flex flex-col items-center gap-1.5">
                 <p className="text-foreground/50 text-sm font-medium tracking-wide">Kortix</p>
-                <p className="text-foreground/25 text-xs tracking-widest uppercase">
-                  Click or press Enter to sign in
-                </p>
+                <p className="text-foreground/25 text-xs tracking-widest uppercase">{tHardcodedUi.raw('appAuthPage.line355JsxTextClickOrPressEnterToSignIn')}</p>
               </div>
               <motion.div
                 animate={{ y: [0, 5, 0] }}
@@ -404,8 +402,9 @@ function AuthContent() {
 }
 
 export default function AuthPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Signing in" />}>
+    <Suspense fallback={<ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appAuthPage.line408JsxAttrTitleSigningIn')} />}>
       <>
         <AuthBrowserNoiseGuard />
         <AuthContent />

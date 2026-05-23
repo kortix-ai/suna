@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * AppHeader — the canonical top bar used outside the (dashboard) shell.
  *
@@ -43,6 +45,7 @@ export function AppHeader({
    * landing). Pass an explicit href to override on a specific surface. */
   logoHref?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const displayName =
     (user.user_metadata?.name as string | undefined) ||
     user.email?.split('@')[0] ||
@@ -69,7 +72,7 @@ export function AppHeader({
       >
         <Link
           href={logoHref}
-          aria-label="Kortix home"
+          aria-label={tHardcodedUi.raw('componentsLayoutAppHeader.line72JsxAttrAriaLabelKortixHome')}
           className="mr-1 inline-flex cursor-pointer items-center rounded-md transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <KortixLogo size={20} />

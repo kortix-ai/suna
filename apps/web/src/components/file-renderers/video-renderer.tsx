@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -40,6 +42,7 @@ export function VideoRenderer({
   loop = false,
   onDownload,
 }: VideoRendererProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -198,7 +201,7 @@ export function VideoRenderer({
         )}
         {hasError ? (
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-            <p className="text-muted-foreground font-medium text-sm">Failed to load video</p>
+            <p className="text-muted-foreground font-medium text-sm">{tHardcodedUi.raw('componentsFileRenderersVideoRenderer.line201JsxTextFailedToLoadVideo')}</p>
           </div>
         ) : (
           <div className="relative group">
@@ -264,8 +267,8 @@ export function VideoRenderer({
       {/* Error state */}
       {hasError ? (
         <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-          <p className="text-white font-medium mb-2">Failed to load video</p>
-          <p className="text-sm text-white/60">The video could not be played</p>
+          <p className="text-white font-medium mb-2">{tHardcodedUi.raw('componentsFileRenderersVideoRenderer.line267JsxTextFailedToLoadVideo')}</p>
+          <p className="text-sm text-white/60">{tHardcodedUi.raw('componentsFileRenderersVideoRenderer.line268JsxTextTheVideoCouldNotBePlayed')}</p>
         </div>
       ) : (
         <>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { normalizeAppPathname } from '@/lib/instance-routes';
@@ -162,6 +164,7 @@ export function AgentSelector({
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [flash, setFlash] = useState(false);
@@ -207,7 +210,7 @@ export function AgentSelector({
           <CommandPopoverTrigger>
             <button
               type="button"
-              aria-label="Agent picker"
+              aria-label={tHardcodedUi.raw('componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker')}
               className={cn(
                 'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-200 capitalize cursor-pointer',
                 flash && 'bg-primary/10 text-foreground',
@@ -220,14 +223,14 @@ export function AgentSelector({
           </CommandPopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
-          <p>Switch agent <kbd className="ml-1 px-1.5 py-0.5 rounded bg-foreground/10 text-xs font-mono">Tab</kbd></p>
+          <p>{tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}<kbd className="ml-1 px-1.5 py-0.5 rounded bg-foreground/10 text-xs font-mono">Tab</kbd></p>
         </TooltipContent>
       </Tooltip>
 
       <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
         <CommandInput
           compact
-          placeholder="Search agents..."
+          placeholder={tHardcodedUi.raw('componentsSessionSessionChatInput.line231JsxAttrPlaceholderSearchAgents')}
           value={search}
           onValueChange={setSearch}
         />
@@ -268,9 +271,7 @@ export function AgentSelector({
 
           {/* No results */}
           {filteredPrimary.length === 0 && search.trim() && (
-            <div className="py-8 text-center text-xs text-muted-foreground/50">
-              No agents match &ldquo;{search.trim()}&rdquo;
-            </div>
+            <div className="py-8 text-center text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo')}{search.trim()}{tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextRdquo')}</div>
           )}
         </CommandList>
       </CommandPopoverContent>
@@ -293,6 +294,7 @@ function VariantSelector({
   selectedVariant: string | null;
   onSelect: (variant: string | null) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const currentIndex = selectedVariant ? variants.indexOf(selectedVariant) : -1;
 
   function cycle() {
@@ -318,7 +320,7 @@ function VariantSelector({
         </button>
       </TooltipTrigger>
       <TooltipContent side="top">
-        <p className="text-xs">Cycle thinking effort</p>
+        <p className="text-xs">{tHardcodedUi.raw('componentsSessionSessionChatInput.line322JsxTextCycleThinkingEffort')}</p>
       </TooltipContent>
     </Tooltip>
   );
@@ -699,6 +701,7 @@ function getContextLimit(models: FlatModel[] | undefined, selectedModel: { provi
 }
 
 function TokenProgress({ messages, models, selectedModel, onContextClick }: TokenProgressProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const contextTokens = useMemo(() => getLastAssistantTokenTotal(messages), [messages]);
   const contextLimit = useMemo(() => getContextLimit(models, selectedModel), [models, selectedModel]);
   const ratio = contextTokens > 0 ? Math.min(contextTokens / contextLimit, 1) : 0;
@@ -732,8 +735,8 @@ function TokenProgress({ messages, models, selectedModel, onContextClick }: Toke
         </TooltipTrigger>
         <TooltipContent side="top">
           <div className="text-xs font-mono space-y-0.5">
-            <div>Context: {(contextTokens / 1000).toFixed(1)}k / {(contextLimit / 1000).toFixed(0)}k tokens</div>
-            <div className="text-muted-foreground">{Math.round(ratio * 100)}% used</div>
+            <div>Context: {(contextTokens / 1000).toFixed(1)}{tHardcodedUi.raw('componentsSessionSessionChatInput.line736JsxTextK')}{(contextLimit / 1000).toFixed(0)}{tHardcodedUi.raw('componentsSessionSessionChatInput.line736JsxTextKTokens')}</div>
+            <div className="text-muted-foreground">{Math.round(ratio * 100)}{tHardcodedUi.raw('componentsSessionSessionChatInput.line737JsxTextUsed')}</div>
           </div>
         </TooltipContent>
       </Tooltip>
@@ -997,6 +1000,7 @@ function MentionPopover({
   loading?: boolean;
   anchorRef: React.RefObject<HTMLElement | null>;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const listRef = useRef<HTMLDivElement>(null);
 
   // Scroll selected item into view
@@ -1109,7 +1113,7 @@ function MentionPopover({
         {loading && files.length === 0 && (
           <div className="px-3 py-2 flex items-center gap-2 text-muted-foreground/50">
             <Loader2 className="size-3.5 animate-spin" />
-            <span className="text-xs">Searching…</span>
+            <span className="text-xs">{tHardcodedUi.raw('componentsSessionSessionChatInput.line1113JsxTextSearching')}</span>
           </div>
         )}
       </div>
@@ -1124,6 +1128,7 @@ function MentionPopover({
 // --- Todo Chip (inline inside the chat input card, same style as sub-session context) ---
 
 function TodoChip({ sessionId }: { sessionId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: todos } = useOpenCodeSessionTodo(sessionId);
   const [expanded, setExpanded] = useState(false);
 
@@ -1149,8 +1154,7 @@ function TodoChip({ sessionId }: { sessionId: string }) {
       >
         <ListTodo className="size-3.5 text-muted-foreground flex-shrink-0" />
         <span className="text-xs text-muted-foreground flex-1 min-w-0 truncate text-left">
-          {completed} of {total} tasks done
-          {inProgress && (
+          {completed} of {total}{tHardcodedUi.raw('componentsSessionSessionChatInput.line1153JsxTextTasksDone')}{inProgress && (
             <span className="text-foreground/80 font-medium"> · {inProgress.content}</span>
           )}
         </span>
@@ -1317,6 +1321,7 @@ export function SessionChatInput({
   onQuestionAction,
   escCount = 0,
 }: SessionChatInputProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const placeholderVariants = useMemo(
     () => [
       placeholder,
@@ -2017,9 +2022,7 @@ export function SessionChatInput({
         <div className="relative flex flex-col w-full gap-2 overflow-visible">
           {isDragOver && (
             <div className="absolute inset-0 z-30 rounded-[24px] border-2 border-dashed border-primary/70 bg-primary/5 pointer-events-none flex items-center justify-center">
-              <span className="px-3 py-1 rounded-md bg-background/90 text-xs font-medium text-foreground">
-                Drop files to attach
-              </span>
+              <span className="px-3 py-1 rounded-md bg-background/90 text-xs font-medium text-foreground">{tHardcodedUi.raw('componentsSessionSessionChatInput.line2038JsxTextDropFilesToAttach')}</span>
             </div>
           )}
           {/* Slash command popover (portalled to body to escape overflow-hidden ancestors) */}
@@ -2058,7 +2061,7 @@ export function SessionChatInput({
                       type="button"
                       onClick={onClearReply}
                       className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                      aria-label="Clear reply"
+                      aria-label={tHardcodedUi.raw('componentsSessionSessionChatInput.line2078JsxAttrAriaLabelClearReply')}
                     >
                       <X className="size-3" />
                     </button>
@@ -2098,7 +2101,7 @@ export function SessionChatInput({
                   type="button"
                   onClick={() => { setStagedCommand(null); setText(''); }}
                   className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label="Cancel command"
+                  aria-label={tHardcodedUi.raw('componentsSessionSessionChatInput.line2118JsxAttrAriaLabelCancelCommand')}
                 >
                   <X className="size-3" />
                 </button>
@@ -2125,7 +2128,7 @@ export function SessionChatInput({
                       <span>Queue</span>
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="top"><p>Add to queue</p></TooltipContent>
+                  <TooltipContent side="top"><p>{tHardcodedUi.raw('componentsSessionSessionChatInput.line2145JsxTextAddToQueue')}</p></TooltipContent>
                 </Tooltip>
               )}
               {text.trim().length === 0 && !stagedCommand && (
@@ -2164,9 +2167,7 @@ export function SessionChatInput({
                 <div
                   aria-hidden
                   className="absolute left-0.5 top-4 text-base sm:text-sm text-muted-foreground/50 pointer-events-none"
-                >
-                  Enter details and press Enter, or press Esc to cancel
-                </div>
+                >{tHardcodedUi.raw('componentsSessionSessionChatInput.line2185JsxTextEnterDetailsAndPressEnterOrPressEsc')}</div>
               )}
               {/* Highlight overlay — mirrors textarea text with colored mention spans */}
               {highlightSegments && (
@@ -2217,7 +2218,7 @@ export function SessionChatInput({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar"
+                accept={tHardcodedUi.raw('componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml')}
                 multiple
                 className="hidden"
                 onChange={handleFileSelect}
@@ -2232,7 +2233,7 @@ export function SessionChatInput({
                     <Paperclip className="h-4 w-4" strokeWidth={2} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="top"><p>Attach files</p></TooltipContent>
+                <TooltipContent side="top"><p>{tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}</p></TooltipContent>
               </Tooltip>
 
               {primaryAgents.length > 0 && onAgentChange && (

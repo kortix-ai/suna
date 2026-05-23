@@ -1,5 +1,7 @@
 'use client';
 
+import { useLocale, useTranslations } from 'next-intl';
+
 import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -26,6 +28,8 @@ async function getUnifiedInvite(inviteId: string): Promise<UnifiedInvite> {
 }
 
 export default function InvitePage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const locale = useLocale();
   const { inviteId } = useParams<{ inviteId: string }>();
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
@@ -84,9 +88,7 @@ export default function InvitePage() {
     return (
       <BrandSurface>
         <div className="flex items-center gap-2.5 text-foreground/40 text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading invite…
-        </div>
+          <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('appInvitesInviteidPage.line88JsxTextLoadingInvite')}</div>
       </BrandSurface>
     );
   }
@@ -95,15 +97,11 @@ export default function InvitePage() {
     return (
       <BrandSurface>
         <InviteCard kicker="Invite">
-          <StateHeading>Invite not found</StateHeading>
+          <StateHeading>{tHardcodedUi.raw('appInvitesInviteidPage.line98JsxTextInviteNotFound')}</StateHeading>
           <StateBody>
-            {inviteQuery.error instanceof Error
-              ? inviteQuery.error.message
-              : 'This invite link is invalid or has been revoked.'}
+            {tHardcodedUi.raw('appInvitesInviteidPage.inviteInvalidOrRevoked')}
           </StateBody>
-          <GhostAction onClick={() => router.replace('/projects')}>
-            Back to projects
-          </GhostAction>
+          <GhostAction onClick={() => router.replace('/projects')}>{tHardcodedUi.raw('appInvitesInviteidPage.line105JsxTextBackToProjects')}</GhostAction>
         </InviteCard>
       </BrandSurface>
     );
@@ -119,18 +117,12 @@ export default function InvitePage() {
   if (!invite.email_matches_caller) {
     return (
       <BrandSurface>
-        <InviteCard kicker="Wrong account">
-          <StateHeading>Switch accounts</StateHeading>
-          <StateBody>
-            This invite is addressed to a different account. You're signed in
-            as <span className="text-foreground/80 font-medium">{user.email}</span>.
+        <InviteCard kicker={tHardcodedUi.raw('appInvitesInviteidPage.line122JsxAttrKickerWrongAccount')}>
+          <StateHeading>{tHardcodedUi.raw('appInvitesInviteidPage.line123JsxTextSwitchAccounts')}</StateHeading>
+          <StateBody>{tHardcodedUi.raw('appInvitesInviteidPage.line125JsxTextThisInviteIsAddressedToADifferentAccount')}{' '}<span className="text-foreground/80 font-medium">{user.email}</span>.
           </StateBody>
-          <p className="text-xs text-foreground/30 mt-4">
-            Sign out and sign back in with the address that received the invite.
-          </p>
-          <GhostAction onClick={() => router.replace('/projects')}>
-            Back to projects
-          </GhostAction>
+          <p className="text-xs text-foreground/30 mt-4">{tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}</p>
+          <GhostAction onClick={() => router.replace('/projects')}>{tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}</GhostAction>
         </InviteCard>
       </BrandSurface>
     );
@@ -139,14 +131,12 @@ export default function InvitePage() {
   if (invite.expired) {
     return (
       <BrandSurface>
-        <InviteCard kicker="Invite">
-          <StateHeading>Invite expired</StateHeading>
+        <InviteCard kicker={tHardcodedUi.raw('appInvitesInviteidPage.inviteKicker')}>
+          <StateHeading>{tHardcodedUi.raw('appInvitesInviteidPage.line143JsxTextInviteExpired')}</StateHeading>
           <StateBody>
-            Expired <span className="text-foreground/60">{formatWhen(invite.expires_at)}</span>. Ask the person who invited you to send a new one.
-          </StateBody>
-          <GhostAction onClick={() => router.replace('/projects')}>
-            Back to projects
-          </GhostAction>
+            {tHardcodedUi.raw('appInvitesInviteidPage.expiredPrefix')}{' '}
+            <span className="text-foreground/60">{formatWhen(invite.expires_at, locale)}</span>{tHardcodedUi.raw('appInvitesInviteidPage.line145JsxTextAskThePersonWhoInvitedYouToSend')}</StateBody>
+          <GhostAction onClick={() => router.replace('/projects')}>{tHardcodedUi.raw('appInvitesInviteidPage.line148JsxTextBackToProjects')}</GhostAction>
         </InviteCard>
       </BrandSurface>
     );
@@ -161,14 +151,14 @@ export default function InvitePage() {
     null;
   const targetName = item.invite.account_name || 'Account';
   const inviterEmail = invite.inviter_email;
-  const targetLabel = 'Team account';
+  const targetLabel = tHardcodedUi.raw('appInvitesInviteidPage.teamAccountLabel');
   const roleLabel = item.invite.initial_role === 'admin'
-    ? 'an admin'
-    : 'a member';
+    ? tHardcodedUi.raw('appInvitesInviteidPage.roleAdmin')
+    : tHardcodedUi.raw('appInvitesInviteidPage.roleMember');
 
   return (
     <BrandSurface>
-      <InviteCard kicker="Invitation">
+      <InviteCard kicker={tHardcodedUi.raw('appInvitesInviteidPage.invitationKicker')}>
         {inviterEmail ? (
           <div className="flex items-center gap-3">
             <UserAvatar email={inviterEmail} size="lg" />
@@ -176,15 +166,11 @@ export default function InvitePage() {
               <div className="text-foreground/85 truncate text-sm font-medium">
                 {inviterEmail}
               </div>
-              <div className="text-foreground/40 mt-0.5 text-xs">
-                invited you to join a team
-              </div>
+              <div className="text-foreground/40 mt-0.5 text-xs">{tHardcodedUi.raw('appInvitesInviteidPage.line180JsxTextInvitedYouToJoinATeam')}</div>
             </div>
           </div>
         ) : (
-          <div className="text-foreground/50 text-sm leading-relaxed">
-            You have been invited to join a team.
-          </div>
+          <div className="text-foreground/50 text-sm leading-relaxed">{tHardcodedUi.raw('appInvitesInviteidPage.line186JsxTextYouHaveBeenInvitedToJoinATeam')}</div>
         )}
 
         <div className="mt-5 flex items-center gap-3 rounded-2xl border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-3.5">
@@ -197,13 +183,13 @@ export default function InvitePage() {
             </div>
             <div className="text-foreground/40 mt-0.5 flex items-center gap-1 text-xs">
               <Clock className="size-3" />
-              {targetLabel} · expires {formatWhen(invite.expires_at)}
+              {targetLabel}{tHardcodedUi.raw('appInvitesInviteidPage.line200JsxTextExpires')}{formatWhen(invite.expires_at, locale)}
             </div>
           </div>
         </div>
 
         <p className="text-foreground/35 mt-4 text-xs leading-relaxed">
-          {`You'll join this account as ${roleLabel} and see projects the owner gives you access to.`}
+          {tHardcodedUi('appInvitesInviteidPage.joinAccountDescription', { roleLabel })}
         </p>
 
         {errorMessage ? (
@@ -224,7 +210,7 @@ export default function InvitePage() {
             {declinePending ? (
               <Loader2 className="h-4 w-4 animate-spin mx-auto" />
             ) : (
-              'Decline'
+              tHardcodedUi.raw('appInvitesInviteidPage.decline')
             )}
           </Button>
           <Button
@@ -237,7 +223,7 @@ export default function InvitePage() {
             {acceptPending ? (
               <Loader2 className="h-4 w-4 animate-spin mx-auto" />
             ) : (
-              'Accept'
+              tHardcodedUi.raw('appInvitesInviteidPage.accept')
             )}
           </Button>
         </div>
@@ -319,15 +305,14 @@ function GhostAction({
   );
 }
 
-function formatWhen(iso: string): string {
+function formatWhen(iso: string, locale: string): string {
   const d = new Date(iso);
   const now = new Date();
   const msPerDay = 24 * 60 * 60 * 1000;
   const diffDays = Math.round((d.getTime() - now.getTime()) / msPerDay);
-  if (diffDays < -1) return `on ${d.toLocaleDateString()}`;
-  if (diffDays === -1) return 'yesterday';
-  if (diffDays === 0) return 'today';
-  if (diffDays === 1) return 'tomorrow';
-  if (diffDays < 14) return `in ${diffDays} days`;
-  return d.toLocaleDateString();
+  if (diffDays < -1) return d.toLocaleDateString(locale);
+  if (diffDays < 14) {
+    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(diffDays, 'day');
+  }
+  return d.toLocaleDateString(locale);
 }

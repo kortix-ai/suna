@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -55,6 +57,7 @@ export function UpdateChangelogPreview({
   collapsedCount?: number;
   moreButtonVariant?: 'ghost' | 'link';
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
 
   const visibleChanges = useMemo(
@@ -99,8 +102,7 @@ export function UpdateChangelogPreview({
             variant === 'muted' ? 'border-t border-border/60' : 'border-t border-border/30 h-auto py-2',
           )}
         >
-          Show {remainingCount} more changes
-        </Button>
+          Show {remainingCount}{tHardcodedUi.raw('componentsUpdateChangelogPreview.line102JsxTextMoreChanges')}</Button>
       ) : null}
     </div>
   );

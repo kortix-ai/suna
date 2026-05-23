@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -144,6 +146,7 @@ function rememberGitHubSetupReturn(path: string) {
 }
 
 export default function AccountSettingsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -211,9 +214,7 @@ export default function AccountSettingsPage() {
               onClick={() => router.push('/projects')}
               className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to projects
-            </button>
+              <ArrowLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line197JsxTextBackToProjects')}</button>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <button
                 type="button"
@@ -252,7 +253,7 @@ export default function AccountSettingsPage() {
           {accountQuery.isError && (
             <InfoBanner
               tone="destructive"
-              title="Failed to load account"
+              title={tHardcodedUi.raw('appAccountsIdPage.line237JsxAttrTitleFailedToLoadAccount')}
               action={
                 <Button
                   variant="outline"
@@ -277,7 +278,7 @@ export default function AccountSettingsPage() {
           {account && (
             <Tabs defaultValue={initialTab} className="space-y-6">
               <TabsList>
-                <TabsTrigger value="members">All members</TabsTrigger>
+                <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
                 <TabsTrigger value="roles">Roles</TabsTrigger>
                 <TabsTrigger value="git">Git</TabsTrigger>
@@ -405,6 +406,7 @@ function GitHubConnectionCard({
   account: AccountDetail;
   canManage: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [disconnectTarget, setDisconnectTarget] = useState<{
     installationId: string;
@@ -464,9 +466,9 @@ function GitHubConnectionCard({
   return (
     <>
       <SectionCard
-        title="Git connections"
+        title={tHardcodedUi.raw('appAccountsIdPage.line397JsxAttrTitleGitConnections')}
         count={installations.length}
-        description="Connect one or more GitHub users or organizations. Projects choose a connection during import."
+        description={tHardcodedUi.raw('appAccountsIdPage.line399JsxAttrDescriptionConnectOneOrMoreGithubUsersOrOrganizations')}
         action={
           <Button
             type="button"
@@ -505,7 +507,7 @@ function GitHubConnectionCard({
             <InfoBanner
               tone="warning"
               icon={Github}
-              title="GitHub status unavailable"
+              title={tHardcodedUi.raw('appAccountsIdPage.line438JsxAttrTitleGithubStatusUnavailable')}
             >
               {(installationsQuery.error as Error).message}
             </InfoBanner>
@@ -513,8 +515,8 @@ function GitHubConnectionCard({
         ) : installations.length === 0 ? (
           <EmptyState
             icon={Github}
-            title="No GitHub connections"
-            description="Connect the Kortix GitHub App to import repositories from a personal account or organization."
+            title={tHardcodedUi.raw('appAccountsIdPage.line446JsxAttrTitleNoGithubConnections')}
+            description={tHardcodedUi.raw('appAccountsIdPage.line447JsxAttrDescriptionConnectTheKortixGithubAppToImportRepositories')}
             action={
               <Button
                 type="button"
@@ -527,9 +529,7 @@ function GitHubConnectionCard({
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Github className="h-4 w-4" />
-                )}
-                Connect GitHub
-              </Button>
+                )}{tHardcodedUi.raw('appAccountsIdPage.line461JsxTextConnectGithub')}</Button>
             }
           />
         ) : (
@@ -614,18 +614,13 @@ function GitHubConnectionCard({
       <InfoBanner
         tone="neutral"
         icon={Shield}
-        title="Git credentials are platform credentials"
-      >
-        Kortix stores the GitHub App installation on the account and mints
-        short-lived clone tokens server-side for imports, snapshots, and sandbox
-        git operations. These credentials are not user-readable project secrets
-        and are never injected as runtime env vars.
-      </InfoBanner>
+        title={tHardcodedUi.raw('appAccountsIdPage.line547JsxAttrTitleGitCredentialsArePlatformCredentials')}
+      >{tHardcodedUi.raw('appAccountsIdPage.line549JsxTextKortixStoresTheGithubAppInstallationOnThe')}</InfoBanner>
 
       <ConfirmDialog
         open={Boolean(disconnectTarget)}
         onOpenChange={(open) => !open && setDisconnectTarget(null)}
-        title="Disconnect GitHub"
+        title={tHardcodedUi.raw('appAccountsIdPage.line558JsxAttrTitleDisconnectGithub')}
         description={`New imports from ${disconnectTarget?.ownerLogin ?? 'this GitHub account'} will stop working until it is connected again. Existing projects keep their repository link.`}
         confirmLabel="Disconnect"
         onConfirm={() => {
@@ -653,6 +648,7 @@ function GeneralCard({
   queryClient: ReturnType<typeof useQueryClient>;
   canWrite: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState(account.name);
 
   useEffect(() => {
@@ -682,12 +678,12 @@ function GeneralCard({
   return (
     <SectionCard
       title="General"
-      description="Basic information about this account."
+      description={tHardcodedUi.raw('appAccountsIdPage.line615JsxAttrDescriptionBasicInformationAboutThisAccount')}
       flush
     >
       <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="account-name">Account name</Label>
+          <Label htmlFor="account-name">{tHardcodedUi.raw('appAccountsIdPage.line620JsxTextAccountName')}</Label>
           <Input
             id="account-name"
             value={name}
@@ -702,9 +698,7 @@ function GeneralCard({
             }
           />
           {!canWrite && (
-            <p className="text-xs text-muted-foreground">
-              You do not have permission to rename this account.
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line636JsxTextYouDoNotHavePermissionToRenameThis')}</p>
           )}
         </div>
 
@@ -755,6 +749,7 @@ function MembersCard({
   canRemove: boolean;
   canUpdateRole: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
@@ -828,7 +823,7 @@ function MembersCard({
     <SectionCard
       title="Members"
       count={account.member_count}
-      description="People with access to this account."
+      description={tHardcodedUi.raw('appAccountsIdPage.line761JsxAttrDescriptionPeopleWithAccessToThisAccount')}
       action={
         canInvite && (
           <Button
@@ -836,9 +831,7 @@ function MembersCard({
             size="sm"
             className="gap-1.5"
           >
-            <UserPlus className="h-4 w-4" />
-            Invite member
-          </Button>
+            <UserPlus className="h-4 w-4" />{tHardcodedUi.raw('appAccountsIdPage.line770JsxTextInviteMember')}</Button>
         )
       }
       flush
@@ -847,7 +840,7 @@ function MembersCard({
         <div className="px-6 py-5">
           <InfoBanner
             tone="destructive"
-            title="Failed to load members"
+            title={tHardcodedUi.raw('appAccountsIdPage.line780JsxAttrTitleFailedToLoadMembers')}
             action={
               <Button variant="outline" size="sm" onClick={onRetry}>
                 Retry
@@ -928,7 +921,7 @@ function MembersCard({
                         <Badge
                           variant="outline"
                           className="h-5 rounded-md border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-normal text-amber-700 dark:text-amber-300"
-                          title="Super-admin: bypasses every IAM check"
+                          title={tHardcodedUi.raw('appAccountsIdPage.line924JsxAttrTitleSuperAdminBypassesEveryIAMCheck')}
                         >
                           super
                         </Badge>
@@ -956,7 +949,7 @@ function MembersCard({
                         <Badge
                           variant="outline"
                           className="h-5 rounded-md border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
-                          title="MFA enrolled"
+                          title={tHardcodedUi.raw('appAccountsIdPage.line952JsxAttrTitleMFAEnrolled')}
                         >
                           2FA
                         </Badge>
@@ -987,15 +980,11 @@ function MembersCard({
                               }
                               className="gap-2"
                             >
-                              <KeyRound className="h-3.5 w-3.5" />
-                              View &amp; Edit permission policies
-                            </DropdownMenuItem>
+                              <KeyRound className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line883JsxTextViewAmpEditPermissionPolicies')}</DropdownMenuItem>
                             {canUpdateRole && !isSelf && (
                               <>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuLabel className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                  Change role
-                                </DropdownMenuLabel>
+                                <DropdownMenuLabel className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line889JsxTextChangeRole')}</DropdownMenuLabel>
                                 {(
                                   ['owner', 'admin', 'member'] as AccountRole[]
                                 ).map((role) => (
@@ -1029,9 +1018,7 @@ function MembersCard({
                                   disabled={isLastOwner}
                                   className="gap-2"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  Remove from team
-                                </DropdownMenuItem>
+                                  <Trash2 className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line925JsxTextRemoveFromTeam')}</DropdownMenuItem>
                               </>
                             )}
                             {isSelf && !account.personal_account && (
@@ -1042,9 +1029,7 @@ function MembersCard({
                                   disabled={isLastOwner}
                                   className="gap-2"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  Leave team
-                                </DropdownMenuItem>
+                                  <Trash2 className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line938JsxTextLeaveTeam')}</DropdownMenuItem>
                               </>
                             )}
                           </DropdownMenuContent>
@@ -1057,9 +1042,7 @@ function MembersCard({
             );
           })}
           {sorted.length === 0 && (
-            <li className="px-6 py-8 text-center text-sm text-muted-foreground">
-              No members yet.
-            </li>
+            <li className="px-6 py-8 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line953JsxTextNoMembersYet')}</li>
           )}
         </List>
       )}
@@ -1076,7 +1059,7 @@ function MembersCard({
         onOpenChange={(o) => {
           if (!o) setRemoveTarget(null);
         }}
-        title="Remove member"
+        title={tHardcodedUi.raw('appAccountsIdPage.line971JsxAttrTitleRemoveMember')}
         description={
           <span>
             Remove{' '}
@@ -1084,9 +1067,7 @@ function MembersCard({
               {removeTarget ? memberLabel(removeTarget) : ''}
             </span>{' '}
             from{' '}
-            <span className="font-medium text-foreground">{account.name}</span>?
-            They will lose access immediately.
-          </span>
+            <span className="font-medium text-foreground">{account.name}</span>{tHardcodedUi.raw('appAccountsIdPage.line979JsxTextTheyWillLoseAccessImmediately')}</span>
         }
         confirmLabel="Remove"
         onConfirm={() =>
@@ -1098,13 +1079,10 @@ function MembersCard({
       <ConfirmDialog
         open={leaveConfirmOpen}
         onOpenChange={setLeaveConfirmOpen}
-        title="Leave team"
+        title={tHardcodedUi.raw('appAccountsIdPage.line993JsxAttrTitleLeaveTeam')}
         description={
-          <span>
-            You&apos;ll lose access to{' '}
-            <span className="font-medium text-foreground">{account.name}</span>{' '}
-            and its projects.
-          </span>
+          <span>{tHardcodedUi.raw('appAccountsIdPage.line996JsxTextYouAposLlLoseAccessTo')}{' '}
+            <span className="font-medium text-foreground">{account.name}</span>{' '}{tHardcodedUi.raw('appAccountsIdPage.line998JsxTextAndItsProjects')}</span>
         }
         confirmLabel="Leave"
         onConfirm={() => leaveMutation.mutate()}
@@ -1139,6 +1117,7 @@ function InviteMemberModal({
   accountId: string;
   onInvited: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<AccountRole>('member');
   const [inlineError, setInlineError] = useState<string | null>(null);
@@ -1213,13 +1192,8 @@ function InviteMemberModal({
     >
       <DialogContent className="sm:max-w-md p-0 overflow-hidden gap-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-border/60">
-          <DialogTitle className="text-lg font-semibold tracking-tight">
-            Invite member
-          </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            Invite by email. If they don&apos;t have a Kortix account yet,
-            they&apos;ll get access when they sign up.
-          </DialogDescription>
+          <DialogTitle className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('appAccountsIdPage.line1109JsxTextInviteMember')}</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1112JsxTextInviteByEmailIfTheyDonAposT')}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="px-6 py-5 space-y-4">
@@ -1235,7 +1209,7 @@ function InviteMemberModal({
                   setEmail(e.target.value);
                   if (inlineError) setInlineError(null);
                 }}
-                placeholder="teammate@company.com"
+                placeholder={tHardcodedUi.raw('appAccountsIdPage.line1130JsxAttrPlaceholderTeammateCompanyCom')}
                 autoFocus
                 className="pl-9"
                 disabled={mutation.isPending}
@@ -1254,12 +1228,8 @@ function InviteMemberModal({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="member">
-                  Member — can use assigned projects
-                </SelectItem>
-                <SelectItem value="admin">
-                  Admin — can invite members
-                </SelectItem>
+                <SelectItem value="member">{tHardcodedUi.raw('appAccountsIdPage.line1150JsxTextMemberCanUseAssignedProjects')}</SelectItem>
+                <SelectItem value="admin">{tHardcodedUi.raw('appAccountsIdPage.line1153JsxTextAdminCanInviteMembers')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1300,27 +1270,24 @@ function InviteMemberModal({
 // ============================== DANGER ZONE ==============================
 
 function DangerZoneCard() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <SectionCard
       tone="destructive"
-      title="Danger zone"
-      description="Irreversible actions for this team."
+      title={tHardcodedUi.raw('appAccountsIdPage.line1198JsxAttrTitleDangerZone')}
+      description={tHardcodedUi.raw('appAccountsIdPage.line1199JsxAttrDescriptionIrreversibleActionsForThisTeam')}
     >
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-foreground">Delete account</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Permanently delete this account and all associated projects.
-          </p>
+          <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1203JsxTextDeleteAccount')}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1205JsxTextPermanentlyDeleteThisAccountAndAllAssociatedProjects')}</p>
         </div>
         <Button
           variant="outline"
           disabled
-          title="Coming soon"
+          title={tHardcodedUi.raw('appAccountsIdPage.line1211JsxAttrTitleComingSoon')}
           className="shrink-0"
-        >
-          Coming soon
-        </Button>
+        >{tHardcodedUi.raw('appAccountsIdPage.line1214JsxTextComingSoon')}</Button>
       </div>
     </SectionCard>
   );
@@ -1335,6 +1302,7 @@ function PendingInvitesSection({
   accountId: string;
   canManage: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<AccountInvitation | null>(
@@ -1391,8 +1359,7 @@ function PendingInvitesSection({
 
   return (
     <div className="border-b border-border/60 bg-muted/20">
-      <div className="px-6 pt-3 pb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        Pending invites · {invites.length}
+      <div className="px-6 pt-3 pb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1287JsxTextPendingInvites')}{invites.length}
       </div>
       <List>
         {invites.map((invite) => {
@@ -1440,24 +1407,18 @@ function PendingInvitesSection({
                             }
                             className="gap-2"
                           >
-                            <RefreshCw className="h-3.5 w-3.5" />
-                            Resend invite
-                          </DropdownMenuItem>
+                            <RefreshCw className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line1336JsxTextResendInvite')}</DropdownMenuItem>
                           <DropdownMenuItem
                             onSelect={() => copyInviteLink(invite.invite_url)}
                             className="gap-2"
                           >
-                            <LinkIcon className="h-3.5 w-3.5" />
-                            Copy invitation link
-                          </DropdownMenuItem>
+                            <LinkIcon className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line1343JsxTextCopyInvitationLink')}</DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onSelect={() => setCancelTarget(invite)}
                             className="gap-2"
                           >
-                            <X className="h-3.5 w-3.5" />
-                            Cancel invite
-                          </DropdownMenuItem>
+                            <X className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line1351JsxTextCancelInvite')}</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     ) : null}
@@ -1474,13 +1435,13 @@ function PendingInvitesSection({
         onOpenChange={(o) => {
           if (!o) setCancelTarget(null);
         }}
-        title="Cancel invite"
+        title={tHardcodedUi.raw('appAccountsIdPage.line1369JsxAttrTitleCancelInvite')}
         description={
           cancelTarget
             ? `Revoke the pending invite for ${cancelTarget.email}? They'll need a new invite to join.`
             : ''
         }
-        confirmLabel="Cancel invite"
+        confirmLabel={tHardcodedUi.raw('appAccountsIdPage.line1375JsxAttrConfirmlabelCancelInvite')}
         isPending={cancelMutation.isPending}
         onConfirm={() => {
           if (!cancelTarget) return;

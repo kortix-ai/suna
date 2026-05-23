@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Streamdown, defaultRemarkPlugins, defaultRehypePlugins } from 'streamdown';
@@ -780,6 +782,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   className,
   isStreaming = false,
 }) => {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Resolve the active sandbox server so we can proxy localhost URLs
   const { proxyUrl } = useSandboxProxy();
 
@@ -1111,9 +1114,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
 
   if (!safeContent) {
     return (
-      <div className={cn('text-muted-foreground text-sm', className)}>
-        No content
-      </div>
+      <div className={cn('text-muted-foreground text-sm', className)}>{tHardcodedUi.raw('componentsMarkdownUnifiedMarkdown.line1115JsxTextNoContent')}</div>
     );
   }
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * InteractiveDemo — the homepage centerpiece.
  *
@@ -150,19 +152,20 @@ function Toggle({ on }: { on: boolean }) {
 /* ─────────────────────────── pages ─────────────────────────── */
 
 function HomePage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const stats: [string, string][] = [['5', 'Active agents'], ['24', 'Sessions today'], ['12', 'Automations'], ['148', 'Tasks this week']];
   return (
     <div>
-      <PageHead title="Good morning, Sarah" sub="Thursday, May 22 · Acme AGI" action={<FauxButton><Settings2 className="size-3.5" /> Customize</FauxButton>} />
+      <PageHead title={tHardcodedUi.raw('componentsHomeInteractiveDemo.line156JsxAttrTitleGoodMorningSarah')} sub={tHardcodedUi.raw('componentsHomeInteractiveDemo.line156JsxAttrSubThursdayMay22AcmeAgi')} action={<FauxButton><Settings2 className="size-3.5" /> Customize</FauxButton>} />
 
       {/* composer */}
       <div className="rounded-2xl border border-border bg-card p-3 shadow-sm">
-        <div className="px-1 pb-2 text-sm text-muted-foreground">Ask Kortix to do anything across your company…</div>
+        <div className="px-1 pb-2 text-sm text-muted-foreground">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line160JsxTextAskKortixToDoAnythingAcrossYourCompany')}</div>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <span className="inline-flex size-7 items-center justify-center rounded-full border border-border text-muted-foreground"><Paperclip className="size-3.5" /></span>
             <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs text-foreground"><Bot className="size-3.5" /> finance-agent</span>
-            <span className="hidden h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs text-muted-foreground sm:inline-flex"><Sparkles className="size-3.5" /> Opus 4.7</span>
+            <span className="hidden h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs text-muted-foreground sm:inline-flex"><Sparkles className="size-3.5" />{tHardcodedUi.raw('componentsHomeInteractiveDemo.line165JsxTextOpus47')}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="inline-flex size-7 items-center justify-center rounded-full border border-border text-muted-foreground"><Mic className="size-3.5" /></span>
@@ -183,7 +186,7 @@ function HomePage() {
 
       {/* two columns */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Panel title="Active agents" count="· 5">
+        <Panel title={tHardcodedUi.raw('componentsHomeInteractiveDemo.line186JsxAttrTitleActiveAgents')} count="· 5">
           {([
             ['finance-agent', 'Reconciled March invoices', TrendingUp, true],
             ['support-agent', 'Resolved 3 tickets in #support', Headphones, true],
@@ -192,7 +195,7 @@ function HomePage() {
             <Row key={name} leading={<EntityAvatar icon={Icon} size="sm" />} title={name} subtitle={last} trailing={<StatusDot on={on} />} />
           ))}
         </Panel>
-        <Panel title="Recent sessions" count="· 3">
+        <Panel title={tHardcodedUi.raw('componentsHomeInteractiveDemo.line195JsxAttrTitleRecentSessions')} count="· 3">
           {([
             ['Q3 board deck', 'finance-agent', '4m ago', 'success'],
             ['Refund policy update', 'support-agent', '1h ago', 'success'],
@@ -213,17 +216,15 @@ function HomePage() {
 }
 
 function ChatPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex h-full flex-col">
       <div className="mb-4 flex items-center gap-2 font-mono text-xs text-muted-foreground">
-        <MessageSquare className="size-3.5" /> Sessions / Q3 board deck
-      </div>
+        <MessageSquare className="size-3.5" />{tHardcodedUi.raw('componentsHomeInteractiveDemo.line219JsxTextSessionsQ3BoardDeck')}</div>
 
       <div className="flex-1 space-y-4 overflow-hidden">
         {/* user */}
-        <div className="ml-auto w-fit max-w-[82%] rounded-2xl rounded-br-sm bg-foreground px-4 py-2.5 text-sm text-background">
-          Build the Q3 board deck from our latest metrics and email it to the board.
-        </div>
+        <div className="ml-auto w-fit max-w-[82%] rounded-2xl rounded-br-sm bg-foreground px-4 py-2.5 text-sm text-background">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line225JsxTextBuildTheQ3BoardDeckFromOurLatest')}</div>
 
         {/* assistant */}
         <div>
@@ -242,8 +243,8 @@ function ChatPage() {
               <Check className="ml-auto size-3.5 text-emerald-500" />
             </div>
             <div className="space-y-1 px-3 py-2.5 font-mono text-xs leading-relaxed text-muted-foreground">
-              <div><span className="text-foreground">SELECT</span> revenue, burn, pipeline</div>
-              <div><span className="text-foreground">FROM</span> metrics.q3 → <span className="text-emerald-500">312 rows</span></div>
+              <div><span className="text-foreground">SELECT</span>{tHardcodedUi.raw('componentsHomeInteractiveDemo.line245JsxTextRevenueBurnPipeline')}</div>
+              <div><span className="text-foreground">FROM</span>{tHardcodedUi.raw('componentsHomeInteractiveDemo.line246JsxTextMetricsQ3')}<span className="text-emerald-500">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line246JsxTextText312Rows')}</span></div>
             </div>
           </div>
 
@@ -257,7 +258,7 @@ function ChatPage() {
             ))}
             <div className="flex items-start gap-2.5 text-sm">
               <span className="mt-[5px] size-1.5 shrink-0 animate-pulse rounded-full bg-foreground/40" />
-              <span className="text-foreground">Formatting &amp; final review…</span>
+              <span className="text-foreground">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line260JsxTextFormattingAmpFinalReview')}</span>
             </div>
           </div>
 
@@ -266,7 +267,7 @@ function ChatPage() {
             <span className="flex size-9 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground"><FileText className="size-4" /></span>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-foreground">Q3-board-deck.pptx</div>
-              <div className="text-xs text-muted-foreground">12 slides · ready in 4 min</div>
+              <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line269JsxTextText12SlidesReadyIn4Min')}</div>
             </div>
             <span className="inline-flex size-8 items-center justify-center rounded-full border border-border text-muted-foreground"><Download className="size-4" /></span>
           </div>
@@ -276,7 +277,7 @@ function ChatPage() {
       {/* input */}
       <div className="mt-4 flex items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2.5 shadow-sm">
         <Paperclip className="size-4 text-muted-foreground" />
-        <span className="flex-1 text-sm text-muted-foreground">Reply to finance-agent…</span>
+        <span className="flex-1 text-sm text-muted-foreground">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line279JsxTextReplyToFinanceAgent')}</span>
         <span className="inline-flex size-7 items-center justify-center rounded-full bg-foreground text-background"><Send className="size-3.5" /></span>
       </div>
     </div>
@@ -284,6 +285,7 @@ function ChatPage() {
 }
 
 function AgentsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const agents: [string, string, LucideIcon, string, boolean][] = [
     ['finance-agent', 'Owns the books — reconciliation, reporting, board decks', TrendingUp, '1,204 runs', true],
     ['support-agent', 'Triages and resolves tickets across email and Slack', Headphones, '8,930 runs', true],
@@ -293,7 +295,7 @@ function AgentsPage() {
   ];
   return (
     <div>
-      <PageHead title="Agents" sub="5 deployed · 4 running now" action={<FauxButton primary><Plus className="size-3.5" /> New agent</FauxButton>} />
+      <PageHead title="Agents" sub={tHardcodedUi.raw('componentsHomeInteractiveDemo.line296JsxAttrSubText5Deployed4RunningNow')} action={<FauxButton primary><Plus className="size-3.5" />{tHardcodedUi.raw('componentsHomeInteractiveDemo.line296JsxTextNewAgent')}</FauxButton>} />
       <Panel>
         {agents.map(([name, desc, Icon, runs, on]) => (
           <Row
@@ -315,6 +317,7 @@ function AgentsPage() {
 }
 
 function SkillsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const libs: [string, string, string[]][] = [
     ['Finance', '6 skills', ['Invoice reconciliation', 'Board reporting', 'Scenario models']],
     ['Legal', '5 skills', ['Contract review', 'Clause library', 'Cited research']],
@@ -323,7 +326,7 @@ function SkillsPage() {
   ];
   return (
     <div>
-      <PageHead title="Skills" sub="4 libraries · shared across every agent" action={<FauxButton primary><Plus className="size-3.5" /> New skill</FauxButton>} />
+      <PageHead title="Skills" sub={tHardcodedUi.raw('componentsHomeInteractiveDemo.line326JsxAttrSubText4LibrariesSharedAcrossEveryAgent')} action={<FauxButton primary><Plus className="size-3.5" />{tHardcodedUi.raw('componentsHomeInteractiveDemo.line326JsxTextNewSkill')}</FauxButton>} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {libs.map(([name, count, skills]) => (
           <div key={name} className="rounded-2xl border border-border/60 bg-card p-4">
@@ -347,6 +350,7 @@ function SkillsPage() {
 }
 
 function IntegrationsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const tools: [string, string, boolean][] = [
     ['gmail.com', 'Gmail', true],
     ['slack.com', 'Slack', true],
@@ -362,8 +366,8 @@ function IntegrationsPage() {
     <div>
       <PageHead
         title="Integrations"
-        sub="3,000+ available · 6 connected"
-        action={<span className="hidden h-8 items-center gap-2 rounded-full border border-border bg-muted/40 px-3 text-xs text-muted-foreground sm:inline-flex"><Search className="size-3.5" /> Search…</span>}
+        sub={tHardcodedUi.raw('componentsHomeInteractiveDemo.line365JsxAttrSubText3000Available6Connected')}
+        action={<span className="hidden h-8 items-center gap-2 rounded-full border border-border bg-muted/40 px-3 text-xs text-muted-foreground sm:inline-flex"><Search className="size-3.5" />{tHardcodedUi.raw('componentsHomeInteractiveDemo.line366JsxTextSearch')}</span>}
       />
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         {tools.map(([d, name, connected]) => (
@@ -384,6 +388,7 @@ function IntegrationsPage() {
 }
 
 function SchedulingPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const jobs: [string, string, string, boolean][] = [
     ['Morning briefing', 'Every day · 08:00', 'in 6h', true],
     ['Weekly board report', 'Every Mon · 07:00', 'in 3d', true],
@@ -392,7 +397,7 @@ function SchedulingPage() {
   ];
   return (
     <div>
-      <PageHead title="Scheduling" sub="3 active · runs in your timezone" action={<FauxButton primary><Plus className="size-3.5" /> New schedule</FauxButton>} />
+      <PageHead title="Scheduling" sub={tHardcodedUi.raw('componentsHomeInteractiveDemo.line395JsxAttrSubText3ActiveRunsInYourTimezone')} action={<FauxButton primary><Plus className="size-3.5" />{tHardcodedUi.raw('componentsHomeInteractiveDemo.line395JsxTextNewSchedule')}</FauxButton>} />
       <Panel>
         {jobs.map(([name, when, next, on]) => (
           <Row
@@ -409,6 +414,7 @@ function SchedulingPage() {
 }
 
 function ChannelsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const channels: [string, string, string, string, LucideIcon][] = [
     ['Slack', '#support', 'support-agent', '142 today', Hash],
     ['Email', 'support@acme.ai', 'support-agent', '38 today', Mail],
@@ -417,7 +423,7 @@ function ChannelsPage() {
   ];
   return (
     <div>
-      <PageHead title="Channels" sub="4 connected · routing inbound to agents" action={<FauxButton primary><Plus className="size-3.5" /> Add channel</FauxButton>} />
+      <PageHead title="Channels" sub={tHardcodedUi.raw('componentsHomeInteractiveDemo.line420JsxAttrSubText4ConnectedRoutingInboundToAgents')} action={<FauxButton primary><Plus className="size-3.5" />{tHardcodedUi.raw('componentsHomeInteractiveDemo.line420JsxTextAddChannel')}</FauxButton>} />
       <Panel>
         {channels.map(([name, addr, agent, vol, Icon]) => (
           <Row
@@ -434,6 +440,7 @@ function ChannelsPage() {
 }
 
 function SecurityPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const members: [string, string, 'Owner' | 'Admin' | 'Member'][] = [
     ['sarah@acme.ai', 'Sarah Chen', 'Owner'],
     ['marcus@acme.ai', 'Marcus Lee', 'Admin'],
@@ -446,7 +453,7 @@ function SecurityPage() {
   ];
   return (
     <div className="space-y-4">
-      <Panel title="Members & roles" count="· 3" action={<FauxButton><Plus className="size-3.5" /> Invite</FauxButton>}>
+      <Panel title={tHardcodedUi.raw('componentsHomeInteractiveDemo.line449JsxAttrTitleMembersRoles')} count="· 3" action={<FauxButton><Plus className="size-3.5" /> Invite</FauxButton>}>
         {members.map(([email, name, role]) => (
           <Row
             key={email}
@@ -457,7 +464,7 @@ function SecurityPage() {
           />
         ))}
       </Panel>
-      <Panel title="Secrets vault" count="· encrypted">
+      <Panel title={tHardcodedUi.raw('componentsHomeInteractiveDemo.line460JsxAttrTitleSecretsVault')} count={tHardcodedUi.raw('componentsHomeInteractiveDemo.line460JsxAttrCountEncrypted')}>
         {secrets.map(([name, masked, domain]) => (
           <Row
             key={name}
@@ -468,7 +475,7 @@ function SecurityPage() {
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={favicon(domain)} alt="" width={14} height={14} className="size-3.5 rounded-sm" />
-                <span className="hidden sm:inline">injected at runtime</span>
+                <span className="hidden sm:inline">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line471JsxTextInjectedAtRuntime')}</span>
               </span>
             }
           />
@@ -496,6 +503,7 @@ const ORDER: PageId[] = ['home', 'chat', 'agents', 'skills', 'integrations', 'sc
 /* ─────────────────────────── shell ─────────────────────────── */
 
 export function InteractiveDemo() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [active, setActive] = useState<PageId>('home');
   const page = PAGES[active];
 
@@ -525,18 +533,18 @@ export function InteractiveDemo() {
             <span className="size-2.5 rounded-full bg-muted-foreground/15" />
           </div>
           <div className="ml-2 flex min-w-0 items-center gap-1.5 text-xs">
-            <EntityAvatar label="Acme AGI" size="xs" />
-            <span className="font-medium text-foreground">Acme AGI</span>
+            <EntityAvatar label={tHardcodedUi.raw('componentsHomeInteractiveDemo.line528JsxAttrLabelAcmeAgi')} size="xs" />
+            <span className="font-medium text-foreground">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line529JsxTextAcmeAgi')}</span>
             <ChevronRight className="size-3 text-muted-foreground/40" />
             <span className="truncate text-muted-foreground">{page.label}</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <span className="hidden h-8 w-44 items-center gap-2 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground md:flex">
               <Search className="size-3.5" /> Search
-              <span className="ml-auto font-mono text-xs text-muted-foreground/50">⌘K</span>
+              <span className="ml-auto font-mono text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line536JsxTextK')}</span>
             </span>
             <span className="flex size-8 items-center justify-center rounded-full border border-border text-muted-foreground"><Bell className="size-4" /></span>
-            <UserAvatar email="sarah@acme.ai" name="Sarah Chen" size="sm" />
+            <UserAvatar email={tHardcodedUi.raw('componentsHomeInteractiveDemo.line539JsxAttrEmailSarahAcmeAi')} name="Sarah Chen" size="sm" />
           </div>
         </div>
 
@@ -544,20 +552,19 @@ export function InteractiveDemo() {
           {/* sidebar */}
           <aside className="hidden flex-col border-r border-border/60 bg-muted/20 p-3 lg:flex">
             <button className="mb-3 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-foreground/[0.04]">
-              <EntityAvatar label="Acme AGI" size="sm" />
+              <EntityAvatar label={tHardcodedUi.raw('componentsHomeInteractiveDemo.line547JsxAttrLabelAcmeAgi')} size="sm" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold text-foreground">Acme AGI</span>
-                <span className="block truncate text-xs text-muted-foreground">Enterprise · 24 seats</span>
+                <span className="block truncate text-sm font-semibold text-foreground">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line549JsxTextAcmeAgi')}</span>
+                <span className="block truncate text-xs text-muted-foreground">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line550JsxTextEnterprise24Seats')}</span>
               </span>
               <ChevronsUpDown className="size-3.5 text-muted-foreground" />
             </button>
 
             <div className="mb-1 flex items-center gap-2 rounded-lg bg-foreground px-3 py-2 text-sm font-medium text-background">
-              <Plus className="size-4" /> New session
-            </div>
+              <Plus className="size-4" />{tHardcodedUi.raw('componentsHomeInteractiveDemo.line556JsxTextNewSession')}</div>
             <div className="mb-3 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground">
               <Search className="size-4" /> Search
-              <span className="ml-auto font-mono text-xs text-muted-foreground/50">⌘K</span>
+              <span className="ml-auto font-mono text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line560JsxTextK')}</span>
             </div>
 
             <nav className="flex flex-col gap-0.5">
@@ -580,9 +587,9 @@ export function InteractiveDemo() {
             </nav>
 
             <div className="mt-auto flex items-center gap-2.5 rounded-lg px-2 pb-1 pt-3">
-              <UserAvatar email="sarah@acme.ai" name="Sarah Chen" size="sm" />
+              <UserAvatar email={tHardcodedUi.raw('componentsHomeInteractiveDemo.line583JsxAttrEmailSarahAcmeAi')} name="Sarah Chen" size="sm" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-foreground">Sarah Chen</span>
+                <span className="block truncate text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsHomeInteractiveDemo.line585JsxTextSarahChen')}</span>
                 <span className="block truncate text-xs text-muted-foreground">Owner</span>
               </span>
               <ChevronsUpDown className="size-3.5 text-muted-foreground" />
