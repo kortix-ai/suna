@@ -20,7 +20,6 @@ import {
   Loader2,
   MessageCircle,
   Search,
-  ArrowRightLeft,
   PanelLeftClose,
   PanelLeftIcon,
   ArrowUp,
@@ -57,7 +56,6 @@ import {
 } from '@/components/ui/command';
 import { SidebarContext } from '@/components/ui/sidebar';
 import {
-  useOpenCodeSessions,
   useOpenCodeAgents,
   useOpenCodeProviders,
 } from '@/hooks/opencode/use-opencode-sessions';
@@ -406,7 +404,6 @@ export function CommandPalette() {
   const billingEnabled = isBillingEnabled();
 
   // ── Data hooks ──
-  const { data: sessions } = useOpenCodeSessions();
   const { data: agents } = useOpenCodeAgents();
   const { data: providers } = useOpenCodeProviders();
 
@@ -536,29 +533,8 @@ export function CommandPalette() {
     return words.every((w) => haystack.includes(w));
   }, []);
 
-  // ── Filter: sessions ──
-  const filteredSessions = useMemo(() => {
-    if (!sessions || !query.trim()) return [];
-    const q = query.trim();
-    return sessions
-      .filter((s) => {
-        if (s.parentID || s.time.archived) return false;
-        const searchable = [s.title, s.slug, s.id].filter(Boolean).join(' ');
-        return fuzzyMatch(searchable, q);
-      })
-      .slice(0, 20);
-  }, [sessions, query, fuzzyMatch]);
-
-  // Recent sessions for idle state
-  const recentSessions = useMemo(() => {
-    if (!sessions) return [];
-    return sessions.filter((s) => !s.parentID && !s.time.archived).slice(0, 5);
-  }, [sessions]);
-
   const hasQuery = query.trim().length > 0;
   const queryLongEnough = query.trim().length >= 2;
-
-  const hasSessionResults = filteredSessions.length > 0;
   // ── Palette items ──
   const allPaletteItems = useMemo(() => {
     return getItemsForSurface('commandPalette')
@@ -690,12 +666,6 @@ export function CommandPalette() {
 
   const hasNavResults = filteredNavItems.length > 0;
   const hasSessionActionResults = sessionActionItems.length > 0;
-  const hasAnyResults = hasNavResults || hasSessionResults || hasSessionActionResults;
-
-  const showNoResults =
-    hasQuery &&
-    queryLongEnough &&
-    !hasAnyResults;
 
   // ── Handlers ──
 
@@ -735,7 +705,7 @@ export function CommandPalette() {
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 
   const handleSelectProject = useCallback((p: KortixProject) => {
-    router.push(`/projects/${p.project_id}/sessions`);
+    router.push(`/projects/${p.project_id}`);
     close();
   }, [router, close]);
 
@@ -753,17 +723,37 @@ export function CommandPalette() {
   }, [projectId, openProjectTab, router, close]);
 
   const sessionName = (s: ProjectSession) =>
+    s.name ||
     (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
     s.branch_name ||
     s.session_id.slice(0, 8);
 
+  // Projects sorted by most-recently-opened — reused for both the "Switch
+  // Project" sub-picker and the global idle "Recent Projects" list.
+  const sortedProjects = useMemo(
+    () =>
+      [...(projectsList ?? [])].sort((a, b) =>
+        (b.last_opened_at || b.updated_at).localeCompare(a.last_opened_at || a.updated_at),
+      ),
+    [projectsList],
+  );
+
   const filteredProjectsList = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const sorted = [...(projectsList ?? [])].sort((a, b) =>
-      (b.last_opened_at || b.updated_at).localeCompare(a.last_opened_at || a.updated_at),
-    );
-    return (q ? sorted.filter((p) => p.name.toLowerCase().includes(q)) : sorted).slice(0, 50);
-  }, [projectsList, query]);
+    return (q ? sortedProjects.filter((p) => p.name.toLowerCase().includes(q)) : sortedProjects).slice(0, 50);
+  }, [sortedProjects, query]);
+
+  // Idle "Recent" lists. In a project we surface the project's own recent
+  // sessions (current source: ['project-sessions', projectId]); in the global
+  // shell there is no cross-project session feed, so we surface recent
+  // projects instead.
+  const recentProjectSessions = useMemo(() => {
+    return [...(projectSessionsList ?? [])]
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      .slice(0, 5);
+  }, [projectSessionsList]);
+
+  const recentProjects = useMemo(() => sortedProjects.slice(0, 5), [sortedProjects]);
 
   const filteredAccountsList = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -783,6 +773,26 @@ export function CommandPalette() {
     return (q ? sorted.filter((s) => sessionName(s).toLowerCase().includes(q)) : sorted).slice(0, 50);
   }, [projectSessionsList, query]);
 
+  // ── Root-search result lists (current sources only) ──
+  // In a project, free-text search hits the project's own sessions; in the
+  // global shell it hits projects (there is no legacy global session feed).
+  const rootSessionResults = useMemo(() => {
+    if (!hasQuery || !projectId) return [];
+    return filteredProjectSessionsList.slice(0, 8);
+  }, [hasQuery, projectId, filteredProjectSessionsList]);
+
+  const rootProjectResults = useMemo(() => {
+    if (!hasQuery || projectId) return [];
+    return filteredProjectsList.slice(0, 8);
+  }, [hasQuery, projectId, filteredProjectsList]);
+
+  const hasSessionResults = rootSessionResults.length > 0;
+  const hasProjectResults = rootProjectResults.length > 0;
+  const hasAnyResults =
+    hasNavResults || hasSessionResults || hasProjectResults || hasSessionActionResults;
+
+  const showNoResults = hasQuery && queryLongEnough && !hasAnyResults;
+
   const handleNavigate = useCallback(
     (path: string, label?: string) => {
       const type = path.startsWith('/settings')
@@ -797,19 +807,6 @@ export function CommandPalette() {
       close();
     },
     [router, close],
-  );
-
-  const handleSelectSession = useCallback(
-    (sessionId: string, title?: string) => {
-      openTabAndNavigate({
-        id: sessionId,
-        title: title || 'Session',
-        type: 'session',
-        href: `/sessions/${sessionId}`,
-      });
-      close();
-    },
-    [close],
   );
 
   const handleSelectFile = useCallback(
@@ -1086,8 +1083,13 @@ export function CommandPalette() {
     if (page === 'sessions') return filteredProjectSessionsList.length;
     if (page === 'messages') return 0; // count is shown inline by MessagesPage
     if (!hasQuery) return 0;
-    return filteredNavItems.length + filteredSessions.length + sessionActionItems.length;
-  }, [page, hasQuery, filteredNavItems, filteredSessions, sessionActionItems, filteredAgents, visibleModels, filteredProjectsList, filteredAccountsList, filteredProjectSessionsList]);
+    return (
+      filteredNavItems.length +
+      rootSessionResults.length +
+      rootProjectResults.length +
+      sessionActionItems.length
+    );
+  }, [page, hasQuery, filteredNavItems, rootSessionResults, rootProjectResults, sessionActionItems, filteredAgents, visibleModels, filteredProjectsList, filteredAccountsList, filteredProjectSessionsList]);
 
   // ── Placeholder text ──
   const placeholder = useMemo(() => {
@@ -1252,27 +1254,46 @@ export function CommandPalette() {
                     )}
                   </CommandGroup>
 
-                  {/* Recent Sessions */}
-                  {recentSessions.length > 0 && (
+                  {/* Recent — project sessions when scoped to a project, else
+                      recent projects (no legacy global session feed). */}
+                  {projectId && recentProjectSessions.length > 0 && (
                     <CommandGroup heading="Recent Sessions" forceMount>
-                      {recentSessions.map((session) => (
+                      {recentProjectSessions.map((session) => (
                         <CommandItem
-                          key={session.id}
-                          value={sanitizeCmdkValue(`recent ${session.title || ''} ${session.slug || ''} ${session.id}`)}
-                          onSelect={() =>
-                            handleSelectSession(
-                              session.id,
-                              session.title || session.slug || 'Untitled',
-                            )
-                          }
+                          key={session.session_id}
+                          value={sanitizeCmdkValue(`recent ${sessionName(session)} ${session.session_id}`)}
+                          onSelect={() => handleSelectProjectSession(session)}
                         >
                           <MessageCircle className="h-4 w-4 flex-shrink-0" />
-                          <span className="truncate flex-1">
-                            {session.title || session.slug || 'Untitled'}
-                          </span>
+                          <span className="truncate flex-1">{sessionName(session)}</span>
+                          {session.session_id === params?.sessionId && (
+                            <span className="text-xs text-primary/60 font-medium">Current</span>
+                          )}
                           <span className="text-xs text-muted-foreground/30 tabular-nums flex-shrink-0">
-                            {formatRelativeTime(session.time.updated)}
+                            {formatRelativeTime(new Date(session.updated_at).getTime())}
                           </span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  )}
+
+                  {!projectId && recentProjects.length > 0 && (
+                    <CommandGroup heading="Recent Projects" forceMount>
+                      {recentProjects.map((project) => (
+                        <CommandItem
+                          key={project.project_id}
+                          value={sanitizeCmdkValue(`recent project ${project.name} ${project.project_id}`)}
+                          onSelect={() => handleSelectProject(project)}
+                        >
+                          <FolderGit2 className="h-4 w-4 flex-shrink-0" />
+                          <span className="truncate flex-1">{project.name}</span>
+                          {(project.last_opened_at || project.updated_at) && (
+                            <span className="text-xs text-muted-foreground/30 tabular-nums flex-shrink-0">
+                              {formatRelativeTime(
+                                new Date(project.last_opened_at || project.updated_at).getTime(),
+                              )}
+                            </span>
+                          )}
                         </CommandItem>
                       ))}
                     </CommandGroup>
@@ -1347,54 +1368,49 @@ export function CommandPalette() {
                     </CommandGroup>
                   )}
 
-                  {/* Sessions */}
+                  {/* Sessions — project-scoped, current source only */}
                   {hasSessionResults && (
                     <CommandGroup heading="Sessions" forceMount>
-                      {filteredSessions.map((session) => {
-                        const hasTitle = !!(session.title || session.slug);
-                        return (
-                          <CommandItem
-                            key={session.id}
-                            value={`session-${session.id}`}
-                            onSelect={() =>
-                              handleSelectSession(
-                                session.id,
-                                session.title || session.slug || session.id,
-                              )
-                            }
-                          >
-                            <MessageCircle className="h-4 w-4 flex-shrink-0" />
-                            <div className="flex flex-col overflow-hidden flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                {hasTitle ? (
-                                  <>
-                                    <span className="truncate text-sm font-medium">
-                                      {session.title || session.slug}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground/40 font-mono flex-shrink-0">
-                                      {session.id}
-                                    </span>
-                                  </>
-                                ) : (
-                                  <span className="truncate text-sm font-mono text-muted-foreground/70">
-                                    {session.id}
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-xs text-muted-foreground/50 truncate">
-                                {formatRelativeTime(session.time.updated)}
-                                {session.summary && session.summary.files > 0 && (
-                                  <span className="ml-1">
-                                    · {session.summary.files} file
-                                    {session.summary.files !== 1 ? 's' : ''}
-                                  </span>
-                                )}
-                              </span>
-                            </div>
-                            <ArrowRightLeft className="h-3 w-3 text-muted-foreground/30 flex-shrink-0" />
-                          </CommandItem>
-                        );
-                      })}
+                      {rootSessionResults.map((session) => (
+                        <CommandItem
+                          key={session.session_id}
+                          value={sanitizeCmdkValue(`session ${sessionName(session)} ${session.session_id}`)}
+                          onSelect={() => handleSelectProjectSession(session)}
+                        >
+                          <MessageCircle className="h-4 w-4 flex-shrink-0" />
+                          <span className="truncate text-sm flex-1">{sessionName(session)}</span>
+                          {session.session_id === params?.sessionId && (
+                            <Check className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                          )}
+                          <span className="text-xs text-muted-foreground/40 tabular-nums flex-shrink-0">
+                            {formatRelativeTime(new Date(session.updated_at).getTime())}
+                          </span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  )}
+
+                  {/* Projects — surfaced in the global shell where there is no
+                      active project to scope sessions to. */}
+                  {hasProjectResults && (
+                    <CommandGroup heading="Projects" forceMount>
+                      {rootProjectResults.map((project) => (
+                        <CommandItem
+                          key={project.project_id}
+                          value={sanitizeCmdkValue(`project ${project.name} ${project.project_id}`)}
+                          onSelect={() => handleSelectProject(project)}
+                        >
+                          <FolderGit2 className="h-4 w-4 flex-shrink-0" />
+                          <span className="truncate text-sm flex-1">{project.name}</span>
+                          {(project.last_opened_at || project.updated_at) && (
+                            <span className="text-xs text-muted-foreground/40 tabular-nums flex-shrink-0">
+                              {formatRelativeTime(
+                                new Date(project.last_opened_at || project.updated_at).getTime(),
+                              )}
+                            </span>
+                          )}
+                        </CommandItem>
+                      ))}
                     </CommandGroup>
                   )}
 

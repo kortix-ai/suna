@@ -1895,3 +1895,43 @@ html[data-desktop-platform="macos"] .kx-desktop-controls {
 }
 /* Drag region: the chrome strip covers the title-bar zone. On macOS the
    first 80px is the OS traffic-light area; rest is freely draggable. */
+
+/* ─── Desktop title-bar inset (shared) ───────────────────────────────────
+   Vertical space reserved at the very top of the window for the OS window
+   controls, so top-reaching surfaces (the AppHeader, full-screen modals)
+   never sit under them. Zero on the web; on desktop, tall enough to clear
+   the macOS traffic lights / the Win-Linux control cluster. */
+html[data-desktop="true"] {
+  --kx-titlebar-inset: 28px;
+}
+html[data-desktop-platform="macos"] {
+  --kx-titlebar-inset: 40px;
+}
+
+/* AppHeader (the breadcrumb bar on non-project pages): clear the OS window
+   controls on desktop. macOS draws traffic lights top-left (~80px); Windows
+   and Linux draw min/max/close top-right. */
+html[data-desktop-platform="macos"] .kx-app-header {
+  padding-left: 88px;
+}
+html[data-desktop="true"]:not([data-desktop-platform="macos"]) .kx-app-header {
+  padding-right: 120px;
+}
+
+/* Full-screen / top-reaching modals (e.g. the File Preview modal) start
+   below the title-bar inset on desktop so their own chrome never underlaps
+   the OS window controls. Pairs with `inset-3 sm:inset-4` for the sides. */
+.kx-fullscreen-modal {
+  top: calc(0.75rem + var(--kx-titlebar-inset, 0px));
+}
+@media (min-width: 640px) {
+  .kx-fullscreen-modal {
+    top: calc(1rem + var(--kx-titlebar-inset, 0px));
+  }
+}
+
+/* For a full-bleed (inset-0) modal whose chrome floats from the top via a
+   margin (e.g. the Files file-preview top bar): drop it past the inset too. */
+.kx-titlebar-safe-mt {
+  margin-top: calc(0.75rem + var(--kx-titlebar-inset, 0px));
+}

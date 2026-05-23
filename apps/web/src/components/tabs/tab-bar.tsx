@@ -964,8 +964,14 @@ export function TabBar() {
         return;
       }
 
-      // ── Close tab: always Ctrl+W (Cmd+W is intercepted by the browser on macOS)
-      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyW') {
+      // ── Close tab: Ctrl+W everywhere; Cmd+W too in the desktop app (no
+      //    browser there to intercept it — on the web Cmd+W stays the browser's).
+      if (
+        e.code === 'KeyW' &&
+        !e.shiftKey &&
+        !e.altKey &&
+        ((e.ctrlKey && !e.metaKey) || (isDesktop() && e.metaKey && !e.ctrlKey))
+      ) {
         e.preventDefault();
         const { activeTabId: active, tabs: allTabs } = useTabStore.getState();
         if (active && allTabs[active] && !allTabs[active].pinned) {
@@ -1025,8 +1031,11 @@ export function TabBar() {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // Capture phase: WKWebView (desktop) and inner elements can swallow some
+    // key combos before a bubble-phase window listener runs — the same reason
+    // DesktopChrome captures Cmd+R. Capturing guarantees Ctrl+W et al. fire.
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [setActiveTab, handleClose, tabSwitchModifier, currentInstanceId]);
 
   // Scroll active tab into view when it changes

@@ -14,7 +14,10 @@ import {
 import { useSidebar } from '@/components/ui/sidebar';
 import { isDesktop, desktopPlatform } from '@/lib/desktop';
 import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
-import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import {
+  useProjectSessionTabsStore,
+  CUSTOMIZE_TAB_ID,
+} from '@/stores/project-session-tabs-store';
 
 interface ProjectTabBarProps {
   projectId: string;
@@ -74,19 +77,13 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   const tabsByProject = useProjectSessionTabsStore((s) => s.tabsByProject);
   const openTab = useProjectSessionTabsStore((s) => s.openTab);
   const closeTab = useProjectSessionTabsStore((s) => s.closeTab);
-  const customizeOpenByProject = useProjectSessionTabsStore(
-    (s) => s.customizeOpenByProject,
-  );
   const openCustomizeTab = useProjectSessionTabsStore((s) => s.openCustomizeTab);
-  const closeCustomizeTab = useProjectSessionTabsStore((s) => s.closeCustomizeTab);
   const openTabIds = useMemo(
     () => tabsByProject[projectId] ?? [],
     [tabsByProject, projectId],
   );
   const isCustomizeRoute =
     pathname?.startsWith(`/projects/${projectId}/customize`) ?? false;
-  const isCustomizeTabOpen =
-    isCustomizeRoute || (customizeOpenByProject[projectId] ?? false);
 
   // Auto-open the current session as a tab whenever the URL points at one.
   useEffect(() => {
@@ -120,19 +117,30 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   }, []);
   const needsTrafficLightSpace = isMacDesktop && sidebar.state === 'collapsed';
 
-  const handleCloseTab = (sessionId: string) => {
-    const wasActive = activeSessionId === sessionId;
-    const remaining = openTabIds.filter((id) => id !== sessionId);
-    closeTab(projectId, sessionId);
+  const hrefForTab = (id: string) =>
+    id === CUSTOMIZE_TAB_ID
+      ? `/projects/${projectId}/customize`
+      : `/projects/${projectId}/sessions/${id}`;
+
+  const isTabActive = (id: string) =>
+    id === CUSTOMIZE_TAB_ID
+      ? isCustomizeRoute
+      : (pathname?.startsWith(`/projects/${projectId}/sessions/${id}`) ?? false);
+
+  const handleCloseTab = (id: string) => {
+    const wasActive = isTabActive(id);
+    const remaining = openTabIds.filter((t) => t !== id);
+    closeTab(projectId, id);
 
     if (!wasActive) return;
     if (remaining.length > 0) {
       // Focus the closest neighbor (the tab that took this one's slot).
-      const idx = openTabIds.indexOf(sessionId);
+      const idx = openTabIds.indexOf(id);
       const next = remaining[Math.min(idx, remaining.length - 1)];
-      router.push(`/projects/${projectId}/sessions/${next}`);
+      router.push(hrefForTab(next));
     } else {
-      router.push(`/projects/${projectId}/sessions`);
+      // No tabs left → back to the project index (new-session composer).
+      router.push(`/projects/${projectId}`);
     }
   };
 
@@ -181,75 +189,24 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
         </Tooltip>
       </div>
 
-      {/* Session tabs — mirrors components/tabs/tab-bar.tsx OG styling:
-          flat row, bottom accent line on active, hover-fade close button.
-          The Customize tab sits at the head of the list so its slot is
-          stable regardless of how many sessions are open. */}
+      {/* Tabs — mirrors components/tabs/tab-bar.tsx OG styling: flat row,
+          bottom accent line on active, hover-fade close button. Customize is
+          just another entry in the ordered list (no longer pinned first), so
+          it sits wherever it was opened and closes like any other tab. */}
       <div className="flex-1 flex items-stretch overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-        {isCustomizeTabOpen && (
-          <div
-            key="__customize"
-            role="tab"
-            aria-selected={isCustomizeRoute}
-            onClick={() => router.push(`/projects/${projectId}/customize`)}
-            className={cn(
-              'group relative flex items-center text-sm select-none cursor-pointer',
-              'transition-colors duration-150 h-full',
-              'gap-1.5 px-2.5 md:gap-2 md:px-3 max-w-[200px] min-w-[96px] md:min-w-[80px]',
-              isCustomizeRoute
-                ? 'text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <SlidersHorizontal className="h-3 w-3 flex-shrink-0" />
-            <span
-              className={cn(
-                'flex-1 truncate',
-                isCustomizeRoute && 'font-medium',
-              )}
-            >
-              Customize
-            </span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                closeCustomizeTab(projectId);
-                if (isCustomizeRoute) {
-                  router.push(`/projects/${projectId}/sessions`);
-                }
-              }}
-              className={cn(
-                'flex-shrink-0 p-0.5 rounded-sm transition-colors duration-100 cursor-pointer',
-                'hover:bg-foreground/10',
-                isCustomizeRoute
-                  // active tab: tappable close on touch, hover-dimmed on desktop
-                  ? 'opacity-60 md:opacity-40 md:hover:opacity-80'
-                  // inactive tab: desktop hover only (no hover target on touch)
-                  : 'hidden md:block md:opacity-0 md:group-hover:opacity-40 md:group-hover:hover:opacity-80',
-              )}
-              aria-label="Close Customize"
-            >
-              <X className="h-2.5 w-2.5" />
-            </button>
-            {isCustomizeRoute && (
-              <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-foreground/80 rounded-full" />
-            )}
-          </div>
-        )}
-        {openTabIds.map((sessionId) => {
+        {openTabIds.map((tabId) => {
+          const isCustomize = tabId === CUSTOMIZE_TAB_ID;
+          const isActive = isTabActive(tabId);
           // Sessions don't carry a user-set name yet (API model is branch-only).
           // Fall back to a short id slice until naming ships.
-          const label = `session ${sessionId.slice(0, 8)}`;
-          const isActive =
-            pathname?.startsWith(`/projects/${projectId}/sessions/${sessionId}`) ?? false;
+          const label = isCustomize ? 'Customize' : `session ${tabId.slice(0, 8)}`;
 
           return (
             <div
-              key={sessionId}
+              key={tabId}
               role="tab"
               aria-selected={isActive}
-              onClick={() => router.push(`/projects/${projectId}/sessions/${sessionId}`)}
+              onClick={() => router.push(hrefForTab(tabId))}
               className={cn(
                 'group relative flex items-center text-sm select-none cursor-pointer',
                 'transition-colors duration-150 h-full',
@@ -257,12 +214,13 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
                 isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
             >
+              {isCustomize && <SlidersHorizontal className="h-3 w-3 flex-shrink-0" />}
               <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{label}</span>
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleCloseTab(sessionId);
+                  handleCloseTab(tabId);
                 }}
                 className={cn(
                   'flex-shrink-0 p-0.5 rounded-sm transition-colors duration-100 cursor-pointer',

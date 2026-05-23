@@ -314,14 +314,17 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-sessions',
-    label: 'Sessions',
+    label: 'Open Session',
     icon: MessagesSquare,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/sessions',
+    // Opens the in-palette "Open Session" sub-picker (see SUBMENU_PAGE_BY_ID);
+    // the href is only a non-palette fallback and points at the project root
+    // (the session-list page was removed in favour of the composer landing).
+    href: '/projects/{projectId}',
     requiresProject: true,
-    keywords: 'sessions runs threads project conversations',
+    keywords: 'sessions runs threads project conversations open',
   },
   {
     id: 'proj-customize',

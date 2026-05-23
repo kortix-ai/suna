@@ -910,7 +910,7 @@ export function InstanceSettingsModal({
                       <Button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        variant={activeTab === tab.id ? 'secondary' : 'ghost'}
+                        variant={activeTab === tab.id ? 'subtle' : 'ghost'}
                         className="flex items-center gap-2 whitespace-nowrap flex-shrink-0 justify-start"
                       >
                         <Icon className="h-4 w-4" />

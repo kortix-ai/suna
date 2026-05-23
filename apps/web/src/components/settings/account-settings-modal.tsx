@@ -126,7 +126,7 @@ export function AccountSettingsModal({
                     <Button
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id)}
-                      variant={isActive ? 'secondary' : 'ghost'}
+                      variant={isActive ? 'subtle' : 'ghost'}
                       className={cn(
                         'flex flex-shrink-0 items-center gap-2 justify-start whitespace-nowrap',
                         !isActive && 'text-muted-foreground hover:text-foreground',

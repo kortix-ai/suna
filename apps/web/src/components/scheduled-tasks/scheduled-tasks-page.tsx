@@ -128,7 +128,7 @@ const TaskListItem = ({
     <SpotlightCard
       className={cn(
         "transition-colors cursor-pointer group",
-        isSelected ? "bg-muted" : "bg-card"
+        isSelected ? "bg-primary/[0.06]" : "bg-card"
       )}
     >
       <div onClick={onClick} className="flex items-center justify-between p-5">

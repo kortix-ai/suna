@@ -124,8 +124,9 @@ export function FilePreviewModal() {
         onClick={goBackToBrowser}
       />
 
-      {/* Modal surface */}
-      <div className="fixed inset-3 sm:inset-4 z-50 flex flex-col rounded-2xl border border-border/60 bg-background shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-[0.98] duration-150">
+      {/* Modal surface — `kx-fullscreen-modal` drops the top edge below the
+          desktop title-bar inset so it clears the macOS traffic lights. */}
+      <div className="kx-fullscreen-modal fixed inset-3 sm:inset-4 z-50 flex flex-col rounded-2xl border border-border/60 bg-background shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-[0.98] duration-150">
         {/* Top bar */}
         <div className="flex items-center gap-2 px-3 h-12 border-b border-border/40 shrink-0 bg-background/95 backdrop-blur-sm">
           <Button

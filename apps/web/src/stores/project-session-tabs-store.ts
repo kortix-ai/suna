@@ -17,17 +17,22 @@ import { persist } from 'zustand/middleware';
 const MAX_TABS_PER_PROJECT = 8;
 const MAX_RECENTLY_CLOSED = 16;
 
+/**
+ * Sentinel tab id for the project's Customize surface. Customize lives in the
+ * same ordered tab list as sessions so it behaves like any other tab — it
+ * opens where you put it, keeps its position, and closes with Cmd/Ctrl+W.
+ * The literal can't collide with a session_id (those are UUIDs).
+ */
+export const CUSTOMIZE_TAB_ID = 'customize';
+
 interface State {
-  /** projectId → ordered list of session_ids currently open as tabs */
-  tabsByProject: Record<string, string[]>;
-  /** projectId → stack of recently-closed session_ids (most recent last) */
-  recentlyClosedByProject: Record<string, string[]>;
   /**
-   * projectId → whether the Customize tab is currently open.
-   * Customize sits next to the session tabs but isn't a session, so it
-   * lives in its own slot rather than mingling with sessionId strings.
+   * projectId → ordered list of open tab ids. Entries are session_ids, plus
+   * the CUSTOMIZE_TAB_ID sentinel when the Customize tab is open.
    */
-  customizeOpenByProject: Record<string, boolean>;
+  tabsByProject: Record<string, string[]>;
+  /** projectId → stack of recently-closed tab ids (most recent last) */
+  recentlyClosedByProject: Record<string, string[]>;
 }
 
 interface Actions {
@@ -52,24 +57,11 @@ export const useProjectSessionTabsStore = create<State & Actions>()(
     (set, get) => ({
       tabsByProject: {},
       recentlyClosedByProject: {},
-      customizeOpenByProject: {},
 
-      openCustomizeTab: (projectId) => {
-        if (get().customizeOpenByProject[projectId]) return;
-        set({
-          customizeOpenByProject: {
-            ...get().customizeOpenByProject,
-            [projectId]: true,
-          },
-        });
-      },
-
-      closeCustomizeTab: (projectId) => {
-        if (!get().customizeOpenByProject[projectId]) return;
-        const next = { ...get().customizeOpenByProject };
-        delete next[projectId];
-        set({ customizeOpenByProject: next });
-      },
+      // Customize is just another tab in the ordered list — append on open,
+      // drop on close. Same code path as session tabs.
+      openCustomizeTab: (projectId) => get().openTab(projectId, CUSTOMIZE_TAB_ID),
+      closeCustomizeTab: (projectId) => get().closeTab(projectId, CUSTOMIZE_TAB_ID),
 
       openTab: (projectId, sessionId) => {
         const current = get().tabsByProject[projectId] ?? [];

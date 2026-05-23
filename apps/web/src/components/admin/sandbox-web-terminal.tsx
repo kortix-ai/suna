@@ -116,7 +116,7 @@ export default function SandboxWebTerminal({
     <div
       className={cn(
         'rounded-2xl overflow-hidden border bg-black flex flex-col transition-all duration-200',
-        isFullscreen && 'fixed inset-3 z-50 shadow-2xl border-primary/20',
+        isFullscreen && 'kx-fullscreen-modal fixed inset-3 z-50 shadow-2xl border-primary/20',
       )}
     >
       <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-900/80 border-b border-zinc-800">

@@ -360,7 +360,7 @@ export function DriveToolbar({
             <div className="h-4 w-px bg-border/50 mx-1 shrink-0" />
             <Button
               type="button"
-              variant={checkpointsToggle.open ? 'secondary' : 'ghost'}
+              variant={checkpointsToggle.open ? 'subtle' : 'ghost'}
               size="sm"
               onClick={checkpointsToggle.onToggle}
               title="Toggle Checkpoints panel"
@@ -384,7 +384,7 @@ export function DriveToolbar({
           return (
             <Button
               type="button"
-              variant={changeRequestsToggle.open ? 'secondary' : 'ghost'}
+              variant={changeRequestsToggle.open ? 'subtle' : 'ghost'}
               size="sm"
               onClick={changeRequestsToggle.onToggle}
               title={

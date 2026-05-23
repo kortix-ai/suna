@@ -66,10 +66,6 @@ export interface UserMenuUser {
   planName?: string;
 }
 
-const isMacUA =
-  typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-const MOD = isMacUA ? '⌘' : 'Ctrl';
-
 export function UserMenu({
   user,
   variant = 'sidebar',
@@ -211,7 +207,6 @@ export function UserMenu({
           <ActionRow
             icon={<SettingsIcon className="size-3.5" />}
             label="User settings"
-            shortcut={`${MOD},`}
             onSelect={() => openUserSettings('general')}
           />
 

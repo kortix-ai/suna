@@ -130,8 +130,9 @@ export function FilePreviewModal() {
 
       {/* Modal container */}
       <div className="fixed inset-0 z-50 flex flex-col pointer-events-none animate-in fade-in-0 zoom-in-95 duration-200">
-        {/* Top bar - floating */}
-        <div className="pointer-events-auto mx-auto mt-3 flex items-center justify-between gap-4 px-4 h-12 bg-background/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-lg max-w-3xl w-[calc(100%-2rem)]">
+        {/* Top bar - floating. `kx-titlebar-safe-mt` keeps it below the
+            desktop title-bar inset so it clears the macOS traffic lights. */}
+        <div className="kx-titlebar-safe-mt pointer-events-auto mx-auto flex items-center justify-between gap-4 px-4 h-12 bg-background/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-lg max-w-3xl w-[calc(100%-2rem)]">
           {/* Left: back + file info */}
           <div className="flex items-center gap-2.5 min-w-0">
             <Button

@@ -254,7 +254,7 @@ export function UserSettingsModal({
                                             key={tab.id}
                                             onClick={() => handleTabClick(tab.id)}
                                             disabled={tab.disabled}
-                                            variant={isActive ? "secondary" : "ghost"}
+                                            variant={isActive ? "subtle" : "ghost"}
                                             className={cn(
                                                 "flex items-center gap-2 whitespace-nowrap flex-shrink-0 justify-start",
                                                 !isActive && "text-muted-foreground hover:text-foreground"

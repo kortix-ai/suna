@@ -42,8 +42,8 @@ function WallpaperCard({
         {/* Hover overlay */}
         <div
           className={cn(
-            'absolute inset-0 transition-opacity duration-200 pointer-events-none',
-            isActive ? 'bg-black/10' : 'bg-black/0 group-hover:bg-black/10'
+            'absolute inset-0 transition-colors duration-200 pointer-events-none',
+            isActive ? 'bg-transparent' : 'bg-transparent group-hover:bg-foreground/[0.06]'
           )}
         />
         {/* Check badge */}

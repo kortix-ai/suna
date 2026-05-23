@@ -57,7 +57,7 @@ export function AppHeader({
     <>
     <header
       className={cn(
-        'flex shrink-0 items-center justify-between gap-3 px-6 py-4',
+        'kx-app-header flex shrink-0 items-center justify-between gap-3 px-6 py-4',
         variant === 'overlay' && 'pointer-events-none absolute inset-x-0 top-0 z-20',
       )}
     >
