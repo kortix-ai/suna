@@ -1,7 +1,13 @@
+// authorize / assertAuthorized / listAccessibleResources are dispatched
+// per-account between the V1 (policy-based) and V2 (role-based) engines
+// via the iam_v2_enabled flag. Routes never see which engine answered.
 export {
   authorize,
   assertAuthorized,
   listAccessibleResources,
+  invalidateIamV2Flag,
+} from './dispatcher';
+export {
   checkConditions,
   actionPassesBoundary,
   type AccessibleResources,

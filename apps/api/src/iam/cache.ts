@@ -3,11 +3,11 @@
 // single set of DB lookups per (action, target) key.
 
 import type { Context } from 'hono';
-import {
-  authorize,
-  type AuthorizeResult,
-  type AuthorizeTarget,
-  type RequestContext,
+import { authorize } from './dispatcher';
+import type {
+  AuthorizeResult,
+  AuthorizeTarget,
+  RequestContext,
 } from './engine';
 
 type CacheMap = Map<string, Promise<AuthorizeResult>>;
