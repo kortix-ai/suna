@@ -27,9 +27,16 @@ import {
   listProjectAccess,
   revokeProjectAccess,
   updateProjectAccess,
+  attachGroupToProject,
+  detachGroupFromProject,
+  listProjectGroupGrants,
+  updateProjectGroupGrant,
   type ProjectAccessMember,
+  type ProjectGroupGrant,
   type ProjectRole,
 } from '@/lib/projects-client';
+import { listGroups, type AccountGroup } from '@/lib/iam-client';
+import { useIamV2Enabled } from '@/lib/use-iam-version';
 
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   manager: 'Manager',
@@ -84,6 +91,10 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
 
   const project = projectQuery.data;
   const canManage = project?.effective_project_role === 'manager' || accessQuery.data?.can_manage;
+  // V2 surfaces the project_group_grants table as a sibling card. V1
+  // accounts don't see it (groups attach via policies on the Group
+  // detail page instead).
+  const { enabled: isIamV2 } = useIamV2Enabled(project?.account_id);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -107,6 +118,14 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
           error={accessQuery.error as Error | null}
           onRetry={() => accessQuery.refetch()}
         />
+
+        {isIamV2 && project?.account_id && (
+          <ProjectGroupGrantsCard
+            projectId={projectId}
+            accountId={project.account_id}
+            canManage={!!canManage}
+          />
+        )}
       </div>
     </div>
   );
@@ -351,5 +370,230 @@ function AccountRoleBadge({ role }: { role: ProjectAccessMember['account_role'] 
     >
       {role}
     </Badge>
+  );
+}
+
+// ─── IAM V2: Group attachments ─────────────────────────────────────────────
+
+function ProjectGroupGrantsCard({
+  projectId,
+  accountId,
+  canManage,
+}: {
+  projectId: string;
+  accountId: string;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const grantsKey = ['project-group-grants', projectId];
+
+  const grantsQuery = useQuery({
+    queryKey: grantsKey,
+    queryFn: () => listProjectGroupGrants(projectId),
+    staleTime: 20_000,
+  });
+  const groupsQuery = useQuery({
+    queryKey: ['account-groups', accountId],
+    queryFn: () => listGroups(accountId),
+    enabled: canManage,
+    staleTime: 60_000,
+  });
+
+  const grants = grantsQuery.data?.grants ?? [];
+  const groups: AccountGroup[] = groupsQuery.data ?? [];
+  const attachedIds = useMemo(() => new Set(grants.map((g) => g.group_id)), [grants]);
+  const available = useMemo(
+    () => groups.filter((g) => !attachedIds.has(g.group_id)),
+    [groups, attachedIds],
+  );
+
+  const [pickerGroupId, setPickerGroupId] = useState<string>('');
+  const [pickerRole, setPickerRole] = useState<ProjectRole>('editor');
+  const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: grantsKey });
+  }
+
+  const attachMutation = useMutation({
+    mutationFn: () => attachGroupToProject(projectId, pickerGroupId, pickerRole),
+    onMutate: () => setPendingGroupId(pickerGroupId),
+    onSettled: () => setPendingGroupId(null),
+    onSuccess: () => {
+      toast.success('Group attached');
+      setPickerGroupId('');
+      setPickerRole('editor');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to attach group'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (input: { groupId: string; role: ProjectRole }) =>
+      updateProjectGroupGrant(projectId, input.groupId, input.role),
+    onMutate: (input) => setPendingGroupId(input.groupId),
+    onSettled: () => setPendingGroupId(null),
+    onSuccess: () => {
+      toast.success('Role updated');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to update role'),
+  });
+
+  const detachMutation = useMutation({
+    mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
+    onMutate: (groupId) => setPendingGroupId(groupId),
+    onSettled: () => setPendingGroupId(null),
+    onSuccess: () => {
+      toast.success('Group detached');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to detach group'),
+  });
+
+  return (
+    <SectionCard
+      flush
+      title="Group access"
+      description="Attach an account group to this project. Every member of the group gets the chosen role here."
+      count={grants.length}
+      action={
+        canManage && available.length > 0 ? (
+          <form
+            className="flex items-center gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!pickerGroupId || attachMutation.isPending) return;
+              attachMutation.mutate();
+            }}
+          >
+            <Select
+              value={pickerGroupId}
+              onValueChange={setPickerGroupId}
+              disabled={attachMutation.isPending}
+            >
+              <SelectTrigger className="h-8 w-44 text-xs">
+                <SelectValue placeholder="Pick a group…" />
+              </SelectTrigger>
+              <SelectContent>
+                {available.map((g) => (
+                  <SelectItem key={g.group_id} value={g.group_id}>
+                    {g.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={pickerRole}
+              onValueChange={(v) => setPickerRole(v as ProjectRole)}
+              disabled={attachMutation.isPending}
+            >
+              <SelectTrigger className="h-8 w-28 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
+                <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
+                <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              disabled={!pickerGroupId || attachMutation.isPending}
+            >
+              Attach
+            </Button>
+          </form>
+        ) : null
+      }
+    >
+      {grantsQuery.isLoading && (
+        <div className="px-6 py-5">
+          <Skeleton className="h-8 w-full" />
+        </div>
+      )}
+
+      {!grantsQuery.isLoading && grants.length === 0 && (
+        <div className="px-6 py-5 text-xs text-muted-foreground">
+          No groups attached yet.
+          {canManage && available.length === 0 && groups.length > 0 && (
+            <> All your groups are already attached.</>
+          )}
+          {canManage && groups.length === 0 && (
+            <>
+              {' '}Create one on the{' '}
+              <a
+                href={`/accounts/${accountId}`}
+                className="underline hover:text-foreground"
+              >
+                account page
+              </a>
+              .
+            </>
+          )}
+        </div>
+      )}
+
+      {!grantsQuery.isLoading && grants.length > 0 && (
+        <List>
+          {grants.map((g: ProjectGroupGrant) => {
+            const busy = pendingGroupId === g.group_id;
+            return (
+              <ListRow
+                key={g.group_id}
+                leading={
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/60">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                }
+                title={g.group_name}
+                subtitle={
+                  <InlineMeta>
+                    <span>Attached {formatDate(g.created_at)}</span>
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : canManage ? (
+                    <div className="flex items-center gap-1.5">
+                      <Select
+                        value={g.role}
+                        onValueChange={(v) =>
+                          updateMutation.mutate({ groupId: g.group_id, role: v as ProjectRole })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-28 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
+                          <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
+                          <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => detachMutation.mutate(g.group_id)}
+                      >
+                        Detach
+                      </Button>
+                    </div>
+                  ) : (
+                    <Badge variant="outline" size="sm" className="capitalize">
+                      {g.role}
+                    </Badge>
+                  )
+                }
+              />
+            );
+          })}
+        </List>
+      )}
+    </SectionCard>
   );
 }

@@ -490,6 +490,58 @@ export async function inviteProjectMember(
   );
 }
 
+// ── IAM V2: project ⇄ group attachments ────────────────────────────────────
+
+export interface ProjectGroupGrant {
+  group_id: string;
+  group_name: string;
+  role: ProjectRole;
+  granted_by: string | null;
+  created_at: string;
+}
+
+export async function listProjectGroupGrants(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ grants: ProjectGroupGrant[] }>(
+      `/projects/${projectId}/group-grants`,
+    ),
+  );
+}
+
+export async function attachGroupToProject(
+  projectId: string,
+  groupId: string,
+  role: ProjectRole,
+) {
+  return unwrap(
+    await backendApi.post<{ project_id: string; group_id: string; role: ProjectRole }>(
+      `/projects/${projectId}/group-grants`,
+      { group_id: groupId, role },
+    ),
+  );
+}
+
+export async function updateProjectGroupGrant(
+  projectId: string,
+  groupId: string,
+  role: ProjectRole,
+) {
+  return unwrap(
+    await backendApi.patch<{ project_id: string; group_id: string; role: ProjectRole }>(
+      `/projects/${projectId}/group-grants/${groupId}`,
+      { role },
+    ),
+  );
+}
+
+export async function detachGroupFromProject(projectId: string, groupId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/group-grants/${groupId}`,
+    ),
+  );
+}
+
 export interface ProjectSecretsResponse {
   items: ProjectSecret[];
   /** Env keys declared as required in the project's kortix.toml manifest. */
