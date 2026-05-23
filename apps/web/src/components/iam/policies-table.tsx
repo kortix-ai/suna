@@ -1501,7 +1501,7 @@ function CreatePolicyDialog({
                       setExpiryPreset(opt.key);
                       setExpiryCustomISO('');
                     }}
-                    className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                    className={`cursor-pointer rounded-md border px-2 py-1 text-[11px] transition-colors ${
                       expiryPreset === opt.key
                         ? 'border-primary bg-primary/10 text-foreground'
                         : 'border-border/60 text-muted-foreground hover:bg-muted/40'
@@ -1514,7 +1514,7 @@ function CreatePolicyDialog({
                 <button
                   type="button"
                   onClick={() => setExpiryPreset('custom')}
-                  className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                  className={`cursor-pointer rounded-md border px-2 py-1 text-[11px] transition-colors ${
                     expiryPreset === 'custom'
                       ? 'border-primary bg-primary/10 text-foreground'
                       : 'border-border/60 text-muted-foreground hover:bg-muted/40'
@@ -1551,7 +1551,7 @@ function CreatePolicyDialog({
               <button
                 type="button"
                 onClick={() => setConditionsOpen((v) => !v)}
-                className="flex w-full items-center justify-between gap-2 rounded-2xl px-3 py-2.5 text-left text-xs font-medium text-muted-foreground hover:bg-muted/30"
+                className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-2xl px-3 py-2.5 text-left text-xs font-medium text-muted-foreground hover:bg-muted/30"
                 disabled={createMutation.isPending}
               >
                 <span className="flex items-center gap-1.5">
@@ -1616,7 +1616,7 @@ function CreatePolicyDialog({
                               onClick={() =>
                                 setIpCidrs((prev) => prev.filter((x) => x !== c))
                               }
-                              className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              className="cursor-pointer rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                               aria-label={`Remove ${c}`}
                               disabled={createMutation.isPending}
                             >
