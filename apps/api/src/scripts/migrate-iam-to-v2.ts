@@ -521,8 +521,22 @@ async function stagePolicy(
 // ─── Validation ────────────────────────────────────────────────────────────
 
 /**
+ * The set of actions V2 actually models. Anything V1 grants outside
+ * this set is a deliberate V2 deprecation (policy.* and role.* have no
+ * place in the simpler model — no DB-driven policies or custom roles
+ * to manage). Validation skips these; they're not parity bugs.
+ */
+const V2_KNOWN_ACTIONS: ReadonlySet<string> = (() => {
+  const s = new Set<string>();
+  for (const set of Object.values(ACCOUNT_ROLE_PERMS)) for (const a of set) s.add(a);
+  for (const set of Object.values(PROJECT_ROLE_PERMS)) for (const a of set) s.add(a);
+  return s;
+})();
+
+/**
  * For every member of the account, verify that V2 allows at least every
- * (action, target) V1 allowed. Returns the number of diffs found.
+ * (action, target) V1 allowed. Skips actions V2 deliberately doesn't
+ * model. Returns the number of diffs found.
  */
 async function validateAccount(accountId: string): Promise<number> {
   const members = await db
@@ -536,8 +550,12 @@ async function validateAccount(accountId: string): Promise<number> {
     .where(eq(projects.accountId, accountId));
 
   const projectIds = accountProjects.map((p) => p.projectId);
-  const projectActionList = Object.values(PROJECT_ACTIONS);
-  const accountActionList = Object.values(ACCOUNT_ACTIONS);
+  const projectActionList = Object.values(PROJECT_ACTIONS).filter((a) =>
+    V2_KNOWN_ACTIONS.has(a),
+  );
+  const accountActionList = Object.values(ACCOUNT_ACTIONS).filter((a) =>
+    V2_KNOWN_ACTIONS.has(a),
+  );
 
   let diffs = 0;
   for (const m of members) {
