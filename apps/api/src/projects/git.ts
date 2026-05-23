@@ -356,9 +356,9 @@ export async function resolveTreeOid(
 /**
  * Materialize a subtree of the repo at a commit into a fresh local
  * directory — the snapshot builder feeds this to Daytona's Image API
- * which expects a local Dockerfile + context. Streams via `git archive`
- * piped into `tar -x` so it's fast and doesn't litter intermediate
- * working trees on the mirror.
+ * which expects a local Dockerfile + context. Archives to a temporary tarball
+ * before extraction so Bun child-process stream backpressure cannot truncate
+ * large trees under load.
  *
  * Returns the absolute path where the context was extracted. Caller is
  * responsible for `rm -rf`ing it when done.
@@ -390,22 +390,19 @@ export async function materializeRepoContext(
     }
   }
 
-  await new Promise<void>((resolve, reject) => {
-    const archive = spawn('git', ['archive', '--format=tar', treeish], {
-      cwd: repoPath,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  const archivePath = `${target}.tar`;
+  try {
+    await runGit(['archive', '--format=tar', '-o', archivePath, treeish], repoPath, false);
+    await execFileAsync('tar', ['-xf', archivePath, '-C', target], {
+      env: { ...process.env },
+      timeout: 60_000,
     });
-    const extract = spawn('tar', ['-x', '-C', target], { stdio: ['pipe', 'inherit', 'inherit'] });
-    let archiveErr = '';
-    archive.stderr.on('data', (b: Buffer) => { archiveErr += b.toString(); });
-    archive.stdout.pipe(extract.stdin);
-    archive.on('error', reject);
-    extract.on('error', reject);
-    extract.on('close', (code) => {
-      if (code === 0 && archive.exitCode === 0) resolve();
-      else reject(new Error(archiveErr.trim() || `archive/extract exit code ${code}`));
-    });
-  });
+  } catch (error) {
+    await fs.rm(target, { recursive: true, force: true });
+    throw error;
+  } finally {
+    await fs.rm(archivePath, { force: true }).catch(() => {});
+  }
 
   try {
     await assertNoSymlinks(target);
