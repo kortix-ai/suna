@@ -270,6 +270,10 @@
     "recent": "Recenti",
     "personalAccount": "Account personale",
     "workspaces": "Aree di lavoro",
+    "servers": "Server",
+    "searchServers": "Cerca server...",
+    "addServer": "Aggiungi server",
+    "noServersFound": "Nessun server trovato",
     "theme": "Tema",
     "integrations": "Integrazioni",
     "billing": "Fatturazione",
@@ -277,7 +281,6 @@
     "adminPanel": "Pannello admin",
     "apiKeys": "Chiavi API",
     "envManager": "Gestore ambiente",
-    "localEnvManager": "Gestore .Env locale",
     "advanced": "Avanzato",
     "plan": "Piano",
     "conversation": "conversazione",
@@ -404,8 +407,6 @@
     "customizeIcon": "Clicca per personalizzare l'icona del worker"
   },
   "home": {
-    "title": "Benvenuto",
-    "subtitle": "Inizia",
     "heroPlaceholder": "Descrivi il compito che vuoi che il tuo Worker completi..."
   },
   "showcase": {
@@ -1129,4 +1130,3 @@
     }
   }
 }
-

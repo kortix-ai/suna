@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "i18n:audit": "node scripts/audit-i18n.mjs",
+    "i18n:strict": "node scripts/audit-i18n.mjs --max-hardcoded=0",
     "test:workspace-search": "node --experimental-strip-types --test src/features/files/search/workspace-search-core.test.mts",
     "test:e2e": "bash ./scripts/run-e2e.sh",
     "test:e2e:ui": "bash ./scripts/run-e2e.sh --ui",

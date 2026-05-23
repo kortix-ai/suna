@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { locales, defaultLocale, type Locale } from '@/i18n/config';
+import { getCookieLocale, getUserLocale, LOCALE_COOKIE_MAX_AGE, LOCALE_COOKIE_NAME } from '@/i18n/locale';
 import { detectBestLocaleFromHeaders } from '@/lib/utils/geo-detection-server';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes';
@@ -151,9 +152,9 @@ export async function middleware(request: NextRequest) {
     if (isRemainingPathMarketing) {
       // Rewrite /de to /, etc.
       const response = NextResponse.rewrite(new URL(remainingPath, request.url));
-      response.cookies.set('locale', locale, {
+      response.cookies.set(LOCALE_COOKIE_NAME, locale, {
         path: '/',
-        maxAge: 31536000, // 1 year
+        maxAge: LOCALE_COOKIE_MAX_AGE,
         sameSite: 'lax',
       });
 
@@ -251,13 +252,13 @@ export async function middleware(request: NextRequest) {
   // 3. Detected locale is not English (default)
   if (isMarketingRoute && (!firstSegment || !locales.includes(firstSegment as Locale))) {
     // Check if user has explicit preference in cookie
-    const localeCookie = request.cookies.get('locale')?.value;
-    const hasExplicitPreference = !!localeCookie && locales.includes(localeCookie as Locale);
+    const localeCookie = getCookieLocale(request.cookies.get(LOCALE_COOKIE_NAME)?.value);
+    const hasExplicitPreference = !!localeCookie;
 
     // Check user metadata (if authenticated) - reuse the user we already fetched
     let userLocale: Locale | null = null;
-    if (!hasExplicitPreference && user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
-      userLocale = user.user_metadata.locale as Locale;
+    if (!hasExplicitPreference) {
+      userLocale = getUserLocale(user);
     }
 
     // Only auto-redirect if:
@@ -277,9 +278,9 @@ export async function middleware(request: NextRequest) {
 
         const redirectResponse = NextResponse.redirect(redirectUrl);
         // Set cookie so we don't redirect again on next visit
-        redirectResponse.cookies.set('locale', detectedLocale, {
+        redirectResponse.cookies.set(LOCALE_COOKIE_NAME, detectedLocale, {
           path: '/',
-          maxAge: 31536000, // 1 year
+          maxAge: LOCALE_COOKIE_MAX_AGE,
           sameSite: 'lax',
         });
         return redirectResponse;

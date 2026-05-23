@@ -1,9 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { Check, Monitor, Sun, Moon, Palette, ImageIcon } from 'lucide-react';
+import { Check, Monitor, Sun, Moon, Palette, ImageIcon, PanelTop } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { transitionFromElement } from '@/lib/view-transition';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
@@ -83,6 +84,10 @@ export function AppearanceTab() {
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID
   );
   const setWallpaperId = useUserPreferencesStore((s) => s.setWallpaperId);
+  const disableTabSelector = useUserPreferencesStore(
+    (s) => s.preferences.disableTabSelector ?? false,
+  );
+  const setDisableTabSelector = useUserPreferencesStore((s) => s.setDisableTabSelector);
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -112,7 +117,7 @@ export function AppearanceTab() {
           <h3 className="text-lg font-semibold">Appearance</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Choose a color mode and wallpaper.
+          Choose a color mode, wallpaper, and layout options.
         </p>
       </div>
 
@@ -159,6 +164,29 @@ export function AppearanceTab() {
                 onSelect={() => setWallpaperId(wp.id)}
               />
             ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <PanelTop className="size-4 text-muted-foreground" />
+            <label className="text-xs font-medium text-muted-foreground">
+              Layout
+            </label>
+          </div>
+          <div className="rounded-2xl border divide-y">
+            <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">Session tabs</div>
+                <div className="text-xs text-muted-foreground">
+                  Show a tab bar at the top of projects and the dashboard to switch between open sessions.
+                </div>
+              </div>
+              <Switch
+                checked={!disableTabSelector}
+                onCheckedChange={(v) => setDisableTabSelector(!v)}
+              />
+            </div>
           </div>
         </div>
 

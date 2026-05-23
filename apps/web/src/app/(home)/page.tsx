@@ -19,14 +19,93 @@ const DEMO_URL = '/enterprise';
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
 const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 
+// A big, recognizable slice of the 3,000+ connectors (favicons via Google's
+// service). Grouped by category for readability — order doesn't matter, it all
+// scrolls past in one continuous row below.
 const INTEGRATIONS = [
-  'gmail.com', 'slack.com', 'github.com', 'stripe.com', 'notion.so', 'hubspot.com',
-  'linear.app', 'salesforce.com', 'figma.com', 'zoom.us', 'shopify.com', 'asana.com',
-  'jira.com', 'intercom.com', 'airtable.com', 'dropbox.com', 'zendesk.com', 'twilio.com',
+  // Communication & email
+  'gmail.com', 'slack.com', 'discord.com', 'zoom.us', 'microsoft.com', 'telegram.org',
+  'whatsapp.com', 'twilio.com', 'sendgrid.com', 'mailgun.com', 'intercom.com', 'front.com',
+  'loom.com', 'webex.com', 'ringcentral.com',
+  // Productivity & docs
+  'notion.so', 'airtable.com', 'asana.com', 'monday.com', 'clickup.com', 'trello.com',
+  'todoist.com', 'evernote.com', 'coda.io', 'atlassian.com', 'jira.com', 'basecamp.com',
+  'miro.com', 'figma.com', 'canva.com', 'smartsheet.com', 'wrike.com',
+  // Files & storage
+  'dropbox.com', 'box.com', 'drive.google.com', 'onedrive.live.com', 'wetransfer.com',
+  // Dev & cloud
+  'github.com', 'gitlab.com', 'bitbucket.org', 'vercel.com', 'netlify.com', 'heroku.com',
+  'aws.amazon.com', 'cloud.google.com', 'azure.microsoft.com', 'digitalocean.com',
+  'cloudflare.com', 'docker.com', 'sentry.io', 'datadoghq.com', 'pagerduty.com',
+  'circleci.com', 'npmjs.com', 'postman.com', 'mongodb.com', 'redis.io', 'supabase.com',
+  'planetscale.com', 'snowflake.com', 'databricks.com', 'jenkins.io', 'linear.app',
+  // CRM & sales
+  'salesforce.com', 'hubspot.com', 'pipedrive.com', 'zoho.com', 'close.com', 'outreach.io',
+  'salesloft.com', 'gong.io', 'apollo.io', 'clearbit.com', 'zoominfo.com', 'copper.com',
+  // Marketing
+  'mailchimp.com', 'klaviyo.com', 'marketo.com', 'activecampaign.com', 'convertkit.com',
+  'hootsuite.com', 'buffer.com', 'sproutsocial.com', 'semrush.com', 'ahrefs.com',
+  'mixpanel.com', 'amplitude.com', 'segment.com', 'hotjar.com',
+  // Payments & finance
+  'stripe.com', 'paypal.com', 'squareup.com', 'quickbooks.intuit.com', 'xero.com', 'brex.com',
+  'ramp.com', 'wise.com', 'plaid.com', 'chargebee.com', 'recurly.com', 'paddle.com', 'bill.com',
+  // Support
+  'zendesk.com', 'freshdesk.com', 'helpscout.com', 'gorgias.com', 'kustomer.com',
+  // HR & recruiting
+  'workday.com', 'bamboohr.com', 'gusto.com', 'rippling.com', 'deel.com', 'lever.co',
+  'greenhouse.io', 'ashbyhq.com',
+  // E-commerce & website
+  'shopify.com', 'woocommerce.com', 'bigcommerce.com', 'squarespace.com', 'wix.com',
+  'webflow.com', 'magento.com',
+  // Data & BI
+  'tableau.com', 'looker.com', 'metabase.com', 'fivetran.com', 'getdbt.com', 'hex.tech',
+  // Forms, scheduling & automation
+  'typeform.com', 'surveymonkey.com', 'jotform.com', 'tally.so', 'calendly.com', 'cal.com',
+  'zapier.com', 'make.com', 'ifttt.com', 'retool.com', 'docusign.com', 'pandadoc.com',
+  // Social
+  'linkedin.com', 'x.com', 'facebook.com', 'instagram.com', 'youtube.com', 'tiktok.com',
+  'reddit.com', 'pinterest.com', 'twitch.tv',
+  // AI
+  'openai.com', 'anthropic.com', 'huggingface.co', 'perplexity.ai', 'mistral.ai',
+  'cohere.com', 'replicate.com', 'elevenlabs.io',
 ];
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{children}</span>;
+}
+
+/**
+ * One seamless, infinitely-looping logo row. Renders two identical copies and
+ * scrolls by exactly one copy (50%) before wrapping, so there's never a blank
+ * gap or a reset jump. Spacing lives on the items (mr-3), not the container, so
+ * both copies are the same width and the wrap is pixel-perfect.
+ */
+// Calm, premium drift speed (px/sec). Each tile is 48px wide + 12px margin = 60px.
+const MARQUEE_PX_PER_SEC = 28;
+
+function LogoMarquee({ items, reverse = false }: { items: string[]; reverse?: boolean }) {
+  // Constant on-screen speed regardless of how many logos are in the list.
+  const duration = (items.length * 60) / MARQUEE_PX_PER_SEC;
+  return (
+    <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_6%,black_94%,transparent)]">
+      <motion.div
+        className="flex w-max"
+        animate={{ x: reverse ? ['-50%', '0%'] : ['0%', '-50%'] }}
+        transition={{ duration, repeat: Infinity, ease: 'linear' }}
+      >
+        {[0, 1].map((copy) => (
+          <div key={copy} className="flex shrink-0" aria-hidden={copy > 0}>
+            {items.map((d, i) => (
+              <span key={`${copy}-${d}-${i}`} className="mr-3 flex size-12 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-card">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={favicon(d)} alt="" width={22} height={22} loading="lazy" decoding="async" className="size-[22px] rounded-md" />
+              </span>
+            ))}
+          </div>
+        ))}
+      </motion.div>
+    </div>
+  );
 }
 
 export default function Home() {
@@ -81,22 +160,9 @@ export default function Home() {
         {/* ═══════════════ INTEGRATIONS MARQUEE ═══════════════ */}
         <section className="border-y border-border/60 bg-muted/20 py-10">
           <p className="mb-7 text-center text-sm text-muted-foreground">
-            Connects to the <span className="font-medium text-foreground">3,000+ tools</span> your company already runs on
+            Connects to the <span className="font-medium text-foreground">3,000+ Apps</span> your company already runs on
           </p>
-          <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
-            <motion.div
-              className="flex w-max gap-3"
-              animate={{ x: ['0%', '-50%'] }}
-              transition={{ duration: 40, repeat: Infinity, ease: 'linear' }}
-            >
-              {[...INTEGRATIONS, ...INTEGRATIONS].map((d, i) => (
-                <span key={`${d}-${i}`} className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-card">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={favicon(d)} alt="" width={22} height={22} className="size-[22px] rounded-md" />
-                </span>
-              ))}
-            </motion.div>
-          </div>
+          <LogoMarquee items={INTEGRATIONS} />
         </section>
 
         {/* ═══════════════ STATS ═══════════════ */}

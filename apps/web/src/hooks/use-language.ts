@@ -1,52 +1,15 @@
 'use client';
 
 import { locales, defaultLocale, type Locale } from '@/i18n/config';
+import {
+  getBrowserLocale,
+  LOCALE_CHANGE_EVENT,
+  persistBrowserLocale,
+} from '@/i18n/locale';
 import { useCallback, useState, useEffect } from 'react';
 import { detectBestLocale } from '@/lib/utils/geo-detection';
 import { useAuth } from '@/components/AuthProvider';
 import { createClient } from '@/lib/supabase/client';
-import type { User } from '@supabase/supabase-js';
-
-/**
- * Gets the stored locale with priority:
- * 1. User profile preference (from user_metadata) - ALWAYS highest priority
- * 2. Cookie (explicit user preference)
- * 3. localStorage (explicit user preference)
- * 4. Geo-detection (timezone/browser) - default when nothing is explicitly set
- * 5. Default locale
- */
-function getStoredLocale(user: User | null): Locale {
-  if (typeof window === 'undefined') return defaultLocale;
-
-  // Priority 1: Check user profile preference (if authenticated)
-  // This ALWAYS takes precedence - user explicitly set it in settings
-  if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
-    return user.user_metadata.locale as Locale;
-  }
-  
-  // Priority 2: Check cookie (explicit user preference)
-  const cookies = document.cookie.split(';');
-  const localeCookie = cookies.find(c => c.trim().startsWith('locale='));
-  if (localeCookie) {
-    const value = localeCookie.split('=')[1].trim();
-    if (locales.includes(value as Locale)) {
-      return value as Locale;
-    }
-  }
-  
-  // Priority 3: Check localStorage (explicit user preference)
-  const stored = localStorage.getItem('locale');
-  if (stored && locales.includes(stored as Locale)) {
-    return stored as Locale;
-  }
-  
-  // Priority 4: Geo-detection (default when nothing is explicitly set)
-  const geoDetected = detectBestLocale();
-  return geoDetected;
-}
-
-// Custom event name for locale changes
-const LOCALE_CHANGE_EVENT = 'locale-change';
 
 export function useLanguage() {
   // Use AuthProvider's user to avoid unnecessary getUser calls
@@ -59,7 +22,7 @@ export function useLanguage() {
   useEffect(() => {
     let mounted = true;
     
-    const storedLocale = getStoredLocale(user);
+    const storedLocale = getBrowserLocale(user, detectBestLocale);
     if (mounted) {
       setLocale(storedLocale);
       setIsLoading(false);
@@ -109,14 +72,7 @@ export function useLanguage() {
       }
     }
     
-    // Priority 2: Store preference in cookie (explicit user preference)
-    const cookieValue = `locale=${newLocale}; path=/; max-age=31536000; SameSite=Lax`;
-    document.cookie = cookieValue;
-    
-    // Priority 3: Store in localStorage as backup (explicit user preference)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('locale', newLocale);
-    }
+    persistBrowserLocale(newLocale);
 
     // Update local state immediately
     setLocale(newLocale);
@@ -139,4 +95,3 @@ export function useLanguage() {
     isLoading
   };
 }
-
