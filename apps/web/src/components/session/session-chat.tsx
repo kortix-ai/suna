@@ -130,12 +130,6 @@ import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { toast as sonnerToast } from 'sonner';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import {
-  useMessageQueueStore,
-  selectSessionItems,
-  type QueuedMessage,
-} from '@/stores/message-queue-store';
-import { useMessageQueueDrain } from '@/hooks/opencode/use-message-queue-drain';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
@@ -4603,170 +4597,9 @@ export function SessionChat({
     hasPendingUserReply,
   ]);
 
-  // ---- Message Queue ----
-  // Mirrors OpenCode's `followup` queue (research/opencode/packages/app/src/
-  // pages/session.tsx, lines 540-2018):
-  //   - per-session items + paused + failed flags in the store
-  //   - one reactive drain effect (use-message-queue-drain) — no setTimeout,
-  //     no requestAnimationFrame, no double locks
-  //   - failed items stay at the head and don't auto-retry
-  //   - paused is set on session abort and cleared on enqueue / send-now
-  const queuedMessages = useMessageQueueStore(selectSessionItems(sessionId));
-  const queueRemove = useMessageQueueStore((s) => s.remove);
-  const queueMoveUp = useMessageQueueStore((s) => s.moveUp);
-  const queueMoveDown = useMessageQueueStore((s) => s.moveDown);
-  const queueClearSession = useMessageQueueStore((s) => s.clearSession);
-  const queueSetPaused = useMessageQueueStore((s) => s.setPaused);
-  const queueSetFailed = useMessageQueueStore((s) => s.setFailed);
-  const [queueExpanded, setQueueExpanded] = useState(false);
-
-  const hasActiveQuestionForQueue = useOpenCodePendingStore((s) =>
-    Object.values(s.questions).some((q) => q.sessionID === sessionId),
-  );
-
-  // Composite gate. The drain only fires when ALL of these are clear:
-  //
-  //   - isBusy: the debounced UI busy state (2s tail after server idles)
-  //   - isServerBusy: server-reported status === 'busy' | 'retry'
-  //   - hasIncompleteAssistant: latest assistant message hasn't completed
-  //   - hasPendingUserReply: there's a user message with no assistant reply yet
-  //   - pendingSendInFlight: a previous handleSend hasn't been server-acked
-  //   - hasActiveQuestionForQueue: a structured question is awaiting answer
-  //
-  // While ANY of these are true, queued messages accumulate in the local
-  // store and the queue UI shows them. When ALL clear (the assistant turn
-  // is genuinely complete), the drain fires ONCE and sends every queued
-  // item concurrently via Promise.allSettled — the OpenCode server's
-  // runner (research/opencode/packages/opencode/src/effect/runner.ts:111)
-  // serializes the prompt_async calls per-session so they execute in
-  // arrival order, but we don't have to wait for the assistant response
-  // between client-side sends.
-  const canDrain =
-    !isBusy &&
-    !isServerBusy &&
-    !hasIncompleteAssistant &&
-    !hasPendingUserReply &&
-    !pendingSendInFlight &&
-    !hasActiveQuestionForQueue;
-
-  // handleSend is defined later in the component, but we need a stable
-  // reference for the drain hook. Use a ref so the hook always sees the
-  // current closure without re-firing on every render.
-  const handleSendRef = useRef<typeof handleSend>();
-
-  useMessageQueueDrain({
-    sessionId,
-    canDrain,
-    sendFn: useCallback(
-      async (msgs: QueuedMessage[]) => {
-        // Defensive filter: drop any items the user removed (or send-now'd)
-        // between the drain snapshot and now. Without this, a send-now click
-        // mid-drain would cause the same message to be sent twice.
-        const liveIds = new Set(
-          (useMessageQueueStore.getState().items[sessionId] ?? []).map(
-            (m) => m.id,
-          ),
-        );
-        const toSend = msgs.filter((m) => liveIds.has(m.id));
-        if (toSend.length === 0) return;
-
-        // Fire all queued messages CONCURRENTLY in one synchronous burst.
-        // Each handleSend runs its sync prefix (build optimistic message →
-        // addOptimisticUserMessage → setStatus busy) up to its first await
-        // (file upload OR promptAsync). Because all N sync prefixes run
-        // back-to-back in the same JS tick BEFORE any await yields, React
-        // batches the N optimistic-add store mutations into a single
-        // re-render — the user sees all N user messages appear at once,
-        // not staggered.
-        //
-        // After the .map returns N pending promises, Promise.allSettled
-        // waits for all of them. Each handleSend's `await promptAsync` is
-        // an HTTP call to /session/.../prompt_async which the server
-        // accepts (204) and queues internally via its per-session Runner
-        // deferred chain (research/opencode/packages/opencode/src/effect/
-        // runner.ts:111). The server processes them in arrival order.
-        const results = await Promise.allSettled(
-          toSend.map((msg) =>
-            // Cast: AttachedFile and QueuedFile share the same shape but live
-            // in different module hierarchies; runtime values are interchangeable.
-            handleSendRef.current!(
-              msg.text,
-              msg.files as AttachedFile[] | undefined,
-              undefined,
-              {
-                agent: msg.agent ?? undefined,
-                model: msg.model ?? undefined,
-                variant: msg.variant ?? undefined,
-              },
-            ),
-          ),
-        );
-
-        // Per-item state reconciliation. Successful items are removed from
-        // the queue; failed items stay put. We mark `failed` to the first
-        // remaining failed item's id so the drain effect doesn't retry-loop
-        // (the gate `failed === items[0].id` blocks the next cycle until
-        // the user manually intervenes via send-now or remove).
-        const store = useMessageQueueStore.getState();
-        let anyFailed = false;
-        results.forEach((result, idx) => {
-          const msg = toSend[idx];
-          if (result.status === 'fulfilled') {
-            store.remove(sessionId, msg.id);
-          } else {
-            anyFailed = true;
-            console.error('[message-queue] item send failed', {
-              sessionId,
-              messageId: msg.id,
-              err: result.reason,
-            });
-          }
-        });
-
-        if (anyFailed) {
-          const remaining =
-            useMessageQueueStore.getState().items[sessionId] ?? [];
-          if (remaining.length > 0) {
-            store.setFailed(sessionId, remaining[0].id);
-          }
-        }
-      },
-      [sessionId],
-    ),
-  });
-
-  // Send-now handler. Matches OpenCode (session.tsx:2016-2018, sendFollowup
-  // with `manual: true`): just send the queued item now, regardless of pause.
-  // Does NOT abort the current turn — the OpenCode server's runner will
-  // serialize concurrent prompt_async calls via its deferred chain (see
-  // research/opencode/packages/opencode/src/effect/runner.ts:111).
-  const handleQueueSendNow = useCallback(
-    (messageId: string) => {
-      const msg = useMessageQueueStore
-        .getState()
-        .items[sessionId]?.find((m) => m.id === messageId);
-      if (!msg) return;
-      // Clearing pause + failed lets the drain effect re-pick this up if the
-      // synchronous send below races. setFailed is also called to clear any
-      // prior failure on this id.
-      queueSetPaused(sessionId, false);
-      queueSetFailed(sessionId, undefined);
-      queueRemove(sessionId, messageId);
-      void handleSendRef.current!(
-        msg.text,
-        msg.files as AttachedFile[] | undefined,
-        undefined,
-        {
-          agent: msg.agent ?? undefined,
-          model: msg.model ?? undefined,
-          variant: msg.variant ?? undefined,
-        },
-      ).catch(() => {
-        // handleSend already cleaned up the optimistic UI; nothing more to do.
-      });
-    },
-    [sessionId, queueSetPaused, queueSetFailed, queueRemove],
-  );
+  // No client-side message queue: sends go straight to the server, which
+  // serializes concurrent prompt_async calls per-session (so sending while the
+  // agent is busy is safe). See SessionChatInput.handleSubmit → onSend.
 
   // Stop polling when session goes idle (via SSE or polling fallback).
   // Grace period: if we sent a message recently (within 5s), don't stop polling
@@ -5664,10 +5497,6 @@ export function SessionChat({
     ],
   );
 
-  // Wire the queue drain to the latest handleSend without triggering the
-  // drain effect on every handleSend identity change.
-  handleSendRef.current = handleSend;
-
   const handleStop = useCallback(() => {
     // Guard against rapid clicks — ignore if an abort is already in flight
     if (abortSession.isPending) {
@@ -5704,12 +5533,8 @@ export function SessionChat({
       }
     }
 
-    // Pause queue auto-drain on abort. Matches OpenCode (session.tsx:2011-2015,
-    // `onAbort: setFollowup("paused", id, true)`). Enqueueing a new message or
-    // clicking "send now" on a queued item will clear the pause.
-    queueSetPaused(sessionId, true);
     abortSession.mutate(sessionId);
-  }, [sessionId, abortSession, queueSetPaused]);
+  }, [sessionId, abortSession]);
 
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
@@ -6313,164 +6138,23 @@ export function SessionChat({
             questionPromptRef.current?.performAction();
           }}
           inputSlot={
-            renderedQuestion || queuedMessages.length > 0 ? (
-              <>
-                {renderedQuestion && (
-                  <div
-                    className={cn(
-                      'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
-                      questionPromptVisible
-                        ? 'max-h-[520px] opacity-100 translate-y-0 duration-300'
-                        : 'max-h-0 opacity-0 -translate-y-1 duration-320 pointer-events-none',
-                    )}
-                  >
-                    <QuestionPrompt
-                      ref={questionPromptRef}
-                      request={renderedQuestion}
-                      onReply={handleQuestionReply}
-                      onReject={handleQuestionReject}
-                      onActionChange={handleQuestionActionChange}
-                    />
-                  </div>
+            renderedQuestion ? (
+              <div
+                className={cn(
+                  'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
+                  questionPromptVisible
+                    ? 'max-h-[520px] opacity-100 translate-y-0 duration-300'
+                    : 'max-h-0 opacity-0 -translate-y-1 duration-320 pointer-events-none',
                 )}
-                {queuedMessages.length > 0 && (
-                  <div className="rounded-2xl bg-muted/50 overflow-hidden">
-                    {/* Compact header row */}
-                    <Button
-                      type="button"
-                      onClick={() => setQueueExpanded((v) => !v)}
-                      variant="ghost"
-                      className="flex items-center gap-2 w-full px-3 py-1.5 h-auto rounded-none justify-start hover:bg-muted/80"
-                    >
-                      <ListPlus className="size-3.5 text-muted-foreground flex-shrink-0" />
-                      <span className="text-xs text-muted-foreground flex-1 text-left truncate">
-                        {queuedMessages.length} message
-                        {queuedMessages.length !== 1 ? 's' : ''} queued
-                        {!queueExpanded && queuedMessages.length > 0 && (
-                          <span className="text-foreground/80 font-medium">
-                            {(() => {
-                              const previewText = queuedMessages[0].text.trim();
-                              if (previewText.length > 0) {
-                                return (
-                                  <>
-                                    {' '}
-                                    · {previewText.slice(0, 50)}
-                                    {previewText.length > 50 ? '…' : ''}
-                                  </>
-                                );
-                              }
-                              const fileCount =
-                                queuedMessages[0].files?.length ?? 0;
-                              if (fileCount > 0) {
-                                return (
-                                  <>
-                                    {' '}
-                                    · {fileCount} file{fileCount > 1 ? 's' : ''}
-                                  </>
-                                );
-                              }
-                              return null;
-                            })()}
-                          </span>
-                        )}
-                      </span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            queueClearSession(sessionId);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.stopPropagation();
-                              queueClearSession(sessionId);
-                            }
-                          }}
-                          className="inline-flex items-center justify-center size-5 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted transition-colors"
-                        >
-                          <X className="size-3" />
-                        </span>
-                        <ChevronUp
-                          className={cn(
-                            'size-3 text-muted-foreground/40 transition-transform',
-                            !queueExpanded && 'rotate-180',
-                          )}
-                        />
-                      </div>
-                    </Button>
-
-                    {/* Expanded list — show for any number of queued messages */}
-                    {queueExpanded && queuedMessages.length > 0 && (
-                      <div className="border-t border-border/30 max-h-[160px] overflow-y-auto scrollbar-hide">
-                        <div className="flex flex-col px-1.5 py-1">
-                          {queuedMessages.map((qm, idx) => (
-                            <div
-                              key={qm.id}
-                              className="group/q flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-muted/60 transition-colors"
-                            >
-                              <span className="text-xs tabular-nums text-muted-foreground/40 shrink-0 w-3 text-center">
-                                {idx + 1}
-                              </span>
-                              <p className="flex-1 text-xs text-muted-foreground truncate min-w-0">
-                                {qm.text ||
-                                  `${qm.files?.length ?? 0} file${(qm.files?.length ?? 0) === 1 ? '' : 's'}`}
-                              </p>
-                              <div className="flex items-center gap-0.5 opacity-0 group-hover/q:opacity-100 transition-opacity shrink-0">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      type="button"
-                                      onClick={() => handleQueueSendNow(qm.id)}
-                                      variant="ghost"
-                                      size="icon-xs"
-                                    >
-                                      <Send className="size-2.5" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top">
-                                    <p className="text-xs">Send now</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                                {idx > 0 && (
-                                  <Button
-                                    type="button"
-                                    onClick={() => queueMoveUp(sessionId, qm.id)}
-                                    variant="ghost"
-                                    size="icon-xs"
-                                  >
-                                    <ArrowUp className="size-2.5" />
-                                  </Button>
-                                )}
-                                {idx < queuedMessages.length - 1 && (
-                                  <Button
-                                    type="button"
-                                    onClick={() => queueMoveDown(sessionId, qm.id)}
-                                    variant="ghost"
-                                    size="icon-xs"
-                                  >
-                                    <ArrowDown className="size-2.5" />
-                                  </Button>
-                                )}
-                                <Button
-                                  type="button"
-                                  onClick={() => queueRemove(sessionId, qm.id)}
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  className="hover:text-foreground hover:bg-muted"
-                                >
-                                  <X className="size-2.5" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
+              >
+                <QuestionPrompt
+                  ref={questionPromptRef}
+                  request={renderedQuestion}
+                  onReply={handleQuestionReply}
+                  onReject={handleQuestionReject}
+                  onActionChange={handleQuestionActionChange}
+                />
+              </div>
             ) : undefined
           }
         />

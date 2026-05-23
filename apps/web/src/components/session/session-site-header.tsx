@@ -182,7 +182,12 @@ export function SessionSiteHeader({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" sideOffset={4}>
-                    <p>{isSidePanelOpen ? 'Close' : 'Open'} panel</p>
+                    <p className="flex items-center gap-1.5">
+                      {isSidePanelOpen ? 'Close' : 'Open'} panel
+                      <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                        ⌘I
+                      </kbd>
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               )}

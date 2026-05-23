@@ -1,57 +1,52 @@
 'use client';
 
-import { useState } from 'react';
 import { useParams } from 'next/navigation';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GitMerge, GitPullRequestArrow, Loader2 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { GitPullRequestArrow, Loader2, Sparkles } from 'lucide-react';
 
-import {
-  getProjectSession,
-  openChangeRequest,
-  getChangeRequestMergePreview,
-  mergeChangeRequest,
-} from '@/lib/projects-client';
+import { getProjectSession } from '@/lib/projects-client';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
-import { FileExplorerPage } from '@/features/files/components';
+import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 
 import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
+import { STATUS_TEXT } from '@/components/ui/status';
+
+// Status → single-letter badge, using the canonical status-text tones.
+const STATUS_BADGE: Record<string, { letter: string; cls: string; label: string }> = {
+  added: { letter: 'A', cls: STATUS_TEXT.success, label: 'Added' },
+  modified: { letter: 'M', cls: STATUS_TEXT.warning, label: 'Modified' },
+  deleted: { letter: 'D', cls: STATUS_TEXT.destructive, label: 'Deleted' },
+};
 
 /**
- * Files CRUD'd in this session's sandbox.
+ * Side-panel "Changes" view.
  *
- * The session's sandbox `/workspace` IS the git working tree of this session's
- * branch (branch name == the route session id, forked from `base_ref`). So the
- * file browser below — the app's standard FileExplorer, pointed at this
- * session's active sandbox — shows exactly those files, with the agent's
- * changes badged via git status. They live ONLY in this session until merged
- * into the base branch, which the header actions do via a change request.
+ * Each session runs on its own standalone version of the project (a branch
+ * forked from `base_ref`), so work here never touches the main version until
+ * it's explicitly merged. This panel is intentionally NOT a file browser — the
+ * full explorer lives in the main Files tab + Customize. Here we only surface:
+ *
+ *   1. what changed in this session (git status), and
+ *   2. the one way to persist it: ask the agent to open a change request, which
+ *      it commits + opens via `kortix cr open` for the user to review & merge.
  */
 export function SessionFilesPanel() {
-  // The git branch == the ROUTE session id (== sandbox id), which differs from
-  // SessionLayout's `sessionId` prop (that's the OpenCode chat session id).
+  // The git branch == the ROUTE session id; SessionLayout's `sessionId` prop is
+  // the OpenCode chat session id (used to message the agent).
   const { id: projectId, sessionId: gitSessionId } = useParams<{
     id: string;
     sessionId: string;
   }>();
 
-  const queryClient = useQueryClient();
-
-  // Drives the "N changed" copy + enables the merge/CR actions.
   const statusQuery = useGitStatus();
-  const changedCount = statusQuery.data?.length ?? 0;
+  const changedFiles = statusQuery.data ?? [];
+  const changedCount = changedFiles.length;
+  // Show a loader until the first git-status result lands (or while refetching
+  // with nothing yet) instead of flashing the empty state prematurely.
+  const isLoadingChanges =
+    !statusQuery.data && (statusQuery.isLoading || statusQuery.isFetching);
 
   const sessionQuery = useQuery({
     queryKey: ['project', 'session', projectId, gitSessionId],
@@ -60,209 +55,104 @@ export function SessionFilesPanel() {
     staleTime: 60_000,
   });
   const baseRef = sessionQuery.data?.base_ref ?? 'main';
-  const defaultTitle = sessionQuery.data?.name || 'Session changes';
 
-  const [crOpen, setCrOpen] = useState(false);
-  const [crTitle, setCrTitle] = useState('');
-  const [crDescription, setCrDescription] = useState('');
-  const [mergeOpen, setMergeOpen] = useState(false);
+  const { openPreview } = useFilePreviewStore();
 
-  const canAct = !!projectId && !!gitSessionId && changedCount > 0;
-
-  const openCrMutation = useMutation({
-    mutationFn: () =>
-      openChangeRequest(projectId!, {
-        title: crTitle.trim() || defaultTitle,
-        description: crDescription.trim() || undefined,
-        head_ref: gitSessionId!,
-        base_ref: baseRef,
-        session_id: gitSessionId!,
-      }),
-    onSuccess: (cr) => {
-      toast.success(`Change request #${cr.number} opened`);
-      setCrOpen(false);
-      setCrTitle('');
-      setCrDescription('');
-      queryClient.invalidateQueries({
-        queryKey: ['project', 'change-requests', projectId],
-      });
-    },
-    onError: (err) =>
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to open change request',
-      ),
-  });
-
-  const mergeMutation = useMutation({
-    mutationFn: async () => {
-      // Merge runs through a change request: create one for this branch,
-      // verify it merges cleanly, then merge it into the base branch.
-      const cr = await openChangeRequest(projectId!, {
-        title: defaultTitle,
-        head_ref: gitSessionId!,
-        base_ref: baseRef,
-        session_id: gitSessionId!,
-      });
-      const preview = await getChangeRequestMergePreview(projectId!, cr.cr_id);
-      if (!preview.can_merge) {
-        throw new Error(
-          preview.conflicts.length
-            ? `Merge conflicts in ${preview.conflicts.length} file(s). Open a change request to resolve.`
-            : 'These changes can’t be merged automatically.',
-        );
-      }
-      return mergeChangeRequest(projectId!, cr.cr_id);
-    },
-    onSuccess: () => {
-      toast.success(`Merged into ${baseRef}`);
-      setMergeOpen(false);
-      queryClient.invalidateQueries({
-        queryKey: ['project', 'change-requests', projectId],
-      });
-      statusQuery.refetch();
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to merge');
-      setMergeOpen(false);
-    },
-  });
+  // Copy a ready-to-send prompt to the clipboard so the user can paste it into
+  // the chat — the agent then commits and runs `kortix cr open`. (We copy
+  // rather than auto-send because programmatic enqueue isn't reliable here.)
+  const copyChangeRequestPrompt = async () => {
+    const prompt = `Load the kortix-system skill and read about Versions & Change Requests. Then review the changes in this session, commit them, and open a change request to merge into \`${baseRef}\`. Give it a clear title and a description of what changed and why.`;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast.success('Prompt copied — paste it into the chat to ask your agent.');
+    } catch {
+      toast.error('Could not copy to clipboard.');
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
-      {/* Session-only indicator + actions */}
-      <div className="flex-shrink-0 space-y-2.5 border-b border-border/40 p-3">
-        <InfoBanner
-          tone="info"
-          icon={GitPullRequestArrow}
-          className="px-3 py-2 text-xs"
-        >
-          {changedCount > 0 ? (
-            <>
-              <span className="font-medium">
-                {changedCount} file{changedCount === 1 ? '' : 's'} changed
-              </span>{' '}
-              in this session — these live only here until merged into{' '}
-              <span className="font-mono text-foreground/80">{baseRef}</span>.
-            </>
-          ) : (
-            <>
-              Files the agent changes here live only in this session until merged
-              into <span className="font-mono text-foreground/80">{baseRef}</span>
-              .
-            </>
-          )}
-        </InfoBanner>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1"
-            disabled={!canAct}
-            onClick={() => {
-              setCrTitle(defaultTitle);
-              setCrOpen(true);
-            }}
-          >
-            <GitPullRequestArrow className="size-3.5" />
-            Open change request
-          </Button>
-          <Button
-            size="sm"
-            className="flex-1"
-            disabled={!canAct || mergeMutation.isPending}
-            onClick={() => setMergeOpen(true)}
-          >
-            {mergeMutation.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <GitMerge className="size-3.5" />
-            )}
-            Merge to {baseRef}
-          </Button>
+      {/* What this is + the one action. */}
+      <div className="flex-shrink-0 space-y-3 border-b border-border/40 p-4">
+        <div className="space-y-1.5">
+          <h3 className="text-sm font-medium text-foreground">
+            This session is its own version
+          </h3>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Changes here live on a standalone version of your project — separate
+            from{' '}
+            <span className="font-mono text-foreground/80">{baseRef}</span>, so
+            you can work in parallel without affecting it. To make any of them
+            part of your main Kortix version, ask your agent to open a{' '}
+            <span className="font-medium text-foreground/80">change request</span>
+            ; you can review and merge it into{' '}
+            <span className="font-mono text-foreground/80">{baseRef}</span>{' '}
+            whenever you&apos;re ready.
+          </p>
         </div>
+        <Button size="sm" className="w-full" onClick={copyChangeRequestPrompt}>
+          <Sparkles className="size-3.5" />
+          Ask agent to open a change request
+        </Button>
       </div>
 
-      {/* The app's standard file explorer, pointed at this session's sandbox. */}
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <FileExplorerPage />
+      {/* The currently-changed files (git status). */}
+      <div className="min-h-0 flex-1 overflow-auto p-3">
+        <div className="mb-2 flex items-center gap-1.5 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
+          <GitPullRequestArrow className="size-3.5" />
+          Changes
+          {changedCount > 0 && (
+            <span className="text-muted-foreground/40">· {changedCount}</span>
+          )}
+        </div>
+
+        {isLoadingChanges ? (
+          <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground/50">
+            <Loader2 className="size-4 animate-spin" />
+            Loading changes…
+          </div>
+        ) : changedCount > 0 ? (
+          <div className="space-y-0.5">
+            {changedFiles.map((file) => {
+              const badge = STATUS_BADGE[file.status] ?? STATUS_BADGE.modified;
+              const name = file.path.split('/').pop() || file.path;
+              const dir = file.path.slice(0, file.path.length - name.length);
+              return (
+                <button
+                  key={file.path}
+                  type="button"
+                  onClick={() => openPreview(file.path)}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60"
+                >
+                  <span
+                    className={cn(
+                      'w-3 flex-shrink-0 text-center font-mono font-semibold',
+                      badge.cls,
+                    )}
+                    title={badge.label}
+                  >
+                    {badge.letter}
+                  </span>
+                  <span className="truncate font-medium text-foreground/90">
+                    {name}
+                  </span>
+                  {dir && (
+                    <span className="truncate font-mono text-[10px] text-muted-foreground/50">
+                      {dir.replace(/\/$/, '')}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="px-1 py-8 text-center text-xs text-muted-foreground/60">
+            No changes yet. Files the agent creates or edits in this session will
+            show up here.
+          </div>
+        )}
       </div>
-
-      {/* Open change request dialog */}
-      <Dialog open={crOpen} onOpenChange={setCrOpen}>
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-          <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-            <DialogTitle>Open change request</DialogTitle>
-            <DialogDescription>
-              Propose merging this session&apos;s {changedCount} changed file
-              {changedCount === 1 ? '' : 's'} into{' '}
-              <span className="font-mono">{baseRef}</span>.
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              openCrMutation.mutate();
-            }}
-          >
-            <div className="space-y-4 px-6 py-5">
-              <div className="space-y-1.5">
-                <Label htmlFor="cr-title">Title</Label>
-                <Input
-                  id="cr-title"
-                  value={crTitle}
-                  onChange={(e) => setCrTitle(e.target.value)}
-                  placeholder={defaultTitle}
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="cr-description">Description</Label>
-                <Textarea
-                  id="cr-description"
-                  value={crDescription}
-                  onChange={(e) => setCrDescription(e.target.value)}
-                  placeholder="What changed and why (optional)"
-                  rows={4}
-                />
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setCrOpen(false)}
-                disabled={openCrMutation.isPending}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={openCrMutation.isPending}>
-                {openCrMutation.isPending && (
-                  <Loader2 className="size-3.5 animate-spin" />
-                )}
-                Open change request
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Merge confirm */}
-      <ConfirmDialog
-        open={mergeOpen}
-        onOpenChange={setMergeOpen}
-        title={`Merge into ${baseRef}?`}
-        description={
-          <>
-            This brings this session&apos;s {changedCount} changed file
-            {changedCount === 1 ? '' : 's'} into the{' '}
-            <span className="font-mono">{baseRef}</span> branch. A change request
-            is created and merged for the record.
-          </>
-        }
-        confirmLabel={`Merge to ${baseRef}`}
-        onConfirm={() => mergeMutation.mutate()}
-        isPending={mergeMutation.isPending}
-      />
     </div>
   );
 }

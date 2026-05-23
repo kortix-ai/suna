@@ -6,6 +6,7 @@ import {
   ToolActivateContext,
 } from '@/components/session/tool-renderers';
 import { SessionActionsPanel } from '@/components/session/session-actions-panel';
+import { SessionFilesPanel } from '@/components/session/session-files-panel';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 /**
@@ -295,6 +296,17 @@ export default function DebugToolsPage() {
               } as any,
             ]}
           />
+        </div>
+      </div>
+
+      {/* Side-panel Changes view preview — explanation + agent CR button +
+          git-status list (empty here, no sandbox). */}
+      <div className="mx-auto w-full max-w-3xl px-6 pt-10">
+        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Side panel · Changes
+        </h2>
+        <div className="h-[420px] w-full overflow-hidden rounded-2xl border border-border bg-card">
+          <SessionFilesPanel />
         </div>
       </div>
 

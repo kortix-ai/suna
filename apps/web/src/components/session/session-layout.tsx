@@ -111,6 +111,28 @@ export const SessionLayout = memo(function SessionLayout({
   const shouldShowPanel =
     isSidePanelOpen && (hasToolCalls || showBrowser || showFiles);
 
+  // ⌘I / Ctrl+I toggles the side panel open/closed.
+  //
+  // In the dashboard every session tab is pre-mounted (hidden via CSS), so we
+  // must only respond on the active tab. But the standalone session route
+  // mounts a single SessionLayout whose id isn't in the tab system at all —
+  // there `isActiveTab` is always false, so gate on it only when this session
+  // actually is a tab.
+  const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
+  const shouldHandleHotkey = isInTabSystem ? isActiveTab : true;
+  useEffect(() => {
+    if (!shouldHandleHotkey) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'i' || e.key === 'I')) {
+        e.preventDefault();
+        if (isSidePanelOpen) handleSidePanelClose();
+        else setIsSidePanelOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [shouldHandleHotkey, isSidePanelOpen, handleSidePanelClose, setIsSidePanelOpen]);
+
   // Track whether we're mid-animation so we can use relaxed constraints
   // that allow intermediate sizes (e.g. 75%) during the transition.
   const [isAnimating, setIsAnimating] = useState(false);
@@ -337,7 +359,7 @@ function PanelHeaderSwitcher({
         <PanelTabButton
           active={view === 'files'}
           onClick={() => onChangeView('files')}
-          label="Files"
+          label="Changes"
         />
       </div>
       <Tooltip>
@@ -350,7 +372,12 @@ function PanelHeaderSwitcher({
             <X className="w-3.5 h-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">Close panel</TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">
+          Close panel
+          <kbd className="ml-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+            ⌘I
+          </kbd>
+        </TooltipContent>
       </Tooltip>
     </div>
   );

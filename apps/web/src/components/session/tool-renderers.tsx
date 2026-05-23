@@ -5307,6 +5307,35 @@ function RemovedIntegrationTool({
 // TaskTool — Sub-agent delegation
 // ============================================================================
 
+/**
+ * Inline transcript of a sub-agent's child-session tool calls. Shown in the
+ * side panel (large surface) so a sub-agent reveals what it actually did, not
+ * just a header. Forces inline (compact) rendering for the child rows.
+ */
+function SubAgentActivity({
+  childSessionId,
+  parts,
+}: {
+  childSessionId?: string;
+  parts: ToolPart[];
+}) {
+  if (parts.length === 0) return null;
+  return (
+    <ToolSurfaceContext.Provider value="inline">
+      <div className="space-y-1">
+        {parts.map((tp) => (
+          <ToolPartRenderer
+            key={tp.callID}
+            part={tp}
+            sessionId={childSessionId}
+            disableNavigation
+          />
+        ))}
+      </div>
+    </ToolSurfaceContext.Provider>
+  );
+}
+
 function TaskTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
@@ -5364,7 +5393,14 @@ function TaskTool({ part, forceOpen }: ToolProps) {
             : undefined
         }
         rightAccessory={childSessionId ? <ExternalLink /> : undefined}
-      />
+      >
+        {childToolParts.length > 0 ? (
+          <SubAgentActivity
+            childSessionId={childSessionId}
+            parts={childToolParts}
+          />
+        ) : undefined}
+      </BasicTool>
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -5442,7 +5478,14 @@ function SessionSpawnTool({ part, forceOpen }: ToolProps) {
             : undefined
         }
         rightAccessory={childSessionId ? <ExternalLink /> : undefined}
-      />
+      >
+        {childToolParts.length > 0 ? (
+          <SubAgentActivity
+            childSessionId={childSessionId}
+            parts={childToolParts}
+          />
+        ) : undefined}
+      </BasicTool>
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -6228,6 +6271,7 @@ function extractWorkerPreview(cleaned: string): string | null {
 }
 
 function AgentSpawnTool({ part, forceOpen }: ToolProps) {
+  const surface = useContext(ToolSurfaceContext);
   const input = partInput(part);
   const status = partStatus(part);
   const output = partOutput(part);
@@ -6449,6 +6493,16 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
                 )}
               </>
             )}
+          </div>
+        )}
+
+        {/* Panel surface: full child activity inline (not just a summary). */}
+        {surface === 'panel' && childToolParts.length > 0 && (
+          <div className="border-t border-border/30 p-3">
+            <SubAgentActivity
+              childSessionId={childSessionId}
+              parts={childToolParts}
+            />
           </div>
         )}
       </div>

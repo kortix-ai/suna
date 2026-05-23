@@ -55,7 +55,6 @@ import { getFileIcon } from '@/features/files/components/file-icon';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
 import { featureFlags } from '@/lib/feature-flags';
 
-import { useMessageQueueStore } from '@/stores/message-queue-store';
 import {
   CommandPopover,
   CommandPopoverTrigger,
@@ -1704,7 +1703,6 @@ export function SessionChatInput({
     }
   }, [mentionItems.length]);
 
-  const enqueue = useMessageQueueStore((s) => s.enqueue);
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
 
   const handleSubmit = useCallback(async () => {
@@ -1777,39 +1775,24 @@ export function SessionChatInput({
     setSlashFilter(null);
     setMentionQuery(null);
     setMentions([]);
-    // Don't revoke URLs for files going into the queue — they're still needed
-    if (!isBusy) {
-      for (const af of attachedFiles) {
-        if (af.kind === 'local') URL.revokeObjectURL(af.localUrl);
-      }
+    for (const af of attachedFiles) {
+      if (af.kind === 'local') URL.revokeObjectURL(af.localUrl);
     }
     setAttachedFiles([]);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
 
-    // If busy, queue the message instead of sending immediately.
-    // Capture the active agent/model/variant at enqueue time so the message
-    // drains under the same settings the user picked when typing it
-    // (matches OpenCode FollowupDraft semantics).
-    if (isBusy && sessionId) {
-      enqueue(sessionId, {
-        text: trimmed,
-        files: filesToSend,
-        agent: selectedAgent ?? null,
-        model: selectedModel ?? null,
-        variant: selectedVariant ?? null,
-      });
-      return;
-    }
-
+    // Send directly. The OpenCode server serializes concurrent prompt_async
+    // calls per-session, so sending while the agent is busy is safe — the
+    // server queues it. (No client-side message queue.)
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
     } catch {
       // Restore the text so the user can retry
       setText(trimmed);
     }
-  }, [text, isBusy, disabled, onSend, onCommand, stagedCommand, attachedFiles, mentions, sessionId, enqueue, selectedAgent, selectedModel, selectedVariant, lockForQuestion, onCustomAnswer, onQuestionAction]);
+  }, [text, isBusy, disabled, onSend, onCommand, stagedCommand, attachedFiles, mentions, sessionId, lockForQuestion, onCustomAnswer, onQuestionAction]);
 
   const handleSelectCommand = (cmd: Command) => {
     // Stage the command — show an args input instead of executing immediately
