@@ -57,15 +57,9 @@ export default function GroupDetailPage() {
     staleTime: 30_000,
   });
 
-  if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
-  }
-
-  const account = accountQuery.data;
-  const group = groupQuery.data;
-
   // Granular permissions, sourced from the IAM engine. Each sub-tab gates on
   // the action it actually performs — no more single "admin or not" flag.
+  // MUST be called before any conditional return (rules of hooks).
   const canManageMembers = usePermission(accountId, 'group.members.manage', {
     resourceType: 'group',
     resourceId: groupId,
@@ -79,6 +73,13 @@ export default function GroupDetailPage() {
     resourceType: 'group',
     resourceId: groupId,
   }).allowed;
+
+  if (authLoading || !user) {
+    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+  }
+
+  const account = accountQuery.data;
+  const group = groupQuery.data;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">

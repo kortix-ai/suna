@@ -145,17 +145,11 @@ export default function AccountSettingsPage() {
     staleTime: 20_000,
   });
 
-  if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
-  }
-
-  const account = accountQuery.data;
-  const members = membersQuery.data ?? [];
-  const isTeam = account ? !account.personal_account : false;
-
-  // Granular capabilities sourced from the IAM engine instead of raw
-  // account_role. A member granted "Administrator" via an explicit policy
-  // gets the same affordances an owner does, and vice-versa.
+  // Granular capabilities sourced from the IAM engine. MUST be called
+  // before any conditional return — moving these below the auth-loading
+  // guard would change the hook count between renders (rules of hooks).
+  // usePermission internally short-circuits when accountId is falsy, so
+  // it's safe to call before the account query resolves.
   const canWriteAccount = usePermission(accountId, 'account.write').allowed;
   const canDeleteAccount = usePermission(accountId, 'account.delete').allowed;
   const canInviteMember = usePermission(accountId, 'member.invite').allowed;
@@ -164,6 +158,14 @@ export default function AccountSettingsPage() {
   const canCreateGroup = usePermission(accountId, 'group.create').allowed;
   const canCreateRole = usePermission(accountId, 'role.create').allowed;
   const canReadAudit = usePermission(accountId, 'audit.read').allowed;
+
+  if (authLoading || !user) {
+    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+  }
+
+  const account = accountQuery.data;
+  const members = membersQuery.data ?? [];
+  const isTeam = account ? !account.personal_account : false;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
