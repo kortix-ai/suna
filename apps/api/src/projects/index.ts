@@ -84,6 +84,8 @@ import {
   removeProjectMemberPolicy,
   syncProjectMemberPolicy,
 } from '../iam/membership-sync';
+import { listAccessibleResources } from '../iam';
+import { deriveRequestContext } from '../iam/cache';
 import {
   encryptProjectSecret,
   getProjectSecretValue,
@@ -1601,20 +1603,35 @@ export function stopProjectTriggerScheduler(): void {
 // GET /v1/projects
 projectsApp.get('/', async (c) => {
   const scope = await resolveProjectAccount(c);
+  // Reach through `any` for non-typed context keys set by the auth
+  // middleware (the AppEnv only types userId/userEmail).
+  const actingTokenId =
+    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
+      | string
+      | undefined) ?? undefined;
+  const requestCtx = deriveRequestContext(c);
 
-  if (isAccountManager(scope.accountRole)) {
-    const rows = await db
-      .select()
-      .from(projects)
-      .where(and(eq(projects.accountId, scope.accountId), eq(projects.status, 'active')))
-      .orderBy(desc(projects.updatedAt));
+  // Ask the IAM engine which projects the caller can READ. Returns one
+  // of: { mode: 'all' } | { mode: 'none' } | { mode: 'all_except' } |
+  // { mode: 'allow_only' }. The engine handles super-admin bypass,
+  // legacy owner/admin/member bridges, project_members rows, group
+  // policies, project_group expansion, conditions, expiry — everything.
+  const accessible = await listAccessibleResources(
+    scope.userId,
+    scope.accountId,
+    'project.read',
+    'project',
+    actingTokenId,
+    requestCtx,
+  );
 
-    return c.json(rows.map((row) => serializeProject(row, {
-      projectRole: null,
-      effectiveRole: 'manager',
-    })));
-  }
+  if (accessible.mode === 'none') return c.json([]);
 
+  // Build the project rows + per-row project_members metadata used by
+  // the UI to label effective_role. We still consult project_members
+  // because the IAM engine bridges it into authorize() but doesn't
+  // hand the per-row role back here — and the UI wants the original
+  // manager/editor/viewer label, not just "allowed".
   const grants = await db
     .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
     .from(projectMembers)
@@ -1622,27 +1639,52 @@ projectsApp.get('/', async (c) => {
       eq(projectMembers.accountId, scope.accountId),
       eq(projectMembers.userId, scope.userId),
     ));
+  const roleByProject = new Map(
+    grants.map((g) => [g.projectId, g.projectRole as ProjectRole]),
+  );
 
-  if (grants.length === 0) return c.json([]);
+  const baseWhere = and(
+    eq(projects.accountId, scope.accountId),
+    eq(projects.status, 'active'),
+  );
 
-  const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole as ProjectRole]));
-  const rows = await db
-    .select()
-    .from(projects)
-    .where(and(
-      eq(projects.accountId, scope.accountId),
-      eq(projects.status, 'active'),
-      inArray(projects.projectId, grants.map((g) => g.projectId)),
-    ))
-    .orderBy(desc(projects.updatedAt));
+  let rows: Array<typeof projects.$inferSelect>;
+  if (accessible.mode === 'all') {
+    rows = await db.select().from(projects).where(baseWhere).orderBy(desc(projects.updatedAt));
+  } else if (accessible.mode === 'allow_only') {
+    if (accessible.allowed.size === 0) return c.json([]);
+    rows = await db
+      .select()
+      .from(projects)
+      .where(and(baseWhere, inArray(projects.projectId, [...accessible.allowed])))
+      .orderBy(desc(projects.updatedAt));
+  } else {
+    // all_except — fetch everything, then filter denied ids in-memory.
+    // For account sizes well under a few thousand projects this beats a
+    // NOT IN (…) query that the planner often handles poorly.
+    const all = await db
+      .select()
+      .from(projects)
+      .where(baseWhere)
+      .orderBy(desc(projects.updatedAt));
+    rows = all.filter((r) => !accessible.denied.has(r.projectId));
+  }
 
-  return c.json(rows.map((row) => {
-    const projectRole = roleByProject.get(row.projectId) ?? null;
-    return serializeProject(row, {
-      projectRole,
-      effectiveRole: projectRole ?? 'viewer',
-    });
-  }));
+  // Heuristic for effective_role label (UI only, NOT auth):
+  //   - account-manager → 'manager' (legacy owner/admin gets full label)
+  //   - explicit project_members row → that role
+  //   - otherwise → 'viewer' (engine allowed read but we don't know the
+  //     exact role; safe minimum for UI affordances)
+  const accountManager = isAccountManager(scope.accountRole);
+  return c.json(
+    rows.map((row) => {
+      const projectRole = roleByProject.get(row.projectId) ?? null;
+      const effectiveRole = accountManager
+        ? 'manager'
+        : projectRole ?? 'viewer';
+      return serializeProject(row, { projectRole, effectiveRole });
+    }),
+  );
 });
 
 // POST /v1/projects
