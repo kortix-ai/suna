@@ -113,37 +113,35 @@ export async function ensureSchema(): Promise<void> {
  */
 async function warnIfCriticalTablesMissing(): Promise<void> {
   if (!config.DATABASE_URL) return;
-  // Tables (schema, name) the IAM engine + auth middleware require.
-  // Keep this list small and stable — extending it for every new
-  // migration would be noise.
-  const required: Array<[string, string]> = [
-    ['kortix', 'iam_roles'],
-    ['kortix', 'iam_role_permissions'],
-    ['kortix', 'iam_policies'],
-    ['kortix', 'account_groups'],
-    ['kortix', 'account_group_members'],
-    ['kortix', 'account_members'],
-    ['kortix', 'accounts'],
-    ['kortix', 'audit_events'],
+  // Critical tables for IAM + auth + vault paths. Keep this list
+  // small and stable — extending it for every new migration would be
+  // noise. We check only tables in the `kortix` schema (no tuple
+  // joins, no driver-specific helpers) so the query stays portable.
+  const required = [
+    'iam_roles',
+    'iam_role_permissions',
+    'iam_policies',
+    'account_groups',
+    'account_group_members',
+    'account_members',
+    'accounts',
+    'audit_events',
+    'vault_items',
   ];
   const db = postgres(config.DATABASE_URL, { max: 1 });
   try {
     const rows = (await db`
-      SELECT table_schema, table_name
+      SELECT table_name
       FROM information_schema.tables
-      WHERE (table_schema, table_name) IN ${db(required)}
-    `) as Array<{ table_schema: string; table_name: string }>;
-    const present = new Set(
-      rows.map((r) => `${r.table_schema}.${r.table_name}`),
-    );
-    const missing = required
-      .map(([s, n]) => `${s}.${n}`)
-      .filter((qn) => !present.has(qn));
+      WHERE table_schema = 'kortix' AND table_name IN ${db(required)}
+    `) as Array<{ table_name: string }>;
+    const present = new Set(rows.map((r) => r.table_name));
+    const missing = required.filter((n) => !present.has(n));
     if (missing.length > 0) {
       console.warn(
         '[schema] ⚠ KORTIX_SKIP_ENSURE_SCHEMA=1 but critical tables are missing:',
       );
-      for (const m of missing) console.warn(`[schema]   • ${m}`);
+      for (const m of missing) console.warn(`[schema]   • kortix.${m}`);
       console.warn(
         '[schema] Run `bun run --cwd packages/db drizzle-kit push` or remove the env flag to auto-apply.',
       );
