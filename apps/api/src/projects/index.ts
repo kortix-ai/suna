@@ -84,7 +84,7 @@ import {
   removeProjectMemberPolicy,
   syncProjectMemberPolicy,
 } from '../iam/membership-sync';
-import { listAccessibleResources } from '../iam';
+import { authorize, listAccessibleResources } from '../iam';
 import { deriveRequestContext } from '../iam/cache';
 import {
   encryptProjectSecret,
@@ -737,6 +737,22 @@ async function resolveProjectAccount(c: Context, body?: Record<string, unknown>)
   };
 }
 
+// Maps the high-level project access action onto the IAM action key
+// the engine recognises. Keep this narrow — these three labels cover
+// every gate this file uses; bespoke actions (project.trigger.fire,
+// project.deploy, project.secrets.write, etc.) should call authorize()
+// directly with the exact action.
+function iamActionForProjectAccess(action: ProjectAccessAction): string {
+  switch (action) {
+    case 'read':
+      return 'project.read';
+    case 'write':
+      return 'project.write';
+    case 'manage':
+      return 'project.members.manage';
+  }
+}
+
 async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   const [row] = await db
@@ -753,10 +769,36 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
 
   const accountRole = membership.accountRole as AccountRole;
   const projectRole = await getProjectMemberRole(projectId, userId);
-  const effectiveRole = effectiveProjectRole(accountRole, projectRole);
-  if (!roleAllows(effectiveRole, action)) {
+
+  // Ask the IAM engine for the real verdict. The engine consults
+  // super-admin bypass, direct + group policies, project_groups, AND
+  // the legacy account_role / project_members bridges (in non-strict
+  // mode), so it's strictly a superset of the old role-only check.
+  const actingTokenId =
+    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
+      | string
+      | undefined) ?? undefined;
+  const requestCtx = deriveRequestContext(c);
+  const verdict = await authorize(
+    userId,
+    row.accountId,
+    iamActionForProjectAccess(action),
+    { type: 'project', id: projectId },
+    actingTokenId,
+    requestCtx,
+  );
+  if (!verdict.allowed) {
     throw new HTTPException(403, { message: 'You do not have access to this project' });
   }
+
+  // effectiveRole label for the UI / downstream helpers. The engine
+  // doesn't hand back a role — it answers yes/no. Mirror the prior
+  // mapping so any code reading effectiveRole still gets sensible
+  // labels: owner/admin → manager, explicit project_members row →
+  // that role, otherwise → 'viewer' (the engine permitted read but
+  // we don't know the exact tier).
+  const effectiveRole =
+    effectiveProjectRole(accountRole, projectRole) ?? 'viewer';
   (c as any).set('accountId', row.accountId);
 
   return {
