@@ -14,10 +14,12 @@ import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import {
   accountGithubInstallations,
   accountGithubInstallationStates,
+  accountGroups,
   accountMembers,
   kortixApiKeys,
   projects,
   projectMembers,
+  projectGroupGrants,
   projectGitConnections,
   projectGitCredentials,
   projectSecrets,
@@ -4786,6 +4788,163 @@ projectsApp.delete('/:projectId/access/:userId', async (c) => {
   await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId).catch(
     (err) => console.warn('[projects] failed to drop IAM mirror', err),
   );
+
+  return c.json({ ok: true });
+});
+
+// ─── Project group grants (IAM V2 bulk-access channel) ────────────────────
+//
+// A row in project_group_grants attaches an account_group to a project
+// with a chosen project_role. Every member of the group inherits that
+// role on that project. These routes work for both V1 and V2 accounts —
+// V1 just ignores the rows because V1's engine reads from iam_policies.
+
+const PROJECT_ROLES = ['manager', 'editor', 'viewer'] as const;
+type ProjectGroupGrantRole = typeof PROJECT_ROLES[number];
+
+function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
+  return typeof v === 'string' && (PROJECT_ROLES as readonly string[]).includes(v);
+}
+
+// GET /v1/projects/:projectId/group-grants
+// List every group attached to this project, with the role + group name.
+projectsApp.get('/:projectId/group-grants', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const rows = await db
+    .select({
+      groupId: projectGroupGrants.groupId,
+      role: projectGroupGrants.role,
+      grantedBy: projectGroupGrants.grantedBy,
+      createdAt: projectGroupGrants.createdAt,
+      groupName: accountGroups.name,
+    })
+    .from(projectGroupGrants)
+    .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
+    .where(eq(projectGroupGrants.projectId, projectId));
+
+  return c.json({
+    grants: rows.map((r) => ({
+      group_id: r.groupId,
+      group_name: r.groupName,
+      role: r.role,
+      granted_by: r.grantedBy,
+      created_at: r.createdAt.toISOString(),
+    })),
+  });
+});
+
+// POST /v1/projects/:projectId/group-grants
+// Attach a group to this project at the given role. Idempotent — if the
+// group already has a grant, the role is updated.
+projectsApp.post('/:projectId/group-grants', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(
+    loaded.userId,
+    loaded.row.accountId,
+    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    { type: 'project', id: projectId },
+  );
+
+  const body = await readBody(c);
+  const groupId = normalizeString(body.group_id ?? body.groupId);
+  const role = body.role;
+  if (!groupId) return c.json({ error: 'group_id is required' }, 400);
+  if (!isProjectRole(role)) {
+    return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
+  }
+
+  // Confirm the group exists and belongs to this account — prevents
+  // attaching a foreign-account group via a guessed UUID.
+  const [group] = await db
+    .select({ groupId: accountGroups.groupId })
+    .from(accountGroups)
+    .where(
+      and(eq(accountGroups.groupId, groupId), eq(accountGroups.accountId, loaded.row.accountId)),
+    )
+    .limit(1);
+  if (!group) return c.json({ error: 'group not found in this account' }, 404);
+
+  const now = new Date();
+  await db
+    .insert(projectGroupGrants)
+    .values({
+      projectId,
+      groupId,
+      accountId: loaded.row.accountId,
+      role,
+      grantedBy: loaded.userId,
+    })
+    .onConflictDoUpdate({
+      target: [projectGroupGrants.projectId, projectGroupGrants.groupId],
+      set: { role, grantedBy: loaded.userId, updatedAt: now },
+    });
+
+  return c.json({ project_id: projectId, group_id: groupId, role }, 201);
+});
+
+// PATCH /v1/projects/:projectId/group-grants/:groupId
+// Change the role on an existing attachment. Returns 404 when there's
+// nothing to change.
+projectsApp.patch('/:projectId/group-grants/:groupId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const groupId = c.req.param('groupId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(
+    loaded.userId,
+    loaded.row.accountId,
+    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    { type: 'project', id: projectId },
+  );
+
+  const body = await readBody(c);
+  if (!isProjectRole(body.role)) {
+    return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
+  }
+
+  const result = await db
+    .update(projectGroupGrants)
+    .set({ role: body.role, updatedAt: new Date() })
+    .where(
+      and(
+        eq(projectGroupGrants.projectId, projectId),
+        eq(projectGroupGrants.groupId, groupId),
+      ),
+    )
+    .returning({ groupId: projectGroupGrants.groupId });
+
+  if (result.length === 0) return c.json({ error: 'grant not found' }, 404);
+  return c.json({ project_id: projectId, group_id: groupId, role: body.role });
+});
+
+// DELETE /v1/projects/:projectId/group-grants/:groupId
+// Detach a group. Members of the group lose access via this grant
+// immediately; any direct project_members row they have is unaffected.
+projectsApp.delete('/:projectId/group-grants/:groupId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const groupId = c.req.param('groupId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(
+    loaded.userId,
+    loaded.row.accountId,
+    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    { type: 'project', id: projectId },
+  );
+
+  await db
+    .delete(projectGroupGrants)
+    .where(
+      and(
+        eq(projectGroupGrants.projectId, projectId),
+        eq(projectGroupGrants.groupId, groupId),
+      ),
+    );
 
   return c.json({ ok: true });
 });
