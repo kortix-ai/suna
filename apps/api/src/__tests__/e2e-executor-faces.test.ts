@@ -197,7 +197,7 @@ describe('CLI face', () => {
 });
 
 describe('MCP face', () => {
-  test('initialize, tools/list, and tools/call work over stdio JSON-RPC', async () => {
+  test('exposes stable meta-tools and runs the discover→describe→call loop', async () => {
     const proc = Bun.spawn({
       cmd: ['bun', EXECUTOR_MCP],
       cwd: REPO_ROOT,
@@ -216,9 +216,35 @@ describe('MCP face', () => {
       expect(await requestMcp(proc, reader, 1, 'initialize', { protocolVersion: '2025-06-18' })).toMatchObject({
         serverInfo: { name: 'kortix-executor' },
       });
+
+      // tools/list is the fixed meta-tool surface — NOT one tool per action.
       const listed = await requestMcp(proc, reader, 2, 'tools/list');
-      expect(listed.tools[0]).toMatchObject({ name: 'echo__get', title: 'echo.get' });
-      const called = await requestMcp(proc, reader, 3, 'tools/call', { name: 'echo__get', arguments: { q: 'mcp' } });
+      expect(listed.tools.map((t: { name: string }) => t.name)).toEqual(['connectors', 'discover', 'describe', 'call']);
+
+      // connectors → catalog with per-connector tool counts.
+      const connectors = JSON.parse(
+        (await requestMcp(proc, reader, 3, 'tools/call', { name: 'connectors', arguments: {} })).content[0].text,
+      );
+      expect(connectors.connectors[0]).toMatchObject({ slug: 'echo', provider: 'http', tools: 1 });
+
+      // discover → intent search across usable tools.
+      const discovered = JSON.parse(
+        (await requestMcp(proc, reader, 4, 'tools/call', { name: 'discover', arguments: { query: 'echo' } })).content[0].text,
+      );
+      expect(discovered.matches[0]).toMatchObject({ tool: 'echo.get', risk: 'read' });
+
+      // describe → one tool's input schema.
+      const described = JSON.parse(
+        (await requestMcp(proc, reader, 5, 'tools/call', { name: 'describe', arguments: { tool: 'echo.get' } })).content[0].text,
+      );
+      expect(described).toMatchObject({ tool: 'echo.get', risk: 'read' });
+      expect(described.inputSchema).toMatchObject({ type: 'object' });
+
+      // call → run it through the gateway.
+      const called = await requestMcp(proc, reader, 6, 'tools/call', {
+        name: 'call',
+        arguments: { connector: 'echo', action: 'get', args: { q: 'mcp' } },
+      });
       expect(called.isError).toBe(false);
       const payload = JSON.parse(called.content[0].text);
       expect(payload.data.url).toBe('https://example.test/anything?q=mcp');

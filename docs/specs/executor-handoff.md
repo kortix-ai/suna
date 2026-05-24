@@ -9,7 +9,35 @@
 
 Date of handoff: 2026-05-23 · Branch: `newer-kortix` · Repo root: `suna/`
 
-## Post-handoff update — 2026-05-24
+## Post-handoff update — 2026-05-24 (MCP is now the PRIMARY sandbox interface)
+
+Per Marko: the agent should reach the Executor through **MCP**, not the CLI —
+"loading MCP same as our reference project (RhysSullivan/executor) as the primary
+way of interacting from within the sandbox." Shipped:
+
+- **`executor-mcp` refactored to meta-tools.** It no longer explodes every
+  connector action into `tools/list` (that floods context once a catalog has
+  hundreds of actions). It now exposes four stable meta-tools — `connectors`,
+  `discover`, `describe`, `call` — matching executor.sh's progressive-discovery
+  model. `tools/list` is constant regardless of catalog size.
+- **OpenCode auto-loads it every session.** The daemon
+  (`apps/kortix-sandbox-agent-server/src/opencode.ts`) injects
+  `OPENCODE_CONFIG_CONTENT` registering `kortix-executor` as a `type: "local"`
+  MCP server (`bun /opt/kortix/apps/sandbox/agent-cli/connectors/executor-mcp.ts`)
+  with the resolved `KORTIX_EXECUTOR_TOKEN` + `KORTIX_API_URL` embedded in
+  `environment`. Inline config merges ABOVE the project config in OpenCode's
+  precedence, so it's always present WITHOUT the user's repo carrying any
+  sandbox-only wiring. Gated on both env vars (no-op if the gateway isn't wired).
+  Note: `OPENCODE_CONFIG_CONTENT` skips `{env:}` substitution, so the values are
+  embedded literally (OpenCode also forwards its own env to MCP children).
+  `buildExecutorMcpConfigContent()` is unit-tested (`executor-mcp-config.test.ts`).
+- **Skill rewritten MCP-first** (`kortix-executor/SKILL.md`, both the repo copy
+  and `packages/starter/templates/base/…`): teaches the `discover→describe→call`
+  loop via the MCP tools; CLI demoted to a documented fallback.
+- **CLI + TS SDK kept** as secondary faces (reference parity, debugging, and the
+  SDK is what `executor-mcp` itself uses). `e2e-executor-faces.test.ts` now drives
+  the meta-tool loop over stdio JSON-RPC; all four faces (SDK/CLI/MCP/sandbox-env)
+  green. Run it from `apps/api/` so Bun loads `apps/api/.env`.
 
 The "not yet e2e tested" items below were completed after this handoff was
 written:
