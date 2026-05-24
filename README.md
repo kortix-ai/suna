@@ -1,67 +1,150 @@
+<div align="center">
+
+<img src="apps/web/public/Logomark.svg" alt="Kortix" width="80" />
+
 # Kortix
 
-**The Open-Source Operating System for Running Autonomous Companies**
+### The AI command center for your company
 
-The best results come from maximum entropy and openness. Give a language model full context — every file, every secret, every integration, every piece of institutional knowledge — and let it run free. For that to work, it needs a proper machine: a real computer running 24/7 where all the context is stored, all the secrets live, all the work accumulates, and all the other agents operate alongside it.
+Kortix is where your company runs on AI — one place where all your context,
+agents, triggers, integrations, and memory live, and a workforce of AI agents
+does the real work across your tools, around the clock. It feels as simple as a
+chat app; underneath, everything is code you own.
 
-A Kortix *is* a company. One shared machine where every agent sees the same filesystem, the same databases, the same credentials, the same history. Context isn't siloed per tool or per session — it's shared across the entire system, compounding over time. When your support agent resolves a ticket, your product agent already knows. When your finance agent reconciles an invoice, the context is there for everyone.
+[Website](https://kortix.com) · [Documentation](https://kortix.com/docs) · [Cloud](https://kortix.com) · [OpenCode](https://opencode.ai)
 
-The reason this works is that coding agents — agents that operate inside a real computer with bash, a filesystem, and the full power of a Linux machine — are the optimal harness for all knowledge work, not just software engineering. They can write scripts, call APIs, manipulate files, browse the web, run databases, parse documents, generate reports, manage infrastructure — anything a human can do at a terminal. Pair that with agent skills, persistent memory, triggers, and orchestration, and you can build complete agents for sales, finance, operations, legal, recruiting, customer support, and every other function a company needs.
+![License: Elastic 2.0](https://img.shields.io/badge/License-Elastic%202.0-2563eb)
+![Source-available](https://img.shields.io/badge/Source--available-yes-22c55e)
+![Runtime: OpenCode](https://img.shields.io/badge/Runtime-OpenCode-111827)
 
-We are building Kortix as our own internal operating system at [Kortix](https://kortix.com) to run our own companies and products. Every agent, skill, and workflow we ship is something we use ourselves — battle-tested against real workloads, not demos. 
+</div>
 
-**What you get:** A cloud computer where AI agents do the actual work of running a company. Full Linux Ubuntu sandbox, persistent memory, 60+ skills, 3,000+ integrations, cron/webhook triggers, multi-channel access. Agents work 24/7 — code, APIs, documents, spreadsheets, infrastructure — whether you're there or not. Everything is Linux, bash, files. The agent runtime is [OpenCode](https://github.com/anomalyco/opencode).
+---
 
-## Quick Start
+## What is Kortix?
 
-Run locally on your laptop or on a VPS/server — the installer handles both.
+Most AI tools give you a chat box. Kortix gives you a **command center**: one
+place where your agents, skills, integrations, automations, and memory all live —
+and a workforce of AI agents that produces real output (decks, reports, code,
+replies, deployed work), not just chat.
+
+It is **not** a chatbot, a copilot, or a single "AI employee." It's the operating
+layer for an AI-native company — accessible to anyone, owned by you.
+
+## What's in the command center
+
+| | |
+| --- | --- |
+| **Agents** | Your AI coworkers — one per role or task. |
+| **Skills & workflows** | Reusable know-how that does a job your way. |
+| **Integrations** | 3,000+ tools, connected once and shared across the org. |
+| **Chat & sessions** | Where you and your team work with agents, live. |
+| **Automations** | Triggers on a schedule, a webhook, or a chat message. |
+| **Memory** | A living company brain that compounds over time. |
+
+Work runs three ways: **on-demand** (ask in chat, get it now), **human-assisted**
+(the agent works and checks in for the calls that matter), and **automated**
+(runs on a schedule or trigger, end to end).
+
+## Quickstart
+
+### Kortix Cloud — managed
+
+Sign up at **[kortix.com](https://kortix.com)**, create a project, and start a
+session. Nothing to install.
+
+### From the terminal — for builders
 
 ```bash
-curl -fsSL https://kortix.com/install | bash
+curl -fsSL https://kortix.com/install | bash   # install the kortix CLI
+kortix login                                   # authorize in your browser
+
+kortix init                                    # scaffold a project (kortix.toml + agent config)
+kortix ship                                    # create the cloud project and push your repo
+kortix sessions new --prompt "Summarize this week's commits and open a change request"
+kortix cr ls                                   # review what the agent proposes — then merge to keep it
 ```
 
-The installer will ask where you're running:
+Full command surface: **[CLI reference](https://kortix.com/docs/reference/cli)**.
 
-1. **Local machine** (laptop/desktop) — binds to `localhost`
-2. **VPS / Server** — binds to `0.0.0.0`, accessible over the network
+## How it works
 
-Kortix works best when it can run 24/7 — even when your laptop is closed. We recommend [Kortix Cloud](https://kortix.com/) for managed hosting, or a Docker-capable server/VPS for self-hosting.
+A **Kortix project is one git repository** with a `kortix.toml` manifest at its
+root — the single source of truth for the whole company.
 
-On any server, just SSH in and run the same install command:
+```
+project  (git repo + kortix.toml)
+   └─ session ──> isolated cloud sandbox on a branch named after the session
+                     └─ agent (OpenCode) works, commits, pushes
+                           └─ change request ──> you review & merge ──> main
+```
+
+- Every **session** runs in its own disposable Linux sandbox on its own branch —
+  the agent can install, run, and break anything; only what it commits survives.
+- Work reaches `main` only through a **change request** you approve, so the
+  company self-improves one reviewed change at a time.
+- **Triggers** (cron + signed webhooks) and **channels** (Slack) spawn sessions
+  automatically.
+- **Connections** let agents call your tools (Pipedream, MCP, OpenAPI, GraphQL,
+  HTTP), brokered server-side with per-user credentials.
+- The agent runtime is **[OpenCode](https://opencode.ai)** — engine- and
+  provider-agnostic; bring your own models or use Kortix cloud.
+
+Learn the model: **[Concepts](https://kortix.com/docs/concepts)** ·
+**[Reference](https://kortix.com/docs/reference)** ·
+**[Quickstart](https://kortix.com/docs/quickstart)**
+
+## Why Kortix
+
+- **Open & yours.** Source-available and self-hostable — your data, your models,
+  your infrastructure. No lock-in, fully auditable.
+- **A workforce, not one assistant.** Org-scale specialist agents that run in
+  parallel and compound a shared memory.
+- **Real work, not chat.** Agents run on real computers and return finished
+  deliverables — and take real actions in your tools.
+- **Everything is code.** Versioned, reviewable, portable, governable — never a
+  black box.
+
+## Self-host
+
+Kortix is source-available and runs on your own infrastructure — laptop, VPS,
+your VPC, or air-gapped. Bring your own models, and point the CLI at your
+instance:
 
 ```bash
-# SSH into your server, then run the same install:
-curl -fsSL https://kortix.com/install | bash
+kortix login --api https://kortix.your-company.com
 ```
 
-After install, manage everything with the `kortix` CLI:
+Managed hosting is **[Kortix Cloud](https://kortix.com)** — see
+**[Pricing](https://kortix.com/pricing)** for Open Source, Cloud, and Enterprise.
 
+## Enterprise & security
+
+Members, groups & roles that match your org · per-resource permissions for people
+**and** agents · a secrets manager (encrypted, injected at runtime, never
+exposed) · full audit trail · human approval gates on sensitive actions · on-prem,
+VPC, or air-gapped deployment.
+
+## Develop
+
+Monorepo managed with **pnpm 8** (Docker required for sandboxes).
+
+```bash
+pnpm install
+pnpm dev            # web + API (scripts/dev-local.sh)
+pnpm dev:web        # web app only
+pnpm dev:api        # API only
+pnpm dev:sandbox    # build the local sandbox image
+pnpm build          # build all packages
+pnpm nuke           # tear down the local Docker environment
 ```
-kortix start       Start all services
-kortix stop        Stop all services
-kortix restart     Restart all services
-kortix logs        Tail logs
-kortix status      Show service status
-kortix update      Pull latest images and restart
-kortix reset       Wipe local data and start fresh
-kortix uninstall   Remove Kortix completely
-```
 
-## DEV Commands
+Apps live under `apps/` (`web`, `api`, `cli`, `mobile`, `sandbox`); the
+documentation source is in `apps/web/content/docs`.
 
-- `curl -fsSL http://localhost:3000/install | bash`
-- `pnpm dev` — start frontend + API in dev mode
-- `pnpm dev:web` — start web app only
-- `pnpm dev:frontend` — alias for `pnpm dev:web`
-- `pnpm dev:api` — start API only
-- `pnpm dev:mobile` — start mobile app (Expo dev server)
-- `pnpm dev:sandbox` — build the local `kortix/sandbox:dev` image used by project-session sandboxes
-- `pnpm dev:sandbox:build` — alias for `pnpm dev:sandbox`
-- `pnpm build` — build all packages (`pnpm -r run build`)
-- `pnpm nuke` — tear down local Docker environment
-- `pnpm nuke:start` — nuke + restart fresh
+## License & naming
 
-
-## License
-
-See [LICENSE](LICENSE) for details.
+- **License:** [Elastic License 2.0](LICENSE) — source-available.
+- **Kortix** is the product. **Suna** is the open-source project name (this repo,
+  [`kortix-ai/suna`](https://github.com/kortix-ai/suna)). The agent runtime is
+  **[OpenCode](https://opencode.ai)**.
