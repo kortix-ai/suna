@@ -4,9 +4,10 @@ import { useTranslations } from 'next-intl';
 /**
  * UserMenu — the ONE "you" menu.
  *
- * Pure identity: who you are, a Home shortcut, user settings, theme, and log
- * out. "Which account" lives in the sibling <AccountSwitcher> (the breadcrumb),
- * "which project" in <ProjectSwitcher> — neither belongs here.
+ * Identity-first: who you are, your current account (its name + a shortcut to
+ * its settings — not a switcher), Home/Docs shortcuts, user settings, theme, and
+ * log out. *Switching* accounts lives in the sibling <AccountSwitcher> (the
+ * breadcrumb); "which project" in <ProjectSwitcher>.
  *
  * Because this menu is mounted on every authenticated page, it still owns the
  * one cross-cutting account concern: guaranteeing a default selected account
@@ -25,6 +26,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
+  BookOpen,
   ChevronsUpDown,
   Home,
   LogOut,
@@ -45,6 +47,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -102,6 +105,9 @@ export function UserMenu({
       setSelectedAccountId(accounts[0].account_id);
     }
   }, [accountsQuery.data, selectedAccountId, setSelectedAccountId]);
+
+  const currentAccount =
+    accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ?? null;
 
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
@@ -199,12 +205,47 @@ export function UserMenu({
 
         <Divider />
 
+        {/* Current account — orientation + a shortcut to its settings. This is
+            NOT a switcher; switching accounts lives in the header breadcrumb. */}
+        {currentAccount && (
+          <>
+            <div className="p-1">
+              <DropdownMenuItem
+                onSelect={() =>
+                  deferAfterClose(() => router.push(`/accounts/${currentAccount.account_id}`))
+                }
+                className={cn(
+                  'flex h-11 cursor-pointer items-center gap-2.5 rounded-lg px-2 py-0 text-left',
+                  '[&_svg:not([class*=size-])]:size-3.5 [&_svg]:!text-muted-foreground/70',
+                )}
+              >
+                <EntityAvatar label={currentAccount.name} size="sm" />
+                <div className="min-w-0 flex-1 leading-tight">
+                  <div className="truncate text-sm font-medium text-foreground">
+                    {currentAccount.name}
+                  </div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground/70">
+                    Account settings
+                  </div>
+                </div>
+                <SettingsIcon className="size-3.5" />
+              </DropdownMenuItem>
+            </div>
+            <Divider />
+          </>
+        )}
+
         {/* One action group — kept divider-light by design. */}
         <div className="p-1">
           <ActionRow
             icon={<Home className="size-3.5" />}
             label="Home"
             onSelect={() => deferAfterClose(() => router.push('/projects'))}
+          />
+          <ActionRow
+            icon={<BookOpen className="size-3.5" />}
+            label="Docs"
+            onSelect={() => deferAfterClose(() => router.push('/docs'))}
           />
           <ActionRow
             icon={<SettingsIcon className="size-3.5" />}
