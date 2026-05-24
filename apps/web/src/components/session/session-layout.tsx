@@ -243,7 +243,7 @@ export const SessionLayout = memo(function SessionLayout({
   ) : showExplorer ? (
     <SessionExplorerPanel />
   ) : showFiles ? (
-    <SessionFilesPanel />
+    <SessionFilesPanel chatSessionId={sessionId} />
   ) : (
     <SessionActionsPanel sessionId={sessionId} messages={messages} />
   );

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
@@ -8,6 +9,7 @@ import { GitPullRequestArrow, Loader2, Sparkles } from 'lucide-react';
 import { getProjectSession } from '@/lib/projects-client';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { useChatSendStore } from '@/stores/chat-send-store';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 
@@ -33,7 +35,17 @@ const STATUS_BADGE: Record<string, { letter: string; cls: string; label: string 
  *   2. the one way to persist it: ask the agent to open a change request, which
  *      it commits + opens via `kortix cr open` for the user to review & merge.
  */
-export function SessionFilesPanel() {
+export function SessionFilesPanel({
+  /**
+   * The OpenCode chat session id (from SessionLayout) — the session whose agent
+   * we message. Distinct from the ROUTE session id below (which == the git
+   * branch). When absent (e.g. the standalone /debug/tools harness, where no
+   * chat is mounted) the action falls back to copying the prompt.
+   */
+  chatSessionId,
+}: {
+  chatSessionId?: string;
+} = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // The git branch == the ROUTE session id; SessionLayout's `sessionId` prop is
   // the OpenCode chat session id (used to message the agent).
@@ -59,17 +71,38 @@ export function SessionFilesPanel() {
   const baseRef = sessionQuery.data?.base_ref ?? 'main';
 
   const { openPreview } = useFilePreviewStore();
+  const sendToSession = useChatSendStore((s) => s.sendToSession);
+  const [asking, setAsking] = useState(false);
 
-  // Copy a ready-to-send prompt to the clipboard so the user can paste it into
-  // the chat — the agent then commits and runs `kortix cr open`. (We copy
-  // rather than auto-send because programmatic enqueue isn't reliable here.)
-  const copyChangeRequestPrompt = async () => {
+  // Send the agent a ready-made instruction to commit this session's work and
+  // open a change request — it runs `kortix cr open` for the user to review &
+  // merge. We send it straight through the chat's own send path (same as typing
+  // it), so there's no copy/paste step. If no chat is mounted (e.g. the
+  // standalone debug harness) we fall back to copying the prompt.
+  const askAgentToOpenChangeRequest = async () => {
+    if (asking) return;
     const prompt = `Load the kortix-system skill and read about Versions & Change Requests. Then review the changes in this session, commit them, and open a change request to merge into \`${baseRef}\`. Give it a clear title and a description of what changed and why.`;
+
+    if (!chatSessionId) {
+      try {
+        await navigator.clipboard.writeText(prompt);
+        toast.success('Prompt copied — paste it into the chat to ask your agent.');
+      } catch {
+        toast.error('Could not copy to clipboard.');
+      }
+      return;
+    }
+
+    setAsking(true);
     try {
-      await navigator.clipboard.writeText(prompt);
-      toast.success('Prompt copied — paste it into the chat to ask your agent.');
-    } catch {
-      toast.error('Could not copy to clipboard.');
+      await sendToSession(chatSessionId, prompt);
+      toast.success('Asked your agent to open a change request.');
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Could not reach the agent. Please try again.',
+      );
+    } finally {
+      setAsking(false);
     }
   };
 
@@ -88,8 +121,17 @@ export function SessionFilesPanel() {
             <span className="font-mono text-foreground/80">{baseRef}</span>{' '}
             {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line91JsxTextWheneverYouReReady')}</p>
         </div>
-        <Button size="sm" className="w-full" onClick={copyChangeRequestPrompt}>
-          <Sparkles className="size-3.5" />
+        <Button
+          size="sm"
+          className="w-full"
+          onClick={askAgentToOpenChangeRequest}
+          disabled={asking}
+        >
+          {asking ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Sparkles className="size-3.5" />
+          )}
           {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line96JsxTextAskAgentToOpenAChangeRequest')}</Button>
       </div>
 

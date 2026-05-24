@@ -137,6 +137,7 @@ import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useChatSendStore } from '@/stores/chat-send-store';
 import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
@@ -5508,6 +5509,18 @@ export function SessionChat({
       messages,
     ],
   );
+
+  // Expose this session's canonical sender so sibling surfaces (e.g. the
+  // "Changes" side panel's "Ask agent to open a change request" button) can
+  // drive the agent through the SAME robust path the input uses — optimistic
+  // message, SSE wiring, error propagation — instead of copying a prompt to the
+  // clipboard. Keyed by the OpenCode chat session id (`sessionId`).
+  const registerSender = useChatSendStore((s) => s.registerSender);
+  const unregisterSender = useChatSendStore((s) => s.unregisterSender);
+  useEffect(() => {
+    registerSender(sessionId, (text: string) => handleSend(text));
+    return () => unregisterSender(sessionId);
+  }, [sessionId, handleSend, registerSender, unregisterSender]);
 
   const handleStop = useCallback(() => {
     // Guard against rapid clicks — ignore if an abort is already in flight

@@ -24,6 +24,7 @@ import {
   Folder,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { STATUS_TEXT } from '@/components/ui/status';
 /* AutoContinue — commented out
@@ -1793,9 +1794,16 @@ export function SessionChatInput({
     // server queues it. (No client-side message queue.)
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
-    } catch {
-      // Restore the text so the user can retry
+    } catch (err) {
+      // Restore the text so the user can retry — AND surface why. Previously
+      // this catch was silent, so a failed send looked like the message simply
+      // "bounced back" into the box with no explanation.
       setText(trimmed);
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Couldn’t send your message. Please try again.',
+      );
     }
   }, [text, isBusy, disabled, onSend, onCommand, stagedCommand, attachedFiles, mentions, sessionId, lockForQuestion, onCustomAnswer, onQuestionAction]);
 
