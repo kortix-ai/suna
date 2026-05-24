@@ -201,6 +201,7 @@ export default function AccountSettingsPage() {
   const account = accountQuery.data;
   const members = membersQuery.data ?? [];
   const initialTab = searchParams.get('tab') === 'git' ? 'git' : 'members';
+  const isTeam = account ? !account.personal_account : false;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">

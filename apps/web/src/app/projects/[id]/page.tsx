@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -13,7 +13,6 @@ import {
 } from '@/components/session/session-chat-input';
 import {
   createProjectSession,
-  deleteProjectSession,
   type ProjectSession,
 } from '@/lib/projects-client';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
@@ -27,22 +26,16 @@ import { toast } from '@/lib/toast';
  * title), so it's a typeable composer with working attachments that is
  * visually identical to opening a new session.
  *
- * Warm start: we provision the session + sandbox the moment the page loads, so
- * by the time the user presses Enter the work has a head start. On send we stash
- * the message and route into the session, which auto-sends it once the runtime
- * is ready (the session view shows its own loader while the sandbox boots). If
- * the user leaves without sending, the warm session is deleted so we never
- * orphan a sandbox.
+ * On send we create the session, stash the message, and route into the session,
+ * which auto-sends it once the runtime is ready. Simply opening this page should
+ * not create a stealth session.
  */
 export default function ProjectIndexPage() {
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const warm = useRef<{ promise: Promise<ProjectSession> | null; sent: boolean }>({
-    promise: null,
-    sent: false,
-  });
+  const pendingSession = useRef<Promise<ProjectSession> | null>(null);
   const [busy, setBusy] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -52,40 +45,27 @@ export default function ProjectIndexPage() {
     rootRef.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
   }, []);
 
-  const ensureSession = useCallback(() => {
-    if (!warm.current.promise) {
-      warm.current.promise = createProjectSession(projectId)
+  const createSession = useCallback(() => {
+    if (!pendingSession.current) {
+      pendingSession.current = createProjectSession(projectId)
         .then((s) => {
           queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
           return s;
         })
         .catch((err) => {
-          warm.current.promise = null; // allow a retry on the next attempt
+          pendingSession.current = null; // allow a retry on the next attempt
           throw err;
         });
     }
-    return warm.current.promise;
+    return pendingSession.current;
   }, [projectId, queryClient]);
-
-  // Begin provisioning the session + sandbox (focus/keystroke also call this).
-  const warmStart = useCallback(() => {
-    if (!warm.current.promise) void ensureSession().catch(() => {});
-  }, [ensureSession]);
-
-  // Auto-provision the moment the page loads — don't wait for the user to
-  // engage the input — so the sandbox is already booting by the time they
-  // type. If they leave without sending, the cleanup below deletes it.
-  useEffect(() => {
-    warmStart();
-  }, [warmStart]);
 
   const handleSend = useCallback(
     async (text: string, files?: AttachedFile[]) => {
       if (!text.trim() && !files?.length) return;
       setBusy(true);
       try {
-        const session = await ensureSession();
-        warm.current.sent = true;
+        const session = await createSession();
         // The session view's pending-prompt handoff (ActiveSessionChat) reads
         // this; files ride along via the global pending-files store.
         sessionStorage.setItem(`project_pending_prompt:${session.session_id}`, text);
@@ -96,30 +76,14 @@ export default function ProjectIndexPage() {
         toast.error(err instanceof Error ? err.message : 'Failed to start session');
       }
     },
-    [ensureSession, projectId, router],
+    [createSession, projectId, router],
   );
-
-  // Delete a warm-started-but-unsent session when leaving the index (or when
-  // switching projects), and reset the ref so the next project provisions fresh.
-  useEffect(() => {
-    return () => {
-      const { promise, sent } = warm.current;
-      if (promise && !sent) {
-        void promise
-          .then((s) => deleteProjectSession(projectId, s.session_id))
-          .catch(() => {});
-      }
-      warm.current = { promise: null, sent: false };
-    };
-  }, [projectId]);
 
   return (
     <ProjectShell projectId={projectId}>
       <div
         ref={rootRef}
         className="relative flex-1 min-h-0 flex flex-col overflow-hidden bg-background"
-        onFocusCapture={warmStart}
-        onInput={warmStart}
       >
         {/* Full-bleed welcome wallpaper — identical to a real empty session */}
         <div className="absolute inset-0 z-0 pointer-events-none">
