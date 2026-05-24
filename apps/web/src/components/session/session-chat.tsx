@@ -138,7 +138,7 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useChatSendStore } from '@/stores/chat-send-store';
-import { useServerStore } from '@/stores/server-store';
+import { useServerStore, getActiveOpenCodeUrl } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   buildFileRefsBlock,
@@ -5504,18 +5504,36 @@ export function SessionChat({
 
         // Thrown = network/transport failure (request didn't complete).
         if (caught) {
+          console.error('[session-chat] send threw', {
+            sessionId,
+            attempt,
+            activeUrl: getActiveOpenCodeUrl(),
+            error: caughtErr,
+          });
           if (attempt < maxAttempts) {
             await sleep(retryBackoffMs[attempt - 1]);
             continue;
           }
           handleSendError();
-          throw caughtErr;
+          throw caughtErr instanceof Error
+            ? caughtErr
+            : new Error('Couldn’t reach the server.');
         }
 
         // The SDK resolves (not rejects) on HTTP errors, returning
         // { error, response } instead of throwing.
         if (res?.error) {
           const status = res?.response?.status as number | undefined;
+          // Full ground truth in the console so we stop guessing the cause:
+          // the exact status, the URL it actually hit, and the error body.
+          console.error('[session-chat] send failed', {
+            sessionId,
+            attempt,
+            status,
+            requestedUrl: res?.response?.url,
+            activeUrl: getActiveOpenCodeUrl(),
+            error: res?.error,
+          });
           const transient =
             status === undefined || status >= 500 || status === 408 || status === 429;
           if (transient && attempt < maxAttempts) {
@@ -5523,11 +5541,17 @@ export function SessionChat({
             continue;
           }
           handleSendError();
-          const message =
+          // Surface the real cause in the toast — a bare "Failed to send
+          // message" hides whether this was a 4xx (bad request/auth/model) or
+          // a 5xx/proxy blip. Lead with the server's message if it gave one,
+          // otherwise show the HTTP status so it's diagnosable at a glance.
+          const detail =
             (typeof res.error?.data?.message === 'string' && res.error.data.message) ||
             (typeof res.error === 'string' && res.error) ||
-            'Failed to send message';
-          throw new Error(message);
+            null;
+          throw new Error(
+            detail ?? `Couldn’t send your message (HTTP ${status ?? 'unknown'}).`,
+          );
         }
 
         // Success — the server accepted the prompt (204) and streams the
