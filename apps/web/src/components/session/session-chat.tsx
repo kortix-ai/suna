@@ -5462,36 +5462,77 @@ export function SessionChat({
           });
       };
 
-      let res: any;
-      try {
-        res = await client.session.promptAsync({
-          sessionID: sessionId,
-          parts: mappedParts,
-          // Pass the session's directory so opencode resolves project-scoped
-          // agents (.opencode/agent/*.md under the project) and applies them
-          // when the user picked a project agent from the picker.
-          ...(session?.directory ? { directory: session.directory } : {}),
-          ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
-          ...(sendOpts?.model ? { model: sendOpts.model } : {}),
-          ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
-        } as any);
-      } catch (err) {
-        // Network / thrown SDK error — clean up and propagate so the queue
-        // drain can mark the item as failed and the input can restore text.
-        handleSendError();
-        throw err;
-      }
+      const promptBody = {
+        sessionID: sessionId,
+        parts: mappedParts,
+        // Pass the session's directory so opencode resolves project-scoped
+        // agents (.opencode/agent/*.md under the project) and applies them
+        // when the user picked a project agent from the picker.
+        ...(session?.directory ? { directory: session.directory } : {}),
+        ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
+        ...(sendOpts?.model ? { model: sendOpts.model } : {}),
+        ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
+      } as any;
 
-      // The SDK resolves (not rejects) on HTTP errors, returning
-      // { error: ... } instead of throwing. Treat this as a failure so the
-      // UI doesn't stay stuck on "busy" with the optimistic user bubble.
-      if (res?.error) {
-        handleSendError();
-        const message =
-          (typeof res.error?.data?.message === 'string' && res.error.data.message) ||
-          (typeof res.error === 'string' && res.error) ||
-          'Failed to send message';
-        throw new Error(message);
+      // Sending to the sandbox's OpenCode server can transiently fail — the
+      // container may be waking from auto-stop, restarting, or the tunnel
+      // blips. A single blip used to surface as "Failed to send message" and
+      // bounce the draft back. Retry transient failures with backoff so a flaky
+      // send self-heals; only give up (and surface the error) after several
+      // attempts.
+      //
+      // We retry ONLY cases where the server did not accept the prompt — a
+      // thrown network error (request never completed) or a 5xx/429/408
+      // response — so an already-queued prompt is never double-sent. A 4xx
+      // (bad request, auth, missing model key) is a real failure and surfaces
+      // immediately. The optimistic user message + busy status stay up across
+      // retries, so the UI shows the send in progress the whole time.
+      const retryBackoffMs = [400, 1000, 2000];
+      const maxAttempts = retryBackoffMs.length + 1;
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+      let res: any;
+      for (let attempt = 1; ; attempt++) {
+        let caught = false;
+        let caughtErr: unknown;
+        try {
+          res = await client.session.promptAsync(promptBody);
+        } catch (err) {
+          caught = true;
+          caughtErr = err;
+        }
+
+        // Thrown = network/transport failure (request didn't complete).
+        if (caught) {
+          if (attempt < maxAttempts) {
+            await sleep(retryBackoffMs[attempt - 1]);
+            continue;
+          }
+          handleSendError();
+          throw caughtErr;
+        }
+
+        // The SDK resolves (not rejects) on HTTP errors, returning
+        // { error, response } instead of throwing.
+        if (res?.error) {
+          const status = res?.response?.status as number | undefined;
+          const transient =
+            status === undefined || status >= 500 || status === 408 || status === 429;
+          if (transient && attempt < maxAttempts) {
+            await sleep(retryBackoffMs[attempt - 1]);
+            continue;
+          }
+          handleSendError();
+          const message =
+            (typeof res.error?.data?.message === 'string' && res.error.data.message) ||
+            (typeof res.error === 'string' && res.error) ||
+            'Failed to send message';
+          throw new Error(message);
+        }
+
+        // Success — the server accepted the prompt (204) and streams the
+        // response over SSE.
+        break;
       }
 
       return messageID;
