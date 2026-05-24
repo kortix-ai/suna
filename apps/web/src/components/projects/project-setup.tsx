@@ -16,7 +16,7 @@
 import * as React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Check, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Check, X } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -110,18 +110,36 @@ function SetupStepList({
           subtitle={<span className="text-xs text-muted-foreground">{step.description}</span>}
           trailing={
             step.done ? null : (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-primary hover:bg-primary/10 hover:text-primary"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onStep(step);
-                }}
-              >
-                {step.cta}
-                <ArrowRight />
-              </Button>
+              <div className="flex items-center gap-0.5">
+                <Button
+                  asChild
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-muted-foreground/70 hover:text-foreground"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <a
+                    href={step.learnHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Learn more"
+                  >
+                    <BookOpen className="size-3.5" />
+                  </a>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-primary hover:bg-primary/10 hover:text-primary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStep(step);
+                  }}
+                >
+                  {step.cta}
+                  <ArrowRight />
+                </Button>
+              </div>
             )
           }
         />

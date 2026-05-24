@@ -59,6 +59,8 @@ export interface ProjectSetupStep {
   /** Customize surface that completes this step; null = handled by the caller. */
   href: string | null;
   cta: string;
+  /** Docs page for the "Learn more" affordance. */
+  learnHref: string;
 }
 
 export interface ProjectSetupState {
@@ -146,17 +148,18 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
       {
         id: 'repo',
         title: 'Connect a repository',
-        description: 'A git repo backs every session in this project.',
+        description: "Your project's code lives in a git repository.",
         done: repoConnected,
         optional: false,
         icon: GitBranch,
         href: base('settings'),
         cta: 'Connect',
+        learnHref: '/docs/concepts/projects',
       },
       {
         id: 'agent',
-        title: 'Configure your agent',
-        description: 'Add an agent persona or a Kortix manifest to the repo.',
+        title: 'Set up your agent',
+        description: 'Choose the agent that does the work in this project.',
         // A repo with Kortix config (kortix.toml / opencode) already has a
         // working agent runtime via the default agent — so either signal counts.
         done: agentCount > 0 || isKortixRepo,
@@ -164,18 +167,20 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         icon: Bot,
         href: base('agents'),
         cta: 'Set up',
+        learnHref: '/docs/concepts/agents',
       },
       ...(secretsApply
         ? [
             {
               id: 'secrets' as const,
               title: 'Add required secrets',
-              description: 'Fill in the env values your manifest declares.',
+              description: 'Add the API keys and tokens your project needs.',
               done: secretsDone,
               optional: false,
               icon: KeyRound,
               href: base('secrets'),
               cta: 'Add secrets',
+              learnHref: '/docs/concepts/secrets',
             },
           ]
         : []),
@@ -188,6 +193,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         icon: Plug,
         href: base('connectors'),
         cta: 'Connect',
+        learnHref: '/docs/concepts/connections',
       },
       {
         id: 'team',
@@ -198,6 +204,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         icon: Users,
         href: base('members'),
         cta: 'Invite',
+        learnHref: '/docs/concepts/accounts',
       },
       {
         id: 'session',
@@ -208,6 +215,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         icon: SquarePen,
         href: null,
         cta: 'Start',
+        learnHref: '/docs/quickstart',
       },
     ];
 
