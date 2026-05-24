@@ -295,7 +295,7 @@ function CompactConnectingSignal({
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex justify-center pt-2.5"
+      className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center"
       role="status"
       aria-label={status}
     >
