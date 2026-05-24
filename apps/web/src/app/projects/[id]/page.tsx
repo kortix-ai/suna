@@ -5,30 +5,23 @@ import { useParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { ProjectShell } from '@/components/projects/project-shell';
-import { ProjectSetupChecklist } from '@/components/projects/project-setup';
-import { SessionWelcome } from '@/components/session/session-welcome';
-import {
-  SessionChatInput,
-  type AttachedFile,
-} from '@/components/session/session-chat-input';
+import { ProjectHome } from '@/components/projects/project-home';
 import {
   createProjectSession,
   type ProjectSession,
 } from '@/lib/projects-client';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { toast } from '@/lib/toast';
 
 /**
- * Project root — the new-session empty state.
+ * Project root — the project home / dashboard.
  *
- * Renders the exact same empty state as a fresh session (SessionWelcome
- * wallpaper full-bleed + the bottom-docked SessionChatInput, no centered
- * title), so it's a typeable composer with working attachments that is
- * visually identical to opening a new session.
+ * A welcome hero + a composer to start a session, over a grid of section tiles
+ * (integrations, scheduled tasks, skills, Slack, team, agent) that tease the
+ * feature and prompt setup, each docs-backed.
  *
- * On send we create the session, stash the message, and route into the session,
- * which auto-sends it once the runtime is ready. Simply opening this page should
- * not create a stealth session.
+ * Opening this page does not create a stealth session: a session is created on
+ * send, then we route into it (the session view auto-sends the stashed prompt
+ * once the runtime is ready).
  */
 export default function ProjectIndexPage() {
   const { id: projectId } = useParams<{ id: string }>();
@@ -37,13 +30,6 @@ export default function ProjectIndexPage() {
 
   const pendingSession = useRef<Promise<ProjectSession> | null>(null);
   const [busy, setBusy] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  // "Run your first session" step → drop the user straight into the composer
-  // that's already docked at the bottom of this very page.
-  const focusComposer = useCallback(() => {
-    rootRef.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
-  }, []);
 
   const createSession = useCallback(() => {
     if (!pendingSession.current) {
@@ -61,15 +47,13 @@ export default function ProjectIndexPage() {
   }, [projectId, queryClient]);
 
   const handleSend = useCallback(
-    async (text: string, files?: AttachedFile[]) => {
-      if (!text.trim() && !files?.length) return;
+    async (text: string) => {
+      if (!text.trim()) return;
       setBusy(true);
       try {
         const session = await createSession();
-        // The session view's pending-prompt handoff (ActiveSessionChat) reads
-        // this; files ride along via the global pending-files store.
+        // ActiveSessionChat reads this and auto-sends once the sandbox is ready.
         sessionStorage.setItem(`project_pending_prompt:${session.session_id}`, text);
-        if (files?.length) usePendingFilesStore.getState().setPendingFiles(files);
         router.push(`/projects/${projectId}/sessions/${session.session_id}`);
       } catch (err) {
         setBusy(false);
@@ -81,24 +65,7 @@ export default function ProjectIndexPage() {
 
   return (
     <ProjectShell projectId={projectId}>
-      <div
-        ref={rootRef}
-        className="relative flex-1 min-h-0 flex flex-col overflow-hidden bg-background"
-      >
-        {/* Full-bleed welcome wallpaper — identical to a real empty session */}
-        <div className="absolute inset-0 z-0 pointer-events-none">
-          <SessionWelcome />
-        </div>
-
-        {/* Setup checklist (hidden once the project is configured) floats over
-            the wallpaper; the region still pushes the composer to the bottom. */}
-        <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4">
-          <ProjectSetupChecklist projectId={projectId} onStartSession={focusComposer} />
-        </div>
-
-        {/* The real (typeable) chat input, docked at the bottom */}
-        <SessionChatInput onSend={handleSend} disabled={busy} autoFocus />
-      </div>
+      <ProjectHome projectId={projectId} onSend={handleSend} busy={busy} />
     </ProjectShell>
   );
 }
