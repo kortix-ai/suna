@@ -316,8 +316,15 @@ export async function proxyToDaytona(
   const serviceKey = access.serviceKey ?? await resolveServiceKey(sandboxId);
 
   // 2. Proxy with auto-wake retry
-  const MAX_RETRIES = 3;
-  const RETRY_DELAYS_MS = [2000, 5000, 8000]; // progressive delays to let sandbox boot
+  const MAX_RETRIES = 5;
+  // Tight ramp catches the kortix-master restart window (post-warm-claim
+  // dnah-apply-env bounces the s6 service to pick up the per-session
+  // KORTIX_TOKEN; bun + opencode rebind port 8000 in ~2-4s). Previous
+  // [2s, 5s, 8s] meant a request landing mid-restart waited a full 11-15s
+  // for the 4th attempt to land. New curve: max 200+500+1000+2000+3000 = 6.7s
+  // worst case, ~1s typical when restart is in flight, and 2 extra fast
+  // attempts means we don't burn the whole window on early misses.
+  const RETRY_DELAYS_MS = [200, 500, 1000, 2000, 3000];
   let wakeTriggered = false;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
