@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { List, ListRow } from '@/components/ui/list';
 import { Progress } from '@/components/ui/progress';
 import { SectionCard } from '@/components/ui/section-card';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
 import {
   useAccountOnboarding,
@@ -95,10 +96,18 @@ export function AccountOnboardingGuide({
   if (setup.isLoading || setup.isComplete) return null;
   if (dismissible && dismissed) return null;
 
+  // The first actionable, incomplete step — the one focal CTA.
+  const nextId = setup.steps.find((s) => !s.done && !s.locked)?.id;
+
   return (
     <SectionCard
       className={cn('w-full max-w-xl shadow-sm', className)}
-      title="Get started with Kortix"
+      title={
+        <span className="flex items-center gap-2">
+          <KortixLogo size={16} />
+          Get started with Kortix
+        </span>
+      }
       description={`${setup.requiredDone} of ${setup.requiredTotal} steps done`}
       action={
         dismissible ? (
@@ -150,20 +159,33 @@ export function AccountOnboardingGuide({
                         <BookOpen className="size-3.5" />
                       </a>
                     </Button>
-                    {!step.locked && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-primary hover:bg-primary/10 hover:text-primary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onStep(step);
-                        }}
-                      >
-                        {step.cta}
-                        <ArrowRight />
-                      </Button>
-                    )}
+                    {!step.locked &&
+                      (step.id === nextId ? (
+                        <Button
+                          size="sm"
+                          className="gap-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onStep(step);
+                          }}
+                        >
+                          {step.cta}
+                          <ArrowRight />
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-primary hover:bg-primary/10 hover:text-primary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onStep(step);
+                          }}
+                        >
+                          {step.cta}
+                          <ArrowRight />
+                        </Button>
+                      ))}
                   </div>
                 )
               }
