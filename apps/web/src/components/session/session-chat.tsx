@@ -3904,7 +3904,21 @@ export function SessionChat({
   const disableToolNavigation =
     onboardingActive && onboardingSessionId === sessionId;
   const activeTabId = useTabStore((s) => s.activeTabId);
-  const isActiveSessionTab = activeTabId === sessionId;
+  // In the desktop dashboard, every open session tab is pre-mounted at once
+  // (see layout-content.tsx), so only the visible tab may be treated as
+  // "active" — otherwise every busy session would react to global shortcuts
+  // (ESC-to-stop, auto question handling) at the same time. But the standalone
+  // project session route (/projects/[id]/sessions/[sessionId]) mounts a single
+  // SessionChat whose id is never registered in this desktop tab store — there
+  // activeTabId is a page tab (e.g. "page:/dashboard"), so a strict equality
+  // check is permanently false and silently disables those shortcuts. Mirror
+  // the SessionLayout hotkey gate: only require the active-tab match when this
+  // session actually lives in the tab system; otherwise this is the only chat
+  // mounted, so it's active.
+  const isInDesktopTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
+  const isActiveSessionTab = isInDesktopTabSystem
+    ? activeTabId === sessionId
+    : true;
 
   // Clicking a tool call in the chat opens the side panel (Actions view)
   // focused on that tool's large preview — instead of expanding inline.
@@ -5572,16 +5586,23 @@ export function SessionChat({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !isBusy) return;
 
+      // ESC was already consumed by something else — e.g. the composer's own
+      // slash/mention popover (which calls preventDefault) or another focused
+      // control that handled it — so it must never advance the stop counter.
       if (e.defaultPrevented) return;
 
-      // Only the main chat composer should arm triple-ESC stop. Modal/dialog ESC
-      // handling and other focused controls must never advance this counter.
+      // ESC-to-stop is a page-wide shortcut: it must fire whether or not the
+      // composer is focused, because users watch the agent run with focus
+      // elsewhere (chat body, a tool view, or nothing at all). The only presses
+      // we ignore are those meant for an open overlay the user is interacting
+      // with — when focus sits inside a dialog/menu/popover/select, that ESC is
+      // for dismissing it, not for stopping. (A hovered tooltip never takes
+      // focus, so the stop button's own tooltip can't suppress the shortcut.)
       const active = document.activeElement;
-      const isChatTextareaFocused =
-        active instanceof HTMLTextAreaElement &&
-        active.dataset.sessionChatStopScope === 'true';
-
-      if (!isChatTextareaFocused) return;
+      const focusInOverlay = active?.closest(
+        '[role="dialog"],[role="alertdialog"],[role="menu"],[data-radix-popper-content-wrapper]',
+      );
+      if (focusInOverlay) return;
 
       e.preventDefault();
 

@@ -2190,7 +2190,6 @@ export function SessionChatInput({
               )}
               <textarea
                 ref={textareaRef}
-                data-session-chat-stop-scope="true"
                 value={text}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
