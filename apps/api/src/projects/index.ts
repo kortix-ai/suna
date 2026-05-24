@@ -111,9 +111,12 @@ import {
 } from '../executor/share';
 import {
   ensureBuildForLatestCommit,
+  getProjectSandboxHealth,
   listSnapshotsForProject,
 } from '../snapshots/builder';
+import { classifySnapshotError, describeSnapshotError } from '../snapshots/error-classify';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
+import { ProvisionTimeline } from '../platform/services/provision-timeline';
 import { getProvider } from '../platform/providers';
 import { config, type SandboxProviderName } from '../config';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../shared/account-limits';
@@ -1541,6 +1544,7 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: deriveKortixApiBase(),
+    KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
     // Per-session model override (e.g. Slack turns pin a specific model).
     // The sandbox agent reads this and sets it on every opencode prompt call.
@@ -1617,7 +1621,7 @@ export async function createProjectSession(input: {
   // a dead sandbox (repo clone-credential fetch can't reach us). Refusing here
   // avoids minting a doomed session row + remote branch and surfaces the real
   // fix to the user instead of a cryptic "OpenCode runtime is not ready" later.
-  const callbackUnreachable = sandboxCallbackUnreachableReason();
+  const callbackUnreachable = providerName === 'local_docker' ? null : sandboxCallbackUnreachableReason();
   if (callbackUnreachable) {
     return { error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } } };
   }
@@ -1684,36 +1688,85 @@ export async function createProjectSession(input: {
   // Fire-and-forget sandbox provisioning. The dashboard polls the sandbox
   // status endpoint and shows the ConnectingScreen during the long tail.
   void (async () => {
+    const tl = new ProvisionTimeline(sessionId, 'session-create');
     try {
-      // Resolve git auth + create the session branch HERE (off the synchronous
-      // create response). The remote git host (e.g. git.freestyle.sh) costs
-      // ~8-10s of round-trips for the fetch-tip + push-branch dance; doing it
-      // inline made POST /sessions take ~12s. The sandbox only checks out this
-      // branch after Daytona create + base clone (~10s+), and
-      // checkoutSessionBranch retries for ~15s, so the branch reliably lands
-      // before it's needed. A failure here marks the session failed (surfaced
-      // by the ConnectingScreen) instead of a synchronous 502.
-      const gitAuth = await resolveProjectGitAuth(project);
-      if (!branchAlreadyCreated) {
-        const projectWithGitAuth = { ...project, gitAuthToken: gitAuth.auth?.token ?? null };
-        await createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef);
-      }
+      // Resolve git auth and user env concurrently. Git auth is needed for
+      // background freshness checks / remote branch publishing, but a warm
+      // session can boot from an existing ready snapshot without waiting for it.
+      const gitAuthPromise = resolveProjectGitAuth(project).then((gitAuth) => {
+        tl.mark('git-auth');
+        return gitAuth;
+      });
+      const projectWithGitAuthPromise = gitAuthPromise.then((gitAuth) => ({
+        ...project,
+        gitAuthToken: gitAuth.auth?.token ?? null,
+      }));
+      const envPromise = buildSessionSandboxEnvVars({
+        accountId,
+        projectId,
+        sessionId,
+        userId,
+        repoUrl: project.repoUrl,
+        baseRef,
+        agentName,
+        initialPrompt,
+        opencodeModel,
+      }).then((envVars) => {
+        tl.mark('env-vars');
+        return envVars;
+      });
+
+      const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
+        const [current] = await db
+          .select({ metadata: projectSessions.metadata })
+          .from(projectSessions)
+          .where(eq(projectSessions.sessionId, sessionId))
+          .limit(1);
+        const currentMetadata =
+          current?.metadata && typeof current.metadata === 'object'
+            ? (current.metadata as Record<string, unknown>)
+            : {};
+        await db
+          .update(projectSessions)
+          .set({
+            metadata: { ...currentMetadata, ...extra },
+            updatedAt: new Date(),
+          })
+          .where(eq(projectSessions.sessionId, sessionId));
+      };
+
+      // Origin branch creation is publishing work, not readiness work. The
+      // sandbox now creates the session branch locally from the base checkout
+      // immediately, so this remote push runs fully in the background.
+      const branchPromise: Promise<void> = branchAlreadyCreated
+        ? Promise.resolve()
+        : projectWithGitAuthPromise.then((projectWithGitAuth) =>
+            createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
+          ).then(async () => {
+            tl.mark('branch-pushed');
+            await mergeSessionMetadata({
+              remote_branch: { status: 'ready', branch: sessionId, updated_at: new Date().toISOString() },
+            });
+          });
+      branchPromise.catch(async (err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[projects] Remote branch creation failed for session ${sessionId}:`, err);
+        await mergeSessionMetadata({
+          remote_branch: {
+            status: 'failed',
+            branch: sessionId,
+            error: message.slice(0, 500),
+            updated_at: new Date().toISOString(),
+          },
+        }).catch(() => {});
+      });
 
       const extraEnvVars = {
-        ...(await buildSessionSandboxEnvVars({
-          accountId,
-          projectId,
-          sessionId,
-          userId,
-          repoUrl: project.repoUrl,
-          baseRef,
-          agentName,
-          initialPrompt,
-          opencodeModel,
-        })),
+        ...(await envPromise),
         ...(input.extraEnvVars ?? {}),
       };
-      await provisionSessionSandbox({
+
+      const provisionPromise = provisionSessionSandbox({
         sandboxId: sessionId,
         accountId,
         projectId,
@@ -1726,10 +1779,18 @@ export async function createProjectSession(input: {
           repoUrl: project.repoUrl,
           defaultBranch: project.defaultBranch,
           manifestPath: project.manifestPath,
-          gitAuthToken: gitAuth.auth?.token ?? null,
+          gitAuthToken: null,
         },
+        resolveGitAuthToken: async () => (await gitAuthPromise).auth?.token ?? null,
         baseRef,
       });
+
+      // provisionSessionSandbox returns once its row is inserted; provider
+      // create and remote branch push both continue in detached background work.
+      await provisionPromise;
+      tl.mark('kicked');
+      const sessionStartTimeline = tl.log();
+      await mergeSessionMetadata({ session_start_timeline: sessionStartTimeline }).catch(() => {});
     } catch (err) {
       const message = (err as Error)?.message || 'Sandbox provisioning failed';
       console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
@@ -2986,9 +3047,42 @@ function serializeProjectSnapshot(row: {
     snapshot_id: row.snapshotId,
     status: row.status,
     error: row.error,
+    error_category: row.error
+      ? (typeof row.metadata?.errorCategory === 'string'
+          ? row.metadata.errorCategory
+          : classifySnapshotError(row.error))
+      : null,
     metadata: row.metadata ?? {},
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+function serializeSandboxHealth(
+  health: Awaited<ReturnType<typeof getProjectSandboxHealth>>,
+) {
+  return {
+    branch: health.branch,
+    provider: health.provider,
+    ready_count: health.readyCount,
+    bootable_count: health.bootableCount,
+    total_count: health.totalCount,
+    retention: health.retention,
+    healthy: health.healthy,
+    building: health.building,
+    first_build: health.firstBuild,
+    runtime_outdated: health.runtimeOutdated,
+    latest_ready_commit_sha: health.latestReadyCommitSha,
+    latest_status: health.latestStatus,
+    failure: health.failure
+      ? {
+          commit_sha: health.failure.commitSha,
+          error: health.failure.error,
+          category: health.failure.category,
+          fixable_by_agent: health.failure.fixableByAgent,
+          failed_at: health.failure.failedAt,
+        }
+      : null,
   };
 }
 
@@ -3032,12 +3126,37 @@ projectsApp.get('/:projectId/snapshots', async (c) => {
     headResolveError = err instanceof Error ? err.message : String(err);
   }
 
+  let health: Awaited<ReturnType<typeof getProjectSandboxHealth>> | null = null;
+  try {
+    health = await getProjectSandboxHealth(projectId, loaded.row.defaultBranch);
+  } catch {
+    /* non-fatal — the panel still renders from `items` */
+  }
+
   return c.json({
     items: rows.map(serializeProjectSnapshot),
     default_branch: loaded.row.defaultBranch,
     head_commit_sha: headCommitSha,
     head_resolve_error: headResolveError,
+    health: health ? serializeSandboxHealth(health) : null,
   });
+});
+
+// GET /v1/projects/:projectId/sandbox-health
+// Lightweight, DB-only sandbox health for the project sidebar alert. Skips the
+// git HEAD resolution that GET /snapshots does, so it's cheap to poll.
+projectsApp.get('/:projectId/sandbox-health', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  try {
+    const health = await getProjectSandboxHealth(projectId, loaded.row.defaultBranch);
+    return c.json(serializeSandboxHealth(health));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Failed to read sandbox health: ${message}` }, 500);
+  }
 });
 
 // ─── Project-scoped CLI tokens ─────────────────────────────────────────────
@@ -3228,6 +3347,89 @@ projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
     branch: loaded.row.defaultBranch,
     commit_sha: result.commitSha ?? null,
   });
+});
+
+// POST /v1/projects/:projectId/snapshots/fix-with-agent
+// Spin up a session pre-seeded with the latest build failure so an agent can
+// diagnose + fix the Dockerfile and open a change request. Requires at least
+// one ready snapshot to boot the fixing session in — graceful degradation lets
+// it run on the most recent healthy image while the broken tip is repaired.
+projectsApp.post('/:projectId/snapshots/fix-with-agent', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const userId = c.get('userId') as string;
+  const branch = loaded.row.defaultBranch;
+
+  let rows: Awaited<ReturnType<typeof listSnapshotsForProject>> = [];
+  try {
+    rows = await listSnapshotsForProject(projectId, { limit: 25 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Failed to read snapshots: ${message}` }, 500);
+  }
+  const failed =
+    rows.find((r) => r.branch === branch && r.status === 'failed') ??
+    rows.find((r) => r.status === 'failed');
+  if (!failed) {
+    return c.json({ error: 'No failed snapshot build to fix.' }, 409);
+  }
+
+  // Need a healthy snapshot to boot the fixing session in. Without one there's
+  // nothing to run the agent on (the cold first-build-failure case) — the user
+  // must retry or fix the Dockerfile manually.
+  const health = await getProjectSandboxHealth(projectId, branch);
+  if (health.readyCount === 0) {
+    return c.json(
+      {
+        error:
+          'No ready sandbox to run the fix in yet. Retry the build, or edit the Dockerfile manually.',
+        code: 'NO_READY_SANDBOX',
+      },
+      409,
+    );
+  }
+
+  const errorText = failed.error ?? 'Snapshot build failed';
+  const category =
+    typeof failed.metadata?.errorCategory === 'string'
+      ? (failed.metadata.errorCategory as ReturnType<typeof classifySnapshotError>)
+      : classifySnapshotError(errorText);
+  const info = describeSnapshotError(category);
+
+  const prompt = [
+    `The sandbox snapshot build for this project is failing, so new sessions can't boot from a fresh image. Diagnose the root cause and fix it, then open a change request.`,
+    ``,
+    `Failing commit: ${failed.commitSha.slice(0, 8)} (branch ${failed.branch || branch})`,
+    `Error type: ${category} — ${info.title}`,
+    info.hint,
+    ``,
+    `Build error:`,
+    '```',
+    errorText.slice(0, 4000),
+    '```',
+    ``,
+    `The sandbox image is built from the project's Dockerfile (see kortix.toml [sandbox]; default \`.kortix/Dockerfile\`).`,
+    ``,
+    `Steps:`,
+    `1. Inspect the Dockerfile and the build error above.`,
+    `2. Fix the root cause.`,
+    `3. Open a change request targeting \`${branch}\`. Once it merges, the snapshot rebuilds automatically.`,
+  ].join('\n');
+
+  const result = await createProjectSession({
+    project: loaded.row,
+    userId,
+    body: {
+      initial_prompt: prompt,
+      name: 'Fix sandbox build',
+      metadata: { kind: 'sandbox-build-fix', failed_commit_sha: failed.commitSha },
+    },
+    request: requestAuditContext(c),
+  });
+  if (result.error) return sendSessionCreateError(c, result.error);
+
+  return c.json({ session_id: result.row!.sessionId }, 201);
 });
 
 // PUT /v1/projects/:projectId/git-credential
@@ -5592,6 +5794,56 @@ projectsApp.delete('/:projectId/sessions/:sessionId', async (c) => {
   return c.json({ ok: true });
 });
 
+// POST /v1/projects/:projectId/sessions/:sessionId/wake
+// Wake a sandbox that the provider auto-stopped while idle. The DB row still
+// reads `active` (nothing updates it when Daytona auto-stops after ~15min), so
+// opening such a session would otherwise hit a dead container and spin on the
+// health poll. The frontend fires this on open: a running sandbox is a cheap
+// status no-op; a stopped one gets started in the background while the health
+// poll picks up readiness — so the request returns instantly either way.
+projectsApp.post('/:projectId/sessions/:sessionId/wake', async (c) => {
+  const projectId = c.req.param('projectId');
+  const sessionId = c.req.param('sessionId');
+  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!(await loadVisibleSession(loaded, sessionId))) return c.json({ error: 'Not found' }, 404);
+
+  const [row] = await db
+    .select()
+    .from(sessionSandboxes)
+    .where(and(
+      eq(sessionSandboxes.sessionId, sessionId),
+      eq(sessionSandboxes.projectId, projectId),
+      eq(sessionSandboxes.accountId, loaded.row.accountId),
+    ))
+    .limit(1);
+  if (!row || !row.externalId) return c.json({ status: 'unknown' });
+
+  const providerName = row.provider as SandboxProviderName;
+  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
+    return c.json({ status: 'unknown' });
+  }
+  const provider = getProvider(providerName);
+
+  let status: string;
+  try {
+    status = await provider.getStatus(row.externalId);
+  } catch {
+    return c.json({ status: 'unknown' });
+  }
+  if (status === 'running') return c.json({ status: 'running' });
+
+  // Stopped/archived → kick the start in the background so the caller gets an
+  // instant answer and the health poll observes readiness. Don't block the
+  // request on the provider's start (~10-30s on a cold wake).
+  void provider.start(row.externalId).catch((err) =>
+    console.warn(`[wake] failed to start sandbox ${row.externalId} (session ${sessionId}):`, err),
+  );
+  return c.json({ status: 'waking' });
+});
+
 // POST /v1/projects/:projectId/sessions/:sessionId/restart
 // Tear down the current sandbox container, revoke its sandbox-scoped api keys,
 // and re-provision a fresh one with the latest project secrets + rotated
@@ -6042,6 +6294,22 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
     .returning();
 
   invalidateProjectMirror(projectId);
+
+  // Proactive pre-build: the merge advanced the default branch, so kick a
+  // snapshot build for the new tip now instead of waiting for the next session
+  // to pay a cold build. Fire-and-forget; the previous ready snapshot keeps
+  // serving sessions until this finishes (graceful degradation on boot).
+  void ensureBuildForLatestCommit(projectForGit, {
+    branch: cr.baseRef,
+    accountId: loaded.row.accountId,
+    source: 'cr-merge',
+  }).catch((err) =>
+    console.warn(
+      '[change-requests] pre-build after merge failed',
+      projectId,
+      err instanceof Error ? err.message : err,
+    ),
+  );
 
   // A merged CR may have edited kortix.toml's [[connectors]]. The connector DB
   // cache (what the gateway + dashboard read) is derived from the manifest, so

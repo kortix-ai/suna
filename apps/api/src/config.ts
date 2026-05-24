@@ -11,10 +11,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-// Only Daytona is supported end-to-end. The DB enum still carries the
-// historical 'local_docker' value for legacy rows, but the API will never
-// produce one.
-export type SandboxProviderName = 'daytona';
+export type SandboxProviderName = 'daytona' | 'local_docker';
 export type InternalKortixEnv = 'dev' | 'staging' | 'prod';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -161,9 +158,11 @@ const envSchema = z.object({
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL:                  optStr,
   KORTIX_YOLO_URL:             optUrl('https://api-yolo.kortix.com/v1'),
-  // Legacy: kept so old .env files don't fail validation. Value is ignored —
-  // every sandbox now provisions on Daytona.
   ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
+  SANDBOX_IMAGE:               optStr,
+  KORTIX_LOCAL_IMAGES:         optBoolFalse,
+  DOCKER_HOST:                 optStr,
+  SANDBOX_NETWORK:             optStr,
   // Default port base for sandbox port mapping; kept for the queue drainer
   // and deployments router which still reference it.
   SANDBOX_PORT_BASE:           optInt(14000),
@@ -235,10 +234,9 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona'] as const;
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'local_docker'] as const;
 
-/** Parse comma-separated provider list (e.g. "daytona"). Unknown entries
- *  are dropped with a warning so an old .env doesn't break boot. */
+/** Parse comma-separated provider list (e.g. "daytona,local_docker"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
   if (!raw) return ['daytona'];
   const names = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -276,6 +274,9 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (!raw.DAYTONA_API_KEY)    issues.push({ var: 'DAYTONA_API_KEY',    message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_SERVER_URL) issues.push({ var: 'DAYTONA_SERVER_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
+  }
+  if (providers.includes('local_docker') && !raw.DOCKER_HOST) {
+    issues.push({ var: 'DOCKER_HOST', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "local_docker"', level: 'error' });
   }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
@@ -455,6 +456,10 @@ export const config = {
   KORTIX_URL: env.KORTIX_URL,
   KORTIX_YOLO_URL: env.KORTIX_YOLO_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
+  SANDBOX_IMAGE: env.SANDBOX_IMAGE || 'kortix/kortix-sandbox:latest',
+  KORTIX_LOCAL_IMAGES: env.KORTIX_LOCAL_IMAGES,
+  DOCKER_HOST: env.DOCKER_HOST,
+  SANDBOX_NETWORK: env.SANDBOX_NETWORK,
   SANDBOX_PORT_BASE: env.SANDBOX_PORT_BASE,
   SANDBOX_CONTAINER_NAME: env.SANDBOX_CONTAINER_NAME,
 
@@ -561,6 +566,7 @@ export const config = {
     if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
     switch (name) {
       case 'daytona': return !!this.DAYTONA_API_KEY;
+      case 'local_docker': return !!this.DOCKER_HOST;
       default: {
         const exhaustive: never = name;
         return exhaustive;
@@ -577,6 +583,14 @@ export const config = {
    */
   getDefaultProvider(): SandboxProviderName {
     return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
+  },
+
+  isDaytonaEnabled(): boolean {
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('daytona') && !!this.DAYTONA_API_KEY;
+  },
+
+  isLocalDockerEnabled(): boolean {
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker') && !!this.DOCKER_HOST;
   },
 
 };

@@ -210,7 +210,7 @@ describe('daemon proxy auth gate', () => {
       baseConfig({ autoClone: true }),
       fakeOpencode('ok'),
       Date.now(),
-      { repoMaterializationError: 'git clone failed: authentication required' },
+      { repoMaterializationError: 'git clone failed: authentication required', timeline: [] },
     )
 
     const health = await app.request('/kortix/health')
@@ -396,7 +396,7 @@ describe('daemon proxy auth gate', () => {
       baseConfig(),
       fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
       Date.now(),
-      { repoMaterializationError: null },
+      { repoMaterializationError: null, timeline: [] },
       store,
     )
 
@@ -453,7 +453,7 @@ describe('daemon proxy auth gate', () => {
       baseConfig(),
       fakeOpencode('ok'),
       Date.now(),
-      { repoMaterializationError: null },
+      { repoMaterializationError: null, timeline: [] },
       createProjectEnvStore(),
     )
 

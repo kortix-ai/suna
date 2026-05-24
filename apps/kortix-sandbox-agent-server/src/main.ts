@@ -20,7 +20,12 @@ export const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
 async function main() {
   const bootTime = Date.now()
   const cfg = loadConfig()
-  const bootState: SandboxBootState = { repoMaterializationError: null }
+  const bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] }
+  // In-container boot timeline (ms since process start). Surfaced via
+  // /kortix/health so the dashboard can attribute post-create boot latency.
+  const bootMark = (label: string) => {
+    bootState.timeline.push({ label, atMs: Date.now() - bootTime })
+  }
   logger.info('[boot] kortix-sandbox-agent-server starting', {
     servicePort: cfg.servicePort,
     opencodeInternalPort: cfg.opencodeInternalPort,
@@ -33,6 +38,7 @@ async function main() {
   // means previews work even while the agent is still booting, and a repo/
   // opencode failure never takes it down. Reachable via /proxy/<staticPort>.
   const staticWeb = startStaticWebServer(cfg.staticPort)
+  bootMark('static-web')
 
   try {
     await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
@@ -41,6 +47,7 @@ async function main() {
       err: err instanceof Error ? err.message : String(err),
     })
   }
+  bootMark('git-identity')
 
   if (cfg.autoClone) {
     try {
@@ -52,6 +59,7 @@ async function main() {
       logger.error('[boot] repo materialization failed', err)
     }
   }
+  bootMark('repo-materialized')
 
   const opencodeConfigDir = await resolveOpencodeConfigDir(cfg)
   logger.info('[boot] resolved opencode config dir', { opencodeConfigDir })
@@ -68,9 +76,11 @@ async function main() {
   } else {
     await opencode.start()
   }
+  bootMark('opencode-spawned')
 
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
   installShutdownHandlers(opencode, server, staticWeb)
+  bootMark('proxy-up')
 
   logger.info('[boot] proxy up; waiting for opencode readiness in background', {
     servicePort: cfg.servicePort,
@@ -81,7 +91,11 @@ async function main() {
   void (async () => {
     const ready = await waitForOpencodeReady(opencode)
     if (ready) {
-      logger.info('[boot] opencode ready', { opencodePid: opencode.getPid() })
+      bootMark('opencode-ready')
+      logger.info('[boot] opencode ready', {
+        opencodePid: opencode.getPid(),
+        timeline: bootState.timeline,
+      })
       startOpencodeEventLoop(opencode, cfg, {
         onQuestionAsked: (req) => {
           void relayQuestionToApi(req, cfg).catch((err) =>
@@ -89,8 +103,8 @@ async function main() {
           )
         },
       })
-      await maybeDeliverInitialPrompt(cfg.opencodeInternalPort).catch((err) => {
-        logger.warn('[boot] initial prompt delivery failed', err)
+      await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort).catch((err) => {
+        logger.warn('[boot] initial opencode session setup failed', err)
       })
     } else {
       logger.warn('[boot] opencode did not become ready within deadline; supervisor still retrying', {
@@ -100,15 +114,17 @@ async function main() {
   })()
 }
 
-async function maybeDeliverInitialPrompt(opencodePort: number): Promise<void> {
+async function maybeCreateInitialOpencodeSession(opencodePort: number): Promise<void> {
   const prompt = (process.env.KORTIX_INITIAL_PROMPT ?? '').trim()
-  if (!prompt) return
+  const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+  if (!prompt && !bootstrapSession) return
 
   const baseUrl = `http://127.0.0.1:${opencodePort}`
   const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
 
-  logger.info('[boot] delivering KORTIX_INITIAL_PROMPT to opencode', {
+  logger.info('[boot] creating initial opencode session', {
     bytes: prompt.length,
+    hasPrompt: prompt.length > 0,
     workspace,
   })
 
@@ -123,6 +139,17 @@ async function maybeDeliverInitialPrompt(opencodePort: number): Promise<void> {
   }
   const session = (await sessionRes.json()) as { id?: string }
   if (!session.id) throw new Error('opencode session create returned no id')
+
+  if (!prompt) {
+    try {
+      mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
+      writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+    } catch (err) {
+      logger.warn('[boot] failed to pin opencode session id', err)
+    }
+    logger.info('[boot] initial opencode session created', { sessionId: session.id })
+    return
+  }
 
   const model = resolveOpencodeModel()
   const promptRes = await fetch(

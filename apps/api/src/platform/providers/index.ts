@@ -1,5 +1,6 @@
 import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
+import { LocalDockerProvider } from './local-docker';
 
 /**
  * Sandbox provider lineup. Extensible registry — adding a new runtime is
@@ -7,10 +8,10 @@ import { DaytonaProvider } from './daytona';
  * `ProviderName` union. Call sites depend on the `SandboxProvider`
  * interface, not the concrete class, so they stay untouched.
  *
- *   - daytona — managed cloud (Daytona). Only provider implemented today;
- *               local_docker was removed when we consolidated on cloud.
+ *   - daytona — managed cloud (Daytona)
+ *   - local_docker — self-hosted/local Docker runtime
  */
-export type ProviderName = 'daytona';
+export type ProviderName = 'daytona' | 'local_docker';
 export type { SandboxProviderName } from '../../config';
 
 export interface CreateSandboxOpts {
@@ -24,8 +25,7 @@ export interface CreateSandboxOpts {
    * Override the provider's default snapshot/image with one built
    * specifically for this project. The snapshot builder
    * (apps/api/src/snapshots/builder.ts) populates this when a session
-   * boots; falls back to the provider-wide default when absent (e.g.
-   * for legacy sessions that pre-date per-project builds).
+   * boots; falls back to the provider-wide default when absent.
    */
   snapshot?: string;
 }
@@ -92,6 +92,12 @@ export function getProvider(name: ProviderName): SandboxProvider {
       }
       provider = new DaytonaProvider();
       break;
+    case 'local_docker':
+      if (!config.DOCKER_HOST) {
+        throw new Error('Local Docker provider requires DOCKER_HOST to be set.');
+      }
+      provider = new LocalDockerProvider();
+      break;
     default: {
       const exhaustive: never = name;
       throw new Error(`Unknown sandbox provider: ${exhaustive}`);
@@ -107,5 +113,8 @@ export function getDefaultProviderName(): ProviderName {
 }
 
 export function getAvailableProviders(): ProviderName[] {
-  return ['daytona'];
+  const available: ProviderName[] = [];
+  if (config.isDaytonaEnabled()) available.push('daytona');
+  if (config.isLocalDockerEnabled()) available.push('local_docker');
+  return available;
 }

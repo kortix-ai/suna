@@ -5,9 +5,7 @@
 # ║      curl -fsSL https://kortix.com/install | bash                            ║
 # ║                                                                              ║
 # ║  Downloads the prebuilt `kortix` binary for your OS + arch from              ║
-# ║  GitHub Releases and drops it on PATH. Cleanly replaces any legacy           ║
-# ║  ~/.kortix/kortix shell script left over from the old self-host              ║
-# ║  installer.                                                                  ║
+# ║  GitHub Releases and drops it on PATH.                                       ║
 # ║                                                                              ║
 # ║  Re-run any time to update (or use `kortix update`).                         ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -105,18 +103,6 @@ download_binary() {
   ok "Downloaded ($(du -h "$TMP_BIN" | awk '{print $1}'))"
 }
 
-# ─── Handle the legacy ~/.kortix/kortix bash script ──────────────────────────
-maybe_migrate_legacy() {
-  local legacy="$INSTALL_HOME/$BINARY_NAME"
-  if [ ! -f "$legacy" ]; then return; fi
-  # Detect: the legacy one is a bash script that mentions "Kortix CLI" near the top.
-  if head -3 "$legacy" 2>/dev/null | grep -q '#!/usr/bin/env bash'; then
-    warn "Legacy bash CLI detected at $legacy"
-    info "Backing it up to ${legacy}.legacy and replacing with the new binary."
-    mv "$legacy" "${legacy}.legacy" || fatal "Could not move legacy CLI aside. Try \`sudo rm $legacy\` first."
-  fi
-}
-
 # ─── Install the binary ──────────────────────────────────────────────────────
 install_binary() {
   mkdir -p "$INSTALL_HOME"
@@ -204,7 +190,6 @@ main() {
   download_binary
 
   section "Installing"
-  maybe_migrate_legacy
   install_binary
   link_onto_path
 

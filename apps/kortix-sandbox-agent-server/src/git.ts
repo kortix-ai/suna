@@ -197,40 +197,49 @@ async function checkoutSessionBranch(
   token: string | undefined,
 ): Promise<void> {
   const refSpec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`
-  const delayMs = Math.max(1, Math.floor(cfg.branchFetchDelaySec * 1000))
-  let lastErr: string | null = null
+  const fetched = await gitWithAuth(token, cfg.repoUrl, [
+    '-C',
+    target,
+    'fetch',
+    'origin',
+    refSpec,
+  ])
 
-  for (let attempt = 1; attempt <= cfg.branchFetchAttempts; attempt++) {
-    const fetched = await gitWithAuth(token, cfg.repoUrl, [
+  if (fetched.code === 0) {
+    const checkout = await gitWithAuth(token, cfg.repoUrl, [
       '-C',
       target,
-      'fetch',
-      'origin',
-      refSpec,
+      'checkout',
+      '-B',
+      branch,
+      `refs/remotes/origin/${branch}`,
     ])
-    if (fetched.code === 0) {
-      const checkout = await gitWithAuth(token, cfg.repoUrl, [
-        '-C',
-        target,
-        'checkout',
-        '-B',
-        branch,
-        `refs/remotes/origin/${branch}`,
-      ])
-      if (checkout.code === 0) {
-        logger.info('[git] checked out session branch', { branch })
-        return
-      }
-      lastErr = checkout.stderr
-    } else {
-      lastErr = fetched.stderr
+    if (checkout.code === 0) {
+      logger.info('[git] checked out remote session branch', { branch })
+      return
     }
-    await new Promise((r) => setTimeout(r, delayMs))
+    logger.warn('[git] remote session branch checkout failed; creating local branch', {
+      branch,
+      stderr: checkout.stderr.slice(0, 300),
+    })
+  } else {
+    logger.info('[git] remote session branch not ready; creating local branch from base checkout', {
+      branch,
+      stderr: fetched.stderr.slice(0, 300),
+    })
   }
 
-  throw new Error(
-    `failed to fetch session branch ${branch} after ${cfg.branchFetchAttempts} attempts: ${lastErr}`,
-  )
+  const local = await gitWithAuth(token, cfg.repoUrl, [
+    '-C',
+    target,
+    'checkout',
+    '-B',
+    branch,
+  ])
+  if (local.code !== 0) {
+    throw new Error(`failed to create local session branch ${branch}: ${local.stderr}`)
+  }
+  logger.info('[git] created local session branch', { branch })
 }
 
 /**
@@ -268,6 +277,12 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       `+refs/heads/${base}:refs/remotes/origin/${base}`,
     ])
     if (fetched.code !== 0) throw new Error(`git fetch (refresh) failed: ${fetched.stderr}`)
+
+    // Refresh path only: bring the working tree to the freshly-fetched base.
+    const reset = await gitWithAuth(cloneToken, cfg.repoUrl, [
+      '-C', target, 'reset', '--hard', `origin/${base}`,
+    ])
+    if (reset.code !== 0) throw new Error(`git reset --hard failed: ${reset.stderr}`)
   } else {
     const tmpTarget = join(dirname(target), `.kortix-clone-${process.pid}-${Date.now()}`)
     await rm(tmpTarget, { recursive: true, force: true })
@@ -302,25 +317,10 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     }
     await rm(target, { recursive: true, force: true })
     await rename(tmpTarget, target)
+    // Fresh clone already left the working tree on `base` at tip — the old
+    // extra `git fetch origin base` + `git reset --hard` here was a redundant
+    // network round-trip on the per-session boot hot path. Removed.
   }
-
-  const fetchBase = await gitWithAuth(cloneToken, cfg.repoUrl, [
-    '-C',
-    target,
-    'fetch',
-    'origin',
-    base,
-  ])
-  if (fetchBase.code !== 0) throw new Error(`git fetch base failed: ${fetchBase.stderr}`)
-
-  const reset = await gitWithAuth(cloneToken, cfg.repoUrl, [
-    '-C',
-    target,
-    'reset',
-    '--hard',
-    `origin/${base}`,
-  ])
-  if (reset.code !== 0) throw new Error(`git reset --hard failed: ${reset.stderr}`)
 
   if (cfg.branchName) {
     await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)

@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Bot,
+  Container,
   KeyRound,
   Plug,
   Settings,
@@ -42,6 +43,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { slug: 'skills',     label: 'Skills',     icon: Sparkles,       hint: 'On-demand capabilities' },
   { slug: 'commands',   label: 'Commands',   glyph: '/',           hint: 'Slash commands' },
   { slug: 'secrets',    label: 'Secrets',    icon: KeyRound,       hint: 'Per-project env values' },
+  { slug: 'sandbox',    label: 'Sandbox',    icon: Container,      hint: 'Runtime image + snapshot health' },
   { slug: 'connectors', label: 'Connectors', icon: Plug,           hint: 'Integrations the Executor can call' },
   { slug: 'schedules',  label: 'Schedules',  icon: Timer,          hint: 'Cron-driven triggers' },
   { slug: 'webhooks',   label: 'Webhooks',   icon: Webhook,        hint: 'Signed HTTP triggers' },

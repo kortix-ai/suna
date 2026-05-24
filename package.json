@@ -9,7 +9,7 @@
     "dev:mobile": "pnpm --filter ./apps/mobile dev",
     "dev:desktop": "pnpm --filter @kortix/desktop dev:macos",
     "dev:api": "pnpm --filter kortix-api dev",
-    "dev:sandbox": "docker build -f apps/sandbox/Dockerfile -t kortix/sandbox:dev .",
+    "dev:sandbox": "docker build -f apps/sandbox/Dockerfile -t kortix/kortix-sandbox:dev .",
     "dev:sandbox:build": "pnpm dev:sandbox",
     "build": "pnpm -r run build",
     "cli:bundle": "pnpm --filter @kortix/cli bundle",

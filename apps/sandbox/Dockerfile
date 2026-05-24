@@ -15,7 +15,7 @@
 #                   git + opencode.
 #
 # Build from the repo root:
-#   docker build -f apps/sandbox/Dockerfile -t kortix/sandbox:dev .
+#   docker build -f apps/sandbox/Dockerfile -t kortix/kortix-sandbox:dev .
 #
 # To register with Daytona, push to a registry then point the snapshot
 # at the resulting image:tag.

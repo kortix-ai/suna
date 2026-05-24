@@ -9,6 +9,7 @@ import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runProjects } from './commands/projects.ts';
 import { runSecrets } from './commands/secrets.ts';
+import { runSelfHost } from './commands/self-host.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { runTriggers } from './commands/triggers.ts';
@@ -30,6 +31,7 @@ const COMMANDS: readonly Command[] = [
   { name: 'init', blurb: 'Scaffold a Kortix project in the current directory' },
   { name: '<project-name>', blurb: 'Create a new directory and scaffold it' },
   { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
+  { name: 'self-host', args: '<subcommand>', blurb: 'Run your own Kortix Cloud from Docker images' },
   { name: 'login', blurb: 'Authenticate against the Kortix cloud' },
   { name: 'logout', blurb: 'Remove the stored auth token' },
   { name: 'whoami', blurb: 'Show the currently authenticated user' },
@@ -80,8 +82,7 @@ async function main(argv: string[]): Promise<number> {
     }
   }
   if (argv.length === 0) {
-    // No args — show the big ASCII banner above the help, like `vercel`
-    // and the legacy installer did.
+    // No args — show the big ASCII banner above the help, like `vercel`.
     printBanner();
     process.stdout.write(renderHelp());
     return 0;
@@ -119,6 +120,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'secrets') {
     return runSecrets(argv.slice(1));
   }
+  if (argv[0] === 'self-host') {
+    return runSelfHost(argv.slice(1));
+  }
   if (argv[0] === 'env') {
     return runEnv(argv.slice(1));
   }
@@ -141,7 +145,7 @@ async function main(argv: string[]): Promise<number> {
     return runUninstall(argv.slice(1));
   }
   // Reserved subcommand names we don't ship yet — don't let them fall
-  // through to the legacy scaffold (`kortix <new-project-name>`), which
+  // through to the project scaffold (`kortix <new-project-name>`), which
   // would otherwise create a directory called `deploy/`, etc.
   const RESERVED_FUTURE_COMMANDS = new Set([
     'apps',
@@ -163,8 +167,7 @@ async function main(argv: string[]): Promise<number> {
     return 2;
   }
 
-  // Anything else is the legacy "create new directory" form
-  // (`kortix my-new-project`).
+  // Anything else is the "create new directory" form (`kortix my-new-project`).
   return runCreate(argv);
 }
 

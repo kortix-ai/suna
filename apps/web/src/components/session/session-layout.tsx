@@ -65,8 +65,10 @@ export const SessionLayout = memo(function SessionLayout({
   const toggleExpanded = useKortixComputerStore((s) => s.toggleExpanded);
 
   // Track active tab to restore per-session panel state on tab switch
-  const activeTabId = useTabStore((s) => s.activeTabId);
-  const isActiveTab = activeTabId === sessionId;
+  // Subscribe to the BOOLEAN (am-I-active) rather than the raw activeTabId so a
+  // tab switch only re-renders the two panes whose active state flips — not
+  // every pre-mounted session layout. Keeps switching 0-latency.
+  const isActiveTab = useTabStore((s) => s.activeTabId === sessionId);
 
   useEffect(() => {
     if (isActiveTab) {

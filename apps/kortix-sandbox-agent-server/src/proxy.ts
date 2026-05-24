@@ -31,7 +31,7 @@ export function buildOpencodeApp(
   cfg: Config,
   opencode: Opencode,
   bootTime: number,
-  bootState: SandboxBootState = { repoMaterializationError: null },
+  bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
 ): Hono {
@@ -187,7 +187,7 @@ export function startProxy(
   cfg: Config,
   opencode: Opencode,
   bootTime: number,
-  bootState: SandboxBootState = { repoMaterializationError: null },
+  bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
 ): ProxyServer {

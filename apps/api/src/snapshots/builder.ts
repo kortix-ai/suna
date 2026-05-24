@@ -27,7 +27,7 @@
  * DB row keyed on commit.
  */
 
-import { and, desc, eq, inArray, lt, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { copyFile, cp, rm, stat } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -87,6 +87,11 @@ import {
 } from './dockerfile-layer';
 import { computeSnapshotHash, formatSnapshotName } from './hash';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
+import {
+  classifySnapshotError,
+  describeSnapshotError,
+  type SnapshotErrorCategory,
+} from './error-classify';
 
 /** Cap how long the Daytona-side snapshot build is allowed to take. */
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
@@ -143,8 +148,43 @@ export class SnapshotBuildError extends Error {
  *   awaited by the session-creation path.
  * - `manual` — user clicked "Rebuild now" in the dashboard or an admin
  *   ran the script.
+ * - `cr-merge` — fired after a change request merges into the default branch
+ *   so the new tip is built ahead of the next session (proactive pre-build).
  */
-export type SnapshotBuildSource = 'project-create' | 'session-start' | 'manual';
+export type SnapshotBuildSource = 'project-create' | 'session-start' | 'manual' | 'cr-merge';
+
+/**
+ * Mark a snapshot row `failed`, recording both the raw error and its
+ * classified category (merged into metadata) so the dashboard + the
+ * fix-with-agent flow can route the failure. Best-effort — a DB blip here
+ * must not mask the underlying build error to the caller.
+ */
+async function markSnapshotFailed(
+  projectId: string,
+  commitSha: string,
+  provider: SandboxProviderName,
+  message: string,
+): Promise<void> {
+  const errorCategory = classifySnapshotError(message);
+  await db
+    .update(projectRuntimeSnapshots)
+    .set({
+      status: 'failed',
+      error: message.slice(0, 2000),
+      // jsonb-merge so we keep any build-stage breadcrumbs (logs, contentHash)
+      // already written by the live build and just stamp the category on top.
+      metadata: sql`COALESCE(${projectRuntimeSnapshots.metadata}, '{}'::jsonb) || ${JSON.stringify({ errorCategory })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.commitSha, commitSha),
+        eq(projectRuntimeSnapshots.provider, provider),
+      ),
+    )
+    .catch(() => {});
+}
 
 /**
  * Build (or rebuild) the snapshot for a specific commit. Idempotent:
@@ -189,8 +229,42 @@ export async function buildSnapshotForCommit(
       };
     }
 
+    // Non-destructive rebuild: the row is `ready` with a still-bootable image
+    // and we're only rebuilding because the runtime fingerprint changed. Keep
+    // the old snapshot `ready`/bootable throughout (so "latest ready" never
+    // blanks out for an existing project) and swap to the new image atomically
+    // on success.
+    const rebuildAt = extractMetadataNumber(existing.metadata, 'rebuildStartedAt');
+    if (rebuildAt != null && Date.now() - rebuildAt < BUILD_TIMEOUT_MS) {
+      // Another worker is already rebuilding this commit for the new runtime —
+      // boot the existing (older-runtime) image now instead of duplicating it.
+      return {
+        daytonaName: existing.snapshotId,
+        commitSha,
+        contentHash: extractMetadataHash(existing.metadata) ?? identity.contentHash,
+        runtimeFingerprint:
+          extractMetadataRuntimeFingerprint(existing.metadata) ?? identity.runtimeFingerprint,
+        built: false,
+      };
+    }
+    // Claim the rebuild by stamping a marker — without disturbing status/snapshotId.
+    await db
+      .update(projectRuntimeSnapshots)
+      .set({
+        metadata: sql`COALESCE(${projectRuntimeSnapshots.metadata}, '{}'::jsonb) || ${JSON.stringify({ rebuildStartedAt: Date.now() })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(projectRuntimeSnapshots.projectId, project.projectId),
+          eq(projectRuntimeSnapshots.commitSha, commitSha),
+          eq(projectRuntimeSnapshots.provider, provider),
+        ),
+      )
+      .catch(() => {});
+
     try {
-      const result = await runBuild(project, commitSha, provider);
+      const result = await runBuild(project, commitSha, provider, undefined, { silent: true });
       await updateSnapshotRow(project.projectId, commitSha, provider, options.source, result);
       return {
         daytonaName: result.daytonaName,
@@ -201,11 +275,14 @@ export async function buildSnapshotForCommit(
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      // Keep the old ready snapshot bootable; clear the rebuild marker and note
+      // the error so a later attempt retries cleanly.
       await db
         .update(projectRuntimeSnapshots)
         .set({
           status: 'ready',
           error: message.slice(0, 2000),
+          metadata: sql`(COALESCE(${projectRuntimeSnapshots.metadata}, '{}'::jsonb) - 'rebuildStartedAt')`,
           updatedAt: new Date(),
         })
         .where(
@@ -274,21 +351,7 @@ export async function buildSnapshotForCommit(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await db
-      .update(projectRuntimeSnapshots)
-      .set({
-        status: 'failed',
-        error: message.slice(0, 2000),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(projectRuntimeSnapshots.projectId, project.projectId),
-          eq(projectRuntimeSnapshots.commitSha, commitSha),
-          eq(projectRuntimeSnapshots.provider, provider),
-        ),
-      )
-      .catch(() => {});
+    await markSnapshotFailed(project.projectId, commitSha, provider, message);
     throw new SnapshotBuildError(`Snapshot build failed: ${message}`, err);
   }
 }
@@ -527,6 +590,7 @@ export async function sweepStaleSnapshotBuilds(): Promise<number> {
     .set({
       status: 'failed',
       error: 'build orphaned (API restart or timeout) — rebuilds on next use',
+      metadata: sql`COALESCE(${projectRuntimeSnapshots.metadata}, '{}'::jsonb) || ${JSON.stringify({ errorCategory: 'timeout' as SnapshotErrorCategory })}::jsonb`,
       updatedAt: new Date(),
     })
     .where(
@@ -562,6 +626,131 @@ export async function listSnapshotsForProject(
     )
     .orderBy(desc(projectRuntimeSnapshots.createdAt))
     .limit(limit);
+}
+
+/**
+ * Project-level sandbox health for the alert/badge surfaces. DB-only (no git
+ * HEAD resolution) so it's cheap enough to poll from the project sidebar.
+ *
+ * The key signals the UI needs:
+ *   - `readyCount`  → how many *healthy* (current-runtime) ready snapshots
+ *     exist for the branch. ≥1 means sessions can boot (possibly degraded);
+ *     0 means the project is one failed build away from being unusable.
+ *   - `building`    → a build is actively in flight (not stale).
+ *   - `latestStatus`→ status of the most recent row for the branch.
+ *   - `failure`     → present when the most recent build failed, carrying the
+ *     classified category so the UI can show "retry" vs "fix with agent".
+ */
+export interface ProjectSandboxHealth {
+  branch: string;
+  provider: SandboxProviderName;
+  /** Retained ready snapshots for the branch (any runtime) — what's kept as a fallback. */
+  readyCount: number;
+  /** Ready snapshots matching the CURRENT runtime — bootable for HEAD without a rebuild. */
+  bootableCount: number;
+  /** Total snapshot rows for the branch (any status) — 0 means the project never built. */
+  totalCount: number;
+  /** Configured retention target. */
+  retention: number;
+  /** ≥1 retained ready snapshot exists → a session can boot (possibly an older runtime). */
+  healthy: boolean;
+  /** A build is in flight (queued/building, not stale), or a ready row is rebuilding in place. */
+  building: boolean;
+  /** True the very first time a project builds (no rows yet). Distinguishes "first" from "updating". */
+  firstBuild: boolean;
+  /** Retained ready snapshots exist but none match the current runtime — a refresh is pending. */
+  runtimeOutdated: boolean;
+  /** SHA of the most recent ready snapshot, or null. */
+  latestReadyCommitSha: string | null;
+  /** Most recent row's status for the branch, or null when none exist. */
+  latestStatus: ProjectSnapshotStatusValue | null;
+  /** Present when the most recent build for the branch failed. */
+  failure: {
+    commitSha: string;
+    error: string;
+    category: SnapshotErrorCategory;
+    fixableByAgent: boolean;
+    failedAt: string;
+  } | null;
+}
+
+type ProjectSnapshotStatusValue = typeof projectRuntimeSnapshots.$inferSelect['status'];
+
+export async function getProjectSandboxHealth(
+  projectId: string,
+  branch: string,
+  provider: SandboxProviderName = 'daytona',
+): Promise<ProjectSandboxHealth> {
+  const retention = snapshotRetentionCount();
+  const runtimeFingerprint = await currentRuntimeArtifactFingerprint().catch(() => null);
+
+  const rows = await db
+    .select()
+    .from(projectRuntimeSnapshots)
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.branch, branch),
+        eq(projectRuntimeSnapshots.provider, provider),
+      ),
+    )
+    .orderBy(desc(projectRuntimeSnapshots.createdAt))
+    .limit(50);
+
+  // Retained = every ready snapshot (any runtime). These are real, kept builds —
+  // counting only current-runtime ones made an existing project read as "0
+  // retained / building first sandbox" right after a runtime bump, which looked
+  // like builds were vanishing. Bootable = the subset that matches the current
+  // runtime (boots HEAD with no rebuild).
+  const readyRows = rows.filter((r) => r.status === 'ready' && r.snapshotId);
+  const bootableRows =
+    runtimeFingerprint === null
+      ? readyRows
+      : readyRows.filter((r) => extractMetadataRuntimeFingerprint(r.metadata) === runtimeFingerprint);
+  // A ready row carrying a `rebuildStartedAt` marker is mid non-destructive
+  // rebuild (still bootable) — surface that as "building" too.
+  const building = rows.some(
+    (r) =>
+      ((r.status === 'building' || r.status === 'queued') && !isInProgressSnapshotStale(r)) ||
+      (r.status === 'ready' && extractMetadataNumber(r.metadata, 'rebuildStartedAt') != null),
+  );
+
+  const latest = rows[0] ?? null;
+  let failure: ProjectSandboxHealth['failure'] = null;
+  if (latest && latest.status === 'failed') {
+    const message = latest.error ?? 'Snapshot build failed';
+    const category =
+      extractMetadataErrorCategory(latest.metadata) ?? classifySnapshotError(message);
+    failure = {
+      commitSha: latest.commitSha,
+      error: message,
+      category,
+      fixableByAgent: describeSnapshotError(category).fixableByAgent,
+      failedAt: (latest.updatedAt instanceof Date
+        ? latest.updatedAt
+        : new Date(latest.updatedAt)
+      ).toISOString(),
+    };
+  }
+
+  return {
+    branch,
+    provider,
+    readyCount: Math.min(readyRows.length, retention),
+    bootableCount: Math.min(bootableRows.length, retention),
+    totalCount: rows.length,
+    retention,
+    healthy: readyRows.length > 0,
+    building,
+    // "First build" only when no usable ready snapshot has *ever* been produced
+    // — so an existing project rebuilding for a runtime bump reads as "updating",
+    // not "building first sandbox".
+    firstBuild: readyRows.length === 0,
+    runtimeOutdated: readyRows.length > 0 && bootableRows.length === 0,
+    latestReadyCommitSha: readyRows[0]?.commitSha ?? null,
+    latestStatus: latest?.status ?? null,
+    failure,
+  };
 }
 
 /**
@@ -670,21 +859,29 @@ async function runBuild(
   commitSha: string,
   provider: SandboxProviderName,
   prepared?: PreparedContext,
+  opts: { silent?: boolean } = {},
 ): Promise<BuildOutcome> {
-  // Flip to `building` first so concurrent waiters can distinguish "in
-  // progress" from "queued and stuck". Best-effort — if the update misses
-  // (row vanished, db blip), the build still proceeds.
-  await db
-    .update(projectRuntimeSnapshots)
-    .set({ status: 'building', updatedAt: new Date() })
-    .where(
-      and(
-        eq(projectRuntimeSnapshots.projectId, project.projectId),
-        eq(projectRuntimeSnapshots.commitSha, commitSha),
-        eq(projectRuntimeSnapshots.provider, provider),
-      ),
-    )
-    .catch(() => {});
+  // `silent` = non-destructive rebuild: the row is currently `ready` with a
+  // still-bootable snapshot (we're only rebuilding because the runtime
+  // fingerprint changed). Keep it `ready` and avoid the progress writes that
+  // would overwrite the live snapshotId — sessions keep booting the old image
+  // until the new one is swapped in atomically by updateSnapshotRow on success.
+  if (!opts.silent) {
+    // Flip to `building` first so concurrent waiters can distinguish "in
+    // progress" from "queued and stuck". Best-effort — if the update misses
+    // (row vanished, db blip), the build still proceeds.
+    await db
+      .update(projectRuntimeSnapshots)
+      .set({ status: 'building', updatedAt: new Date() })
+      .where(
+        and(
+          eq(projectRuntimeSnapshots.projectId, project.projectId),
+          eq(projectRuntimeSnapshots.commitSha, commitSha),
+          eq(projectRuntimeSnapshots.provider, provider),
+        ),
+      )
+      .catch(() => {});
+  }
 
   // Daytona is the only provider with a build path today. New providers
   // can be added here as cases; the rest of the function stays the same.
@@ -714,14 +911,16 @@ async function runBuild(
   // Cache miss — now pay for the expensive context (or reuse the caller's).
   const ctx = prepared ?? await prepareBuildContext(project, commitSha, identity!);
   try {
-    await updateBuildingSnapshotStage(project.projectId, commitSha, provider, {
-      snapshotId: ctx.snapshotName,
-      stage: 'uploading-context',
-      contentHash: ctx.contentHash,
-      shortHash: ctx.shortHash,
-      runtimeFingerprint: ctx.runtimeFingerprint,
-      message: 'Uploading Daytona snapshot build context',
-    });
+    if (!opts.silent) {
+      await updateBuildingSnapshotStage(project.projectId, commitSha, provider, {
+        snapshotId: ctx.snapshotName,
+        stage: 'uploading-context',
+        contentHash: ctx.contentHash,
+        shortHash: ctx.shortHash,
+        runtimeFingerprint: ctx.runtimeFingerprint,
+        message: 'Uploading Daytona snapshot build context',
+      });
+    }
 
     // Daytona snapshot builds intermittently drop the control connection
     // ("Your socket connection ... idle connections will be closed"), a
@@ -745,15 +944,17 @@ async function runBuild(
                 buildLogs.splice(0, buildLogs.length - SNAPSHOT_LOG_TAIL_LIMIT);
               }
               console.info(`[snapshots] ${ctx.snapshotName}: ${line}`);
-              void updateBuildingSnapshotStage(project.projectId, commitSha, provider, {
-                snapshotId: ctx.snapshotName,
-                stage: 'building-image',
-                contentHash: ctx.contentHash,
-                shortHash: ctx.shortHash,
-                runtimeFingerprint: ctx.runtimeFingerprint,
-                message: line,
-                logs: buildLogs,
-              });
+              if (!opts.silent) {
+                void updateBuildingSnapshotStage(project.projectId, commitSha, provider, {
+                  snapshotId: ctx.snapshotName,
+                  stage: 'building-image',
+                  contentHash: ctx.contentHash,
+                  shortHash: ctx.shortHash,
+                  runtimeFingerprint: ctx.runtimeFingerprint,
+                  message: line,
+                  logs: buildLogs,
+                });
+              }
             },
           },
         );
@@ -1167,4 +1368,16 @@ function extractMetadataRuntimeFingerprint(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== 'object') return null;
   const value = (metadata as Record<string, unknown>).runtimeFingerprint;
   return typeof value === 'string' ? value : null;
+}
+
+function extractMetadataErrorCategory(metadata: unknown): SnapshotErrorCategory | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const value = (metadata as Record<string, unknown>).errorCategory;
+  return typeof value === 'string' ? (value as SnapshotErrorCategory) : null;
+}
+
+function extractMetadataNumber(metadata: unknown, key: string): number | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }

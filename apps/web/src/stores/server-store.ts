@@ -1067,13 +1067,28 @@ export async function switchToInstanceAsync(
 export async function switchToSessionSandboxAsync(
   projectId: string,
   sessionId: string,
+  /**
+   * Already-fetched sandbox row from the caller (the session page queries it to
+   * gate its own render). Passing it here avoids a duplicate
+   * GET /sessions/:id/sandbox round-trip on first open of a session — pure dead
+   * time on the path to showing a running sandbox.
+   */
+  prefetched?: {
+    status: string;
+    external_id: string | null;
+    provider: string;
+    sandbox_id: string;
+  } | null,
 ): Promise<SwitchToInstanceResult | null> {
   // Fast path: if the active server already points at this session, no-op.
   const sync = switchToInstance(sessionId);
   if (sync) return sync;
 
-  const { getProjectSessionSandbox } = await import('@/lib/projects-client');
-  const sandbox = await getProjectSessionSandbox(projectId, sessionId);
+  let sandbox = prefetched ?? null;
+  if (!sandbox) {
+    const { getProjectSessionSandbox } = await import('@/lib/projects-client');
+    sandbox = await getProjectSessionSandbox(projectId, sessionId);
+  }
 
   if (!sandbox || sandbox.status !== 'active' || !sandbox.external_id) {
     return null;

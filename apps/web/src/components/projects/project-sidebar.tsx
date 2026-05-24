@@ -36,6 +36,10 @@ import {
   ProjectSetupRailItem,
 } from '@/components/projects/project-setup';
 import {
+  ProjectSandboxAlertNavItem,
+  ProjectSandboxAlertRailItem,
+} from '@/components/projects/sandbox-health-alert';
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -59,6 +63,7 @@ import { useAdminRole } from '@/hooks/admin';
 import { useAuth } from '@/components/AuthProvider';
 import { createProjectSession } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
+import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 
 const isMac =
   typeof navigator !== 'undefined' &&
@@ -395,6 +400,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const createSession = useMutation({
     mutationFn: () => createProjectSession(projectId),
     onSuccess: (session) => {
+      beginSessionTiming(session.session_id);
+      sessionMark(session.session_id, 'session-created');
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
       router.push(`/projects/${projectId}/sessions/${session.session_id}`);
       if (isMobile) setOpenMobile(false);
@@ -406,6 +413,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
   const handleNewSession = useCallback(() => {
     if (createSession.isPending) return;
+    markSessionClick();
     createSession.mutate();
   }, [createSession]);
 
@@ -529,6 +537,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               modal that houses Files, Skills, Agents, and the rest of
               the per-project config surfaces. */}
           <div className="mt-auto w-full space-y-0.5">
+            <ProjectSandboxAlertRailItem projectId={projectId} />
             <ProjectSetupRailItem projectId={projectId} />
             <CollapsedIconButton
               icon={<SlidersHorizontal className="h-4 w-4" />}
@@ -591,6 +600,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               Skills, Agents, and every other per-project config surface. */}
           <SidebarGroup className="py-0 mt-auto">
             <SidebarMenu>
+              <ProjectSandboxAlertNavItem projectId={projectId} />
               <ProjectSetupNavItem projectId={projectId} />
               <SidebarMenuItem>
                 <SidebarMenuButton

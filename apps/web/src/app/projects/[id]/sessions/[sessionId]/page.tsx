@@ -20,6 +20,7 @@ import {
   restartProjectSession,
   syncOpencodeSessionData,
   updateProjectSession,
+  wakeProjectSession,
 } from '@/lib/projects-client';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
 import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
@@ -33,6 +34,7 @@ import {
   useCreateOpenCodeSession,
   useOpenCodeSessions,
 } from '@/hooks/opencode/use-opencode-sessions';
+import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -66,10 +68,12 @@ export default function ProjectSessionPage() {
     enabled: !!user && !!sessionId && !!projectId,
     staleTime: 0,
     // Poll while the row is missing (returns null) OR while still provisioning.
+    // Tight 1s cadence so the UI flips to the sandbox the instant the backend
+    // marks it active — the provisioning wall is the backend's, not ours.
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (!data) return 3_000;
-      return data.status === 'provisioning' ? 3_000 : false;
+      if (!data) return 1_000;
+      return data.status === 'provisioning' ? 1_000 : false;
     },
   });
 
@@ -84,6 +88,7 @@ export default function ProjectSessionPage() {
     if (sandbox.status !== 'active') return;
     if (switchedRef.current === sandbox.sandbox_id) return;
     switchedRef.current = sandbox.sandbox_id;
+    sessionMark(sandbox.session_id, 'sandbox-active');
     (async () => {
       markProvisioningVerified();
       // Drop OpenCode caches BEFORE switching the active server so stale
@@ -101,7 +106,9 @@ export default function ProjectSessionPage() {
           }
         } catch {}
       }
-      await switchToSessionSandboxAsync(projectId, sandbox.sandbox_id);
+      // Pass the already-fetched row so the switch skips a duplicate
+      // GET /sessions/:id/sandbox on first open.
+      await switchToSessionSandboxAsync(projectId, sandbox.sandbox_id, sandbox);
       // Hard-clear the cookie so no subsequent navigation can be hijacked.
       setActiveInstanceCookie(null);
     })();
@@ -119,6 +126,26 @@ export default function ProjectSessionPage() {
     const active = s.servers.find((entry) => entry.id === s.activeServerId);
     return active?.instanceId;
   });
+
+  useEffect(() => {
+    if (sandbox && activeInstanceId === sandbox.sandbox_id) {
+      sessionMark(sandbox.session_id, 'server-switched');
+    }
+  }, [activeInstanceId, sandbox]);
+
+  // Wake-on-open: the DB row reads `active` even after the provider auto-stops
+  // an idle sandbox, so opening such a session would spin the health poll
+  // against a dead container. Fire a best-effort wake once when the row is
+  // active — a running sandbox is a cheap no-op; a stopped one starts warming
+  // immediately while the health poll picks up readiness.
+  const wokeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sandbox || !projectId) return;
+    if (sandbox.status !== 'active') return;
+    if (wokeRef.current === sandbox.sandbox_id) return;
+    wokeRef.current = sandbox.sandbox_id;
+    void wakeProjectSession(projectId, sandbox.session_id).catch(() => {});
+  }, [sandbox, projectId]);
 
   // From the first paint we mount ProjectShell so the project's sidebar is
   // always visible — no full-page "Preparing workspace" flash. The inner
@@ -295,6 +322,22 @@ function ActiveSessionChat({
     createMutation.data?.id ??
     firstRootSession?.id ??
     null;
+
+  // ── Readiness benchmarking marks ───────────────────────────────────────
+  useEffect(() => {
+    if (runtimeReady) sessionMark(sessionId, 'runtime-ready');
+  }, [runtimeReady, sessionId]);
+  useEffect(() => {
+    if (sessionsQuery.data) sessionMark(sessionId, 'opencode-listed');
+  }, [sessionsQuery.data, sessionId]);
+  useEffect(() => {
+    if (!chatSessionId) return;
+    sessionMark(sessionId, 'chat-ready');
+    const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>([
+      'project', 'session-sandbox', projectId, sessionId,
+    ]);
+    finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
+  }, [chatSessionId, sessionId, projectId, queryClient]);
 
   useEffect(() => {
     if (!chatSessionId) return;

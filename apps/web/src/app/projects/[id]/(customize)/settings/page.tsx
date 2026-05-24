@@ -25,7 +25,6 @@ import {
   getProject,
   updateProject,
 } from '@/lib/projects-client';
-import { SandboxSnapshotCard } from '@/components/projects/sandbox-snapshot-card';
 
 export default function ProjectSettingsPage({
   params,
@@ -103,10 +102,6 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
           <>
             <GeneralProjectCard project={project} canManage={!!canManage} />
             <RepositoryCard repoUrl={project.repo_url} />
-            <SandboxSnapshotCard
-              projectId={projectId}
-              canManage={!!canManage}
-            />
             {canManage && (
               <SectionCard
                 tone="destructive"

@@ -22,6 +22,7 @@ COPY ${SERVICE} ./${SERVICE}
 COPY packages/shared ./packages/shared
 COPY packages/db ./packages/db
 COPY packages/agent-tunnel ./packages/agent-tunnel
+COPY packages/starter ./packages/starter
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
@@ -63,6 +64,9 @@ COPY --from=deps /app/packages/db/package.json ./packages/db/package.json
 COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
 COPY --from=deps /app/packages/agent-tunnel/src ./packages/agent-tunnel/src
 COPY --from=deps /app/packages/agent-tunnel/package.json ./packages/agent-tunnel/package.json
+COPY --from=deps /app/packages/starter/src ./packages/starter/src
+COPY --from=deps /app/packages/starter/package.json ./packages/starter/package.json
+COPY --from=deps /app/packages/starter/tsconfig.json ./packages/starter/tsconfig.json
 
 # Copy SQL migrations used by ensureSchema() at runtime.
 COPY supabase/migrations ./supabase/migrations

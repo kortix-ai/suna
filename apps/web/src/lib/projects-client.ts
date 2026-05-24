@@ -753,6 +753,16 @@ export async function pipedreamFinalize(projectId: string, slug: string) {
 /** Build status of a project's Daytona snapshot row. */
 export type ProjectSnapshotStatus = 'queued' | 'building' | 'ready' | 'failed';
 
+/** Classified reason a snapshot build failed (see apps/api/.../error-classify.ts). */
+export type SnapshotErrorCategory =
+  | 'dockerfile'
+  | 'tunnel'
+  | 'provider'
+  | 'timeout'
+  | 'runtime'
+  | 'git'
+  | 'unknown';
+
 export interface ProjectSnapshot {
   snapshot_row_id: string;
   project_id: string;
@@ -762,9 +772,43 @@ export interface ProjectSnapshot {
   snapshot_id: string | null;
   status: ProjectSnapshotStatus;
   error: string | null;
+  /** Classified category when `error` is set; null otherwise. */
+  error_category: SnapshotErrorCategory | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+/** Project-level sandbox health summary for the sidebar alert + panel banner. */
+export interface ProjectSandboxHealth {
+  branch: string;
+  provider: string;
+  /** Retained ready snapshots (any runtime) — kept as fallbacks. */
+  ready_count: number;
+  /** Ready snapshots matching the current runtime — bootable for HEAD without a rebuild. */
+  bootable_count: number;
+  /** Total snapshot rows (any status); 0 means the project never built. */
+  total_count: number;
+  /** Configured retention target. */
+  retention: number;
+  /** ≥1 retained ready snapshot exists → a session can boot (possibly an older runtime). */
+  healthy: boolean;
+  /** A build is in flight, or a ready snapshot is rebuilding in place. */
+  building: boolean;
+  /** True only the very first time a project builds (no ready snapshot ever). */
+  first_build: boolean;
+  /** Retained ready snapshots exist but none match the current runtime — refresh pending. */
+  runtime_outdated: boolean;
+  latest_ready_commit_sha: string | null;
+  latest_status: ProjectSnapshotStatus | null;
+  /** Present when the most recent build for the branch failed. */
+  failure: {
+    commit_sha: string;
+    error: string;
+    category: SnapshotErrorCategory;
+    fixable_by_agent: boolean;
+    failed_at: string;
+  } | null;
 }
 
 export interface ProjectSnapshotsResponse {
@@ -774,6 +818,8 @@ export interface ProjectSnapshotsResponse {
   head_commit_sha: string | null;
   /** Error string when head_commit_sha is null (e.g. GitHub App not installed). */
   head_resolve_error: string | null;
+  /** Project-level health summary (null only if the API couldn't compute it). */
+  health: ProjectSandboxHealth | null;
 }
 
 export interface RebuildSnapshotResponse {
@@ -790,10 +836,34 @@ export async function listProjectSnapshots(projectId: string) {
   );
 }
 
+/** Lightweight, DB-only sandbox health — cheap enough to poll from the sidebar. */
+export async function getProjectSandboxHealth(projectId: string) {
+  return unwrap(
+    await backendApi.get<ProjectSandboxHealth>(
+      `/projects/${projectId}/sandbox-health`,
+    ),
+  );
+}
+
 export async function rebuildProjectSnapshot(projectId: string) {
   return unwrap(
     await backendApi.post<RebuildSnapshotResponse>(
       `/projects/${projectId}/snapshots/rebuild`,
+      {},
+    ),
+  );
+}
+
+/**
+ * Spin up a session pre-seeded with the latest snapshot build failure so an
+ * agent can diagnose + fix it and open a change request. Returns the new
+ * session id (navigate to it). Throws if there's no failed build, or no ready
+ * snapshot to run the fix in (cold first-build failure).
+ */
+export async function fixSandboxWithAgent(projectId: string) {
+  return unwrap(
+    await backendApi.post<{ session_id: string }>(
+      `/projects/${projectId}/snapshots/fix-with-agent`,
       {},
     ),
   );
@@ -1352,6 +1422,20 @@ export async function restartProjectSession(
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,
+      {},
+    ),
+  );
+}
+
+/**
+ * Wake a sandbox the provider auto-stopped while idle. Cheap status no-op when
+ * it's running; starts it in the background when stopped. Fire on session open
+ * so an idled sandbox warms immediately instead of spinning the health poll.
+ */
+export async function wakeProjectSession(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.post<{ status: 'running' | 'waking' | 'unknown' }>(
+      `/projects/${projectId}/sessions/${sessionId}/wake`,
       {},
     ),
   );

@@ -27,10 +27,9 @@ from a terminal or a local coding agent. Concretely:
 - **MCP server.** Explicitly deferred. The MCP wrapper will be built
   later as its own thing on top of the same API; it is **not** invoked
   through this CLI.
-- **Self-hosted stack management** (`start` / `stop` / `logs` /
-  `update`). That's the legacy installer at `~/.kortix/kortix`. Leave
-  it alone for now — the two CLIs coexist by living at different paths
-  on PATH.
+- **Implicit top-level `start` / `dev`.** Self-hosting lives under
+  `kortix self-host ...` so Cloud hosts and local self-hosted hosts use
+  the same host-selection model.
 
 ### Non-goal: a CLI-only API
 

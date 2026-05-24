@@ -3903,22 +3903,20 @@ export function SessionChat({
   const onboardingSessionId = useOnboardingModeStore((s) => s.sessionId);
   const disableToolNavigation =
     onboardingActive && onboardingSessionId === sessionId;
-  const activeTabId = useTabStore((s) => s.activeTabId);
-  // In the desktop dashboard, every open session tab is pre-mounted at once
-  // (see layout-content.tsx), so only the visible tab may be treated as
-  // "active" — otherwise every busy session would react to global shortcuts
-  // (ESC-to-stop, auto question handling) at the same time. But the standalone
-  // project session route (/projects/[id]/sessions/[sessionId]) mounts a single
-  // SessionChat whose id is never registered in this desktop tab store — there
-  // activeTabId is a page tab (e.g. "page:/dashboard"), so a strict equality
-  // check is permanently false and silently disables those shortcuts. Mirror
-  // the SessionLayout hotkey gate: only require the active-tab match when this
-  // session actually lives in the tab system; otherwise this is the only chat
-  // mounted, so it's active.
-  const isInDesktopTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
-  const isActiveSessionTab = isInDesktopTabSystem
-    ? activeTabId === sessionId
-    : true;
+  // Every open session tab is pre-mounted at once (see layout-content.tsx), so
+  // only the visible tab may be treated as "active" — otherwise every busy
+  // session would react to global shortcuts (ESC-to-stop, auto question
+  // handling) at the same time. The standalone project session route
+  // (/projects/[id]/sessions/[sessionId]) mounts a single SessionChat whose id
+  // is never registered in this tab store; there it's the only chat mounted, so
+  // it's always active.
+  //
+  // Subscribe to the BOOLEAN result rather than the raw activeTabId value: a
+  // tab switch then only re-renders the two sessions whose active state flips,
+  // not every mounted SessionChat. This is what keeps tab switching 0-latency.
+  const isActiveSessionTab = useTabStore((s) =>
+    s.tabs[sessionId] ? s.activeTabId === sessionId : true,
+  );
 
   // Clicking a tool call in the chat opens the side panel (Actions view)
   // focused on that tool's large preview — instead of expanding inline.

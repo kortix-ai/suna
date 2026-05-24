@@ -70,7 +70,7 @@ describe('project env sync curl e2e', () => {
       baseConfig(),
       fakeOpencode(() => { restarts += 1 }),
       Date.now(),
-      { repoMaterializationError: null },
+      { repoMaterializationError: null, timeline: [] },
       store,
     )
     const server = Bun.serve({ port: 0, fetch: app.fetch })

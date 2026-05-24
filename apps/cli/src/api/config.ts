@@ -32,9 +32,8 @@ import { dirname, resolve } from 'node:path';
 // One host is "active" at a time — every command operates against it
 // unless overridden by `--host <name>` for a single invocation.
 //
-// Migration: an older ~/.config/kortix/auth.json (single-host schema)
-// is read on first load and transparently moved into a `default` host.
-// Once migrated, the old file is removed.
+// Single-host auth files are read on first load and moved into a `default`
+// host so users can switch cleanly between Kortix Cloud and self-hosted APIs.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const DEFAULT_API_BASE = 'https://api.kortix.com';
@@ -61,8 +60,8 @@ function defaultConfigPath(): string {
 }
 
 export function configFilePath(): string {
-  // Honor KORTIX_CONFIG_FILE (new) and KORTIX_AUTH_FILE (legacy, used by
-  // the existing e2e test harness) as overrides.
+  // Honor both config path env vars. KORTIX_AUTH_FILE is still used by the
+  // existing e2e test harness.
   return (
     process.env.KORTIX_CONFIG_FILE ??
     process.env.KORTIX_AUTH_FILE ??
@@ -70,16 +69,14 @@ export function configFilePath(): string {
   );
 }
 
-function legacyAuthFilePath(): string {
+function singleHostAuthFilePath(): string {
   return resolve(homedir(), '.config', 'kortix', 'auth.json');
 }
 
-/** Only pull from the legacy ~/.config/kortix/auth.json when the
- *  caller is using the *default* config file location. Custom paths
- *  (KORTIX_CONFIG_FILE / KORTIX_AUTH_FILE pointed at /tmp/foo) get a
- *  fresh empty config — they're almost always tests or scratch envs
- *  that don't want side effects on the user's real auth state. */
-function shouldMigrateLegacy(currentPath: string): boolean {
+/** Only pull from the single-host auth file when the caller is using the
+ *  default config file location. Custom paths get a fresh empty config:
+ *  they are usually tests or scratch envs that must not mutate real auth. */
+function shouldImportSingleHostAuth(currentPath: string): boolean {
   return currentPath === defaultConfigPath();
 }
 
@@ -95,8 +92,8 @@ export function loadConfig(): Config {
       if (parsed && typeof parsed === 'object' && parsed.hosts) {
         return normalizeConfig(parsed);
       }
-      // Old auth.json schema at the override path — migrate in place.
-      const migrated = migrateLegacy(parsed);
+      // Single-host auth schema at the override path: import in place.
+      const migrated = importSingleHostAuth(parsed);
       if (migrated) {
         saveConfig(migrated);
         return migrated;
@@ -106,19 +103,17 @@ export function loadConfig(): Config {
     }
   }
 
-  // Migrate from the legacy ~/.config/kortix/auth.json — but ONLY when
-  // the caller is using the default config-file path. Tests and scratch
-  // environments that point KORTIX_CONFIG_FILE elsewhere expect a fresh
-  // empty config, not the user's real auth file being slurped in.
-  if (shouldMigrateLegacy(path)) {
-    const legacy = legacyAuthFilePath();
-    if (existsSync(legacy)) {
+  // Import from ~/.config/kortix/auth.json only when the caller is using the
+  // default config path. Test/scratch envs pointed elsewhere should stay empty.
+  if (shouldImportSingleHostAuth(path)) {
+    const singleHostAuth = singleHostAuthFilePath();
+    if (existsSync(singleHostAuth)) {
       try {
-        const parsed = JSON.parse(readFileSync(legacy, 'utf8')) as Record<string, unknown>;
-        const migrated = migrateLegacy(parsed);
+        const parsed = JSON.parse(readFileSync(singleHostAuth, 'utf8')) as Record<string, unknown>;
+        const migrated = importSingleHostAuth(parsed);
         if (migrated) {
           saveConfig(migrated);
-          rmSync(legacy, { force: true });
+          rmSync(singleHostAuth, { force: true });
           return migrated;
         }
       } catch {
@@ -266,12 +261,12 @@ function normalizeConfig(parsed: Partial<Config>): Config {
   return { active, hosts: cleaned };
 }
 
-function migrateLegacy(parsed: Record<string, unknown> | Partial<Config> | null): Config | null {
+function importSingleHostAuth(parsed: Record<string, unknown> | Partial<Config> | null): Config | null {
   if (!parsed || typeof parsed !== 'object') return null;
   const p = parsed as Record<string, unknown>;
   const token = typeof p.token === 'string' ? p.token : undefined;
   if (!token) return null;
-  // Old shape used `api_base` instead of `url`.
+  // Single-host auth uses `api_base`; multi-host config uses `url`.
   const url = typeof p.api_base === 'string' ? p.api_base : DEFAULT_API_BASE;
   const host: Host = {
     url,

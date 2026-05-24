@@ -97,7 +97,8 @@ export function ProjectCreateModal({
 
   const [mode, setMode] = useState<'managed' | 'github'>('managed');
   const [newName, setNewName] = useState('');
-  const [includeGeneralKnowledgeSkills, setIncludeGeneralKnowledgeSkills] = useState(true);
+  const [includeGeneralKnowledgeSkills, setIncludeGeneralKnowledgeSkills] =
+    useState(true);
   const [selectedInstallationId, setSelectedInstallationId] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
   const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
@@ -276,8 +277,16 @@ export function ProjectCreateModal({
     >
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line237JsxTextNewProject')}</DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line240JsxTextStartWithAPrivateManagedRepoExistingGithub')}</DialogDescription>
+          <DialogTitle className="text-lg font-semibold tracking-tight">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectCreateModal.line237JsxTextNewProject',
+            )}
+          </DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectCreateModal.line240JsxTextStartWithAPrivateManagedRepoExistingGithub',
+            )}
+          </DialogDescription>
         </DialogHeader>
 
         {mode === 'managed' ? (
@@ -286,11 +295,21 @@ export function ProjectCreateModal({
               <InfoBanner
                 tone="neutral"
                 icon={GitBranch}
-                title={tHardcodedUi.raw('componentsProjectsProjectCreateModal.line251JsxAttrTitleKortixManagedRepository')}
-              >{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line253JsxTextCreatesAPrivateManagedRepoSeedsTheStarter')}</InfoBanner>
+                title={tHardcodedUi.raw(
+                  'componentsProjectsProjectCreateModal.line251JsxAttrTitleKortixManagedRepository',
+                )}
+              >
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectCreateModal.line253JsxTextCreatesAPrivateManagedRepoSeedsTheStarter',
+                )}
+              </InfoBanner>
 
               <div className="space-y-1.5">
-                <Label htmlFor="new-name">{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line258JsxTextProjectName')}</Label>
+                <Label htmlFor="new-name">
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectCreateModal.line258JsxTextProjectName',
+                  )}
+                </Label>
                 <Input
                   id="new-name"
                   value={newName}
@@ -305,8 +324,16 @@ export function ProjectCreateModal({
 
               <div className="flex items-start justify-between gap-4 rounded-md border border-border/60 px-3 py-3">
                 <div className="min-w-0 space-y-1">
-                  <Label htmlFor="gkw-skills">{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line273JsxTextGeneralKnowledgeWorkerSkills')}</Label>
-                  <p className="text-xs leading-5 text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand')}</p>
+                  <Label htmlFor="gkw-skills">
+                    {tHardcodedUi.raw(
+                      'componentsProjectsProjectCreateModal.line273JsxTextGeneralKnowledgeWorkerSkills',
+                    )}
+                  </Label>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {tHardcodedUi.raw(
+                      'componentsProjectsProjectCreateModal.line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand',
+                    )}
+                  </p>
                 </div>
                 <Switch
                   id="gkw-skills"
@@ -324,7 +351,11 @@ export function ProjectCreateModal({
                 disabled={submitting}
                 onClick={() => setMode('github')}
               >
-                <Github className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line297JsxTextImportExistingGithubRepo')}</Button>
+                <Github className="h-3.5 w-3.5" />
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectCreateModal.line297JsxTextImportExistingGithubRepo',
+                )}
+              </Button>
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
@@ -345,7 +376,11 @@ export function ProjectCreateModal({
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Plus className="h-4 w-4" />
-                )}{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line320JsxTextCreateProject')}</Button>
+                )}
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectCreateModal.line320JsxTextCreateProject',
+                )}
+              </Button>
             </div>
           </form>
         ) : (
@@ -353,8 +388,16 @@ export function ProjectCreateModal({
             <div className="min-h-[430px] space-y-5 px-6 py-5">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="text-base font-semibold">{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line330JsxTextImportGithubRepository')}</h3>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line333JsxTextPickAConnectedGithubAccountThenSearchIts')}</p>
+                  <h3 className="text-base font-semibold">
+                    {tHardcodedUi.raw(
+                      'componentsProjectsProjectCreateModal.line330JsxTextImportGithubRepository',
+                    )}
+                  </h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {tHardcodedUi.raw(
+                      'componentsProjectsProjectCreateModal.line333JsxTextPickAConnectedGithubAccountThenSearchIts',
+                    )}
+                  </p>
                 </div>
                 <Button
                   type="button"
@@ -364,12 +407,20 @@ export function ProjectCreateModal({
                   disabled={submitting}
                   onClick={() => setMode('managed')}
                 >
-                  <GitBranch className="h-4 w-4" />{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line345JsxTextManagedRepo')}</Button>
+                  <GitBranch className="h-4 w-4" />
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectCreateModal.line345JsxTextManagedRepo',
+                  )}
+                </Button>
               </div>
 
               {githubInstallationsQuery.isLoading ? (
                 <div className="flex h-28 items-center justify-center text-sm text-muted-foreground">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line352JsxTextLoadingGithubConnections')}</div>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectCreateModal.line352JsxTextLoadingGithubConnections',
+                  )}
+                </div>
               ) : githubInstallations.length === 0 ? (
                 <InfoBanner
                   tone={
@@ -378,7 +429,9 @@ export function ProjectCreateModal({
                       : 'info'
                   }
                   icon={Github}
-                  title={tHardcodedUi.raw('componentsProjectsProjectCreateModal.line362JsxAttrTitleConnectTheKortixGithubApp')}
+                  title={tHardcodedUi.raw(
+                    'componentsProjectsProjectCreateModal.line362JsxAttrTitleConnectTheKortixGithubApp',
+                  )}
                   action={
                     <Button
                       type="button"
@@ -398,12 +451,20 @@ export function ProjectCreateModal({
                       {isConnectingGitHub ? 'Connecting' : 'Connect'}
                     </Button>
                   }
-                >{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line383JsxTextKortixUsesTheGithubAppToListRepositories')}</InfoBanner>
+                >
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectCreateModal.line383JsxTextKortixUsesTheGithubAppToListRepositories',
+                  )}
+                </InfoBanner>
               ) : (
                 <>
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-3">
-                      <Label htmlFor="github-installation">{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line391JsxTextGitAccount')}</Label>
+                      <Label htmlFor="github-installation">
+                        {tHardcodedUi.raw(
+                          'componentsProjectsProjectCreateModal.line391JsxTextGitAccount',
+                        )}
+                      </Label>
                       <Button
                         type="button"
                         variant="ghost"
@@ -416,7 +477,11 @@ export function ProjectCreateModal({
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <Github className="h-4 w-4" />
-                        )}{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line405JsxTextAddAccount')}</Button>
+                        )}
+                        {tHardcodedUi.raw(
+                          'componentsProjectsProjectCreateModal.line405JsxTextAddAccount',
+                        )}
+                      </Button>
                     </div>
                     <Select
                       value={selectedInstallationId}
@@ -427,7 +492,11 @@ export function ProjectCreateModal({
                         id="github-installation"
                         className="w-full"
                       >
-                        <SelectValue placeholder={tHardcodedUi.raw('componentsProjectsProjectCreateModal.line417JsxAttrPlaceholderSelectAGithubAccount')} />
+                        <SelectValue
+                          placeholder={tHardcodedUi.raw(
+                            'componentsProjectsProjectCreateModal.line417JsxAttrPlaceholderSelectAGithubAccount',
+                          )}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {githubInstallations.map((installation) => (
@@ -460,7 +529,11 @@ export function ProjectCreateModal({
                           onClick={() =>
                             router.push(`/accounts/${accountId}?tab=git`)
                           }
-                        >{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line451JsxTextManageGitConnections')}</button>
+                        >
+                          {tHardcodedUi.raw(
+                            'componentsProjectsProjectCreateModal.line451JsxTextManageGitConnections',
+                          )}
+                        </button>
                       </InlineMeta>
                     </div>
                   </div>
@@ -492,8 +565,12 @@ export function ProjectCreateModal({
                   {repos.length === 0 && !githubReposQuery.isLoading ? (
                     <EmptyState
                       icon={Github}
-                      title={tHardcodedUi.raw('componentsProjectsProjectCreateModal.line484JsxAttrTitleNoRepositoriesAvailable')}
-                      description={tHardcodedUi.raw('componentsProjectsProjectCreateModal.line485JsxAttrDescriptionUpdateTheGithubAppInstallationToGrantKortix')}
+                      title={tHardcodedUi.raw(
+                        'componentsProjectsProjectCreateModal.line484JsxAttrTitleNoRepositoriesAvailable',
+                      )}
+                      description={tHardcodedUi.raw(
+                        'componentsProjectsProjectCreateModal.line485JsxAttrDescriptionUpdateTheGithubAppInstallationToGrantKortix',
+                      )}
                       size="sm"
                       action={
                         selectedInstallation?.installation_url ? (
@@ -519,12 +596,18 @@ export function ProjectCreateModal({
                   ) : null}
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="github-project-name">{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line511JsxTextProjectName')}</Label>
+                    <Label htmlFor="github-project-name">
+                      {tHardcodedUi.raw(
+                        'componentsProjectsProjectCreateModal.line511JsxTextProjectName',
+                      )}
+                    </Label>
                     <Input
                       id="github-project-name"
                       value={newName}
                       onChange={(e) => setNewName(e.target.value)}
-                      placeholder={tHardcodedUi.raw('componentsProjectsProjectCreateModal.line516JsxAttrPlaceholderUseRepositoryName')}
+                      placeholder={tHardcodedUi.raw(
+                        'componentsProjectsProjectCreateModal.line516JsxAttrPlaceholderUseRepositoryName',
+                      )}
                       autoCapitalize="none"
                       autoCorrect="off"
                     />
@@ -556,7 +639,11 @@ export function ProjectCreateModal({
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Github className="h-4 w-4" />
-                )}{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line549JsxTextImportRepo')}</Button>
+                )}
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectCreateModal.line549JsxTextImportRepo',
+                )}
+              </Button>
             </div>
           </form>
         )}
@@ -630,14 +717,20 @@ function RepositoryPicker({
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder={tHardcodedUi.raw('componentsProjectsProjectCreateModal.line623JsxAttrPlaceholderSearchRepositories')}
+            placeholder={tHardcodedUi.raw(
+              'componentsProjectsProjectCreateModal.line623JsxAttrPlaceholderSearchRepositories',
+            )}
             autoCapitalize="none"
             autoCorrect="off"
             autoFocus
           />
         </div>
         {filteredRepos.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectCreateModal.line631JsxTextNoRepositoriesFound')}</div>
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectCreateModal.line631JsxTextNoRepositoriesFound',
+            )}
+          </div>
         ) : (
           <List className="max-h-[min(50vh,360px)] overflow-y-auto">
             {filteredRepos.map((repo) => {

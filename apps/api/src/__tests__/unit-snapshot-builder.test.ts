@@ -434,3 +434,80 @@ describe('pruneOldSnapshots', () => {
     expect(daytonaDeleteCalls).toHaveLength(0);
   });
 });
+
+describe('getProjectSandboxHealth', () => {
+  const allForBranch = (r: Row) =>
+    r.projectId === PROJECT_ID && r.branch === BRANCH && r.provider === 'daytona';
+
+  test('first build: only a building row, no ready snapshot ever', async () => {
+    // Fresh updatedAt so the in-flight build isn't treated as a stale orphan.
+    rows = [makeRow({ snapshotRowId: 'b', status: 'building', metadata: {}, updatedAt: new Date() })];
+    setFilter(allForBranch);
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
+    expect(h.firstBuild).toBe(true);
+    expect(h.healthy).toBe(false);
+    expect(h.building).toBe(true);
+    expect(h.readyCount).toBe(0);
+  });
+
+  test('existing ready snapshot rebuilding in place reads as healthy + updating, NOT first build', async () => {
+    // Non-destructive rebuild: row stays `ready` (old runtime) with a
+    // rebuildStartedAt marker. Must not regress to "building first sandbox".
+    rows = [
+      makeRow({
+        snapshotRowId: 'ready-rebuilding',
+        status: 'ready',
+        snapshotId: 'snap-old',
+        metadata: { runtimeFingerprint: 'runtime-old', rebuildStartedAt: Date.now() },
+        createdAt: new Date(2026, 0, 3),
+      }),
+    ];
+    setFilter(allForBranch);
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
+    expect(h.firstBuild).toBe(false);
+    expect(h.healthy).toBe(true);
+    expect(h.readyCount).toBe(1);
+    expect(h.bootableCount).toBe(0); // old runtime → needs a rebuild to boot HEAD
+    expect(h.runtimeOutdated).toBe(true);
+    expect(h.building).toBe(true); // rebuildStartedAt marker surfaces as building
+  });
+
+  test('current-runtime ready snapshot is bootable + healthy', async () => {
+    rows = [
+      makeRow({ snapshotRowId: 'r', status: 'ready', metadata: { runtimeFingerprint: 'runtime-current' } }),
+    ];
+    setFilter(allForBranch);
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
+    expect(h.healthy).toBe(true);
+    expect(h.bootableCount).toBe(1);
+    expect(h.runtimeOutdated).toBe(false);
+    expect(h.firstBuild).toBe(false);
+  });
+
+  test('failed latest build with no ready snapshot surfaces a failure', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'f',
+        status: 'failed',
+        snapshotId: null,
+        error: 'failed to solve: exit code: 1',
+        metadata: { errorCategory: 'dockerfile' },
+        createdAt: new Date(2026, 0, 4),
+      }),
+    ];
+    setFilter(allForBranch);
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
+    expect(h.failure?.category).toBe('dockerfile');
+    expect(h.failure?.fixableByAgent).toBe(true);
+    expect(h.healthy).toBe(false);
+    expect(h.readyCount).toBe(0);
+  });
+});

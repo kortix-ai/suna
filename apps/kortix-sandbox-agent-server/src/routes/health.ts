@@ -4,8 +4,12 @@ import type { Config } from '../config'
 import { readRepoInfo } from '../git'
 import type { Opencode } from '../opencode'
 
+export type BootMark = { label: string; atMs: number }
+
 export type SandboxBootState = {
   repoMaterializationError: string | null
+  /** In-container boot timeline (ms since process start) for latency benchmarking. */
+  timeline: BootMark[]
 }
 
 /**
@@ -65,6 +69,9 @@ export function createHealthRouter(
       branch: repoInfo?.branch ?? null,
       commit_sha: repoInfo?.commit ?? null,
       boot_error: bootState.repoMaterializationError,
+      // In-container boot timeline (ms since process start) so the dashboard can
+      // attribute the post-create boot latency (clone vs opencode vs proxy).
+      boot_timeline: bootState.timeline,
       // Visible auth posture so misconfiguration doesn't silently downgrade.
       auth: cfg.kortixToken ? 'configured' : 'unconfigured',
     })
