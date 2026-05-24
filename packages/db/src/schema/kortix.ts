@@ -77,17 +77,6 @@ export const projectRoleEnum = kortixSchema.enum('project_role', [
   'viewer',
 ]);
 
-export const projectTriggerTypeEnum = kortixSchema.enum('project_trigger_type', [
-  'cron',
-  'webhook',
-]);
-
-export const projectTriggerEventStatusEnum = kortixSchema.enum('project_trigger_event_status', [
-  'queued',
-  'fired',
-  'failed',
-]);
-
 export const apiKeyStatusEnum = kortixSchema.enum('api_key_status', [
   'active',
   'revoked',
@@ -471,34 +460,6 @@ export const projectSecretGrants = kortixSchema.table(
   ],
 );
 
-export const projectTriggers = kortixSchema.table(
-  'project_triggers',
-  {
-    triggerId: uuid('trigger_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    type: projectTriggerTypeEnum('type').notNull(),
-    config: jsonb('config').default({}).$type<Record<string, unknown>>(),
-    agentName: varchar('agent_name', { length: 128 }).default('default').notNull(),
-    promptTemplate: text('prompt_template').notNull(),
-    enabled: boolean('enabled').default(true).notNull(),
-    createdBy: uuid('created_by'),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    lastFiredAt: timestamp('last_fired_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_project_triggers_account').on(table.accountId),
-    index('idx_project_triggers_project').on(table.projectId),
-    index('idx_project_triggers_type_enabled').on(table.type, table.enabled),
-  ],
-);
-
 /**
  * Who can see/open a session within the org. `private` (default) = only the
  * creator; `project` = every project member (team-wide); `restricted` = the
@@ -589,34 +550,6 @@ export const projectTriggerRuntime = kortixSchema.table(
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
-  ],
-);
-
-export const projectTriggerEvents = kortixSchema.table(
-  'project_trigger_events',
-  {
-    eventId: uuid('event_id').defaultRandom().primaryKey(),
-    triggerId: uuid('trigger_id')
-      .notNull()
-      .references(() => projectTriggers.triggerId, { onDelete: 'cascade' }),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    status: projectTriggerEventStatusEnum('status').default('queued').notNull(),
-    payload: jsonb('payload').default({}).$type<Record<string, unknown>>(),
-    renderedPrompt: text('rendered_prompt'),
-    sessionId: text('session_id').references(() => projectSessions.sessionId, { onDelete: 'set null' }),
-    error: text('error'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_project_trigger_events_trigger').on(table.triggerId),
-    index('idx_project_trigger_events_project_status').on(table.projectId, table.status),
-    index('idx_project_trigger_events_status_created').on(table.status, table.createdAt),
   ],
 );
 
@@ -1178,8 +1111,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   gitCredentials: many(projectGitCredentials),
   members: many(projectMembers),
   secrets: many(projectSecrets),
-  triggers: many(projectTriggers),
-  triggerEvents: many(projectTriggerEvents),
   sessions: many(projectSessions),
   runtimeSnapshots: many(projectRuntimeSnapshots),
 }));
@@ -1221,37 +1152,6 @@ export const projectSecretsRelations = relations(projectSecrets, ({ one }) => ({
   project: one(projects, {
     fields: [projectSecrets.projectId],
     references: [projects.projectId],
-  }),
-}));
-
-export const projectTriggersRelations = relations(projectTriggers, ({ one, many }) => ({
-  account: one(accounts, {
-    fields: [projectTriggers.accountId],
-    references: [accounts.accountId],
-  }),
-  project: one(projects, {
-    fields: [projectTriggers.projectId],
-    references: [projects.projectId],
-  }),
-  events: many(projectTriggerEvents),
-}));
-
-export const projectTriggerEventsRelations = relations(projectTriggerEvents, ({ one }) => ({
-  account: one(accounts, {
-    fields: [projectTriggerEvents.accountId],
-    references: [accounts.accountId],
-  }),
-  project: one(projects, {
-    fields: [projectTriggerEvents.projectId],
-    references: [projects.projectId],
-  }),
-  trigger: one(projectTriggers, {
-    fields: [projectTriggerEvents.triggerId],
-    references: [projectTriggers.triggerId],
-  }),
-  session: one(projectSessions, {
-    fields: [projectTriggerEvents.sessionId],
-    references: [projectSessions.sessionId],
   }),
 }));
 
@@ -1312,8 +1212,6 @@ export const accountsRelations = relations(accounts, ({ many }) => ({
   githubInstallations: many(accountGithubInstallations),
   projectMembers: many(projectMembers),
   projects: many(projects),
-  projectTriggers: many(projectTriggers),
-  projectTriggerEvents: many(projectTriggerEvents),
   projectSessions: many(projectSessions),
   projectRuntimeSnapshots: many(projectRuntimeSnapshots),
   sandboxes: many(sandboxes),

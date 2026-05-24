@@ -21,9 +21,7 @@ import {
   projectGitConnections,
   projectGitCredentials,
   projectSecrets,
-  projectTriggerEvents,
   projectTriggerRuntime,
-  projectTriggers,
   projectSessions,
   sessionSandboxes,
   changeRequests,
@@ -188,8 +186,6 @@ type ProjectRow = typeof projects.$inferSelect;
 type ProjectGitConnectionRow = typeof projectGitConnections.$inferSelect;
 type ProjectGitCredentialRow = typeof projectGitCredentials.$inferSelect;
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
-type ProjectTriggerRow = typeof projectTriggers.$inferSelect;
-type ProjectTriggerEventRow = typeof projectTriggerEvents.$inferSelect;
 type RequestAuditContext = {
   method: string;
   path: string;
@@ -599,51 +595,10 @@ function isSystemProjectSecretName(name: string): boolean {
   return name.toUpperCase().startsWith('KORTIX_');
 }
 
-function serializeProjectTrigger(row: ProjectTriggerRow) {
-  const publicConfig = { ...normalizeJsonObject(row.config) };
-  const hasSecret = Boolean(publicConfig.secret || publicConfig.webhook_secret || publicConfig.webhookSecret);
-  delete publicConfig.secret;
-  delete publicConfig.webhook_secret;
-  delete publicConfig.webhookSecret;
-  if (hasSecret) publicConfig.has_secret = true;
-
-  return {
-    trigger_id: row.triggerId,
-    account_id: row.accountId,
-    project_id: row.projectId,
-    type: row.type,
-    config: publicConfig,
-    agent_name: row.agentName,
-    prompt_template: row.promptTemplate,
-    enabled: row.enabled,
-    created_by: row.createdBy,
-    metadata: row.metadata ?? {},
-    last_fired_at: row.lastFiredAt?.toISOString() ?? null,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-  };
-}
-
 function serializeSessionSandboxConfig(configValue: Record<string, unknown> | null | undefined): Record<string, unknown> {
   const config = { ...(configValue ?? {}) };
   delete config.serviceKey;
   return config;
-}
-
-function serializeProjectTriggerEvent(row: ProjectTriggerEventRow) {
-  return {
-    event_id: row.eventId,
-    trigger_id: row.triggerId,
-    account_id: row.accountId,
-    project_id: row.projectId,
-    status: row.status,
-    payload: row.payload ?? {},
-    rendered_prompt: row.renderedPrompt,
-    session_id: row.sessionId,
-    error: row.error,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-  };
 }
 
 function serializeGitHubInstallation(
@@ -1797,11 +1752,6 @@ export async function createProjectSession(input: {
   return { row: sessionRow, headers: responseHeaders };
 }
 
-function triggerWebhookSecret(row: ProjectTriggerRow): string | null {
-  const cfg = normalizeJsonObject(row.config);
-  return normalizeString(cfg.secret ?? cfg.webhook_secret ?? cfg.webhookSecret);
-}
-
 function normalizeSignatureHeader(value: string | null): string | null {
   const header = normalizeString(value);
   if (!header) return null;
@@ -1885,133 +1835,6 @@ async function triggerBackpressureState(accountId: string, projectId: string) {
     active,
     accountActiveLimit,
     tier,
-  };
-}
-
-async function fireProjectTrigger(input: {
-  trigger: ProjectTriggerRow;
-  project: ProjectRow;
-  payload: Record<string, unknown>;
-  renderedPrompt: string;
-  request?: RequestAuditContext;
-  markAcceptedAt?: Date;
-}): Promise<{
-  status: 'queued' | 'fired' | 'failed';
-  reason?: string;
-  error?: string;
-  event: ProjectTriggerEventRow;
-  session?: ProjectSessionRow;
-  httpStatus?: number;
-  backpressure?: Awaited<ReturnType<typeof triggerBackpressureState>>;
-}> {
-  const { trigger, project, payload, renderedPrompt } = input;
-  const backpressure = await triggerBackpressureState(trigger.accountId, trigger.projectId);
-  const [event] = await db
-    .insert(projectTriggerEvents)
-    .values({
-      triggerId: trigger.triggerId,
-      accountId: trigger.accountId,
-      projectId: trigger.projectId,
-      status: 'queued',
-      payload,
-      renderedPrompt,
-      updatedAt: new Date(),
-    })
-    .returning();
-
-  if (backpressure.shouldQueue) {
-    if (input.markAcceptedAt) {
-      await db
-        .update(projectTriggers)
-        .set({ lastFiredAt: input.markAcceptedAt, updatedAt: new Date() })
-        .where(eq(projectTriggers.triggerId, trigger.triggerId))
-        .returning();
-    }
-    return {
-      status: 'queued',
-      reason: backpressure.provisioning >= backpressure.projectProvisioningLimit
-        ? 'project provisioning backpressure'
-        : 'account session cap',
-      event,
-      backpressure,
-    };
-  }
-
-  if (!trigger.createdBy) {
-    const message = 'Trigger has no actor to own the session';
-    const [failedEvent] = await db
-      .update(projectTriggerEvents)
-      .set({ status: 'failed', error: message, updatedAt: new Date() })
-      .where(eq(projectTriggerEvents.eventId, event.eventId))
-      .returning();
-    return {
-      status: 'failed',
-      error: message,
-      event: failedEvent ?? event,
-      httpStatus: 409,
-    };
-  }
-
-  const triggerConfig = normalizeJsonObject(trigger.config);
-  const provider = normalizeString(triggerConfig.provider);
-  const sessionResult = await createProjectSession({
-    project,
-    userId: trigger.createdBy,
-    enforceAccountCap: false,
-    request: input.request,
-    body: {
-      agent_name: trigger.agentName,
-      initial_prompt: renderedPrompt,
-      ...(provider ? { provider } : {}),
-      metadata: {
-        trigger_id: trigger.triggerId,
-        trigger_event_id: event.eventId,
-        trigger_type: trigger.type,
-      },
-    },
-    metadata: {
-      trigger_id: trigger.triggerId,
-      trigger_event_id: event.eventId,
-      trigger_type: trigger.type,
-    },
-  });
-
-  if (sessionResult.error) {
-    const message = String(sessionResult.error.body.error ?? 'Failed to create trigger session');
-    const [failedEvent] = await db
-      .update(projectTriggerEvents)
-      .set({ status: 'failed', error: message, updatedAt: new Date() })
-      .where(eq(projectTriggerEvents.eventId, event.eventId))
-      .returning();
-    return {
-      status: 'failed',
-      error: message,
-      event: failedEvent ?? event,
-      httpStatus: sessionResult.error.status,
-    };
-  }
-
-  const session = sessionResult.row!;
-  const [updatedEvent] = await db
-    .update(projectTriggerEvents)
-    .set({
-      status: 'fired',
-      sessionId: session.sessionId,
-      updatedAt: new Date(),
-    })
-    .where(eq(projectTriggerEvents.eventId, event.eventId))
-    .returning();
-
-  await db
-    .update(projectTriggers)
-    .set({ lastFiredAt: input.markAcceptedAt ?? new Date(), updatedAt: new Date() })
-    .where(eq(projectTriggers.triggerId, trigger.triggerId))
-    .returning();
-
-  return {
-    status: 'fired',
-    event: updatedEvent ?? event,
-    session,
   };
 }
 
@@ -2113,32 +1936,15 @@ function triggerSchedulerIntervalMs() {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 60_000;
 }
 
-function cronTriggerSchedule(row: ProjectTriggerRow): string | null {
-  const cfg = normalizeJsonObject(row.config);
-  return normalizeString(cfg.cron ?? cfg.schedule);
-}
-
-function cronTriggerTimezone(row: ProjectTriggerRow): string | undefined {
-  const cfg = normalizeJsonObject(row.config);
-  return normalizeString(cfg.timezone) ?? undefined;
-}
-
 export function nextCronRun(schedule: string, from: Date, timezone?: string): Date | null {
   const job = new Cron(schedule, { paused: true, ...(timezone ? { timezone } : {}) });
   return job.nextRun(from);
 }
 
-export function isCronTriggerDue(row: ProjectTriggerRow, now = new Date()): boolean {
-  const schedule = cronTriggerSchedule(row);
-  if (!schedule) return false;
-  const next = nextCronRun(schedule, row.lastFiredAt ?? row.createdAt, cronTriggerTimezone(row));
-  return Boolean(next && next.getTime() <= now.getTime());
-}
-
 /**
  * Walks every active project's git repo for `.opencode/triggers/*.md` and
- * fires due cron triggers. Triggers are 100% file-defined now — the DB
- * `project_triggers` table is no longer scanned.
+ * fires due cron triggers. Triggers are 100% file-defined now (kortix.toml);
+ * the old DB-backed trigger tables have been removed.
  */
 export async function runProjectTriggerSweep(now = new Date()): Promise<{
   scanned: number;
@@ -2259,11 +2065,9 @@ async function markGitTriggerFired(projectId: string, slug: string, when: Date) 
 }
 
 /**
- * Fire a git-backed trigger. Parallels `fireProjectTrigger` but skips the
- * `project_trigger_events` row (the events table is FK-bound to
- * `project_triggers`, and we want to keep that constraint clean). The
- * project_sessions row carries `trigger_slug` in metadata so audits still
- * reconstruct the firing path.
+ * Fire a git-backed trigger. Triggers are file-defined (kortix.toml), so there
+ * is no DB trigger/event row — the project_sessions row carries `trigger_slug`
+ * in metadata so audits can still reconstruct the firing path.
  */
 async function fireGitTrigger(input: {
   spec: GitTriggerSpec;
@@ -2333,9 +2137,8 @@ function summarizeTriggerPayload(payload: Record<string, unknown>): Record<strin
 
 /**
  * Walk all active projects, load their git-backed triggers, and fire any
- * cron triggers that are due. Mirrors `runProjectTriggerSweep` for the
- * DB-backed path but writes to `project_trigger_runtime` instead of
- * `project_triggers.last_fired_at`.
+ * cron triggers that are due. Runtime state (last_fired_at) lives in
+ * `project_trigger_runtime`, keyed by project + slug.
  *
  * We swallow per-project errors so one busted repo can't break the sweep
  * for everyone else.

@@ -141,11 +141,10 @@ opsApp.get('/overview', async (c) => {
       FROM kortix.session_sandboxes
       GROUP BY provider
     `),
-    groupCounts(sql`
-      SELECT status AS key, count(*)::int AS count
-      FROM kortix.project_trigger_events
-      GROUP BY status
-    `),
+    // Triggers are file-defined (kortix.toml) now; the project_trigger_events
+    // table is gone and the git path doesn't persist events, so this is always
+    // empty. Field kept for dashboard compatibility.
+    Promise.resolve<Record<string, number>>({}),
     oneCount(sql`
       SELECT count(*)::int AS count
       FROM kortix.audit_events
