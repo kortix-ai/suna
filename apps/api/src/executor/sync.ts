@@ -37,6 +37,17 @@ export interface SyncResult {
   errors: Array<{ slug: string; error: string }>;
 }
 
+export interface SyncOptions {
+  /**
+   * Re-fetch every connector's catalog even when its manifest hash is
+   * unchanged. The manual "Sync" button passes this (the user is explicitly
+   * asking to re-pull catalogs, e.g. an MCP server gained new tools). The
+   * automatic reconcile paths (CRUD, CR-merge, periodic sweep) leave it off so
+   * an unchanged connector skips its (network) catalog fetch.
+   */
+  force?: boolean;
+}
+
 interface ResolvedCatalog {
   actions: NormalizedAction[];
   /** OpenAPI server discovered from the doc (folded into config). */
@@ -48,7 +59,7 @@ interface ResolvedCatalog {
  * Materialize a project's connectors from its manifest. Loads the project +
  * git auth (so private repos resolve), reads kortix.toml, then upserts.
  */
-export async function syncProjectConnectors(projectId: string, accountId: string): Promise<SyncResult> {
+export async function syncProjectConnectors(projectId: string, accountId: string, opts: SyncOptions = {}): Promise<SyncResult> {
   const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
   if (!row) return { synced: 0, errors: [{ slug: '(project)', error: 'project not found' }] };
 
@@ -60,7 +71,7 @@ export async function syncProjectConnectors(projectId: string, accountId: string
   const errors: SyncResult['errors'] = parseErrors.map((e) => ({ slug: e.slug, error: e.error }));
 
   const existing = await db
-    .select({ slug: executorConnectors.slug, connectorId: executorConnectors.connectorId, manifestHash: executorConnectors.manifestHash })
+    .select({ slug: executorConnectors.slug, connectorId: executorConnectors.connectorId, manifestHash: executorConnectors.manifestHash, status: executorConnectors.status })
     .from(executorConnectors)
     .where(eq(executorConnectors.projectId, projectId));
   const existingBySlug = new Map(existing.map((e) => [e.slug, e]));
@@ -69,9 +80,17 @@ export async function syncProjectConnectors(projectId: string, accountId: string
   let synced = 0;
   for (const spec of specs) {
     try {
-      const catalog = await resolveCatalog(gitProject, spec);
-      await upsertConnector(projectId, accountId, spec, catalog, existingBySlug.get(spec.slug)?.connectorId ?? null);
-      if (catalog.error) errors.push({ slug: spec.slug, error: catalog.error });
+      const ex = existingBySlug.get(spec.slug);
+      // Cheap reconcile: when the connector's catalog-affecting fields are
+      // unchanged (hash match) and it last materialized cleanly, skip the
+      // network catalog fetch. The DB row's cheap fields (name/enabled/
+      // policies) are still reconciled inside upsertConnector. `force` (manual
+      // sync) always re-fetches; error rows always retry.
+      const catalogUnchanged =
+        !opts.force && !!ex && ex.status !== 'error' && ex.manifestHash === manifestHashForConnector(spec);
+      const catalog = catalogUnchanged ? null : await resolveCatalog(gitProject, spec);
+      await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null);
+      if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
       synced++;
     } catch (e) {
       errors.push({ slug: spec.slug, error: (e as Error).message });
@@ -88,78 +107,85 @@ export async function syncProjectConnectors(projectId: string, accountId: string
   return { synced, errors };
 }
 
-/** Upsert one connector + replace its actions + policies. */
+/**
+ * Upsert one connector + reconcile its actions + policies.
+ *
+ * `catalog === null` means "catalog unchanged" (hash matched, no re-fetch): we
+ * leave the stored config + actions untouched and only reconcile the cheap
+ * fields (name / enabled / status / policies) so a manifest edit that just
+ * toggled `enabled` or tweaked policies still lands without a network round-trip.
+ */
 async function upsertConnector(
   projectId: string,
   accountId: string,
   spec: ConnectorSpec,
-  catalog: ResolvedCatalog,
+  catalog: ResolvedCatalog | null,
   existingId: string | null,
 ): Promise<void> {
-  const config = connectorConfig(spec, catalog.server);
   const manifestHash = manifestHashForConnector(spec);
-  const status = catalog.error ? 'error' : spec.enabled ? 'active' : 'disabled';
+  const status = catalog?.error ? 'error' : spec.enabled ? 'active' : 'disabled';
   // Credentials live in executor_credentials now; authSecret is legacy (kept nullable).
   const authSecret = spec.auth.secret ?? null;
   const credentialMode = spec.credentialMode;
+
+  // Cheap fields reconciled on every sync. `config` (which folds in the
+  // discovered server) only changes when we actually re-resolved the catalog.
+  const common = {
+    name: spec.name,
+    providerType: spec.provider,
+    enabled: spec.enabled,
+    authSecret,
+    credentialMode,
+    manifestHash,
+    status,
+    lastError: catalog?.error ?? null,
+    lastSyncedAt: new Date(),
+    updatedAt: new Date(),
+  } as const;
 
   let connectorId = existingId;
   if (connectorId) {
     await db
       .update(executorConnectors)
-      .set({
-        name: spec.name,
-        providerType: spec.provider,
-        enabled: spec.enabled,
-        config,
-        authSecret,
-        credentialMode,
-        manifestHash,
-        status,
-        lastError: catalog.error ?? null,
-        lastSyncedAt: new Date(),
-        updatedAt: new Date(),
-      })
+      .set(catalog ? { ...common, config: connectorConfig(spec, catalog.server) } : common)
       .where(eq(executorConnectors.connectorId, connectorId));
   } else {
+    // A brand-new connector is never "unchanged", so catalog is always present
+    // here; fall back to a server-less config defensively.
     const [created] = await db
       .insert(executorConnectors)
       .values({
         accountId,
         projectId,
         slug: spec.slug,
-        name: spec.name,
-        providerType: spec.provider,
-        enabled: spec.enabled,
-        config,
-        authSecret,
-        credentialMode,
-        manifestHash,
-        status,
-        lastError: catalog.error ?? null,
-        lastSyncedAt: new Date(),
+        ...common,
+        config: connectorConfig(spec, catalog?.server ?? null),
       })
       .returning({ connectorId: executorConnectors.connectorId });
     connectorId = created!.connectorId;
   }
 
-  // Replace actions (relative paths) + policies wholesale — simplest correct sync.
-  await db.delete(executorConnectorActions).where(eq(executorConnectorActions.connectorId, connectorId));
-  if (catalog.actions.length > 0) {
-    await db.insert(executorConnectorActions).values(
-      catalog.actions.map((a) => ({
-        connectorId: connectorId!,
-        path: a.path,
-        name: a.name,
-        description: a.description,
-        inputSchema: a.inputSchema,
-        outputSchema: a.outputSchema,
-        risk: a.risk,
-        binding: a.binding as unknown as Record<string, unknown>,
-      })),
-    );
+  // Actions only change when the catalog was re-resolved — leave them in place
+  // on a cheap reconcile.
+  if (catalog) {
+    await db.delete(executorConnectorActions).where(eq(executorConnectorActions.connectorId, connectorId));
+    if (catalog.actions.length > 0) {
+      await db.insert(executorConnectorActions).values(
+        catalog.actions.map((a) => ({
+          connectorId: connectorId!,
+          path: a.path,
+          name: a.name,
+          description: a.description,
+          inputSchema: a.inputSchema,
+          outputSchema: a.outputSchema,
+          risk: a.risk,
+          binding: a.binding as unknown as Record<string, unknown>,
+        })),
+      );
+    }
   }
 
+  // Policies gate calls (not part of the catalog hash) — always reconcile; cheap.
   await db.delete(executorConnectorPolicies).where(eq(executorConnectorPolicies.connectorId, connectorId));
   const policyRows = toPolicyRows(spec);
   if (policyRows.length > 0) {

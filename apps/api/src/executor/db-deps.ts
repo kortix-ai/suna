@@ -273,7 +273,9 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   listCatalog,
   resolveAdmin,
   listConnectors,
-  syncConnectors: (projectId, accountId) => syncProjectConnectors(projectId, accountId),
+  // The manual "Sync" button re-pulls catalogs unconditionally (force) — the
+  // user is explicitly asking to refresh, e.g. an MCP server gained new tools.
+  syncConnectors: (projectId, accountId) => syncProjectConnectors(projectId, accountId, { force: true }),
   setSharing,
   createConnector: (projectId, accountId, draft) =>
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft, (draft as any)?.sharing as SharingIntent | undefined),

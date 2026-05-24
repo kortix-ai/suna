@@ -2161,6 +2161,44 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
   }
 }
 
+/**
+ * Reconcile every active project's connector DB cache against its kortix.toml.
+ * This is the reliability backstop for connectors: the UI CRUD path and the
+ * CR-merge hook reconcile inline, but a raw `git push` / `kortix` CLI edit that
+ * bypasses both is only caught here. We invalidate the git mirror per project
+ * so an out-of-band manifest edit is seen this sweep (not up to a minute later,
+ * behind the mirror refresh throttle). `syncProjectConnectors` is hash-aware,
+ * so unchanged connectors cost a manifest read, not a catalog re-fetch.
+ */
+export async function runProjectConnectorSweep(): Promise<{ scanned: number; synced: number; errors: number }> {
+  if (connectorSweepRunning) return { scanned: 0, synced: 0, errors: 0 };
+  connectorSweepRunning = true;
+  const out = { scanned: 0, synced: 0, errors: 0 };
+  try {
+    const { syncProjectConnectors } = await import('../executor/sync');
+    const projectsForSweep = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.status, 'active'))
+      .limit(200);
+    for (const project of projectsForSweep) {
+      out.scanned += 1;
+      try {
+        invalidateProjectMirror(project.projectId);
+        const res = await syncProjectConnectors(project.projectId, project.accountId);
+        out.synced += res.synced;
+        out.errors += res.errors.length;
+      } catch (err) {
+        out.errors += 1;
+        console.warn('[project-connectors] sweep failed', project.projectId, err instanceof Error ? err.message : err);
+      }
+    }
+    return out;
+  } finally {
+    connectorSweepRunning = false;
+  }
+}
+
 // ─── Git-backed triggers ────────────────────────────────────────────────────
 //
 // Triggers can ALSO live in the project repo at `.opencode/triggers/<slug>.md`
@@ -2386,6 +2424,20 @@ export function startProjectTriggerScheduler(): void {
         }
       }).catch((error) => {
         console.error('[project-apps] sweep failed:', error);
+      });
+    }
+
+    // Connector reconcile backstop — slower cadence than the trigger sweep so
+    // we don't re-read every manifest each tick. Catches out-of-band manifest
+    // edits (raw git push / CLI) and heals any DB drift / retries error rows.
+    if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
+      lastConnectorSweepAt = Date.now();
+      runProjectConnectorSweep().then((result) => {
+        if (result.synced || result.errors) {
+          console.log('[project-connectors] sweep completed', result);
+        }
+      }).catch((error) => {
+        console.error('[project-connectors] sweep failed:', error);
       });
     }
 
@@ -6195,6 +6247,11 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
   // periodic sweep is the backstop if this best-effort call fails.
   void import('../executor/sync')
     .then(({ syncProjectConnectors }) => syncProjectConnectors(projectId, loaded.row.accountId))
+    .then((res) => {
+      if (res.errors.length) {
+        console.warn('[change-requests] connector reconcile had errors', projectId, res.errors);
+      }
+    })
     .catch((err) =>
       console.warn('[change-requests] connector reconcile failed', projectId, err instanceof Error ? err.message : err),
     );

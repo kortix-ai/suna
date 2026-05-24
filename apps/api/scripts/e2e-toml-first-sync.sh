@@ -19,6 +19,8 @@
 #   CONN-3 NO DB-FIRST: insert a rogue DB row that is NOT in the manifest, sync
 #          → row is DELETED (nothing survives in the DB unless it is in TOML)
 #   CONN-4 DELETE /executor/.../connectors/:slug → gone from BOTH toml and DB
+#   CONN-5 a connector added to kortix.toml on a branch and landed via a real
+#          CR merge auto-reconciles into the DB with NO manual sync call
 #
 # Usage:
 #   bash apps/api/scripts/e2e-toml-first-sync.sh
@@ -34,7 +36,8 @@ set -euo pipefail
 
 API="${KORTIX_API_URL:-http://localhost:8008}"
 DB_URL="${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}"
-ENV_FILE="${ENV_FILE:-$(cd "$(dirname "$0")/.." && pwd)/.env}"
+API_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="${ENV_FILE:-$API_DIR/.env}"
 
 bold()  { printf '\n\033[1m%s\033[0m\n' "$*"; }
 ok()    { printf '  \033[0;32m✓\033[0m  %s\n' "$*"; }
@@ -42,7 +45,7 @@ fail()  { printf '  \033[0;31m✗\033[0m  %s\n' "$*"; exit 1; }
 dim()   { printf '  \033[2m%-9s\033[0m  %s\n' "$1" "$2"; }
 
 require() { command -v "$1" >/dev/null || fail "missing dependency: $1"; }
-require curl; require jq; require psql; require python3; require awk
+require curl; require jq; require psql; require python3; require awk; require git; require mktemp; require bun
 
 assert_eq() {
   local got="$1" want="$2" label="$3"
@@ -62,6 +65,7 @@ psql_one() {
 
 PROJECT_ID=""
 PAT_HASH=""
+TMP_DIR=""
 cleanup() {
   bold "cleanup"
   if [[ -n "$PROJECT_ID" && -n "${PAT_SECRET:-}" ]]; then
@@ -71,6 +75,7 @@ cleanup() {
     [[ "$code" == "200" ]] && ok "purged project (repo deleted)" || dim "purge" "HTTP $code (manual cleanup may be needed for $PROJECT_ID)"
   fi
   [[ -n "$PAT_HASH" ]] && { psql_one "delete from kortix.account_tokens where secret_key_hash = '$PAT_HASH';" >/dev/null || true; ok "revoked e2e PAT"; }
+  [[ -n "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
 
@@ -117,6 +122,18 @@ sync_connectors() {
   assert_status "$code" "200" "POST /connectors/sync"
 }
 
+# git over HTTPS with the project push token (basic auth header), like the CLI/ship path.
+git_auth_header() { printf 'AUTHORIZATION: basic %s' "$(printf '%s' "x-access-token:$1" | base64 | tr -d '\n')"; }
+
+# Poll the DB-materialized connector view until <slug> appears (yes) or timeout.
+wait_connector_in_db() {
+  for _ in $(seq 1 20); do
+    [[ "$(connector_in_db "$1")" == "yes" ]] && { echo yes; return; }
+    sleep 1
+  done
+  echo no
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 bold "0. Backend reachable + managed git configured"
 HEALTH="$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "$API/health" || echo 000)"
@@ -152,6 +169,7 @@ PROV="$(api POST /v1/projects/provision "{\"account_id\":\"$ACCOUNT_ID\",\"name\
 assert_status "$(code_of "$PROV")" "201" "POST /projects/provision"
 PROV_BODY="$(body_of "$PROV")"
 PROJECT_ID="$(jq -r '.project_id' <<<"$PROV_BODY")"
+REPO_URL="$(jq -r '.repo_url' <<<"$PROV_BODY")"
 assert_eq "$(jq -r '.metadata.git.provider' <<<"$PROV_BODY")" "freestyle" "git provider"
 [[ -n "$PROJECT_ID" && "$PROJECT_ID" != "null" ]] || fail "no project_id returned"
 dim "project" "$PROJECT_ID"
@@ -213,5 +231,51 @@ R="$(api DELETE "/v1/executor/projects/$PROJECT_ID/connectors/e2e-http")"
 assert_status "$(code_of "$R")" "200" "DELETE /connectors/:slug"
 grep -q 'slug = "e2e-http"' <<<"$(manifest)" && fail "connector still in kortix.toml after delete" || ok "connector removed from kortix.toml"
 assert_eq "$(connector_in_db e2e-http)" "no" "connector removed from DB"
+
+bold "9. CONN-5 — a connector landed via a real CR merge auto-syncs (no manual sync)"
+TK="$(api POST "/v1/projects/$PROJECT_ID/git-token" '{}')"
+assert_status "$(code_of "$TK")" "200" "POST /git-token"
+PUSH_TOKEN="$(jq -r '.push_token' <<<"$(body_of "$TK")")"
+[[ -n "$PUSH_TOKEN" && "$PUSH_TOKEN" != "null" ]] || fail "no push_token"
+TMP_DIR="$(mktemp -d)"
+HDR="$(git_auth_header "$PUSH_TOKEN")"
+git -c http.extraheader="$HDR" clone -q "$REPO_URL" "$TMP_DIR/repo" || fail "clone failed"
+git -C "$TMP_DIR/repo" config user.email e2e@kortix.ai
+git -C "$TMP_DIR/repo" config user.name  e2e
+git -C "$TMP_DIR/repo" checkout -q -b cr-conn
+# Edit kortix.toml on the branch (NOT via the API) — the CR-merge hook must
+# reconcile this into the DB with no manual sync call. Edit via smol-toml (the
+# platform's own parser) so the result is valid regardless of prior shape.
+( cd "$API_DIR" && TF="$TMP_DIR/repo/kortix.toml" bun -e '
+import { parse, stringify } from "smol-toml";
+import { readFileSync, writeFileSync } from "node:fs";
+const f = process.env.TF;
+const m = parse(readFileSync(f, "utf8"));
+const c = Array.isArray(m.connectors) ? m.connectors : [];
+c.push({ slug: "e2e-cr-http", provider: "http", base_url: "https://cr.example.com" });
+m.connectors = c;
+writeFileSync(f, stringify(m));
+' ) || fail "failed to edit kortix.toml on branch"
+grep -q 'slug = "e2e-cr-http"' "$TMP_DIR/repo/kortix.toml" || fail "branch manifest edit did not take"
+git -C "$TMP_DIR/repo" add -A
+git -C "$TMP_DIR/repo" commit -q -m "feat: add e2e-cr-http connector via CR"
+git -C "$TMP_DIR/repo" -c http.extraheader="$HDR" push -q origin cr-conn
+ok "pushed branch cr-conn with a new [[connectors]] entry"
+assert_eq "$(connector_in_db e2e-cr-http)" "no" "branch edit NOT in DB before merge (main unchanged)"
+# The server mirrors the repo behind a refresh throttle, so a just-pushed
+# branch can take up to the throttle window to become resolvable. Poll CR-open
+# through it (the call itself forces the fetch once the window elapses).
+CR_CODE=""; CR_BODY=""
+for _ in $(seq 1 18); do
+  CR="$(api POST "/v1/projects/$PROJECT_ID/change-requests" '{"title":"Add e2e-cr-http","head_ref":"cr-conn","base_ref":"main"}')"
+  CR_CODE="$(code_of "$CR")"; CR_BODY="$(body_of "$CR")"
+  [[ "$CR_CODE" == "201" ]] && break
+  sleep 5
+done
+assert_status "$CR_CODE" "201" "POST /change-requests"
+CR_ID="$(jq -r '.cr_id' <<<"$CR_BODY")"
+MG="$(api POST "/v1/projects/$PROJECT_ID/change-requests/$CR_ID/merge" '{}')"
+assert_status "$(code_of "$MG")" "200" "POST /change-requests/:id/merge"
+assert_eq "$(wait_connector_in_db e2e-cr-http)" "yes" "CR-merge auto-reconciled connector into DB (no manual sync)"
 
 bold "PASSED — config-first creation + toml-as-source-of-truth verified end-to-end against $API"
