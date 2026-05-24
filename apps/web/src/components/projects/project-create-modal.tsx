@@ -13,6 +13,7 @@ import {
   Github,
   Loader2,
   Plus,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -294,7 +295,7 @@ export function ProjectCreateModal({
             <div className="space-y-5 px-6 py-5">
               <InfoBanner
                 tone="neutral"
-                icon={GitBranch}
+                icon={Sparkles}
                 title={tHardcodedUi.raw(
                   'componentsProjectsProjectCreateModal.line251JsxAttrTitleKortixManagedRepository',
                 )}
