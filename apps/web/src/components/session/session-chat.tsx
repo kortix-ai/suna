@@ -4265,8 +4265,13 @@ export function SessionChat({
           .messages({ sessionID: sessionId })
           .then((res) => {
             if (res.data) {
+              // hydrate() already drops superseded optimistic messages AND
+              // bridges their text onto the real server message. Do NOT also
+              // call clearOptimisticMessages here: on an error send whose user
+              // message the server hasn't persisted yet, that wipes the user's
+              // typed text and leaves an empty bubble. Keeping the optimistic
+              // message means the user always still sees what they sent.
               useSyncStore.getState().hydrate(sessionId, res.data as any);
-              useSyncStore.getState().clearOptimisticMessages(sessionId);
             } else {
               // No server data — just remove the optimistic message
               removeOptimisticUserMessage(messageID);
@@ -5451,8 +5456,13 @@ export function SessionChat({
           .messages({ sessionID: sessionId })
           .then((res) => {
             if (res.data) {
+              // hydrate() already drops superseded optimistic messages AND
+              // bridges their text onto the real server message. Do NOT also
+              // call clearOptimisticMessages here: on an error send whose user
+              // message the server hasn't persisted yet, that wipes the user's
+              // typed text and leaves an empty bubble. Keeping the optimistic
+              // message means the user always still sees what they sent.
               useSyncStore.getState().hydrate(sessionId, res.data as any);
-              useSyncStore.getState().clearOptimisticMessages(sessionId);
             } else {
               removeOptimisticUserMessage(messageID);
             }
