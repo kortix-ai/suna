@@ -9,6 +9,7 @@
  */
 
 export type CustomizeSection =
+  | 'changes'
   | 'files'
   | 'skills'
   | 'agents'
@@ -19,11 +20,13 @@ export type CustomizeSection =
   | 'schedules'
   | 'webhooks'
   | 'channels'
+  | 'sandbox'
   | 'settings';
 
 export const DEFAULT_CUSTOMIZE_SECTION: CustomizeSection = 'files';
 
 export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
+  'changes',
   'files',
   'skills',
   'agents',
@@ -34,6 +37,7 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'schedules',
   'webhooks',
   'channels',
+  'sandbox',
   'settings',
 ];
 

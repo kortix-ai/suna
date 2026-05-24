@@ -22,7 +22,6 @@ import {
   useMemo,
   useState,
 } from 'react';
-import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import {
   createFileTreeIconResolver,
@@ -31,13 +30,14 @@ import {
 } from '@pierre/trees';
 import {
   ExternalLink,
-  FileText,
+  Pencil,
+  Plus,
   Search,
   ShieldAlert,
   Sparkles,
 } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -60,6 +60,11 @@ import {
   type ProjectConfigSummary,
   type ProjectFileEntry,
 } from '@/lib/projects-client';
+import {
+  useConfigureThread,
+  newConfigPrompt,
+  editConfigPrompt,
+} from '@/components/projects/customize/use-configure-thread';
 
 type Skill = ProjectConfigSummary['skills'][number];
 const pierreIconResolver = createFileTreeIconResolver('complete');
@@ -125,6 +130,7 @@ export function SkillsView({ projectId }: { projectId: string }) {
 
   const selectedSkill = skills.find((s) => s.path === selectedSkillPath) ?? null;
   const activeFilePath = selectedFilePath ?? selectedSkill?.path ?? null;
+  const startThread = useConfigureThread(projectId);
 
   // ProjectFilesProvider supplies project + ref to the shared
   // <FileContentRenderer/> in the right pane, so we get the same file
@@ -134,16 +140,23 @@ export function SkillsView({ projectId }: { projectId: string }) {
     <ProjectFilesProvider value={{ projectId, ref: defaultBranch }}>
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       {/* ── List column (skills + inline file trees) ─────────────────── */}
-      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[300px] md:border-b-0 md:border-r">
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-          <Sparkles className="h-4 w-4 text-muted-foreground" />
-          <h1 className="flex-1 text-sm font-semibold text-foreground">Skills</h1>
-          {skills.length > 0 && (
-            <Badge variant="secondary" size="sm" className="tabular-nums">
-              {skills.length}
-            </Badge>
-          )}
-        </div>
+      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[240px] md:border-b-0 md:border-r">
+        <CustomizeSectionHeader
+          icon={Sparkles}
+          title="Skills"
+          count={skills.length}
+          actions={
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => startThread(newConfigPrompt('skill'))}
+            >
+              <Plus className="h-3 w-3" />
+              New
+            </Button>
+          }
+        />
 
         <div className="border-b border-border/40 px-3 py-2.5">
           <div className="relative">
@@ -168,7 +181,11 @@ export function SkillsView({ projectId }: { projectId: string }) {
               onRetry={() => detailQuery.refetch()}
             />
           ) : skills.length === 0 ? (
-            <EmptyList icon={Sparkles} label={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line168JsxAttrLabelNoSkillsYet')} />
+            <EmptyList
+              icon={Sparkles}
+              label={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line168JsxAttrLabelNoSkillsYet')}
+              onCreate={() => startThread(newConfigPrompt('skill'))}
+            />
           ) : filtered.length === 0 ? (
             <NoMatches query={query} />
           ) : (
@@ -471,7 +488,7 @@ function PierreTreeIcon({
 
 function SkillFileViewer({
   projectId,
-  skill: _skill,
+  skill,
   selectedPath,
 }: {
   projectId: string;
@@ -484,7 +501,7 @@ function SkillFileViewer({
   // Markdown preview, syntax-highlighted code, JSON tree, CSV table,
   // image preview, etc. — for free, kept in sync with the file viewer.
   const fileName = selectedPath.split('/').pop() ?? selectedPath;
-  const fileHref = `/projects/${projectId}/files?path=${encodeURIComponent(selectedPath)}`;
+  const startThread = useConfigureThread(projectId);
 
   return (
     <>
@@ -496,7 +513,9 @@ function SkillFileViewer({
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground/70">
           {selectedPath}
         </span>
-        <DetailToolbarActions fileHref={fileHref} />
+        <DetailToolbarActions
+          onEdit={() => startThread(editConfigPrompt('skill', skill.name, skill.path))}
+        />
       </header>
 
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -514,33 +533,18 @@ function SkillFileViewer({
   );
 }
 
-function DetailToolbarActions({
-  fileHref,
-}: {
-  fileHref: string;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  // Copy / edit live inside the shared FileContentRenderer chrome (when
-  // showHeader is enabled there). Here we only own the "deep link to the
-  // file viewer" action, since the rest of the customize chrome shows it
-  // consistently across sections.
+function DetailToolbarActions({ onEdit }: { onEdit: () => void }) {
   return (
-    <div className="flex items-center gap-0.5">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-          >
-            <Link href={fileHref}>
-              <FileText className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line540JsxTextOpenInFileViewer')}</TooltipContent>
-      </Tooltip>
+    <div className="flex items-center gap-1">
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 gap-1.5 px-2.5 text-xs"
+        onClick={onEdit}
+      >
+        <Pencil className="h-3.5 w-3.5" />
+        Edit with agent
+      </Button>
     </div>
   );
 }
@@ -609,9 +613,11 @@ function NoMatches({ query }: { query: string }) {
 function EmptyList({
   icon,
   label,
+  onCreate,
 }: {
   icon: Icon;
   label: string;
+  onCreate: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
@@ -624,14 +630,22 @@ function EmptyList({
           <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line623JsxTextKortixOpencodeSkillsLtSlugGtSkillMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line625JsxTextAndItAposLlShowUpHere')}</>
       }
       action={
-        <Button asChild variant="ghost" size="sm" className="gap-1.5">
-          <a
-            href="https://opencode.ai/docs/skills/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line636JsxTextOpencodeSkillsDocs')}</a>
-        </Button>
+        <div className="flex flex-col items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={onCreate}>
+            <Plus className="h-3.5 w-3.5" />
+            Create a skill
+          </Button>
+          <Button asChild variant="ghost" size="sm" className="gap-1.5">
+            <a
+              href="https://opencode.ai/docs/skills/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Docs
+            </a>
+          </Button>
+        </div>
       }
     />
   );

@@ -57,6 +57,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -307,10 +308,7 @@ export function TriggersView({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-semibold text-foreground">{meta.pageTitle}</h1>
-      </div>
+      <CustomizeSectionHeader icon={Icon} title={meta.pageTitle} />
       <ProjectTriggersBody projectId={projectId} type={type} meta={meta} />
     </div>
   );
@@ -359,12 +357,12 @@ function ProjectTriggersBody({
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8">
+      <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
         <header className="space-y-1">
           <h2 className="text-base font-semibold text-foreground">
             {meta.pageTitle}
           </h2>
-          <p className="max-w-2xl text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {meta.description}
           </p>
         </header>

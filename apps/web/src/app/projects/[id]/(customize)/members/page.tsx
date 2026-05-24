@@ -6,6 +6,7 @@ import { FormEvent, use, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Shield, UserPlus, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -62,10 +63,7 @@ export default function ProjectMembersPage({
 export function MembersView({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <Users className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-semibold text-foreground">Members</h1>
-      </div>
+      <CustomizeSectionHeader icon={Users} title="Members" />
       <ProjectMembersBody projectId={projectId} />
     </div>
   );

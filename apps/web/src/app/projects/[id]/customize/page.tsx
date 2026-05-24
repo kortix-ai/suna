@@ -1,44 +1,32 @@
 'use client';
 
 /**
- * /projects/[id]/customize — single-page Customize surface.
+ * /projects/[id]/customize — deep-link entry into the Customize overlay.
  *
- * Hosts every per-project config (Files, Skills, Agents, Commands, Secrets,
- * Schedules, Webhooks, Channels, Settings) behind a left rail. Section
- * selection defaults to Files here; section deep links live at
- * `/projects/[id]/customize/[section]`. The legacy `?section=` search param is
- * still accepted so older shared links land on the same tab.
- *
- * Wrapped in `ProjectShell` so the project sidebar + session tab bar stay
- * anchored — Customize is just another tab among the open project tabs.
+ * Customize is now a full-screen overlay (see customize-store), not a route.
+ * This page only exists so old links / bookmarks keep working: it opens the
+ * overlay on the requested section (legacy `?section=` still honored) and drops
+ * you on the project home behind it.
  */
 
-import { use, useMemo } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
-import { CustomizeView } from '@/components/projects/customize/customize-view';
-import { ProjectShell } from '@/components/projects/project-shell';
-import {
-  DEFAULT_CUSTOMIZE_SECTION,
-  parseCustomizeSection,
-} from '@/lib/customize-sections';
+import { parseCustomizeSection } from '@/lib/customize-sections';
+import { useCustomizeStore } from '@/stores/customize-store';
 
-export default function ProjectCustomizePage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id: projectId } = use(params);
+export default function ProjectCustomizeRedirect() {
+  const params = useParams<{ id: string }>();
+  const projectId = params?.id ?? '';
   const searchParams = useSearchParams();
-  const section = useMemo(
-    () =>
-      parseCustomizeSection(searchParams.get('section')) ?? DEFAULT_CUSTOMIZE_SECTION,
-    [searchParams],
-  );
+  const router = useRouter();
 
-  return (
-    <ProjectShell projectId={projectId}>
-      <CustomizeView projectId={projectId} section={section} />
-    </ProjectShell>
-  );
+  useEffect(() => {
+    if (!projectId) return;
+    const section = parseCustomizeSection(searchParams.get('section')) ?? undefined;
+    useCustomizeStore.getState().openCustomize(section);
+    router.replace(`/projects/${projectId}`);
+  }, [projectId, searchParams, router]);
+
+  return null;
 }

@@ -1,38 +1,37 @@
 'use client';
 
 /**
- * /projects/[id]/customize/[section] — path-based Customize deep links.
+ * /projects/[id]/customize/[section] — deep-link entry into the Customize
+ * overlay for a specific section (e.g. `/customize/skills`).
  *
- * Mirrors the query-param Customize page while giving Cmd+K and browser
- * bookmarks stable URLs such as `/customize/skills` and `/customize/settings`.
+ * Customize is now a full-screen overlay (see customize-store), not a route.
+ * This page exists only so bookmarks / Cmd+K deep links keep working: it opens
+ * the overlay on the requested section and drops you on the project home behind
+ * it.
  */
 
-import { useMemo } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
-import { CustomizeView } from '@/components/projects/customize/customize-view';
-import { ProjectShell } from '@/components/projects/project-shell';
-import {
-  DEFAULT_CUSTOMIZE_SECTION,
-  parseCustomizeSection,
-} from '@/lib/customize-sections';
+import { parseCustomizeSection } from '@/lib/customize-sections';
+import { useCustomizeStore } from '@/stores/customize-store';
 
-export default function ProjectCustomizeSectionPage() {
+export default function ProjectCustomizeSectionRedirect() {
   const params = useParams<{ id: string; section: string }>();
   const projectId = params?.id ?? '';
   const rawSection = params?.section;
   const searchParams = useSearchParams();
-  const section = useMemo(
-    () =>
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!projectId) return;
+    const section =
       parseCustomizeSection(rawSection) ??
       parseCustomizeSection(searchParams.get('section')) ??
-      DEFAULT_CUSTOMIZE_SECTION,
-    [rawSection, searchParams],
-  );
+      undefined;
+    useCustomizeStore.getState().openCustomize(section);
+    router.replace(`/projects/${projectId}`);
+  }, [projectId, rawSection, searchParams, router]);
 
-  return (
-    <ProjectShell projectId={projectId}>
-      <CustomizeView projectId={projectId} section={section} />
-    </ProjectShell>
-  );
+  return null;
 }

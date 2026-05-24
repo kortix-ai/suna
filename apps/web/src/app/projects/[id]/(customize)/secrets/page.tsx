@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { FormEvent, use, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import {
   AlertTriangle,
   Check,
@@ -109,10 +110,7 @@ export default function ProjectSecretsPage({
 export function SecretsView({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <KeyRound className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-semibold text-foreground">Secrets</h1>
-      </div>
+      <CustomizeSectionHeader icon={KeyRound} title="Secrets" />
       <ProjectSecretsBody projectId={projectId} />
     </div>
   );
@@ -346,7 +344,7 @@ function SecretsCard({
                 className="h-8 gap-1.5 text-xs"
                 onClick={() => setProviderModalOpen(true)}
               >
-                <Plug className="h-3.5 w-3.5" />{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line311JsxTextConnectProvider')}</Button>
+                <Plug className="h-3.5 w-3.5" />Connect LLM provider</Button>
             )}
             <Button
               variant="outline"

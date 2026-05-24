@@ -7,8 +7,10 @@ import { useParams } from 'next/navigation';
 import { Check, Slack } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ChannelsDialog } from '@/components/channels/channels-dialog';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { useSlackInstall } from '@/hooks/channels/use-channels-installations';
 
 export default function ProjectChannelsPage() {
@@ -24,13 +26,18 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <Slack className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-semibold text-foreground">Channels</h1>
-      </div>
+      <CustomizeSectionHeader icon={Slack} title="Channels" />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-2xl px-4 py-8">
+        <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
+          <header className="space-y-1">
+            <h2 className="text-base font-semibold text-foreground">Channels</h2>
+            <p className="text-xs text-muted-foreground">
+              Run this project from chat — connect a Slack workspace and your
+              agent responds in the channels you invite it to.
+            </p>
+          </header>
+
           {isLoading ? (
             <Skeleton className="h-28 w-full rounded-2xl" />
           ) : install ? (
@@ -49,24 +56,22 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                 <code className="font-mono">{install.workspaceId}</code>
               </InfoBanner>
 
-              <div className="rounded-2xl border border-border/60 bg-card p-4">
-                <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line50JsxTextEnableTheBotForThisProject')}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line52JsxTextAddA')}<code className="font-mono text-xs">[[channels]]</code>{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line52JsxTextEntryWith')}{' '}
+              <SectionCard title={tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line50JsxTextEnableTheBotForThisProject')}>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line52JsxTextAddA')}<code className="font-mono text-xs">[[channels]]</code>{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line52JsxTextEntryWith')}{' '}
                   <code className="font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line53JsxTextPlatformSlack')}</code>{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line53JsxTextToThisProjectS')}{' '}
                   <code className="font-mono text-xs">kortix.toml</code>{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line54JsxTextInviteTheBotToAnyChannelInYour')}<code className="font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line55JsxTextKortix')}</code>{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line55JsxTextItLlRespondThere')}</p>
-              </div>
+              </SectionCard>
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-border/70 bg-card p-5">
-                <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line63JsxTextSlackIsnTConnectedYet')}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line65JsxTextConnectASlackWorkspaceToThisProjectTokens')}</p>
-                <div className="mt-4">
-                  <Button onClick={() => setOpen(true)} className="gap-2">
-                    <Slack className="h-4 w-4" />{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line70JsxTextConnectSlack')}</Button>
-                </div>
-              </div>
-            </div>
+            <SectionCard
+              title={tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line63JsxTextSlackIsnTConnectedYet')}
+              action={
+                <Button onClick={() => setOpen(true)} size="sm" className="gap-2">
+                  <Slack className="h-4 w-4" />{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line70JsxTextConnectSlack')}</Button>
+              }
+            >
+              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeChannelsPage.line65JsxTextConnectASlackWorkspaceToThisProjectTokens')}</p>
+            </SectionCard>
           )}
         </div>
       </div>
