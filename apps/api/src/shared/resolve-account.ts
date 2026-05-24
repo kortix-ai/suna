@@ -10,6 +10,10 @@ async function syncLegacySubscription(accountId: string): Promise<void> {
   }
 }
 
+function defaultAccountName(): string {
+  return 'Account';
+}
+
 export async function resolveAccountId(userId: string): Promise<string> {
   try {
     const [membership] = await db
@@ -35,7 +39,7 @@ export async function resolveAccountId(userId: string): Promise<string> {
       try {
         await db.insert(accounts).values({
           accountId: legacy.accountId,
-          name: 'Personal',
+          name: defaultAccountName(),
           personalAccount: true,
         }).onConflictDoNothing();
 
@@ -63,7 +67,7 @@ export async function resolveAccountId(userId: string): Promise<string> {
   try {
     await db.insert(accounts).values({
       accountId: userId,
-      name: 'Personal',
+      name: defaultAccountName(),
       personalAccount: true,
     }).onConflictDoNothing();
 

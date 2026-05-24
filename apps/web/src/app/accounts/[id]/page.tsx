@@ -200,7 +200,6 @@ export default function AccountSettingsPage() {
 
   const account = accountQuery.data;
   const members = membersQuery.data ?? [];
-  const isTeam = account ? !account.personal_account : false;
   const initialTab = searchParams.get('tab') === 'git' ? 'git' : 'members';
 
   return (
@@ -242,9 +241,7 @@ export default function AccountSettingsPage() {
               </h1>
               {account && (
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {account.personal_account
-                    ? 'Your personal account. Invite collaborators to share projects.'
-                    : 'Manage account settings, members, and access.'}
+                  Manage account settings, members, and access.
                 </p>
               )}
             </div>

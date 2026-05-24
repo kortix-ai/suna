@@ -39,7 +39,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -56,10 +55,6 @@ import { CreateAccountModal } from '@/components/accounts/create-account-modal';
 import { AccountSettingsModal } from '@/components/settings/account-settings-modal';
 
 export type AccountSwitcherVariant = 'header' | 'sidebar';
-
-function capitalize(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
 
 export function AccountSwitcher({
   variant = 'header',
@@ -96,11 +91,9 @@ export function AccountSwitcher({
 
   const sortedAccounts = useMemo(
     () =>
-      [...(accountsQuery.data ?? [])].sort((a, b) => {
-        if (a.personal_account && !b.personal_account) return -1;
-        if (!a.personal_account && b.personal_account) return 1;
-        return (a.name || '').localeCompare(b.name || '');
-      }),
+      [...(accountsQuery.data ?? [])].sort((a, b) =>
+        (a.name || '').localeCompare(b.name || ''),
+      ),
     [accountsQuery.data],
   );
 
@@ -108,7 +101,9 @@ export function AccountSwitcher({
   const filteredAccounts = useMemo(() => {
     if (!query.trim()) return sortedAccounts;
     const q = query.trim().toLowerCase();
-    return sortedAccounts.filter((a) => (a.name || '').toLowerCase().includes(q));
+    return sortedAccounts.filter((a) =>
+      (a.name || '').toLowerCase().includes(q),
+    );
   }, [sortedAccounts, query]);
 
   const close = () => setMenuOpen(false);
@@ -122,8 +117,7 @@ export function AccountSwitcher({
     close();
   };
 
-  const label =
-    activeAccount?.name || (activeAccount?.personal_account ? 'Personal' : 'Account');
+  const label = activeAccount?.name || 'Account';
   const tile = (
     <EntityAvatar label={label} size={variant === 'header' ? 'xs' : 'sm'} />
   );
@@ -137,7 +131,9 @@ export function AccountSwitcher({
           'hover:bg-muted/50 data-[state=open]:bg-muted/60',
           className,
         )}
-        aria-label={tHardcodedUi.raw('componentsLayoutAccountSwitcher.line137JsxAttrAriaLabelSwitchAccount')}
+        aria-label={tHardcodedUi.raw(
+          'componentsLayoutAccountSwitcher.line137JsxAttrAriaLabelSwitchAccount',
+        )}
       >
         {tile}
         <span className="max-w-40 truncate text-sm font-medium">{label}</span>
@@ -190,7 +186,9 @@ export function AccountSwitcher({
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={tHardcodedUi.raw('componentsLayoutAccountSwitcher.line190JsxAttrPlaceholderFindAccount')}
+                placeholder={tHardcodedUi.raw(
+                  'componentsLayoutAccountSwitcher.line190JsxAttrPlaceholderFindAccount',
+                )}
                 className="h-7 pl-7 pr-2 text-xs placeholder:text-muted-foreground/50"
               />
             </div>
@@ -214,20 +212,14 @@ export function AccountSwitcher({
               </div>
             ) : (
               filteredAccounts.map((account) => {
-                const itemLabel =
-                  account.name || (account.personal_account ? 'Personal' : 'Account');
-                const hint = account.personal_account
-                  ? 'Personal'
-                  : account.account_role
-                    ? capitalize(account.account_role)
-                    : null;
+                const itemLabel = account.name || 'Account';
                 const active = account.account_id === activeAccount?.account_id;
                 return (
                   <DropdownMenuItem
                     key={account.account_id}
                     onSelect={() => switchAccount(account)}
                     className={cn(
-                      'group/acct flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2 py-0',
+                      'flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2 py-0',
                       active && 'bg-muted/60',
                     )}
                   >
@@ -235,26 +227,6 @@ export function AccountSwitcher({
                     <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight">
                       {itemLabel}
                     </span>
-                    {hint && (
-                      <Badge variant="secondary" size="sm" className="capitalize">
-                        {hint}
-                      </Badge>
-                    )}
-                    <button
-                      type="button"
-                      aria-label={`Settings for ${itemLabel}`}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        deferAfterClose(() =>
-                          router.push(`/accounts/${account.account_id}`),
-                        );
-                      }}
-                      className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground/60 opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus:opacity-100 group-hover/acct:opacity-100"
-                    >
-                      <SettingsIcon className="size-3.5" />
-                    </button>
                     {active && (
                       <Check className="size-3.5 shrink-0 text-foreground/70" />
                     )}
@@ -268,6 +240,20 @@ export function AccountSwitcher({
         <div className="h-px bg-border/40" />
 
         <div className="px-1 py-1">
+          {activeAccount && (
+            <DropdownMenuItem
+              onSelect={() => {
+                close();
+                router.push(`/accounts/${activeAccount.account_id}`);
+              }}
+              className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
+            >
+              <SettingsIcon className="size-3.5" />
+              <span className="flex-1 truncate text-sm font-medium text-foreground/80">
+                Account settings
+              </span>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             onSelect={() => {
               close();
@@ -276,14 +262,22 @@ export function AccountSwitcher({
             className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <ArrowUpRight className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsLayoutAccountSwitcher.line277JsxTextAllAccounts')}</span>
+            <span className="flex-1 truncate text-sm font-medium text-foreground/80">
+              {tHardcodedUi.raw(
+                'componentsLayoutAccountSwitcher.line277JsxTextAllAccounts',
+              )}
+            </span>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => deferAfterClose(() => setCreateOpen(true))}
             className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <Plus className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsLayoutAccountSwitcher.line286JsxTextNewAccount')}</span>
+            <span className="flex-1 truncate text-sm font-medium text-foreground/80">
+              {tHardcodedUi.raw(
+                'componentsLayoutAccountSwitcher.line286JsxTextNewAccount',
+              )}
+            </span>
           </DropdownMenuItem>
           {billingActive && (
             <DropdownMenuItem
@@ -342,7 +336,9 @@ export function AccountSwitcher({
         open={billingOpen}
         onOpenChange={setBillingOpen}
         defaultTab="billing"
-        returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
+        returnUrl={
+          typeof window !== 'undefined' ? window?.location?.href || '/' : '/'
+        }
       />
     </>
   );

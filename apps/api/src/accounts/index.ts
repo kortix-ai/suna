@@ -24,6 +24,24 @@ function buildInviteUrl(inviteId: string): string {
   const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
   return `${base}/invites/${inviteId}`;
 }
+
+function defaultAccountName(email: string | null | undefined): string {
+  const normalized = email?.trim();
+  return normalized ? `${normalized}'s Account` : 'Account';
+}
+
+function accountDisplayName(
+  name: string | null | undefined,
+  email: string | null | undefined,
+  personalAccount: boolean,
+): string {
+  const normalized = name?.trim();
+  if (personalAccount && (!normalized || normalized === 'Personal' || normalized === 'User')) {
+    return defaultAccountName(email);
+  }
+  return normalized || defaultAccountName(email);
+}
+
 import { iamRouter } from './iam';
 import { auditRouter } from './audit';
 import { accountSessionGate } from '../iam/session-gate';
@@ -111,7 +129,7 @@ accountsRouter.get('/me', async (c) => {
     accounts: memberships.map((m) => ({
       account_id: m.accountId,
       slug: m.accountId.slice(0, 8),
-      name: m.name || userEmail || 'User',
+      name: accountDisplayName(m.name, userEmail, m.personalAccount),
       personal_account: m.personalAccount,
       role: m.accountRole,
     })),
@@ -370,7 +388,7 @@ accountsRouter.get('/', async (c) => {
       return c.json(
         memberships.map((m) => ({
           account_id: m.accountId,
-          name: m.name || userEmail || 'User',
+          name: accountDisplayName(m.name, userEmail, m.personalAccount),
           slug: m.accountId.slice(0, 8),
           personal_account: m.personalAccount,
           created_at: m.createdAt?.toISOString() ?? new Date().toISOString(),
@@ -397,7 +415,7 @@ accountsRouter.get('/', async (c) => {
       return c.json(
         legacyMemberships.map((m) => ({
           account_id: m.accountId,
-          name: userEmail || 'User',
+          name: defaultAccountName(userEmail),
           slug: m.accountId.slice(0, 8),
           personal_account: true,
           created_at: new Date().toISOString(),
@@ -412,7 +430,7 @@ accountsRouter.get('/', async (c) => {
   }
 
   try {
-    const personalName = userEmail || 'Personal';
+    const personalName = defaultAccountName(userEmail);
     const [created] = await db
       .insert(accounts)
       .values({ name: personalName, personalAccount: true })
@@ -439,7 +457,7 @@ accountsRouter.get('/', async (c) => {
     return c.json([
       {
         account_id: userId,
-        name: userEmail || 'User',
+        name: defaultAccountName(userEmail),
         slug: userId.slice(0, 8),
         personal_account: true,
         created_at: new Date().toISOString(),

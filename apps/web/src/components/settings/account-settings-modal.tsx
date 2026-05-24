@@ -68,13 +68,7 @@ export function AccountSettingsModal({
     accountsQuery.data?.[0] ??
     null;
 
-  const accountLabel =
-    activeAccount?.name || (activeAccount?.personal_account ? 'Personal' : 'Account');
-  const roleLine = activeAccount?.personal_account
-    ? 'Personal account'
-    : activeAccount?.account_role
-      ? `${activeAccount.account_role.charAt(0).toUpperCase()}${activeAccount.account_role.slice(1)} · Team`
-      : 'Team account';
+  const accountLabel = activeAccount?.name || 'Account';
 
   const tabs: Tab[] = getAccountTabs(true)
     .filter((t) => t.id === 'billing' || t.id === 'transactions')
@@ -105,7 +99,7 @@ export function AccountSettingsModal({
                 <div>
                   <div className="text-lg font-semibold leading-tight">{tHardcodedUi.raw('componentsSettingsAccountSettingsModal.line103JsxTextAccountSettings')}</div>
                   <div className="truncate text-xs text-muted-foreground leading-tight">
-                    {accountLabel} · {roleLine}
+                    {accountLabel}
                   </div>
                 </div>
                 <Button
@@ -181,7 +175,7 @@ export function AccountSettingsModal({
                       {accountLabel}
                     </div>
                     <div className="truncate text-xs text-muted-foreground leading-tight">
-                      {roleLine}
+                      Account settings
                     </div>
                   </>
                 )}

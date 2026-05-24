@@ -758,11 +758,9 @@ export function CommandPalette() {
 
   const filteredAccountsList = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const sorted = [...(accountsList ?? [])].sort((a, b) => {
-      if (a.personal_account && !b.personal_account) return -1;
-      if (!a.personal_account && b.personal_account) return 1;
-      return (a.name || '').localeCompare(b.name || '');
-    });
+    const sorted = [...(accountsList ?? [])].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || ''),
+    );
     return q ? sorted.filter((a) => (a.name || '').toLowerCase().includes(q)) : sorted;
   }, [accountsList, query]);
 
@@ -1650,7 +1648,7 @@ export function CommandPalette() {
             filteredAccountsList.length > 0 ? (
               <CommandGroup heading={`Accounts (${filteredAccountsList.length})`} forceMount>
                 {filteredAccountsList.map((account) => {
-                  const label = account.name || (account.personal_account ? 'Personal' : 'Account');
+                  const label = account.name || 'Account';
                   return (
                     <CommandItem
                       key={account.account_id}
@@ -1659,9 +1657,6 @@ export function CommandPalette() {
                     >
                       <Users className="h-4 w-4 shrink-0 text-muted-foreground/70" />
                       <span className="flex-1 truncate">{label}</span>
-                      {account.personal_account && (
-                        <span className="text-xs text-muted-foreground/40">Personal</span>
-                      )}
                       {account.account_id === selectedAccountId && (
                         <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
                       )}

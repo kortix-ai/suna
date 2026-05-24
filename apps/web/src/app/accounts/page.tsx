@@ -38,21 +38,21 @@ export default function AccountsPage() {
     staleTime: 60_000,
   });
 
-  // Personal first, then alpha. One flat list — the distinction is just a badge.
-  const sortedAccounts = useMemo(
-    () => {
-      const accounts = accountsQuery.data ?? [];
-      return [...accounts].sort((a, b) => {
-        if (a.personal_account && !b.personal_account) return -1;
-        if (!a.personal_account && b.personal_account) return 1;
-        return (a.name || '').localeCompare(b.name || '');
-      });
-    },
-    [accountsQuery.data],
-  );
+  const sortedAccounts = useMemo(() => {
+    const accounts = accountsQuery.data ?? [];
+    return [...accounts].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || ''),
+    );
+  }, [accountsQuery.data]);
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return (
+      <ConnectingScreen
+        forceConnecting
+        overrideStage="auth"
+        hideWorkspacePicker
+      />
+    );
   }
 
   return (
@@ -65,14 +65,24 @@ export default function AccountsPage() {
             onClick={() => router.push('/projects')}
             className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsPage.line66JsxTextBackToProjects')}</button>
+            <ArrowLeft className="h-3.5 w-3.5" />
+            {tHardcodedUi.raw('appAccountsPage.line66JsxTextBackToProjects')}
+          </button>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Accounts</h1>
-              <p className="mt-1 text-sm text-muted-foreground">{tHardcodedUi.raw('appAccountsPage.line71JsxTextAccountsYouBelongTo')}</p>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                Accounts
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {tHardcodedUi.raw(
+                  'appAccountsPage.line71JsxTextAccountsYouBelongTo',
+                )}
+              </p>
             </div>
             <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
-              <Plus className="h-4 w-4" />{tHardcodedUi.raw('appAccountsPage.line75JsxTextNewAccount')}</Button>
+              <Plus className="h-4 w-4" />
+              {tHardcodedUi.raw('appAccountsPage.line75JsxTextNewAccount')}
+            </Button>
           </div>
 
           {accountsQuery.isLoading ? (
@@ -97,7 +107,9 @@ export default function AccountsPage() {
                     key={account.account_id}
                     account={account}
                     active={account.account_id === selectedAccountId}
-                    onClick={() => router.push(`/accounts/${account.account_id}`)}
+                    onClick={() =>
+                      router.push(`/accounts/${account.account_id}`)
+                    }
                   />
                 ))}
               </List>
@@ -144,7 +156,7 @@ function AccountRow({
   active: boolean;
   onClick: () => void;
 }) {
-  const label = account.name || (account.personal_account ? 'Personal' : 'Account');
+  const label = account.name || 'Account';
   return (
     <ListRow
       onClick={onClick}
@@ -152,11 +164,6 @@ function AccountRow({
       title={label}
       badges={
         <>
-          {account.personal_account && (
-            <Badge variant="outline" size="sm">
-              Personal
-            </Badge>
-          )}
           {active && (
             <Badge variant="outline" size="sm">
               <Check />
@@ -164,11 +171,6 @@ function AccountRow({
             </Badge>
           )}
         </>
-      }
-      subtitle={
-        <span className="text-xs capitalize text-muted-foreground">
-          {account.account_role || 'owner'}
-        </span>
       }
       trailing={
         <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
