@@ -21,6 +21,10 @@ const BoolFlag = z.preprocess((v) => {
 const Schema = z.object({
   KORTIX_SERVICE_PORT: z.coerce.number().int().positive().default(8000),
   KORTIX_OPENCODE_INTERNAL_PORT: z.coerce.number().int().positive().default(4096),
+  // Static web server port. Default 3211 is a hard contract: apps/web
+  // (platform-client STATIC_FILE_SERVER, url.ts) and the starter `show` tool
+  // build preview URLs against this exact port via /proxy/3211 and p3211-* .
+  KORTIX_STATIC_PORT: z.coerce.number().int().positive().default(3211),
   KORTIX_WORKSPACE: z.string().default('/workspace'),
   // Project repo is cloned directly into the workspace. The repo's
   // Kortix-owned files live under <workspace>/.kortix/ (Dockerfile +
@@ -45,6 +49,7 @@ const Schema = z.object({
 export type Config = {
   servicePort: number
   opencodeInternalPort: number
+  staticPort: number
   workspace: string
   projectTarget: string
   defaultBranch: string
@@ -65,6 +70,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = Schema.parse({
     KORTIX_SERVICE_PORT: env.KORTIX_SERVICE_PORT,
     KORTIX_OPENCODE_INTERNAL_PORT: env.KORTIX_OPENCODE_INTERNAL_PORT,
+    KORTIX_STATIC_PORT: env.KORTIX_STATIC_PORT,
     KORTIX_WORKSPACE: env.KORTIX_WORKSPACE,
     KORTIX_PROJECT_TARGET: env.KORTIX_PROJECT_TARGET,
     KORTIX_DEFAULT_BRANCH: env.KORTIX_DEFAULT_BRANCH,
@@ -84,6 +90,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     servicePort: parsed.KORTIX_SERVICE_PORT,
     opencodeInternalPort: parsed.KORTIX_OPENCODE_INTERNAL_PORT,
+    staticPort: parsed.KORTIX_STATIC_PORT,
     workspace: parsed.KORTIX_WORKSPACE,
     projectTarget: parsed.KORTIX_PROJECT_TARGET,
     defaultBranch: parsed.KORTIX_DEFAULT_BRANCH,

@@ -19,6 +19,7 @@ export type SandboxBootState = {
  *     opencode: 'ok' | 'starting' | 'down',
  *     uptime_s: number,
  *     opencode_pid: number | null,
+ *     static_web_port: number | null,  // bound static-web port, null if down
  *     repo: string | null,    // remote URL of the materialized repo, if any
  *     branch: string | null,
  *     commit_sha: string | null
@@ -32,6 +33,7 @@ export function createHealthRouter(
   opencode: Opencode,
   bootTime: number,
   bootState: SandboxBootState,
+  staticWebPort: number | null = null,
 ): Hono {
   const router = new Hono()
 
@@ -54,6 +56,9 @@ export function createHealthRouter(
       opencode: opencodeState,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
       opencode_pid: opencode.getPid(),
+      // Static web server (preview/static files). The bound port when up, else
+      // null — surfaces "preview won't load because static-web never bound".
+      static_web_port: staticWebPort,
       repo_required: repoRequired,
       repo_ready: repoReady,
       repo: repoInfo?.remoteUrl ?? null,

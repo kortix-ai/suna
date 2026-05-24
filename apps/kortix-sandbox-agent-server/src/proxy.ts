@@ -33,6 +33,7 @@ export function buildOpencodeApp(
   bootTime: number,
   bootState: SandboxBootState = { repoMaterializationError: null },
   projectEnv?: ProjectEnvStore,
+  staticWebPort: number | null = null,
 ): Hono {
   const app = new Hono()
 
@@ -41,7 +42,7 @@ export function buildOpencodeApp(
   // a trailing slash doesn't fall through to the reverse proxy.
   // Health bypasses auth — it's how the cloud probes liveness mid-boot.
   const kortixRouter = new Hono()
-  const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState)
+  const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
   const refreshRouter = createRefreshRouter(cfg, opencode)
   const promptRouter = createPromptRouter(cfg)
   const abortRouter = createAbortRouter(cfg)
@@ -188,8 +189,9 @@ export function startProxy(
   bootTime: number,
   bootState: SandboxBootState = { repoMaterializationError: null },
   projectEnv?: ProjectEnvStore,
+  staticWebPort: number | null = null,
 ): ProxyServer {
-  const app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv)
+  const app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort)
 
   const server = Bun.serve({
     port: cfg.servicePort,

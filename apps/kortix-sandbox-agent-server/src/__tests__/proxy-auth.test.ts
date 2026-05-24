@@ -28,6 +28,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
     defaultBranch: 'main',

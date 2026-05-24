@@ -14,6 +14,7 @@ function baseConfig(): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
     defaultBranch: 'main',
@@ -26,6 +27,8 @@ function baseConfig(): Config {
     repoUrl: undefined,
     branchName: undefined,
     kortixToken: TEST_TOKEN,
+    gitUserName: 'Kortix Agent',
+    gitUserEmail: 'agent@kortix.ai',
   }
 }
 

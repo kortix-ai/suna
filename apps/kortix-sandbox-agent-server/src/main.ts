@@ -9,6 +9,7 @@ import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
+import { startStaticWebServer } from './static-web'
 
 // Pin file for the opencode session created from KORTIX_INITIAL_PROMPT.
 // Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
@@ -23,8 +24,15 @@ async function main() {
   logger.info('[boot] kortix-sandbox-agent-server starting', {
     servicePort: cfg.servicePort,
     opencodeInternalPort: cfg.opencodeInternalPort,
+    staticPort: cfg.staticPort,
     autoClone: cfg.autoClone,
   })
+
+  // Bring the static web server up first. It only serves files off disk, so it
+  // has no dependency on repo materialization or opencode — starting it early
+  // means previews work even while the agent is still booting, and a repo/
+  // opencode failure never takes it down. Reachable via /proxy/<staticPort>.
+  const staticWeb = startStaticWebServer(cfg.staticPort)
 
   try {
     await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
@@ -61,8 +69,8 @@ async function main() {
     await opencode.start()
   }
 
-  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv)
-  installShutdownHandlers(opencode, server)
+  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+  installShutdownHandlers(opencode, server, staticWeb)
 
   logger.info('[boot] proxy up; waiting for opencode readiness in background', {
     servicePort: cfg.servicePort,

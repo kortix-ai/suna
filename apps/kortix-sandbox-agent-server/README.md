@@ -10,6 +10,12 @@ Thin sandbox-side daemon that runs inside every Kortix project-session sandbox.
    `KORTIX_SERVICE_PORT` (default `8000`).
 3. Small Kortix-namespaced control surface: `GET /kortix/health` and
    `POST /kortix/refresh`.
+4. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
+   HTML/asset the agent writes to disk, injecting a `<base>` tag so relative
+   assets resolve cleanly through the sandbox proxy. Ported from main's
+   always-on `core/services/static-web.js` s6 service; now runs in-process
+   (see `src/static-web.ts`). `apps/web` builds preview URLs against this exact
+   port via `/proxy/3211/*` and the `p3211-<sandboxId>` subdomain route.
 
 Everything else — triggers, channels, connectors, secrets, preferences — is
 deliberately **not** the daemon's concern. Those live in the cloud API and
@@ -24,14 +30,18 @@ plus the s6 service definitions.
 ## Boot flow
 
 1. Read env vars (`src/config.ts`).
-2. If `KORTIX_PROJECT_AUTO_CLONE=1`, `git clone` the project repo to
+2. Start the static web server on `0.0.0.0:KORTIX_STATIC_PORT` (in-process).
+   It only reads files off disk, so it comes up first and stays up regardless
+   of repo/opencode state — previews work while the agent is still booting.
+   Non-fatal: a bind failure is logged and `static_web_port` reports `null`.
+3. If `KORTIX_PROJECT_AUTO_CLONE=1`, `git clone` the project repo to
    `/workspace/.kortix` and check out the requested branch. Failures are
    logged but non-fatal — the daemon still serves `/kortix/health`.
-3. Resolve `OPENCODE_CONFIG_DIR` (project overlay wins over the baked default).
-4. Start the opencode supervisor in the cloned project directory (`opencode serve --port <internal> --hostname 127.0.0.1`).
+4. Resolve `OPENCODE_CONFIG_DIR` (project overlay wins over the baked default).
+5. Start the opencode supervisor in the cloned project directory (`opencode serve --port <internal> --hostname 127.0.0.1`).
    If the binary isn't found we keep going and report `opencode: 'starting'`.
-5. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
-6. Trap signals; on shutdown, drain proxy + kill child.
+6. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
+7. Trap signals; on shutdown, drain proxy + static web + kill child.
 
 ## Routes
 
@@ -49,6 +59,7 @@ plus the s6 service definitions.
   "opencode": "ok",
   "uptime_s": 123,
   "opencode_pid": 4567,
+  "static_web_port": 3211,
   "repo": "https://github.com/owner/name.git",
   "branch": "main",
   "commit_sha": "abc123..."
@@ -102,6 +113,7 @@ Flagged so it doesn't quietly become a P0 the first time a key rotates.
 ```
 KORTIX_SERVICE_PORT=8000
 KORTIX_OPENCODE_INTERNAL_PORT=4096
+KORTIX_STATIC_PORT=3211
 KORTIX_WORKSPACE=/workspace
 KORTIX_PROJECT_TARGET=/workspace/.kortix
 KORTIX_DEFAULT_BRANCH=main
