@@ -6,6 +6,7 @@ import { isOpenCodeConfigInvalidError } from '@/lib/opencode-errors';
 import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useServerStore } from '@/stores/server-store';
 import type {
   Session,
   Message,
@@ -88,22 +89,47 @@ export interface ToolListItem {
 // Query Keys
 // ============================================================================
 
+/**
+ * Active sandbox/server id, used to scope per-sandbox caches.
+ *
+ * Each project session is its OWN sandbox (session_id == sandbox_id), but the
+ * OpenCode SDK client + caches are global. Without scoping, switching from
+ * session A to B would show A's data under B — which is why the code used to
+ * NUKE the entire opencode cache on every switch. That nuke is exactly what
+ * made returning to an already-open session "reload".
+ *
+ * By appending the server id to per-sandbox cache keys, every sandbox's data
+ * coexists in the cache, so returning to a warm session is instant and we no
+ * longer need to tear anything down. Appended at the END so existing prefix
+ * matches (e.g. invalidate `['opencode','sessions']`) still hit.
+ *
+ * `session(id)` / `messages(id)` stay global: opencode session ids are unique
+ * per sandbox, so they never collide across sandboxes.
+ */
+function activeServerKey(): string {
+  try {
+    return useServerStore.getState().activeServerId ?? 'none';
+  } catch {
+    return 'none';
+  }
+}
+
 export const opencodeKeys = {
   all: ['opencode'] as const,
-  sessions: () => ['opencode', 'sessions'] as const,
+  sessions: (serverId?: string) => ['opencode', 'sessions', serverId ?? activeServerKey()] as const,
   session: (id: string) => ['opencode', 'session', id] as const,
   messages: (sessionId: string) => ['opencode', 'session', sessionId, 'messages'] as const,
-  agents: () => ['opencode', 'agents'] as const,
-  toolIds: () => ['opencode', 'tool-ids'] as const,
-  tools: (providerID: string, modelID: string) => ['opencode', 'tools', providerID, modelID] as const,
-  skills: () => ['opencode', 'skills'] as const,
-  projects: () => ['opencode', 'projects'] as const,
-  currentProject: () => ['opencode', 'project', 'current'] as const,
-  commands: () => ['opencode', 'commands'] as const,
-  providers: () => ['opencode', 'providers'] as const,
-  pathInfo: () => ['opencode', 'path-info'] as const,
-  mcpStatus: () => ['opencode', 'mcp-status'] as const,
-  worktrees: () => ['opencode', 'worktrees'] as const,
+  agents: () => ['opencode', 'agents', activeServerKey()] as const,
+  toolIds: () => ['opencode', 'tool-ids', activeServerKey()] as const,
+  tools: (providerID: string, modelID: string) => ['opencode', 'tools', providerID, modelID, activeServerKey()] as const,
+  skills: () => ['opencode', 'skills', activeServerKey()] as const,
+  projects: () => ['opencode', 'projects', activeServerKey()] as const,
+  currentProject: () => ['opencode', 'project', 'current', activeServerKey()] as const,
+  commands: () => ['opencode', 'commands', activeServerKey()] as const,
+  providers: () => ['opencode', 'providers', activeServerKey()] as const,
+  pathInfo: () => ['opencode', 'path-info', activeServerKey()] as const,
+  mcpStatus: () => ['opencode', 'mcp-status', activeServerKey()] as const,
+  worktrees: () => ['opencode', 'worktrees', activeServerKey()] as const,
 };
 
 // ============================================================================
@@ -131,10 +157,13 @@ function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }): 
 // Session Hooks
 // ============================================================================
 
+// localStorage placeholder caches are per-sandbox too — scope by active server
+// id so re-opening a warm session paints its OWN last data, never the previous
+// sandbox's. Scoping lives in the helpers so every call site inherits it.
 function getLSCache<T>(key: string): T | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(`${key}:${activeServerKey()}`);
     if (!raw) return undefined;
     return JSON.parse(raw) as T;
   } catch {
@@ -145,7 +174,7 @@ function getLSCache<T>(key: string): T | undefined {
 function setLSCache(key: string, value: unknown): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(`${key}:${activeServerKey()}`, JSON.stringify(value));
   } catch {
     // Storage full or unavailable
   }
@@ -162,8 +191,12 @@ function useOpenCodeRuntimeReady() {
 
 export function useOpenCodeSessions() {
   const runtimeReady = useOpenCodeRuntimeReady();
+  // Subscribe to the active server so the query key recomputes the instant the
+  // sandbox switches — returning to a warm session hits its cached list rather
+  // than refetching from scratch.
+  const serverId = useServerStore((s) => s.activeServerId) ?? undefined;
   return useQuery<Session[]>({
-    queryKey: opencodeKeys.sessions(),
+    queryKey: opencodeKeys.sessions(serverId),
     queryFn: async () => {
       const client = getClient();
       const result = await client.session.list({ limit: 10000 });

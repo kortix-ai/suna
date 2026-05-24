@@ -91,21 +91,12 @@ export default function ProjectSessionPage() {
     sessionMark(sandbox.session_id, 'sandbox-active');
     (async () => {
       markProvisioningVerified();
-      // Drop OpenCode caches BEFORE switching the active server so stale
-      // sessions/messages/agents from the previous sandbox can't bleed into
-      // the new one's UI. The `['opencode', ...]` namespace covers
-      // `sessions`, `session(id)`, `messages`, `agents`, etc.
-      queryClient.removeQueries({ queryKey: ['opencode'] });
-      // Also nuke the global localStorage caches the OpenCode hooks read as
-      // placeholderData (kortix_cache_sessions etc.) — they're not server-
-      // scoped today and would otherwise flash the prior sandbox's data.
-      if (typeof window !== 'undefined') {
-        try {
-          for (const key of Object.keys(window.localStorage)) {
-            if (key.startsWith('kortix_cache_')) window.localStorage.removeItem(key);
-          }
-        } catch {}
-      }
+      // No cache teardown here anymore. OpenCode caches (query keys + the
+      // localStorage placeholders) and the message sync store are now scoped
+      // per-sandbox (see opencodeKeys / activeServerKey), so the previous
+      // sandbox's data can't bleed into this one — and keeping it cached is
+      // exactly what makes switching back to an already-open session instant
+      // instead of reloading.
       // Pass the already-fetched row so the switch skips a duplicate
       // GET /sessions/:id/sandbox on first open.
       await switchToSessionSandboxAsync(projectId, sandbox.sandbox_id, sandbox);
