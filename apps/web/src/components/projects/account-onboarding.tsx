@@ -87,7 +87,7 @@ export function AccountOnboardingGuide({
       if (step.id === 'session' && setup.primaryProjectId)
         return router.push(`/projects/${setup.primaryProjectId}`);
       if (step.id === 'team' && accountId)
-        return router.push(`/accounts/${accountId}/members`);
+        return router.push(`/accounts/${accountId}?tab=members`);
     },
     [accountId, onCreateProject, router, setup.primaryProjectId],
   );
