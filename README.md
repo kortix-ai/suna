@@ -11,11 +11,7 @@ agents, triggers, integrations, and memory live, and a workforce of AI agents
 does the real work across your tools, around the clock. It feels as simple as a
 chat app; underneath, everything is code you own.
 
-[Website](https://kortix.com) · [Documentation](https://kortix.com/docs) · [Cloud](https://kortix.com) · [OpenCode](https://opencode.ai)
-
-![License: Elastic 2.0](https://img.shields.io/badge/License-Elastic%202.0-2563eb)
-![Source-available](https://img.shields.io/badge/Source--available-yes-22c55e)
-![Runtime: OpenCode](https://img.shields.io/badge/Runtime-OpenCode-111827)
+[Website](https://kortix.com) · [Documentation](https://kortix.com/docs) · [Cloud](https://kortix.com)
 
 </div>
 
@@ -87,8 +83,9 @@ project  (git repo + kortix.toml)
   automatically.
 - **Connections** let agents call your tools (Pipedream, MCP, OpenAPI, GraphQL,
   HTTP), brokered server-side with per-user credentials.
-- The agent runtime is **[OpenCode](https://opencode.ai)** — engine- and
-  provider-agnostic; bring your own models or use Kortix cloud.
+- A **coding agent** runs in each sandbox — engine- and provider-agnostic, so you
+  bring your own models. The runtime is becoming pluggable, so you'll choose which
+  coding agent your company runs.
 
 Learn the model: **[Concepts](https://kortix.com/docs/concepts)** ·
 **[Reference](https://kortix.com/docs/reference)** ·
@@ -142,9 +139,6 @@ pnpm nuke           # tear down the local Docker environment
 Apps live under `apps/` (`web`, `api`, `cli`, `mobile`, `sandbox`); the
 documentation source is in `apps/web/content/docs`.
 
-## License & naming
+## License
 
-- **License:** [Elastic License 2.0](LICENSE) — source-available.
-- **Kortix** is the product. **Suna** is the open-source project name (this repo,
-  [`kortix-ai/suna`](https://github.com/kortix-ai/suna)). The agent runtime is
-  **[OpenCode](https://opencode.ai)**.
+[Elastic License 2.0](LICENSE) — source-available.
