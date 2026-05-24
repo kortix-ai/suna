@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -46,6 +46,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   linkRepository,
   type GitHubRepository,
+  type KortixProject,
   listGitHubInstallations,
   listGitHubRepositories,
   provisionProject,
@@ -64,6 +65,21 @@ function rememberGitHubSetupReturn(path: string) {
   } catch {
     // Non-critical: the setup page still falls back to the projects flow.
   }
+}
+
+function upsertProject(
+  projects: KortixProject[] | undefined,
+  project: KortixProject,
+) {
+  const current = projects ?? [];
+  const existingIndex = current.findIndex(
+    (item) => item.project_id === project.project_id,
+  );
+  if (existingIndex === -1) return [project, ...current];
+
+  const next = [...current];
+  next[existingIndex] = project;
+  return next;
 }
 
 /**
@@ -99,9 +115,20 @@ export function ProjectCreateModal({
     mutationFn: provisionProject,
     onSuccess: (project) => {
       toast.success('Project created');
-      router.replace(`/projects/${project.project_id}`);
-      resetAndClose();
+      queryClient.setQueryData<KortixProject[]>(
+        ['projects', project.account_id],
+        (projects) => upsertProject(projects, project),
+      );
+      queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
+        upsertProject(projects, project),
+      );
       void queryClient.invalidateQueries({ queryKey: ['projects'] });
+      void queryClient.refetchQueries({
+        queryKey: ['projects'],
+        type: 'active',
+      });
+      resetAndClose();
+      router.replace(`/projects/${project.project_id}`);
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to create project');
@@ -115,8 +142,10 @@ export function ProjectCreateModal({
     staleTime: 0,
   });
 
-  const githubInstallations =
-    githubInstallationsQuery.data?.installations ?? [];
+  const githubInstallations = useMemo(
+    () => githubInstallationsQuery.data?.installations ?? [],
+    [githubInstallationsQuery.data?.installations],
+  );
   const selectedInstallation =
     githubInstallations.find(
       (installation) => installation.installation_id === selectedInstallationId,
@@ -153,9 +182,20 @@ export function ProjectCreateModal({
     mutationFn: linkRepository,
     onSuccess: (result) => {
       toast.success('Repository linked');
-      router.replace(`/projects/${result.project.project_id}`);
-      resetAndClose();
+      queryClient.setQueryData<KortixProject[]>(
+        ['projects', result.project.account_id],
+        (projects) => upsertProject(projects, result.project),
+      );
+      queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
+        upsertProject(projects, result.project),
+      );
       void queryClient.invalidateQueries({ queryKey: ['projects'] });
+      void queryClient.refetchQueries({
+        queryKey: ['projects'],
+        type: 'active',
+      });
+      resetAndClose();
+      router.replace(`/projects/${result.project.project_id}`);
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to link repository');

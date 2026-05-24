@@ -24,7 +24,7 @@ export default function AccountsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
-  const { selectedAccountId } = useCurrentAccountStore();
+  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
@@ -109,10 +109,26 @@ export default function AccountsPage() {
       <CreateAccountModal
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={() => {
-          // Stay on /accounts and refresh the list so the new account shows up
-          // immediately — no manual hard refresh, no redirect to /projects.
-          queryClient.invalidateQueries({ queryKey: ['accounts'] });
+        onCreated={(account) => {
+          queryClient.setQueryData<KortixAccount[]>(
+            ['accounts'],
+            (accounts) => {
+              const current = accounts ?? [];
+              return current.some(
+                (item) => item.account_id === account.account_id,
+              )
+                ? current.map((item) =>
+                    item.account_id === account.account_id ? account : item,
+                  )
+                : [account, ...current];
+            },
+          );
+          void queryClient.invalidateQueries({ queryKey: ['accounts'] });
+          setSelectedAccountId(account.account_id);
+          void queryClient.invalidateQueries({
+            queryKey: ['projects', account.account_id],
+          });
+          router.replace('/projects');
         }}
       />
     </div>

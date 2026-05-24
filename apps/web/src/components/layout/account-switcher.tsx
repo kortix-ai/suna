@@ -317,8 +317,25 @@ export function AccountSwitcher({
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={(account: KortixAccount) => {
-          queryClient.invalidateQueries({ queryKey: ['accounts'] });
+          queryClient.setQueryData<KortixAccount[]>(
+            ['accounts'],
+            (accounts) => {
+              const current = accounts ?? [];
+              return current.some(
+                (item) => item.account_id === account.account_id,
+              )
+                ? current.map((item) =>
+                    item.account_id === account.account_id ? account : item,
+                  )
+                : [account, ...current];
+            },
+          );
+          void queryClient.invalidateQueries({ queryKey: ['accounts'] });
           setSelectedAccountId(account.account_id);
+          void queryClient.invalidateQueries({
+            queryKey: ['projects', account.account_id],
+          });
+          router.push('/projects');
         }}
       />
       <AccountSettingsModal
