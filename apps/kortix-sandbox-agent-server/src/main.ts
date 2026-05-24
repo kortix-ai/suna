@@ -1,9 +1,9 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { loadConfig, resolveOpencodeConfigDir, type Config } from './config'
-import { materializeRepo } from './git'
+import { configureGlobalGitIdentity, materializeRepo } from './git'
 import { logger } from './logger'
-import { createOpencodeSupervisor, waitForOpencodeReady } from './opencode'
+import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady } from './opencode'
 import { startOpencodeEventLoop, type QuestionRequest } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
@@ -25,6 +25,14 @@ async function main() {
     opencodeInternalPort: cfg.opencodeInternalPort,
     autoClone: cfg.autoClone,
   })
+
+  try {
+    await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
+  } catch (err) {
+    logger.warn('[boot] default git identity setup failed', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
 
   if (cfg.autoClone) {
     try {

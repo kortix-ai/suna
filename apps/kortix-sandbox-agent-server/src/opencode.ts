@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { access, constants, stat } from 'node:fs/promises'
 
 import type { Config } from './config'
+import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
 
@@ -178,6 +179,7 @@ export function createOpencodeSupervisor(
     const baseEnv = projectEnv ? mergeProjectEnv(process.env, projectEnv) : process.env
     const env: NodeJS.ProcessEnv = {
       ...baseEnv,
+      ...buildGitIdentityEnv(cfg),
       HOME: OPENCODE_HOME,
       OPENCODE_CONFIG_DIR: opencodeConfigDir,
       // Clear inherited PORT/APP_PORT — opencode launches user shells; we

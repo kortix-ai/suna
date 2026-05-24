@@ -6,13 +6,18 @@ import type { Config } from './config'
 import { logger } from './logger'
 
 type ExecResult = { code: number; stdout: string; stderr: string }
+type GitIdentityConfig = Pick<Config, 'gitUserName' | 'gitUserEmail'>
 
-function execGit(args: string[], opts: { cwd?: string } = {}): Promise<ExecResult> {
+function execGit(
+  args: string[],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, {
       cwd: opts.cwd,
       env: {
         ...process.env,
+        ...opts.env,
         GIT_TERMINAL_PROMPT: '0',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -24,6 +29,48 @@ function execGit(args: string[], opts: { cwd?: string } = {}): Promise<ExecResul
     child.on('error', reject)
     child.on('close', (code) => resolve({ code: code ?? 0, stdout, stderr }))
   })
+}
+
+export function buildGitIdentityEnv(cfg: GitIdentityConfig): NodeJS.ProcessEnv {
+  return {
+    GIT_AUTHOR_NAME: cfg.gitUserName,
+    GIT_AUTHOR_EMAIL: cfg.gitUserEmail,
+    GIT_COMMITTER_NAME: cfg.gitUserName,
+    GIT_COMMITTER_EMAIL: cfg.gitUserEmail,
+  }
+}
+
+async function configureGitValue(
+  prefixArgs: string[],
+  configArgs: string[],
+  key: string,
+  value: string,
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<void> {
+  const current = await execGit([...prefixArgs, 'config', ...configArgs, '--get', key], opts)
+  if (current.code === 0 && current.stdout.trim()) return
+
+  const set = await execGit([...prefixArgs, 'config', ...configArgs, key, value], opts)
+  if (set.code !== 0) {
+    throw new Error(`git config ${key} failed: ${set.stderr || set.stdout}`)
+  }
+}
+
+export async function configureGlobalGitIdentity(
+  cfg: GitIdentityConfig,
+  home: string,
+): Promise<void> {
+  await mkdir(home, { recursive: true })
+  const env = { HOME: home }
+  await configureGitValue([], ['--global'], 'user.name', cfg.gitUserName, { env })
+  await configureGitValue([], ['--global'], 'user.email', cfg.gitUserEmail, { env })
+  logger.info('[git] configured default global identity', { home, name: cfg.gitUserName, email: cfg.gitUserEmail })
+}
+
+async function configureRepoGitIdentity(cfg: GitIdentityConfig, target: string): Promise<void> {
+  await configureGitValue(['-C', target], ['--local'], 'user.name', cfg.gitUserName)
+  await configureGitValue(['-C', target], ['--local'], 'user.email', cfg.gitUserEmail)
+  logger.info('[git] configured default repo identity', { target, name: cfg.gitUserName, email: cfg.gitUserEmail })
 }
 
 /** Build the `-c http.<repo-origin>/.extraheader=...` auth args for git. */
@@ -219,6 +266,8 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   if (cfg.branchName) {
     await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
   }
+
+  await configureRepoGitIdentity(cfg, target)
 }
 
 export type RepoInfo = {

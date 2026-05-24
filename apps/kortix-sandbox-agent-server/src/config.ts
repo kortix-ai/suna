@@ -38,6 +38,8 @@ const Schema = z.object({
   KORTIX_REPO_URL: z.string().optional(),
   KORTIX_BRANCH_NAME: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
+  KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
+  KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
 })
 
 export type Config = {
@@ -55,6 +57,8 @@ export type Config = {
   repoUrl: string | undefined
   branchName: string | undefined
   kortixToken: string | undefined
+  gitUserName: string
+  gitUserEmail: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -73,6 +77,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_REPO_URL: env.KORTIX_REPO_URL,
     KORTIX_BRANCH_NAME: env.KORTIX_BRANCH_NAME,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
+    KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
+    KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
   })
 
   return {
@@ -90,6 +96,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     repoUrl: parsed.KORTIX_REPO_URL,
     branchName: parsed.KORTIX_BRANCH_NAME,
     kortixToken: parsed.KORTIX_TOKEN,
+    gitUserName: parsed.KORTIX_GIT_USER_NAME,
+    gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
   }
 }
 

@@ -20,7 +20,7 @@ import type { Opencode } from '../opencode'
 import { buildOpencodeApp } from '../proxy'
 import { createProjectEnvStore, mergeProjectEnv } from '../project-env'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { buildGitAuthArgs, materializeRepo } from '../git'
+import { buildGitAuthArgs, configureGlobalGitIdentity, materializeRepo } from '../git'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
@@ -40,6 +40,8 @@ function baseConfig(over: Partial<Config> = {}): Config {
     repoUrl: undefined,
     branchName: undefined,
     kortixToken: TEST_TOKEN,
+    gitUserName: 'Kortix Agent',
+    gitUserEmail: 'agent@kortix.ai',
     ...over,
   }
 }
@@ -88,6 +90,18 @@ function git(args: string[], cwd?: string) {
       GIT_TERMINAL_PROMPT: '0',
     },
   })
+}
+
+function gitOutput(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): string {
+  return execFileSync('git', args, {
+    cwd: opts.cwd,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      ...opts.env,
+      GIT_TERMINAL_PROMPT: '0',
+    },
+  }).trim()
 }
 
 describe('daemon proxy auth gate', () => {
@@ -154,8 +168,21 @@ describe('daemon proxy auth gate', () => {
       expect(requests[0]!.url).toBe('http://api.local/v1/projects/project-123/git/clone-credential')
       expect((requests[0]!.init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${TEST_TOKEN}`)
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('v1\n')
+      expect(gitOutput(['-C', target, 'config', 'user.name'])).toBe('Kortix Agent')
+      expect(gitOutput(['-C', target, 'config', 'user.email'])).toBe('agent@kortix.ai')
     } finally {
       globalThis.fetch = originalFetch
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('configures the default git identity in the OpenCode home', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-git-home-'))
+    try {
+      await configureGlobalGitIdentity(baseConfig(), root)
+      expect(gitOutput(['config', '--global', 'user.name'], { env: { HOME: root } })).toBe('Kortix Agent')
+      expect(gitOutput(['config', '--global', 'user.email'], { env: { HOME: root } })).toBe('agent@kortix.ai')
+    } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
