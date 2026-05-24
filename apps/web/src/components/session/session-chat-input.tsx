@@ -16,7 +16,6 @@ import {
   Loader2,
   Paperclip,
   X,
-  ListPlus,
   ListTodo,
   MessageSquare,
   Terminal,
@@ -2122,23 +2121,9 @@ export function SessionChatInput({
             className="flex flex-col gap-1 px-3.5 max-h-[320px] opacity-100 translate-y-0"
           >
             <div className="relative w-full">
-              {/* Add to queue button — floats top-right of textarea when busy and text is typed */}
-              {isBusy && canSubmit && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      onClick={handleSubmit}
-                      variant="ghost"
-                      className="absolute right-0 top-1 z-20 h-7 gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80"
-                    >
-                      <ListPlus className="size-3.5" />
-                      <span>Queue</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top"><p>{tHardcodedUi.raw('componentsSessionSessionChatInput.line2145JsxTextAddToQueue')}</p></TooltipContent>
-                </Tooltip>
-              )}
+              {/* Sending while the agent is busy already works — Enter (or the
+                  send button) posts straight to the server, which queues it
+                  per-session. No separate "Add to queue" affordance needed. */}
               {text.trim().length === 0 && !stagedCommand && (
                 <div
                   aria-hidden
