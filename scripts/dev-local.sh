@@ -141,6 +141,46 @@ ensure_agent_binary() {
   fi
 }
 
+kill_dev_ports() {
+  local ports=()
+  local port
+  local seen
+
+  for port in "$@"; do
+    [[ -n "$port" ]] || continue
+    seen="0"
+    local existing
+    for existing in "${ports[@]}"; do
+      if [[ "$existing" == "$port" ]]; then
+        seen="1"
+        break
+      fi
+    done
+    [[ "$seen" == "0" ]] && ports+=("$port")
+  done
+
+  for port in "${ports[@]}"; do
+    local pids
+    pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    [[ -n "$pids" ]] || continue
+
+    echo "[dev] Clearing stale listener(s) on port $port: ${pids//$'\n'/ }"
+    while IFS= read -r pid; do
+      [[ -n "$pid" ]] || continue
+      kill "$pid" 2>/dev/null || true
+    done <<< "$pids"
+
+    sleep 1
+
+    pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    [[ -n "$pids" ]] || continue
+    while IFS= read -r pid; do
+      [[ -n "$pid" ]] || continue
+      kill -9 "$pid" 2>/dev/null || true
+    done <<< "$pids"
+  done
+}
+
 cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
@@ -161,6 +201,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 load_local_env
+kill_dev_ports 3000 8008 "${PORT:-8008}"
 
 echo "[dev] Checking Supabase configuration..."
 if ! docker info >/dev/null 2>&1; then
