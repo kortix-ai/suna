@@ -37,7 +37,9 @@ PY
 
   export KORTIX_LOCAL_DEV=1
   export ENV_MODE=local
-  export ALLOWED_SANDBOX_PROVIDERS="daytona,local_docker"
+  # `local_docker` was removed when we consolidated on cloud — listing it here
+  # only made the API log "Unknown sandbox provider" twice on every boot.
+  export ALLOWED_SANDBOX_PROVIDERS="daytona"
   # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Daytona)
   # sandboxes call BACK to it (LLM router, web search, RPC) and cannot reach
   # this machine's localhost — so they need a public tunnel URL. The dashboard

@@ -27,7 +27,7 @@
  * DB row keyed on commit.
  */
 
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, ne } from 'drizzle-orm';
 import { copyFile, cp, rm, stat } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -47,6 +47,13 @@ import type { SandboxProviderName } from '../config';
  * the Daytona snapshot cache even if SANDBOX_VERSION is unchanged in dev.
  */
 const OPENCODE_VERSION = '1.14.28';
+
+/**
+ * Pinned `agent-browser` (Vercel agent-browser) CLI version baked into every
+ * snapshot alongside a Chrome-for-Testing build. Folded into the runtime
+ * fingerprint below so bumping it invalidates the Daytona snapshot cache.
+ */
+const AGENT_BROWSER_VERSION = '0.27.0';
 
 /**
  * Filesystem paths to the runtime artifacts the layered Dockerfile
@@ -83,8 +90,11 @@ import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 
 /** Cap how long the Daytona-side snapshot build is allowed to take. */
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
+/** How many times to retry a snapshot build that fails with a transient error. */
+const BUILD_ATTEMPTS = 3;
+const BUILD_RETRY_BASE_MS = 2_000;
 const SNAPSHOT_LOG_TAIL_LIMIT = 20;
-const RUNTIME_LAYER_VERSION = 'agent-gzip-v1';
+const RUNTIME_LAYER_VERSION = 'agent-browser-v1';
 
 /**
  * Default retention: how many `ready` snapshots we keep per
@@ -162,24 +172,25 @@ export async function buildSnapshotForCommit(
 
   const existing = await findSnapshotRow(project.projectId, commitSha, provider);
   if (existing?.status === 'ready' && existing.snapshotId) {
-    const prepared = await prepareBuildContext(project, commitSha);
+    // Cheap identity compare — no context materialize / gzip needed just to
+    // confirm the existing ready row still matches this commit's inputs.
+    const identity = await computeSnapshotIdentity(project, commitSha);
     if (
-      existing.snapshotId === prepared.snapshotName &&
-      extractMetadataHash(existing.metadata) === prepared.contentHash &&
-      extractMetadataRuntimeFingerprint(existing.metadata) === prepared.runtimeFingerprint
+      existing.snapshotId === identity.snapshotName &&
+      extractMetadataHash(existing.metadata) === identity.contentHash &&
+      extractMetadataRuntimeFingerprint(existing.metadata) === identity.runtimeFingerprint
     ) {
-      await rm(prepared.contextDir, { recursive: true, force: true }).catch(() => {});
       return {
         daytonaName: existing.snapshotId,
         commitSha,
-        contentHash: prepared.contentHash,
-        runtimeFingerprint: prepared.runtimeFingerprint,
+        contentHash: identity.contentHash,
+        runtimeFingerprint: identity.runtimeFingerprint,
         built: false,
       };
     }
 
     try {
-      const result = await runBuild(project, commitSha, provider, prepared);
+      const result = await runBuild(project, commitSha, provider);
       await updateSnapshotRow(project.projectId, commitSha, provider, options.source, result);
       return {
         daytonaName: result.daytonaName,
@@ -498,6 +509,40 @@ export async function ensureBuildForLatestCommit(
 }
 
 /**
+ * Mark snapshot builds stuck in `building`/`queued` past the build deadline as
+ * `failed`. Orphans happen when the API restarts mid-build — the detached build
+ * promise dies with the process, leaving the row `building` forever. Until it's
+ * cleared, every session on that commit waits the full snapshot deadline
+ * (~10min) before the per-commit recovery path kicks in, which reads as a long
+ * spin then failure. Sweeping on startup (restarts are exactly when orphans are
+ * created) clears them so the next session rebuilds cleanly.
+ *
+ * The cutoff is on `updated_at`: a live build refreshes it via the snapshot
+ * build-log stream, so only genuinely-dead rows are swept.
+ */
+export async function sweepStaleSnapshotBuilds(): Promise<number> {
+  const cutoff = new Date(Date.now() - BUILD_TIMEOUT_MS);
+  const swept = await db
+    .update(projectRuntimeSnapshots)
+    .set({
+      status: 'failed',
+      error: 'build orphaned (API restart or timeout) — rebuilds on next use',
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        inArray(projectRuntimeSnapshots.status, ['building', 'queued']),
+        lt(projectRuntimeSnapshots.updatedAt, cutoff),
+      ),
+    )
+    .returning({ id: projectRuntimeSnapshots.snapshotRowId });
+  if (swept.length > 0) {
+    console.warn(`[snapshots] swept ${swept.length} stale build row(s) → failed (orphaned by restart/timeout)`);
+  }
+  return swept.length;
+}
+
+/**
  * List snapshot history for a project, most recent first. Powers the
  * "Sandbox snapshot" panel in the dashboard.
  */
@@ -641,28 +686,34 @@ async function runBuild(
     )
     .catch(() => {});
 
-  const ctx = prepared ?? await prepareBuildContext(project, commitSha);
+  // Daytona is the only provider with a build path today. New providers
+  // can be added here as cases; the rest of the function stays the same.
+  if (provider !== 'daytona') {
+    throw new SnapshotBuildError(
+      `snapshot builder not implemented for provider '${provider}'`,
+    );
+  }
+  const daytona = getDaytona();
+
+  // Identity-first: compute the cheap content-addressed name and probe the
+  // registry BEFORE materializing the repo context / gzipping the ~99MB agent
+  // binary. A content-hash hit (unchanged Dockerfile + deps — the common case
+  // on every new code commit) returns here in well under a second.
+  const identity = prepared ? null : await computeSnapshotIdentity(project, commitSha);
+  const snapshotName = prepared ? prepared.snapshotName : identity!.snapshotName;
+  if (await getUsableSnapshot(daytona, snapshotName)) {
+    return {
+      daytonaName: snapshotName,
+      contentHash: prepared ? prepared.contentHash : identity!.contentHash,
+      shortHash: prepared ? prepared.shortHash : identity!.shortHash,
+      runtimeFingerprint: prepared ? prepared.runtimeFingerprint : identity!.runtimeFingerprint,
+      built: false,
+    };
+  }
+
+  // Cache miss — now pay for the expensive context (or reuse the caller's).
+  const ctx = prepared ?? await prepareBuildContext(project, commitSha, identity!);
   try {
-    // Daytona is the only provider with a build path today. New providers
-    // can be added here as cases; the rest of the function stays the same.
-    if (provider !== 'daytona') {
-      throw new SnapshotBuildError(
-        `snapshot builder not implemented for provider '${provider}'`,
-      );
-    }
-    const daytona = getDaytona();
-    try {
-      const existing = await daytona.snapshot.get(ctx.snapshotName);
-      if (existing) {
-        return {
-          daytonaName: ctx.snapshotName,
-          contentHash: ctx.contentHash,
-          shortHash: ctx.shortHash,
-          runtimeFingerprint: ctx.runtimeFingerprint,
-          built: false,
-        };
-      }
-    } catch { /* not present — proceed with build */ }
     await updateBuildingSnapshotStage(project.projectId, commitSha, provider, {
       snapshotId: ctx.snapshotName,
       stage: 'uploading-context',
@@ -671,41 +722,118 @@ async function runBuild(
       runtimeFingerprint: ctx.runtimeFingerprint,
       message: 'Uploading Daytona snapshot build context',
     });
-    const buildLogs: string[] = [];
-    await daytona.snapshot.create(
-      { name: ctx.snapshotName, image: Image.fromDockerfile(ctx.composedPath) },
-      {
-        timeout: Math.floor(BUILD_TIMEOUT_MS / 1000),
-        onLogs: (chunk) => {
-          const line = chunk.trim();
-          if (!line) return;
-          buildLogs.push(line);
-          if (buildLogs.length > SNAPSHOT_LOG_TAIL_LIMIT) {
-            buildLogs.splice(0, buildLogs.length - SNAPSHOT_LOG_TAIL_LIMIT);
-          }
-          console.info(`[snapshots] ${ctx.snapshotName}: ${line}`);
-          void updateBuildingSnapshotStage(project.projectId, commitSha, provider, {
-            snapshotId: ctx.snapshotName,
-            stage: 'building-image',
+
+    // Daytona snapshot builds intermittently drop the control connection
+    // ("Your socket connection ... idle connections will be closed"), a
+    // transient gateway error that otherwise hard-fails the whole session
+    // (build failures aren't retried by the provision loop). Retry transient
+    // failures, and after any failure re-check the registry first — the socket
+    // can drop AFTER the image finished building server-side.
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
+      const buildLogs: string[] = [];
+      try {
+        await daytona.snapshot.create(
+          { name: ctx.snapshotName, image: Image.fromDockerfile(ctx.composedPath) },
+          {
+            timeout: Math.floor(BUILD_TIMEOUT_MS / 1000),
+            onLogs: (chunk) => {
+              const line = chunk.trim();
+              if (!line) return;
+              buildLogs.push(line);
+              if (buildLogs.length > SNAPSHOT_LOG_TAIL_LIMIT) {
+                buildLogs.splice(0, buildLogs.length - SNAPSHOT_LOG_TAIL_LIMIT);
+              }
+              console.info(`[snapshots] ${ctx.snapshotName}: ${line}`);
+              void updateBuildingSnapshotStage(project.projectId, commitSha, provider, {
+                snapshotId: ctx.snapshotName,
+                stage: 'building-image',
+                contentHash: ctx.contentHash,
+                shortHash: ctx.shortHash,
+                runtimeFingerprint: ctx.runtimeFingerprint,
+                message: line,
+                logs: buildLogs,
+              });
+            },
+          },
+        );
+        return {
+          daytonaName: ctx.snapshotName,
+          contentHash: ctx.contentHash,
+          shortHash: ctx.shortHash,
+          runtimeFingerprint: ctx.runtimeFingerprint,
+          built: true,
+        };
+      } catch (err) {
+        lastErr = err;
+        // The connection may have dropped after the build actually completed —
+        // if the snapshot is now active, treat it as success. getUsableSnapshot
+        // also reaps an errored/build_failed snapshot so the retry rebuilds
+        // clean instead of seeing it as a (poisoned) cache hit.
+        if (await getUsableSnapshot(daytona, ctx.snapshotName)) {
+          return {
+            daytonaName: ctx.snapshotName,
             contentHash: ctx.contentHash,
             shortHash: ctx.shortHash,
             runtimeFingerprint: ctx.runtimeFingerprint,
-            message: line,
-            logs: buildLogs,
-          });
-        },
-      },
-    );
-    return {
-      daytonaName: ctx.snapshotName,
-      contentHash: ctx.contentHash,
-      shortHash: ctx.shortHash,
-      runtimeFingerprint: ctx.runtimeFingerprint,
-      built: true,
-    };
+            built: true,
+          };
+        }
+        if (!isTransientDaytonaError(err) || attempt === BUILD_ATTEMPTS) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[snapshots] build attempt ${attempt}/${BUILD_ATTEMPTS} for ${ctx.snapshotName} failed transiently — retrying: ${msg.slice(0, 120)}`);
+        await new Promise((r) => setTimeout(r, BUILD_RETRY_BASE_MS * attempt));
+      }
+    }
+    throw lastErr;
   } finally {
     await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/**
+ * Return true only if a content-addressed snapshot already exists AND is usable
+ * (`active`). Snapshots are content-addressed, so a build that errored leaves a
+ * snapshot in `error`/`build_failed` under the SAME name — without this guard it
+ * would be reused forever as a false cache hit (every session then fails with
+ * "Snapshot … is error"). Reap those so the build runs fresh.
+ */
+async function getUsableSnapshot(
+  daytona: ReturnType<typeof getDaytona>,
+  name: string,
+): Promise<boolean> {
+  try {
+    const snap = await daytona.snapshot.get(name);
+    if (!snap) return false;
+    const state = (snap as { state?: string }).state;
+    if (state === 'active') return true;
+    if (state === 'error' || state === 'build_failed') {
+      await daytona.snapshot.delete(snap).catch(() => {});
+    }
+    return false;
+  } catch {
+    return false; // not found / transient — treat as absent, caller proceeds to build
+  }
+}
+
+/** Transient Daytona build/transport errors worth retrying (vs a real build failure). */
+function isTransientDaytonaError(err: unknown): boolean {
+  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    m.includes('socket connection') ||
+    m.includes('idle connection') ||
+    m.includes('not read from or written to') ||
+    m.includes('socket hang up') ||
+    m.includes('timeout') ||
+    m.includes('timed out') ||
+    m.includes('econnreset') ||
+    m.includes('econnrefused') ||
+    m.includes('etimedout') ||
+    m.includes('eof') ||
+    m.includes('network') ||
+    m.includes('gateway') ||
+    m.includes(' 502') || m.includes(' 503') || m.includes(' 504')
+  );
 }
 
 async function updateBuildingSnapshotStage(
@@ -798,10 +926,27 @@ interface PreparedContext {
   runtimeFingerprint: string;
 }
 
-async function prepareBuildContext(
+interface SnapshotIdentity {
+  snapshotName: string;
+  contentHash: string;
+  shortHash: string;
+  runtimeFingerprint: string;
+  /** Repo subdir used as the build context (null == repo root). */
+  contextSubdir: string | null;
+  userDockerfile: string;
+}
+
+/**
+ * Cheap half of the prepare step: read the project's Dockerfile + tree oid and
+ * compute the content-addressed snapshot name. Deliberately does NOT touch the
+ * ~99MB agent binary or materialize the repo context — callers check whether
+ * the image already exists (a content-hash cache hit) before paying for the
+ * gzip + tarball, which is the common case on every new code commit.
+ */
+async function computeSnapshotIdentity(
   project: GitBackedProject,
   commitSha: string,
-): Promise<PreparedContext> {
+): Promise<SnapshotIdentity> {
   const sandboxPaths = await resolveSandboxPaths(project, commitSha);
   const userDockerfile = await readRepoFile(project, sandboxPaths.dockerfile, commitSha);
   if (!userDockerfile.trim()) {
@@ -809,29 +954,42 @@ async function prepareBuildContext(
       `Empty Dockerfile at ${sandboxPaths.dockerfile} (commit ${commitSha.slice(0, 8)})`,
     );
   }
-  const contextTreeOid = await resolveTreeOid(
-    project,
-    commitSha,
-    sandboxPaths.context === '.' ? null : sandboxPaths.context,
-  );
-  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
-  await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
-  await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
-  await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
-
+  const contextSubdir = sandboxPaths.context === '.' ? null : sandboxPaths.context;
+  const contextTreeOid = await resolveTreeOid(project, commitSha, contextSubdir);
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   const hash = computeSnapshotHash({
     dockerfile: userDockerfile,
     contextTreeOid,
     runtimeFingerprint,
   });
-  const snapshotName = formatSnapshotName(project.projectId, hash.contentHash);
+  return {
+    snapshotName: formatSnapshotName(project.projectId, hash.contentHash),
+    contentHash: hash.contentHash,
+    shortHash: hash.shortHash,
+    runtimeFingerprint,
+    contextSubdir,
+    userDockerfile,
+  };
+}
 
-  const contextDir = await materializeRepoContext(
-    project,
-    commitSha,
-    sandboxPaths.context === '.' ? null : sandboxPaths.context,
-  );
+/**
+ * Expensive half: materialize the git context, stage the kortix-agent binary
+ * (gzip ~99MB) + CLI/SDK, and compose the layered Dockerfile. Only call this
+ * when an actual image build is required — runBuild() checks the snapshot
+ * registry first and reaches here only on a miss.
+ */
+async function prepareBuildContext(
+  project: GitBackedProject,
+  commitSha: string,
+  identity?: SnapshotIdentity,
+): Promise<PreparedContext> {
+  const id = identity ?? await computeSnapshotIdentity(project, commitSha);
+  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
+  await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
+  await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
+
+  const contextDir = await materializeRepoContext(project, commitSha, id.contextSubdir);
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
   await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
@@ -839,8 +997,9 @@ async function prepareBuildContext(
 
   const composedPath = join(contextDir, '.kortix-snapshot.Dockerfile');
   const composed = buildLayeredDockerfile({
-    userDockerfile,
+    userDockerfile: id.userDockerfile,
     opencodeVersion: OPENCODE_VERSION,
+    agentBrowserVersion: AGENT_BROWSER_VERSION,
     agentBinaryPath: 'kortix-agent.gz',
     entrypointScriptPath: 'kortix-entrypoint',
     agentCliPath: 'kortix-agent-cli',
@@ -851,16 +1010,32 @@ async function prepareBuildContext(
   return {
     contextDir,
     composedPath,
-    snapshotName,
-    contentHash: hash.contentHash,
-    shortHash: hash.shortHash,
-    runtimeFingerprint,
+    snapshotName: id.snapshotName,
+    contentHash: id.contentHash,
+    shortHash: id.shortHash,
+    runtimeFingerprint: id.runtimeFingerprint,
   };
 }
 
+let runtimeFingerprintCache: { key: string; value: string } | null = null;
+
 async function currentRuntimeArtifactFingerprint(): Promise<string> {
-  return buildRuntimeArtifactFingerprint({
-    sandboxVersion: `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}`,
+  // The fingerprint hashes the ~99MB agent binary; doing that on every session
+  // start is wasteful since the runtime artifacts only change when the API is
+  // rebuilt/redeployed. Memoize keyed on the agent binary's mtime+size so a dev
+  // rebuild (which restages the CLI/SDK alongside it) still busts the cache.
+  let key = '';
+  try {
+    const s = await stat(AGENT_BIN_PATH);
+    key = `${s.mtimeMs}:${s.size}:${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
+  } catch {
+    key = ''; // couldn't stat — compute uncached this call
+  }
+  if (key && runtimeFingerprintCache?.key === key) {
+    return runtimeFingerprintCache.value;
+  }
+  const value = await buildRuntimeArtifactFingerprint({
+    sandboxVersion: `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:ab:${AGENT_BROWSER_VERSION}`,
     opencodeVersion: OPENCODE_VERSION,
     artifacts: [
       { label: 'kortix-agent', path: AGENT_BIN_PATH },
@@ -869,6 +1044,8 @@ async function currentRuntimeArtifactFingerprint(): Promise<string> {
       { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH },
     ],
   });
+  if (key) runtimeFingerprintCache = { key, value };
+  return value;
 }
 
 async function updateSnapshotRow(

@@ -16,11 +16,36 @@
  * the user-facing constraint list.
  */
 
+/**
+ * Default pinned `agent-browser` (Vercel agent-browser) CLI version baked into
+ * the layer when the caller doesn't pin one explicitly. The builder may pass an
+ * override via `agentBrowserVersion` to centralize the pin (and fold it into the
+ * snapshot fingerprint); this fallback keeps the layer self-contained.
+ */
+const DEFAULT_AGENT_BROWSER_VERSION = '0.27.0';
+
+/**
+ * Playwright version we use *only* as a cross-arch source for a headless
+ * Chromium binary. Chrome for Testing (what `agent-browser install` downloads)
+ * ships no Linux arm64 build, so on arm64 nodes / Apple-Silicon dev that path
+ * hard-fails. Playwright publishes prebuilt Chromium for both linux-x64 and
+ * linux-arm64 and its `--with-deps` installs the OS libraries on Debian/Ubuntu,
+ * so we bake that binary and point agent-browser at it via
+ * `AGENT_BROWSER_EXECUTABLE_PATH`.
+ */
+const PLAYWRIGHT_VERSION = '1.60.0';
+
 export interface BuildLayeredDockerfileOpts {
   /** Literal contents of the user's project Dockerfile. */
   userDockerfile: string;
   /** Pinned opencode CLI version (matches platform-wide `OPENCODE_VERSION`). */
   opencodeVersion: string;
+  /**
+   * Pinned `agent-browser` CLI version. Optional — defaults to
+   * `DEFAULT_AGENT_BROWSER_VERSION`. The builder passes the platform-wide
+   * `AGENT_BROWSER_VERSION` so the pin is centralized and fingerprinted.
+   */
+  agentBrowserVersion?: string;
   /** Path the snapshot builder will reference for the gzipped kortix-agent binary. */
   agentBinaryPath: string;
   /** Path the snapshot builder will reference for the entrypoint script. */
@@ -46,6 +71,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
   const {
     userDockerfile,
     opencodeVersion,
+    agentBrowserVersion = DEFAULT_AGENT_BROWSER_VERSION,
     agentBinaryPath,
     entrypointScriptPath,
     agentCliPath,
@@ -86,6 +112,28 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // have `kortix` on PATH until a later snapshot build.
     'RUN curl -fsSL https://kortix.com/install | bash \\',
     '    || echo "kortix CLI not yet available — sandbox will boot without it"',
+    '',
+    // agent-browser (Vercel agent-browser): fast browser-automation CLI for
+    // the agent — drives Chrome/Chromium over CDP from accessibility-tree
+    // snapshots. Install the Rust CLI globally, then bake a headless Chromium.
+    // We source Chromium from Playwright (not `agent-browser install`, whose
+    // Chrome-for-Testing has no linux-arm64 build) since Playwright ships both
+    // linux-x64 and linux-arm64 builds and installs the OS libs via
+    // `--with-deps`. agent-browser is pointed at it through the ENV below; the
+    // agent loads usage via `agent-browser skills get core` at runtime.
+    `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
+    '    && apt-get update \\',
+    `    && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \\`,
+    '    && rm -rf /var/lib/apt/lists/* \\',
+    "    && ln -sf \"$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)\" /usr/local/bin/chromium \\",
+    '    && /usr/local/bin/chromium --version \\',
+    '    && agent-browser --version',
+    // --no-sandbox: the sandbox already runs as root inside an isolated VM, and
+    // Chromium refuses its own sandbox as root. Point agent-browser at the
+    // Playwright Chromium baked above.
+    'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
+    '    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\',
+    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
     '',
     `COPY ${agentBinaryPath} /tmp/kortix-agent.gz`,
     `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,

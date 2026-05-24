@@ -42,6 +42,10 @@ RUN case "${TARGETARCH:-}" in \
 FROM oven/bun:1-debian
 
 ARG OPENCODE_VERSION=1.14.28
+# Keep in sync with AGENT_BROWSER_VERSION / PLAYWRIGHT_VERSION in
+# apps/api/src/snapshots/{builder,dockerfile-layer}.ts
+ARG AGENT_BROWSER_VERSION=0.27.0
+ARG PLAYWRIGHT_VERSION=1.60.0
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -50,6 +54,7 @@ RUN apt-get update \
         git \
         nodejs \
         npm \
+        unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # OpenCode is distributed as an npm package. Install globally so it ends
@@ -58,6 +63,23 @@ RUN apt-get update \
 RUN npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \
     && opencode --version
+
+# agent-browser (Vercel agent-browser): browser-automation CLI for the agent.
+# Chrome for Testing (what `agent-browser install` fetches) has no linux-arm64
+# build, so we source Chromium from Playwright instead — it ships both
+# linux-x64 and linux-arm64 builds and installs the OS libs via --with-deps —
+# and point agent-browser at it with AGENT_BROWSER_EXECUTABLE_PATH below.
+RUN npm install -g --no-audit --no-fund "agent-browser@${AGENT_BROWSER_VERSION}" \
+    && apt-get update \
+    && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf "$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" /usr/local/bin/chromium \
+    && /usr/local/bin/chromium --version \
+    && agent-browser --version
+# --no-sandbox: container runs as root and Chromium refuses its own sandbox there.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
+    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \
+    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage
 
 COPY --from=builder /agent/dist/kortix-agent /usr/local/bin/kortix-agent
 COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint

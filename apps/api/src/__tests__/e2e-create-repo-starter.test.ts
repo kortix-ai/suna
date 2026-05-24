@@ -25,6 +25,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/Dockerfile',
   '.kortix/opencode/agents/kortix.md',
   '.kortix/opencode/opencode.jsonc',
+  '.kortix/opencode/skills/kortix-executor/SKILL.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md',

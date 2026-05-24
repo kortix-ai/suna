@@ -7,6 +7,7 @@ import {
 
 const COMMON = {
   opencodeVersion: '1.14.28',
+  agentBrowserVersion: '0.27.0',
   agentBinaryPath: 'kortix-agent.gz',
   entrypointScriptPath: 'kortix-entrypoint',
   agentCliPath: 'kortix-agent-cli',
@@ -20,6 +21,11 @@ describe('buildLayeredDockerfile', () => {
     expect(merged.startsWith('FROM ubuntu:24.04\nRUN apt-get install -y foo')).toBe(true);
     expect(merged).toContain('Kortix runtime layer (auto-injected)');
     expect(merged).toContain('opencode-ai@1.14.28');
+    expect(merged).toContain('agent-browser@0.27.0');
+    // Chromium is sourced from Playwright (cross-arch) and wired via ENV.
+    expect(merged).toContain('playwright@1.60.0 install --with-deps chromium');
+    expect(merged).toContain('AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium');
+    expect(merged).toContain('AGENT_BROWSER_ARGS=--no-sandbox');
     expect(merged).toContain('COPY kortix-agent.gz /tmp/kortix-agent.gz');
     expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
     expect(merged).toContain('COPY kortix-agent-cli/ /opt/kortix/apps/sandbox/agent-cli/');
@@ -39,6 +45,13 @@ describe('buildLayeredDockerfile', () => {
   test('result ends with a trailing newline', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...COMMON });
     expect(merged.endsWith('\n')).toBe(true);
+  });
+
+  test('agentBrowserVersion is optional — falls back to the pinned default', () => {
+    const { agentBrowserVersion, ...withoutVersion } = COMMON;
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...withoutVersion });
+    expect(merged).toContain('agent-browser@0.27.0');
+    expect(merged).toContain('playwright@1.60.0 install --with-deps chromium');
   });
 });
 

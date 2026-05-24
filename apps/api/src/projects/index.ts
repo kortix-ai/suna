@@ -1683,21 +1683,6 @@ export async function createProjectSession(input: {
   const branchAlreadyCreated =
     body.branch_already_created === true ||
     body.branchAlreadyCreated === true;
-  const gitAuth = await resolveProjectGitAuth(project);
-
-  const projectWithGitAuth = {
-    ...project,
-    gitAuthToken: gitAuth.auth?.token ?? null,
-  };
-
-  if (!branchAlreadyCreated) {
-    try {
-      await createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef);
-    } catch (error) {
-      const message = (error as Error).message || 'Failed to create remote branch';
-      return { error: { status: 502, body: { error: message } } };
-    }
-  }
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
   const opencodeModel = normalizeString(body.opencode_model ?? body.opencodeModel);
@@ -1745,6 +1730,20 @@ export async function createProjectSession(input: {
   // status endpoint and shows the ConnectingScreen during the long tail.
   void (async () => {
     try {
+      // Resolve git auth + create the session branch HERE (off the synchronous
+      // create response). The remote git host (e.g. git.freestyle.sh) costs
+      // ~8-10s of round-trips for the fetch-tip + push-branch dance; doing it
+      // inline made POST /sessions take ~12s. The sandbox only checks out this
+      // branch after Daytona create + base clone (~10s+), and
+      // checkoutSessionBranch retries for ~15s, so the branch reliably lands
+      // before it's needed. A failure here marks the session failed (surfaced
+      // by the ConnectingScreen) instead of a synchronous 502.
+      const gitAuth = await resolveProjectGitAuth(project);
+      if (!branchAlreadyCreated) {
+        const projectWithGitAuth = { ...project, gitAuthToken: gitAuth.auth?.token ?? null };
+        await createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef);
+      }
+
       const extraEnvVars = {
         ...(await buildSessionSandboxEnvVars({
           accountId,
@@ -2100,6 +2099,14 @@ const globalForProjectTriggers = globalThis as typeof globalThis & {
 
 let triggerSchedulerTimer: TriggerSchedulerTimer | null = null;
 let triggerSweepRunning = false;
+
+// Connector reconcile sweep — runs on a slower cadence than the trigger sweep.
+let connectorSweepRunning = false;
+let lastConnectorSweepAt = 0;
+function connectorSweepIntervalMs() {
+  const raw = Number(process.env.KORTIX_CONNECTOR_SWEEP_INTERVAL_MS);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 120_000;
+}
 
 function triggerSchedulerIntervalMs() {
   const raw = Number((config as any).KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS);
@@ -6180,6 +6187,17 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
     .returning();
 
   invalidateProjectMirror(projectId);
+
+  // A merged CR may have edited kortix.toml's [[connectors]]. The connector DB
+  // cache (what the gateway + dashboard read) is derived from the manifest, so
+  // reconcile it from the new tip — best-effort, never blocks the merge
+  // response. The manifest in git stays the source of truth either way; the
+  // periodic sweep is the backstop if this best-effort call fails.
+  void import('../executor/sync')
+    .then(({ syncProjectConnectors }) => syncProjectConnectors(projectId, loaded.row.accountId))
+    .catch((err) =>
+      console.warn('[change-requests] connector reconcile failed', projectId, err instanceof Error ? err.message : err),
+    );
 
   return c.json({
     change_request: serializeChangeRequest(row),

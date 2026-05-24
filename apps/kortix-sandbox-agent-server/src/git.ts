@@ -106,6 +106,9 @@ async function gitWithAuth(
   return execGit([...buildGitAuthArgs(repoUrl, token), ...args], opts)
 }
 
+const CLONE_CRED_TIMEOUT_MS = 15_000
+const CLONE_CRED_ATTEMPTS = 4
+
 async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
   if (!cfg.apiUrl || !cfg.projectId || !cfg.kortixToken) return undefined
 
@@ -116,22 +119,62 @@ async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
       ? rawBase
       : `${rawBase}/v1`
   const url = `${base}/projects/${encodeURIComponent(cfg.projectId)}/git/clone-credential`
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${cfg.kortixToken}`,
-      Accept: 'application/json',
-    },
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`failed to fetch git clone credential (${res.status}): ${text || res.statusText}`)
+
+  // The control plane is reached over the public internet (KORTIX_API_URL).
+  // A bare fetch with no timeout/retry turns one transient blip — or a
+  // misconfigured (e.g. loopback) callback URL — into a permanent boot failure
+  // surfaced as the opaque Bun error "Unable to connect. Is the computer able to
+  // access the url?". Retry transient failures, time-box each attempt, and on
+  // exhaustion throw an error that names the URL so /kortix/health explains the
+  // real problem instead of leaking that string verbatim.
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= CLONE_CRED_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${cfg.kortixToken}`,
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(CLONE_CRED_TIMEOUT_MS),
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        // 4xx (bad token / not found) won't fix itself — fail immediately.
+        if (res.status >= 400 && res.status < 500) {
+          throw new Error(`failed to fetch git clone credential (${res.status}): ${text || res.statusText}`)
+        }
+        // 5xx is potentially transient — retry.
+        throw new Error(`clone-credential ${res.status}: ${text || res.statusText}`)
+      }
+      const body = await res.json().catch(() => null) as
+        | { auth?: { token?: string | null } | null }
+        | null
+      const token = body?.auth?.token?.trim()
+      return token || undefined
+    } catch (err) {
+      lastErr = err
+      const is4xx = err instanceof Error && /\((4\d\d)\)/.test(err.message)
+      if (is4xx || attempt === CLONE_CRED_ATTEMPTS) break
+      logger.warn('[git] clone-credential fetch failed; retrying', {
+        attempt,
+        of: CLONE_CRED_ATTEMPTS,
+        url: base,
+        err: err instanceof Error ? err.message : String(err),
+      })
+      await new Promise((r) => setTimeout(r, 500 * attempt))
+    }
   }
-  const body = await res.json().catch(() => null) as
-    | { auth?: { token?: string | null } | null }
-    | null
-  const token = body?.auth?.token?.trim()
-  return token || undefined
+
+  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr)
+  if (lastErr instanceof Error && /\((4\d\d)\)/.test(lastErr.message)) {
+    throw lastErr
+  }
+  throw new Error(
+    `could not reach the Kortix control plane at ${base} to fetch the git clone ` +
+    `credential after ${CLONE_CRED_ATTEMPTS} attempts — is KORTIX_API_URL publicly ` +
+    `reachable from this sandbox? (${detail})`,
+  )
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -228,15 +271,31 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   } else {
     const tmpTarget = join(dirname(target), `.kortix-clone-${process.pid}-${Date.now()}`)
     await rm(tmpTarget, { recursive: true, force: true })
-    logger.info('[git] cloning repo', { repoUrl: cfg.repoUrl, base, target })
-    const cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [
-      'clone',
-      '--branch',
+    logger.info('[git] cloning repo', {
+      repoUrl: cfg.repoUrl,
       base,
-      '--single-branch',
+      target,
+      filter: cfg.cloneFilter || 'none',
+    })
+    const baseCloneArgs = ['clone', '--branch', base, '--single-branch']
+    // Blobless partial clone keeps full history but defers file blobs, cutting
+    // the boot-time transfer from a full-history pack to roughly the working
+    // tree. This is the dominant per-session boot cost on large repos.
+    let cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [
+      ...baseCloneArgs,
+      ...(cfg.cloneFilter ? [`--filter=${cfg.cloneFilter}`] : []),
       cfg.repoUrl,
       tmpTarget,
     ])
+    if (cloned.code !== 0 && cfg.cloneFilter) {
+      // Remote may not advertise uploadpack.allowFilter — fall back to a full
+      // clone so a non-supporting host still boots (just slower).
+      logger.warn('[git] partial clone failed; retrying as a full clone', {
+        stderr: cloned.stderr.slice(0, 200),
+      })
+      await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
+      cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget])
+    }
     if (cloned.code !== 0) {
       await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
       throw new Error(`git clone failed: ${cloned.stderr}`)

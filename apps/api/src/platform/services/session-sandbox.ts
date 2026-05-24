@@ -65,8 +65,9 @@ async function waitForLatestReadySnapshot(
 ): Promise<NonNullable<Awaited<ReturnType<typeof getLatestReadySnapshot>>> | null> {
   const waitMs = snapshotReadyWaitMs();
   const deadline = Date.now() + waitMs;
-  const pollMs = snapshotReadyPollMs(waitMs);
+  const maxPollMs = snapshotReadyPollMs(waitMs);
 
+  let attempt = 0;
   for (;;) {
     if (commitSha) {
       const readyForCommit = await getReadySnapshotForCommit(projectId, commitSha, providerName);
@@ -86,7 +87,12 @@ async function waitForLatestReadySnapshot(
     }
     const remaining = deadline - Date.now();
     if (remaining <= 0) return null;
-    await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, remaining)));
+    // Ramp the poll: a content-hash cache hit becomes ready in ~3-5s, so start
+    // tight (500ms) and back off to the configured max instead of waiting a
+    // flat 5s step and adding dead time to the common warm path.
+    const rampMs = Math.min(maxPollMs, 500 * 2 ** Math.min(attempt, 4));
+    attempt++;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(rampMs, remaining)));
   }
 }
 
