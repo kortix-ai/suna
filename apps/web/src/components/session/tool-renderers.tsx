@@ -3057,16 +3057,53 @@ ToolRegistry.register('apply_patch', ApplyPatchTool);
 ToolRegistry.register('apply-patch', ApplyPatchTool);
 
 // --- Read ---
+/** Read tool output: a file with `N: ` line-numbered content, or a directory. */
+interface ParsedReadOutput {
+  path?: string;
+  type?: 'file' | 'directory';
+  content?: string;
+  entries?: string[];
+}
+
+function parseReadOutput(output: string): ParsedReadOutput | null {
+  if (!output) return null;
+  const pathMatch = output.match(/<path>([\s\S]*?)<\/path>/);
+  const path = pathMatch ? pathMatch[1].trim() : undefined;
+
+  const contentMatch = output.match(/<content>\n?([\s\S]*?)\n?<\/content>/);
+  if (contentMatch) {
+    // Strip the "   12: " line-number gutter the read tool prepends.
+    const content = contentMatch[1]
+      .split('\n')
+      .map((l) => l.replace(/^\s*\d+:\s?/, ''))
+      .join('\n');
+    return { path, type: 'file', content };
+  }
+
+  const entriesMatch = output.match(/<entries>\n?([\s\S]*?)\n?<\/entries>/);
+  if (entriesMatch) {
+    const entries = entriesMatch[1]
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !/^\(\d+\s+entr/i.test(l));
+    return { path, type: 'directory', entries };
+  }
+
+  return null;
+}
+
 function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const metadata = partMetadata(part);
+  const output = partOutput(part);
   const status = partStatus(part);
   const filePath =
     (input.filePath as string) ||
     (streamingInput.filePath as string) ||
     undefined;
   const filename = getFilename(filePath) || '';
+  const ext = filename.split('.').pop() || '';
   const { openPreview } = useFilePreviewStore();
   const { toDisplayPath } = useOcFileOpen();
 
@@ -3081,6 +3118,14 @@ function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     return val.filter((p): p is string => typeof p === 'string');
   }, [status, metadata.loaded]);
 
+  // Parse the file content / directory listing so the panel can preview it.
+  // (Inline in chat, BasicTool renders only the compact row — these children
+  // surface when expanded or when focused in the side panel.)
+  const parsed = useMemo(
+    () => (status === 'completed' ? parseReadOutput(output) : null),
+    [status, output],
+  );
+
   return (
     <>
       <BasicTool
@@ -3090,7 +3135,35 @@ function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         forceOpen={forceOpen}
         locked={locked}
         onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
-      />
+      >
+        {parsed?.type === 'file' && parsed.content ? (
+          <ToolCode code={parsed.content} language={ext} />
+        ) : parsed?.type === 'directory' &&
+          parsed.entries &&
+          parsed.entries.length > 0 ? (
+          <div
+            data-scrollable
+            className="max-h-96 space-y-0.5 overflow-auto px-3 py-2"
+          >
+            {parsed.entries.map((entry, i) => {
+              const isDir = entry.endsWith('/');
+              return (
+                <div
+                  key={i}
+                  className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground/80"
+                >
+                  {isDir ? (
+                    <Folder className="size-3 flex-shrink-0 text-muted-foreground/40" />
+                  ) : (
+                    <FileIcon className="size-3 flex-shrink-0 text-muted-foreground/40" />
+                  )}
+                  <span className="truncate">{entry}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </BasicTool>
       {loaded.length > 0 && (
         <div className="mt-1 space-y-0.5 pl-2">
           {loaded.map((filepath, i) => (
@@ -3550,31 +3623,149 @@ function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 ToolRegistry.register('list', ListTool);
 
 // --- WebFetch ---
+/** Heuristic: does this output look like a full HTML document? */
+function looksLikeHtml(s: string): boolean {
+  if (!s) return false;
+  const head = s.slice(0, 600).toLowerCase();
+  if (head.includes('<!doctype html') || head.includes('<html')) return true;
+  return /<\/(body|head|div|p|span|table)>/i.test(s.slice(0, 3000));
+}
+
+/** Strip an HTML document down to its <title> + readable text. */
+function extractReadableHtml(html: string): { title?: string; text: string } {
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch ? decodeEntities(titleMatch[1].trim()) : undefined;
+  const text = decodeEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<head[\s\S]*?<\/head>/gi, ' ')
+      .replace(/<!--[\s\S]*?-->/g, ' ')
+      .replace(/<\/(p|div|section|article|li|h[1-6]|br|tr|ul|ol)\s*>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+  );
+  return { title, text };
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
 function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
+  const status = partStatus(part);
   const url = (input.url as string) || '';
-  const args: string[] = [];
-  if (input.format) args.push('format=' + String(input.format));
+  const format = (input.format as string) || '';
+  const domain = url ? wsDomain(url) : '';
+  const favicon = url ? wsFavicon(url) : null;
+  const safeUrl = safeHttpUrl(url);
+  const [rawOpen, setRawOpen] = useState(false);
+
+  // HTML output is otherwise an unreadable raw dump — extract a clean preview.
+  const isHtml = format === 'html' || (!format && looksLikeHtml(output));
+  const readable = useMemo(
+    () => (isHtml && output ? extractReadableHtml(output) : null),
+    [isHtml, output],
+  );
 
   return (
     <BasicTool
       icon={<Globe />}
       trigger={{
         title: 'Web Fetch',
-        subtitle: url,
-        args,
+        subtitle: domain || url,
+        args: format ? [format] : undefined,
       }}
-      rightAccessory={url ? <ExternalLink /> : undefined}
+      rightAccessory={safeUrl ? <ExternalLink /> : undefined}
+      onSubtitleClick={safeUrl ? () => openSafeExternalUrl(url) : undefined}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
     >
-      {output && <ToolOutputFallback output={output} toolName="web_fetch" />}
+      {!output ? null : readable ? (
+        <div data-scrollable className="max-h-[28rem] overflow-auto">
+          {/* Page header — favicon, title, domain, open-in-tab */}
+          <a
+            href={safeUrl ?? undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group flex items-center gap-2 border-b border-border/40 px-3 py-2 hover:bg-muted/30"
+          >
+            <span className="flex size-5 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-muted/60">
+              {favicon ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={favicon}
+                  alt=""
+                  className="size-4 rounded"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <Globe className="size-3 text-muted-foreground/50" />
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-medium text-foreground group-hover:text-primary">
+                {readable.title || domain}
+              </span>
+              <span className="block truncate font-mono text-[10px] text-muted-foreground/50">
+                {domain}
+              </span>
+            </span>
+            <ExternalLink className="size-3 flex-shrink-0 text-muted-foreground/30 group-hover:text-muted-foreground/60" />
+          </a>
+          {/* Readable extracted text */}
+          <p className="whitespace-pre-wrap break-words px-3 py-2 text-xs leading-relaxed text-foreground/80">
+            {readable.text.slice(0, 4000) || 'No readable text content.'}
+          </p>
+          {/* Raw HTML, on demand */}
+          <Collapsible open={rawOpen} onOpenChange={setRawOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center gap-1.5 border-t border-border/40 px-3 py-2 text-xs text-muted-foreground/60 transition-colors hover:text-foreground"
+              >
+                <ChevronRight
+                  className={cn(
+                    'size-3 transition-transform',
+                    rawOpen && 'rotate-90',
+                  )}
+                />
+                View raw HTML
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 pb-2 font-mono text-[11px] leading-relaxed text-muted-foreground/70">
+                {output.slice(0, 8000)}
+              </pre>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      ) : (
+        <ToolOutputFallback
+          output={output}
+          isStreaming={status === 'running'}
+          toolName="web_fetch"
+        />
+      )}
     </BasicTool>
   );
 }
 ToolRegistry.register('webfetch', WebFetchTool);
+ToolRegistry.register('web_fetch', WebFetchTool);
 
 // --- WebSearch ---
 
@@ -7015,7 +7206,38 @@ function SkillTool({ part, forceOpen }: ToolProps) {
             : undefined
         }
         rightAccessory={<ExternalLink />}
-      />
+      >
+        {/* Body — shown in the side panel (the compact chat row opens the
+            modal instead). Renders the skill instructions + bundled files. */}
+        {isCompleted && (markdownContent || skillFiles.length > 0) ? (
+          <div
+            data-scrollable
+            className={cn('max-h-96 overflow-auto p-3', MD_FLUSH_CLASSES)}
+          >
+            {markdownContent && (
+              <UnifiedMarkdown content={markdownContent} isStreaming={false} />
+            )}
+            {skillFiles.length > 0 && (
+              <div className="mt-3 border-t border-border/40 pt-2">
+                <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground/50">
+                  Files
+                </div>
+                <div className="space-y-0.5">
+                  {skillFiles.map((f, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70"
+                    >
+                      <FileText className="size-3 flex-shrink-0 text-muted-foreground/40" />
+                      <span className="truncate">{f}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </BasicTool>
 
       {/* Modal with full skill content */}
       {modalOpen && (
@@ -7660,6 +7882,336 @@ ToolRegistry.register('trigger_resume', TriggersTool);
 ToolRegistry.register('trigger-resume', TriggersTool);
 ToolRegistry.register('oc-trigger_resume', TriggersTool);
 ToolRegistry.register('oc-trigger-resume', TriggersTool);
+
+// ============================================================================
+// TodoWrite — the agent's plan / checklist
+// ============================================================================
+//
+// `todowrite` is how the agent maintains its running plan. Each call replaces
+// the full list, so a given part is the snapshot of the plan at that moment.
+// We render it as a real checklist (status icon + content) with a progress
+// bar and a done/total badge — far better than the raw JSON GenericTool dump.
+
+interface TodoItem {
+  content: string;
+  status: 'completed' | 'in_progress' | 'pending' | 'cancelled';
+  priority?: string;
+}
+
+function parseTodos(value: unknown): TodoItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw) => {
+    if (!raw || typeof raw !== 'object') return [];
+    const content = (raw as any).content;
+    if (typeof content !== 'string' || !content.trim()) return [];
+    const s = (raw as any).status;
+    const status: TodoItem['status'] =
+      s === 'completed' || s === 'in_progress' || s === 'cancelled'
+        ? s
+        : 'pending';
+    return [{ content, status, priority: (raw as any).priority }];
+  });
+}
+
+function TodoStatusIcon({ status }: { status: TodoItem['status'] }) {
+  switch (status) {
+    case 'completed':
+      return (
+        <CheckCircle className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.success)} />
+      );
+    case 'in_progress':
+      return (
+        <Loader2 className="size-3.5 flex-shrink-0 animate-spin text-primary" />
+      );
+    case 'cancelled':
+      return <Ban className="size-3.5 flex-shrink-0 text-muted-foreground/40" />;
+    default:
+      return <Circle className="size-3.5 flex-shrink-0 text-muted-foreground/30" />;
+  }
+}
+
+function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(part);
+  const streamingInput = partStreamingInput(part);
+  const metadata = partMetadata(part);
+
+  const todos = useMemo(() => {
+    const fromInput = parseTodos(input.todos);
+    if (fromInput.length) return fromInput;
+    const fromMeta = parseTodos(metadata.todos);
+    if (fromMeta.length) return fromMeta;
+    return parseTodos(streamingInput.todos);
+  }, [input.todos, metadata.todos, streamingInput.todos]);
+
+  const total = todos.length;
+  const done = todos.filter((t) => t.status === 'completed').length;
+  const active = todos.find((t) => t.status === 'in_progress');
+  const pct = total ? Math.round((done / total) * 100) : 0;
+
+  // Subtitle: the item being worked on, else a progress summary.
+  const subtitle = active
+    ? active.content
+    : total
+      ? `${done} of ${total} done`
+      : undefined;
+
+  return (
+    <BasicTool
+      icon={<ListTodo className="size-3.5 flex-shrink-0" />}
+      trigger={{ title: 'Todos', subtitle }}
+      badge={total ? `${done}/${total}` : undefined}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      {total > 0 ? (
+        <div data-scrollable className="max-h-96 overflow-auto px-3 py-2">
+          <div className="mb-2.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-foreground/60 transition-all duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <ul className="space-y-1.5">
+            {todos.map((todo, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs leading-snug">
+                <span className="mt-px">
+                  <TodoStatusIcon status={todo.status} />
+                </span>
+                <span
+                  className={cn(
+                    'min-w-0 flex-1',
+                    todo.status === 'completed' &&
+                      'text-muted-foreground/50 line-through',
+                    todo.status === 'in_progress' && 'font-medium text-foreground',
+                    todo.status === 'pending' && 'text-foreground/70',
+                    todo.status === 'cancelled' &&
+                      'text-muted-foreground/40 line-through',
+                  )}
+                >
+                  {todo.content}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <ToolEmptyState message="No tasks yet" />
+      )}
+    </BasicTool>
+  );
+}
+ToolRegistry.register('todowrite', TodoWriteTool);
+ToolRegistry.register('todo_write', TodoWriteTool);
+ToolRegistry.register('todo-write', TodoWriteTool);
+
+// ============================================================================
+// Question (answered) — the agent asked the user; show Q + chosen answer(s)
+// ============================================================================
+//
+// The LIVE interactive question is handled separately by QuestionPrompt (fed
+// the `question` prop in ToolPartRenderer). This renderer is for the resolved
+// historical tool part: it surfaces every question, its options, and which
+// option(s) the user picked — including free-text answers not in the list.
+
+interface ParsedQuestion {
+  question: string;
+  header?: string;
+  options: { label: string; description?: string }[];
+}
+
+/** Best-effort: pull "Question"="Answer" pairs out of the tool output string. */
+function parseQuestionAnswersFromOutput(
+  output: string,
+  count: number,
+): string[][] | null {
+  if (!output) return null;
+  const pairRegex = /"([^"]*)"="([^"]*)"/g;
+  const found: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = pairRegex.exec(output)) !== null) found.push(m[2]);
+  if (found.length === 0) return null;
+  return Array.from({ length: Math.max(count, found.length) }, (_, i) =>
+    found[i] ? [found[i]] : [],
+  );
+}
+
+function QuestionTool({
+  part,
+  defaultOpen,
+  forceOpen,
+  locked,
+  hasActiveQuestion,
+}: ToolProps) {
+  const input = partInput(part);
+  const metadata = partMetadata(part);
+  const output = partOutput(part);
+
+  const questions = useMemo<ParsedQuestion[]>(() => {
+    const raw = Array.isArray(input.questions) ? input.questions : [];
+    return raw.flatMap((q: any) => {
+      if (!q || typeof q !== 'object') return [];
+      return [
+        {
+          question: typeof q.question === 'string' ? q.question : '',
+          header: typeof q.header === 'string' ? q.header : undefined,
+          options: Array.isArray(q.options)
+            ? q.options.flatMap((o: any) =>
+                o && typeof o.label === 'string'
+                  ? [
+                      {
+                        label: o.label,
+                        description:
+                          typeof o.description === 'string'
+                            ? o.description
+                            : undefined,
+                      },
+                    ]
+                  : [],
+              )
+            : [],
+        },
+      ];
+    });
+  }, [input.questions]);
+
+  const answers = useMemo<string[][]>(() => {
+    if (Array.isArray(metadata.answers) && metadata.answers.length > 0) {
+      return metadata.answers as string[][];
+    }
+    return parseQuestionAnswersFromOutput(output, questions.length) ?? [];
+  }, [metadata.answers, output, questions.length]);
+
+  const total = questions.length;
+  const answeredCount = answers.filter((a) => a && a.length > 0).length;
+  const single = total === 1;
+
+  // While the question is still live, the interactive QuestionPrompt renders
+  // right below this part — so keep this to a quiet header to avoid duplication.
+  if (hasActiveQuestion) {
+    return (
+      <BasicTool
+        icon={<MessageCircle className="size-3.5 flex-shrink-0" />}
+        trigger={{
+          title: single ? 'Question' : 'Questions',
+          subtitle: 'Waiting for your answer',
+        }}
+        forceOpen={forceOpen}
+        locked={locked}
+      />
+    );
+  }
+
+  const subtitle =
+    single && answers[0]?.length
+      ? answers[0].join(', ')
+      : total
+        ? `${answeredCount} of ${total} answered`
+        : undefined;
+
+  return (
+    <BasicTool
+      icon={<MessageCircle className="size-3.5 flex-shrink-0" />}
+      trigger={{ title: single ? 'Question' : 'Questions', subtitle }}
+      badge={!single && total ? `${answeredCount}/${total}` : undefined}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      {total > 0 ? (
+        <div
+          data-scrollable
+          className="max-h-[28rem] space-y-3 overflow-auto px-3 py-2"
+        >
+          {questions.map((q, i) => {
+            const ans = answers[i] ?? [];
+            const customAnswers = ans.filter(
+              (a) => !q.options.some((o) => o.label === a),
+            );
+            return (
+              <div key={i} className="space-y-1.5">
+                <div className="text-xs font-medium text-foreground/90 [&_code]:text-xs [&_p]:my-0 [&_p]:leading-relaxed">
+                  <UnifiedMarkdown
+                    content={q.question || q.header || `Question ${i + 1}`}
+                  />
+                </div>
+                {q.options.length > 0 ? (
+                  <div className="space-y-1">
+                    {q.options.map((opt, j) => {
+                      const picked = ans.includes(opt.label);
+                      return (
+                        <div
+                          key={j}
+                          className={cn(
+                            'flex items-start gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors',
+                            picked
+                              ? 'border-primary/30 bg-primary/5'
+                              : 'border-transparent opacity-50',
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'mt-px flex-shrink-0',
+                              picked
+                                ? STATUS_TEXT.success
+                                : 'text-muted-foreground/30',
+                            )}
+                          >
+                            {picked ? (
+                              <Check className="size-3.5" />
+                            ) : (
+                              <Circle className="size-3.5" />
+                            )}
+                          </span>
+                          <span className="min-w-0">
+                            <span
+                              className={cn(
+                                'font-medium',
+                                picked ? 'text-foreground' : 'text-foreground/70',
+                              )}
+                            >
+                              {opt.label}
+                            </span>
+                            {opt.description && (
+                              <span className="ml-1 text-muted-foreground">
+                                {opt.description}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {customAnswers.map((a, k) => (
+                      <div
+                        key={`custom-${k}`}
+                        className="flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/5 px-2 py-1.5 text-xs"
+                      >
+                        <span className={cn('mt-px flex-shrink-0', STATUS_TEXT.success)}>
+                          <Check className="size-3.5" />
+                        </span>
+                        <span className="min-w-0 font-medium text-foreground">
+                          {a}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 px-2 py-1.5 text-sm font-medium text-foreground">
+                    {ans.length > 0 ? ans.join(', ') : '—'}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <ToolEmptyState message="No questions" />
+      )}
+    </BasicTool>
+  );
+}
+ToolRegistry.register('question', QuestionTool);
+ToolRegistry.register('ask', QuestionTool);
 
 // ============================================================================
 // ToolError

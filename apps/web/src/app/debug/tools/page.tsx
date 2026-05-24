@@ -9,6 +9,7 @@ import {
 } from '@/components/session/tool-renderers';
 import { SessionActionsPanel } from '@/components/session/session-actions-panel';
 import { SessionFilesPanel } from '@/components/session/session-files-panel';
+import { SessionExplorerPanel } from '@/components/session/session-explorer-panel';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 /**
@@ -194,7 +195,27 @@ const GROUPS: Group[] = [
     title: 'Context (read / search / list)',
     rows: [
       {
-        label: 'read',
+        label: 'read (file content)',
+        node: part(
+          'read',
+          done(
+            { filePath: '/workspace/apps/web/src/lib/math.ts' },
+            '<path>/workspace/apps/web/src/lib/math.ts</path>\n<type>file</type>\n<content>\n1: export function add(a: number, b: number): number {\n2:   // guard against NaN inputs\n3:   if (Number.isNaN(a) || Number.isNaN(b)) return 0;\n4:   return a + b;\n5: }\n</content>',
+          ),
+        ),
+      },
+      {
+        label: 'read (directory)',
+        node: part(
+          'read',
+          done(
+            { filePath: '/workspace' },
+            '<path>/workspace</path>\n<type>directory</type>\n<entries>\n.git/\nsrc/\npackage.json\nREADME.md\n\n(4 entries)\n</entries>',
+          ),
+        ),
+      },
+      {
+        label: 'read (loaded list)',
         node: part(
           'read',
           done(
@@ -250,10 +271,101 @@ const GROUPS: Group[] = [
         ),
       },
       {
-        label: 'webfetch',
+        label: 'webfetch (markdown)',
         node: part(
           'webfetch',
-          done({ url: 'https://nextjs.org/docs/app' }, '# App Router\n\nThe App Router...'),
+          done({ url: 'https://nextjs.org/docs/app', format: 'markdown' }, '# App Router\n\nThe App Router is a new paradigm for building applications using React’s latest features.'),
+        ),
+      },
+      {
+        label: 'webfetch (html)',
+        node: part(
+          'webfetch',
+          done(
+            { url: 'https://nextjs.org/docs/app', format: 'html' },
+            '<!DOCTYPE html>\n<html>\n<head>\n<title>App Router – Next.js</title>\n<style>body{font:14px sans-serif}</style>\n</head>\n<body>\n<h1>App Router</h1>\n<p>The App Router is a new paradigm for building applications using React’s latest features such as Server Components and streaming.</p>\n<p>It lives in the <code>app/</code> directory.</p>\n</body>\n</html>',
+          ),
+        ),
+      },
+    ],
+  },
+  {
+    title: 'Planning & interaction',
+    rows: [
+      {
+        label: 'todowrite',
+        node: part(
+          'todowrite',
+          done(
+            {
+              todos: [
+                { content: 'Create project directory and generate palette', status: 'completed', priority: 'high' },
+                { content: 'Build the portfolio HTML with full design system', status: 'in_progress', priority: 'high' },
+                { content: 'Preview the site via static server', status: 'pending', priority: 'high' },
+                { content: 'Playwright QA screenshots at desktop + mobile', status: 'pending', priority: 'medium' },
+                { content: 'Polish and fix any issues found in QA', status: 'pending', priority: 'medium' },
+              ],
+            },
+            '',
+          ),
+        ),
+      },
+      {
+        label: 'todowrite (running)',
+        node: part('todowrite', running({})),
+      },
+      {
+        label: 'question (single, answered)',
+        node: part(
+          'question',
+          done(
+            {
+              questions: [
+                {
+                  header: 'Site type',
+                  question: 'What kind of site are you looking for? Give me a quick description and I’ll run with it.',
+                  options: [
+                    { label: 'Personal / portfolio', description: 'A simple personal landing page, portfolio, or bio site' },
+                    { label: 'Small business / brand', description: 'A landing page for a brand, product, or small business' },
+                    { label: 'Fun / experimental', description: 'A playful or experimental micro-site' },
+                    { label: 'Dashboard / tool', description: 'A small web app, dashboard, or utility tool' },
+                  ],
+                },
+              ],
+            },
+            'User has answered your questions: "What kind of site are you looking for?"="Personal / portfolio". You can now continue.',
+            { answers: [['Personal / portfolio']] },
+          ),
+        ),
+      },
+      {
+        label: 'question (multi, answered)',
+        node: part(
+          'question',
+          done(
+            {
+              questions: [
+                {
+                  header: 'Framework',
+                  question: 'Which framework should we use?',
+                  options: [
+                    { label: 'Next.js', description: 'App Router, RSC' },
+                    { label: 'Remix', description: 'Nested routes' },
+                  ],
+                },
+                {
+                  header: 'Styling',
+                  question: 'How should we style it?',
+                  options: [
+                    { label: 'Tailwind', description: 'Utility-first' },
+                    { label: 'CSS Modules', description: 'Scoped CSS' },
+                  ],
+                },
+              ],
+            },
+            'answered',
+            { answers: [['Next.js'], ['Tailwind']] },
+          ),
         ),
       },
     ],
@@ -305,6 +417,17 @@ export default function DebugToolsPage() {
           {tHardcodedUi.raw('appDebugToolsPage.line305JsxTextSidePanelChanges')}</h2>
         <div className="h-[420px] w-full overflow-hidden rounded-2xl border border-border bg-card">
           <SessionFilesPanel />
+        </div>
+      </div>
+
+      {/* Side-panel Files view preview — the in-sandbox explorer. Without a live
+          sandbox it shows its "not reachable" empty state. */}
+      <div className="mx-auto w-full max-w-3xl px-6 pt-10">
+        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Side panel · Files (explorer)
+        </h2>
+        <div className="h-[420px] w-full overflow-hidden rounded-2xl border border-border bg-card">
+          <SessionExplorerPanel />
         </div>
       </div>
 

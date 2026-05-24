@@ -27,6 +27,7 @@ import {
   type SessionPanelView,
 } from '@/stores/session-browser-store';
 import { SessionFilesPanel } from '@/components/session/session-files-panel';
+import { SessionExplorerPanel } from '@/components/session/session-explorer-panel';
 import {
   SessionActionsPanel,
   collectToolParts,
@@ -83,6 +84,7 @@ export const SessionLayout = memo(function SessionLayout({
   const panelView = useSessionBrowserStore((s) => s.viewBySession[sessionId] ?? 'actions');
   const setPanelView = useSessionBrowserStore((s) => s.setView);
   const showBrowser = panelView === 'browser';
+  const showExplorer = panelView === 'explorer';
   const showFiles = panelView === 'files';
 
   useEffect(() => {
@@ -110,7 +112,7 @@ export const SessionLayout = memo(function SessionLayout({
   // active view" — so the user can pop the panel open just to use the
   // internal browser even before the agent has run any tools.
   const shouldShowPanel =
-    isSidePanelOpen && (hasToolCalls || showBrowser || showFiles);
+    isSidePanelOpen && (hasToolCalls || showBrowser || showExplorer || showFiles);
 
   // ⌘I / Ctrl+I toggles the side panel open/closed.
   //
@@ -236,6 +238,8 @@ export const SessionLayout = memo(function SessionLayout({
   // uses — so there is exactly one tool-rendering implementation.
   const panelBody = showBrowser ? (
     <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
+  ) : showExplorer ? (
+    <SessionExplorerPanel />
   ) : showFiles ? (
     <SessionFilesPanel />
   ) : (
@@ -357,6 +361,11 @@ function PanelHeaderSwitcher({
           active={view === 'browser'}
           onClick={() => onChangeView('browser')}
           label="Browser"
+        />
+        <PanelTabButton
+          active={view === 'explorer'}
+          onClick={() => onChangeView('explorer')}
+          label="Files"
         />
         <PanelTabButton
           active={view === 'files'}

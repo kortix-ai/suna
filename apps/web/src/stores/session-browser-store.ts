@@ -22,7 +22,9 @@ import { persist } from 'zustand/middleware';
  * here.
  */
 
-export type SessionPanelView = 'actions' | 'browser' | 'files';
+// 'actions' = tool calls · 'browser' = internal browser · 'explorer' = in-sandbox
+// file explorer + preview · 'files' = git changes for this session.
+export type SessionPanelView = 'actions' | 'browser' | 'explorer' | 'files';
 
 interface SessionBrowserState {
   /** Active view per session. Defaults to 'actions' when unset. */
