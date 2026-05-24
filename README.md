@@ -105,12 +105,19 @@ Learn the model: **[Concepts](https://kortix.com/docs/concepts)** ·
 ## Self-host
 
 Kortix is source-available and runs on your own infrastructure — laptop, VPS,
-your VPC, or air-gapped. Bring your own models, and point the CLI at your
-instance:
+your VPC, or air-gapped. Start a production-style local instance from Docker
+images, then switch the CLI between Cloud and your own hosts:
 
 ```bash
-kortix login --api https://kortix.your-company.com
+kortix self-host start
+kortix hosts ls
+kortix hosts use local
+kortix hosts use cloud
 ```
+
+The first interactive setup asks only for integration credentials that unlock
+managed git/deployments, GitHub repo access, and Pipedream connectors. Ports,
+local URLs, Supabase keys, and Docker Compose defaults are generated for you.
 
 Managed hosting is **[Kortix Cloud](https://kortix.com)** — see
 **[Pricing](https://kortix.com/pricing)** for Open Source, Cloud, and Enterprise.

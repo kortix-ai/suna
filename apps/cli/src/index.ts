@@ -17,6 +17,7 @@ import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { printBanner } from './banner.ts';
+import { activeHostEntry } from './api/config.ts';
 import { C, header, pad, rule } from './style.ts';
 
 const VERSION = '0.1.0';
@@ -95,6 +96,7 @@ async function main(argv: string[]): Promise<number> {
     printVersion();
     return 0;
   }
+  printActiveHostNotice(argv[0]);
   if (argv[0] === 'init') {
     return runInit(argv.slice(1));
   }
@@ -169,6 +171,15 @@ async function main(argv: string[]): Promise<number> {
 
   // Anything else is the "create new directory" form (`kortix my-new-project`).
   return runCreate(argv);
+}
+
+function printActiveHostNotice(command: string): void {
+  if (['help', '--help', '-h', 'version'].includes(command)) return;
+  const { name, host } = activeHostEntry();
+  const loginState = host.token ? host.user_email || host.user_id || 'logged in' : 'not logged in';
+  process.stderr.write(
+    `${C.dim}host ${C.reset}${C.bold}${name}${C.reset}${C.dim} (${host.url}, ${loginState})${C.reset}\n`,
+  );
 }
 
 main(process.argv.slice(2))

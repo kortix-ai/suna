@@ -1,5 +1,4 @@
 import {
-  DEFAULT_HOST_NAME,
   activeHostName,
   getHost,
   listHosts,
@@ -22,23 +21,22 @@ instance. The "active" host is what every other command operates on
 unless you pass \`--host <name>\` per invocation.
 
 Subcommands:
-  ls                                  List hosts (* marks active)
+  ls                                  List hosts (cloud/local always exist)
   use <name>                          Switch the active host
   add <name> --url <url> [--login]    Register a new host; with --login
                                       run the browser flow immediately
-  rm <name>                           Remove a host (cannot remove the
-                                      last remaining active host
-                                      without --force)
+  rm <name>                           Remove a custom host; built-in
+                                      cloud/local are reset instead
   info [<name>]                       Show one host (or the active)
   current                             Print the active host name
 
 Global options:
-  --force        Skip the "remove last host" confirmation.
+  --force        Skip removal confirmation.
   -h, --help     Show this help.
 
 Examples:
-  kortix hosts add local --url http://localhost:8008 --login
   kortix hosts use local
+  kortix hosts use cloud
   kortix projects ls --host local
   kortix hosts ls
 `;
@@ -82,7 +80,7 @@ function hostsLs(): number {
   const rows = listHosts();
   if (rows.length === 0) {
     process.stdout.write(
-      `${C.dim}No hosts configured. Run \`kortix login\` or \`kortix hosts add <name> --url <url>\`.${C.reset}\n`,
+      `${C.dim}No hosts configured. Run \`kortix login\` or \`kortix self-host start\`.${C.reset}\n`,
     );
     return 0;
   }
@@ -104,9 +102,12 @@ function hostsLs(): number {
       `${mark}${pad(r.name, nameW)}   ${pad(user, userW)}   ${C.faded}${r.host.url}${C.reset}\n`,
     );
   }
-  process.stdout.write(
-    `\n  ${C.dim}${rows.length} host${rows.length === 1 ? '' : 's'} · ${C.green}●${C.reset}${C.dim} = active${C.reset}\n\n`,
-  );
+  const active = rows.find((r) => r.active);
+  process.stdout.write(`\n  ${C.green}●${C.reset}${C.dim} active${C.reset}`);
+  if (active) {
+    process.stdout.write(`${C.dim}: ${C.reset}${C.bold}${active.name}${C.reset}${C.dim} -> ${active.host.url}${C.reset}`);
+  }
+  process.stdout.write('\n\n');
   return 0;
 }
 
@@ -264,7 +265,7 @@ async function hostsRm(args: string[]): Promise<number> {
       `${C.dim}  Active host is now ${C.reset}${C.bold}${result.switchedTo}${C.reset}\n`,
     );
   } else if (isActive) {
-    process.stdout.write(`${C.dim}  No remaining hosts — you're logged out.${C.reset}\n`);
+    process.stdout.write(`${C.dim}  Built-in host reset; run ${C.cyan}kortix login --host ${name}${C.reset}${C.dim} to authenticate again.${C.reset}\n`);
   }
   return 0;
 }
@@ -319,6 +320,3 @@ function removeBoolFlag(argv: string[], names: string[]): boolean {
   }
   return false;
 }
-
-// Silence unused if the default host name constant becomes useful later.
-void DEFAULT_HOST_NAME;

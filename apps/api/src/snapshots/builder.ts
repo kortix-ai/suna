@@ -366,7 +366,6 @@ export async function getLatestReadySnapshot(
   branch: string,
   provider: SandboxProviderName = 'daytona',
 ): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
-  const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   const rows = await db
     .select()
     .from(projectRuntimeSnapshots)
@@ -380,6 +379,10 @@ export async function getLatestReadySnapshot(
     )
     .orderBy(desc(projectRuntimeSnapshots.createdAt))
     .limit(10);
+  if (provider === 'local_docker') {
+    return rows[0] ?? null;
+  }
+  const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   return rows.find((row) =>
     extractMetadataRuntimeFingerprint(row.metadata) === runtimeFingerprint
   ) ?? null;

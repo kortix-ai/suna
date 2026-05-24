@@ -52,7 +52,7 @@ printf "[build-local-images] Building frontend standalone output...\n"
   NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co \
   NEXT_PUBLIC_SUPABASE_ANON_KEY=local-build-placeholder-anon-key \
   NEXT_OUTPUT=standalone \
-  pnpm run build
+  pnpm exec next build --experimental-app-only
 )
 
 printf "[build-local-images] Building kortix/kortix-frontend:%s...\n" "$TAG"
