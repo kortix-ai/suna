@@ -1,7 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
@@ -23,19 +21,19 @@ import { toast } from '@/lib/toast';
 /**
  * Project root — the new-session empty state.
  *
- * Reuses the real session empty state (SessionWelcome wallpaper +
- * SessionChatInput), so it's a typeable composer with working attachments —
- * visually near-identical to a fresh session.
+ * Renders the exact same empty state as a fresh session (SessionWelcome
+ * wallpaper full-bleed + the bottom-docked SessionChatInput, no centered
+ * title), so it's a typeable composer with working attachments that is
+ * visually identical to opening a new session.
  *
- * Warm start: the moment the user engages the input (focus / first keystroke)
- * we provision the session + sandbox in the background, so by the time they
- * press Enter the work has a head start. On send we stash the message and route
- * into the session, which auto-sends it once the runtime is ready (the session
- * view shows its own loader while the sandbox boots). If the user leaves
- * without sending, the warm session is deleted so we never orphan a sandbox.
+ * Warm start: we provision the session + sandbox the moment the page loads, so
+ * by the time the user presses Enter the work has a head start. On send we stash
+ * the message and route into the session, which auto-sends it once the runtime
+ * is ready (the session view shows its own loader while the sandbox boots). If
+ * the user leaves without sending, the warm session is deleted so we never
+ * orphan a sandbox.
  */
 export default function ProjectIndexPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -61,10 +59,17 @@ export default function ProjectIndexPage() {
     return warm.current.promise;
   }, [projectId, queryClient]);
 
-  // Begin provisioning as soon as the user engages the input.
+  // Begin provisioning the session + sandbox (focus/keystroke also call this).
   const warmStart = useCallback(() => {
     if (!warm.current.promise) void ensureSession().catch(() => {});
   }, [ensureSession]);
+
+  // Auto-provision the moment the page loads — don't wait for the user to
+  // engage the input — so the sandbox is already booting by the time they
+  // type. If they leave without sending, the cleanup below deletes it.
+  useEffect(() => {
+    warmStart();
+  }, [warmStart]);
 
   const handleSend = useCallback(
     async (text: string, files?: AttachedFile[]) => {
@@ -86,7 +91,8 @@ export default function ProjectIndexPage() {
     [ensureSession, projectId, router],
   );
 
-  // Delete a warm-started-but-unsent session when leaving the index.
+  // Delete a warm-started-but-unsent session when leaving the index (or when
+  // switching projects), and reset the ref so the next project provisions fresh.
   useEffect(() => {
     return () => {
       const { promise, sent } = warm.current;
@@ -95,29 +101,28 @@ export default function ProjectIndexPage() {
           .then((s) => deleteProjectSession(projectId, s.session_id))
           .catch(() => {});
       }
+      warm.current = { promise: null, sent: false };
     };
   }, [projectId]);
 
   return (
     <ProjectShell projectId={projectId}>
-      <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden bg-background">
-        {/* Same full-bleed wallpaper as a real empty session */}
+      <div
+        className="relative flex-1 min-h-0 flex flex-col overflow-hidden bg-background"
+        onFocusCapture={warmStart}
+        onInput={warmStart}
+      >
+        {/* Full-bleed welcome wallpaper — identical to a real empty session */}
         <div className="absolute inset-0 z-0 pointer-events-none">
           <SessionWelcome />
         </div>
 
-        {/* Centered title + the real (typeable) chat input */}
-        <div
-          className="relative z-10 flex-1 min-h-0 flex flex-col items-center justify-center gap-6 px-4"
-          onFocusCapture={warmStart}
-          onInput={warmStart}
-        >
-          <div className="space-y-2 text-center">
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground">{tHardcodedUi.raw('appProjectsIdPage.line114JsxTextWhatShouldWeBuild')}</h1>
-            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appProjectsIdPage.line117JsxTextDescribeATaskToStartANewSession')}</p>
-          </div>
-          <SessionChatInput onSend={handleSend} disabled={busy} autoFocus />
-        </div>
+        {/* Empty transparent region pushes the composer to the bottom, just
+            like a fresh session — wallpaper reads through, no centered title. */}
+        <div className="relative flex-1 min-h-0 z-10" />
+
+        {/* The real (typeable) chat input, docked at the bottom */}
+        <SessionChatInput onSend={handleSend} disabled={busy} autoFocus />
       </div>
     </ProjectShell>
   );
