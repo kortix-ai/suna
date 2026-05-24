@@ -27,6 +27,7 @@
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.4.0",
+    "opencode-ai": "1.14.28",
     "postgres": "^3.4.8",
     "smol-toml": "^1.6.1",
     "stripe": "^14.0.0",

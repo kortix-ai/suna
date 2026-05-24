@@ -129,6 +129,12 @@ import {
   listProjectSecretsSnapshotForUser,
 } from './secrets';
 import {
+  completeChatGptHeadlessAuth,
+  startChatGptHeadlessAuth,
+} from './opencode-chatgpt-auth';
+
+const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
+import {
   effectiveProjectRole,
   isAccountManager,
   parseProjectRole,
@@ -3555,6 +3561,9 @@ projectsApp.post('/:projectId/secrets', async (c) => {
   if (name.startsWith('KORTIX_')) {
     return c.json({ error: 'KORTIX_* names are reserved for platform/runtime-managed variables' }, 400);
   }
+  if (name === CODEX_AUTH_JSON_SECRET_NAME) {
+    return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
+  }
 
   const value = typeof body.value === 'string' ? body.value : null;
 
@@ -3623,6 +3632,129 @@ projectsApp.post('/:projectId/secrets', async (c) => {
   return c.json(view ?? { name }, 200);
 });
 
+// POST /v1/projects/:projectId/providers/openai/chatgpt/headless/start
+// Starts the OpenCode ChatGPT Pro/Plus headless device-code flow on the API
+// server. This deliberately does not require a running sandbox: provider
+// credentials are project configuration, and sandboxes only consume the saved
+// CODEX_AUTH_JSON secret later.
+projectsApp.post('/:projectId/providers/openai/chatgpt/headless/start', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  try {
+    return c.json(await startChatGptHeadlessAuth({
+      projectId,
+      userId: loaded.userId,
+    }));
+  } catch (err) {
+    return c.json({
+      error: err instanceof Error ? err.message : 'Failed to start ChatGPT authorization',
+    }, 500);
+  }
+});
+
+// POST /v1/projects/:projectId/providers/openai/chatgpt/headless/complete
+// Waits for the server-side OpenCode device flow to complete, then writes the
+// resulting auth.json into project_secrets as CODEX_AUTH_JSON. This is
+// intentionally Codex-specific; generic OpenCode auth can keep using its own
+// OPENCODE_AUTH_JSON row without being overwritten by subscription onboarding.
+projectsApp.post('/:projectId/providers/openai/chatgpt/headless/complete', async (c) => {
+  const projectId = c.req.param('projectId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const authId = normalizeString(body.auth_id);
+  if (!authId) return c.json({ error: 'auth_id is required' }, 400);
+
+  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
+  if (body.sharing != null) {
+    sharing = parseSharingIntent(body.sharing, loaded.userId);
+    if (!sharing) {
+      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+    }
+  }
+  if (sharing?.mode !== 'private' && !roleAllows(loaded.effectiveRole, 'manage')) {
+    return c.json({ error: 'Only project managers can configure shared provider credentials' }, 403);
+  }
+
+  try {
+    const value = await completeChatGptHeadlessAuth({
+      authId,
+      projectId,
+      userId: loaded.userId,
+    });
+
+    const now = new Date();
+    if (sharing?.mode === 'private') {
+      await db
+        .insert(projectSecrets)
+        .values({
+          projectId,
+          name: CODEX_AUTH_JSON_SECRET_NAME,
+          valueEnc: encryptProjectSecret(projectId, value),
+          ownerUserId: loaded.userId,
+          active: true,
+          createdBy: loaded.userId,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [projectSecrets.projectId, projectSecrets.name, projectSecrets.ownerUserId],
+          targetWhere: sql`${projectSecrets.ownerUserId} is not null`,
+          set: {
+            valueEnc: encryptProjectSecret(projectId, value),
+            active: true,
+            updatedAt: now,
+          },
+        });
+
+      const subject = await resolveShareSubject(loaded.userId);
+      const views = await loadSecretViewsForUser(projectId, subject, true);
+      const view = views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME);
+      return c.json(view ?? { name: CODEX_AUTH_JSON_SECRET_NAME }, 200);
+    }
+
+    await db
+      .insert(projectSecrets)
+      .values({
+        projectId,
+        name: CODEX_AUTH_JSON_SECRET_NAME,
+        valueEnc: encryptProjectSecret(projectId, value),
+        createdBy: loaded.userId,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [projectSecrets.projectId, projectSecrets.name],
+        targetWhere: isNull(projectSecrets.ownerUserId),
+        set: {
+          valueEnc: encryptProjectSecret(projectId, value),
+          updatedAt: now,
+        },
+      });
+
+    const [row] = await db
+      .select({ secretId: projectSecrets.secretId })
+      .from(projectSecrets)
+      .where(and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.name, CODEX_AUTH_JSON_SECRET_NAME),
+        isNull(projectSecrets.ownerUserId),
+      ))
+      .limit(1);
+    if (sharing && row) await setSecretSharing(row.secretId, sharing);
+
+    const subject = await resolveShareSubject(loaded.userId);
+    const views = await loadSecretViewsForUser(projectId, subject, true);
+    const view = views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME);
+    return c.json(view ?? { name: CODEX_AUTH_JSON_SECRET_NAME }, 200);
+  } catch (err) {
+    return c.json({
+      error: err instanceof Error ? err.message : 'Failed to complete ChatGPT authorization',
+    }, 500);
+  }
+});
+
 // DELETE /v1/projects/:projectId/secrets/:name
 projectsApp.delete('/:projectId/secrets/:name', async (c) => {
   const projectId = c.req.param('projectId');
@@ -3665,6 +3797,9 @@ projectsApp.put('/:projectId/secrets/:name/personal', async (c) => {
   }
   if (isSystemProjectSecretName(name)) {
     return c.json({ error: 'KORTIX_* names are reserved and cannot be overridden' }, 400);
+  }
+  if (name === CODEX_AUTH_JSON_SECRET_NAME) {
+    return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
   }
 
   const value = typeof body.value === 'string' ? body.value : null;
