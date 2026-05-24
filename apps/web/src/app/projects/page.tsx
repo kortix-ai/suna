@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  FolderGit2,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -18,6 +17,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { ProjectCreateModal } from '@/components/projects/project-create-modal';
+import { AccountOnboardingGuide } from '@/components/projects/account-onboarding';
 import {
   archiveProject,
   listAccounts,
@@ -259,22 +259,12 @@ export default function ProjectsPage() {
           )}
 
           {showEmptyState && (
-            <SectionCard flush>
-              <EmptyState
-                icon={FolderGit2}
-                title={tHardcodedUi.raw('appProjectsPage.line265JsxAttrTitleCreateYourFirstProject')}
-                description={tHardcodedUi.raw('appProjectsPage.line266JsxAttrDescriptionAProjectIsAWorkspaceForOneCompany')}
-                action={
-                  <Button
-                    onClick={() => setModalOpen(true)}
-                    disabled={!selectedAccountId || !canCreateProjects}
-                    size="sm"
-                    className="gap-1.5"
-                  >
-                    <Plus className="h-4 w-4" />{tHardcodedUi.raw('appProjectsPage.line275JsxTextNewProject')}</Button>
-                }
+            <div className="flex justify-center pt-2">
+              <AccountOnboardingGuide
+                accountId={selectedAccountId}
+                onCreateProject={() => setModalOpen(true)}
               />
-            </SectionCard>
+            </div>
           )}
 
           {showNoResults && (
@@ -286,6 +276,15 @@ export default function ProjectsPage() {
                 description={tHardcodedUi.raw('appProjectsPage.line288JsxAttrDescriptionTryADifferentSearchTerm')}
               />
             </SectionCard>
+          )}
+
+          {total > 0 && (
+            <AccountOnboardingGuide
+              accountId={selectedAccountId}
+              onCreateProject={() => setModalOpen(true)}
+              dismissible
+              className="max-w-none"
+            />
           )}
 
           {filtered.length > 0 && (
