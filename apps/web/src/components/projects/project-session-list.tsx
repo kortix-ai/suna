@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useState, memo } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Loader2, MoreHorizontal, RotateCcw, Trash2 } from 'lucide-react';
+import { Loader2, MoreHorizontal, RotateCcw, Share2, Trash2 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 
@@ -40,6 +40,7 @@ import {
   type ProjectOpenCodeSession,
   type ProjectSessionStatus,
 } from '@/lib/projects-client';
+import { SessionShareDialog } from '@/components/projects/session-share-dialog';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -75,6 +76,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const activeOpenCodeSessionId = searchParams.get('oc');
   const queryClient = useQueryClient();
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(null);
+  const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -150,6 +152,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
                 titleOverride={root?.title ?? undefined}
                 childCount={children.length}
                 onDelete={(id, label) => setSessionToDelete({ id, label })}
+                onShare={(s) => setSessionToShare(s)}
                 onRestart={(id) => restartMutation.mutate(id)}
                 isRestarting={
                   restartMutation.isPending &&
@@ -178,6 +181,14 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           );
         })}
       </div>
+
+      <SessionShareDialog
+        projectId={projectId}
+        session={sessionToShare}
+        open={!!sessionToShare}
+        onOpenChange={(open) => !open && setSessionToShare(null)}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] })}
+      />
 
       <AlertDialog
         open={!!sessionToDelete}
@@ -213,6 +224,7 @@ interface ProjectSessionRowProps {
   href: string;
   isActive: boolean;
   onDelete: (sessionId: string, label: string) => void;
+  onShare: (session: ProjectSession) => void;
   onRestart: (sessionId: string) => void;
   isRestarting: boolean;
   titleOverride?: string;
@@ -224,6 +236,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
   href,
   isActive,
   onDelete,
+  onShare,
   onRestart,
   isRestarting,
   titleOverride,
@@ -320,6 +333,19 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40 p-1">
+              {session.can_manage_sharing !== false && (
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onShare(session);
+                  }}
+                >
+                  <Share2 className="h-4 w-4" />
+                  Share…
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 className="cursor-pointer"
                 disabled={isRestarting}

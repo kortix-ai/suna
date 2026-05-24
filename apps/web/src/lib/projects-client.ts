@@ -285,19 +285,37 @@ export interface GitHubInstallationsResponse extends GitHubInstallationStatus {
   installations: GitHubInstallationStatus[];
 }
 
+/**
+ * The per-user view of one secret KEY: the shared/project row merged with the
+ * requesting member's own override, plus which one wins for them at runtime.
+ */
 export interface ProjectSecret {
-  secret_id: string;
-  project_id: string;
   name: string;
+  project_id: string;
+  /** Shared row id; null when only a personal override (or nothing) exists. */
+  secret_id: string | null;
   created_by: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
   system?: boolean;
   readonly?: boolean;
   purpose?: string | null;
-  configured?: boolean;
   can_rotate?: boolean;
   managed_by?: string | null;
+  /** A shared/project value is set. */
+  configured: boolean;
+  /** Persisted share scope — 'project' (everyone) or 'restricted' (allow-list). */
+  share_scope?: 'project' | 'restricted';
+  /** Who can use the shared value. Same shape as connector sharing. */
+  sharing?: ConnectorSharing | null;
+  /** The shared value reaches me (project-wide, or I'm in the allow-list). */
+  usable_by_me: boolean;
+  /** My own per-key override (value never returned), and whether it's active. */
+  mine: { active: boolean; updated_at: string } | null;
+  /** What actually runs in my sessions for this key. */
+  effective_source: 'mine' | 'shared' | 'none';
+  /** I'm allowed to edit the shared row (project manager). */
+  can_manage_shared: boolean;
 }
 
 function unwrap<T>(response: { data?: T; success: boolean; error?: Error }) {
@@ -490,6 +508,8 @@ export async function inviteProjectMember(
 
 export interface ProjectSecretsResponse {
   items: ProjectSecret[];
+  /** Whether the requesting member can edit shared rows (vs only their own overrides). */
+  can_manage?: boolean;
   /** Env keys declared as required in the project's kortix.toml manifest. */
   required: string[];
   /** Env keys declared as optional in the project's kortix.toml manifest. */
@@ -518,7 +538,9 @@ export async function upsertProjectSecret(
   projectId: string,
   input: {
     name: string;
-    value: string;
+    /** Omit to change sharing only on an existing secret (value left untouched). */
+    value?: string;
+    sharing?: ConnectorSharing;
   },
 ) {
   return unwrap(
@@ -546,6 +568,33 @@ export async function deleteProjectSecret(projectId: string, name: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
       `/projects/${projectId}/secrets/${encodeURIComponent(name)}`,
+    ),
+  );
+}
+
+/**
+ * Set/update the caller's OWN per-key override ("use mine") and/or flip whether
+ * it's active. Any project member may call this; it never touches the shared
+ * value or anyone else's override.
+ */
+export async function setPersonalProjectSecret(
+  projectId: string,
+  name: string,
+  input: { value?: string; active?: boolean },
+) {
+  return unwrap(
+    await backendApi.put<ProjectSecret>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
+      input,
+    ),
+  );
+}
+
+/** Remove the caller's own override for a key (falls back to the shared value). */
+export async function deletePersonalProjectSecret(projectId: string, name: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
     ),
   );
 }
@@ -1200,6 +1249,13 @@ export interface ProjectSession {
   error: string | null;
   metadata: Record<string, unknown>;
   opencode_sessions: ProjectOpenCodeSession[];
+  // Ownership + org-visibility (Phase 2 session sharing).
+  created_by?: string | null;
+  owner_email?: string | null;
+  visibility?: 'private' | 'project' | 'restricted';
+  sharing?: ConnectorSharing | null;
+  is_owner?: boolean;
+  can_manage_sharing?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1217,6 +1273,23 @@ export interface ProjectOpenCodeSession {
 export async function listProjectSessions(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions`),
+  );
+}
+
+/**
+ * Set who can see/open a session (private | project | members). Owner or
+ * project manager only. Reuses the connector/secret sharing intent shape.
+ */
+export async function setProjectSessionSharing(
+  projectId: string,
+  sessionId: string,
+  intent: ConnectorSharing,
+) {
+  return unwrap(
+    await backendApi.put<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}/sharing`,
+      intent,
+    ),
   );
 }
 

@@ -413,13 +413,29 @@ export const projectSecrets = kortixSchema.table(
     valueEnc: text('value_enc').notNull(),
     scope: projectSecretScopeEnum('scope').default('runtime').notNull(),
     shareScope: secretShareScopeEnum('share_scope').default('project').notNull(),
+    // NULL = the shared project-level row (governed by share_scope + grants).
+    // Non-null = that member's PRIVATE per-key override, which shadows the
+    // shared row of the same name in their own sessions. Mirrors
+    // executor_credentials.userId. See docs/specs/executor.md / iam.md.
+    ownerUserId: uuid('owner_user_id'),
+    // On a personal override row: whether the member currently uses their own
+    // value (true) or has flipped back to the shared one while keeping theirs
+    // stored (false). Ignored on shared rows.
+    active: boolean('active').default(true).notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('idx_project_secrets_project').on(table.projectId),
-    uniqueIndex('idx_project_secrets_project_name').on(table.projectId, table.name),
+    // At most one SHARED row per (project, name)…
+    uniqueIndex('idx_project_secrets_project_name_shared')
+      .on(table.projectId, table.name)
+      .where(sql`${table.ownerUserId} is null`),
+    // …and at most one PERSONAL override per (project, name, member).
+    uniqueIndex('idx_project_secrets_project_name_owner')
+      .on(table.projectId, table.name, table.ownerUserId)
+      .where(sql`${table.ownerUserId} is not null`),
   ],
 );
 
@@ -483,6 +499,18 @@ export const projectTriggers = kortixSchema.table(
   ],
 );
 
+/**
+ * Who can see/open a session within the org. `private` (default) = only the
+ * creator; `project` = every project member (team-wide); `restricted` = the
+ * creator + the members/groups in `project_session_grants`. Mirrors the secret
+ * sharing model but defaults to private. See docs/specs/iam.md.
+ */
+export const projectSessionVisibilityEnum = kortixSchema.enum('project_session_visibility', [
+  'private',
+  'project',
+  'restricted',
+]);
+
 export const projectSessions = kortixSchema.table(
   'project_sessions',
   {
@@ -502,6 +530,9 @@ export const projectSessions = kortixSchema.table(
     agentName: text('agent_name').default('default').notNull(),
     status: projectSessionStatusEnum('status').default('queued').notNull(),
     error: text('error'),
+    // Session ownership + org-visibility (default private to the creator).
+    createdBy: uuid('created_by'),
+    visibility: projectSessionVisibilityEnum('visibility').default('private').notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -510,7 +541,33 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_account').on(table.accountId),
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),
+    index('idx_project_sessions_created_by').on(table.createdBy),
     uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
+  ],
+);
+
+/**
+ * Allow-list for a `restricted` session — which members/groups (besides the
+ * owner) can see + open it. Mirrors `project_secret_grants`.
+ */
+export const projectSessionGrants = kortixSchema.table(
+  'project_session_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    principalType: secretGrantPrincipalEnum('principal_type').notNull(),
+    principalId: uuid('principal_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_session_grants_session').on(table.sessionId),
+    uniqueIndex('idx_project_session_grants_unique').on(
+      table.sessionId,
+      table.principalType,
+      table.principalId,
+    ),
   ],
 );
 

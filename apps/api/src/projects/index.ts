@@ -10,7 +10,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Cron } from 'croner';
 import { Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGithubInstallations,
   accountGithubInstallationStates,
@@ -35,6 +35,7 @@ import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
 import {
   archiveRepoSubtree,
+  commitFileToBranch,
   createRemoteSessionBranch,
   getBranchDiff,
   getCommit,
@@ -97,6 +98,20 @@ import {
 } from '../iam';
 import { deriveRequestContext } from '../iam/cache';
 import {
+  isSecretUsableBy,
+  isSessionVisibleTo,
+  loadGrants,
+  loadSessionGrants,
+  parseSharingIntent,
+  resolveShareSubject,
+  scopeToIntent,
+  setSecretSharing,
+  setSessionSharing,
+  visibilityToIntent,
+  type SecretGrant,
+  type ShareSubject,
+} from '../executor/share';
+import {
   ensureBuildForLatestCommit,
   listSnapshotsForProject,
 } from '../snapshots/builder';
@@ -110,7 +125,7 @@ import {
   encryptProjectSecret,
   getProjectSecretValue,
   isValidSecretName,
-  listProjectSecretsSnapshot,
+  listProjectSecretsSnapshotForUser,
 } from './secrets';
 import {
   effectiveProjectRole,
@@ -192,10 +207,23 @@ const ACTIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running
 const PROVISIONING_SESSION_STATUSES = ['queued', 'branching', 'provisioning'] as const;
 const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
 
-function serializeSession(row: ProjectSessionRow) {
+function serializeSession(
+  row: ProjectSessionRow,
+  ctx?: {
+    /** The grants on this session (for restricted visibility). */
+    grants?: SecretGrant[];
+    /** The viewing user, to compute is_owner / can_manage_sharing. */
+    viewerId?: string;
+    /** Viewer can manage the project (owner/admin/manager). */
+    canManageProject?: boolean;
+    /** Resolved email of the session owner, for "shared by X" display. */
+    ownerEmail?: string | null;
+  },
+) {
   const opencodeSessions = Array.isArray(row.metadata?.opencode_sessions)
     ? row.metadata.opencode_sessions
     : [];
+  const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -212,9 +240,53 @@ function serializeSession(row: ProjectSessionRow) {
     error: row.error,
     metadata: row.metadata ?? {},
     opencode_sessions: opencodeSessions,
+    // Ownership + org-visibility (Phase 2 session sharing).
+    created_by: row.createdBy,
+    owner_email: ctx?.ownerEmail ?? null,
+    visibility: row.visibility,
+    sharing: visibilityToIntent(row.visibility as 'private' | 'project' | 'restricted', ctx?.grants ?? []),
+    is_owner: isOwner,
+    can_manage_sharing: isOwner || Boolean(ctx?.canManageProject),
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Load a session and enforce that the viewer can SEE it (owner, project-wide,
+ * or in the allow-list). Returns null for both not-found and not-visible so we
+ * never reveal the existence of a private session. Also reports whether the
+ * viewer may manage its sharing (owner or project manager).
+ */
+async function loadVisibleSession(
+  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
+  sessionId: string,
+): Promise<{
+  row: ProjectSessionRow;
+  subject: ShareSubject;
+  grants: SecretGrant[];
+  isOwner: boolean;
+  canManageProject: boolean;
+  canManageSharing: boolean;
+} | null> {
+  const [row] = await db
+    .select()
+    .from(projectSessions)
+    .where(and(
+      eq(projectSessions.sessionId, sessionId),
+      eq(projectSessions.projectId, loaded.row.projectId),
+      eq(projectSessions.accountId, loaded.row.accountId),
+    ))
+    .limit(1);
+  if (!row) return null;
+  const subject = await resolveShareSubject(loaded.userId);
+  const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
+  if (!isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject)) {
+    return null;
+  }
+  const isOwner = row.createdBy === loaded.userId;
+  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  return { row, subject, grants, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };
 }
 
 function dashboardBaseUrl(): string {
@@ -433,23 +505,94 @@ async function checkConcurrentSessionCap(accountId: string, userId: string, requ
   };
 }
 
-function serializeProjectSecret(row: typeof projectSecrets.$inferSelect) {
-  const system = isSystemProjectSecretName(row.name);
-  const isGitAuth = row.name === PROJECT_GIT_AUTH_SECRET_NAME;
+type SecretRow = typeof projectSecrets.$inferSelect;
+
+/**
+ * The per-user view of one secret KEY: the shared/project row (what managers
+ * control + who it's shared with) merged with the requesting member's own
+ * private override, plus which one actually wins for them at runtime. This is
+ * what powers the "use shared / use mine" choice in the UI.
+ */
+function buildSecretView(input: {
+  name: string;
+  shared?: SecretRow;
+  sharedGrants?: SecretGrant[];
+  personal?: SecretRow;
+  subject: ShareSubject;
+  canManageShared: boolean;
+}) {
+  const { name, shared, sharedGrants = [], personal, subject, canManageShared } = input;
+  const system = isSystemProjectSecretName(name);
+  const isGitAuth = name === PROJECT_GIT_AUTH_SECRET_NAME;
+  const usableByMe = shared
+    ? isSecretUsableBy(shared.shareScope as 'project' | 'restricted', sharedGrants, subject)
+    : false;
+  const mineActive = Boolean(personal?.active);
+  const effectiveSource: 'mine' | 'shared' | 'none' =
+    personal && mineActive ? 'mine' : usableByMe ? 'shared' : 'none';
   return {
-    secret_id: row.secretId,
-    project_id: row.projectId,
-    name: row.name,
-    created_by: row.createdBy,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
+    name,
+    project_id: (shared ?? personal)!.projectId,
+    secret_id: shared?.secretId ?? null,
+    created_by: shared?.createdBy ?? null,
+    created_at: (shared?.createdAt ?? personal?.createdAt)?.toISOString() ?? null,
+    updated_at: (shared?.updatedAt ?? personal?.updatedAt)?.toISOString() ?? null,
     system,
     readonly: system,
     purpose: isGitAuth ? 'git_auth' : null,
-    configured: true,
     can_rotate: isGitAuth,
     managed_by: isGitAuth ? 'project_secret' : null,
+    // The SHARED row: is a project value set, who can use it, and can it reach me.
+    configured: Boolean(shared),
+    share_scope: shared?.shareScope ?? 'project',
+    sharing: shared ? scopeToIntent(shared.shareScope as 'project' | 'restricted', sharedGrants) : null,
+    usable_by_me: usableByMe,
+    // MY private override (value never returned), and whether I'm using it.
+    mine: personal ? { active: personal.active, updated_at: personal.updatedAt.toISOString() } : null,
+    // What actually gets injected into my sessions for this key.
+    effective_source: effectiveSource,
+    // Members manage only their own override; managers also manage the shared row.
+    can_manage_shared: canManageShared && !system,
   };
+}
+
+/**
+ * Load every secret KEY in a project as the per-user view (shared + my own
+ * override merged). Used by the secrets list + returned after a write.
+ */
+async function loadSecretViewsForUser(
+  projectId: string,
+  subject: ShareSubject,
+  canManageShared: boolean,
+): Promise<ReturnType<typeof buildSecretView>[]> {
+  const rows = await db
+    .select()
+    .from(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, subject.userId)),
+    ))
+    .orderBy(desc(projectSecrets.updatedAt));
+
+  const byName = new Map<string, { shared?: SecretRow; personal?: SecretRow }>();
+  for (const row of rows) {
+    const slot = byName.get(row.name) ?? {};
+    if (row.ownerUserId === null) slot.shared = row;
+    else slot.personal = row;
+    byName.set(row.name, slot);
+  }
+  const grants = await loadGrants(rows.filter((r) => r.ownerUserId === null).map((r) => r.secretId));
+
+  return [...byName.entries()].map(([name, slot]) =>
+    buildSecretView({
+      name,
+      shared: slot.shared,
+      sharedGrants: slot.shared ? grants.get(slot.shared.secretId) ?? [] : [],
+      personal: slot.personal,
+      subject,
+      canManageShared,
+    }),
+  );
 }
 
 function isSystemProjectSecretName(name: string): boolean {
@@ -1422,7 +1565,10 @@ async function buildSessionSandboxEnvVars(input: {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
   // then reused by the daemon for both API calls and proxy HMAC validation.
-  const runtimeSecrets = await listProjectSecretsSnapshot(input.projectId);
+  // Resolved AS the launching user, so personal overrides win and "Only me" /
+  // "Select members" secrets only reach members they're shared with.
+  const subject = await resolveShareSubject(input.userId);
+  const runtimeSecrets = await listProjectSecretsSnapshotForUser(input.projectId, subject);
   // The Slack signing secret only verifies inbound webhooks (an apps/api job).
   // The in-sandbox agent never needs it — keep it out of the sandbox env.
   delete runtimeSecrets.env.SLACK_SIGNING_SECRET;
@@ -1452,6 +1598,42 @@ function deriveKortixApiBase(): string {
   return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1`;
 }
 
+/**
+ * Cloud sandboxes (the only kind we provision) reach the control plane over the
+ * public internet via `$KORTIX_API_URL`. A loopback/unspecified host is never
+ * reachable from inside a remote sandbox, so a session booted against one is
+ * dead-on-arrival: repo materialization can't fetch its git clone credential and
+ * the daemon ends up reporting "OpenCode runtime is not ready" with a cryptic
+ * "Unable to connect" boot error ~60s later. Detect it up front so session
+ * creation fails fast with an actionable message instead.
+ *
+ * Returns a human-readable reason string when unreachable, or null when fine.
+ */
+function sandboxCallbackUnreachableReason(): string | null {
+  let host: string;
+  try {
+    host = new URL(deriveKortixApiBase()).hostname.toLowerCase();
+  } catch {
+    return `KORTIX_URL is not a valid URL: ${config.KORTIX_URL || '(unset)'}`;
+  }
+  const isLoopback =
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === '127.0.0.1' ||
+    host.startsWith('127.') ||
+    host === '0.0.0.0' ||
+    host === '::1' ||
+    host === '[::1]';
+  if (!isLoopback) return null;
+  return (
+    `KORTIX_URL points at a loopback address (${config.KORTIX_URL}). ` +
+    `Cloud sandboxes run remotely and cannot call back to your machine's localhost, ` +
+    `so the agent runtime will never boot. Start the dev tunnel with \`pnpm dev\` ` +
+    `(it provisions a public Cloudflare URL automatically and exports it as KORTIX_URL), ` +
+    `or set a public KORTIX_URL in apps/api/.env.`
+  );
+}
+
 export async function createProjectSession(input: {
   project: ProjectRow;
   userId: string;
@@ -1474,6 +1656,15 @@ export async function createProjectSession(input: {
       return { error: { status: 400, body: { error: `Unknown or disabled sandbox provider: ${requestedProvider}` } } };
     }
     providerName = requestedProvider as SandboxProviderName;
+  }
+
+  // Fail fast on an unreachable callback URL — a loopback KORTIX_URL guarantees
+  // a dead sandbox (repo clone-credential fetch can't reach us). Refusing here
+  // avoids minting a doomed session row + remote branch and surfaces the real
+  // fix to the user instead of a cryptic "OpenCode runtime is not ready" later.
+  const callbackUnreachable = sandboxCallbackUnreachableReason();
+  if (callbackUnreachable) {
+    return { error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } } };
   }
 
   let responseHeaders: Record<string, string> | undefined;
@@ -1534,6 +1725,10 @@ export async function createProjectSession(input: {
         sandboxId: sessionId,
         agentName,
         status: 'provisioning',
+        // Sessions are private to their creator by default; share via the
+        // session-header control (visibility = project | restricted).
+        createdBy: userId,
+        visibility: 'private',
         metadata,
         updatedAt: new Date(),
       })
@@ -1847,12 +2042,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
     .limit(1);
   if (!project) return c.json({ error: 'Not found' }, 404);
 
-  const { specs } = await loadProjectTriggers({
-    projectId: project.projectId,
-    repoUrl: project.repoUrl,
-    defaultBranch: project.defaultBranch,
-    manifestPath: project.manifestPath,
-  });
+  const { specs } = await loadProjectTriggers(await withProjectGitAuth(project));
   const spec = specs.find((s) => s.slug === slug);
   if (!spec || spec.type !== 'webhook' || !spec.enabled) {
     return c.json({ error: 'Not found' }, 404);
@@ -2117,12 +2307,7 @@ async function runGitTriggerSweep(now: Date, accumulator: {
   for (const project of projectsForSweep) {
     let specs: GitTriggerSpec[];
     try {
-      const loaded = await loadProjectTriggers({
-        projectId: project.projectId,
-        repoUrl: project.repoUrl,
-        defaultBranch: project.defaultBranch,
-        manifestPath: project.manifestPath,
-      });
+      const loaded = await loadProjectTriggers(await withProjectGitAuth(project));
       specs = loaded.specs;
     } catch (err) {
       console.warn('[project-triggers/git] load failed', project.projectId, err instanceof Error ? err.message : err);
@@ -3240,19 +3425,17 @@ projectsApp.put('/:projectId/git-credential', async (c) => {
 });
 
 // GET /v1/projects/:projectId/secrets
-// Returns stored secrets (names only, no plaintext) plus the manifest-
-// declared required/optional env keys, so the UI can show a "must-set"
-// checklist alongside what's already configured.
+// Readable by any project member: returns each secret KEY as the per-user view
+// (the shared row + that member's own override, names only, no plaintext) plus
+// the manifest-declared required/optional env keys. Members manage only their
+// own override; managers additionally manage the shared row (`can_manage_shared`).
 projectsApp.get('/:projectId/secrets', async (c) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const rows = await db
-    .select()
-    .from(projectSecrets)
-    .where(eq(projectSecrets.projectId, projectId))
-    .orderBy(desc(projectSecrets.updatedAt));
+  const subject = await resolveShareSubject(loaded.userId);
+  const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
 
   // Manifest is optional — a project without kortix.toml just gets empty
   // required/optional lists. We surface loaded/missing/error explicitly so the
@@ -3276,14 +3459,16 @@ projectsApp.get('/:projectId/secrets', async (c) => {
     });
   }
 
-  const items = rows
-    .filter((row) => !isSystemProjectSecretName(row.name))
-    .map(serializeProjectSecret);
+  const items = (await loadSecretViewsForUser(projectId, subject, canManageShared))
+    .filter((item) => !item.system);
 
   return c.json({
     items,
     required,
     optional,
+    // Page-level: may this member edit shared rows (add/set/share), or only
+    // manage their own overrides?
+    can_manage: canManageShared,
     manifest_status: manifestStatus,
     manifest_path: loaded.row.manifestPath,
     ...(manifestError ? { manifest_error: manifestError } : {}),
@@ -3308,28 +3493,70 @@ projectsApp.post('/:projectId/secrets', async (c) => {
   }
 
   const value = typeof body.value === 'string' ? body.value : null;
-  if (value === null) return c.json({ error: 'value is required' }, 400);
+
+  // Optional sharing intent (project | private | members). Absent → leave
+  // sharing as-is (column defaults to 'project' on first insert).
+  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
+  if (body.sharing != null) {
+    sharing = parseSharingIntent(body.sharing, loaded.userId);
+    if (!sharing) {
+      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+    }
+  }
+
+  // Look up the existing SHARED row so a sharing-only edit doesn't force
+  // re-entering the value. Creating a brand-new secret still requires a value.
+  const [existing] = await db
+    .select({ secretId: projectSecrets.secretId })
+    .from(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, name),
+      isNull(projectSecrets.ownerUserId),
+    ))
+    .limit(1);
+  if (!existing && value === null) {
+    return c.json({ error: 'value is required' }, 400);
+  }
 
   const now = new Date();
-  const [row] = await db
-    .insert(projectSecrets)
-    .values({
-      projectId,
-      name,
-      valueEnc: encryptProjectSecret(projectId, value),
-      createdBy: loaded.userId,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projectSecrets.projectId, projectSecrets.name],
-      set: {
+  let secretId: string;
+  if (value !== null) {
+    const [row] = await db
+      .insert(projectSecrets)
+      .values({
+        projectId,
+        name,
         valueEnc: encryptProjectSecret(projectId, value),
+        createdBy: loaded.userId,
         updatedAt: now,
-      },
-    })
-    .returning();
+      })
+      .onConflictDoUpdate({
+        // The shared row is unique on (project, name) WHERE owner_user_id IS NULL.
+        target: [projectSecrets.projectId, projectSecrets.name],
+        targetWhere: isNull(projectSecrets.ownerUserId),
+        set: {
+          valueEnc: encryptProjectSecret(projectId, value),
+          updatedAt: now,
+        },
+      })
+      .returning({ secretId: projectSecrets.secretId });
+    secretId = row.secretId;
+  } else {
+    // Sharing-only update — touch updatedAt so the list reflects the change.
+    await db
+      .update(projectSecrets)
+      .set({ updatedAt: now })
+      .where(eq(projectSecrets.secretId, existing!.secretId));
+    secretId = existing!.secretId;
+  }
 
-  return c.json(serializeProjectSecret(row), 200);
+  if (sharing) await setSecretSharing(secretId, sharing);
+
+  const subject = await resolveShareSubject(loaded.userId);
+  const views = await loadSecretViewsForUser(projectId, subject, true);
+  const view = views.find((v) => v.name === name);
+  return c.json(view ?? { name }, 200);
 });
 
 // DELETE /v1/projects/:projectId/secrets/:name
@@ -3345,11 +3572,100 @@ projectsApp.delete('/:projectId/secrets/:name', async (c) => {
     return c.json({ error: `${name} is managed by Kortix and cannot be removed` }, 403);
   }
 
+  // Only the shared row — members' personal overrides for this key are theirs to
+  // remove (via the /personal route) and are left intact.
   await db
     .delete(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
       eq(projectSecrets.name, name),
+      isNull(projectSecrets.ownerUserId),
+    ));
+
+  return c.json({ ok: true });
+});
+
+// PUT /v1/projects/:projectId/secrets/:name/personal
+// Any project member sets/updates THEIR OWN per-key override (the "use mine"
+// value) and/or flips whether it's active. Operates only on the caller's row;
+// never touches the shared value or anyone else's override.
+projectsApp.put('/:projectId/secrets/:name/personal', async (c) => {
+  const projectId = c.req.param('projectId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const name = c.req.param('name')?.trim().toUpperCase();
+  if (!name || !isValidSecretName(name)) {
+    return c.json({ error: 'Invalid secret name' }, 400);
+  }
+  if (isSystemProjectSecretName(name)) {
+    return c.json({ error: 'KORTIX_* names are reserved and cannot be overridden' }, 400);
+  }
+
+  const value = typeof body.value === 'string' ? body.value : null;
+  const active = typeof body.active === 'boolean' ? body.active : undefined;
+  if (value === null && active === undefined) {
+    return c.json({ error: 'value or active is required' }, 400);
+  }
+
+  const [existingMine] = await db
+    .select({ secretId: projectSecrets.secretId })
+    .from(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, name),
+      eq(projectSecrets.ownerUserId, loaded.userId),
+    ))
+    .limit(1);
+
+  const now = new Date();
+  if (!existingMine) {
+    if (value === null) {
+      return c.json({ error: 'value is required to create an override' }, 400);
+    }
+    await db.insert(projectSecrets).values({
+      projectId,
+      name,
+      valueEnc: encryptProjectSecret(projectId, value),
+      ownerUserId: loaded.userId,
+      active: active ?? true,
+      createdBy: loaded.userId,
+      updatedAt: now,
+    });
+  } else {
+    await db
+      .update(projectSecrets)
+      .set({
+        ...(value !== null ? { valueEnc: encryptProjectSecret(projectId, value) } : {}),
+        ...(active !== undefined ? { active } : {}),
+        updatedAt: now,
+      })
+      .where(eq(projectSecrets.secretId, existingMine.secretId));
+  }
+
+  const subject = await resolveShareSubject(loaded.userId);
+  const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'));
+  return c.json(views.find((v) => v.name === name) ?? { name }, 200);
+});
+
+// DELETE /v1/projects/:projectId/secrets/:name/personal
+// Remove the caller's own override for this key (falls back to the shared value).
+projectsApp.delete('/:projectId/secrets/:name/personal', async (c) => {
+  const projectId = c.req.param('projectId');
+  const name = c.req.param('name')?.trim().toUpperCase();
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!name || !isValidSecretName(name)) {
+    return c.json({ error: 'Invalid secret name' }, 400);
+  }
+
+  await db
+    .delete(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, name),
+      eq(projectSecrets.ownerUserId, loaded.userId),
     ));
 
   return c.json({ ok: true });
@@ -3378,7 +3694,7 @@ function buildPublicWebhookUrl(projectId: string, slug: string): string {
 
 /** Builds the GET-listing response shape (specs + runtime + errors). */
 async function loadTriggersForResponse(projectId: string, project: ProjectRow) {
-  const { specs, errors } = await loadProjectTriggers(project);
+  const { specs, errors } = await loadProjectTriggers(await withProjectGitAuth(project));
   const runtimeRows = specs.length === 0
     ? []
     : await db
@@ -3515,11 +3831,6 @@ function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | 
   return { owner: m[1]!, repo: m[2]! };
 }
 
-async function resolveTriggerCommitAuth(project: ProjectRow) {
-  const auth = await resolveProjectGitAuth(project);
-  return auth.auth ?? undefined;
-}
-
 /**
  * Convert a validated draft into the spec shape the manifest writer
  * expects (and the trigger loader returns).
@@ -3598,44 +3909,64 @@ export async function commitManifest(
   manifest: ParsedManifest,
   message: string,
 ): Promise<{ ok: true } | { error: string; status: number }> {
-  const repo = parseGitHubRepoUrl(project.repoUrl);
-  if (!repo) return { error: 'Project repo URL is not a GitHub URL', status: 400 };
+  const content = serializeManifest(manifest);
+  const branch = project.defaultBranch;
 
-  let auth: GitHubAuthContext | undefined;
-  try {
-    auth = await resolveTriggerCommitAuth(project);
-  } catch (err) {
-    return {
-      error: `GitHub auth unavailable: ${(err as Error).message || String(err)}`,
-      status: 502,
-    };
+  // GitHub repos: commit through the Contents API (App / PAT auth) — the
+  // lightweight single-file path that doesn't need a full clone.
+  const repo = parseGitHubRepoUrl(project.repoUrl);
+  if (repo) {
+    let auth: GitHubAuthContext | undefined;
+    try {
+      auth = (await resolveProjectGitAuth(project)).auth ?? undefined;
+    } catch (err) {
+      return { error: `GitHub auth unavailable: ${(err as Error).message || String(err)}`, status: 502 };
+    }
+    const existingSha = await getFileSha({ owner: repo.owner, repo: repo.repo, path: MANIFEST_FILENAME, branch, auth });
+    try {
+      await commitFile({
+        owner: repo.owner,
+        repo: repo.repo,
+        path: MANIFEST_FILENAME,
+        content,
+        message,
+        branch,
+        existingSha: existingSha ?? undefined,
+        auth,
+      });
+    } catch (err) {
+      return { error: `Failed to commit ${MANIFEST_FILENAME}: ${(err as Error).message || String(err)}`, status: 502 };
+    }
+    invalidateProjectMirror(project.projectId);
+    return { ok: true };
   }
 
-  const branch = project.defaultBranch;
-  const existingSha = await getFileSha({
-    owner: repo.owner,
-    repo: repo.repo,
-    path: MANIFEST_FILENAME,
-    branch,
-    auth,
-  });
+  // Any other host (Freestyle managed git, GitLab, generic HTTPS remote):
+  // commit via the git CLI. The old code bailed here with "Project repo URL is
+  // not a GitHub URL", which broke every manifest edit (connectors, triggers,
+  // apps) on managed/self-hosted projects. Mirrors createRemoteSessionBranch's
+  // GitHub-fast-path / git-CLI-fallback split.
+  let gitProject: ProjectRow & { gitAuthToken: string | null };
+  try {
+    gitProject = await withProjectGitAuth(project);
+  } catch (err) {
+    return { error: `Git auth unavailable: ${(err as Error).message || String(err)}`, status: 502 };
+  }
+  if (!gitProject.gitAuthToken) {
+    return { error: 'No git credentials available to write to the project repo', status: 502 };
+  }
 
   try {
-    await commitFile({
-      owner: repo.owner,
-      repo: repo.repo,
+    await commitFileToBranch(gitProject, {
       path: MANIFEST_FILENAME,
-      content: serializeManifest(manifest),
+      content,
       message,
       branch,
-      existingSha: existingSha ?? undefined,
-      auth,
+      authorName: 'Kortix',
+      authorEmail: 'noreply@kortix.ai',
     });
   } catch (err) {
-    return {
-      error: `Failed to commit ${MANIFEST_FILENAME}: ${(err as Error).message || String(err)}`,
-      status: 502,
-    };
+    return { error: `Failed to commit ${MANIFEST_FILENAME}: ${(err as Error).message || String(err)}`, status: 502 };
   }
 
   invalidateProjectMirror(project.projectId);
@@ -4019,7 +4350,7 @@ projectsApp.post('/:projectId/triggers/:slug/fire', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const { specs } = await loadProjectTriggers(loaded.row);
+  const { specs } = await loadProjectTriggers(await withProjectGitAuth(loaded.row));
   const spec = specs.find((s) => s.slug === slug);
   if (!spec) return c.json({ error: 'Not found' }, 404);
 
@@ -5015,7 +5346,13 @@ projectsApp.post('/:projectId/sessions', async (c) => {
   for (const [key, value] of Object.entries(result.headers ?? {})) {
     c.header(key, value);
   }
-  return c.json(serializeSession(result.row!), 201);
+  return c.json(
+    serializeSession(result.row!, {
+      viewerId: loaded.userId,
+      canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
+    }),
+    201,
+  );
 });
 
 // GET /v1/projects/:projectId/sessions
@@ -5031,7 +5368,36 @@ projectsApp.get('/:projectId/sessions', async (c) => {
     .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.accountId, loaded.row.accountId)))
     .orderBy(desc(projectSessions.updatedAt));
 
-  return c.json(rows.map(serializeSession));
+  // Filter to sessions the viewer may see: their own, project-wide, or ones
+  // shared with them (restricted + grant). Then surface owner + sharing so the
+  // list can show "shared by X".
+  const subject = await resolveShareSubject(loaded.userId);
+  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  const grantsBySession = await loadSessionGrants(
+    rows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
+  );
+  const visible = rows.filter((r) =>
+    isSessionVisibleTo(
+      r.visibility as 'private' | 'project' | 'restricted',
+      r.createdBy,
+      grantsBySession.get(r.sessionId) ?? [],
+      subject,
+    ),
+  );
+  // Owner emails only for sessions someone else owns (for the "shared by" label).
+  const ownerIds = [...new Set(visible.map((r) => r.createdBy).filter((id): id is string => !!id && id !== loaded.userId))];
+  const emails = await lookupEmailsByUserIds(ownerIds);
+
+  return c.json(
+    visible.map((r) =>
+      serializeSession(r, {
+        grants: grantsBySession.get(r.sessionId) ?? [],
+        viewerId: loaded.userId,
+        canManageProject,
+        ownerEmail: r.createdBy ? emails.get(r.createdBy) ?? null : null,
+      }),
+    ),
+  );
 });
 
 // GET /v1/projects/:projectId/sessions/:sessionId
@@ -5043,18 +5409,49 @@ projectsApp.get('/:projectId/sessions/:sessionId', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const [row] = await db
-    .select()
-    .from(projectSessions)
-    .where(and(
-      eq(projectSessions.sessionId, sessionId),
-      eq(projectSessions.projectId, projectId),
-      eq(projectSessions.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
 
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json(serializeSession(row));
+  const ownerEmail = visible.row.createdBy && !visible.isOwner
+    ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
+    : null;
+  return c.json(serializeSession(visible.row, {
+    grants: visible.grants,
+    viewerId: loaded.userId,
+    canManageProject: visible.canManageProject,
+    ownerEmail,
+  }));
+});
+
+// PUT /v1/projects/:projectId/sessions/:sessionId/sharing
+// Owner or project manager sets who can see/open this session
+// (private | project | members). Mirrors connector/secret sharing.
+projectsApp.put('/:projectId/sessions/:sessionId/sharing', async (c) => {
+  const projectId = c.req.param('projectId');
+  const sessionId = c.req.param('sessionId');
+  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+  if (!visible.canManageSharing) {
+    return c.json({ error: 'Only the session owner or a project manager can change sharing' }, 403);
+  }
+
+  const intent = parseSharingIntent(body, loaded.userId);
+  if (!intent) return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+
+  await setSessionSharing(sessionId, intent);
+
+  const fresh = await loadVisibleSession(loaded, sessionId);
+  return c.json(fresh ? serializeSession(fresh.row, {
+    grants: fresh.grants,
+    viewerId: loaded.userId,
+    canManageProject: fresh.canManageProject,
+  }) : { ok: true });
 });
 
 // PATCH /v1/projects/:projectId/sessions/:sessionId
@@ -5079,17 +5476,9 @@ projectsApp.patch('/:projectId/sessions/:sessionId', async (c) => {
     return c.json({ error: `field is not user-editable: ${unknownField}` }, 400);
   }
 
-  const [existing] = await db
-    .select()
-    .from(projectSessions)
-    .where(and(
-      eq(projectSessions.sessionId, sessionId),
-      eq(projectSessions.projectId, projectId),
-      eq(projectSessions.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
-
-  if (!existing) return c.json({ error: 'Not found' }, 404);
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+  const existing = visible.row;
 
   const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
 
@@ -5120,7 +5509,11 @@ projectsApp.patch('/:projectId/sessions/:sessionId', async (c) => {
     .returning();
 
   if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json(serializeSession(row));
+  return c.json(serializeSession(row, {
+    grants: visible.grants,
+    viewerId: loaded.userId,
+    canManageProject: visible.canManageProject,
+  }));
 });
 
 // POST /v1/projects/sync-opencode-sessions
@@ -5273,6 +5666,9 @@ projectsApp.get('/:projectId/sessions/:sessionId/sandbox', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
+  // Only members who can see the session may reach its sandbox.
+  if (!(await loadVisibleSession(loaded, sessionId))) return c.json({ error: 'Not found' }, 404);
+
   const [row] = await db
     .select()
     .from(sessionSandboxes)
@@ -5313,6 +5709,13 @@ projectsApp.delete('/:projectId/sessions/:sessionId', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
+  // Stopping a session is reserved for its owner or a project manager.
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+  if (!visible.canManageSharing) {
+    return c.json({ error: 'Only the session owner or a project manager can stop this session' }, 403);
+  }
+
   const [row] = await db
     .update(projectSessions)
     .set({ status: 'stopped', updatedAt: new Date() })
@@ -5339,20 +5742,24 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const [session] = await db
-    .select()
-    .from(projectSessions)
-    .where(and(
-      eq(projectSessions.sessionId, sessionId),
-      eq(projectSessions.projectId, projectId),
-      eq(projectSessions.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
-  if (!session) return c.json({ error: 'Not found' }, 404);
+  // Restart is reserved for the session owner or a project manager.
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+  if (!visible.canManageSharing) {
+    return c.json({ error: 'Only the session owner or a project manager can restart this session' }, 403);
+  }
+  const session = visible.row;
 
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
     return c.json({ error: `Restart is not supported for provider ${providerName}` }, 400);
+  }
+
+  // Same loopback-callback guard as create: restarting into an unreachable
+  // KORTIX_URL just rebuilds the same dead sandbox.
+  const restartUnreachable = sandboxCallbackUnreachableReason();
+  if (restartUnreachable) {
+    return c.json({ error: restartUnreachable, code: 'KORTIX_URL_UNREACHABLE' }, 503);
   }
 
   // Resolve git auth fresh — installation tokens rotate.

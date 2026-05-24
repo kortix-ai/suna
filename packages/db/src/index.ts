@@ -47,6 +47,8 @@ export {
   chatInstalls,
   chatThreads,
   projectSessions,
+  projectSessionGrants,
+  projectSessionVisibilityEnum,
   projectRuntimeSnapshots,
   sessionSandboxes,
   sessionSandboxStatusEnum,

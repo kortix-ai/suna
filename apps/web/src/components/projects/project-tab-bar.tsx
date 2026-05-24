@@ -4,7 +4,8 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Menu, SlidersHorizontal, X } from 'lucide-react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { Share2 } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { cn } from '@/lib/utils';
 import {
@@ -15,6 +16,8 @@ import {
 import { useSidebar } from '@/components/ui/sidebar';
 import { isDesktop, desktopPlatform } from '@/lib/desktop';
 import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
+import { Button } from '@/components/ui/button';
+import { SessionShareDialog, SessionVisibilityBadge } from '@/components/projects/session-share-dialog';
 import {
   useProjectSessionTabsStore,
   CUSTOMIZE_TAB_ID,
@@ -111,6 +114,11 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
     (sessions ?? []).forEach((s) => map.set(s.session_id, s));
     return map;
   }, [sessions]);
+
+  // Share control for the currently-open session (the "session header" slot).
+  const queryClient = useQueryClient();
+  const [shareOpen, setShareOpen] = useState(false);
+  const activeSession = activeSessionId ? sessionById.get(activeSessionId) ?? null : null;
 
   // macOS desktop traffic-light spacing — mirrors tab-bar.tsx.
   const [isMacDesktop, setIsMacDesktop] = useState(false);
@@ -247,7 +255,32 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
         })}
       </div>
 
-      <div className="flex-shrink-0 flex items-center pr-2 relative z-20 bg-sidebar pl-1 h-full" />
+      <div className="flex-shrink-0 flex items-center gap-1.5 pr-2 relative z-20 bg-sidebar pl-1 h-full">
+        {activeSession && (
+          <>
+            <SessionVisibilityBadge session={activeSession} />
+            {activeSession.can_manage_sharing !== false && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-xs"
+                onClick={() => setShareOpen(true)}
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                Share
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+
+      <SessionShareDialog
+        projectId={projectId}
+        session={activeSession}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] })}
+      />
     </div>
   );
 }

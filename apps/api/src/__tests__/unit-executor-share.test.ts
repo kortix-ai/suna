@@ -5,7 +5,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   intentToScope,
   isSecretUsableBy,
+  isSessionVisibleTo,
   scopeToIntent,
+  sessionIntentToVisibility,
+  visibilityToIntent,
   type SecretGrant,
 } from '../executor/share';
 
@@ -96,5 +99,40 @@ describe('scopeToIntent — round-trip for the dashboard', () => {
       const { shareScope, grants } = intentToScope(intent);
       expect(intentToScope(scopeToIntent(shareScope, grants))).toEqual({ shareScope, grants });
     }
+  });
+});
+
+describe('session sharing — default private; team-wide or select-members', () => {
+  test('owner always sees their own session, regardless of visibility', () => {
+    expect(isSessionVisibleTo('private', ALICE, [], { userId: ALICE, groupIds: [] })).toBe(true);
+    expect(isSessionVisibleTo('private', ALICE, [], { userId: BOB, groupIds: [] })).toBe(false);
+  });
+
+  test('project visibility → every member', () => {
+    expect(isSessionVisibleTo('project', ALICE, [], { userId: BOB, groupIds: [] })).toBe(true);
+  });
+
+  test('restricted → owner + member/group grants only', () => {
+    const grants: SecretGrant[] = [
+      { principalType: 'member', principalId: BOB },
+      { principalType: 'group', principalId: SALES },
+    ];
+    expect(isSessionVisibleTo('restricted', ALICE, grants, { userId: BOB, groupIds: [] })).toBe(true);
+    expect(isSessionVisibleTo('restricted', ALICE, grants, { userId: 'carol', groupIds: [SALES] })).toBe(true);
+    expect(isSessionVisibleTo('restricted', ALICE, grants, { userId: 'carol', groupIds: [] })).toBe(false);
+  });
+
+  test('intent ⇄ visibility round-trips', () => {
+    expect(sessionIntentToVisibility({ mode: 'project' })).toEqual({ visibility: 'project', grants: [] });
+    expect(sessionIntentToVisibility({ mode: 'private', ownerId: ALICE })).toEqual({ visibility: 'private', grants: [] });
+    // Empty members collapses to private (owner only).
+    expect(sessionIntentToVisibility({ mode: 'members', memberIds: [] })).toEqual({ visibility: 'private', grants: [] });
+    const members = sessionIntentToVisibility({ mode: 'members', memberIds: [BOB], groupIds: [SALES] });
+    expect(members.visibility).toBe('restricted');
+    expect(members.grants).toHaveLength(2);
+
+    expect(visibilityToIntent('project', [])).toEqual({ mode: 'project' });
+    expect(visibilityToIntent('private', [])).toEqual({ mode: 'private', ownerId: '' });
+    expect(visibilityToIntent('restricted', members.grants)).toEqual({ mode: 'members', memberIds: [BOB], groupIds: [SALES] });
   });
 });

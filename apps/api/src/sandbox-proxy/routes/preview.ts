@@ -13,7 +13,8 @@ import {
   KORTIX_USER_CONTEXT_HEADER,
 } from '../../shared/kortix-user-context';
 import { getTraceHeaders } from '../../lib/request-context';
-import { listProjectSecretsSnapshot } from '../../projects/secrets';
+import { listProjectSecretsSnapshotForUser } from '../../projects/secrets';
+import { resolveShareSubject } from '../../executor/share';
 
 interface PreviewProxyContext {
   userId: string;
@@ -243,13 +244,19 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
 
 async function syncProjectEnvToSandbox(input: {
   projectId: string;
+  userId: string;
   previewUrl: string;
   previewToken: string | null;
   serviceKey: string | null;
 }): Promise<void> {
   if (!input.serviceKey) return;
 
-  const snapshot = await listProjectSecretsSnapshot(input.projectId);
+  // Resolve as the acting user so the re-sync keeps personal overrides and
+  // share-scope restrictions consistent with what was injected at boot.
+  // TODO(phase-2): once sessions carry an owner, resolve as the session owner
+  // rather than the current requester.
+  const subject = await resolveShareSubject(input.userId);
+  const snapshot = await listProjectSecretsSnapshotForUser(input.projectId, subject);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${input.serviceKey}`,
@@ -372,6 +379,7 @@ export async function proxyToDaytona(
         try {
           await syncProjectEnvToSandbox({
             projectId: sandboxRow.projectId,
+            userId,
             previewUrl,
             previewToken,
             serviceKey,

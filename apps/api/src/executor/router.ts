@@ -16,7 +16,10 @@
  */
 import { Hono, type Context } from 'hono';
 import { handleCall, type GatewayDeps } from './gateway';
-import type { SharingIntent } from './share';
+import { parseSharingIntent, type SharingIntent } from './share';
+
+// Re-exported for callers that historically imported it from here.
+export { parseSharingIntent };
 
 export interface ExecutorPrincipal {
   userId: string;
@@ -272,18 +275,3 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): Hono {
   return app;
 }
 
-/** Validate/normalize the sharing body into a SharingIntent. */
-export function parseSharingIntent(body: any, fallbackOwner: string): SharingIntent | null {
-  const mode = typeof body?.mode === 'string' ? body.mode : '';
-  if (mode === 'project') return { mode: 'project' };
-  if (mode === 'private') {
-    const ownerId = typeof body?.ownerId === 'string' && body.ownerId ? body.ownerId : fallbackOwner;
-    return { mode: 'private', ownerId };
-  }
-  if (mode === 'members') {
-    const memberIds = Array.isArray(body?.memberIds) ? body.memberIds.filter((x: unknown) => typeof x === 'string') : [];
-    const groupIds = Array.isArray(body?.groupIds) ? body.groupIds.filter((x: unknown) => typeof x === 'string') : [];
-    return { mode: 'members', memberIds, groupIds };
-  }
-  return null;
-}

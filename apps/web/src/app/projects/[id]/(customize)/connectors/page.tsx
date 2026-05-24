@@ -24,7 +24,6 @@ import type { LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -40,18 +39,18 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { RadioGroup } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SharingPicker, ShareOption } from '@/components/projects/sharing-picker';
 import { toast } from '@/lib/toast';
 import {
   createConnector,
   deleteConnector,
   listConnectors,
   listPipedreamApps,
-  listProjectAccess,
   pipedreamConnect,
   pipedreamFinalize,
   setConnectorCredential,
@@ -358,12 +357,6 @@ function ConnectorSetupFields({
   onChange: (s: ConnectorSetup) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const members = useQuery({
-    queryKey: ['project-access', projectId],
-    queryFn: () => listProjectAccess(projectId),
-    enabled: value.access === 'members',
-    staleTime: 30_000,
-  });
   return (
     <div className="space-y-4">
       <div className="space-y-2">
@@ -373,33 +366,17 @@ function ConnectorSetupFields({
           <ShareOption value="per_user" label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line373JsxAttrLabelEachMemberConnectsTheirOwn')} desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line373JsxAttrDescEveryMemberLinksTheirOwnAccountBYO')} current={value.credential} />
         </RadioGroup>
       </div>
-      <div className="space-y-2">
-        <Label>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line377JsxTextWhoCanUseIt')}</Label>
-        <RadioGroup value={value.access} onValueChange={(v) => onChange({ ...value, access: v as ConnectorSetup['access'] })} className="space-y-2">
-          <ShareOption value="project" label="Project-wide" desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line379JsxAttrDescEveryMemberOfThisProject')} current={value.access} />
-          <ShareOption value="private" label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line380JsxAttrLabelOnlyMe')} desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line380JsxAttrDescJustYou')} current={value.access} />
-          <ShareOption value="members" label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line381JsxAttrLabelSelectMembers')} desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line381JsxAttrDescAChosenListOfMembers')} current={value.access} />
-        </RadioGroup>
-        {value.access === 'members' && (
-          <div className="space-y-2 rounded-2xl border border-border/60 p-3">
-            {members.isLoading ? (
-              <Skeleton className="h-16 w-full" />
-            ) : (
-              (members.data?.members ?? []).map((m) => (
-                <label key={m.user_id} className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={value.memberIds.includes(m.user_id)}
-                    onCheckedChange={(c) =>
-                      onChange({ ...value, memberIds: c ? [...value.memberIds, m.user_id] : value.memberIds.filter((id) => id !== m.user_id) })
-                    }
-                  />
-                  <span className="truncate">{m.email ?? m.user_id}</span>
-                </label>
-              ))
-            )}
-          </div>
-        )}
-      </div>
+      <SharingPicker
+        projectId={projectId}
+        value={{ mode: value.access, memberIds: value.memberIds }}
+        onChange={(s) => onChange({ ...value, access: s.mode, memberIds: s.memberIds })}
+        copy={{
+          heading: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line377JsxTextWhoCanUseIt'),
+          project: { label: 'Project-wide', desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line379JsxAttrDescEveryMemberOfThisProject') },
+          private: { label: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line380JsxAttrLabelOnlyMe'), desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line380JsxAttrDescJustYou') },
+          members: { label: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line381JsxAttrLabelSelectMembers'), desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line381JsxAttrDescAChosenListOfMembers') },
+        }}
+      />
     </div>
   );
 }
@@ -811,13 +788,6 @@ function ConnectorSharingDialog({
   const [mode, setMode] = useState<'project' | 'private' | 'members'>('project');
   const [memberIds, setMemberIds] = useState<string[]>([]);
 
-  const membersQuery = useQuery({
-    queryKey: ['project-access', projectId],
-    queryFn: () => listProjectAccess(projectId),
-    enabled: open && mode === 'members',
-    staleTime: 30_000,
-  });
-
   useMemo(() => {
     if (!open || !connector) return;
     const s = connector.sharing;
@@ -849,28 +819,17 @@ function ConnectorSharingDialog({
           {connector && !connector.secretSet && (
             <InfoBanner tone="neutral" title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line845JsxAttrTitleCredentialNotSet')}>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line845JsxTextSetTheCredentialOrConnectTheAccountBefore')}</InfoBanner>
           )}
-          <RadioGroup value={mode} onValueChange={(v) => setMode(v as typeof mode)} className="space-y-2">
-            <ShareOption value="project" label="Project-wide" desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line848JsxAttrDescEveryMemberOfThisProject')} current={mode} />
-            <ShareOption value="private" label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line849JsxAttrLabelOnlyMe')} desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line849JsxAttrDescJustYou')} current={mode} />
-            <ShareOption value="members" label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line850JsxAttrLabelSelectMembers')} desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line850JsxAttrDescAChosenListOfMembers')} current={mode} />
-          </RadioGroup>
-          {mode === 'members' && (
-            <div className="space-y-2 rounded-2xl border border-border/60 p-3">
-              {membersQuery.isLoading ? (
-                <Skeleton className="h-16 w-full" />
-              ) : (
-                (membersQuery.data?.members ?? []).map((m) => (
-                  <label key={m.user_id} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={memberIds.includes(m.user_id)}
-                      onCheckedChange={(c) => setMemberIds((prev) => (c ? [...prev, m.user_id] : prev.filter((id) => id !== m.user_id)))}
-                    />
-                    <span className="truncate">{m.email ?? m.user_id}</span>
-                  </label>
-                ))
-              )}
-            </div>
-          )}
+          <SharingPicker
+            projectId={projectId}
+            showHeading={false}
+            value={{ mode, memberIds }}
+            onChange={(s) => { setMode(s.mode); setMemberIds(s.memberIds); }}
+            copy={{
+              project: { label: 'Project-wide', desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line848JsxAttrDescEveryMemberOfThisProject') },
+              private: { label: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line849JsxAttrLabelOnlyMe'), desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line849JsxAttrDescJustYou') },
+              members: { label: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line850JsxAttrLabelSelectMembers'), desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line850JsxAttrDescAChosenListOfMembers') },
+            }}
+          />
         </div>
         <DialogFooter className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={save.isPending}>Cancel</Button>
@@ -880,18 +839,6 @@ function ConnectorSharingDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function ShareOption({ value, label, desc, current }: { value: string; label: string; desc: string; current: string }) {
-  return (
-    <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3 transition-colors ${current === value ? 'border-primary/50 bg-primary/[0.04]' : 'border-border/60 hover:bg-muted/40'}`}>
-      <RadioGroupItem value={value} className="mt-0.5" />
-      <div className="space-y-0.5">
-        <div className="text-sm font-medium text-foreground">{label}</div>
-        <div className="text-xs text-muted-foreground">{desc}</div>
-      </div>
-    </label>
   );
 }
 
