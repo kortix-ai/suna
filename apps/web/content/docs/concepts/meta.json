@@ -1,0 +1,15 @@
+{
+  "title": "Concepts",
+  "pages": [
+    "index",
+    "projects",
+    "sessions",
+    "change-requests",
+    "agents",
+    "secrets",
+    "triggers",
+    "connections",
+    "channels",
+    "accounts"
+  ]
+}

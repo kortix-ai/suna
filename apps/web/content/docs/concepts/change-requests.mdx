@@ -1,0 +1,25 @@
+---
+title: Change requests
+description: The git merge layer that lands a session's branch on the default branch.
+---
+
+A **change request** merges one branch (`head_ref`, usually a session branch)
+into another (`base_ref`, usually the default branch). It is the **only** path
+for session work to reach the default branch.
+
+It's Kortix-native: the row is metadata; the git operations run in the Kortix API
+against any backend (GitHub, Freestyle, plain git) — no per-host integration.
+
+- **Why** — sessions run on ephemeral branches; the sandbox is destroyed at the
+  end, and everything else boots from the default branch. Until a change request
+  merges, the work is invisible and unreviewed. This covers everything committed:
+  code, skills, agents, `kortix.toml`, `AGENTS.md` — no exceptions.
+- **Lifecycle** — `open → merged` (terminal) or `open → closed` (reopenable). A
+  merged request can't be reopened or closed.
+- **Merge** — fast-forward when `head_ref` is ahead, else a three-way merge
+  commit (default message `Merge CR #<n>: <title>`). A preview flags conflicts
+  first; resolve on the branch and push.
+
+The agent opens the request (`kortix cr open`) but does not merge its own work —
+you merge from the dashboard or `kortix cr merge <n>`. Data model, diff
+semantics, and REST API: [change requests reference](/docs/reference/change-requests).

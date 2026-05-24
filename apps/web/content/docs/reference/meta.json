@@ -1,0 +1,14 @@
+{
+  "title": "Reference",
+  "pages": [
+    "index",
+    "manifest",
+    "cli",
+    "change-requests",
+    "session-runtime",
+    "secrets",
+    "triggers",
+    "sandbox-image",
+    "config-boundary"
+  ]
+}

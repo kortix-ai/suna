@@ -1,0 +1,91 @@
+---
+title: Sandbox image
+description: The layered Docker image, what Kortix injects, constraints, examples, and snapshot rebuilds.
+---
+
+The sandbox base image. For how a session uses it at runtime, see [Session runtime](/docs/reference/session-runtime).
+
+Every session boots inside a Docker container, built in two parts: **your Dockerfile** defines the environment (languages, tools, system packages), and the **Kortix runtime layer** is auto-injected on top so the dashboard can connect.
+
+```
+┌─────────────────────────────────────────┐
+│  Kortix runtime layer (auto-injected)   │  ← opencode + kortix-agent + ENTRYPOINT
+├─────────────────────────────────────────┤
+│  Your Dockerfile                        │  ← .kortix/Dockerfile
+└─────────────────────────────────────────┘
+```
+
+Referenced from `kortix.toml`:
+
+```toml
+[sandbox]
+dockerfile = ".kortix/Dockerfile"
+context    = "."
+```
+
+Both paths must be repo-relative. Absolute paths and `..` traversal are rejected (the validator falls back to the default). Field details: [kortix.toml](/docs/reference/manifest#sandbox).
+
+## What the Kortix layer injects
+
+On top of your Dockerfile's final stage, the snapshot builder appends:
+
+1. `USER root` (the layer needs to install things).
+2. `apt-get install -y ca-certificates curl git nodejs npm`.
+3. `npm install -g opencode-ai@<pinned-version>`.
+4. `COPY` the `kortix-agent` and `kortix-entrypoint` binaries to `/usr/local/bin/`.
+5. `ENV KORTIX_WORKSPACE=/workspace`, `WORKDIR /workspace`, `EXPOSE 8000`.
+6. `ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]`.
+
+Everything you installed stays on `PATH`; the layer relocates and removes nothing.
+
+## Constraints
+
+These rules keep a sandbox connectable. They aren't enforced statically — your build succeeds even if you violate them — but the session won't behave correctly.
+
+| Rule | Why |
+| --- | --- |
+| Don't set `ENTRYPOINT`. | Kortix overrides it. Your `CMD` is also ignored. |
+| Don't claim port `8000`. | Reserved for the daemon's reverse proxy. Run your dev servers on other ports. |
+| `FROM` a Debian/Ubuntu-family base. | The layer assumes `apt-get`. Alpine, Fedora, Arch will fail at layer build. |
+| Don't `RUN apt-get clean` without `rm -rf /var/lib/apt/lists/*`. | The Kortix layer re-runs `apt-get update`; a broken lists cache breaks it. |
+| Don't bake credentials into the image. | Use `[env]` + Secrets Manager — values are injected at session start. |
+
+Everything else is fair game: `RUN curl … | sh` for toolchains, COPY seed data, set `ENV` for non-secret config, install any apt/npm packages.
+
+## Examples
+
+The starter ships a minimal Ubuntu base:
+
+```dockerfile
+# syntax=docker/dockerfile:1.7
+FROM ubuntu:24.04
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl git build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+```
+
+A heavier example with Python + Bun:
+
+```dockerfile
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl git python3.12 python3.12-venv unzip \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://bun.sh/install | bash
+
+ENV PATH="/root/.bun/bin:${PATH}"
+WORKDIR /workspace
+```
+
+## Snapshot rebuilds
+
+Snapshots are content-addressed: the platform hashes your Dockerfile + the git tree OID of the build context + a platform runtime fingerprint (opencode version + `kortix-agent` binary). Unchanged hash reuses the snapshot; otherwise a new one builds. Rebuilds happen on any push touching your Dockerfile or anything `COPY`'d into it — pure code commits reuse the snapshot for free.
+
+Builds run Daytona-side via `Image.fromDockerfile`. The first session on a new content hash triggers an inline build (a few minutes, shown as "preparing image"); later sessions on the same content hit the cache.
+
+Editing the Dockerfile inside a session takes effect on the **next** session; current ones keep their booted snapshot. The edit reaches `main` only once a [change request](/docs/reference/change-requests) merges it.

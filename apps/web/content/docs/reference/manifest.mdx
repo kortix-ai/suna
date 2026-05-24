@@ -1,0 +1,282 @@
+---
+title: kortix.toml
+description: The project manifest — every table, field, default, and validation rule.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The one file the platform treats as authoritative for a project. For the plain-language version, see [Projects](/docs/concepts/projects).
+
+`kortix.toml` lives at the repo root. Any repo with a valid `kortix.toml` at the root is a Kortix project. The parser is permissive — it never throws on a bad entry: bad triggers and apps go into an `errors` list alongside the good ones, and unknown top-level tables are ignored (park your own metadata freely).
+
+## Full example
+
+```toml
+# Pinned schema version. Lets the platform evolve safely.
+kortix_version = 1
+
+[project]
+name = "my-project"
+description = "What this project is."
+
+[env]
+required = ["DATABASE_URL"]
+optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "WEBHOOK_SLACK_SECRET"]
+
+[sandbox]
+dockerfile = ".kortix/Dockerfile"   # repo-relative
+context = "."                       # build context
+
+[opencode]
+config_dir = ".kortix/opencode"
+
+[[triggers]]
+slug = "daily-digest"
+name = "Daily digest"
+type = "cron"
+agent = "kortix"
+enabled = true
+cron = "0 0 9 * * 1-5"            # 09:00 Mon–Fri
+timezone = "America/Los_Angeles"
+prompt = """
+Summarize yesterday's commits across the repo. Save the result to
+notes/digest-{{ cron.fired_at }}.md and open a CR against main.
+"""
+
+[[triggers]]
+slug = "slack-hook"
+name = "Slack handler"
+type = "webhook"
+agent = "kortix"
+enabled = true
+secret_env = "WEBHOOK_SLACK_SECRET"   # add value via Secrets Manager
+prompt = """
+Slack event from {{ headers.user_agent }}.
+User said: {{ body.text }}
+"""
+```
+
+## Schema version
+
+```toml
+kortix_version = 1
+```
+
+`kortix_version` is the schema version. Manifests without it are treated as v1 for backward compatibility (`null`, `1`, and `"1"` all decode to v1). A manifest declaring a version higher than the platform knows about is rejected outright — the platform won't silently misread future fields. When the platform writes the manifest back after a dashboard edit, it ensures `kortix_version` is the first key.
+
+## What's parsed where
+
+| Surface           | What it reads                                            |
+| ----------------- | ------------------------------------------------------- |
+| Trigger sweep     | `[[triggers]]`                                          |
+| Sandbox builder   | `[sandbox]`                                             |
+| Sandbox runtime   | `[opencode]` (where to launch opencode with its config) |
+| Session bootstrap | `[env]` (advisory — surfaced to dashboard, not enforced)|
+| Connector sync    | `[[connectors]]`                                        |
+| Apps deploy sweep | `[[apps]]` (when `KORTIX_APPS_EXPERIMENTAL=true`)        |
+| Dashboard UI      | All of the above + the raw manifest                     |
+
+## `[project]`
+
+Optional, human-facing metadata (`name`, `description`). The platform does **not**
+currently read this table — a project's display name comes from its own record,
+not the manifest — so treat `[project]` as a convention for people reading the repo.
+
+## `[env]`
+
+Declares the env vars your sessions need. Values live in the Kortix Secrets Manager, never inline; the platform decrypts and injects them as plain env vars at session start.
+
+```toml
+[env]
+required = ["DATABASE_URL"]
+optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
+```
+
+| Field      | Type       | Notes                                                                  |
+| ---------- | ---------- | ---------------------------------------------------------------------- |
+| `required` | `string[]` | Advisory list — surfaced in the dashboard. Not enforced at session start today. |
+| `optional` | `string[]` | Available to sessions if set; absence is fine.                        |
+
+<Callout type="info" title="On enforcement">
+The dashboard uses `required` to nag the user about secrets to set, but the session bootstrap does not currently block on missing values. Treat `required` as a contract with the user, not the platform.
+</Callout>
+
+Manifest name validation is permissive — items match `^[A-Z_][A-Z0-9_]*$` (no length cap). The Secrets Manager API caps names at 64 chars (`^[A-Z_][A-Z0-9_]{0,63}$`), so a longer name is accepted in the manifest but can never get a value. Keep names ≤ 64 chars.
+
+The `KORTIX_*` prefix is reserved at the Secrets Manager surface, not at parse time: listing `KORTIX_FOO` in `[env]` parses fine but can never have a value. Don't. Full contract: [Secrets](/docs/reference/secrets).
+
+## `[sandbox]`
+
+Points at the Dockerfile that becomes the base for session sandboxes; the Kortix runtime layer (opencode CLI, agent daemon, entrypoint) is layered on top automatically. Optional — omitting the table or any key falls back to defaults.
+
+```toml
+[sandbox]
+dockerfile = ".kortix/Dockerfile"
+context    = "."
+```
+
+| Field        | Type   | Default              | Notes                                       |
+| ------------ | ------ | -------------------- | ------------------------------------------- |
+| `dockerfile` | string | `.kortix/Dockerfile` | Repo-relative.                              |
+| `context`    | string | `.`                  | Build context, repo-relative. Alias: `context_dir`. |
+
+Both paths must be repo-relative. Absolute paths and `..` traversal are silently ignored — the validator falls back to the default without an error. A custom path that "isn't being read" usually hits this. See [Sandbox image](/docs/reference/sandbox-image) for what the layer injects and what your Dockerfile can do.
+
+## `[opencode]`
+
+Where OpenCode's config dir lives. Optional, with a default. The agent daemon launches opencode with `OPENCODE_CONFIG_DIR` pointed here.
+
+```toml
+[opencode]
+config_dir = ".kortix/opencode"
+```
+
+| Field        | Type   | Default            | Notes                                                  |
+| ------------ | ------ | ------------------ | ------------------------------------------------------ |
+| `config_dir` | string | `.kortix/opencode` | Repo-relative dir. Same silent-fallback behavior as `[sandbox]` paths. |
+
+That directory holds agents, skills, slash commands, tools, plugins, and `opencode.jsonc` — the layout opencode reads by convention. Kortix doesn't read those files; opencode does. See [Kortix vs OpenCode config](/docs/reference/config-boundary) and [opencode.ai/docs](https://opencode.ai/docs/).
+
+## `[[triggers]]`
+
+Array of tables. Each entry spawns a fresh session that runs `prompt` as its initial message. Sorted alphabetically by slug in the parsed output, so UI ordering is stable. Full reference: [Triggers](/docs/reference/triggers).
+
+```toml
+[[triggers]]
+slug    = "daily-digest"
+type    = "cron"
+cron    = "0 0 9 * * 1-5"
+prompt  = "Summarize yesterday's commits."
+```
+
+### Common fields
+
+| Field     | Required | Type   | Default     | Notes                                                          |
+| --------- | -------- | ------ | ----------- | -------------------------------------------------------------- |
+| `slug`    | yes      | string | —           | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers.            |
+| `type`    | yes      | string | —           | `"cron"` or `"webhook"`.                                       |
+| `prompt`  | yes      | string | —           | Mustache-style template. Alias: `prompt_template`.            |
+| `name`    | no       | string | `slug`      | Human label.                                                  |
+| `agent`   | no       | string | `"default"` | OpenCode agent name. Alias: `agent_name`.                     |
+| `enabled` | no       | bool   | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
+
+Cron-only: `cron` (6-field croner `second minute hour day month weekday`, alias `schedule`) and `timezone` (IANA name, default `"UTC"`). Webhook-only: `secret_env` (name of a `project_secrets` entry holding the HMAC secret, alias `secretEnv`).
+
+The parser accepts both alias forms (`prompt` / `prompt_template`, `agent` / `agent_name`, `cron` / `schedule`, `secret_env` / `secretEnv`). The platform serializes back with the canonical names, so editing-then-saving from the UI normalizes aliases away. Slug uniqueness is per-section — a trigger and an app may share a slug; two triggers may not.
+
+## `[[connectors]]`
+
+Array of tables. Each entry connects an external tool the agent can call. The
+definition lives in git; credentials live in the platform, never here. Full
+model: [Connections](/docs/concepts/connections).
+
+```toml
+[[connectors]]
+slug       = "slack"
+provider   = "pipedream"     # pipedream | mcp | openapi | graphql | http
+app        = "slack"         # pipedream app slug
+credential = "per_user"      # per_user | shared
+
+  [[connectors.policies]]
+  match  = "*"
+  action = "require_approval"  # always_run | require_approval | block
+```
+
+| Field        | Required | Type   | Notes                                                              |
+| ------------ | -------- | ------ | ----------------------------------------------------------------- |
+| `slug`       | yes      | string | `[a-z0-9][a-z0-9_-]{0,127}`, unique among connectors; the tool namespace. |
+| `provider`   | yes      | string | `pipedream` \| `mcp` \| `openapi` \| `graphql` \| `http`.         |
+| `name`       | no       | string | Display name. Defaults to slug.                                  |
+| `enabled`    | no       | bool   | Defaults to `true`.                                              |
+| `credential` | no       | string | `shared` or `per_user`. Default: `per_user` for pipedream, `shared` otherwise. |
+
+Provider-specific fields:
+
+- **pipedream** — `app` (required), `account` (optional, defaults to slug).
+- **mcp** — `url` (required), `transport` = `http` (default) or `sse`.
+- **openapi** — `spec` (required: URL or repo-relative path).
+- **graphql** — `endpoint` (required), `spec` (optional SDL).
+- **http** — `base_url` (required, alias `baseUrl`), `spec` (optional).
+
+### `[connectors.auth]`
+
+Optional. `type` = `bearer | basic | custom | none` (default `none`); `in` =
+`header` (default) or `query`; `name` (required when `type = "custom"`); `prefix`
+(optional); `secret` (optional secret name, `^[A-Z_][A-Z0-9_]{0,63}$`). Not
+allowed with `provider = "pipedream"`.
+
+### `[[connectors.policies]]`
+
+Optional per-tool gates. `match` (glob over tool names, required) + `action` =
+`always_run | require_approval | block` (required).
+
+## `[[apps]]` (experimental)
+
+Gated behind `KORTIX_APPS_EXPERIMENTAL=true`. With the flag off, `/apps` routes return 404 (JSON error explaining the flag) and the deploy sweep skips every project — entries are parsed but never acted on. `[[apps]]` declares deployable surfaces alongside the agent, fly.toml-style. The platform dispatches through a provider adapter (Freestyle today; pluggable) and records each deploy in the `deployments` table.
+
+```toml
+[[apps]]
+slug      = "marketing-site"
+name      = "Marketing site"
+enabled   = true
+framework = "next"
+domains   = ["marketing.example.com"]
+
+  [apps.source]
+  type      = "git"            # or "tar"
+  repo      = "https://github.com/me/site"
+  branch    = "main"
+  root_path = "apps/site"
+
+  [apps.build]
+  command = "pnpm build"
+  out_dir = "dist"
+
+  [apps.env]
+  NEXT_PUBLIC_API_URL = "https://api.example.com"
+```
+
+Entries sort alphabetically by slug; slug uniqueness is per-section.
+
+| Field       | Required | Type       | Notes                                                  |
+| ----------- | -------- | ---------- | ------------------------------------------------------ |
+| `slug`      | yes      | string     | URL-safe, unique among apps.                           |
+| `name`      | no       | string     | Display name. Defaults to slug.                        |
+| `enabled`   | no       | bool       | Defaults to `true`. Disabled apps are skipped.         |
+| `domains`   | yes      | `string[]` | Must be non-empty. The parser rejects entries that omit or empty this. |
+| `framework` | no       | string     | Hint for the provider adapter (e.g. `"next"`).         |
+
+### `[apps.source]`
+
+| Field       | Required for `git` | Required for `tar` | Notes                                                            |
+| ----------- | ------------------ | ------------------ | --------------------------------------------------------------- |
+| `type`      | yes                | yes                | `"git"` or `"tar"`.                                             |
+| `repo`      | no                 | —                  | Git clone URL. Falls back to the project's own repo URL if omitted. |
+| `branch`    | no                 | —                  | Defaults to the project's default branch.                       |
+| `root_path` | no                 | —                  | Path inside the source to deploy from. Defaults to `"."`.       |
+| `url`       | —                  | yes                | HTTPS URL of the tarball.                                       |
+
+### `[apps.build]`
+
+| Field     | Required | Notes                                          |
+| --------- | -------- | ---------------------------------------------- |
+| `command` | no       | Build command. Empty → no build step.          |
+| `out_dir` | no       | Output directory served by the provider.       |
+
+If both are empty, the parsed entry collapses to `null` — the provider treats it as "no build phase."
+
+### `[apps.env]`
+
+Key/value map. Keys must match `^[A-Za-z_][A-Za-z0-9_]*$` (mixed case allowed, unlike `[env]` secrets which are uppercase-only). Values must be strings — numbers and booleans are rejected.
+
+### Hash-based redeploy
+
+Apps redeploy when the manifest-derived hash of their config changes. The hash excludes `slug` and `name`, so renaming an app doesn't trigger a redeploy. Edits to `source`, `build`, `env`, `domains`, `framework`, or `enabled` do.
+
+## Round-trip rules
+
+Dashboard manifest edits are a read-modify-write on the same file. To keep the diff clean across UI and in-session edits:
+
+- Keep `kortix_version` as the first key.
+- Inside a `[[triggers]]` entry, write fields in this order: `slug`, `name`, `type`, `agent`, `enabled`, then type-specific fields, then `prompt` last.
+- If you add a webhook trigger before its secret is set, declare the secret name in `[env].optional` so it shows up in the Secrets Manager, and leave the trigger `enabled = false` until the value is in.

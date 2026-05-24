@@ -1,0 +1,30 @@
+---
+title: Projects
+description: A project is one git repository plus a kortix.toml manifest.
+---
+
+A **project is one git repository** with a [`kortix.toml`](/docs/reference/manifest)
+at its root. The repo is the project — files, history, agent config, and settings
+all live in git. No separate database to keep in sync.
+
+Backed two ways:
+
+- **Kortix-managed repo** — Kortix creates and hosts a private repo (default).
+- **Imported GitHub repo** — link an existing repo; Kortix operates on it via the
+  GitHub API.
+
+Either way the project has a `default_branch` that every
+[session](/docs/concepts/sessions) branches from and every
+[change request](/docs/concepts/change-requests) merges into.
+
+## What the control plane reads from `kortix.toml`
+
+- `[project]` — name, description
+- `[env]` — [secret](/docs/reference/secrets) names
+- `[sandbox]` + `.kortix/Dockerfile` — the [sandbox image](/docs/reference/sandbox-image)
+- `[opencode] config_dir` — agent config location (default `.kortix/opencode`)
+- `[[triggers]]` — [automations](/docs/concepts/triggers)
+- `[[apps]]` — deployable apps (experimental)
+
+Unknown tables are ignored. Dashboard edits to triggers/env/apps are
+read-modify-writes on the same file, so in-session and dashboard edits round-trip.

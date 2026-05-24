@@ -1,0 +1,24 @@
+---
+title: Channels
+description: Drive a project from Slack — messages spawn sessions and the agent replies in-thread.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A **channel** connects a chat workspace to a project so you can run the agent
+from chat. Connect Slack to a project, and a message or mention spawns a
+[session](/docs/concepts/sessions); the agent replies in the thread. Follow-up
+messages in that thread continue the same session.
+
+- **Connect Slack** from the project's Channels page in the dashboard, or with
+  [`kortix channels connect`](/docs/reference/cli). Two options: bring your own
+  Slack app (a bot token + signing secret), or the Kortix-managed Slack app via
+  OAuth.
+- **Credentials are stored as project [secrets](/docs/concepts/secrets)** (e.g.
+  `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`) — never in the repo.
+
+<Callout type="info" title="Note">
+Channels are configured through the dashboard, CLI, and secrets — **not** through
+`kortix.toml`. Telegram is supported on the backend but has no CLI or dashboard
+surface yet.
+</Callout>

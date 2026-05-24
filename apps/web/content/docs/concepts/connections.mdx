@@ -1,0 +1,30 @@
+---
+title: Connections
+description: Let the agent call your external tools, brokered server-side per project.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A **connection** (connector) lets a project's agent call an external tool or
+service — Slack, Gmail, a database, any HTTP/GraphQL API. Connections are
+per-project, and the agent can only use what you connect.
+
+- **Declared as `[[connectors]]` in `kortix.toml`** — provider is one of
+  **Pipedream, MCP, OpenAPI, GraphQL, or HTTP**. The definition lives in git;
+  the **credentials live in the platform, never in the repo**.
+- **Credentials are shared or per-user.** A connection can use one shared
+  credential, or each member connects their own account.
+- **Per-call policies** — each tool can be set to run, require approval, or be
+  blocked.
+- **Set up in the dashboard** — the project's Connectors page offers Pipedream
+  one-click connect plus a custom path for OpenAPI/GraphQL/MCP/HTTP. See
+  [Connecting your tools](/docs/guides/connecting-tools).
+
+<Callout type="info" title="Under the hood">
+Every session gets a `kortix-executor` MCP server and a scoped Executor token.
+The agent discovers tools through it (`connectors` → `discover` → `describe` →
+`call`); each `call` is brokered by the Kortix API, which resolves the credential
+server-side, enforces sharing and policies, runs it, and audits it. The agent
+never holds third-party credentials. Pipedream's one-click connect requires
+Pipedream API keys to be configured on the platform.
+</Callout>
