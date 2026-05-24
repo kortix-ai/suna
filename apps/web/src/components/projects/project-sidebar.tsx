@@ -32,6 +32,10 @@ import { UserMenu } from '@/components/layout/user-menu';
 import { ProjectSwitcher } from '@/components/layout/project-switcher';
 import { ProjectSessionList } from '@/components/projects/project-session-list';
 import {
+  ProjectSetupNavItem,
+  ProjectSetupRailItem,
+} from '@/components/projects/project-setup';
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -525,6 +529,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               modal that houses Files, Skills, Agents, and the rest of
               the per-project config surfaces. */}
           <div className="mt-auto w-full space-y-0.5">
+            <ProjectSetupRailItem projectId={projectId} />
             <CollapsedIconButton
               icon={<SlidersHorizontal className="h-4 w-4" />}
               label="Customize"
@@ -586,6 +591,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               Skills, Agents, and every other per-project config surface. */}
           <SidebarGroup className="py-0 mt-auto">
             <SidebarMenu>
+              <ProjectSetupNavItem projectId={projectId} />
               <SidebarMenuItem>
                 <SidebarMenuButton
                   onClick={goCustomize}

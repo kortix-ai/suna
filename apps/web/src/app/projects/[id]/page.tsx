@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { ProjectShell } from '@/components/projects/project-shell';
+import { ProjectSetupChecklist } from '@/components/projects/project-setup';
 import { SessionWelcome } from '@/components/session/session-welcome';
 import {
   SessionChatInput,
@@ -43,6 +44,13 @@ export default function ProjectIndexPage() {
     sent: false,
   });
   const [busy, setBusy] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // "Run your first session" step → drop the user straight into the composer
+  // that's already docked at the bottom of this very page.
+  const focusComposer = useCallback(() => {
+    rootRef.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+  }, []);
 
   const ensureSession = useCallback(() => {
     if (!warm.current.promise) {
@@ -108,6 +116,7 @@ export default function ProjectIndexPage() {
   return (
     <ProjectShell projectId={projectId}>
       <div
+        ref={rootRef}
         className="relative flex-1 min-h-0 flex flex-col overflow-hidden bg-background"
         onFocusCapture={warmStart}
         onInput={warmStart}
@@ -117,9 +126,11 @@ export default function ProjectIndexPage() {
           <SessionWelcome />
         </div>
 
-        {/* Empty transparent region pushes the composer to the bottom, just
-            like a fresh session — wallpaper reads through, no centered title. */}
-        <div className="relative flex-1 min-h-0 z-10" />
+        {/* Setup checklist (hidden once the project is configured) floats over
+            the wallpaper; the region still pushes the composer to the bottom. */}
+        <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4">
+          <ProjectSetupChecklist projectId={projectId} onStartSession={focusComposer} />
+        </div>
 
         {/* The real (typeable) chat input, docked at the bottom */}
         <SessionChatInput onSend={handleSend} disabled={busy} autoFocus />
