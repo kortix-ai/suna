@@ -9,7 +9,7 @@ import {
 } from '@/components/session/tool-renderers';
 import { SessionActionsPanel } from '@/components/session/session-actions-panel';
 import { SessionFilesPanel } from '@/components/session/session-files-panel';
-import { SessionExplorerPanel } from '@/components/session/session-explorer-panel';
+import { SessionFilesExplorer } from '@/components/session/session-files-explorer';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 /**
@@ -420,14 +420,15 @@ export default function DebugToolsPage() {
         </div>
       </div>
 
-      {/* Side-panel Files view preview — the in-sandbox explorer. Without a live
-          sandbox it shows its "not reachable" empty state. */}
+      {/* Side-panel Files view preview — the in-sandbox explorer (the same
+          /files FileExplorerPage, in preview mode). Without a live sandbox it
+          shows its "server not reachable" empty state. */}
       <div className="mx-auto w-full max-w-3xl px-6 pt-10">
         <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Side panel · Files (explorer)
         </h2>
         <div className="h-[420px] w-full overflow-hidden rounded-2xl border border-border bg-card">
-          <SessionExplorerPanel />
+          <SessionFilesExplorer />
         </div>
       </div>
 

@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Download,
@@ -13,6 +14,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useDialogDepth, dialogOverlayZ, dialogContentZ } from '@/lib/z-stack';
 import { useFilesStore } from '../store/files-store';
 import { FileContentRenderer, getLanguageFromExt } from './file-content-renderer';
 import { FileHistoryPopoverContent } from './file-history-popover';
@@ -42,6 +44,9 @@ export function FilePreviewModal() {
   const filePathList = useFilesStore((s) => s.filePathList);
   const currentFileIndex = useFilesStore((s) => s.currentFileIndex);
   const projectCtx = useProjectContext();
+  // Sit above whatever dialog depth we're rendered inside (e.g. the Customize
+  // overlay) so the preview never opens *behind* its host modal.
+  const dialogDepth = useDialogDepth();
 
   const isOpen = panelMode === 'viewer' && !!selectedFilePath;
 
@@ -73,7 +78,11 @@ export function FilePreviewModal() {
         return;
       }
       if (e.key === 'Escape') {
+        // Capture-phase + stopImmediatePropagation so ESC only closes the
+        // preview — not a host Radix dialog underneath (e.g. the Customize
+        // overlay), which would otherwise also fire its own escape handler.
         e.preventDefault();
+        e.stopImmediatePropagation();
         if (historyPath) setHistoryPath(null);
         else goBackToBrowser();
         return;
@@ -89,8 +98,9 @@ export function FilePreviewModal() {
         return;
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // Capture phase so we run before Radix's document-level escape listener.
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [isOpen, goBackToBrowser, nextFile, prevFile, hasNext, hasPrev, historyPath]);
 
   // Lock body scroll
@@ -118,18 +128,27 @@ export function FilePreviewModal() {
   }, [selectedFilePath]);
 
   if (!isOpen) return null;
+  // Portal to <body>: this full-screen fixed overlay is rendered inside
+  // constrained containers (session side panel / Customize section) whose
+  // overflow-hidden + occasional display:none would clip or collapse it.
+  // Portaling escapes those subtrees; React context is preserved.
+  if (typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm animate-in fade-in-0 duration-150"
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in-0 duration-150"
+        style={{ zIndex: dialogOverlayZ(dialogDepth + 1) }}
         onClick={goBackToBrowser}
       />
 
       {/* Modal surface — `kx-fullscreen-modal` drops the top edge below the
           desktop title-bar inset so it clears the macOS traffic lights. */}
-      <div className="kx-fullscreen-modal fixed inset-3 sm:inset-4 z-50 flex flex-col rounded-2xl border border-border/60 bg-background shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-[0.98] duration-150">
+      <div
+        className="kx-fullscreen-modal fixed inset-3 sm:inset-4 flex flex-col rounded-2xl border border-border/60 bg-background shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-[0.98] duration-150"
+        style={{ zIndex: dialogContentZ(dialogDepth + 1) }}
+      >
         {/* Top bar */}
         <div className="flex items-center gap-2 px-3 h-12 border-b border-border/40 shrink-0 bg-background/95 backdrop-blur-sm">
           <Button
@@ -261,6 +280,7 @@ export function FilePreviewModal() {
           )}
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

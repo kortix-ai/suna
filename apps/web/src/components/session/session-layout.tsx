@@ -26,8 +26,7 @@ import {
   useSessionBrowserStore,
   type SessionPanelView,
 } from '@/stores/session-browser-store';
-import { SessionFilesPanel } from '@/components/session/session-files-panel';
-import { SessionExplorerPanel } from '@/components/session/session-explorer-panel';
+import { SessionFilesExplorer } from '@/components/session/session-files-explorer';
 import {
   SessionActionsPanel,
   collectToolParts,
@@ -83,11 +82,14 @@ export const SessionLayout = memo(function SessionLayout({
 
   // Right-side panel view — actions (tool calls) or internal browser.
   // Per-session, so each session remembers which view the user prefers.
-  const panelView = useSessionBrowserStore((s) => s.viewBySession[sessionId] ?? 'actions');
+  const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId] ?? 'actions');
+  // The standalone "Changes" view ('files') is folded into the Files explorer
+  // (its version banner shows the diff + change-request action), so coerce any
+  // persisted 'files' selection to 'explorer'.
+  const panelView: SessionPanelView = storedPanelView === 'files' ? 'explorer' : storedPanelView;
   const setPanelView = useSessionBrowserStore((s) => s.setView);
   const showBrowser = panelView === 'browser';
   const showExplorer = panelView === 'explorer';
-  const showFiles = panelView === 'files';
 
   useEffect(() => {
     if (shouldOpenPanel && !isSidePanelOpen) {
@@ -114,7 +116,7 @@ export const SessionLayout = memo(function SessionLayout({
   // active view" — so the user can pop the panel open just to use the
   // internal browser even before the agent has run any tools.
   const shouldShowPanel =
-    isSidePanelOpen && (hasToolCalls || showBrowser || showExplorer || showFiles);
+    isSidePanelOpen && (hasToolCalls || showBrowser || showExplorer);
 
   // ⌘I / Ctrl+I toggles the side panel open/closed.
   //
@@ -241,9 +243,7 @@ export const SessionLayout = memo(function SessionLayout({
   const panelBody = showBrowser ? (
     <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
   ) : showExplorer ? (
-    <SessionExplorerPanel />
-  ) : showFiles ? (
-    <SessionFilesPanel chatSessionId={sessionId} />
+    <SessionFilesExplorer chatSessionId={sessionId} />
   ) : (
     <SessionActionsPanel sessionId={sessionId} messages={messages} />
   );
@@ -368,11 +368,6 @@ function PanelHeaderSwitcher({
           active={view === 'explorer'}
           onClick={() => onChangeView('explorer')}
           label="Files"
-        />
-        <PanelTabButton
-          active={view === 'files'}
-          onClick={() => onChangeView('files')}
-          label="Changes"
         />
       </div>
       <Tooltip>

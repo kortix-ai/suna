@@ -69,7 +69,18 @@ import { DRAG_MIME } from './file-tree-item';
  * 
  * File preview opens as a full-screen modal overlay.
  */
-export function FileExplorerPage() {
+export function FileExplorerPage({
+  fileOpenMode = 'tab',
+}: {
+  /**
+   * What "opening" a file does (double-click / context-menu "Open in new tab").
+   * - `'tab'` (default): open a workspace file tab — used by the /files page.
+   * - `'preview'`: open the in-place preview modal — used inside the session
+   *   side panel, which has no workspace tab bar to host a file tab.
+   * Single-click always previews regardless of mode.
+   */
+  fileOpenMode?: 'tab' | 'preview';
+} = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -251,16 +262,6 @@ export function FileExplorerPage() {
     navigateToPath(node.path);
   }, [navigateToPath]);
 
-  const handleOpenFile = useCallback((node: FileNode) => {
-    // Open in tab
-    openTabAndNavigate({
-      id: `file:${node.path}`,
-      title: node.name,
-      type: 'file',
-      href: `/files/${encodeURIComponent(node.path)}`,
-    });
-  }, []);
-
   const handlePreviewFile = useCallback((node: FileNode) => {
     // Open in preview modal
     const allFiles = fileItems.map((f) => f.path);
@@ -268,14 +269,33 @@ export function FileExplorerPage() {
     openFileWithList(node.path, allFiles, Math.max(0, index));
   }, [fileItems, openFileWithList]);
 
-  const handleOpenInTab = useCallback((node: FileNode) => {
+  const handleOpenFile = useCallback((node: FileNode) => {
+    // In preview mode (side panel) there is no workspace tab bar — fall back to
+    // the in-place preview modal instead of opening a /files tab.
+    if (fileOpenMode === 'preview') {
+      handlePreviewFile(node);
+      return;
+    }
     openTabAndNavigate({
       id: `file:${node.path}`,
       title: node.name,
       type: 'file',
       href: `/files/${encodeURIComponent(node.path)}`,
     });
-  }, []);
+  }, [fileOpenMode, handlePreviewFile]);
+
+  const handleOpenInTab = useCallback((node: FileNode) => {
+    if (fileOpenMode === 'preview') {
+      handlePreviewFile(node);
+      return;
+    }
+    openTabAndNavigate({
+      id: `file:${node.path}`,
+      title: node.name,
+      type: 'file',
+      href: `/files/${encodeURIComponent(node.path)}`,
+    });
+  }, [fileOpenMode, handlePreviewFile]);
 
   const handleDownload = useCallback(async (node: FileNode) => {
     try {
