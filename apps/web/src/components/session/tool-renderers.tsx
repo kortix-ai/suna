@@ -94,6 +94,7 @@ import {
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
+import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import {
@@ -250,22 +251,6 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
   const [hasError, setHasError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // ── Scaled 1920×1080 viewport ──
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const [viewportScale, setViewportScale] = useState(0);
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const update = () => {
-      const w = el.clientWidth;
-      if (w > 0) setViewportScale(w / 1920);
-    };
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    update();
-    return () => ro.disconnect();
-  }, []);
-
   const handleRefresh = useCallback(() => {
     setIsLoading(true);
     setHasError(false);
@@ -343,8 +328,6 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
     displayLabel,
     navigateToPreviewTab,
     openInBrowser,
-    viewportRef,
-    viewportScale,
     onLoad,
     onError,
   };
@@ -352,7 +335,7 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
 
 type ServicePreviewState = ReturnType<typeof useServicePreview>;
 
-/** Scaled 1920×1080 iframe viewport — the chrome-less body of a service preview. */
+/** 16:9 iframe viewport — the chrome-less body of a service preview. */
 function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const {
@@ -362,20 +345,19 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
     hasError,
     refreshKey,
     handleRefresh,
-    viewportRef,
-    viewportScale,
     onLoad,
     onError,
   } = preview;
-  const scaledHeight = viewportScale > 0 ? Math.round(1080 * viewportScale) : 0;
 
+  // Render the iframe at its container's real size (16:9) with NO CSS transform.
+  // Cross-origin iframes (OOPIFs) under `transform: scale()` hit a Chromium
+  // compositing bug where they paint blank until a repaint is forced (e.g. a
+  // remount via Refresh) — which is why the preview used to show white on load.
+  // The standalone Browser tab works because it renders a plain full-size iframe;
+  // we mirror that here.
   return (
-    <div
-      ref={viewportRef}
-      className="relative overflow-hidden bg-white"
-      style={{ height: scaledHeight > 0 ? `${scaledHeight}px` : '400px' }}
-    >
-      {isLoading && (
+    <div className="relative aspect-video w-full overflow-hidden bg-white">
+      {(isLoading || !previewUrl) && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-10">
           <div className="flex items-center gap-2 text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" />
@@ -397,22 +379,13 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
           </div>
         </div>
       )}
-      {viewportScale > 0 && (
+      {previewUrl && (
         <iframe
           key={refreshKey}
-          src={previewUrl ?? undefined}
+          src={previewUrl}
           title={displayLabel}
-          className="border-0 bg-white"
-          style={{
-            width: '1920px',
-            height: '1080px',
-            transform: `scale(${viewportScale})`,
-            transformOrigin: '0 0',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-          }}
-          sandbox={tHardcodedUi.raw('componentsSessionToolRenderers.line413JsxAttrSandboxAllowSameOriginAllowScriptsAllowFormsAllow')}
+          className="absolute inset-0 w-full h-full border-0 bg-white"
+          sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
           onLoad={onLoad}
           onError={onError}
         />
