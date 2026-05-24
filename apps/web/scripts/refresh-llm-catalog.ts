@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Fetches https://models.dev/api.json and writes a slimmed snapshot to
- *   apps/web/src/lib/llm-catalog.generated.json
+ *   packages/shared/src/llm-catalog/catalog.generated.json
  *
  * The slim shape is what the ProjectProviderModal actually consumes:
  *   - id, name, env[], doc
@@ -20,7 +20,11 @@ import { fileURLToPath } from 'node:url';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_URL = 'https://models.dev/api.json';
-const OUT_PATH = join(SCRIPT_DIR, '..', 'src', 'lib', 'llm-catalog.generated.json');
+const OUT_PATH = join(
+  SCRIPT_DIR,
+  '..', '..', '..',
+  'packages', 'shared', 'src', 'llm-catalog', 'catalog.generated.json',
+);
 
 interface UpstreamModel {
   id?: string;
