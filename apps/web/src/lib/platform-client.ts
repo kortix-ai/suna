@@ -81,7 +81,7 @@ function isDbSandboxId(sandboxId: string | null | undefined): sandboxId is strin
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker' | 'justavps';
+export type SandboxProviderName = 'daytona' | 'local_docker' | 'justavps' | 'platinum';
 export type ServerTypeOption = string;
 
 export interface SandboxCreateProgress {
@@ -328,9 +328,19 @@ export function extractMappedPorts(
 
 /**
  * Get available sandbox providers from the platform service.
+ *
+ * Reads NEXT_PUBLIC_SANDBOX_PROVIDERS (comma-separated, e.g. "platinum,daytona")
+ * so the FE selector mirrors the backend's ALLOWED_SANDBOX_PROVIDERS without
+ * a separate API roundtrip. First entry is the default. Falls back to
+ * 'daytona' for environments that don't set the override.
  */
 export async function getProviders(): Promise<ProvidersInfo> {
-  return { providers: ['daytona'], default: 'daytona' };
+  const raw = process.env.NEXT_PUBLIC_SANDBOX_PROVIDERS ?? '';
+  const known: SandboxProviderName[] = ['daytona', 'platinum', 'local_docker', 'justavps'];
+  const parsed = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) as SandboxProviderName[];
+  const providers = parsed.filter((p) => (known as string[]).includes(p));
+  if (providers.length === 0) return { providers: ['daytona'], default: 'daytona' };
+  return { providers, default: providers[0] };
 }
 
 /**

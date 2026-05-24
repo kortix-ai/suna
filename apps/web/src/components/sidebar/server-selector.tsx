@@ -370,11 +370,13 @@ function DialogInstanceRow({
   const ProviderIcon = server.provider === 'local_docker' ? Container
     : server.provider === 'daytona' ? Cloud
     : server.provider === 'justavps' ? Server
+    : server.provider === 'platinum' ? Cloud
     : Box;
 
   // Provider badge
   const providerBadge = server.provider === 'local_docker' ? { label: 'local', cls: 'text-blue-500/70 bg-blue-500/10' }
     : server.provider === 'justavps' ? { label: 'vps', cls: 'text-orange-500/70 bg-orange-500/10' }
+    : server.provider === 'platinum' ? { label: 'platinum', cls: 'text-cyan-500/70 bg-cyan-500/10' }
     : server.provider ? { label: 'cloud', cls: 'text-violet-500/70 bg-violet-500/10' }
     : null;
 
@@ -635,6 +637,7 @@ export function InstanceManagerDialog({
   const hasDaytona = availableProviders.includes('daytona');
   const hasLocalDocker = availableProviders.includes('local_docker');
   const hasJustAVPS = availableProviders.includes('justavps');
+  const hasPlatinum = availableProviders.includes('platinum');
   const canAddInstances = accountState?.can_add_instances ?? false;
 
   // Form state (for custom URL / edit)
@@ -1148,6 +1151,27 @@ export function InstanceManagerDialog({
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">Cloud</p>
                     <p className="text-xs text-muted-foreground/70 mt-0.5">Managed sandbox on Daytona cloud</p>
+                  </div>
+                </button>
+              )}
+
+              {!isBillingEnabled() && hasPlatinum && (
+                <button
+                  type="button"
+                  onClick={() => handleCreateSandbox('platinum' as any)}
+                  disabled={isCreatingSandbox}
+                  className="flex items-start gap-3 w-full p-3.5 rounded-2xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 text-left transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-cyan-500/10 flex-shrink-0 mt-0.5">
+                    {isCreatingSandbox && creatingProvider === ('platinum' as any) ? (
+                      <Loader2 className="h-4 w-4 text-cyan-500 animate-spin" />
+                    ) : (
+                      <Cloud className="h-4 w-4 text-cyan-500" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">Platinum</p>
+                    <p className="text-xs text-muted-foreground/70 mt-0.5">microVM sandbox on Platinum cloud</p>
                   </div>
                 </button>
               )}

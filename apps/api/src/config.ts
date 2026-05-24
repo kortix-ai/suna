@@ -14,7 +14,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 // Only Daytona is supported end-to-end. The DB enum still carries the
 // historical 'local_docker' value for legacy rows, but the API will never
 // produce one.
-export type SandboxProviderName = 'daytona';
+export type SandboxProviderName = 'daytona' | 'platinum';
 export type InternalKortixEnv = 'dev' | 'staging' | 'prod';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -154,6 +154,28 @@ const envSchema = z.object({
   DAYTONA_SERVER_URL:          optStr,
   DAYTONA_TARGET:              optStr,
 
+  // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
+  // PLATINUM_TEMPLATE is the shared fallback every project boots from when it
+  // hasn't defined its own image. Override per project by setting
+  // `metadata.platinum_image` on the project row:
+  //   {
+  //     "base_image": "python:3.12-slim",
+  //     "steps": [
+  //       { "op": "apt", "packages": ["git", "curl"] },
+  //       { "op": "pip", "packages": ["fastapi"] },
+  //       { "op": "workdir", "path": "/workspace" }
+  //     ]
+  //   }
+  // Platinum hashes the spec, cache-hits a prior build or materializes a new
+  // template on-demand, then boots the sandbox in one call. First boot pays
+  // build cost (~5-60s alpine, minutes for big bases); subsequent boots with
+  // the same hash are sub-second. Flow lives in:
+  //   apps/api/src/platform/providers/platinum.ts (sends inline `image`)
+  //   apps/api/src/projects/index.ts             (reads project.metadata)
+  PLATINUM_API_URL:            optStr,
+  PLATINUM_API_KEY:            optStr,
+  PLATINUM_TEMPLATE:           optStrDefault('pt-base'),
+
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // KORTIX_URL is auto-derived from PORT if not explicitly set (see validateEnv).
   KORTIX_URL:                  optStr,
@@ -225,7 +247,7 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona'] as const;
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum'] as const;
 
 /** Parse comma-separated provider list (e.g. "daytona"). Unknown entries
  *  are dropped with a warning so an old .env doesn't break boot. */
@@ -266,6 +288,10 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (!raw.DAYTONA_API_KEY)    issues.push({ var: 'DAYTONA_API_KEY',    message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_SERVER_URL) issues.push({ var: 'DAYTONA_SERVER_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
+  }
+  if (providers.includes('platinum')) {
+    if (!raw.PLATINUM_API_KEY) issues.push({ var: 'PLATINUM_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
+    if (!raw.PLATINUM_API_URL) issues.push({ var: 'PLATINUM_API_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
   }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
@@ -432,6 +458,11 @@ export const config = {
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
 
+  // ─── Platinum (Sandbox provisioning) ──────────────────────────────────────
+  PLATINUM_API_URL: env.PLATINUM_API_URL,
+  PLATINUM_API_KEY: env.PLATINUM_API_KEY,
+  PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
+
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   KORTIX_YOLO_URL: env.KORTIX_YOLO_URL,
@@ -542,6 +573,7 @@ export const config = {
     if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
     switch (name) {
       case 'daytona': return !!this.DAYTONA_API_KEY;
+      case 'platinum': return !!this.PLATINUM_API_KEY && !!this.PLATINUM_API_URL;
       default: {
         const exhaustive: never = name;
         return exhaustive;

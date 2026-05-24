@@ -4,6 +4,7 @@ import { eq, and, inArray, ne } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
+import { getProvider, type ProviderName } from '../../platform/providers';
 import {
   canAccessPreviewSandbox,
   resolvePreviewUserContext,
@@ -38,11 +39,36 @@ type SessionSandboxProxyRow = {
   sandboxId: string;
   status: string;
   config: Record<string, unknown> | null;
+  provider: ProviderName;
 };
 
 type SandboxProxyAccess =
-  | { ok: true; serviceKey: string | null }
+  | { ok: true; serviceKey: string | null; provider: ProviderName }
   | { ok: false; response: Response };
+
+// In-process cache of (externalId → provider) so the per-request lookup in
+// resolvePreviewLink/wakeSandbox doesn't double up DB queries on the hot path.
+const providerCache = new Map<string, { provider: ProviderName; expiresAt: number }>();
+function cacheProvider(externalId: string, provider: ProviderName) {
+  providerCache.set(externalId, { provider, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+function getCachedProvider(externalId: string): ProviderName | null {
+  const e = providerCache.get(externalId);
+  if (!e || Date.now() > e.expiresAt) { providerCache.delete(externalId); return null; }
+  return e.provider;
+}
+async function resolveProviderForExternalId(externalId: string): Promise<ProviderName> {
+  const cached = getCachedProvider(externalId);
+  if (cached) return cached;
+  const [row] = await db
+    .select({ provider: sessionSandboxes.provider })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.externalId, externalId))
+    .limit(1);
+  const provider = (row?.provider as ProviderName) ?? 'daytona';
+  cacheProvider(externalId, provider);
+  return provider;
+}
 
 const previewLinkCache = new Map<string, PreviewLinkEntry>();
 const serviceKeyCache = new Map<string, ServiceKeyEntry>();
@@ -86,12 +112,14 @@ async function loadSessionSandboxForProxy(sandboxId: string): Promise<SessionSan
       sandboxId: sessionSandboxes.sandboxId,
       status: sessionSandboxes.status,
       config: sessionSandboxes.config,
+      provider: sessionSandboxes.provider,
     })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.externalId, sandboxId))
     .limit(1);
 
-  return row ?? null;
+  if (row) cacheProvider(sandboxId, row.provider as ProviderName);
+  return row ? { ...row, provider: row.provider as ProviderName } : null;
 }
 
 async function validateSandboxProxyAccess(
@@ -119,7 +147,7 @@ async function validateSandboxProxyAccess(
 
   const serviceKey = extractServiceKey(row.config);
   setCachedServiceKey(sandboxId, serviceKey);
-  return { ok: true, serviceKey };
+  return { ok: true, serviceKey, provider: row.provider };
 }
 
 function getCachedPreviewLink(sandboxId: string, port: number): PreviewLinkEntry | null {
@@ -201,13 +229,23 @@ async function resolvePreviewLink(
   const cached = getCachedPreviewLink(sandboxId, port);
   if (cached) return { url: cached.url, token: cached.token };
 
+  const provider = await resolveProviderForExternalId(sandboxId);
+  if (provider === 'platinum') {
+    // Platinum's resolveEndpoint() re-calls /v1/sandboxes/:id/expose so the
+    // HMAC URL stays fresh across stop/start (host may move). Hardcoded to
+    // port 8000 in the provider today; for other ports we'd need to extend
+    // the SandboxProvider interface.
+    const ep = await getProvider('platinum').resolveEndpoint(sandboxId);
+    setCachedPreviewLink(sandboxId, port, ep.url, null);
+    return { url: ep.url, token: null };
+  }
+
+  // Daytona path — the original SDK call.
   const daytona = getDaytona();
   const sandbox = await daytona.get(sandboxId);
-
   const link = await (sandbox as any).getPreviewLink(port);
   const url = link.url || String(link);
   const token = link.token || null;
-
   setCachedPreviewLink(sandboxId, port, url, token);
   return { url, token };
 }
@@ -216,6 +254,12 @@ async function resolvePreviewLink(
 
 async function wakeSandbox(sandboxId: string): Promise<void> {
   try {
+    const provider = await resolveProviderForExternalId(sandboxId);
+    if (provider === 'platinum') {
+      await getProvider('platinum').ensureRunning(sandboxId);
+      console.log(`[PREVIEW] Wake-up triggered for Platinum sandbox ${sandboxId}`);
+      return;
+    }
     const daytona = getDaytona();
     const sandbox = await daytona.get(sandboxId);
     await (sandbox as any).start?.();
@@ -280,7 +324,17 @@ export async function proxyToDaytona(
     try {
       // Resolve preview link (cached on happy path = zero overhead)
       const { url: previewUrl, token: previewToken } = await resolvePreviewLink(sandboxId, port);
-      const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
+      // Daytona URLs are bare (`https://port-id.proxy.daytona.work`) — naive
+      // concat works. Platinum URLs carry the HMAC in `?t=<token>`; naive
+      // concat puts the path AFTER the token, mangling the HMAC. Parse and
+      // rebuild: replace pathname, merge query strings.
+      const parsedPreview = new URL(previewUrl);
+      parsedPreview.pathname = remainingPath || '/';
+      if (queryString) {
+        const incomingParams = new URLSearchParams(queryString.replace(/^\?/, ''));
+        for (const [k, v] of incomingParams) parsedPreview.searchParams.append(k, v);
+      }
+      const targetUrl = parsedPreview.toString();
 
       // Build forwarding headers — strip user's JWT, inject sandbox service key
       const headers = new Headers();
@@ -486,18 +540,27 @@ export async function proxyToDaytona(
 
   // All retries exhausted. Auto-mark the session sandbox row as errored
   // so the proxy stops hammering a dead Daytona instance on every request.
+  //
+  // Platinum exception: when the in-VM service is briefly unreachable on a
+  // Platinum sandbox, that's typically a host-edge proxy issue (CP→host
+  // forwarding), NOT a dead sandbox. Marking the row 'error' permanently
+  // bricks the session even when the sandbox itself is healthy. The
+  // Platinum provider exposes its own /v1/sandboxes/:id state endpoint
+  // that's authoritative; trust it over preview-proxy retry exhaustion.
   try {
     const [row] = await db
-      .select({ sandboxId: sessionSandboxes.sandboxId, status: sessionSandboxes.status })
+      .select({ sandboxId: sessionSandboxes.sandboxId, status: sessionSandboxes.status, provider: sessionSandboxes.provider })
       .from(sessionSandboxes)
       .where(and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')))
       .limit(1);
-    if (row) {
+    if (row && row.provider !== 'platinum') {
       await db
         .update(sessionSandboxes)
         .set({ status: 'error', updatedAt: new Date() })
         .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
       console.warn(`[PREVIEW] Auto-marked session sandbox ${row.sandboxId} (external: ${sandboxId}) as error after all retries failed`);
+    } else if (row?.provider === 'platinum') {
+      console.warn(`[PREVIEW] Skipping auto-mark-error for Platinum sandbox ${row.sandboxId} — host-edge unreachable, sandbox itself may still be alive`);
     }
   } catch (archiveErr) {
     console.warn('[PREVIEW] Failed to auto-mark sandbox as error:', archiveErr);

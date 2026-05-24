@@ -31,6 +31,7 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
   'daytona',
   'local_docker',
   'justavps',
+  'platinum',
 ]);
 
 export const deploymentStatusEnum = kortixSchema.enum('deployment_status', [

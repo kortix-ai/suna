@@ -71,6 +71,13 @@ import {
 } from './github';
 import { buildStarterFiles } from './starter';
 import {
+  createManagedRepo,
+  mintRepoPushToken,
+  deleteManagedRepo,
+  seedRepoWithFiles,
+  isFreestyleGitConfigured,
+} from './freestyle-git';
+import {
   ensureBuildForLatestCommit,
   listSnapshotsForProject,
 } from '../snapshots/builder';
@@ -446,6 +453,22 @@ function normalizeJsonObject(value: unknown): Record<string, unknown> {
   return isPlainObject(value) ? value : {};
 }
 
+/**
+ * Pull a Platinum declarative image spec out of project.metadata, if set.
+ * Shape (mirrored from Platinum's POST /v1/sandboxes inline-image body):
+ *   { base_image, steps[], entrypoint?, ready_cmd?, default_*?, size_mb? }
+ * Returned undefined when missing or malformed — caller falls back to the
+ * shared PLATINUM_TEMPLATE. We only check structural validity here; the
+ * provider sends it through and Platinum validates strictly via Zod.
+ */
+function extractImageSpec(metadata: unknown): import('../platform/providers').ImageSpec | undefined {
+  if (!isPlainObject(metadata)) return undefined;
+  const raw = (metadata as Record<string, unknown>).platinum_image;
+  if (!isPlainObject(raw)) return undefined;
+  if (typeof raw.base_image !== 'string' || raw.base_image.length === 0) return undefined;
+  return raw as unknown as import('../platform/providers').ImageSpec;
+}
+
 function parseProjectTriggerType(value: unknown): 'cron' | 'webhook' | null {
   const type = normalizeString(value);
   if (type === 'cron' || type === 'webhook') return type;
@@ -770,9 +793,15 @@ async function buildSessionSandboxEnvVars(input: {
     sessionId: input.sessionId,
     userId: input.userId,
   });
+  // local:// is the synthetic placeholder we hand projects that aren't
+  // backed by a real git remote (the local fallback in POST /projects/provision).
+  // kortix-agent's auto-clone would invoke `git clone local://…` which has no
+  // git remote helper → blocks the boot sequence indefinitely and trips the
+  // host-agent's in-VM agent timeout. Skip auto-clone for these projects.
+  const isLocalRepo = input.repoUrl.startsWith('local://');
   return {
     ...runtimeSecrets,
-    KORTIX_PROJECT_AUTO_CLONE: '1',
+    ...(isLocalRepo ? {} : { KORTIX_PROJECT_AUTO_CLONE: '1' }),
     KORTIX_REPO_URL: input.repoUrl,
     KORTIX_DEFAULT_BRANCH: input.baseRef,
     KORTIX_BASE_REF: input.baseRef,
@@ -937,6 +966,10 @@ export async function createProjectSession(input: {
         provider: providerName,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
         extraEnvVars,
+        // Per-project Platinum image spec. When set, the provider builds (or
+        // cache-hits) the declarative image inline on sandbox-create instead
+        // of using the shared PLATINUM_TEMPLATE. Stored on project.metadata.
+        imageSpec: extractImageSpec(project.metadata),
         gitProject: {
           projectId,
           repoUrl: project.repoUrl,
@@ -1685,6 +1718,157 @@ projectsApp.post('/', async (c) => {
   void kickInitialSnapshotBuild(row, scope.accountId);
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
+});
+
+// POST /v1/projects/provision
+//
+// Provision a project backed by a managed git repo. Two modes:
+//   - Freestyle (default when FREESTYLE_API_KEY is set): creates a managed
+//     repo via the Freestyle git API, mints a push token, and returns it so
+//     the CLI/web can push the starter on first use.
+//   - Local fallback (when Freestyle isn't configured): inserts a project
+//     row with a synthetic repo URL so local development still works. The
+//     Platinum sandbox provider bypasses the snapshot/clone path entirely
+//     (see session-sandbox.ts), so a real git remote isn't required for
+//     end-to-end testing against Platinum.
+projectsApp.post('/provision', async (c) => {
+  const body = await readBody(c);
+  const scope = await resolveProjectAccount(c, body);
+  if (!isAccountManager(scope.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+
+  const provider = normalizeString(body.provider) ?? 'freestyle';
+  if (provider !== 'freestyle' && provider !== 'local') {
+    return c.json({ error: `Unsupported managed git provider "${provider}"` }, 400);
+  }
+
+  const name = normalizeString(body.name) ?? normalizeString(body.project_name ?? body.projectName);
+  if (!name) return c.json({ error: 'name is required' }, 400);
+  if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
+    return c.json(
+      { error: 'name must contain only letters, numbers, spaces, hyphens, underscores or dots' },
+      400,
+    );
+  }
+  const repoSlug =
+    name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
+    'kortix-project';
+  const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
+
+  const freestyleReady = await isFreestyleGitConfigured();
+  const useLocal = provider === 'local' || !freestyleReady;
+
+  if (useLocal) {
+    // Local fallback: insert a project row pointing at a placeholder URL.
+    // Platinum sessions don't clone the repo (provider skips the snapshot
+    // path), so this works end-to-end for local dev against Platinum even
+    // without a real git remote.
+    const now = new Date();
+    const localUrl = `local://${scope.accountId}/${repoSlug}`;
+    const [row] = await db
+      .insert(projects)
+      .values({
+        accountId: scope.accountId,
+        name,
+        repoUrl: localUrl,
+        defaultBranch,
+        manifestPath: 'kortix.toml',
+        status: 'active',
+        metadata: { git: { provider: 'local', url: localUrl, default_branch: defaultBranch } },
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [projects.accountId, projects.repoUrl],
+        set: { name, defaultBranch, status: 'active', updatedAt: now },
+      })
+      .returning();
+    await grantProjectRole({
+      accountId: scope.accountId, projectId: row.projectId, userId: scope.userId,
+      role: 'manager', grantedBy: scope.userId,
+    });
+    return c.json(
+      {
+        ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+        provider: 'local',
+        seeded: false,
+      },
+      201,
+    );
+  }
+
+  // Freestyle path (original behaviour).
+  let repo: Awaited<ReturnType<typeof createManagedRepo>>;
+  let push: Awaited<ReturnType<typeof mintRepoPushToken>>;
+  try {
+    repo = await createManagedRepo({ name: repoSlug, defaultBranch });
+    push = await mintRepoPushToken({ repoId: repo.repoId });
+  } catch (error) {
+    return c.json({ error: (error as Error).message || 'Failed to provision managed repo' }, 502);
+  }
+
+  const seedStarter = body.seed_starter === true || body.seedStarter === true;
+  let seeded = false;
+  if (seedStarter) {
+    try {
+      const starter = buildStarterFiles({ projectName: name, repoFullName: repoSlug });
+      await seedRepoWithFiles({
+        repoId: repo.repoId, token: push.token, files: starter,
+        branch: repo.defaultBranch, commitMessage: 'chore: scaffold Kortix project',
+      });
+      seeded = true;
+    } catch (error) {
+      try { await deleteManagedRepo(repo.repoId); } catch { /* best effort */ }
+      return c.json({ error: (error as Error).message || 'Failed to seed project repo' }, 502);
+    }
+  }
+
+  const now = new Date();
+  const [row] = await db
+    .insert(projects)
+    .values({
+      accountId: scope.accountId,
+      name,
+      repoUrl: repo.gitUrl,
+      defaultBranch: repo.defaultBranch,
+      manifestPath: 'kortix.toml',
+      status: 'active',
+      metadata: {
+        git: {
+          url: repo.gitUrl,
+          default_branch: repo.defaultBranch,
+          provider: 'freestyle',
+          auth: { method: 'managed', ref: push.identityId },
+          repo_id: repo.repoId,
+        },
+      },
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [projects.accountId, projects.repoUrl],
+      set: { name, defaultBranch: repo.defaultBranch, status: 'active', updatedAt: now },
+    })
+    .returning();
+
+  await grantProjectRole({
+    accountId: scope.accountId, projectId: row.projectId, userId: scope.userId,
+    role: 'manager', grantedBy: scope.userId,
+  });
+
+  if (seeded) {
+    void kickInitialSnapshotBuild(row, scope.accountId, { gitAuthToken: push.token });
+  }
+
+  return c.json(
+    {
+      ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+      push_token: push.token,
+      repo_id: repo.repoId,
+      provider: 'freestyle',
+      seeded,
+    },
+    201,
+  );
 });
 
 // GET /v1/projects/github/installation?account_id=...
@@ -3996,6 +4180,7 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
           restarted_at: new Date().toISOString(),
         },
         extraEnvVars,
+        imageSpec: extractImageSpec(loaded.row.metadata),
         gitProject: {
           projectId,
           repoUrl: loaded.row.repoUrl,

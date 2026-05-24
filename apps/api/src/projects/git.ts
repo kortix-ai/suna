@@ -466,6 +466,12 @@ export async function createRemoteSessionBranch(
   branchName: string,
   baseRef?: string,
 ) {
+  // Local-only projects (repoUrl `local://...`) skip every git op — they
+  // exist purely as DB rows so a Platinum sandbox session can be created
+  // without a real remote. The Platinum provider also short-circuits the
+  // snapshot/clone path (session-sandbox.ts).
+  if (project.repoUrl.startsWith('local://')) return;
+
   const base = baseRef || project.defaultBranch;
   const authHost = hostFromRepoUrl(project.repoUrl);
   const repoPath = await refreshMirror(project, true);

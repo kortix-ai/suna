@@ -1,5 +1,6 @@
 import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
+import { PlatinumProvider } from './platinum';
 
 /**
  * Sandbox provider lineup. Extensible registry — adding a new runtime is
@@ -7,10 +8,12 @@ import { DaytonaProvider } from './daytona';
  * `ProviderName` union. Call sites depend on the `SandboxProvider`
  * interface, not the concrete class, so they stay untouched.
  *
- *   - daytona — managed cloud (Daytona). Only provider implemented today;
- *               local_docker was removed when we consolidated on cloud.
+ *   - daytona  — managed cloud (Daytona).
+ *   - platinum — Cloud Hypervisor microVMs (api.platinum.dev). No
+ *                per-project snapshot system yet — every sandbox boots
+ *                from a shared template (default: `pt-base`).
  */
-export type ProviderName = 'daytona';
+export type ProviderName = 'daytona' | 'platinum';
 export type { SandboxProviderName } from '../../config';
 
 export interface CreateSandboxOpts {
@@ -28,6 +31,26 @@ export interface CreateSandboxOpts {
    * for legacy sessions that pre-date per-project builds).
    */
   snapshot?: string;
+  /**
+   * Declarative image spec. Currently only the Platinum provider consumes
+   * this — when present, the provider sends `image: {...}` to Platinum's
+   * `POST /v1/sandboxes`, which hashes the spec, cache-hits a prior build
+   * or materializes a new template on-demand, then boots the sandbox in
+   * the same call. Lets a project carry its own Dockerfile-as-code env
+   * without an out-of-band build step. Ignored by Daytona today.
+   */
+  imageSpec?: ImageSpec;
+}
+
+export interface ImageSpec {
+  base_image: string;
+  steps?: Array<Record<string, unknown>>;
+  entrypoint?: string;
+  ready_cmd?: string;
+  default_cpu?: number;
+  default_ram_mb?: number;
+  default_disk_gb?: number;
+  size_mb?: number;
 }
 
 export interface ProvisionResult {
@@ -92,6 +115,12 @@ export function getProvider(name: ProviderName): SandboxProvider {
       }
       provider = new DaytonaProvider();
       break;
+    case 'platinum':
+      if (!config.PLATINUM_API_KEY || !config.PLATINUM_API_URL) {
+        throw new Error('Platinum provider requires PLATINUM_API_KEY and PLATINUM_API_URL to be set.');
+      }
+      provider = new PlatinumProvider();
+      break;
     default: {
       const exhaustive: never = name;
       throw new Error(`Unknown sandbox provider: ${exhaustive}`);
@@ -107,5 +136,5 @@ export function getDefaultProviderName(): ProviderName {
 }
 
 export function getAvailableProviders(): ProviderName[] {
-  return ['daytona'];
+  return ['daytona', 'platinum'];
 }

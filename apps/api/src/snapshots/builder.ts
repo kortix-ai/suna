@@ -39,6 +39,14 @@ import { SANDBOX_VERSION } from '../config';
 import type { SandboxProviderName } from '../config';
 
 /**
+ * Providers that participate in the per-project snapshot system. Today
+ * only `daytona`. Platinum sandboxes boot from a shared template and
+ * never hit the snapshot builder — see session-sandbox.ts where the
+ * provider guard short-circuits this path.
+ */
+type SnapshotProviderName = Extract<SandboxProviderName, 'daytona'>;
+
+/**
  * Pinned opencode CLI version layered into every snapshot. Bump this
  * (and SANDBOX_VERSION) together when a new opencode release is the
  * target — the runtime fingerprint hash invalidates every project's
@@ -143,7 +151,7 @@ export async function buildSnapshotForCommit(
     /** Branch / tag / SHA to resolve. Defaults to project default branch. */
     ref?: string;
     accountId: string;
-    provider?: SandboxProviderName;
+    provider?: SnapshotProviderName;
     source: SnapshotBuildSource;
   },
 ): Promise<SnapshotResolution> {
@@ -255,7 +263,7 @@ export async function buildSnapshotForCommit(
 export async function getLatestReadySnapshot(
   projectId: string,
   branch: string,
-  provider: SandboxProviderName = 'daytona',
+  provider: SnapshotProviderName = 'daytona',
 ): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
   const [row] = await db
     .select()
@@ -281,7 +289,7 @@ export async function getLatestReadySnapshot(
 async function findActiveRowForCommit(
   projectId: string,
   commitSha: string,
-  provider: SandboxProviderName,
+  provider: SnapshotProviderName,
 ): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
   const [row] = await db
     .select()
@@ -318,7 +326,7 @@ export async function ensureBuildForLatestCommit(
   options: {
     branch?: string;
     accountId: string;
-    provider?: SandboxProviderName;
+    provider?: SnapshotProviderName;
     source: SnapshotBuildSource;
   },
 ): Promise<{
@@ -382,7 +390,7 @@ export async function ensureBuildForLatestCommit(
  */
 export async function listSnapshotsForProject(
   projectId: string,
-  options: { limit?: number; provider?: SandboxProviderName } = {},
+  options: { limit?: number; provider?: SnapshotProviderName } = {},
 ): Promise<Array<typeof projectRuntimeSnapshots.$inferSelect>> {
   const limit = Math.min(Math.max(options.limit ?? 25, 1), 100);
   return db
@@ -414,7 +422,7 @@ export async function listSnapshotsForProject(
 export async function pruneOldSnapshots(
   projectId: string,
   branch: string,
-  provider: SandboxProviderName = 'daytona',
+  provider: SnapshotProviderName = 'daytona',
   retain: number = snapshotRetentionCount(),
 ): Promise<{ deletedRows: number; deletedDaytonaSnapshots: number }> {
   const readyRows = await db
@@ -501,7 +509,7 @@ interface BuildOutcome {
 async function runBuild(
   project: GitBackedProject,
   commitSha: string,
-  provider: SandboxProviderName,
+  provider: SnapshotProviderName,
 ): Promise<BuildOutcome> {
   // Flip to `building` first so concurrent waiters can distinguish "in
   // progress" from "queued and stuck". Best-effort — if the update misses
@@ -661,7 +669,7 @@ async function resolveSandboxPaths(project: GitBackedProject, _commitSha: string
 async function findSnapshotRow(
   projectId: string,
   commitSha: string,
-  provider: SandboxProviderName = 'daytona',
+  provider: SnapshotProviderName = 'daytona',
 ) {
   const [row] = await db
     .select()

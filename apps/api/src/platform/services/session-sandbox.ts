@@ -56,6 +56,14 @@ export async function provisionSessionSandbox(opts: {
    */
   extraEnvVars?: Record<string, string>;
   /**
+   * Declarative image spec for providers that support inline image builds
+   * (currently Platinum only). When set, the provider sends `image: {...}`
+   * instead of `template: ...`; the CP hashes the spec, cache-hits a prior
+   * build or materializes a new template on-demand, then boots in one call.
+   * Read from project.metadata.platinum_image by the projects router.
+   */
+  imageSpec?: import('../providers').ImageSpec;
+  /**
    * Project + ref the session boots against. Required: every session
    * sandbox boots from the project's own per-project snapshot
    * (`kortix-snap-…`). There is no shared platform-wide fallback — if
@@ -119,6 +127,7 @@ export async function provisionSessionSandbox(opts: {
       ...(opts.extraEnvVars ?? {}),
       KORTIX_TOKEN: sandboxKey.secretKey,
     },
+    ...(opts.imageSpec ? { imageSpec: opts.imageSpec } : {}),
   };
 
   // Detach the actual provisioning — the API caller navigates immediately
@@ -140,37 +149,49 @@ export async function provisionSessionSandbox(opts: {
       //      DAYTONA_SNAPSHOT fallback — every sandbox boots from its
       //      project's own image.
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
-      const latest = await getLatestReadySnapshot(
-        opts.gitProject.projectId,
-        branch,
-        providerName,
-      );
-
-      // Kick off "is there a newer commit?" check + lazy build. Don't await.
-      void ensureBuildForLatestCommit(opts.gitProject, {
-        branch,
-        accountId,
-        provider: providerName,
-        source: 'session-start',
-      }).catch((err) => {
-        console.warn(
-          `[session-sandbox] ensureBuildForLatestCommit failed for ${sandbox.sandboxId}:`,
-          err,
+      if (providerName === 'platinum') {
+        // Platinum: two boot paths.
+        //   - imageSpec passed in → Platinum builds (or cache-hits) inline,
+        //     no per-project snapshot lookup needed.
+        //   - no imageSpec → shared PLATINUM_TEMPLATE (legacy path).
+        // No Daytona-style per-project snapshot system here (yet).
+        console.log(
+          `[session-sandbox] Booting ${sandbox.sandboxId} on platinum from ` +
+          `${opts.imageSpec ? `inline image (${opts.imageSpec.base_image})` : `template ${config.PLATINUM_TEMPLATE}`} (branch ${branch})`,
         );
-      });
+      } else {
+        const latest = await getLatestReadySnapshot(
+          opts.gitProject.projectId,
+          branch,
+          providerName,
+        );
 
-      if (!latest || !latest.snapshotId) {
-        throw new Error(
-          `Project sandbox is still building. ` +
-          `This is a one-time setup that runs the first time a project is created (or after every failed build is retried). ` +
-          `Please retry in ~1 minute.`,
+        // Kick off "is there a newer commit?" check + lazy build. Don't await.
+        void ensureBuildForLatestCommit(opts.gitProject, {
+          branch,
+          accountId,
+          provider: providerName,
+          source: 'session-start',
+        }).catch((err) => {
+          console.warn(
+            `[session-sandbox] ensureBuildForLatestCommit failed for ${sandbox.sandboxId}:`,
+            err,
+          );
+        });
+
+        if (!latest || !latest.snapshotId) {
+          throw new Error(
+            `Project sandbox is still building. ` +
+            `This is a one-time setup that runs the first time a project is created (or after every failed build is retried). ` +
+            `Please retry in ~1 minute.`,
+          );
+        }
+        providerCreateInput.snapshot = latest.snapshotId;
+        console.log(
+          `[session-sandbox] Booting ${sandbox.sandboxId} from ${latest.snapshotId} ` +
+          `(commit ${latest.commitSha.slice(0, 8)}, branch ${branch})`,
         );
       }
-      providerCreateInput.snapshot = latest.snapshotId;
-      console.log(
-        `[session-sandbox] Booting ${sandbox.sandboxId} from ${latest.snapshotId} ` +
-        `(commit ${latest.commitSha.slice(0, 8)}, branch ${branch})`,
-      );
 
       const firstStage = provider.provisioning.stages[0];
       const { result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
