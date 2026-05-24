@@ -107,20 +107,36 @@ The `KORTIX_*` prefix is reserved at the Secrets Manager surface, not at parse t
 
 ## `[sandbox]`
 
-Points at the Dockerfile that becomes the base for session sandboxes; the Kortix runtime layer (opencode CLI, agent daemon, entrypoint) is layered on top automatically. Optional — omitting the table or any key falls back to defaults.
+Points at the Dockerfile that becomes the base for session sandboxes; the Kortix runtime layer (opencode CLI, agent daemon, entrypoint) is layered on top automatically. Optional — omitting the table or any key falls back to defaults. This is also where you size the sandbox hardware.
 
 ```toml
 [sandbox]
 dockerfile = ".kortix/Dockerfile"
 context    = "."
+cpu        = 2     # vCPU cores
+memory     = 4     # GiB
+disk       = 20    # GiB
+gpu        = 0     # GPU units (0 = none)
 ```
 
 | Field        | Type   | Default              | Notes                                       |
 | ------------ | ------ | -------------------- | ------------------------------------------- |
 | `dockerfile` | string | `.kortix/Dockerfile` | Repo-relative.                              |
 | `context`    | string | `.`                  | Build context, repo-relative. Alias: `context_dir`. |
+| `cpu`        | int    | provider default     | vCPU cores. Alias: `cpus`.                  |
+| `memory`     | int    | provider default     | RAM in GiB. Aliases: `memory_gb`, `mem`.    |
+| `disk`       | int    | provider default     | Disk in GiB. Alias: `disk_gb`.              |
+| `gpu`        | int    | provider default (none) | GPU units (requires GPU capacity on the runtime). |
 
 Both paths must be repo-relative. Absolute paths and `..` traversal are silently ignored — the validator falls back to the default without an error. A custom path that "isn't being read" usually hits this. See [Sandbox image](/docs/reference/sandbox-image) for what the layer injects and what your Dockerfile can do.
+
+### Hardware spec
+
+`cpu` / `memory` / `disk` / `gpu` size the sandbox. Each is independent and optional — leave one out and the runtime provider's default applies. Values are coerced to whole numbers; a non-positive or non-numeric value falls back to the default, and a value above the platform ceiling (cpu 32, memory 128 GiB, disk 500 GiB, gpu 8) is clamped down rather than rejected.
+
+<Callout type="info" title="A spec change rebuilds the snapshot">
+The spec is baked into the project's snapshot at build time — sandboxes inherit their resources from the snapshot, so there's no per-session override. Changing any spec field is part of the snapshot's content hash, so it triggers one rebuild; the new size takes effect on the **next** session, the same way a Dockerfile edit does. Projects that don't declare a spec are unaffected — their snapshot hash is unchanged.
+</Callout>
 
 ## `[opencode]`
 

@@ -203,3 +203,81 @@ function pickRelPath(value: unknown, fallback: string): string {
   if (trimmed.split('/').includes('..')) return fallback;
   return trimmed;
 }
+
+/**
+ * Hardware spec for the sandbox, read from `[sandbox]` in kortix.toml.
+ * Fields map one-to-one onto Daytona's snapshot `Resources` (vCPU cores,
+ * memory & disk in GiB, GPU units). Every field is optional; an unset
+ * field uses the provider's default size.
+ *
+ * The spec is baked into the per-project snapshot at build time — Daytona
+ * inherits a sandbox's resources from its snapshot and has no way to
+ * override them per-sandbox — so it's also part of the snapshot identity
+ * hash (see snapshots/hash.ts): change the spec, rebuild the snapshot.
+ */
+export interface SandboxSpec {
+  /** vCPU cores. */
+  cpu?: number;
+  /** Memory in GiB. */
+  memory?: number;
+  /** Disk in GiB. */
+  disk?: number;
+  /** GPU units. */
+  gpu?: number;
+}
+
+/**
+ * Defensive bounds for each spec field. A value below `min` (e.g. `0`,
+ * a negative, or a typo) is dropped and the provider default is used; a
+ * value above `max` is clamped to `max` rather than rejected, so an
+ * over-eager request still boots — just capped. Tune the ceilings to
+ * match what the runtime provider / plan actually allows.
+ */
+export const SANDBOX_SPEC_LIMITS = {
+  cpu: { min: 1, max: 32 },
+  memory: { min: 1, max: 128 }, // GiB
+  disk: { min: 1, max: 500 }, // GiB
+  gpu: { min: 1, max: 8 },
+} as const;
+
+export function extractSandboxSpec(
+  manifestRaw: Record<string, unknown> | null | undefined,
+): SandboxSpec {
+  if (!manifestRaw) return {};
+  const sandbox = manifestRaw.sandbox;
+  if (!sandbox || typeof sandbox !== 'object' || Array.isArray(sandbox)) return {};
+  const row = sandbox as Record<string, unknown>;
+  const spec: SandboxSpec = {};
+  // Accept a couple of friendly aliases — `cpus`, `memory_gb`/`mem`,
+  // `disk_gb` — so the table reads naturally however it's written.
+  const cpu = pickResource(row.cpu ?? row.cpus, SANDBOX_SPEC_LIMITS.cpu);
+  const memory = pickResource(row.memory ?? row.memory_gb ?? row.mem, SANDBOX_SPEC_LIMITS.memory);
+  const disk = pickResource(row.disk ?? row.disk_gb, SANDBOX_SPEC_LIMITS.disk);
+  const gpu = pickResource(row.gpu, SANDBOX_SPEC_LIMITS.gpu);
+  if (cpu !== undefined) spec.cpu = cpu;
+  if (memory !== undefined) spec.memory = memory;
+  if (disk !== undefined) spec.disk = disk;
+  if (gpu !== undefined) spec.gpu = gpu;
+  return spec;
+}
+
+/** True when no spec field is set — i.e. boot at the provider default size. */
+export function sandboxSpecIsEmpty(spec: SandboxSpec): boolean {
+  return (
+    spec.cpu === undefined &&
+    spec.memory === undefined &&
+    spec.disk === undefined &&
+    spec.gpu === undefined
+  );
+}
+
+function pickResource(value: unknown, bounds: { min: number; max: number }): number | undefined {
+  let n: number | undefined;
+  if (typeof value === 'number') n = value;
+  else if (typeof value === 'string' && value.trim() !== '') n = Number(value);
+  if (n === undefined || !Number.isFinite(n)) return undefined;
+  n = Math.round(n);
+  if (n < bounds.min) return undefined; // 0 / negative / typo → provider default
+  if (n > bounds.max) n = bounds.max; // clamp absurd values rather than reject
+  return n;
+}

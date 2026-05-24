@@ -83,7 +83,10 @@ import { readManifest } from '../projects/triggers';
 import {
   buildLayeredDockerfile,
   extractSandboxPaths,
+  extractSandboxSpec,
+  sandboxSpecIsEmpty,
   type SandboxPaths,
+  type SandboxSpec,
 } from './dockerfile-layer';
 import { computeSnapshotHash, formatSnapshotName } from './hash';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
@@ -931,12 +934,27 @@ async function runBuild(
     // (build failures aren't retried by the provision loop). Retry transient
     // failures, and after any failure re-check the registry first — the socket
     // can drop AFTER the image finished building server-side.
+    // A custom `[sandbox]` spec is baked into the snapshot here — Daytona
+    // inherits a sandbox's resources from its snapshot, so this is the one
+    // place they can be set. Empty spec → omit `resources` and take the
+    // provider default.
+    const resources = sandboxSpecIsEmpty(ctx.spec) ? undefined : ctx.spec;
+    if (resources) {
+      console.info(
+        `[snapshots] ${ctx.snapshotName}: building with custom spec ${JSON.stringify(resources)}`,
+      );
+    }
+
     let lastErr: unknown;
     for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
       const buildLogs: string[] = [];
       try {
         await daytona.snapshot.create(
-          { name: ctx.snapshotName, image: Image.fromDockerfile(ctx.composedPath) },
+          {
+            name: ctx.snapshotName,
+            image: Image.fromDockerfile(ctx.composedPath),
+            ...(resources ? { resources } : {}),
+          },
           {
             timeout: Math.floor(BUILD_TIMEOUT_MS / 1000),
             onLogs: (chunk) => {
@@ -1128,6 +1146,8 @@ interface PreparedContext {
   contentHash: string;
   shortHash: string;
   runtimeFingerprint: string;
+  /** Hardware spec to bake into the Daytona snapshot ({} == provider default). */
+  spec: SandboxSpec;
 }
 
 interface SnapshotIdentity {
@@ -1138,6 +1158,8 @@ interface SnapshotIdentity {
   /** Repo subdir used as the build context (null == repo root). */
   contextSubdir: string | null;
   userDockerfile: string;
+  /** Hardware spec from `[sandbox]` ({} == provider default). */
+  spec: SandboxSpec;
 }
 
 /**
@@ -1151,7 +1173,7 @@ async function computeSnapshotIdentity(
   project: GitBackedProject,
   commitSha: string,
 ): Promise<SnapshotIdentity> {
-  const sandboxPaths = await resolveSandboxPaths(project, commitSha);
+  const { paths: sandboxPaths, spec } = await resolveSandboxConfig(project, commitSha);
   const userDockerfile = await readRepoFile(project, sandboxPaths.dockerfile, commitSha);
   if (!userDockerfile.trim()) {
     throw new SnapshotBuildError(
@@ -1164,6 +1186,7 @@ async function computeSnapshotIdentity(
   const hash = computeSnapshotHash({
     dockerfile: userDockerfile,
     contextTreeOid,
+    spec,
     runtimeFingerprint,
   });
   return {
@@ -1173,6 +1196,7 @@ async function computeSnapshotIdentity(
     runtimeFingerprint,
     contextSubdir,
     userDockerfile,
+    spec,
   };
 }
 
@@ -1218,6 +1242,7 @@ async function prepareBuildContext(
     contentHash: id.contentHash,
     shortHash: id.shortHash,
     runtimeFingerprint: id.runtimeFingerprint,
+    spec: id.spec,
   };
 }
 
@@ -1324,14 +1349,21 @@ async function assertExistsDir(path: string, envVarHint: string): Promise<void> 
   }
 }
 
-async function resolveSandboxPaths(project: GitBackedProject, _commitSha: string): Promise<SandboxPaths> {
+async function resolveSandboxConfig(
+  project: GitBackedProject,
+  _commitSha: string,
+): Promise<{ paths: SandboxPaths; spec: SandboxSpec }> {
   // readManifest reads from the default branch HEAD — for v1 we accept
   // that as the source of truth even when building for a different
   // commit. A more conservative version would read the manifest at
   // commitSha; the difference only matters for projects that edit
-  // [sandbox] paths on feature branches.
+  // [sandbox] paths/spec on feature branches.
   const parsed = await readManifest(project);
-  return extractSandboxPaths(parsed?.raw ?? null);
+  const raw = parsed?.raw ?? null;
+  return {
+    paths: extractSandboxPaths(raw),
+    spec: extractSandboxSpec(raw),
+  };
 }
 
 async function findSnapshotRow(

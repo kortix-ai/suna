@@ -3,6 +3,9 @@ import {
   buildLayeredDockerfile,
   DEFAULT_SANDBOX_PATHS,
   extractSandboxPaths,
+  extractSandboxSpec,
+  sandboxSpecIsEmpty,
+  SANDBOX_SPEC_LIMITS,
 } from '../snapshots/dockerfile-layer';
 
 const COMMON = {
@@ -97,5 +100,66 @@ describe('extractSandboxPaths', () => {
     expect(
       extractSandboxPaths({ sandbox: { dockerfile: '', context: '' } }),
     ).toEqual(DEFAULT_SANDBOX_PATHS);
+  });
+});
+
+describe('extractSandboxSpec', () => {
+  test('returns an empty spec for a null / missing / specless manifest', () => {
+    expect(extractSandboxSpec(null)).toEqual({});
+    expect(extractSandboxSpec({})).toEqual({});
+    expect(extractSandboxSpec({ sandbox: { dockerfile: '.kortix/Dockerfile' } })).toEqual({});
+  });
+
+  test('picks up cpu / memory / disk / gpu', () => {
+    expect(
+      extractSandboxSpec({ sandbox: { cpu: 4, memory: 8, disk: 50, gpu: 1 } }),
+    ).toEqual({ cpu: 4, memory: 8, disk: 50, gpu: 1 });
+  });
+
+  test('partial specs only carry the fields that are set', () => {
+    expect(extractSandboxSpec({ sandbox: { cpu: 2 } })).toEqual({ cpu: 2 });
+    expect(extractSandboxSpec({ sandbox: { memory: 16 } })).toEqual({ memory: 16 });
+  });
+
+  test('accepts friendly aliases (cpus / memory_gb / mem / disk_gb)', () => {
+    expect(extractSandboxSpec({ sandbox: { cpus: 8 } })).toEqual({ cpu: 8 });
+    expect(extractSandboxSpec({ sandbox: { memory_gb: 32 } })).toEqual({ memory: 32 });
+    expect(extractSandboxSpec({ sandbox: { mem: 4 } })).toEqual({ memory: 4 });
+    expect(extractSandboxSpec({ sandbox: { disk_gb: 100 } })).toEqual({ disk: 100 });
+    // Canonical key wins over its alias when both are present.
+    expect(extractSandboxSpec({ sandbox: { cpu: 2, cpus: 8 } })).toEqual({ cpu: 2 });
+  });
+
+  test('coerces numeric strings and rounds fractional values', () => {
+    expect(extractSandboxSpec({ sandbox: { cpu: '4', memory: '8' } })).toEqual({ cpu: 4, memory: 8 });
+    expect(extractSandboxSpec({ sandbox: { cpu: 2.6 } })).toEqual({ cpu: 3 });
+  });
+
+  test('drops non-positive / non-numeric values (→ provider default)', () => {
+    expect(extractSandboxSpec({ sandbox: { cpu: 0, memory: -4 } })).toEqual({});
+    expect(extractSandboxSpec({ sandbox: { cpu: 'lots', disk: NaN } })).toEqual({});
+    expect(extractSandboxSpec({ sandbox: { gpu: 0 } })).toEqual({});
+  });
+
+  test('clamps values above the ceiling rather than rejecting them', () => {
+    expect(extractSandboxSpec({ sandbox: { cpu: 9999 } })).toEqual({
+      cpu: SANDBOX_SPEC_LIMITS.cpu.max,
+    });
+    expect(extractSandboxSpec({ sandbox: { memory: 10000 } })).toEqual({
+      memory: SANDBOX_SPEC_LIMITS.memory.max,
+    });
+  });
+
+  test('falls back when the sandbox section is malformed', () => {
+    expect(extractSandboxSpec({ sandbox: [{ cpu: 4 }] })).toEqual({});
+    expect(extractSandboxSpec({ sandbox: 'oops' })).toEqual({});
+  });
+});
+
+describe('sandboxSpecIsEmpty', () => {
+  test('true only when no field is set', () => {
+    expect(sandboxSpecIsEmpty({})).toBe(true);
+    expect(sandboxSpecIsEmpty({ cpu: 1 })).toBe(false);
+    expect(sandboxSpecIsEmpty({ gpu: 1 })).toBe(false);
   });
 });
