@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { chmodSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { access, constants, stat } from 'node:fs/promises'
 
 import type { Config } from './config'
@@ -194,7 +194,26 @@ export function createOpencodeSupervisor(
     }
   }
 
+  // Bun-compiled binaries (opencode itself) extract a ~4.7MB runtime blob to
+  // $TMPDIR as `.<hash>-00000000.so` on every launch and never clean it up. With
+  // a supervisor that restarts opencode on crash, these pile up fast — a tight
+  // restart loop leaked ~700 files (~3GB) and filled the sandbox's small disk,
+  // after which EVERY write fails with ENOSPC. opencode then reports the generic
+  // "Failed to write auth data" on login, masking the real cause. Sweep the
+  // stale extractions before each (re)spawn so /tmp can't run away. Best-effort.
+  function sweepBunExtractions() {
+    const tmp = process.env.TMPDIR || '/tmp'
+    try {
+      for (const name of readdirSync(tmp)) {
+        if (name.endsWith('-00000000.so')) {
+          try { unlinkSync(join(tmp, name)) } catch {}
+        }
+      }
+    } catch {}
+  }
+
   function spawnChild(bin: string) {
+    sweepBunExtractions()
     // Keep opencode's data store OUT of the project workspace. opencode writes
     // a git-backed snapshot object store (file history) plus caches/logs under
     // $HOME/.local/share/opencode + $HOME/.config. If HOME points at
