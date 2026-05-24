@@ -37,7 +37,12 @@ import { createGzip } from 'node:zlib';
 import { Image } from '@daytonaio/sdk';
 import { projectRuntimeSnapshots } from '@kortix/db';
 import { db } from '../shared/db';
-import { getDaytona } from '../shared/daytona';
+import {
+  deleteDaytonaSnapshotById,
+  getDaytona,
+  isDaytonaConfigured,
+  listDaytonaSnapshots,
+} from '../shared/daytona';
 import { SANDBOX_VERSION } from '../config';
 import type { SandboxProviderName } from '../config';
 
@@ -850,6 +855,164 @@ export async function pruneOldSnapshots(
   return { deletedRows: expired.length, deletedDaytonaSnapshots };
 }
 
+/** Content-addressed name prefix for every per-project session snapshot. */
+const SNAPSHOT_NAME_PREFIX = 'kortix-snap-';
+
+/**
+ * Org-wide ceiling on how many `ready` per-project snapshots we let pile up on
+ * Daytona. Daytona enforces a HARD global cap (100/org); per-project retention
+ * (`DEFAULT_SNAPSHOT_RETENTION`, keep-N each) can't bound a *global* total —
+ * N projects × keep-5 blows past 100. This budget is the real bound: stay
+ * comfortably under the provider cap so a runtime-fingerprint bump (which
+ * rebuilds every project at once) has headroom. Tunable via
+ * `KORTIX_SNAPSHOT_GLOBAL_BUDGET`.
+ */
+const DEFAULT_GLOBAL_SNAPSHOT_BUDGET = 80;
+
+function globalSnapshotBudget(): number {
+  const raw = Number.parseInt(process.env.KORTIX_SNAPSHOT_GLOBAL_BUDGET || '', 10);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return DEFAULT_GLOBAL_SNAPSHOT_BUDGET;
+}
+
+/** Stale `failed` rows older than this are swept (a fresh build re-creates them). */
+const FAILED_ROW_TTL_MS = 24 * 60 * 60 * 1000;
+
+function rowUpdatedMs(row: { updatedAt: Date | string }): number {
+  const t = row.updatedAt instanceof Date ? row.updatedAt.getTime() : new Date(row.updatedAt).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+let reconcileRunning = false;
+
+/**
+ * Org-wide snapshot reconciliation — the global counterpart to the per-project
+ * `pruneOldSnapshots`. Idempotent, best-effort, safe to run on a timer.
+ *
+ *   1. ORPHANS: Daytona snapshots named `kortix-snap-*` that no `ready` DB row
+ *      references — leaked when a rebuild/version-bump replaced a row's
+ *      snapshotId without deleting the old image. Deleted from Daytona.
+ *   2. DEAD ROWS: DB rows marked `ready` whose image is gone from Daytona.
+ *      Deleted so the next session rebuilds cleanly instead of booting a 404.
+ *   3. GLOBAL BUDGET: if more than `budget` ready snapshots survive, evict the
+ *      globally least-recently-updated ones (DB row + image) — never a
+ *      project's most-recent row, so every project stays bootable.
+ *   4. STALE FAILURES: `failed` rows older than `FAILED_ROW_TTL_MS`.
+ *
+ * Refuses to delete anything if the Daytona snapshot list can't be fetched
+ * (never act on a partial view). No-op when Daytona isn't configured.
+ */
+export async function reconcileDaytonaSnapshots(opts: { budget?: number } = {}): Promise<{
+  orphansDeleted: number;
+  deadRowsCleared: number;
+  evicted: number;
+  failedCleared: number;
+  liveBefore: number;
+}> {
+  const noop = { orphansDeleted: 0, deadRowsCleared: 0, evicted: 0, failedCleared: 0, liveBefore: 0 };
+  if (!isDaytonaConfigured() || reconcileRunning) return noop;
+  reconcileRunning = true;
+  try {
+    // Throws if the list is unavailable — we never delete based on a partial view.
+    const live = (await listDaytonaSnapshots()).filter((s) => s.name.startsWith(SNAPSHOT_NAME_PREFIX));
+    const liveByName = new Map(live.map((s) => [s.name, s]));
+    const liveBefore = live.length;
+
+    const readyRows = await db
+      .select()
+      .from(projectRuntimeSnapshots)
+      .where(
+        and(
+          eq(projectRuntimeSnapshots.provider, 'daytona'),
+          eq(projectRuntimeSnapshots.status, 'ready'),
+        ),
+      );
+    const referenced = new Set(
+      readyRows.map((r) => r.snapshotId).filter((s): s is string => Boolean(s)),
+    );
+
+    // 1. Orphans — on Daytona, named like ours, unreferenced.
+    let orphansDeleted = 0;
+    for (const snap of live) {
+      if (referenced.has(snap.name)) continue;
+      if (await deleteDaytonaSnapshotById(snap.id)) orphansDeleted += 1;
+    }
+
+    // 2. Dead cache rows — `ready` but the image no longer exists.
+    const deadRowIds = readyRows
+      .filter((r) => r.snapshotId && !liveByName.has(r.snapshotId))
+      .map((r) => r.snapshotRowId);
+    if (deadRowIds.length > 0) {
+      await db
+        .delete(projectRuntimeSnapshots)
+        .where(inArray(projectRuntimeSnapshots.snapshotRowId, deadRowIds));
+    }
+
+    // 3. Global budget — evict oldest-updated surviving rows beyond the cap,
+    //    keeping each project's most-recent row as a protected floor.
+    const deadSet = new Set(deadRowIds);
+    const surviving = readyRows.filter(
+      (r) => r.snapshotId && liveByName.has(r.snapshotId) && !deadSet.has(r.snapshotRowId),
+    );
+    const budget = opts.budget ?? globalSnapshotBudget();
+    let evicted = 0;
+    if (surviving.length > budget) {
+      const newestPerProject = new Map<string, string>();
+      for (const r of [...surviving].sort((a, b) => rowUpdatedMs(b) - rowUpdatedMs(a))) {
+        if (!newestPerProject.has(r.projectId)) newestPerProject.set(r.projectId, r.snapshotRowId);
+      }
+      const evictRows = [...surviving]
+        .filter((r) => newestPerProject.get(r.projectId) !== r.snapshotRowId)
+        .sort((a, b) => rowUpdatedMs(a) - rowUpdatedMs(b))
+        .slice(0, surviving.length - budget);
+      const evictRowIds = new Set(evictRows.map((r) => r.snapshotRowId));
+      // Images still pointed at by a surviving (non-evicted) row must not be deleted.
+      const keptRefs = new Set(
+        surviving
+          .filter((r) => !evictRowIds.has(r.snapshotRowId))
+          .map((r) => r.snapshotId)
+          .filter((s): s is string => Boolean(s)),
+      );
+      if (evictRowIds.size > 0) {
+        await db
+          .delete(projectRuntimeSnapshots)
+          .where(inArray(projectRuntimeSnapshots.snapshotRowId, [...evictRowIds]));
+        for (const sid of new Set(evictRows.map((r) => r.snapshotId).filter((s): s is string => Boolean(s)))) {
+          if (keptRefs.has(sid)) continue;
+          const snap = liveByName.get(sid);
+          if (snap) await deleteDaytonaSnapshotById(snap.id);
+        }
+        evicted = evictRowIds.size;
+      }
+    }
+
+    // 4. Stale failed rows.
+    const failed = await db
+      .delete(projectRuntimeSnapshots)
+      .where(
+        and(
+          eq(projectRuntimeSnapshots.status, 'failed'),
+          lt(projectRuntimeSnapshots.updatedAt, new Date(Date.now() - FAILED_ROW_TTL_MS)),
+        ),
+      )
+      .returning({ id: projectRuntimeSnapshots.snapshotRowId });
+
+    const result = {
+      orphansDeleted,
+      deadRowsCleared: deadRowIds.length,
+      evicted,
+      failedCleared: failed.length,
+      liveBefore,
+    };
+    if (orphansDeleted || result.deadRowsCleared || evicted || result.failedCleared) {
+      console.log('[snapshots] reconcile', { ...result, budget });
+    }
+    return result;
+  } finally {
+    reconcileRunning = false;
+  }
+}
+
 /* ─── Internals ────────────────────────────────────────────────────────── */
 
 interface BuildOutcome {
@@ -946,6 +1109,7 @@ async function runBuild(
     }
 
     let lastErr: unknown;
+    let quotaRecovered = false;
     for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
       const buildLogs: string[] = [];
       try {
@@ -1001,6 +1165,18 @@ async function runBuild(
             built: true,
           };
         }
+        // Org-wide snapshot quota hit — reclaim orphaned / over-budget
+        // snapshots once, then retry. Without this the cap is a death-spiral:
+        // builds fail, so per-project prune (which only runs after a *successful*
+        // build) never runs, so the quota never frees. Don't burn an attempt on
+        // the pre-reconcile failure.
+        if (isQuotaError(err) && !quotaRecovered) {
+          quotaRecovered = true;
+          const rec = await reconcileDaytonaSnapshots().catch(() => null);
+          console.warn(`[snapshots] quota hit building ${ctx.snapshotName}; reconciled ${JSON.stringify(rec)} — retrying`);
+          attempt--;
+          continue;
+        }
         if (!isTransientDaytonaError(err) || attempt === BUILD_ATTEMPTS) throw err;
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`[snapshots] build attempt ${attempt}/${BUILD_ATTEMPTS} for ${ctx.snapshotName} failed transiently — retrying: ${msg.slice(0, 120)}`);
@@ -1036,6 +1212,12 @@ async function getUsableSnapshot(
   } catch {
     return false; // not found / transient — treat as absent, caller proceeds to build
   }
+}
+
+/** Org-wide snapshot quota exhaustion — recoverable by reconciling first. */
+function isQuotaError(err: unknown): boolean {
+  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return m.includes('quota') || m.includes('maximum allowed');
 }
 
 /** Transient Daytona build/transport errors worth retrying (vs a real build failure). */

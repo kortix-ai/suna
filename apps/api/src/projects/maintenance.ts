@@ -4,6 +4,7 @@ import { db } from '../shared/db';
 import { getProvider, type ProviderName } from '../platform/providers';
 import { invalidateProviderCache } from '../sandbox-proxy';
 import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
+import { reconcileDaytonaSnapshots } from '../snapshots/builder';
 
 const DEFAULT_IDLE_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
@@ -242,12 +243,20 @@ export async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, branches] = await Promise.all([
+    const [idle, branches, snapshots] = await Promise.all([
       hibernateIdleSessionSandboxes(),
       sweepExpiredSessionBranches(),
+      // Org-wide snapshot GC: reclaim orphaned/over-budget Daytona snapshots so
+      // the global quota never strangles new builds. Best-effort.
+      reconcileDaytonaSnapshots().catch((err) => {
+        console.warn('[project-maintenance] snapshot reconcile failed:', err instanceof Error ? err.message : err);
+        return null;
+      }),
     ]);
-    if (idle.stopped || idle.errors || branches.deleted || branches.errors) {
-      console.log('[project-maintenance] completed', { idle, branches });
+    const snapChanged =
+      snapshots && (snapshots.orphansDeleted || snapshots.deadRowsCleared || snapshots.evicted || snapshots.failedCleared);
+    if (idle.stopped || idle.errors || branches.deleted || branches.errors || snapChanged) {
+      console.log('[project-maintenance] completed', { idle, branches, snapshots });
     }
   } finally {
     maintenanceRunning = false;
