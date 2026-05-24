@@ -185,7 +185,7 @@ const LS_AGENTS = 'kortix_cache_agents';
 const LS_COMMANDS = 'kortix_cache_commands';
 const LS_PROVIDERS = 'kortix_cache_providers';
 
-function useOpenCodeRuntimeReady() {
+export function useOpenCodeRuntimeReady() {
   return useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
 }
 
@@ -228,6 +228,12 @@ export function useOpenCodeSession(sessionId: string) {
     },
     enabled: runtimeReady && !!sessionId,
     staleTime: Infinity,
+    // Retry transient failures (sandbox still warming, brief network blip) so a
+    // single failed lookup doesn't settle as "not found" and flash the
+    // not-accessible error. The query stays in its loading state across retries.
+    retry: (failureCount, error) =>
+      !isOpenCodeConfigInvalidError(error) && failureCount < 3,
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
     placeholderData: () => {
       const sessions = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
       return sessions?.find((s) => s.id === sessionId);

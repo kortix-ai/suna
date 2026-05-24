@@ -109,6 +109,7 @@ import {
   useOpenCodeAgents,
   useOpenCodeCommands,
   useOpenCodeProviders,
+  useOpenCodeRuntimeReady,
   useOpenCodeSession,
   useOpenCodeSessions,
 } from '@/hooks/opencode/use-opencode-sessions';
@@ -4019,8 +4020,14 @@ export function SessionChat({
   }, [isSidePanelOpen, setIsSidePanelOpen]);
 
   // ---- Hooks ----
-  const { data: session, isLoading: sessionLoading } =
-    useOpenCodeSession(sessionId);
+  // runtimeReady gates the session query (it's disabled until the sandbox
+  // runtime is connected + healthy). We need it here too so the render logic
+  // can tell "still booting" apart from "genuinely gone".
+  const runtimeReady = useOpenCodeRuntimeReady();
+  const {
+    data: session,
+    isFetched: sessionFetched,
+  } = useOpenCodeSession(sessionId);
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
@@ -5869,9 +5876,19 @@ export function SessionChat({
   // spinning while we wait to confirm "0 messages", we show the welcome
   // screen right away.
   const hasMessages = messages && messages.length > 0;
+  // "Not found" is a TERMINAL answer, never a loading guess. It's only true once
+  // the runtime is connected AND the session lookup has actually run and come
+  // back empty. While the runtime is still connecting (the query is disabled and
+  // therefore reports isLoading=false) or the lookup is in flight, we know
+  // nothing yet — so we must show the loading state, not the error. This is what
+  // stops the "This session is not accessible right now." flash on boot.
+  const sessionResolved = runtimeReady && sessionFetched;
+  const isNotFound = !session && sessionResolved && !optimisticPrompt;
+  // Everything that isn't "we have content" and isn't the terminal not-found
+  // state is loading — including the boot window where the query is still
+  // disabled (isLoading=false) waiting on the runtime.
   const isDataLoading =
-    !session && sessionLoading && !hasMessages && !optimisticPrompt;
-  const isNotFound = !session && !sessionLoading && !optimisticPrompt;
+    !session && !isNotFound && !hasMessages && !optimisticPrompt;
   const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome =
     !prevHasChatContentRef.current && hasChatContent;
