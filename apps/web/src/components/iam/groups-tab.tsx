@@ -40,7 +40,6 @@ import {
   deleteGroup,
   listGroups,
 } from '@/lib/iam-client';
-import { useIamV2Enabled } from '@/lib/use-iam-version';
 
 interface GroupsTabProps {
   accountId: string;
@@ -57,10 +56,6 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<AccountGroup | null>(null);
-  // V2 swaps the V1-only "Permission policies" column for a "Projects"
-  // count (rows in project_group_grants). Same column slot, different
-  // backing field — keeps the table compact on both versions.
-  const { enabled: isIamV2 } = useIamV2Enabled(accountId);
 
   const groupsQuery = useQuery({
     queryKey: ['account-groups', accountId],
@@ -92,11 +87,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
   return (
     <SectionCard
       title="Groups"
-      description={
-        isIamV2
-          ? 'Bundle members together and attach the whole group to projects with a role.'
-          : tHardcodedUi.raw('componentsIamGroupsTab.line87JsxAttrDescriptionBundleMembersTogetherAndGrantPermissionPoliciesTo')
-      }
+      description="Bundle members together and attach the whole group to projects with a role."
       action={
         canCreate && (
           <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
@@ -156,9 +147,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
           title={search ? 'No groups match your search' : 'No groups yet'}
           description={
             !search && canCreate
-              ? isIamV2
-                ? 'Create a group to bulk-add members to projects.'
-                : 'Create a group to start attaching permission policies.'
+              ? 'Create a group to bulk-add members to projects.'
               : undefined
           }
         />
@@ -172,9 +161,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
                 <th className="px-6 py-2.5 font-medium">Name</th>
                 <th className="px-3 py-2.5 font-medium">Source</th>
                 <th className="px-3 py-2.5 font-medium">Members</th>
-                <th className="px-3 py-2.5 font-medium">
-                  {isIamV2 ? 'Projects' : tHardcodedUi.raw('componentsIamGroupsTab.line163JsxTextPermissionPolicies')}
-                </th>
+                <th className="px-3 py-2.5 font-medium">Projects</th>
                 <th className="w-12 px-3 py-2.5" />
               </tr>
             </thead>
@@ -206,7 +193,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
                     {g.member_count ?? 0}
                   </td>
                   <td className="px-3 py-3 text-muted-foreground">
-                    {isIamV2 ? (g.project_count ?? 0) : (g.policy_count ?? 0)}
+                    {g.project_count ?? 0}
                   </td>
                   <td
                     className="px-3 py-3 text-right"

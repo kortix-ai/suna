@@ -26,7 +26,6 @@ import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listAuditEvents, type AuditEvent } from '@/lib/iam-client';
 import { listAccountMembers } from '@/lib/projects-client';
-import { useIamV2Enabled } from '@/lib/use-iam-version';
 
 // ─── Quick filters ─────────────────────────────────────────────────────────
 
@@ -38,21 +37,7 @@ interface QuickFilter {
   daysBack: number | null;
 }
 
-// V1 filter set — kept for accounts where iam_v2_enabled is false.
-const QUICK_FILTERS_V1: QuickFilter[] = [
-  { label: 'All events',        action: null,                            daysBack: null },
-  { label: 'IAM only',          action: 'iam.',                          daysBack: null },
-  { label: 'Policy changes',    action: 'iam.policy',                    daysBack: null },
-  { label: 'Group changes',     action: 'iam.group',                     daysBack: null },
-  { label: 'Super-admin grants', action: 'iam.member.super_admin',       daysBack: null },
-  { label: 'Last 24 hours',     action: null,                            daysBack: 1 },
-  { label: 'Last 7 days',       action: null,                            daysBack: 7 },
-  { label: 'Last 30 days',      action: null,                            daysBack: 30 },
-];
-
-// V2: there are no policies to filter on. Swap "Policy changes" for
-// "Project access" (covers member-direct + group-grant attachment events).
-const QUICK_FILTERS_V2: QuickFilter[] = [
+const QUICK_FILTERS: QuickFilter[] = [
   { label: 'All events',         action: null,                           daysBack: null },
   { label: 'IAM only',           action: 'iam.',                         daysBack: null },
   { label: 'Group changes',      action: 'iam.group',                    daysBack: null },
@@ -77,9 +62,6 @@ export function AuditTab({ accountId }: AuditTabProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [filterIndex, setFilterIndex] = useState(0);
   const [exporting, setExporting] = useState(false);
-  const { enabled: isIamV2 } = useIamV2Enabled(accountId);
-  // Swap the filter set without remounting — the index is just a slot.
-  const QUICK_FILTERS = isIamV2 ? QUICK_FILTERS_V2 : QUICK_FILTERS_V1;
   const active = QUICK_FILTERS[filterIndex];
 
   // Streams the export with the active filter, triggers a browser download.

@@ -17,8 +17,6 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { PoliciesTable } from '@/components/iam/policies-table';
-import { PermissionBoundaryCard } from '@/components/iam/permission-boundary-card';
 import {
   listMemberGroups,
   listMemberProjectAccess,
@@ -28,7 +26,6 @@ import {
 } from '@/lib/iam-client';
 import { getAccount, listAccountMembers, type AccountRole } from '@/lib/projects-client';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
-import { useIamV2Enabled } from '@/lib/use-iam-version';
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',
@@ -90,12 +87,7 @@ export default function MemberDetailPage() {
     () => members.find((m) => m.user_id === memberUserId),
     [members, memberUserId],
   );
-  // Granular permissions from the IAM engine. canManage gates the policies
-  // table (create/edit/delete); canPromoteSuperAdmin gates the bypass toggle.
-  const canManage = usePermission(accountId, 'policy.create').allowed;
-  // V2 accounts don't have policies or permission boundaries — hide those
-  // sections entirely. Account role + groups + capabilities still apply.
-  const { enabled: isIamV2 } = useIamV2Enabled(accountId);
+  // canPromoteSuperAdmin gates the bypass toggle below.
   const canPromoteSuperAdmin = usePermission(
     accountId,
     'member.super_admin.grant',
@@ -223,7 +215,7 @@ export default function MemberDetailPage() {
             />
           )}
 
-          {account && member && isIamV2 && (
+          {account && member && (
             <MemberProjectAccessCard
               accountId={account.account_id}
               memberUserId={member.user_id}
@@ -235,24 +227,6 @@ export default function MemberDetailPage() {
             <CapabilitiesCard
               accountId={account.account_id}
               memberUserId={member.user_id}
-            />
-          )}
-
-          {account && member && !isIamV2 && (
-            <PoliciesTable
-              accountId={account.account_id}
-              principalType="member"
-              principalId={member.user_id}
-              principalLabel={memberLabel}
-              canManage={canManage}
-            />
-          )}
-
-          {account && member && !isIamV2 && (
-            <PermissionBoundaryCard
-              accountId={account.account_id}
-              userId={member.user_id}
-              canManage={canManage}
             />
           )}
 

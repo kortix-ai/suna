@@ -30,7 +30,6 @@ import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PoliciesTable } from '@/components/iam/policies-table';
 import {
   addGroupMembers,
   deleteGroup,
@@ -43,7 +42,6 @@ import {
 } from '@/lib/iam-client';
 import { detachGroupFromProject, getAccount, listAccountMembers } from '@/lib/projects-client';
 import { usePermission } from '@/lib/use-permission';
-import { useIamV2Enabled } from '@/lib/use-iam-version';
 
 export default function GroupDetailPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -74,11 +72,6 @@ export default function GroupDetailPage() {
     resourceType: 'group',
     resourceId: groupId,
   }).allowed;
-  const canManagePolicies = usePermission(accountId, 'policy.create').allowed;
-  // V2 accounts don't have policies — hide the Permission policies tab.
-  // The future V2 group view will show project attachments instead, but
-  // for now the existing Group Members + Settings tabs are sufficient.
-  const { enabled: isIamV2 } = useIamV2Enabled(accountId);
   const canEditGroup = usePermission(accountId, 'group.update', {
     resourceType: 'group',
     resourceId: groupId,
@@ -164,12 +157,7 @@ export default function GroupDetailPage() {
             <Tabs defaultValue="members" className="space-y-6">
               <TabsList>
                 <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line157JsxTextGroupMembers')}</TabsTrigger>
-                {isIamV2 && (
-                  <TabsTrigger value="projects">Project access</TabsTrigger>
-                )}
-                {!isIamV2 && (
-                  <TabsTrigger value="policies">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line158JsxTextPermissionPolicies')}</TabsTrigger>
-                )}
+                <TabsTrigger value="projects">Project access</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
 
@@ -181,27 +169,13 @@ export default function GroupDetailPage() {
                 />
               </TabsContent>
 
-              {isIamV2 && (
-                <TabsContent value="projects">
-                  <GroupProjectGrantsCard
-                    accountId={account.account_id}
-                    groupId={group.group_id}
-                    groupName={group.name}
-                  />
-                </TabsContent>
-              )}
-
-              {!isIamV2 && (
-                <TabsContent value="policies">
-                  <PoliciesTable
-                    accountId={account.account_id}
-                    principalType="group"
-                    principalId={group.group_id}
-                    principalLabel={`the "${group.name}" group`}
-                    canManage={canManagePolicies}
-                  />
-                </TabsContent>
-              )}
+              <TabsContent value="projects">
+                <GroupProjectGrantsCard
+                  accountId={account.account_id}
+                  groupId={group.group_id}
+                  groupName={group.name}
+                />
+              </TabsContent>
 
               <TabsContent value="settings">
                 <GroupSettingsCard

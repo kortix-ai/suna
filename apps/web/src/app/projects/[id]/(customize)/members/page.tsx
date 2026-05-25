@@ -39,7 +39,6 @@ import {
   type ProjectRole,
 } from '@/lib/projects-client';
 import { listGroups, type AccountGroup } from '@/lib/iam-client';
-import { useIamV2Enabled } from '@/lib/use-iam-version';
 
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   manager: 'Manager',
@@ -92,10 +91,6 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
 
   const project = projectQuery.data;
   const canManage = project?.effective_project_role === 'manager' || accessQuery.data?.can_manage;
-  // V2 surfaces the project_group_grants table as a sibling card. V1
-  // accounts don't see it (groups attach via policies on the Group
-  // detail page instead).
-  const { enabled: isIamV2 } = useIamV2Enabled(project?.account_id);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -117,7 +112,7 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
           onRetry={() => accessQuery.refetch()}
         />
 
-        {isIamV2 && project?.account_id && (
+        {project?.account_id && (
           <ProjectGroupGrantsCard
             projectId={projectId}
             accountId={project.account_id}

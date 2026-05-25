@@ -64,24 +64,15 @@ import { SectionCard } from '@/components/ui/section-card';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
-import { RolesTab } from '@/components/iam/roles-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
-import { AnalyticsCard } from '@/components/iam/analytics-card';
-import { DriftCard } from '@/components/iam/drift-card';
-import { StrictModeCard } from '@/components/iam/strict-mode-card';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
-import { ApprovalsCard } from '@/components/iam/approvals-card';
-import { ProjectGroupsCard } from '@/components/iam/project-groups-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
-import { BreakGlassCard } from '@/components/iam/break-glass-card';
-import { ExternalGrantsCard } from '@/components/iam/external-grants-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { usePermission } from '@/lib/use-permission';
-import { useIamV2Enabled } from '@/lib/use-iam-version';
 import {
   type AccountDetail,
   type AccountInvitation,
@@ -173,24 +164,17 @@ export default function AccountSettingsPage() {
     staleTime: 20_000,
   });
 
-  // Granular capabilities sourced from the IAM engine instead of raw
-  // account_role. A member granted "Administrator" via an explicit policy
-  // gets the same affordances an owner does, and vice-versa. MUST be
-  // called before any conditional return — moving these below the
-  // auth-loading guard would change the hook count between renders.
+  // Granular capabilities sourced from the IAM engine. MUST be called
+  // before any conditional return — moving these below the auth-loading
+  // guard would change the hook count between renders.
   // usePermission internally short-circuits when accountId is falsy, so
   // it's safe to call before the account query resolves.
-  // V2-vs-V1 dispatch for the UI surface. When the account is on V2 we
-  // hide the Roles tab + the V1-only Audit panels (analytics, drift)
-  // because those concepts only exist in the policy-based engine.
-  const { enabled: isIamV2 } = useIamV2Enabled(accountId);
   const canWriteAccount = usePermission(accountId, 'account.write').allowed;
   const canDeleteAccount = usePermission(accountId, 'account.delete').allowed;
   const canInviteMember = usePermission(accountId, 'member.invite').allowed;
   const canRemoveMember = usePermission(accountId, 'member.remove').allowed;
   const canUpdateMember = usePermission(accountId, 'member.update').allowed;
   const canCreateGroup = usePermission(accountId, 'group.create').allowed;
-  const canCreateRole = usePermission(accountId, 'role.create').allowed;
   const canReadAudit = usePermission(accountId, 'audit.read').allowed;
 
   if (authLoading || !user) {
@@ -283,7 +267,6 @@ export default function AccountSettingsPage() {
               <TabsList>
                 <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
-                {!isIamV2 && <TabsTrigger value="roles">Roles</TabsTrigger>}
                 <TabsTrigger value="git">Git</TabsTrigger>
                 {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
                 <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -312,23 +295,8 @@ export default function AccountSettingsPage() {
                 />
               </TabsContent>
 
-              {!isIamV2 && (
-                <TabsContent value="roles" className="space-y-6">
-                  <RolesTab
-                    accountId={account.account_id}
-                    canCreate={canCreateRole}
-                  />
-                </TabsContent>
-              )}
-
               {canReadAudit && (
                 <TabsContent value="audit" className="space-y-6">
-                  {!isIamV2 && (
-                    <>
-                      <AnalyticsCard accountId={account.account_id} />
-                      <DriftCard accountId={account.account_id} />
-                    </>
-                  )}
                   <AuditTab accountId={account.account_id} />
                 </TabsContent>
               )}
@@ -363,29 +331,6 @@ export default function AccountSettingsPage() {
                     accountId={account.account_id}
                     canManage={canWriteAccount}
                   />
-                  {/* V1-only: legacy-bridge toggle. */}
-                  {!isIamV2 && (
-                    <StrictModeCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
-                  )}
-                  {/* V1-only: approval workflows for policy mutations. */}
-                  {!isIamV2 && (
-                    <ApprovalsCard
-                      accountId={account.account_id}
-                      currentUserId={user.id}
-                      canManage={canWriteAccount}
-                    />
-                  )}
-                  {/* V1-only: break-glass super-admin escalation. */}
-                  {!isIamV2 && (
-                    <BreakGlassCard
-                      accountId={account.account_id}
-                      currentUserId={user.id}
-                      canManage={canWriteAccount}
-                    />
-                  )}
                 </SettingsGroup>
 
                 {/* ── Identity & directory ─────────────────────── */}
@@ -401,13 +346,6 @@ export default function AccountSettingsPage() {
                     accountId={account.account_id}
                     canManage={canWriteAccount}
                   />
-                  {/* V1-only: cross-account sharing via "external" members. */}
-                  {!isIamV2 && (
-                    <ExternalGrantsCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
-                  )}
                 </SettingsGroup>
 
                 {/* ── Tokens & automation ──────────────────────── */}
@@ -435,16 +373,6 @@ export default function AccountSettingsPage() {
                     canManage={canWriteAccount}
                   />
                 </SettingsGroup>
-
-                {/* ── V1-only: resource groups ─────────────────── */}
-                {!isIamV2 && (
-                  <SettingsGroup title="Resource groups">
-                    <ProjectGroupsCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
-                  </SettingsGroup>
-                )}
 
                 {isTeam && canDeleteAccount && (
                   <SettingsGroup title="Danger zone">

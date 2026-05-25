@@ -14,7 +14,6 @@ import { Badge } from '@/components/ui/badge';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PoliciesTable } from '@/components/iam/policies-table';
 import { accountTokensApi } from '@/lib/api/account-tokens';
 import { getAccount } from '@/lib/projects-client';
 import { usePermission } from '@/lib/use-permission';
@@ -138,17 +137,9 @@ export default function TokenDetailPage() {
           )}
 
           {token && accountId && (
-            <>
-              <InfoBanner tone="info" title={tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line143JsxAttrTitleNarrowWhatThisTokenCanDo')}>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line144JsxTextByDefaultATokenInheritsItsCreatorApos')}<strong>only</strong>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line146JsxTextDoWhatThosePoliciesAllowTheCreatorApos')}</InfoBanner>
-
-              <PoliciesTable
-                accountId={accountId}
-                principalType="token"
-                principalId={token.token_id}
-                principalLabel={`the "${token.name}" token`}
-                canManage={canManage}
-              />
-            </>
+            <InfoBanner tone="info" title="Token permissions">
+              Tokens inherit their creator&apos;s account-role and group memberships at request time. To narrow what a token can reach, scope it to a single project when minting.
+            </InfoBanner>
           )}
         </div>
       </main>
