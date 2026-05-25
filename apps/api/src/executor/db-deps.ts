@@ -15,7 +15,7 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { validateAccountToken } from '../repositories/account-tokens';
-import { authorize } from '../iam/engine';
+import { authorize } from '../iam';
 import {
   isSecretUsableBy,
   resolveShareSubject,

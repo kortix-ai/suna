@@ -87,7 +87,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
   return (
     <SectionCard
       title="Groups"
-      description={tHardcodedUi.raw('componentsIamGroupsTab.line87JsxAttrDescriptionBundleMembersTogetherAndGrantPermissionPoliciesTo')}
+      description="Bundle members together and attach the whole group to projects with a role."
       action={
         canCreate && (
           <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
@@ -147,7 +147,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
           title={search ? 'No groups match your search' : 'No groups yet'}
           description={
             !search && canCreate
-              ? 'Create a group to start attaching permission policies.'
+              ? 'Create a group to bulk-add members to projects.'
               : undefined
           }
         />
@@ -161,7 +161,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
                 <th className="px-6 py-2.5 font-medium">Name</th>
                 <th className="px-3 py-2.5 font-medium">Source</th>
                 <th className="px-3 py-2.5 font-medium">Members</th>
-                <th className="px-3 py-2.5 font-medium">{tHardcodedUi.raw('componentsIamGroupsTab.line163JsxTextPermissionPolicies')}</th>
+                <th className="px-3 py-2.5 font-medium">Projects</th>
                 <th className="w-12 px-3 py-2.5" />
               </tr>
             </thead>
@@ -193,7 +193,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
                     {g.member_count ?? 0}
                   </td>
                   <td className="px-3 py-3 text-muted-foreground">
-                    {g.policy_count ?? 0}
+                    {g.project_count ?? 0}
                   </td>
                   <td
                     className="px-3 py-3 text-right"

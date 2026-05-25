@@ -115,20 +115,11 @@ export {
   changeRequestsRelations,
   // IAM
   accountGroupSourceEnum,
-  iamPrincipalTypeEnum,
-  iamPolicyEffectEnum,
-  iamScopeTypeEnum,
-  iamResourceTypeEnum,
   accountGroups,
   accountGroupMembers,
-  iamRoles,
-  iamRolePermissions,
-  iamPolicies,
+  projectGroupGrants,
   accountGroupsRelations,
   accountGroupMembersRelations,
-  iamRolesRelations,
-  iamRolePermissionsRelations,
-  iamPoliciesRelations,
   // SCIM
   scimTokens,
   // Audit webhooks
@@ -138,17 +129,8 @@ export {
   accountSsoGroupMappings,
   // Session policy
   accountSessionActivity,
-  // Approval workflows
-  iamApprovalRequests,
-  // Permission usage analytics
-  iamActionUsage,
-  // Resource groups (project groups)
-  projectGroups,
-  projectGroupMembers,
   // Service accounts
   serviceAccounts,
-  // Break-glass emergency access
-  iamBreakGlassGrants,
   // Executor (connectors)
   executorConnectorProviderEnum,
   executorConnectorStatusEnum,

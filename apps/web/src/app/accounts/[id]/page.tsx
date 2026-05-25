@@ -14,8 +14,10 @@ import {
   Link as LinkIcon,
   Loader2,
   Mail,
+  HelpCircle,
   MoreHorizontal,
   RefreshCw,
+  Search,
   Shield,
   Trash2,
   Unplug,
@@ -52,6 +54,11 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -64,20 +71,12 @@ import { SectionCard } from '@/components/ui/section-card';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
-import { RolesTab } from '@/components/iam/roles-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
-import { AnalyticsCard } from '@/components/iam/analytics-card';
-import { DriftCard } from '@/components/iam/drift-card';
-import { StrictModeCard } from '@/components/iam/strict-mode-card';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
-import { ApprovalsCard } from '@/components/iam/approvals-card';
-import { ProjectGroupsCard } from '@/components/iam/project-groups-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
-import { BreakGlassCard } from '@/components/iam/break-glass-card';
-import { ExternalGrantsCard } from '@/components/iam/external-grants-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { usePermission } from '@/lib/use-permission';
@@ -172,11 +171,9 @@ export default function AccountSettingsPage() {
     staleTime: 20_000,
   });
 
-  // Granular capabilities sourced from the IAM engine instead of raw
-  // account_role. A member granted "Administrator" via an explicit policy
-  // gets the same affordances an owner does, and vice-versa. MUST be
-  // called before any conditional return — moving these below the
-  // auth-loading guard would change the hook count between renders.
+  // Granular capabilities sourced from the IAM engine. MUST be called
+  // before any conditional return — moving these below the auth-loading
+  // guard would change the hook count between renders.
   // usePermission internally short-circuits when accountId is falsy, so
   // it's safe to call before the account query resolves.
   const canWriteAccount = usePermission(accountId, 'account.write').allowed;
@@ -185,7 +182,6 @@ export default function AccountSettingsPage() {
   const canRemoveMember = usePermission(accountId, 'member.remove').allowed;
   const canUpdateMember = usePermission(accountId, 'member.update').allowed;
   const canCreateGroup = usePermission(accountId, 'group.create').allowed;
-  const canCreateRole = usePermission(accountId, 'role.create').allowed;
   const canReadAudit = usePermission(accountId, 'audit.read').allowed;
 
   if (authLoading || !user) {
@@ -232,19 +228,22 @@ export default function AccountSettingsPage() {
                 </span>
               )}
             </div>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                {accountQuery.isLoading ? (
-                  <Skeleton className="h-7 w-48" />
-                ) : (
-                  account?.name
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                  {accountQuery.isLoading ? (
+                    <Skeleton className="h-7 w-48" />
+                  ) : (
+                    account?.name
+                  )}
+                </h1>
+                {account && (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Manage account settings, members, and access.
+                  </p>
                 )}
-              </h1>
-              {account && (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Manage account settings, members, and access.
-                </p>
-              )}
+              </div>
+              {account && <PermissionsHelpPopover />}
             </div>
           </div>
 
@@ -278,10 +277,13 @@ export default function AccountSettingsPage() {
               <TabsList>
                 <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
-                <TabsTrigger value="roles">Roles</TabsTrigger>
-                <TabsTrigger value="git">Git</TabsTrigger>
+                {/* Git (account-level GitHub install) + Settings are
+                    admin surfaces — gate on account.write so plain
+                    Members don't see tabs they can't act on. Audit is
+                    gated on its own audit.read permission. */}
+                {canWriteAccount && <TabsTrigger value="git">Git</TabsTrigger>}
                 {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
-                <TabsTrigger value="settings">Settings</TabsTrigger>
+                {canWriteAccount && <TabsTrigger value="settings">Settings</TabsTrigger>}
               </TabsList>
 
               <TabsContent value="members" className="space-y-6">
@@ -307,91 +309,186 @@ export default function AccountSettingsPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="roles" className="space-y-6">
-                <RolesTab
-                  accountId={account.account_id}
-                  canCreate={canCreateRole}
-                />
-              </TabsContent>
-
               {canReadAudit && (
                 <TabsContent value="audit" className="space-y-6">
-                  <AnalyticsCard accountId={account.account_id} />
-                  <DriftCard accountId={account.account_id} />
                   <AuditTab accountId={account.account_id} />
                 </TabsContent>
               )}
 
-              <TabsContent value="git" className="space-y-6">
-                <GitHubConnectionCard
-                  account={account}
-                  canManage={canWriteAccount}
-                />
-              </TabsContent>
+              {canWriteAccount && (
+                <TabsContent value="git" className="space-y-6">
+                  <GitHubConnectionCard
+                    account={account}
+                    canManage={canWriteAccount}
+                  />
+                </TabsContent>
+              )}
 
-              <TabsContent value="settings" className="space-y-6">
-                <GeneralCard
-                  account={account}
-                  queryClient={queryClient}
-                  canWrite={canWriteAccount}
-                />
-                <StrictModeCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <MfaRequiredCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <SsoCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <SessionControlsCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <PatPolicyCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <ApprovalsCard
-                  accountId={account.account_id}
-                  currentUserId={user.id}
-                  canManage={canWriteAccount}
-                />
-                <ProjectGroupsCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <ServiceAccountsCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <BreakGlassCard
-                  accountId={account.account_id}
-                  currentUserId={user.id}
-                  canManage={canWriteAccount}
-                />
-                <ExternalGrantsCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <ScimCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <AuditWebhooksCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                {isTeam && canDeleteAccount && <DangerZoneCard />}
+              {canWriteAccount && (
+              <TabsContent value="settings" className="space-y-8">
+                {/* ── General ────────────────────────────────────── */}
+                <SettingsGroup title="General">
+                  <GeneralCard
+                    account={account}
+                    queryClient={queryClient}
+                    canWrite={canWriteAccount}
+                  />
+                </SettingsGroup>
+
+                {/* ── Security ──────────────────────────────────── */}
+                <SettingsGroup
+                  title="Security"
+                  description="Account-wide gates that apply to every member."
+                >
+                  <MfaRequiredCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                  <SessionControlsCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                </SettingsGroup>
+
+                {/* ── Identity & directory ─────────────────────── */}
+                <SettingsGroup
+                  title="Identity & directory"
+                  description="Bring members in from your IdP. Group memberships sync; admin still picks project access."
+                >
+                  <SsoCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                  <ScimCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                </SettingsGroup>
+
+                {/* ── Tokens & automation ──────────────────────── */}
+                <SettingsGroup
+                  title="Tokens & automation"
+                  description="Programmatic access for CI/CD and headless agents."
+                >
+                  <PatPolicyCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                  <ServiceAccountsCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                </SettingsGroup>
+
+                {/* ── Observability ─────────────────────────────── */}
+                <SettingsGroup
+                  title="Observability"
+                  description="Forward audit events to your own pipeline."
+                >
+                  <AuditWebhooksCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                </SettingsGroup>
+
+                {isTeam && canDeleteAccount && (
+                  <SettingsGroup title="Danger zone">
+                    <DangerZoneCard />
+                  </SettingsGroup>
+                )}
               </TabsContent>
+              )}
             </Tabs>
           )}
         </div>
       </main>
     </div>
+  );
+}
+
+// ─── Permissions help popover ──────────────────────────────────────────────
+//
+// Cuts support tickets in half. The model is simple but never explained
+// anywhere in-app: account roles, project roles, group inheritance, and
+// the override rule (account admin/owner trumps any group attachment).
+// Lives in a popover so new admins can find it without scrolling and
+// experienced ones can ignore it.
+
+function PermissionsHelpPopover() {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1.5">
+          <HelpCircle className="h-3.5 w-3.5" />
+          How permissions work
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-96 space-y-4 text-sm">
+        <section className="space-y-1">
+          <h3 className="font-semibold text-foreground">Account roles</h3>
+          <p className="text-xs text-muted-foreground">
+            What a person can do across the whole account.
+          </p>
+          <ul className="space-y-1 text-xs">
+            <li>
+              <span className="font-medium text-foreground">Owner</span> · full
+              control + can transfer ownership and delete the account.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Admin</span> ·
+              everything except deleting the account.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Member</span> · no
+              implicit access — needs direct project grants or group
+              membership.
+            </li>
+          </ul>
+        </section>
+
+        <section className="space-y-1">
+          <h3 className="font-semibold text-foreground">Project roles</h3>
+          <p className="text-xs text-muted-foreground">
+            What a person can do on a specific project.
+          </p>
+          <ul className="space-y-1 text-xs">
+            <li>
+              <span className="font-medium text-foreground">Manager</span> ·
+              read, write, and manage members + settings.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Editor</span> ·
+              read and write, no member or settings changes.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Viewer</span> ·
+              read-only.
+            </li>
+          </ul>
+        </section>
+
+        <section className="space-y-1">
+          <h3 className="font-semibold text-foreground">Groups</h3>
+          <p className="text-xs text-muted-foreground">
+            Bundle members and attach the whole group to a project at a
+            role. Every group member inherits that role. A user picks up
+            the highest role across all their groups + any direct grant.
+          </p>
+        </section>
+
+        <section className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5">
+          <h3 className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+            Override rule
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Owners and admins always have <strong>Manager</strong> on every
+            project, regardless of group attachments. To limit someone to
+            specific projects, change their account role to{' '}
+            <strong>Member</strong> first.
+          </p>
+        </section>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -637,6 +734,36 @@ function permissionLabel(value: unknown): string | null {
   return `Contents ${value}`;
 }
 
+/**
+ * Visual grouping for the Settings tab. With ~10 cards the tab used to
+ * be a wall of similar-looking panels; a small uppercase header per
+ * theme gives the eye a scan path without competing with the cards
+ * themselves.
+ */
+function SettingsGroup({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="space-y-0.5 px-1">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+          {title}
+        </h3>
+        {description && (
+          <p className="text-[11px] text-muted-foreground/80">{description}</p>
+        )}
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
+
 function GeneralCard({
   account,
   queryClient,
@@ -753,18 +880,31 @@ function MembersCard({
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  // Free-text search over email + user_id. Lives in component state so
+  // it doesn't survive tab switches — admins almost never want to jump
+  // back to the same search after navigating away.
+  const [search, setSearch] = useState('');
 
   // canInvite/canRemove/canUpdateRole come in as props (driven by usePermission
   // at the page level). The row-level kebab respects each granularly.
 
   const sorted = useMemo(() => {
     const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
-    return [...members].sort((a, b) => {
+    const q = search.trim().toLowerCase();
+    const filtered = q
+      ? members.filter((m) => {
+          // Match against email (most common) and user_id (for the rare
+          // case where an admin only knows the auth uuid).
+          const email = (m.email ?? '').toLowerCase();
+          return email.includes(q) || m.user_id.toLowerCase().includes(q);
+        })
+      : members;
+    return [...filtered].sort((a, b) => {
       const r = rank[a.account_role] - rank[b.account_role];
       if (r !== 0) return r;
       return memberLabel(a).localeCompare(memberLabel(b));
     });
-  }, [members]);
+  }, [members, search]);
 
   const invalidateMembers = () => {
     queryClient.invalidateQueries({
@@ -871,7 +1011,27 @@ function MembersCard({
         />
       )}
 
-      {!isLoading && !isError && (
+      {!isLoading && !isError && members.length > 0 && (
+        <div className="border-b border-border/60 px-6 py-3">
+          <div className="relative max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by email…"
+              className="h-9 pl-9"
+            />
+          </div>
+        </div>
+      )}
+
+      {!isLoading && !isError && members.length > 0 && sorted.length === 0 && (
+        <div className="px-6 py-8 text-center text-sm text-muted-foreground">
+          No members match &quot;{search.trim()}&quot;.
+        </div>
+      )}
+
+      {!isLoading && !isError && sorted.length > 0 && (
         <List>
           {sorted.map((member) => {
             const isSelf = member.user_id === currentUserId;
@@ -903,6 +1063,7 @@ function MembersCard({
                 }
                 subtitle={
                   <InlineMeta>
+                    <span>Joined {formatDate(member.joined_at)}</span>
                     {member.account_role === 'member' &&
                     typeof member.explicit_project_count === 'number' ? (
                       <span>

@@ -484,30 +484,10 @@ export function isSchemaReady() { return schemaReady; }
 ensureSchema()
   .then(async () => {
     schemaReady = true;
-    // Reconcile system IAM roles. Idempotent and fast (~15 roles).
-    // If the IAM tables haven't been migrated yet (e.g. dev with
-    // KORTIX_SKIP_ENSURE_SCHEMA=1 on a fresh branch), log a one-liner
-    // pointing at the fix instead of a noisy stack trace.
-    try {
-      const { seedSystemRoles, backfillMembershipPolicies } = await import('./iam');
-      await seedSystemRoles();
-      console.log('[startup] IAM system roles seeded');
-      // Materialise legacy account_role + project_members into explicit IAM
-      // policies so the engine needs no legacy bridges. Idempotent.
-      await backfillMembershipPolicies();
-      console.log('[startup] IAM membership policies backfilled');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (/iam_roles.*does not exist|relation .* does not exist/i.test(msg)) {
-        console.warn(
-          '[startup] IAM tables not present yet — skipping role seed. ' +
-          'Run the IAM migration (supabase/migrations/00000000000054_iam_*.sql) ' +
-          'or unset KORTIX_SKIP_ENSURE_SCHEMA for one restart.',
-        );
-      } else {
-        console.error('[startup] IAM role seed failed:', err);
-      }
-    }
+    // V2 IAM hard-codes role permissions in iam/role-perms.ts, so the
+    // boot-time system-role seed + membership-policy backfill from V1
+    // are no longer needed. Permissions resolve directly from
+    // account_members.account_role and project_members.project_role.
     startAccessControlCache();
     startDrainer();
     startTunnelService();

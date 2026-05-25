@@ -193,7 +193,8 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
               className="gap-1.5"
             >
               {saveMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {tHardcodedUi.raw('componentsIamSessionControlsCard.line202JsxTextSavePolicy')}</Button>
+              Save
+            </Button>
           </div>
         )}
       </div>

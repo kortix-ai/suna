@@ -30,9 +30,19 @@ import {
   listProjectAccess,
   revokeProjectAccess,
   updateProjectAccess,
+  attachGroupToProject,
+  detachGroupFromProject,
+  listProjectGroupGrants,
+  updateProjectGroupGrant,
   type ProjectAccessMember,
+  type ProjectGroupGrant,
   type ProjectRole,
 } from '@/lib/projects-client';
+import { listGroups, type AccountGroup } from '@/lib/iam-client';
+import {
+  inheritedFromGroupSummary,
+  isInheritedFromGroupOnly,
+} from '@/components/iam/iam-display-helpers';
 
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   manager: 'Manager',
@@ -105,6 +115,14 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
           error={accessQuery.error as Error | null}
           onRetry={() => accessQuery.refetch()}
         />
+
+        {project?.account_id && (
+          <ProjectGroupGrantsCard
+            projectId={projectId}
+            accountId={project.account_id}
+            canManage={!!canManage}
+          />
+        )}
       </div>
     </div>
   );
@@ -290,6 +308,16 @@ function ProjectAccessCard({
           {sortedMembers.map((member) => {
             const busy = pendingUserId === member.user_id;
             const value = member.project_role ?? (member.has_implicit_access ? 'manager' : 'none');
+            // Group-derived access — at least one project_group_grants
+            // row attaches a group this user belongs to. When this is the
+            // ONLY access path (no direct grant), the dropdown will say
+            // "No access" but the user actually has the group role; the
+            // subtitle below makes that explicit and the badge in the
+            // trailing slot mirrors the effective role.
+            // Pure helpers in iam-display-helpers, unit-tested.
+            const inheritedFromGroup = isInheritedFromGroupOnly(member);
+            const inheritedSummary = inheritedFromGroupSummary(member);
+
             return (
               <ListRow
                 key={member.user_id}
@@ -301,9 +329,11 @@ function ProjectAccessCard({
                     <span>
                       {member.has_implicit_access
                         ? 'Implicit account access'
-                        : member.project_role
-                          ? `Granted ${formatDate(member.granted_at)}`
-                          : 'No project access'}
+                        : inheritedSummary
+                          ? inheritedSummary
+                          : member.project_role
+                            ? `Granted ${formatDate(member.granted_at)}`
+                            : 'No project access'}
                     </span>
                   </InlineMeta>
                 }
@@ -315,6 +345,35 @@ function ProjectAccessCard({
                       <Shield className="mr-1 h-3.5 w-3.5" />
                       Manager
                     </Badge>
+                  ) : inheritedFromGroup ? (
+                    // Read-only effective-role chip + a smaller secondary
+                    // select for admins who want to LAYER a direct grant
+                    // on top (which only matters if it would be higher
+                    // than the inherited role). Most of the time the
+                    // chip is the whole story.
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" size="sm" className="capitalize">
+                        <Shield className="mr-1 h-3.5 w-3.5" />
+                        {member.effective_project_role}
+                      </Badge>
+                      {canManage && (
+                        <Select
+                          value={value}
+                          onValueChange={(next) => setRole(member, next)}
+                          disabled={!canManage}
+                        >
+                          <SelectTrigger className="h-8 w-32 text-xs">
+                            <SelectValue placeholder="Grant…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No direct grant</SelectItem>
+                            <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
+                            <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
+                            <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
                   ) : (
                     <Select
                       value={value}
@@ -351,5 +410,246 @@ function AccountRoleBadge({ role }: { role: ProjectAccessMember['account_role'] 
     >
       {role}
     </Badge>
+  );
+}
+
+// ─── IAM V2: Group attachments ─────────────────────────────────────────────
+
+function ProjectGroupGrantsCard({
+  projectId,
+  accountId,
+  canManage,
+}: {
+  projectId: string;
+  accountId: string;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const grantsKey = ['project-group-grants', projectId];
+
+  const grantsQuery = useQuery({
+    queryKey: grantsKey,
+    queryFn: () => listProjectGroupGrants(projectId),
+    staleTime: 20_000,
+  });
+  const groupsQuery = useQuery({
+    queryKey: ['account-groups', accountId],
+    queryFn: () => listGroups(accountId),
+    enabled: canManage,
+    staleTime: 60_000,
+  });
+
+  const grants = grantsQuery.data?.grants ?? [];
+  const groups: AccountGroup[] = groupsQuery.data ?? [];
+  const attachedIds = useMemo(() => new Set(grants.map((g) => g.group_id)), [grants]);
+  const available = useMemo(
+    () => groups.filter((g) => !attachedIds.has(g.group_id)),
+    [groups, attachedIds],
+  );
+
+  const [pickerGroupId, setPickerGroupId] = useState<string>('');
+  const [pickerRole, setPickerRole] = useState<ProjectRole>('editor');
+  const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: grantsKey });
+  }
+
+  const attachMutation = useMutation({
+    mutationFn: () => attachGroupToProject(projectId, pickerGroupId, pickerRole),
+    onMutate: () => setPendingGroupId(pickerGroupId),
+    onSettled: () => setPendingGroupId(null),
+    onSuccess: () => {
+      toast.success('Group attached');
+      setPickerGroupId('');
+      setPickerRole('editor');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to attach group'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (input: { groupId: string; role: ProjectRole }) =>
+      updateProjectGroupGrant(projectId, input.groupId, input.role),
+    onMutate: (input) => setPendingGroupId(input.groupId),
+    onSettled: () => setPendingGroupId(null),
+    onSuccess: () => {
+      toast.success('Role updated');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to update role'),
+  });
+
+  const detachMutation = useMutation({
+    mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
+    onMutate: (groupId) => setPendingGroupId(groupId),
+    onSettled: () => setPendingGroupId(null),
+    onSuccess: () => {
+      toast.success('Group detached');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to detach group'),
+  });
+
+  return (
+    <SectionCard
+      flush
+      title="Group access"
+      description="Attach an account group to this project. Every member of the group gets the chosen role here."
+      count={grants.length}
+      action={
+        canManage && available.length > 0 ? (
+          <form
+            className="flex items-center gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!pickerGroupId || attachMutation.isPending) return;
+              attachMutation.mutate();
+            }}
+          >
+            <Select
+              value={pickerGroupId}
+              onValueChange={setPickerGroupId}
+              disabled={attachMutation.isPending}
+            >
+              <SelectTrigger className="h-8 w-44 text-xs">
+                <SelectValue placeholder="Pick a group…" />
+              </SelectTrigger>
+              <SelectContent>
+                {available.map((g) => (
+                  <SelectItem key={g.group_id} value={g.group_id}>
+                    {g.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={pickerRole}
+              onValueChange={(v) => setPickerRole(v as ProjectRole)}
+              disabled={attachMutation.isPending}
+            >
+              <SelectTrigger className="h-8 w-28 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
+                <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
+                <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              disabled={!pickerGroupId || attachMutation.isPending}
+            >
+              Attach
+            </Button>
+          </form>
+        ) : null
+      }
+    >
+      {grantsQuery.isLoading && (
+        <div className="px-6 py-5">
+          <Skeleton className="h-8 w-full" />
+        </div>
+      )}
+
+      {!grantsQuery.isLoading && grants.length === 0 && (
+        <div className="px-6 py-5 text-xs text-muted-foreground">
+          No groups attached yet.
+          {canManage && available.length === 0 && groups.length > 0 && (
+            <> All your groups are already attached.</>
+          )}
+          {canManage && groups.length === 0 && (
+            <>
+              {' '}Create one on the{' '}
+              <a
+                href={`/accounts/${accountId}`}
+                className="underline hover:text-foreground"
+              >
+                account page
+              </a>
+              .
+            </>
+          )}
+        </div>
+      )}
+
+      {!grantsQuery.isLoading && grants.length > 0 && (
+        <List>
+          {grants.map((g: ProjectGroupGrant) => {
+            const busy = pendingGroupId === g.group_id;
+            return (
+              <ListRow
+                key={g.group_id}
+                leading={
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/60">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                }
+                title={g.group_name}
+                subtitle={
+                  <InlineMeta>
+                    <span>Attached {formatDate(g.created_at)}</span>
+                    {typeof g.member_count === 'number' && (
+                      <span>
+                        {g.member_count}{' '}
+                        {g.member_count === 1 ? 'member' : 'members'}
+                      </span>
+                    )}
+                    {typeof g.override_count === 'number' &&
+                      g.override_count > 0 && (
+                        <span
+                          className="text-amber-700 dark:text-amber-400"
+                          title="Account owners and admins always have Manager access on every project, regardless of this grant's role."
+                        >
+                          {g.override_count} of {g.member_count} get Manager via
+                          account role
+                        </span>
+                      )}
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : canManage ? (
+                    <div className="flex items-center gap-1.5">
+                      <Select
+                        value={g.role}
+                        onValueChange={(v) =>
+                          updateMutation.mutate({ groupId: g.group_id, role: v as ProjectRole })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-28 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
+                          <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
+                          <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => detachMutation.mutate(g.group_id)}
+                      >
+                        Detach
+                      </Button>
+                    </div>
+                  ) : (
+                    <Badge variant="outline" size="sm" className="capitalize">
+                      {g.role}
+                    </Badge>
+                  )
+                }
+              />
+            );
+          })}
+        </List>
+      )}
+    </SectionCard>
   );
 }

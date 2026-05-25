@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Loader2, Plus, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, FolderOpen, Loader2, Plus, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/components/AuthProvider';
@@ -17,9 +17,17 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -30,16 +38,31 @@ import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PoliciesTable } from '@/components/iam/policies-table';
 import {
   addGroupMembers,
   deleteGroup,
   getGroup,
   listGroupMembers,
+  listGroupProjectGrants,
   removeGroupMember,
   updateGroup,
+  type GroupProjectGrant,
 } from '@/lib/iam-client';
-import { getAccount, listAccountMembers } from '@/lib/projects-client';
+import {
+  countOverridingMembers,
+  floatCurrentUserFirst,
+  isOverridingAccountRole,
+  sortGroupMembersByOverride,
+  type AccountMeta,
+} from '@/components/iam/iam-display-helpers';
+import {
+  attachGroupToProject,
+  detachGroupFromProject,
+  getAccount,
+  listAccountMembers,
+  listProjectsForAccount,
+  type ProjectRole,
+} from '@/lib/projects-client';
 import { usePermission } from '@/lib/use-permission';
 
 export default function GroupDetailPage() {
@@ -71,7 +94,6 @@ export default function GroupDetailPage() {
     resourceType: 'group',
     resourceId: groupId,
   }).allowed;
-  const canManagePolicies = usePermission(accountId, 'policy.create').allowed;
   const canEditGroup = usePermission(accountId, 'group.update', {
     resourceType: 'group',
     resourceId: groupId,
@@ -157,7 +179,7 @@ export default function GroupDetailPage() {
             <Tabs defaultValue="members" className="space-y-6">
               <TabsList>
                 <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line157JsxTextGroupMembers')}</TabsTrigger>
-                <TabsTrigger value="policies">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line158JsxTextPermissionPolicies')}</TabsTrigger>
+                <TabsTrigger value="projects">Project access</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
 
@@ -169,13 +191,11 @@ export default function GroupDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="policies">
-                <PoliciesTable
+              <TabsContent value="projects">
+                <GroupProjectGrantsCard
                   accountId={account.account_id}
-                  principalType="group"
-                  principalId={group.group_id}
-                  principalLabel={`the "${group.name}" group`}
-                  canManage={canManagePolicies}
+                  groupId={group.group_id}
+                  groupName={group.name}
                 />
               </TabsContent>
 
@@ -226,13 +246,36 @@ function GroupMembersCard({
     staleTime: 30_000,
   });
 
-  const emailByUserId = useMemo(() => {
-    const map = new Map<string, string>();
+  // Combined index of account-level info per user_id. Lets the group
+  // members list show emails AND surface the account role badge — owners
+  // and admins implicitly have Manager on every project, which overrides
+  // any group-level role on that project. Worth flagging here so an
+  // admin who adds another admin to a "Viewer" group understands the
+  // grant is mostly cosmetic for that user.
+  const accountMetaByUserId = useMemo(() => {
+    const map = new Map<string, AccountMeta>();
     for (const m of accountMembersQuery.data ?? []) {
-      if (m.email) map.set(m.user_id, m.email);
+      map.set(m.user_id, {
+        email: m.email,
+        accountRole: m.account_role,
+        isSuperAdmin: !!m.is_super_admin,
+      });
     }
     return map;
   }, [accountMembersQuery.data]);
+  const emailByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [id, meta] of accountMetaByUserId) {
+      if (meta.email) map.set(id, meta.email);
+    }
+    return map;
+  }, [accountMetaByUserId]);
+
+  // Pure helpers in iam-display-helpers (unit-tested).
+  const overrideCount = useMemo(
+    () => countOverridingMembers(membersQuery.data ?? [], accountMetaByUserId),
+    [membersQuery.data, accountMetaByUserId],
+  );
 
   const removeMutation = useMutation({
     mutationFn: (userId: string) => removeGroupMember(accountId, groupId, userId),
@@ -282,43 +325,72 @@ function GroupMembersCard({
         />
       )}
 
+      {!membersQuery.isLoading && members.length > 0 && overrideCount > 0 && (
+        <div className="border-b border-border/60 bg-amber-500/5 px-6 py-2.5 text-xs text-amber-700 dark:text-amber-300">
+          <span className="font-medium">Heads-up:</span>{' '}
+          {overrideCount} {overrideCount === 1 ? 'member is' : 'members are'} an
+          account owner or admin. They get Manager on every project regardless
+          of this group&apos;s role.
+        </div>
+      )}
+
       {!membersQuery.isLoading && members.length > 0 && (
         <List>
-          {members.map((m) => {
-            const label = emailByUserId.get(m.user_id) ?? m.user_id;
-            return (
-              <ListRow
-                key={m.user_id}
-                leading={<UserAvatar email={label} size="md" />}
-                title={label}
-                subtitle={
-                  <InlineMeta>
-                    <span>
-                      Added{' '}
-                      {new Date(m.added_at).toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </span>
-                  </InlineMeta>
-                }
-                trailing={
-                  canManage && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                      onClick={() => setRemoveTarget(m.user_id)}
-                      aria-label={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line312JsxAttrAriaLabelRemoveFromGroup')}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )
-                }
-              />
-            );
-          })}
+          {sortGroupMembersByOverride(members, accountMetaByUserId)
+            .map((m) => {
+              const label = emailByUserId.get(m.user_id) ?? m.user_id;
+              const meta = accountMetaByUserId.get(m.user_id);
+              const overrides = !!meta && isOverridingAccountRole(meta);
+              const badgeLabel = meta?.isSuperAdmin
+                ? 'super admin'
+                : meta?.accountRole;
+              return (
+                <ListRow
+                  key={m.user_id}
+                  leading={<UserAvatar email={label} size="md" />}
+                  title={label}
+                  badges={
+                    overrides && badgeLabel ? (
+                      <span
+                        className="rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal capitalize text-amber-700 dark:text-amber-300"
+                        title="Account owners and admins always have Manager access on every project, regardless of group role."
+                      >
+                        {badgeLabel}
+                      </span>
+                    ) : meta?.accountRole === 'member' ? (
+                      <span className="rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize text-muted-foreground">
+                        member
+                      </span>
+                    ) : null
+                  }
+                  subtitle={
+                    <InlineMeta>
+                      <span>
+                        Added{' '}
+                        {new Date(m.added_at).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </span>
+                    </InlineMeta>
+                  }
+                  trailing={
+                    canManage && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        onClick={() => setRemoveTarget(m.user_id)}
+                        aria-label={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line312JsxAttrAriaLabelRemoveFromGroup')}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )
+                  }
+                />
+              );
+            })}
         </List>
       )}
 
@@ -365,11 +437,22 @@ function AddGroupMembersDialog({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? null;
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  // Filter out members already in the group, then float the current
+  // user (if still eligible) to the first row. Adding yourself to a
+  // group you just created is one of the most common actions in this
+  // dialog — pinning your own row makes it a one-click step instead of
+  // a scan-and-find. Pure sort in iam-display-helpers, unit-tested.
   const eligible = useMemo(
-    () => candidates.filter((m) => !existingUserIds.has(m.user_id)),
-    [candidates, existingUserIds],
+    () =>
+      floatCurrentUserFirst(
+        candidates.filter((m) => !existingUserIds.has(m.user_id)),
+        currentUserId,
+      ),
+    [candidates, existingUserIds, currentUserId],
   );
 
   const addMutation = useMutation({
@@ -415,6 +498,7 @@ function AddGroupMembersDialog({
               {eligible.map((m) => {
                 const checked = selected.has(m.user_id);
                 const label = m.email ?? m.user_id;
+                const isMe = m.user_id === currentUserId;
                 return (
                   <button
                     key={m.user_id}
@@ -432,6 +516,11 @@ function AddGroupMembersDialog({
                       className="h-3.5 w-3.5 rounded border-border accent-primary"
                     />
                     <span className="truncate text-sm">{label}</span>
+                    {isMe && (
+                      <span className="ml-auto rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                        you
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -577,5 +666,320 @@ function GroupSettingsCard({
         onConfirm={() => deleteMutation.mutate()}
       />
     </div>
+  );
+}
+
+// ─── V2: Projects this group is attached to ───────────────────────────────
+
+function GroupProjectGrantsCard({
+  accountId,
+  groupId,
+  groupName,
+}: {
+  accountId: string;
+  groupId: string;
+  groupName: string;
+}) {
+  const queryClient = useQueryClient();
+  const queryKey = ['group-project-grants', accountId, groupId];
+  const [attachOpen, setAttachOpen] = useState(false);
+
+  const grantsQuery = useQuery({
+    queryKey,
+    queryFn: () => listGroupProjectGrants(accountId, groupId),
+    staleTime: 30_000,
+  });
+  const grants = grantsQuery.data ?? [];
+  const attachedProjectIds = useMemo(
+    () => new Set(grants.map((g) => g.project_id)),
+    [grants],
+  );
+
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+
+  const detachMutation = useMutation({
+    // detach the grant via the per-project route — that's the one gated
+    // by project.members.manage and the canonical write surface.
+    mutationFn: (projectId: string) => detachGroupFromProject(projectId, groupId),
+    onMutate: (projectId) => setPendingProjectId(projectId),
+    onSettled: () => setPendingProjectId(null),
+    onSuccess: () => {
+      toast.success('Group detached from project');
+      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to detach'),
+  });
+
+  return (
+    <SectionCard
+      flush
+      title="Project access"
+      description={`Projects "${groupName}" is attached to. Every group member inherits the chosen role on that project — except account owners and admins, who always have Manager.`}
+      count={grants.length}
+      action={
+        <Button size="sm" className="gap-1.5" onClick={() => setAttachOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Attach to project
+        </Button>
+      }
+    >
+      {grantsQuery.isLoading && (
+        <div className="px-6 py-5">
+          <Skeleton className="h-8 w-full" />
+        </div>
+      )}
+
+      {!grantsQuery.isLoading && grantsQuery.isError && (
+        <div className="px-6 py-5">
+          <InfoBanner
+            tone="destructive"
+            title="Failed to load project access"
+            action={
+              <Button variant="outline" size="sm" onClick={() => grantsQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          >
+            {(grantsQuery.error as Error)?.message}
+          </InfoBanner>
+        </div>
+      )}
+
+      {!grantsQuery.isLoading && !grantsQuery.isError && grants.length === 0 && (
+        <EmptyState
+          icon={FolderOpen}
+          title="Not attached to any project"
+          description={`Click "Attach to project" to give "${groupName}" access to one of your projects.`}
+        />
+      )}
+
+      <AttachToProjectDialog
+        accountId={accountId}
+        groupId={groupId}
+        groupName={groupName}
+        open={attachOpen}
+        onOpenChange={setAttachOpen}
+        attachedProjectIds={attachedProjectIds}
+        onAttached={() => {
+          queryClient.invalidateQueries({ queryKey });
+          queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+          setAttachOpen(false);
+        }}
+      />
+
+
+      {!grantsQuery.isLoading && grants.length > 0 && (
+        <List>
+          {grants.map((g: GroupProjectGrant) => {
+            const busy = pendingProjectId === g.project_id;
+            return (
+              <ListRow
+                key={g.project_id}
+                leading={
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/60">
+                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                }
+                title={g.project_name}
+                badges={
+                  <span className="rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize text-muted-foreground">
+                    {g.role}
+                  </span>
+                }
+                subtitle={
+                  <InlineMeta>
+                    <span>Attached {new Date(g.created_at).toLocaleDateString()}</span>
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => detachMutation.mutate(g.project_id)}
+                    >
+                      Detach
+                    </Button>
+                  )
+                }
+              />
+            );
+          })}
+        </List>
+      )}
+    </SectionCard>
+  );
+}
+
+// ─── V2: Attach group → project dialog ───────────────────────────────────
+//
+// Opens from the Project access card. Lists every project in the account
+// the caller can manage (effective_project_role === 'manager'), minus
+// projects this group is already attached to. POSTs to the canonical
+// per-project group-grants endpoint (server-side gate on
+// project.members.manage matches our client-side filter).
+
+function AttachToProjectDialog({
+  accountId,
+  groupId,
+  groupName,
+  open,
+  onOpenChange,
+  attachedProjectIds,
+  onAttached,
+}: {
+  accountId: string;
+  groupId: string;
+  groupName: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  attachedProjectIds: Set<string>;
+  onAttached: () => void;
+}) {
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(
+    undefined,
+  );
+  const [selectedRole, setSelectedRole] = useState<ProjectRole>('editor');
+
+  // Only fetch the project list when the dialog is open. Includes
+  // effective_project_role so we can filter to manageable projects.
+  const projectsQuery = useQuery({
+    queryKey: ['projects-for-account', accountId],
+    queryFn: () => listProjectsForAccount(accountId),
+    enabled: open,
+    staleTime: 30_000,
+  });
+
+  const candidates = useMemo(() => {
+    const all = projectsQuery.data ?? [];
+    return all
+      .filter(
+        (p) =>
+          p.effective_project_role === 'manager' &&
+          !attachedProjectIds.has(p.project_id),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [projectsQuery.data, attachedProjectIds]);
+
+  // Reset picker state every time the dialog (re)opens so a stale
+  // selection from a previous open doesn't pre-fill.
+  function handleOpenChange(v: boolean) {
+    if (v) {
+      setSelectedProjectId(undefined);
+      setSelectedRole('editor');
+    }
+    onOpenChange(v);
+  }
+
+  const attachMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedProjectId) throw new Error('Pick a project first');
+      return attachGroupToProject(selectedProjectId, groupId, selectedRole);
+    },
+    onSuccess: () => {
+      toast.success(`"${groupName}" attached to project`);
+      onAttached();
+    },
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to attach group to project'),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Attach &quot;{groupName}&quot; to a project</DialogTitle>
+          <DialogDescription>
+            Every member of this group will inherit the chosen role on the
+            project.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="attach-project">Project</Label>
+            {projectsQuery.isLoading ? (
+              <Skeleton className="h-9 w-full" />
+            ) : candidates.length === 0 ? (
+              <p className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+                {(projectsQuery.data ?? []).length === 0
+                  ? 'No projects in this account yet.'
+                  : attachedProjectIds.size > 0 &&
+                    attachedProjectIds.size === (projectsQuery.data ?? []).filter(
+                      (p) => p.effective_project_role === 'manager',
+                    ).length
+                  ? 'This group is already attached to every project you can manage.'
+                  : 'You need Manager access on a project to attach a group to it.'}
+              </p>
+            ) : (
+              <Select
+                value={selectedProjectId ?? ''}
+                onValueChange={(v) => setSelectedProjectId(v || undefined)}
+              >
+                <SelectTrigger id="attach-project">
+                  <SelectValue placeholder="Choose a project…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {candidates.map((p) => (
+                    <SelectItem key={p.project_id} value={p.project_id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="attach-role">Role</Label>
+            <Select
+              value={selectedRole}
+              onValueChange={(v) => setSelectedRole(v as ProjectRole)}
+            >
+              <SelectTrigger id="attach-role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manager">
+                  Manager — full control of the project
+                </SelectItem>
+                <SelectItem value="editor">
+                  Editor — read and write, no member or settings changes
+                </SelectItem>
+                <SelectItem value="viewer">Viewer — read-only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => handleOpenChange(false)}
+            disabled={attachMutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => attachMutation.mutate()}
+            disabled={
+              !selectedProjectId ||
+              attachMutation.isPending ||
+              candidates.length === 0
+            }
+            className="gap-1.5"
+          >
+            {attachMutation.isPending && (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+            Attach
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

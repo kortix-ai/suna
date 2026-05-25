@@ -15,7 +15,7 @@ import {
 } from '../repositories/account-tokens';
 import { sendAccountInviteEmail } from './email';
 import { config } from '../config';
-import { authorize, ACCOUNT_ACTIONS, assertAuthorized, syncMemberAccountPolicy, removeMemberPolicies, removeProjectPoliciesForMember } from '../iam';
+import { authorize, ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 
 // Public, share-anywhere invite URL. Matches the link generated inside the
 // email template (apps/api/src/accounts/email.ts), so an invite copied here
@@ -344,12 +344,6 @@ async function autoClaimPendingInvites(userId: string, email: string): Promise<v
           .onConflictDoNothing({
             target: [accountMembers.userId, accountMembers.accountId],
           });
-        await syncMemberAccountPolicy({
-          accountId: invite.accountId,
-          userId,
-          accountRole: invite.initialRole,
-          createdBy: userId,
-        });
         await db
           .update(accountInvitations)
           .set({ acceptedAt: new Date() })
@@ -712,13 +706,6 @@ accountsRouter.post('/:accountId/members', async (c) => {
       accountRole: role,
     });
 
-    await syncMemberAccountPolicy({
-      accountId,
-      userId: targetUserId,
-      accountRole: role,
-      createdBy: userId,
-    });
-
     return c.json(
       {
         status: 'added',
@@ -922,8 +909,6 @@ accountsRouter.delete('/:accountId/members/:userId', async (c) => {
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)));
 
-  await removeMemberPolicies(accountId, targetUserId);
-
   return c.json({ ok: true });
 });
 
@@ -978,18 +963,12 @@ accountsRouter.patch('/:accountId/members/:userId', async (c) => {
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)));
 
   if (newRole === 'owner' || newRole === 'admin') {
+    // Owners/admins get implicit Manager on every project; their direct
+    // project_members rows would shadow nothing useful, so clean them up.
     await db
       .delete(projectMembers)
       .where(and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, targetUserId)));
-    await removeProjectPoliciesForMember(accountId, targetUserId);
   }
-
-  await syncMemberAccountPolicy({
-    accountId,
-    userId: targetUserId,
-    accountRole: newRole,
-    createdBy: callerUserId,
-  });
 
   return c.json({
     user_id: targetUserId,
@@ -1030,8 +1009,6 @@ accountsRouter.post('/:accountId/leave', async (c) => {
   await db
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
-
-  await removeMemberPolicies(accountId, userId);
 
   return c.json({ ok: true });
 });

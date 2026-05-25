@@ -34,6 +34,10 @@ export interface AccountDetail {
   account_id: string;
   name: string;
   personal_account: boolean;
+  /** When true the account is on the simplified IAM V2 model (3 account
+   *  roles + 3 project roles, no DB-driven policies). Drives whether the
+   *  frontend shows the V1 Policies/Roles tabs or the V2 simple UI. */
+  iam_v2_enabled?: boolean;
   member_count: number;
   project_count: number;
   role: AccountRole;
@@ -62,6 +66,12 @@ export interface AccountMember {
   joined_at: string;
 }
 
+export interface ProjectGroupAccessSource {
+  group_id: string;
+  group_name: string;
+  role: ProjectRole;
+}
+
 export interface ProjectAccessMember {
   user_id: string;
   email: string | null;
@@ -69,6 +79,13 @@ export interface ProjectAccessMember {
   project_role: ProjectRole | null;
   effective_project_role: ProjectRole | null;
   has_implicit_access: boolean;
+  /** Which path produced effective_project_role. 'implicit' = account
+   *  owner/admin; 'direct' = explicit project_members row; 'group' =
+   *  inherited via a project_group_grants attachment. null = no access. */
+  effective_source?: 'implicit' | 'direct' | 'group' | null;
+  /** Every group attachment that includes this user, sorted by role
+   *  desc. Used to label "via X group" on the row. */
+  group_sources?: ProjectGroupAccessSource[];
   joined_at: string;
   granted_by: string | null;
   granted_at: string | null;
@@ -502,6 +519,63 @@ export async function inviteProjectMember(
     await backendApi.post<ProjectAccessMember>(
       `/projects/${projectId}/access/invite`,
       { email, role },
+    ),
+  );
+}
+
+// ── IAM V2: project ⇄ group attachments ────────────────────────────────────
+
+export interface ProjectGroupGrant {
+  group_id: string;
+  group_name: string;
+  role: ProjectRole;
+  granted_by: string | null;
+  created_at: string;
+  /** Total members in this group. */
+  member_count?: number;
+  /** Members who are account owners/admins — they get implicit Manager
+   *  on every project, so this grant's role doesn't apply to them. */
+  override_count?: number;
+}
+
+export async function listProjectGroupGrants(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ grants: ProjectGroupGrant[] }>(
+      `/projects/${projectId}/group-grants`,
+    ),
+  );
+}
+
+export async function attachGroupToProject(
+  projectId: string,
+  groupId: string,
+  role: ProjectRole,
+) {
+  return unwrap(
+    await backendApi.post<{ project_id: string; group_id: string; role: ProjectRole }>(
+      `/projects/${projectId}/group-grants`,
+      { group_id: groupId, role },
+    ),
+  );
+}
+
+export async function updateProjectGroupGrant(
+  projectId: string,
+  groupId: string,
+  role: ProjectRole,
+) {
+  return unwrap(
+    await backendApi.patch<{ project_id: string; group_id: string; role: ProjectRole }>(
+      `/projects/${projectId}/group-grants/${groupId}`,
+      { role },
+    ),
+  );
+}
+
+export async function detachGroupFromProject(projectId: string, groupId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/group-grants/${groupId}`,
     ),
   );
 }

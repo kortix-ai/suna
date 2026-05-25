@@ -25,7 +25,8 @@ export interface AccountGroup {
   source: 'manual' | 'scim';
   external_id?: string | null;
   member_count?: number;
-  policy_count?: number;
+  /** Number of project_group_grants for this group. */
+  project_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -152,6 +153,26 @@ export async function addGroupMembers(accountId: string, groupId: string, userId
   );
 }
 
+// V2-only: which projects is this group attached to + at what role?
+// Backed by GET /accounts/:id/iam/groups/:gid/project-grants. Each row
+// can be detached via the per-project DELETE /projects/:pid/group-grants/:gid
+// endpoint (already in projects-client as detachGroupFromProject).
+export interface GroupProjectGrant {
+  project_id: string;
+  project_name: string;
+  role: 'manager' | 'editor' | 'viewer';
+  granted_by: string | null;
+  created_at: string;
+}
+
+export async function listGroupProjectGrants(accountId: string, groupId: string) {
+  return unwrap(
+    await backendApi.get<{ grants: GroupProjectGrant[] }>(
+      `/accounts/${accountId}/iam/groups/${groupId}/project-grants`,
+    ),
+  ).grants;
+}
+
 export async function removeGroupMember(accountId: string, groupId: string, userId: string) {
   return unwrap(
     await backendApi.delete<{ removed: boolean }>(
@@ -174,6 +195,26 @@ export async function listMemberGroups(accountId: string, userId: string) {
       `/accounts/${accountId}/iam/members/${userId}/groups`,
     ),
   ).groups;
+}
+
+// V2-only: which projects can this member reach, at what role, and how?
+// `sources` tells the UI why they have access (one or more of):
+//   implicit — they're an account owner/admin (manager on every project)
+//   direct   — explicit project_members row
+//   group    — inherited from a project_group_grants attachment
+export interface MemberProjectAccess {
+  project_id: string;
+  project_name: string;
+  role: 'manager' | 'editor' | 'viewer';
+  sources: Array<'implicit' | 'direct' | 'group'>;
+}
+
+export async function listMemberProjectAccess(accountId: string, userId: string) {
+  return unwrap(
+    await backendApi.get<{ projects: MemberProjectAccess[] }>(
+      `/accounts/${accountId}/iam/members/${userId}/project-access`,
+    ),
+  ).projects;
 }
 
 // ─── Policies ──────────────────────────────────────────────────────────────

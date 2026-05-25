@@ -110,12 +110,22 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
 
   return (
     <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
+      <header className="px-6 py-4">
         <div className="flex items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <KeyRound className="h-4 w-4 text-muted-foreground" />
-              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line116JsxTextRequireMFAForAllMembers')}</h2>
+              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line116JsxTextRequireMFAForAllMembers')}
+              {!statusQuery.isLoading && enabled && (
+                <Badge
+                  variant="outline"
+                  size="sm"
+                  className="border-emerald-500/40 bg-emerald-500/10 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
+                >
+                  required
+                </Badge>
+              )}
+            </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {tHardcodedUi.raw('componentsIamMfaRequiredCard.line119JsxTextWhenEnabledMembersMustCompleteASecondFactor')}</p>
           </div>
@@ -126,29 +136,14 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
               variant={enabled ? 'destructive' : 'default'}
               disabled={!canManage || flipMutation.isPending}
               onClick={() => setConfirmOpen(true)}
-              className="gap-1.5"
+              className="shrink-0 gap-1.5"
             >
               {flipMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {enabled ? 'Disable MFA requirement' : 'Require MFA'}
+              {enabled ? 'Disable' : 'Require MFA'}
             </Button>
           )}
         </div>
       </header>
-      <div className="px-6 py-4">
-        <p className="text-sm">
-          Status:{' '}
-          {statusQuery.isLoading ? (
-            <Skeleton className="inline-block h-4 w-16 align-middle" />
-          ) : enabled ? (
-            <span className="font-medium text-emerald-600 dark:text-emerald-400">
-              Required
-            </span>
-          ) : (
-            <span className="font-medium text-muted-foreground">
-              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line150JsxTextNotRequired')}</span>
-          )}
-        </p>
-      </div>
 
       {/* Enable path */}
       <Dialog

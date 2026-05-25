@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Check, Shield, ShieldOff, Users, X } from 'lucide-react';
+import { ArrowLeft, Check, FolderOpen, Shield, ShieldOff, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/components/AuthProvider';
@@ -17,14 +17,14 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { PoliciesTable } from '@/components/iam/policies-table';
-import { PermissionBoundaryCard } from '@/components/iam/permission-boundary-card';
 import {
   listMemberGroups,
+  listMemberProjectAccess,
   setMemberSuperAdmin,
   type MemberGroupSummary,
+  type MemberProjectAccess,
 } from '@/lib/iam-client';
-import { getAccount, listAccountMembers } from '@/lib/projects-client';
+import { getAccount, listAccountMembers, type AccountRole } from '@/lib/projects-client';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -87,9 +87,7 @@ export default function MemberDetailPage() {
     () => members.find((m) => m.user_id === memberUserId),
     [members, memberUserId],
   );
-  // Granular permissions from the IAM engine. canManage gates the policies
-  // table (create/edit/delete); canPromoteSuperAdmin gates the bypass toggle.
-  const canManage = usePermission(accountId, 'policy.create').allowed;
+  // canPromoteSuperAdmin gates the bypass toggle below.
   const canPromoteSuperAdmin = usePermission(
     accountId,
     'member.super_admin.grant',
@@ -218,27 +216,17 @@ export default function MemberDetailPage() {
           )}
 
           {account && member && (
+            <MemberProjectAccessCard
+              accountId={account.account_id}
+              memberUserId={member.user_id}
+              accountRole={member.account_role}
+            />
+          )}
+
+          {account && member && (
             <CapabilitiesCard
               accountId={account.account_id}
               memberUserId={member.user_id}
-            />
-          )}
-
-          {account && member && (
-            <PoliciesTable
-              accountId={account.account_id}
-              principalType="member"
-              principalId={member.user_id}
-              principalLabel={memberLabel}
-              canManage={canManage}
-            />
-          )}
-
-          {account && member && (
-            <PermissionBoundaryCard
-              accountId={account.account_id}
-              userId={member.user_id}
-              canManage={canManage}
             />
           )}
 
@@ -460,6 +448,105 @@ function MemberGroupsCard({
             </button>
           ))}
         </div>
+      )}
+    </SectionCard>
+  );
+}
+
+// ─── V2: Projects this member can reach ───────────────────────────────────
+
+const PROJECT_ROLE_RANK = { manager: 3, editor: 2, viewer: 1 } as const;
+const SOURCE_LABEL: Record<MemberProjectAccess['sources'][number], string> = {
+  implicit: 'Account admin',
+  direct: 'Direct',
+  group: 'Group',
+};
+
+function MemberProjectAccessCard({
+  accountId,
+  memberUserId,
+  accountRole,
+}: {
+  accountId: string;
+  memberUserId: string;
+  accountRole: AccountRole;
+}) {
+  const router = useRouter();
+  const query = useQuery({
+    queryKey: ['iam-member-project-access', accountId, memberUserId],
+    queryFn: () => listMemberProjectAccess(accountId, memberUserId),
+    staleTime: 30_000,
+  });
+  const items = query.data ?? [];
+  const isAdminLike = accountRole === 'owner' || accountRole === 'admin';
+
+  return (
+    <SectionCard
+      title="Project access"
+      description={
+        isAdminLike
+          ? `${accountRole === 'owner' ? 'Owners' : 'Admins'} are implicit Manager on every active project in the account.`
+          : 'Projects this member can reach via direct grants or groups they belong to.'
+      }
+      count={items.length}
+    >
+      {query.isLoading && <Skeleton className="h-10 w-full" />}
+
+      {!query.isLoading && query.isError && (
+        <InfoBanner
+          tone="destructive"
+          title="Failed to load project access"
+          action={
+            <Button variant="outline" size="sm" onClick={() => query.refetch()}>
+              Retry
+            </Button>
+          }
+        >
+          {(query.error as Error)?.message}
+        </InfoBanner>
+      )}
+
+      {!query.isLoading && !query.isError && items.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          No project access yet. Add this member to a project directly from the project&apos;s
+          Members page, or to a group that&apos;s attached to one.
+        </p>
+      )}
+
+      {!query.isLoading && items.length > 0 && (
+        <ul className="divide-y divide-border/60 -mx-6">
+          {items
+            .slice()
+            .sort(
+              (a, b) =>
+                PROJECT_ROLE_RANK[b.role] - PROJECT_ROLE_RANK[a.role] ||
+                a.project_name.localeCompare(b.project_name),
+            )
+            .map((p) => (
+              <li key={p.project_id}>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/projects/${p.project_id}`)}
+                  className="flex w-full cursor-pointer items-center gap-3 px-6 py-2.5 text-left transition-colors hover:bg-muted/40"
+                >
+                  <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="flex-1 truncate text-sm font-medium text-foreground">
+                    {p.project_name}
+                  </span>
+                  <Badge
+                    variant="outline"
+                    size="sm"
+                    className="capitalize text-[10px] font-normal"
+                  >
+                    {p.role}
+                  </Badge>
+                  <span className="text-[10px] text-muted-foreground">
+                    via {p.sources.map((s) => SOURCE_LABEL[s]).join(' + ')}
+                  </span>
+                </button>
+              </li>
+            ))}
+        </ul>
       )}
     </SectionCard>
   );

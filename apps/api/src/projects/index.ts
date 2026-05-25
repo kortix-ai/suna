@@ -14,10 +14,13 @@ import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGithubInstallations,
   accountGithubInstallationStates,
+  accountGroups,
+  accountGroupMembers,
   accountMembers,
   kortixApiKeys,
   projects,
   projectMembers,
+  projectGroupGrants,
   projectGitConnections,
   projectGitCredentials,
   projectSecrets,
@@ -90,9 +93,6 @@ import {
   authorize,
   assertAuthorized,
   listAccessibleResources,
-  syncProjectMemberPolicy,
-  removeProjectMemberPolicy,
-  syncMemberAccountPolicy,
 } from '../iam';
 import { deriveRequestContext } from '../iam/cache';
 import {
@@ -136,6 +136,7 @@ import {
 const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 import {
   effectiveProjectRole,
+  foldEffectiveProjectAccess,
   isAccountManager,
   parseProjectRole,
   roleAllows,
@@ -1204,23 +1205,6 @@ async function grantProjectRole(input: {
         updatedAt: now,
       },
     });
-
-  // Fold into IAM: mirror this grant as a project-scoped policy so the
-  // engine no longer needs the project_members bridge to see the role.
-  // Strict-mode accounts already ignore the bridge; this keeps non-strict
-  // accounts in sync too. Best-effort — the legacy row is the truth of
-  // record on conflict (sync failure logged but not propagated).
-  try {
-    await syncProjectMemberPolicy({
-      accountId: input.accountId,
-      projectId: input.projectId,
-      userId: input.userId,
-      projectRole: input.role,
-      createdBy: input.grantedBy,
-    });
-  } catch (err) {
-    console.warn('[projects] failed to mirror project member into IAM policy', err);
-  }
 }
 
 async function ensureOrgMembership(
@@ -1234,16 +1218,6 @@ async function ensureOrgMembership(
     .insert(accountMembers)
     .values({ userId, accountId, accountRole: 'member' })
     .onConflictDoNothing();
-  try {
-    await syncMemberAccountPolicy({
-      accountId,
-      userId,
-      accountRole: 'member',
-      createdBy: grantedBy,
-    });
-  } catch (err) {
-    console.warn('[projects] failed to mirror account member into IAM policy', err);
-  }
   return 'member';
 }
 
@@ -1493,6 +1467,28 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
     requestCtx,
   );
   if (!verdict.allowed) {
+    // Distinguish "no access at all" from "has access but not for this
+    // action" so the UI can show a meaningful message. A Viewer can see
+    // the project but can't create a session — telling them "no access"
+    // is misleading and they spend time wondering why they can see the
+    // page at all. Only do the second probe when the failed action was
+    // NOT already 'read' — otherwise it's the same answer.
+    if (action !== 'read') {
+      const readVerdict = await authorize(
+        userId,
+        row.accountId,
+        'project.read',
+        { type: 'project', id: projectId },
+        actingTokenId,
+        requestCtx,
+      );
+      if (readVerdict.allowed) {
+        const verb = action === 'manage' ? 'manage this project' : 'change this project';
+        throw new HTTPException(403, {
+          message: `Your role on this project doesn't let you ${verb}. Ask a project Manager to grant you a higher role.`,
+        });
+      }
+    }
     throw new HTTPException(403, { message: 'You do not have access to this project' });
   }
 
@@ -2337,11 +2333,11 @@ projectsApp.get('/', async (c) => {
       | undefined) ?? undefined;
   const requestCtx = deriveRequestContext(c);
 
-  // Ask the IAM engine which projects the caller can READ. Returns one
-  // of: { mode: 'all' } | { mode: 'none' } | { mode: 'all_except' } |
-  // { mode: 'allow_only' }. The engine handles super-admin bypass,
-  // legacy owner/admin/member bridges, project_members rows, group
-  // policies, project_group expansion, conditions, expiry — everything.
+  // Ask the IAM engine which projects the caller can READ. V2 returns
+  // one of: { mode: 'all' } | { mode: 'none' } | { mode: 'allow_only' }.
+  // 'all' = account admin/owner (manager on every project); 'allow_only'
+  // = enumerated project IDs from direct project_members + group grants;
+  // 'none' = no access.
   const accessible = await listAccessibleResources(
     scope.userId,
     scope.accountId,
@@ -2377,23 +2373,14 @@ projectsApp.get('/', async (c) => {
   let rows: Array<typeof projects.$inferSelect>;
   if (accessible.mode === 'all') {
     rows = await db.select().from(projects).where(baseWhere).orderBy(desc(projects.updatedAt));
-  } else if (accessible.mode === 'allow_only') {
+  } else {
+    // mode === 'allow_only'. The 'none' case was returned above.
     if (accessible.allowed.size === 0) return c.json([]);
     rows = await db
       .select()
       .from(projects)
       .where(and(baseWhere, inArray(projects.projectId, [...accessible.allowed])))
       .orderBy(desc(projects.updatedAt));
-  } else {
-    // all_except — fetch everything, then filter denied ids in-memory.
-    // For account sizes well under a few thousand projects this beats a
-    // NOT IN (…) query that the planner often handles poorly.
-    const all = await db
-      .select()
-      .from(projects)
-      .where(baseWhere)
-      .orderBy(desc(projects.updatedAt));
-    rows = all.filter((r) => !accessible.denied.has(r.projectId));
   }
 
   // Heuristic for effective_role label (UI only, NOT auth):
@@ -5322,7 +5309,7 @@ projectsApp.get('/:projectId/access', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const [accountRows, grantRows] = await Promise.all([
+  const [accountRows, grantRows, projectGroupRows] = await Promise.all([
     db
       .select({
         userId: accountMembers.userId,
@@ -5341,7 +5328,52 @@ projectsApp.get('/:projectId/access', async (c) => {
       })
       .from(projectMembers)
       .where(eq(projectMembers.projectId, loaded.row.projectId)),
+    // V2 group grants attached to this project. Each row lifts everyone in
+    // the group to at least the grant's role on this project. Per-user
+    // membership lookup happens below; we fetch group → role mapping +
+    // name in one shot here so we can label sources on the response.
+    db
+      .select({
+        groupId: projectGroupGrants.groupId,
+        groupName: accountGroups.name,
+        role: projectGroupGrants.role,
+      })
+      .from(projectGroupGrants)
+      .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
+      .where(eq(projectGroupGrants.projectId, loaded.row.projectId)),
   ]);
+
+  // For every grant-bearing group, fetch its members so we can fold their
+  // inherited role into each user's effective access. One round-trip
+  // covering all groups at once.
+  const grantGroupIds = projectGroupRows.map((g) => g.groupId);
+  const groupMemberRows = grantGroupIds.length
+    ? await db
+        .select({
+          groupId: accountGroupMembers.groupId,
+          userId: accountGroupMembers.userId,
+        })
+        .from(accountGroupMembers)
+        .where(inArray(accountGroupMembers.groupId, grantGroupIds))
+    : [];
+
+  // Index: userId → list of { group_id, group_name, role } that contribute.
+  type GroupSource = { group_id: string; group_name: string; role: ProjectRole };
+  const groupSourcesByUser = new Map<string, GroupSource[]>();
+  const grantByGroup = new Map(
+    projectGroupRows.map((g) => [g.groupId, g] as const),
+  );
+  for (const m of groupMemberRows) {
+    const grant = grantByGroup.get(m.groupId);
+    if (!grant) continue;
+    const arr = groupSourcesByUser.get(m.userId) ?? [];
+    arr.push({
+      group_id: grant.groupId,
+      group_name: grant.groupName,
+      role: grant.role as ProjectRole,
+    });
+    groupSourcesByUser.set(m.userId, arr);
+  }
 
   const emails = await lookupEmailsByUserIds(accountRows.map((r) => r.userId));
   const grantsByUser = new Map(grantRows.map((r) => [r.userId, r]));
@@ -5352,14 +5384,29 @@ projectsApp.get('/:projectId/access', async (c) => {
       const accountRole = member.accountRole as AccountRole;
       const grant = grantsByUser.get(member.userId);
       const projectRole = (grant?.projectRole as ProjectRole | undefined) ?? null;
-      const effectiveRole = effectiveProjectRole(accountRole, projectRole);
+      const groupSources = groupSourcesByUser.get(member.userId) ?? [];
+
+      // Pure fold — see projects/access.ts for the precedence rules.
+      const fold = foldEffectiveProjectAccess({
+        accountRole,
+        directRole: projectRole,
+        groupSources,
+      });
+
       return {
         user_id: member.userId,
         email: emails.get(member.userId) ?? null,
         account_role: accountRole,
         project_role: projectRole,
-        effective_project_role: effectiveRole,
+        effective_project_role: fold.effective_project_role,
         has_implicit_access: isAccountManager(accountRole),
+        /** What ultimately decided the effective role. UI labels with
+         *  it: "Manager (account admin)" vs "Editor (via Engineering)". */
+        effective_source: fold.effective_source,
+        /** Every group attachment that includes this user. Lets the UI
+         *  list multi-source access ("Editor via Engineering + Viewer
+         *  via Viewers") without further API calls. */
+        group_sources: fold.group_sources,
         joined_at: member.joinedAt.toISOString(),
         granted_by: grant?.grantedBy ?? null,
         granted_at: grant?.createdAt?.toISOString() ?? null,
@@ -5462,12 +5509,6 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
         eq(projectMembers.projectId, projectId),
         eq(projectMembers.userId, targetUserId),
       ));
-    // Mirror the delete into IAM — owners/admins get implicit access
-    // through the account-scope policy from syncMemberAccountPolicy, so
-    // the per-project policy is redundant noise.
-    await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId).catch(
-      (err) => console.warn('[projects] failed to drop IAM mirror', err),
-    );
 
     return c.json({
       user_id: targetUserId,
@@ -5519,10 +5560,209 @@ projectsApp.delete('/:projectId/access/:userId', async (c) => {
       eq(projectMembers.projectId, projectId),
       eq(projectMembers.userId, targetUserId),
     ));
-  // Drop the mirrored IAM policy too so both sources agree.
-  await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId).catch(
-    (err) => console.warn('[projects] failed to drop IAM mirror', err),
+
+  return c.json({ ok: true });
+});
+
+// ─── Project group grants (IAM V2 bulk-access channel) ────────────────────
+//
+// A row in project_group_grants attaches an account_group to a project
+// with a chosen project_role. Every member of the group inherits that
+// role on that project. These routes work for both V1 and V2 accounts —
+// V1 just ignores the rows because V1's engine reads from iam_policies.
+
+const PROJECT_ROLES = ['manager', 'editor', 'viewer'] as const;
+type ProjectGroupGrantRole = typeof PROJECT_ROLES[number];
+
+function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
+  return typeof v === 'string' && (PROJECT_ROLES as readonly string[]).includes(v);
+}
+
+// GET /v1/projects/:projectId/group-grants
+// List every group attached to this project, with the role + group name.
+projectsApp.get('/:projectId/group-grants', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const rows = await db
+    .select({
+      groupId: projectGroupGrants.groupId,
+      role: projectGroupGrants.role,
+      grantedBy: projectGroupGrants.grantedBy,
+      createdAt: projectGroupGrants.createdAt,
+      groupName: accountGroups.name,
+    })
+    .from(projectGroupGrants)
+    .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
+    .where(eq(projectGroupGrants.projectId, projectId));
+
+  // Per-group member breakdown so the UI can flag attachments where the
+  // grant role won't apply uniformly. When a group includes account
+  // owners/admins, those users have implicit Manager on every project,
+  // so the group's grant role is moot for them. Surfacing
+  // override_count = N lets the project admin see at a glance "this
+  // Viewer attachment doesn't actually viewer-cap 3 of these 5 people".
+  const groupIds = rows.map((r) => r.groupId);
+  type GroupStats = { total: number; overrideCount: number };
+  const statsByGroup = new Map<string, GroupStats>();
+  if (groupIds.length > 0) {
+    const memberRows = await db
+      .select({
+        groupId: accountGroupMembers.groupId,
+        accountRole: accountMembers.accountRole,
+        isSuperAdmin: accountMembers.isSuperAdmin,
+      })
+      .from(accountGroupMembers)
+      .innerJoin(
+        accountMembers,
+        and(
+          eq(accountMembers.userId, accountGroupMembers.userId),
+          eq(accountMembers.accountId, loaded.row.accountId),
+        ),
+      )
+      .where(inArray(accountGroupMembers.groupId, groupIds));
+    for (const m of memberRows) {
+      const stats = statsByGroup.get(m.groupId) ?? { total: 0, overrideCount: 0 };
+      stats.total += 1;
+      if (
+        m.isSuperAdmin ||
+        m.accountRole === 'owner' ||
+        m.accountRole === 'admin'
+      ) {
+        stats.overrideCount += 1;
+      }
+      statsByGroup.set(m.groupId, stats);
+    }
+  }
+
+  return c.json({
+    grants: rows.map((r) => {
+      const stats = statsByGroup.get(r.groupId) ?? { total: 0, overrideCount: 0 };
+      return {
+        group_id: r.groupId,
+        group_name: r.groupName,
+        role: r.role,
+        granted_by: r.grantedBy,
+        created_at: r.createdAt.toISOString(),
+        member_count: stats.total,
+        // How many of the group's members are account owners/admins —
+        // their implicit Manager access overrides this grant's role.
+        override_count: stats.overrideCount,
+      };
+    }),
+  });
+});
+
+// POST /v1/projects/:projectId/group-grants
+// Attach a group to this project at the given role. Idempotent — if the
+// group already has a grant, the role is updated.
+projectsApp.post('/:projectId/group-grants', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(
+    loaded.userId,
+    loaded.row.accountId,
+    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    { type: 'project', id: projectId },
   );
+
+  const body = await readBody(c);
+  const groupId = normalizeString(body.group_id ?? body.groupId);
+  const role = body.role;
+  if (!groupId) return c.json({ error: 'group_id is required' }, 400);
+  if (!isProjectRole(role)) {
+    return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
+  }
+
+  // Confirm the group exists and belongs to this account — prevents
+  // attaching a foreign-account group via a guessed UUID.
+  const [group] = await db
+    .select({ groupId: accountGroups.groupId })
+    .from(accountGroups)
+    .where(
+      and(eq(accountGroups.groupId, groupId), eq(accountGroups.accountId, loaded.row.accountId)),
+    )
+    .limit(1);
+  if (!group) return c.json({ error: 'group not found in this account' }, 404);
+
+  const now = new Date();
+  await db
+    .insert(projectGroupGrants)
+    .values({
+      projectId,
+      groupId,
+      accountId: loaded.row.accountId,
+      role,
+      grantedBy: loaded.userId,
+    })
+    .onConflictDoUpdate({
+      target: [projectGroupGrants.projectId, projectGroupGrants.groupId],
+      set: { role, grantedBy: loaded.userId, updatedAt: now },
+    });
+
+  return c.json({ project_id: projectId, group_id: groupId, role }, 201);
+});
+
+// PATCH /v1/projects/:projectId/group-grants/:groupId
+// Change the role on an existing attachment. Returns 404 when there's
+// nothing to change.
+projectsApp.patch('/:projectId/group-grants/:groupId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const groupId = c.req.param('groupId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(
+    loaded.userId,
+    loaded.row.accountId,
+    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    { type: 'project', id: projectId },
+  );
+
+  const body = await readBody(c);
+  if (!isProjectRole(body.role)) {
+    return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
+  }
+
+  const result = await db
+    .update(projectGroupGrants)
+    .set({ role: body.role, updatedAt: new Date() })
+    .where(
+      and(
+        eq(projectGroupGrants.projectId, projectId),
+        eq(projectGroupGrants.groupId, groupId),
+      ),
+    )
+    .returning({ groupId: projectGroupGrants.groupId });
+
+  if (result.length === 0) return c.json({ error: 'grant not found' }, 404);
+  return c.json({ project_id: projectId, group_id: groupId, role: body.role });
+});
+
+// DELETE /v1/projects/:projectId/group-grants/:groupId
+// Detach a group. Members of the group lose access via this grant
+// immediately; any direct project_members row they have is unaffected.
+projectsApp.delete('/:projectId/group-grants/:groupId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const groupId = c.req.param('groupId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(
+    loaded.userId,
+    loaded.row.accountId,
+    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    { type: 'project', id: projectId },
+  );
+
+  await db
+    .delete(projectGroupGrants)
+    .where(
+      and(
+        eq(projectGroupGrants.projectId, projectId),
+        eq(projectGroupGrants.groupId, groupId),
+      ),
+    );
 
   return c.json({ ok: true });
 });
