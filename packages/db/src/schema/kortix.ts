@@ -139,11 +139,12 @@ export const accounts = kortixSchema.table(
      *  approval from a second super-admin before they execute. Off by
      *  default — accounts opt in via the Settings UI. */
     iamApprovalsRequired: boolean('iam_approvals_required').default(false).notNull(),
-    /** IAM V2 rollout flag. When true, the engine ignores iam_policies
-     *  entirely and decides access from account_members.account_role +
-     *  project_members + project_group_grants. Default off; flipped
-     *  per-account once the migration script has validated parity. */
-    iamV2Enabled: boolean('iam_v2_enabled').default(false).notNull(),
+    /** IAM V2 mode. When true, the engine ignores iam_policies entirely
+     *  and decides access from account_members.account_role +
+     *  project_members + project_group_grants. Defaults to true for new
+     *  accounts; existing rows are migrated via scripts/migrate-iam-to-v2
+     *  (run with --enable-flag) once the parity validator passes. */
+    iamV2Enabled: boolean('iam_v2_enabled').default(true).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
