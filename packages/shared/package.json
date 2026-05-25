@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./tools": "./src/tools/index.ts",
     "./utils": "./src/utils/index.ts",
-    "./constants": "./src/constants/upload-limits.ts"
+    "./constants": "./src/constants/upload-limits.ts",
+    "./llm-catalog": "./src/llm-catalog/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
