@@ -33,18 +33,3 @@ export {
   type ActionCatalogEntry,
   type ResourceType,
 } from './actions';
-
-// V1 membership-sync + system-roles surface. These are no-ops on V2 (V2
-// reads account_members / project_members directly) but the import names
-// stay live so existing call sites in accounts/, invites, projects/, and
-// the boot routine keep compiling without churn. See legacy-shims.ts.
-export {
-  syncMemberAccountPolicy,
-  removeMemberPolicies,
-  removeProjectPoliciesForMember,
-  syncProjectMemberPolicy,
-  removeProjectMemberPolicy,
-  backfillMembershipPolicies,
-  backfillAccountMembershipPolicies,
-  seedSystemRoles,
-} from './legacy-shims';

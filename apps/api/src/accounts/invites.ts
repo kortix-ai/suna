@@ -6,7 +6,6 @@ import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
 import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
-import { syncMemberAccountPolicy } from '../iam';
 
 export const accountInvitesRouter = new Hono<AppEnv>();
 
@@ -121,12 +120,6 @@ accountInvitesRouter.post('/:inviteId/accept', async (c) => {
       .onConflictDoNothing({
         target: [accountMembers.userId, accountMembers.accountId],
       });
-    await syncMemberAccountPolicy({
-      accountId: invite.accountId,
-      userId,
-      accountRole: invite.initialRole,
-      createdBy: userId,
-    });
     return c.json({
       account_id: invite.accountId,
       account_role: invite.initialRole,
@@ -151,13 +144,6 @@ accountInvitesRouter.post('/:inviteId/accept', async (c) => {
     .onConflictDoNothing({
       target: [accountMembers.userId, accountMembers.accountId],
     });
-
-  await syncMemberAccountPolicy({
-    accountId: invite.accountId,
-    userId,
-    accountRole: invite.initialRole,
-    createdBy: userId,
-  });
 
   const acceptedRows = await db
     .update(accountInvitations)

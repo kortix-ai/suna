@@ -93,9 +93,6 @@ import {
   authorize,
   assertAuthorized,
   listAccessibleResources,
-  syncProjectMemberPolicy,
-  removeProjectMemberPolicy,
-  syncMemberAccountPolicy,
 } from '../iam';
 import { deriveRequestContext } from '../iam/cache';
 import {
@@ -1207,23 +1204,6 @@ async function grantProjectRole(input: {
         updatedAt: now,
       },
     });
-
-  // Fold into IAM: mirror this grant as a project-scoped policy so the
-  // engine no longer needs the project_members bridge to see the role.
-  // Strict-mode accounts already ignore the bridge; this keeps non-strict
-  // accounts in sync too. Best-effort — the legacy row is the truth of
-  // record on conflict (sync failure logged but not propagated).
-  try {
-    await syncProjectMemberPolicy({
-      accountId: input.accountId,
-      projectId: input.projectId,
-      userId: input.userId,
-      projectRole: input.role,
-      createdBy: input.grantedBy,
-    });
-  } catch (err) {
-    console.warn('[projects] failed to mirror project member into IAM policy', err);
-  }
 }
 
 async function ensureOrgMembership(
@@ -1237,16 +1217,6 @@ async function ensureOrgMembership(
     .insert(accountMembers)
     .values({ userId, accountId, accountRole: 'member' })
     .onConflictDoNothing();
-  try {
-    await syncMemberAccountPolicy({
-      accountId,
-      userId,
-      accountRole: 'member',
-      createdBy: grantedBy,
-    });
-  } catch (err) {
-    console.warn('[projects] failed to mirror account member into IAM policy', err);
-  }
   return 'member';
 }
 
@@ -5550,12 +5520,6 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
         eq(projectMembers.projectId, projectId),
         eq(projectMembers.userId, targetUserId),
       ));
-    // Mirror the delete into IAM — owners/admins get implicit access
-    // through the account-scope policy from syncMemberAccountPolicy, so
-    // the per-project policy is redundant noise.
-    await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId).catch(
-      (err) => console.warn('[projects] failed to drop IAM mirror', err),
-    );
 
     return c.json({
       user_id: targetUserId,
@@ -5607,10 +5571,6 @@ projectsApp.delete('/:projectId/access/:userId', async (c) => {
       eq(projectMembers.projectId, projectId),
       eq(projectMembers.userId, targetUserId),
     ));
-  // Drop the mirrored IAM policy too so both sources agree.
-  await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId).catch(
-    (err) => console.warn('[projects] failed to drop IAM mirror', err),
-  );
 
   return c.json({ ok: true });
 });
