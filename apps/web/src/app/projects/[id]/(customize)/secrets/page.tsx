@@ -537,7 +537,7 @@ function SourceChooser({
         disabled={busy || !sharedAvailable}
         onClick={() => onChoose('shared')}
         className={cn(
-          'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
+          'flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed',
           !usingMine && sharedAvailable
             ? 'bg-muted font-medium text-foreground'
             : 'text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground',
@@ -552,7 +552,7 @@ function SourceChooser({
         disabled={busy}
         onClick={() => onChoose('mine')}
         className={cn(
-          'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
+          'flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed',
           usingMine ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:text-foreground',
         )}
         title="Use your own value for this key"
