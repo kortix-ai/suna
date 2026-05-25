@@ -149,15 +149,22 @@ kill_dev_ports() {
   for port in "$@"; do
     [[ -n "$port" ]] || continue
     seen="0"
-    local existing
-    for existing in "${ports[@]}"; do
-      if [[ "$existing" == "$port" ]]; then
-        seen="1"
-        break
-      fi
-    done
+    # Bash 3.2 (macOS default) + set -u trips on "${ports[@]}" when the
+    # array is empty. Guard with a length check so the dedup loop only
+    # runs once we've actually accumulated something.
+    if [[ ${#ports[@]} -gt 0 ]]; then
+      local existing
+      for existing in "${ports[@]}"; do
+        if [[ "$existing" == "$port" ]]; then
+          seen="1"
+          break
+        fi
+      done
+    fi
     [[ "$seen" == "0" ]] && ports+=("$port")
   done
+
+  [[ ${#ports[@]} -gt 0 ]] || return 0
 
   for port in "${ports[@]}"; do
     local pids
