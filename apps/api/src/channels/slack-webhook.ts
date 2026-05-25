@@ -40,7 +40,6 @@ import { config } from '../config';
 export const slackWebhookApp = new Hono();
 
 const FIVE_MINUTES = 5 * 60;
-const SLACK_AGENT_MODEL = 'anthropic/claude-sonnet-4-6';
 
 const EVENT_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const seenEventIds = new Map<string, number>();
@@ -66,15 +65,13 @@ interface TurnStream {
   triggerTs: string;
   steps: StreamTaskChunk[];
   streaming: boolean;
+  placeholderActive: boolean;
   expiry: number;
   finalized: boolean;
   projectId: string;
   sessionId: string;
   controlsTs: string | null;
   stopped: boolean;
-  // Persisted so we can re-open a fresh stream *below* the question form
-  // when the user submits — otherwise the agent's post-question answer
-  // lands in this old stream's message slot (above the form).
   teamId: string;
   originatingEvent: SlackEvent;
 }
@@ -95,22 +92,27 @@ async function startTurnStream(
   projectId: string,
   teamId: string,
   event: SlackEvent,
-  firstStepTitle: string,
+  // firstStepTitle was the eager "Spinning up a sandbox" placeholder that
+  // appeared in the plan block before the agent did anything. We no longer
+  // pre-open the plan stream — the parameter stays for ABI but is ignored.
+  _unusedFirstStepTitle?: string,
 ): Promise<TurnStream | null> {
   if (!event.channel || !event.ts || !event.user) return null;
   const token = await loadSlackTokenForProject(projectId);
   if (!token) return null;
-  const bootStep: StreamTaskChunk = {
-    type: 'task_update',
-    id: 'step-0',
-    title: firstStepTitle,
-    status: 'in_progress',
-  };
   const threadTs = event.thread_ts ?? event.ts;
   await joinChannel(token, event.channel);
   await addReaction(token, event.channel, event.ts, WORKING_EMOJI);
 
-  const base = {
+  const placeholderTs = await postMessage(
+    token,
+    event.channel,
+    '⏳  _On it…_',
+    threadTs,
+  );
+  if (!placeholderTs) return null;
+
+  return {
     channel: event.channel,
     token,
     triggerTs: event.ts,
@@ -118,30 +120,53 @@ async function startTurnStream(
     finalized: false,
     projectId,
     sessionId: '',
-    controlsTs: null as string | null,
+    controlsTs: null,
     stopped: false,
     teamId,
     originatingEvent: event,
+    ts: placeholderTs,
+    steps: [],
+    streaming: false,
+    placeholderActive: true,
   };
-  const streamTs = await startStream(
-    token,
-    event.channel,
-    threadTs,
-    event.user,
-    teamId,
-    [bootStep],
-  );
-  if (streamTs) {
-    return { ...base, ts: streamTs, steps: [bootStep], streaming: true };
+}
+
+// Lazily open a real chat.startStream the moment the agent emits its first
+// `slack step`. Deletes the placeholder first so the plan-block message
+// appears in its place chronologically.
+async function openStreamWithFirstStep(handle: TurnStream, firstStep: StreamTaskChunk): Promise<boolean> {
+  if (handle.streaming) return true;
+  if (handle.placeholderActive && handle.ts) {
+    await deleteMessage(handle.token, handle.channel, handle.ts);
+    handle.placeholderActive = false;
+    handle.ts = '';
   }
-  const placeholderTs = await postMessage(
-    token,
-    event.channel,
-    '⏳ _Kortix is working on it…_',
+  const ev = handle.originatingEvent;
+  const threadTs = ev.thread_ts ?? ev.ts;
+  if (!ev.channel || !ev.user || !threadTs) return false;
+  const streamTs = await startStream(
+    handle.token,
+    ev.channel,
     threadTs,
+    ev.user,
+    handle.teamId,
+    [firstStep],
   );
-  if (!placeholderTs) return null;
-  return { ...base, ts: placeholderTs, steps: [], streaming: false };
+  if (!streamTs) return false;
+  handle.ts = streamTs;
+  handle.steps = [firstStep];
+  handle.streaming = true;
+  if (handle.sessionId) await repositionStopControls(handle);
+  return true;
+}
+
+async function repositionStopControls(handle: TurnStream): Promise<void> {
+  if (!handle.sessionId) return;
+  if (handle.controlsTs) {
+    await deleteMessage(handle.token, handle.channel, handle.controlsTs);
+    handle.controlsTs = null;
+  }
+  await attachStopControls(handle, handle.sessionId);
 }
 
 function buildSlackTurnEnv(teamId: string, event: SlackEvent): Record<string, string> {
@@ -154,17 +179,6 @@ function buildSlackTurnEnv(teamId: string, event: SlackEvent): Record<string, st
   return env;
 }
 
-// ─── opencode question.asked → Slack Block Kit form ─────────────────────────
-// The agent uses opencode's built-in `question` tool. The sandbox subscribes
-// to opencode's SSE stream and relays each question.asked here as a
-// QuestionInfo[]. We render a Block Kit form, block on Submit, return the
-// answers (string[][] — one array per question), and the sandbox POSTs them
-// back to opencode's /question/{requestID}/reply so the tool resumes.
-// Mirrors opencode's QuestionOption schema — { label, description }. The
-// dashboard sends the picked label back as the answer string (there is no
-// separate `value` field), so we use the label for both Slack's option
-// `value` and the visible text, and surface `description` as the helper
-// line under each option.
 export interface QuestionInfo {
   question: string;
   header?: string;
@@ -181,8 +195,6 @@ interface PendingAsk {
   channel: string;
   messageTs: string | null;
   token: string;
-  // Persisted for the post-submit stream rotation so the agent's continuation
-  // lands BELOW the form instead of in the old (now-parked) stream message.
   sessionId: string;
   projectId: string;
   teamId: string;
@@ -197,7 +209,6 @@ setInterval(() => {
   for (const [askId, ask] of pendingAsks) {
     if (ask.expiry < now) {
       pendingAsks.delete(askId);
-      // Empty answers signal timeout to the sandbox, which sends question.reject.
       ask.resolve(ask.questions.map(() => []));
     }
   }
@@ -212,15 +223,9 @@ export async function postQuestionAndWait(
     return { ok: false, error: 'No active Slack turn for this session.' };
   }
 
-  // Capture the data needed to spin up a fresh stream BELOW the form once
-  // the user submits. We do this before finalizing because finalizeStream
-  // mutates `handle` and may delete the Stop controls.
   const teamId = handle.teamId;
   const originatingEvent = handle.originatingEvent;
 
-  // Park the current stream so it doesn't keep spinning while the user is
-  // filling in the form. Drop it from activeStreams so any stray relay
-  // calls fail loud instead of mutating a paused stream.
   await finalizeStream(handle, { answer: '_Waiting on your answer below…_' });
   activeStreams.delete(sessionId);
 
@@ -356,7 +361,17 @@ export async function relayTurnStep(
     });
     return false;
   }
+
   if (!handle.streaming) {
+    const firstStep: StreamTaskChunk = {
+      type: 'task_update',
+      id: 'step-0',
+      title: title.slice(0, 200),
+      status: 'in_progress',
+    };
+    if (opts.detail) firstStep.details = opts.detail.slice(0, 500);
+    const opened = await openStreamWithFirstStep(handle, firstStep);
+    if (!opened) return false;
     handle.expiry = Date.now() + STREAM_TTL_MS;
     return true;
   }
@@ -364,21 +379,22 @@ export async function relayTurnStep(
   const last = handle.steps[handle.steps.length - 1];
   if (last && last.status === 'in_progress') {
     last.status = 'complete';
-    const closing: StreamTaskChunk = {
-      type: 'task_update',
-      id: last.id,
-      title: last.title,
-      status: 'complete',
-    };
-    if (opts.outputForPrev) closing.output = opts.outputForPrev.slice(0, 500);
+    if (opts.outputForPrev) last.output = opts.outputForPrev.slice(0, 500);
     if (opts.sourcesForPrev && opts.sourcesForPrev.length > 0) {
-      closing.sources = opts.sourcesForPrev.slice(0, 8).map((s) => ({
+      last.sources = opts.sourcesForPrev.slice(0, 8).map((s) => ({
         type: 'url',
         url: s.url,
         text: s.text.slice(0, 80),
       }));
     }
-    chunks.push(closing);
+    chunks.push({
+      type: 'task_update',
+      id: last.id,
+      title: last.title,
+      status: 'complete',
+      ...(last.output ? { output: last.output } : {}),
+      ...(last.sources ? { sources: last.sources } : {}),
+    });
   }
   const next: StreamTaskChunk = {
     type: 'task_update',
@@ -413,12 +429,13 @@ async function finalizeStream(
   if (handle.finalized) return;
   handle.finalized = true;
   const body = (opts.answer ?? opts.error ?? '_Done._').slice(0, 11000);
+  const ev = handle.originatingEvent;
+  const threadRoot = ev.thread_ts ?? ev.ts ?? handle.triggerTs;
   if (handle.streaming) {
     const chunks: StreamChunk[] = [];
     const last = handle.steps[handle.steps.length - 1];
     if (last && last.status === 'in_progress') {
       last.status = opts.error ? 'error' : 'complete';
-      // Strip details on the closing chunk — re-sending it appends server-side.
       chunks.push({
         type: 'task_update',
         id: last.id,
@@ -432,14 +449,77 @@ async function finalizeStream(
       chunks.push({ type: 'markdown_text', text: body });
     }
     await stopStream(handle.token, handle.channel, handle.ts, chunks);
-  } else {
-    await updateMessage(handle.token, handle.channel, handle.ts, body);
+    await updateBlocks(
+      handle.token,
+      handle.channel,
+      handle.ts,
+      planTitleFor(opts),
+      buildFinalPlanBlocks(handle, body, opts),
+    );
+  } else if (handle.placeholderActive && handle.ts) {
+    await deleteMessage(handle.token, handle.channel, handle.ts);
+    handle.placeholderActive = false;
+    if (opts.blocks && opts.blocks.length > 0) {
+      await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot);
+    } else {
+      await postMessage(handle.token, handle.channel, body, threadRoot);
+    }
   }
   await removeReaction(handle.token, handle.channel, handle.triggerTs, WORKING_EMOJI);
+  if (opts.answer && !opts.error && !handle.stopped) {
+    await addReaction(handle.token, handle.channel, handle.triggerTs, 'white_check_mark');
+  }
   if (handle.controlsTs && !handle.stopped) {
     await deleteMessage(handle.token, handle.channel, handle.controlsTs);
     handle.controlsTs = null;
   }
+}
+
+function planTitleFor(opts: { answer?: string; error?: string }): string {
+  if (opts.error) return 'Run failed';
+  return 'Task complete';
+}
+
+function buildFinalPlanBlocks(
+  handle: TurnStream,
+  body: string,
+  opts: { answer?: string; error?: string; blocks?: unknown[] },
+): unknown[] {
+  const tasks = handle.steps.map((s) => {
+    const task: Record<string, unknown> = {
+      task_id: s.id,
+      title: s.title,
+      status: s.status,
+    };
+    if (s.details) {
+      task.details = {
+        type: 'rich_text',
+        elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: s.details }] }],
+      };
+    }
+    if (s.output) {
+      task.output = {
+        type: 'rich_text',
+        elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: s.output }] }],
+      };
+    }
+    if (s.sources && s.sources.length > 0) task.sources = s.sources;
+    return task;
+  });
+
+  const blocks: Array<Record<string, unknown>> = [
+    {
+      type: 'plan',
+      title: planTitleFor(opts),
+      tasks,
+    },
+  ];
+  if (opts.blocks && opts.blocks.length > 0) {
+    for (const b of opts.blocks) blocks.push(b as Record<string, unknown>);
+  } else if (body && body !== '_Done._') {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: body } });
+  }
+  return blocks;
 }
 
 const PICKER_TTL_MS = 60 * 60 * 1000;
@@ -484,6 +564,14 @@ slackWebhookApp.post('/', async (c) => {
       await dispatchSlackEvent(resolution.projectId, envelope);
     } else if (resolution.kind === 'ambiguous') {
       await maybePostPicker(teamId, resolution.projectIds, envelope);
+    } else if (resolution.kind === 'pending') {
+      const installs = await db
+        .select({ projectId: chatInstalls.projectId })
+        .from(chatInstalls)
+        .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+      if (installs.length > 0) {
+        await maybePostPicker(teamId, installs.map((i) => i.projectId), envelope);
+      }
     }
   })().catch((err) => console.error('[slack-webhook] oauth handler failed', err));
 
@@ -592,7 +680,9 @@ async function resolveOauthProject(
       await db
         .insert(chatChannelBindings)
         .values({ platform: 'slack', workspaceId: teamId, channelId, projectId: onlyProjectId })
-        .onConflictDoNothing();
+        .onConflictDoNothing({
+          target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
+        });
     }
     return { kind: 'project', projectId: onlyProjectId };
   }
@@ -614,12 +704,30 @@ async function maybePostPicker(
   const claimed = await db
     .insert(chatChannelBindings)
     .values({ platform: 'slack', workspaceId: teamId, channelId, projectId: null })
-    .onConflictDoNothing()
+    .onConflictDoNothing({
+      target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
+    })
     .returning({ id: chatChannelBindings.bindingId });
-  if (claimed.length === 0) return;
+  const isFreshClaim = claimed.length > 0;
 
   const token = await loadSlackTokenForProject(projectIds[0]);
   if (!token) return;
+
+  if (!isFreshClaim) {
+    const [existing] = await db
+      .select({ pickerTs: chatChannelBindings.pickerTs, projectId: chatChannelBindings.projectId })
+      .from(chatChannelBindings)
+      .where(and(
+        eq(chatChannelBindings.platform, 'slack'),
+        eq(chatChannelBindings.workspaceId, teamId),
+        eq(chatChannelBindings.channelId, channelId),
+      ))
+      .limit(1);
+    if (existing?.projectId) return;
+    if (existing?.pickerTs) {
+      await deleteMessage(token, channelId, existing.pickerTs);
+    }
+  }
 
   const projectRows = await db
     .select({ projectId: projects.projectId, name: projects.name })
@@ -738,19 +846,6 @@ function slashHelp(): SlashResponse {
         type: 'section',
         text: { type: 'mrkdwn', text: `\`${r.cmd}\`\n${r.desc}` },
       })),
-      { type: 'divider' },
-      {
-        type: 'actions',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: 'Open dashboard', emoji: true },
-            style: 'primary',
-            url: dashboardBase,
-            action_id: 'help_open_dashboard',
-          },
-        ],
-      },
     ],
   };
 }
@@ -817,9 +912,7 @@ async function slashProjects(ctx: { teamId: string; channelId: string }): Promis
             }] : []),
           ],
         };
-        if (og) {
-          card.hero_image = { type: 'image', image_url: og, alt_text: `${p.name} repo` };
-        }
+        void og;
         return card;
       }),
     });
@@ -903,13 +996,11 @@ async function slashSwitch(ctx: { teamId: string; channelId: string }): Promise<
             },
           ],
         };
-        if (og) card.hero_image = { type: 'image', image_url: og, alt_text: `${p.name} repo` };
+        void og;
         return card;
       }),
     });
   } else {
-    // Single-project workspace — there's nothing to switch to, but still show
-    // the project as confirmation.
     const p = rows[0];
     blocks.push({
       type: 'section',
@@ -1494,71 +1585,27 @@ function stripMentions(text: string): string {
   return text.replace(/<@[A-Z0-9]+>/g, '').trim();
 }
 
-const CHANNEL_INTRO_FALLBACK = "👋 Hey! I'm Kortix — your coding teammate. `@`-mention me with a task and I'll get on it.";
+const CHANNEL_INTRO_FALLBACK = "Kortix is now connected to this channel. Mention @Kortix with a task to get started.";
 
 async function postChannelIntro(projectId: string, channelId: string): Promise<void> {
   const token = await loadSlackTokenForProject(projectId);
   if (!token) return;
   const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
-  const heroUrl = config.SLACK_HOME_HERO_URL || DEFAULT_HOME_HERO_URL;
   const blocks: Array<Record<string, unknown>> = [
-    { type: 'image', image_url: heroUrl, alt_text: 'Kortix — your coding teammate in Slack' },
     {
       type: 'header',
-      text: { type: 'plain_text', text: "👋  Hey! I'm Kortix", emoji: true },
+      text: { type: 'plain_text', text: 'Kortix is connected to this channel', emoji: false },
     },
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
         text: [
-          "*Your coding teammate, right here in Slack.*",
+          'Mention `@Kortix` with a task. The agent will read your repository, work in an isolated sandbox, and reply in-thread. Follow-up messages in the same thread continue the conversation.',
           '',
-          "`@`-mention me with a task and I'll get on it — read the repo, run the work in an isolated sandbox, and reply in this thread. Follow-ups stay in context.",
+          'Run `/kortix help` to see available commands.',
         ].join('\n'),
       },
-    },
-    {
-      type: 'context',
-      elements: [
-        { type: 'mrkdwn', text: '⚡  *Live plan streaming*' },
-        { type: 'mrkdwn', text: '🧵  *Thread memory*' },
-        { type: 'mrkdwn', text: '📁  *File I/O*' },
-        { type: 'mrkdwn', text: '🔒  *Isolated sandbox*' },
-      ],
-    },
-    { type: 'divider' },
-    {
-      type: 'section',
-      text: { type: 'mrkdwn', text: '*Try a task*' },
-    },
-    { type: 'section', text: { type: 'mrkdwn', text: '🔍  `@Kortix scan this codebase and write me a one-pager`' } },
-    { type: 'section', text: { type: 'mrkdwn', text: '🔧  `@Kortix open a PR that updates the README with our setup steps`' } },
-    { type: 'section', text: { type: 'mrkdwn', text: '📊  `@Kortix what changed on main this week?`' } },
-    { type: 'divider' },
-    {
-      type: 'actions',
-      elements: [
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: 'Open dashboard', emoji: true },
-          style: 'primary',
-          url: dashboardBase,
-          action_id: 'intro_open_dashboard',
-        },
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: '/kortix help', emoji: true },
-          url: dashboardBase,
-          action_id: 'intro_help',
-        },
-      ],
-    },
-    {
-      type: 'context',
-      elements: [
-        { type: 'mrkdwn', text: `🪐  Managed by Kortix  ·  <${dashboardBase}|kortix.com>` },
-      ],
     },
   ];
   await postBlocks(token, channelId, CHANNEL_INTRO_FALLBACK, blocks);
@@ -1959,7 +2006,6 @@ async function spawnAgentTurn(
       base_ref: project.defaultBranch,
       agent_name: 'default',
       initial_prompt: renderAgentPrompt(envelope, event, revived),
-      opencode_model: SLACK_AGENT_MODEL,
     },
     enforceAccountCap: false,
     metadata: {
@@ -2249,6 +2295,8 @@ interface SlackInteractionPayload {
     action_id?: string;
     value?: string;
     text?: { type?: string; text?: string };
+    // static_select fires block_actions with the picked option here.
+    selected_option?: { value?: string; text?: { text?: string } } | null;
   }>;
   response_url?: string;
   state?: {
