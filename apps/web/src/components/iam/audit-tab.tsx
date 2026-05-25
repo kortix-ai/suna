@@ -26,6 +26,11 @@ import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listAuditEvents, type AuditEvent } from '@/lib/iam-client';
 import { listAccountMembers } from '@/lib/projects-client';
+import {
+  KIND_DOT_CLASS,
+  formatResourcePill,
+  humanizeAuditAction,
+} from './audit-display-helpers';
 
 // ─── Quick filters ─────────────────────────────────────────────────────────
 
@@ -271,54 +276,111 @@ function AuditRow({
   const hasDiff = event.before !== null || event.after !== null;
   const actorLabel = actorEmail ?? event.actor_user_id ?? 'system';
   const occurred = new Date(event.occurred_at);
+  const human = humanizeAuditAction(event.action);
+  const resourcePill = formatResourcePill(event.resource_type, event.resource_id);
+  // Expandable when we have a before/after diff OR when the humanised
+  // title actually hides information (we'd want to surface the raw
+  // action code + IP + full timestamp on demand).
+  const canExpand = hasDiff || event.action !== human.title;
 
   return (
     <li>
       <button
         type="button"
-        onClick={() => hasDiff && setExpanded((v) => !v)}
-        disabled={!hasDiff}
+        onClick={() => canExpand && setExpanded((v) => !v)}
+        disabled={!canExpand}
         className={`flex w-full items-start gap-3 px-6 py-3 text-left transition-colors ${
-          hasDiff ? 'cursor-pointer hover:bg-muted/30' : ''
+          canExpand ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default'
         }`}
       >
-        <div className="mt-0.5 w-3 shrink-0 text-muted-foreground">
-          {hasDiff && (expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />)}
-        </div>
-        <div className="min-w-0 flex-1 space-y-0.5">
-          <div className="flex items-baseline gap-2">
-            <code className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-xs text-foreground">
-              {event.action}
-            </code>
-            <span className="truncate text-xs text-muted-foreground">
-              by <strong className="font-medium text-foreground">{actorLabel}</strong>
-            </span>
+        {/* Coloured kind dot — replaces the raw action code as the
+            primary visual anchor. Green = create, amber = update,
+            red = delete/revoke, sky = attach/export, violet = grant. */}
+        <span
+          className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${KIND_DOT_CLASS[human.kind]}`}
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1 space-y-1">
+          {/* Primary line: humanised title + optional detail (the resource
+              name parsed out of the path, e.g. the secret name). */}
+          <div className="flex items-baseline gap-2 text-sm">
+            <span className="font-medium text-foreground">{human.title}</span>
+            {human.detail && (
+              <code className="truncate rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                {human.detail}
+              </code>
+            )}
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{formatRelative(occurred)}</span>
+          {/* Secondary line: actor · time · resource pill · IP. All
+              muted; the actor name highlighted slightly. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            <span>
+              by <span className="text-foreground/80">{actorLabel}</span>
+            </span>
             <span className="text-muted-foreground/40">·</span>
-            <span title={occurred.toISOString()}>{occurred.toLocaleString()}</span>
-            {event.resource_id && (
+            <span title={occurred.toLocaleString()}>{formatRelative(occurred)}</span>
+            {resourcePill && (
               <>
                 <span className="text-muted-foreground/40">·</span>
-                <span className="truncate font-mono">
-                  {event.resource_type}/{event.resource_id.slice(0, 8)}
+                <span
+                  className="rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize"
+                  title={
+                    event.resource_id
+                      ? `${event.resource_type} ${event.resource_id}`
+                      : event.resource_type ?? undefined
+                  }
+                >
+                  {resourcePill}
                 </span>
               </>
             )}
             {event.ip && (
               <>
                 <span className="text-muted-foreground/40">·</span>
-                <span className="font-mono">{event.ip}</span>
+                <span className="font-mono text-[10px]">{event.ip}</span>
               </>
             )}
           </div>
         </div>
+        {canExpand && (
+          <span className="mt-0.5 shrink-0 text-muted-foreground/60">
+            {expanded ? (
+              <ChevronDown className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5" />
+            )}
+          </span>
+        )}
       </button>
-      {expanded && hasDiff && (
-        <div className="grid gap-3 border-t border-border/40 bg-muted/10 px-6 py-3 sm:grid-cols-2">
-          <DiffPane label="Before" data={event.before} />
-          <DiffPane label="After" data={event.after} />
+      {expanded && canExpand && (
+        <div className="space-y-3 border-t border-border/40 bg-muted/10 px-6 py-3">
+          {/* Raw action code — the one the humanizer hid. Visible on
+              expand so the dev side of the audit (filtering, support
+              tickets) stays one click away. */}
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Raw request
+            </p>
+            <code className="block break-all rounded border border-border/60 bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
+              {event.action}
+            </code>
+          </div>
+          {/* Full timestamp + event id — useful for cross-referencing
+              from server logs. */}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+            <span>
+              Occurred at <span className="font-mono">{occurred.toISOString()}</span>
+            </span>
+            <span>
+              Event id <span className="font-mono">{event.event_id}</span>
+            </span>
+          </div>
+          {hasDiff && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <DiffPane label="Before" data={event.before} />
+              <DiffPane label="After" data={event.after} />
+            </div>
+          )}
         </div>
       )}
     </li>
