@@ -25,9 +25,7 @@ export interface AccountGroup {
   source: 'manual' | 'scim';
   external_id?: string | null;
   member_count?: number;
-  /** V1 surface — number of iam_policies referencing this group. */
-  policy_count?: number;
-  /** V2 surface — number of project_group_grants for this group. */
+  /** Number of project_group_grants for this group. */
   project_count?: number;
   created_at: string;
   updated_at: string;

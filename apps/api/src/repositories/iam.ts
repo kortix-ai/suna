@@ -4,7 +4,7 @@
 // Pure CRUD; route handlers do their own assertAuthorized() calls.
 
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { accountGroupMembers, accountGroups, accountMembers, iamPolicies } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
 import { db } from '../shared/db';
 
 // ─── Groups ────────────────────────────────────────────────────────────────
@@ -24,11 +24,7 @@ export async function listGroups(accountId: string): Promise<
   Array<
     AccountGroup & {
       memberCount: number;
-      /** V1 surface: number of iam_policies referencing this group. */
-      policyCount: number;
-      /** V2 surface: number of project_group_grants attaching this group
-       *  to a project. The frontend swaps which number it shows based on
-       *  the per-account iam_v2_enabled flag. */
+      /** Number of project_group_grants attaching this group to a project. */
       projectCount: number;
     }
   >
@@ -48,19 +44,11 @@ export async function listGroups(accountId: string): Promise<
       // the bare "group_id" without a table prefix, so Postgres resolves
       // both sides of `WHERE x.group_id = "group_id"` to the inner alias
       // and the filter degenerates to `WHERE TRUE` — counts come back as
-      // table-wide totals. Aliasing the inner table doesn't help by
-      // itself; what we need is the OUTER reference to be unambiguously
-      // kortix.account_groups.group_id. policyCount is safe-by-accident
-      // because principal_id has a different name; keep all three
-      // consistent so the next person doesn't trip on the same rake.
+      // table-wide totals. Aliasing the inner table doesn't help; we need
+      // the OUTER reference to be unambiguously kortix.account_groups.
       memberCount: sql<number>`(
         SELECT COUNT(*)::int FROM kortix.account_group_members agm
         WHERE agm.group_id = kortix.account_groups.group_id
-      )`,
-      policyCount: sql<number>`(
-        SELECT COUNT(*)::int FROM kortix.iam_policies p
-        WHERE p.principal_type = 'group'
-          AND p.principal_id = kortix.account_groups.group_id
       )`,
       projectCount: sql<number>`(
         SELECT COUNT(*)::int FROM kortix.project_group_grants pgg

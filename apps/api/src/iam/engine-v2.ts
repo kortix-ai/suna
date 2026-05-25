@@ -101,7 +101,6 @@ type ResolvedActorV2 = {
   accountRole: AccountRole | null;
   groupIds: string[];
   accountMfaRequired: boolean;
-  iamV2Enabled: boolean;
 };
 
 async function resolveActorV2(
@@ -113,7 +112,6 @@ async function resolveActorV2(
       isSuperAdmin: accountMembers.isSuperAdmin,
       accountRole: accountMembers.accountRole,
       mfaRequired: accounts.mfaRequired,
-      iamV2Enabled: accounts.iamV2Enabled,
     })
     .from(accountMembers)
     .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
@@ -131,7 +129,6 @@ async function resolveActorV2(
     accountRole: (member.accountRole as AccountRole | null) ?? null,
     groupIds: groups.map((g) => g.groupId),
     accountMfaRequired: member.mfaRequired,
-    iamV2Enabled: member.iamV2Enabled,
   };
 }
 

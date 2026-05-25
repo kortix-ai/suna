@@ -105,11 +105,6 @@ export const accounts = kortixSchema.table(
     personalAccount: boolean('personal_account').default(true).notNull(),
     setupCompleteAt: timestamp('setup_complete_at', { withTimezone: true }),
     setupWizardStep: integer('setup_wizard_step').default(0).notNull(),
-    // When true the IAM engine ignores the legacy account_role +
-    // project_members bridges — only super-admin bypass and explicit IAM
-    // policies grant access. Off by default so existing accounts keep
-    // working with no changes.
-    iamStrictMode: boolean('iam_strict_mode').default(false).notNull(),
     // When true the IAM engine rejects every browser/JWT request whose
     // session is not at AAL2 (MFA-verified). PATs are exempt — they're
     // expected to gate via per-policy require_mfa conditions instead.
@@ -135,16 +130,6 @@ export const accounts = kortixSchema.table(
     /** When set, PATs not used in this many days are auto-revoked on
      *  next validate. NULL = no idle gate. Units: days. */
     patIdleRevokeDays: integer('pat_idle_revoke_days'),
-    /** When true, a curated set of sensitive IAM actions requires
-     *  approval from a second super-admin before they execute. Off by
-     *  default — accounts opt in via the Settings UI. */
-    iamApprovalsRequired: boolean('iam_approvals_required').default(false).notNull(),
-    /** IAM V2 mode. When true, the engine ignores iam_policies entirely
-     *  and decides access from account_members.account_role +
-     *  project_members + project_group_grants. Defaults to true for new
-     *  accounts; existing rows are migrated via scripts/migrate-iam-to-v2
-     *  (run with --enable-flag) once the parity validator passes. */
-    iamV2Enabled: boolean('iam_v2_enabled').default(true).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -158,30 +143,8 @@ export const accountMembers = kortixSchema.table(
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     accountRole: accountRoleEnum('account_role').default('owner').notNull(),
-    // Super-admin bypasses all IAM policy evaluation. Distinct from accountRole.
+    // Super-admin bypasses all IAM permission evaluation. Distinct from accountRole.
     isSuperAdmin: boolean('is_super_admin').default(false).notNull(),
-    // Permission boundary: max envelope of action prefixes this member
-    // can ever be granted, regardless of how many allow-policies cover
-    // them. AWS-style guardrail to prevent privilege escalation through
-    // delegated admin. NULL = no boundary (no clipping). Shape:
-    //   { allow_action_prefixes: ['project.', 'sandbox.read'] }
-    // Empty array = "no actions allowed" (effective deny-all). Super-
-    // admins bypass — boundaries can't lock out the people who set them.
-    permissionBoundary: jsonb('permission_boundary').$type<{
-      allow_action_prefixes: string[];
-    } | null>(),
-    // Cross-account sharing: when true this member is an EXTERNAL user
-    // (consultant, contractor) attached to the account so admins can
-    // grant them specific access without consuming a regular seat. The
-    // engine treats them like a member — same policy lookups, same
-    // groups — but the UI lists them separately and they can carry an
-    // optional auto-revoke timestamp.
-    isExternal: boolean('is_external').default(false).notNull(),
-    externalGrantExpiresAt: timestamp('external_grant_expires_at', {
-      withTimezone: true,
-    }),
-    externalGrantedBy: uuid('external_granted_by'),
-    externalNote: text('external_note'),
     // External identifier set by an upstream IdP via SCIM. Null = managed
     // locally (invited via UI or API). When set, the IdP "owns" this row —
     // deactivating the user there should mirror here.
@@ -925,7 +888,6 @@ export const deployments = kortixSchema.table(
 );
 
 
-
 // ─── API Keys (sandbox-scoped) ──────────────────────────────────────────────
 
 export const kortixApiKeys = kortixSchema.table(
@@ -1222,8 +1184,6 @@ export const accountsRelations = relations(accounts, ({ many }) => ({
   projectRuntimeSnapshots: many(projectRuntimeSnapshots),
   sandboxes: many(sandboxes),
   groups: many(accountGroups),
-  iamRoles: many(iamRoles),
-  iamPolicies: many(iamPolicies),
 }));
 
 export const accountMembersRelations = relations(accountMembers, ({ one }) => ({
@@ -1816,41 +1776,6 @@ export const accountGroupSourceEnum = kortixSchema.enum('account_group_source', 
   'scim',
 ]);
 
-export const iamPrincipalTypeEnum = kortixSchema.enum('iam_principal_type', [
-  'member',
-  'group',
-  'token',
-]);
-
-export const iamPolicyEffectEnum = kortixSchema.enum('iam_policy_effect', [
-  'allow',
-  'deny',
-]);
-
-export const iamScopeTypeEnum = kortixSchema.enum('iam_scope_type', [
-  'account',
-  'project',
-  'sandbox',
-  'trigger',
-  'channel',
-  'member',
-  'group',
-  // Resource group: scope_id references project_groups.group_id. The
-  // engine resolves "is the target project a member of that group?"
-  // before matching.
-  'project_group',
-]);
-
-export const iamResourceTypeEnum = kortixSchema.enum('iam_resource_type', [
-  'account',
-  'project',
-  'sandbox',
-  'trigger',
-  'channel',
-  'member',
-  'group',
-]);
-
 export const accountGroups = kortixSchema.table(
   'account_groups',
   {
@@ -1919,119 +1844,6 @@ export const projectGroupGrants = kortixSchema.table(
   ],
 );
 
-export const iamRoles = kortixSchema.table(
-  'iam_roles',
-  {
-    roleId: uuid('role_id').defaultRandom().primaryKey(),
-    // NULL accountId means a built-in system role available to every account.
-    accountId: uuid('account_id').references(() => accounts.accountId, {
-      onDelete: 'cascade',
-    }),
-    key: varchar('key', { length: 64 }).notNull(),
-    name: varchar('name', { length: 128 }).notNull(),
-    description: text('description'),
-    resourceType: iamResourceTypeEnum('resource_type').notNull(),
-    isSystem: boolean('is_system').default(false).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_iam_roles_account').on(table.accountId),
-    index('idx_iam_roles_resource_type').on(table.resourceType),
-    // System roles (account_id IS NULL) must have globally unique keys.
-    uniqueIndex('idx_iam_roles_system_key')
-      .on(table.key)
-      .where(sql`${table.accountId} IS NULL`),
-    // Per-account custom roles unique within the account.
-    uniqueIndex('idx_iam_roles_account_key')
-      .on(table.accountId, table.key)
-      .where(sql`${table.accountId} IS NOT NULL`),
-  ],
-);
-
-export const iamRolePermissions = kortixSchema.table(
-  'iam_role_permissions',
-  {
-    roleId: uuid('role_id')
-      .notNull()
-      .references(() => iamRoles.roleId, { onDelete: 'cascade' }),
-    action: varchar('action', { length: 128 }).notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.roleId, table.action] }),
-    index('idx_iam_role_permissions_action').on(table.action),
-  ],
-);
-
-export const iamPolicies = kortixSchema.table(
-  'iam_policies',
-  {
-    policyId: uuid('policy_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    principalType: iamPrincipalTypeEnum('principal_type').notNull(),
-    // For 'member' → auth.users.id; for 'group' → account_groups.group_id;
-    // for 'token' → account_tokens.token_id. Not a FK because target table varies.
-    principalId: uuid('principal_id').notNull(),
-    scopeType: iamScopeTypeEnum('scope_type').notNull(),
-    // NULL = "all resources of this scope_type within the account".
-    // For scope_type='account' this column must be NULL (the Everything scope).
-    scopeId: uuid('scope_id'),
-    roleId: uuid('role_id')
-      .notNull()
-      .references(() => iamRoles.roleId, { onDelete: 'restrict' }),
-    // 'allow' grants the role's actions; 'deny' subtracts them and wins over
-    // any allow on the same action+scope. Engine handles precedence.
-    effect: iamPolicyEffectEnum('effect').default('allow').notNull(),
-    // Optional extra checks applied AFTER scope+role match. If any condition
-    // fails, the policy doesn't apply. Supported keys (v1):
-    //   ip_cidrs:  string[]  — request IP must fall in one of these CIDRs
-    //   require_mfa: boolean — JWT must be at AAL2 (MFA-verified session)
-    // Unrecognised keys are ignored so old engines tolerate forward-rolled
-    // policies. Empty object {} = unconditional (the default).
-    conditions: jsonb('conditions').default({}).$type<Record<string, unknown>>(),
-    /** Optional hard expiry. NULL = permanent. The engine filters
-     *  expired rows out of every SQL query so a cleanup job is
-     *  optional — expired policies stop applying the moment the clock
-     *  crosses this timestamp. */
-    expiresAt: timestamp('expires_at', { withTimezone: true }),
-    createdBy: uuid('created_by'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_iam_policies_account').on(table.accountId),
-    index('idx_iam_policies_principal').on(table.accountId, table.principalType, table.principalId),
-    index('idx_iam_policies_scope').on(table.accountId, table.scopeType, table.scopeId),
-    index('idx_iam_policies_role').on(table.roleId),
-    // Dedupe policies. Split into two partial indexes because Postgres treats
-    // NULLs as distinct by default and we want them treated as equal. Effect
-    // is part of the key so an allow + deny on the same (principal, scope,
-    // role) can coexist — useful for "grant role, then carve out exception".
-    uniqueIndex('idx_iam_policies_unique_with_scope')
-      .on(
-        table.accountId,
-        table.principalType,
-        table.principalId,
-        table.scopeType,
-        table.scopeId,
-        table.roleId,
-        table.effect,
-      )
-      .where(sql`${table.scopeId} IS NOT NULL`),
-    uniqueIndex('idx_iam_policies_unique_no_scope')
-      .on(
-        table.accountId,
-        table.principalType,
-        table.principalId,
-        table.scopeType,
-        table.roleId,
-        table.effect,
-      )
-      .where(sql`${table.scopeId} IS NULL`),
-  ],
-);
 
 export const accountGroupsRelations = relations(accountGroups, ({ one, many }) => ({
   account: one(accounts, {
@@ -2048,32 +1860,6 @@ export const accountGroupMembersRelations = relations(accountGroupMembers, ({ on
   }),
 }));
 
-export const iamRolesRelations = relations(iamRoles, ({ one, many }) => ({
-  account: one(accounts, {
-    fields: [iamRoles.accountId],
-    references: [accounts.accountId],
-  }),
-  permissions: many(iamRolePermissions),
-  policies: many(iamPolicies),
-}));
-
-export const iamRolePermissionsRelations = relations(iamRolePermissions, ({ one }) => ({
-  role: one(iamRoles, {
-    fields: [iamRolePermissions.roleId],
-    references: [iamRoles.roleId],
-  }),
-}));
-
-export const iamPoliciesRelations = relations(iamPolicies, ({ one }) => ({
-  account: one(accounts, {
-    fields: [iamPolicies.accountId],
-    references: [accounts.accountId],
-  }),
-  role: one(iamRoles, {
-    fields: [iamPolicies.roleId],
-    references: [iamRoles.roleId],
-  }),
-}));
 
 // ─── SCIM 2.0 provisioning tokens ──────────────────────────────────────────
 // Long-lived bearer tokens used by external IdPs (Okta, Azure AD, etc.) to
@@ -2236,42 +2022,6 @@ export const serviceAccounts = kortixSchema.table(
 // scope type and resolves "is target project in this group?" at match
 // time.
 
-export const projectGroups = kortixSchema.table(
-  'project_groups',
-  {
-    groupId: uuid('group_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    name: varchar('name', { length: 128 }).notNull(),
-    description: text('description'),
-    createdBy: uuid('created_by'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_project_groups_account').on(table.accountId),
-    uniqueIndex('idx_project_groups_account_name').on(table.accountId, table.name),
-  ],
-);
-
-export const projectGroupMembers = kortixSchema.table(
-  'project_group_members',
-  {
-    groupId: uuid('group_id')
-      .notNull()
-      .references(() => projectGroups.groupId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    addedAt: timestamp('added_at', { withTimezone: true }).defaultNow().notNull(),
-    addedBy: uuid('added_by'),
-  },
-  (table) => [
-    primaryKey({ columns: [table.groupId, table.projectId] }),
-    index('idx_project_group_members_project').on(table.projectId),
-  ],
-);
 
 // ─── Permission usage analytics ("Access Analyzer") ────────────────────────
 // Counters of every (user, action) the IAM engine has allowed in this
@@ -2280,31 +2030,6 @@ export const projectGroupMembers = kortixSchema.table(
 // unused privileges. Denies are NOT tracked here — that's a separate
 // "denied attempts" feature.
 
-export const iamActionUsage = kortixSchema.table(
-  'iam_action_usage',
-  {
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    /** Either a real user_id (browser sessions, PAT minters) OR a PAT's
-     *  token_id when the call came via a token with its own policies.
-     *  Distinguished by principalKind. */
-    principalId: uuid('principal_id').notNull(),
-    /** 'user' (account_members.user_id) or 'token' (account_tokens.token_id). */
-    principalKind: varchar('principal_kind', { length: 8 }).notNull(),
-    /** Canonical action key from the action catalog. */
-    action: varchar('action', { length: 128 }).notNull(),
-    callCount: bigint('call_count', { mode: 'number' }).default(0).notNull(),
-    firstUsedAt: timestamp('first_used_at', { withTimezone: true }).defaultNow().notNull(),
-    lastUsedAt: timestamp('last_used_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.accountId, table.principalKind, table.principalId, table.action] }),
-    index('idx_iam_action_usage_account').on(table.accountId),
-    index('idx_iam_action_usage_principal').on(table.accountId, table.principalKind, table.principalId),
-    index('idx_iam_action_usage_action').on(table.accountId, table.action),
-  ],
-);
 
 // ─── Break-glass emergency access ──────────────────────────────────────────
 // Time-bounded super-admin grant a privileged member can self-activate
@@ -2318,28 +2043,6 @@ export const iamActionUsage = kortixSchema.table(
 // activate. That keeps the same admin trust boundary — break-glass
 // formalises emergency promotion without inventing a new privilege.
 
-export const iamBreakGlassGrants = kortixSchema.table(
-  'iam_break_glass_grants',
-  {
-    grantId: uuid('grant_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    userId: uuid('user_id').notNull(),
-    /** Free-text reason. Required at activation. Surfaced in audit. */
-    reason: text('reason').notNull(),
-    activatedAt: timestamp('activated_at', { withTimezone: true }).defaultNow().notNull(),
-    /** Hard cap on the grant's lifetime. The engine refuses bypass
-     *  past this timestamp without needing a cleanup job. */
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    revokedAt: timestamp('revoked_at', { withTimezone: true }),
-    revokedBy: uuid('revoked_by'),
-  },
-  (table) => [
-    index('idx_iam_break_glass_account').on(table.accountId),
-    index('idx_iam_break_glass_active').on(table.accountId, table.userId, table.expiresAt),
-  ],
-);
 
 // ─── Approval requests for sensitive IAM actions ───────────────────────────
 // Two-phase pattern: the sensitive endpoint stores the requested action
@@ -2351,42 +2054,6 @@ export const iamBreakGlassGrants = kortixSchema.table(
 //   - iam.mfa_required.disable
 //   - account.delete
 
-export const iamApprovalRequests = kortixSchema.table(
-  'iam_approval_requests',
-  {
-    requestId: uuid('request_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    /** Canonical action key (matches the action catalog). */
-    action: varchar('action', { length: 128 }).notNull(),
-    /** Optional resource id the action targets — drives the audit log
-     *  + the "approve" handler when it needs a target. */
-    targetId: uuid('target_id'),
-    /** Frozen request body captured at create time. The approver re-
-     *  executes the exact payload, so the requester can't sneakily
-     *  swap parameters between create and approve. */
-    payload: jsonb('payload').default({}).$type<Record<string, unknown>>().notNull(),
-    /** Free-text reason the requester gave. Surfaced to approvers. */
-    requesterReason: text('requester_reason'),
-    requestedBy: uuid('requested_by').notNull(),
-    requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
-    /** Auto-expires after 24h by default; configurable per-request. */
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    status: varchar('status', { length: 16 }).default('pending').notNull(),
-    decidedBy: uuid('decided_by'),
-    decidedAt: timestamp('decided_at', { withTimezone: true }),
-    decisionReason: text('decision_reason'),
-    /** Filled when status='approved' and the deferred action ran
-     *  successfully. Set to the error message when execution failed. */
-    executionResult: text('execution_result'),
-  },
-  (table) => [
-    index('idx_iam_approval_requests_account').on(table.accountId),
-    index('idx_iam_approval_requests_status').on(table.accountId, table.status),
-    index('idx_iam_approval_requests_requested_by').on(table.requestedBy),
-  ],
-);
 
 // ─── Session activity (per account × user × session) ──────────────────────
 // Tracks idle time + active sessions per account. One row per
