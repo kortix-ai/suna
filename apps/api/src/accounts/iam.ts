@@ -1472,6 +1472,139 @@ iamRouter.get('/:accountId/iam/members/:userId/groups', async (c) => {
   });
 });
 
+// V2-only: which projects does this member reach, and at what role?
+// Combines three sources, max-role per project:
+//   1. account_members.account_role of 'owner' or 'admin' → implicit
+//      Manager on every active project in the account
+//   2. direct project_members.project_role rows
+//   3. project_group_grants for any group the user belongs to
+// V1 callers can use the route too — the data is real either way — but
+// the V1 UI doesn't surface it (PoliciesTable is the equivalent V1 view).
+iamRouter.get('/:accountId/iam/members/:userId/project-access', async (c) => {
+  const callerId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const targetUserId = c.req.param('userId');
+
+  if (callerId !== targetUserId) {
+    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+  }
+
+  type Role = 'manager' | 'editor' | 'viewer';
+  const rank: Record<Role, number> = { viewer: 1, editor: 2, manager: 3 };
+  const max = (a: Role, b: Role): Role => (rank[a] >= rank[b] ? a : b);
+
+  // Project info we'll need for every row in the response.
+  const allProjects = await db
+    .select({
+      projectId: projects.projectId,
+      name: projects.name,
+      status: projects.status,
+    })
+    .from(projects)
+    .where(eq(projects.accountId, accountId));
+  const projectMeta = new Map(allProjects.map((p) => [p.projectId, p] as const));
+
+  // 1) implicit manager via account_role
+  const [membership] = await db
+    .select({ accountRole: accountMembers.accountRole })
+    .from(accountMembers)
+    .where(
+      and(
+        eq(accountMembers.accountId, accountId),
+        eq(accountMembers.userId, targetUserId),
+      ),
+    )
+    .limit(1);
+  if (!membership) {
+    return c.json({ projects: [] });
+  }
+
+  const byProject = new Map<
+    string,
+    { role: Role; sources: ('implicit' | 'direct' | 'group')[] }
+  >();
+  if (membership.accountRole === 'owner' || membership.accountRole === 'admin') {
+    for (const p of allProjects) {
+      if (p.status !== 'active') continue;
+      byProject.set(p.projectId, { role: 'manager', sources: ['implicit'] });
+    }
+  }
+
+  // 2) direct project_members rows
+  const directRows = await db
+    .select({
+      projectId: projectMembers.projectId,
+      role: projectMembers.projectRole,
+    })
+    .from(projectMembers)
+    .where(
+      and(
+        eq(projectMembers.accountId, accountId),
+        eq(projectMembers.userId, targetUserId),
+      ),
+    );
+  for (const r of directRows) {
+    const role = r.role as Role;
+    const cur = byProject.get(r.projectId);
+    if (cur) {
+      cur.role = max(cur.role, role);
+      if (!cur.sources.includes('direct')) cur.sources.push('direct');
+    } else {
+      byProject.set(r.projectId, { role, sources: ['direct'] });
+    }
+  }
+
+  // 3) group grants for any group this user belongs to
+  const groupMembershipRows = await db
+    .select({ groupId: accountGroupMembers.groupId })
+    .from(accountGroupMembers)
+    .where(eq(accountGroupMembers.userId, targetUserId));
+  const groupIds = groupMembershipRows.map((g) => g.groupId);
+  if (groupIds.length > 0) {
+    const grantRows = await db
+      .select({
+        projectId: projectGroupGrants.projectId,
+        role: projectGroupGrants.role,
+      })
+      .from(projectGroupGrants)
+      .where(
+        and(
+          eq(projectGroupGrants.accountId, accountId),
+          inArray(projectGroupGrants.groupId, groupIds),
+        ),
+      );
+    for (const r of grantRows) {
+      const role = r.role as Role;
+      const cur = byProject.get(r.projectId);
+      if (cur) {
+        cur.role = max(cur.role, role);
+        if (!cur.sources.includes('group')) cur.sources.push('group');
+      } else {
+        byProject.set(r.projectId, { role, sources: ['group'] });
+      }
+    }
+  }
+
+  const out: Array<{
+    project_id: string;
+    project_name: string;
+    role: Role;
+    sources: ('implicit' | 'direct' | 'group')[];
+  }> = [];
+  for (const [projectId, info] of byProject) {
+    const meta = projectMeta.get(projectId);
+    if (!meta || meta.status !== 'active') continue;
+    out.push({
+      project_id: projectId,
+      project_name: meta.name,
+      role: info.role,
+      sources: info.sources,
+    });
+  }
+  out.sort((a, b) => a.project_name.localeCompare(b.project_name));
+  return c.json({ projects: out });
+});
+
 // ─── Effective permissions probe ───────────────────────────────────────────
 // The UI uses this to render "what can this user actually do".
 

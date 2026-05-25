@@ -199,6 +199,26 @@ export async function listMemberGroups(accountId: string, userId: string) {
   ).groups;
 }
 
+// V2-only: which projects can this member reach, at what role, and how?
+// `sources` tells the UI why they have access (one or more of):
+//   implicit — they're an account owner/admin (manager on every project)
+//   direct   — explicit project_members row
+//   group    — inherited from a project_group_grants attachment
+export interface MemberProjectAccess {
+  project_id: string;
+  project_name: string;
+  role: 'manager' | 'editor' | 'viewer';
+  sources: Array<'implicit' | 'direct' | 'group'>;
+}
+
+export async function listMemberProjectAccess(accountId: string, userId: string) {
+  return unwrap(
+    await backendApi.get<{ projects: MemberProjectAccess[] }>(
+      `/accounts/${accountId}/iam/members/${userId}/project-access`,
+    ),
+  ).projects;
+}
+
 // ─── Policies ──────────────────────────────────────────────────────────────
 
 export interface ListPoliciesFilter {
