@@ -51,17 +51,28 @@ export async function listGroups(accountId: string): Promise<
       externalId: accountGroups.externalId,
       createdAt: accountGroups.createdAt,
       updatedAt: accountGroups.updatedAt,
+      // IMPORTANT: hard-code the outer table reference in these correlated
+      // subqueries. Drizzle's ${accountGroups.groupId} interpolation emits
+      // the bare "group_id" without a table prefix, so Postgres resolves
+      // both sides of `WHERE x.group_id = "group_id"` to the inner alias
+      // and the filter degenerates to `WHERE TRUE` — counts come back as
+      // table-wide totals. Aliasing the inner table doesn't help by
+      // itself; what we need is the OUTER reference to be unambiguously
+      // kortix.account_groups.group_id. policyCount is safe-by-accident
+      // because principal_id has a different name; keep all three
+      // consistent so the next person doesn't trip on the same rake.
       memberCount: sql<number>`(
-        SELECT COUNT(*)::int FROM kortix.account_group_members
-        WHERE group_id = ${accountGroups.groupId}
+        SELECT COUNT(*)::int FROM kortix.account_group_members agm
+        WHERE agm.group_id = kortix.account_groups.group_id
       )`,
       policyCount: sql<number>`(
-        SELECT COUNT(*)::int FROM kortix.iam_policies
-        WHERE principal_type = 'group' AND principal_id = ${accountGroups.groupId}
+        SELECT COUNT(*)::int FROM kortix.iam_policies p
+        WHERE p.principal_type = 'group'
+          AND p.principal_id = kortix.account_groups.group_id
       )`,
       projectCount: sql<number>`(
-        SELECT COUNT(*)::int FROM kortix.project_group_grants
-        WHERE group_id = ${accountGroups.groupId}
+        SELECT COUNT(*)::int FROM kortix.project_group_grants pgg
+        WHERE pgg.group_id = kortix.account_groups.group_id
       )`,
     })
     .from(accountGroups)
