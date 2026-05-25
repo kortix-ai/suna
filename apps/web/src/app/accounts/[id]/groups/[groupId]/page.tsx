@@ -239,13 +239,49 @@ function GroupMembersCard({
     staleTime: 30_000,
   });
 
-  const emailByUserId = useMemo(() => {
-    const map = new Map<string, string>();
+  // Combined index of account-level info per user_id. Lets the group
+  // members list show emails AND surface the account role badge — owners
+  // and admins implicitly have Manager on every project, which overrides
+  // any group-level role on that project. Worth flagging here so an
+  // admin who adds another admin to a "Viewer" group understands the
+  // grant is mostly cosmetic for that user.
+  type AccountMeta = {
+    email: string | null;
+    accountRole: 'owner' | 'admin' | 'member';
+    isSuperAdmin: boolean;
+  };
+  const accountMetaByUserId = useMemo(() => {
+    const map = new Map<string, AccountMeta>();
     for (const m of accountMembersQuery.data ?? []) {
-      if (m.email) map.set(m.user_id, m.email);
+      map.set(m.user_id, {
+        email: m.email,
+        accountRole: m.account_role,
+        isSuperAdmin: !!m.is_super_admin,
+      });
     }
     return map;
   }, [accountMembersQuery.data]);
+  const emailByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [id, meta] of accountMetaByUserId) {
+      if (meta.email) map.set(id, meta.email);
+    }
+    return map;
+  }, [accountMetaByUserId]);
+
+  // Members whose account role overrides this group's project grants.
+  // Owners + admins both get implicit Manager on every project; super
+  // admins bypass every IAM check entirely.
+  const overrideCount = useMemo(() => {
+    const members = membersQuery.data ?? [];
+    let n = 0;
+    for (const m of members) {
+      const meta = accountMetaByUserId.get(m.user_id);
+      if (!meta) continue;
+      if (meta.isSuperAdmin || meta.accountRole === 'owner' || meta.accountRole === 'admin') n++;
+    }
+    return n;
+  }, [membersQuery.data, accountMetaByUserId]);
 
   const removeMutation = useMutation({
     mutationFn: (userId: string) => removeGroupMember(accountId, groupId, userId),
@@ -295,43 +331,92 @@ function GroupMembersCard({
         />
       )}
 
+      {!membersQuery.isLoading && members.length > 0 && overrideCount > 0 && (
+        <div className="border-b border-border/60 bg-amber-500/5 px-6 py-2.5 text-xs text-amber-700 dark:text-amber-300">
+          <span className="font-medium">Heads-up:</span>{' '}
+          {overrideCount} {overrideCount === 1 ? 'member is' : 'members are'} an
+          account owner or admin. They get Manager on every project regardless
+          of this group&apos;s role.
+        </div>
+      )}
+
       {!membersQuery.isLoading && members.length > 0 && (
         <List>
-          {members.map((m) => {
-            const label = emailByUserId.get(m.user_id) ?? m.user_id;
-            return (
-              <ListRow
-                key={m.user_id}
-                leading={<UserAvatar email={label} size="md" />}
-                title={label}
-                subtitle={
-                  <InlineMeta>
-                    <span>
-                      Added{' '}
-                      {new Date(m.added_at).toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </span>
-                  </InlineMeta>
-                }
-                trailing={
-                  canManage && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                      onClick={() => setRemoveTarget(m.user_id)}
-                      aria-label={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line312JsxAttrAriaLabelRemoveFromGroup')}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )
-                }
-              />
-            );
-          })}
+          {[...members]
+            .sort((a, b) => {
+              // Override-prone rows (owner / admin / super-admin) float to the
+              // top so the warning above maps cleanly onto the first N rows.
+              const rank = (uid: string) => {
+                const meta = accountMetaByUserId.get(uid);
+                if (!meta) return 4;
+                if (meta.isSuperAdmin) return 0;
+                if (meta.accountRole === 'owner') return 1;
+                if (meta.accountRole === 'admin') return 2;
+                return 3;
+              };
+              const ra = rank(a.user_id);
+              const rb = rank(b.user_id);
+              if (ra !== rb) return ra - rb;
+              return new Date(a.added_at).getTime() - new Date(b.added_at).getTime();
+            })
+            .map((m) => {
+              const label = emailByUserId.get(m.user_id) ?? m.user_id;
+              const meta = accountMetaByUserId.get(m.user_id);
+              const overrides =
+                !!meta &&
+                (meta.isSuperAdmin ||
+                  meta.accountRole === 'owner' ||
+                  meta.accountRole === 'admin');
+              const badgeLabel = meta?.isSuperAdmin
+                ? 'super admin'
+                : meta?.accountRole;
+              return (
+                <ListRow
+                  key={m.user_id}
+                  leading={<UserAvatar email={label} size="md" />}
+                  title={label}
+                  badges={
+                    overrides && badgeLabel ? (
+                      <span
+                        className="rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal capitalize text-amber-700 dark:text-amber-300"
+                        title="Account owners and admins always have Manager access on every project, regardless of group role."
+                      >
+                        {badgeLabel}
+                      </span>
+                    ) : meta?.accountRole === 'member' ? (
+                      <span className="rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize text-muted-foreground">
+                        member
+                      </span>
+                    ) : null
+                  }
+                  subtitle={
+                    <InlineMeta>
+                      <span>
+                        Added{' '}
+                        {new Date(m.added_at).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </span>
+                    </InlineMeta>
+                  }
+                  trailing={
+                    canManage && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        onClick={() => setRemoveTarget(m.user_id)}
+                        aria-label={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line312JsxAttrAriaLabelRemoveFromGroup')}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )
+                  }
+                />
+              );
+            })}
         </List>
       )}
 
@@ -656,7 +741,7 @@ function GroupProjectGrantsCard({
     <SectionCard
       flush
       title="Project access"
-      description={`Projects "${groupName}" is attached to. Every group member inherits the chosen role on that project.`}
+      description={`Projects "${groupName}" is attached to. Every group member inherits the chosen role on that project — except account owners and admins, who always have Manager.`}
       count={grants.length}
       action={
         <Button size="sm" className="gap-1.5" onClick={() => setAttachOpen(true)}>
