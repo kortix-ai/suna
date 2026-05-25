@@ -1,6 +1,10 @@
-// authorize / assertAuthorized / listAccessibleResources are dispatched
-// per-account between the V1 (policy-based) and V2 (role-based) engines
-// via the iam_v2_enabled flag. Routes never see which engine answered.
+// Public IAM surface for the rest of the codebase.
+//
+// authorize / assertAuthorized / listAccessibleResources all go through
+// the V2 engine (the V1 policy engine and its dispatcher were retired
+// in PR5). invalidateIamV2Flag is kept as a no-op for binary
+// compatibility with the V1→V2 migration script, which is the last
+// caller of it.
 export {
   authorize,
   assertAuthorized,
@@ -8,14 +12,9 @@ export {
   invalidateIamV2Flag,
 } from './dispatcher';
 export {
-  checkConditions,
-  actionPassesBoundary,
   type AccessibleResources,
   type AuthorizeTarget,
   type AuthorizeResult,
-  type PolicyConditions,
-  type PolicyScopeType,
-  type PermissionBoundary,
   type RequestContext,
 } from './engine';
 export { authorizeCached, deriveRequestContext } from './cache';
@@ -34,15 +33,18 @@ export {
   type ActionCatalogEntry,
   type ResourceType,
 } from './actions';
-export { seedSystemRoles, SYSTEM_ROLES, SYSTEM_ROLE_KEY } from './system-roles';
-export {
-  backfillMembershipPolicies,
-  backfillAccountMembershipPolicies,
-} from './backfill';
+
+// V1 membership-sync + system-roles surface. These are no-ops on V2 (V2
+// reads account_members / project_members directly) but the import names
+// stay live so existing call sites in accounts/, invites, projects/, and
+// the boot routine keep compiling without churn. See legacy-shims.ts.
 export {
   syncMemberAccountPolicy,
   removeMemberPolicies,
   removeProjectPoliciesForMember,
   syncProjectMemberPolicy,
   removeProjectMemberPolicy,
-} from './membership-sync';
+  backfillMembershipPolicies,
+  backfillAccountMembershipPolicies,
+  seedSystemRoles,
+} from './legacy-shims';

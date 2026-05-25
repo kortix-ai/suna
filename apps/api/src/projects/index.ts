@@ -2339,11 +2339,11 @@ projectsApp.get('/', async (c) => {
       | undefined) ?? undefined;
   const requestCtx = deriveRequestContext(c);
 
-  // Ask the IAM engine which projects the caller can READ. Returns one
-  // of: { mode: 'all' } | { mode: 'none' } | { mode: 'all_except' } |
-  // { mode: 'allow_only' }. The engine handles super-admin bypass,
-  // legacy owner/admin/member bridges, project_members rows, group
-  // policies, project_group expansion, conditions, expiry — everything.
+  // Ask the IAM engine which projects the caller can READ. V2 returns
+  // one of: { mode: 'all' } | { mode: 'none' } | { mode: 'allow_only' }.
+  // 'all' = account admin/owner (manager on every project); 'allow_only'
+  // = enumerated project IDs from direct project_members + group grants;
+  // 'none' = no access.
   const accessible = await listAccessibleResources(
     scope.userId,
     scope.accountId,
@@ -2379,23 +2379,14 @@ projectsApp.get('/', async (c) => {
   let rows: Array<typeof projects.$inferSelect>;
   if (accessible.mode === 'all') {
     rows = await db.select().from(projects).where(baseWhere).orderBy(desc(projects.updatedAt));
-  } else if (accessible.mode === 'allow_only') {
+  } else {
+    // mode === 'allow_only'. The 'none' case was returned above.
     if (accessible.allowed.size === 0) return c.json([]);
     rows = await db
       .select()
       .from(projects)
       .where(and(baseWhere, inArray(projects.projectId, [...accessible.allowed])))
       .orderBy(desc(projects.updatedAt));
-  } else {
-    // all_except — fetch everything, then filter denied ids in-memory.
-    // For account sizes well under a few thousand projects this beats a
-    // NOT IN (…) query that the planner often handles poorly.
-    const all = await db
-      .select()
-      .from(projects)
-      .where(baseWhere)
-      .orderBy(desc(projects.updatedAt));
-    rows = all.filter((r) => !accessible.denied.has(r.projectId));
   }
 
   // Heuristic for effective_role label (UI only, NOT auth):
