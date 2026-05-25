@@ -5521,12 +5521,17 @@ export function SessionChat({
 
         // Thrown = network/transport failure (request didn't complete).
         if (caught) {
-          console.error('[session-chat] send threw', {
-            sessionId,
-            attempt,
-            activeUrl: getActiveOpenCodeUrl(),
-            error: caughtErr,
-          });
+          // Lead with a readable string; the dev overlay renders complex error
+          // objects that embed a non-enumerable Response as a useless `{}`.
+          console.error(
+            `[session-chat] send threw (attempt ${attempt}): ${formatCommandError(caughtErr)}`,
+            {
+              sessionId,
+              attempt,
+              activeUrl: getActiveOpenCodeUrl(),
+              error: caughtErr,
+            },
+          );
           if (attempt < maxAttempts) {
             await sleep(retryBackoffMs[attempt - 1]);
             continue;
@@ -5543,14 +5548,19 @@ export function SessionChat({
           const status = res?.response?.status as number | undefined;
           // Full ground truth in the console so we stop guessing the cause:
           // the exact status, the URL it actually hit, and the error body.
-          console.error('[session-chat] send failed', {
-            sessionId,
-            attempt,
-            status,
-            requestedUrl: res?.response?.url,
-            activeUrl: getActiveOpenCodeUrl(),
-            error: res?.error,
-          });
+          // Lead with a readable string; the dev overlay renders the raw SDK
+          // error object that embeds a non-enumerable Response as `{}`.
+          console.error(
+            `[session-chat] send failed (HTTP ${status ?? 'unknown'}, attempt ${attempt}): ${formatCommandError(res?.error)}`,
+            {
+              sessionId,
+              attempt,
+              status,
+              requestedUrl: res?.response?.url,
+              activeUrl: getActiveOpenCodeUrl(),
+              error: res?.error,
+            },
+          );
           const transient =
             status === undefined || status >= 500 || status === 408 || status === 429;
           if (transient && attempt < maxAttempts) {
@@ -5562,10 +5572,19 @@ export function SessionChat({
           // message" hides whether this was a 4xx (bad request/auth/model) or
           // a 5xx/proxy blip. Lead with the server's message if it gave one,
           // otherwise show the HTTP status so it's diagnosable at a glance.
+          const extracted = formatCommandError(res?.error);
           const detail =
             (typeof res.error?.data?.message === 'string' && res.error.data.message) ||
             (typeof res.error === 'string' && res.error) ||
-            null;
+            // formatCommandError falls back to JSON.stringify / a generic
+            // placeholder; only trust it as toast copy when it produced a
+            // short, human-readable line, not a raw object dump.
+            (extracted &&
+            extracted !== 'Command failed' &&
+            !extracted.startsWith('{') &&
+            extracted.length <= 160
+              ? extracted
+              : null);
           throw new Error(
             detail ?? `Couldn’t send your message (HTTP ${status ?? 'unknown'}).`,
           );
