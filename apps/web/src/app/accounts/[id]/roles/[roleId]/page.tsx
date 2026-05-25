@@ -30,6 +30,7 @@ import {
 } from '@/lib/iam-client';
 import { getAccount } from '@/lib/projects-client';
 import { usePermission } from '@/lib/use-permission';
+import { useIamV2Enabled } from '@/lib/use-iam-version';
 
 export default function RoleDetailPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -46,6 +47,17 @@ export default function RoleDetailPage() {
     enabled: !!user && !!accountId,
     staleTime: 30_000,
   });
+
+  // Custom roles only exist on V1. On V2 accounts this URL is reachable
+  // only via direct nav (the Roles tab is hidden) — bounce back to the
+  // account page so the user lands somewhere meaningful instead of a
+  // half-broken V1 surface.
+  const { enabled: isIamV2, isLoading: iamVersionLoading } = useIamV2Enabled(accountId);
+  useEffect(() => {
+    if (!iamVersionLoading && isIamV2 && accountId) {
+      router.replace(`/accounts/${accountId}`);
+    }
+  }, [iamVersionLoading, isIamV2, accountId, router]);
 
   // Use the roles list query so navigation between the tab and detail page
   // shares cache. Fetching a single role by id would require a new endpoint
