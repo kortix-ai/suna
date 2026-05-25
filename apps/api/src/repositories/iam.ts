@@ -32,7 +32,12 @@ export async function listGroups(accountId: string): Promise<
   Array<
     AccountGroup & {
       memberCount: number;
+      /** V1 surface: number of iam_policies referencing this group. */
       policyCount: number;
+      /** V2 surface: number of project_group_grants attaching this group
+       *  to a project. The frontend swaps which number it shows based on
+       *  the per-account iam_v2_enabled flag. */
+      projectCount: number;
     }
   >
 > {
@@ -53,6 +58,10 @@ export async function listGroups(accountId: string): Promise<
       policyCount: sql<number>`(
         SELECT COUNT(*)::int FROM kortix.iam_policies
         WHERE principal_type = 'group' AND principal_id = ${accountGroups.groupId}
+      )`,
+      projectCount: sql<number>`(
+        SELECT COUNT(*)::int FROM kortix.project_group_grants
+        WHERE group_id = ${accountGroups.groupId}
       )`,
     })
     .from(accountGroups)

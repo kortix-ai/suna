@@ -298,7 +298,10 @@ iamRouter.get('/:accountId/iam/groups', async (c) => {
       description: g.description,
       source: g.source,
       member_count: g.memberCount,
+      // V1 surface — number of iam_policies referencing this group.
       policy_count: g.policyCount,
+      // V2 surface — number of project_group_grants for this group.
+      project_count: g.projectCount,
       created_at: g.createdAt.toISOString(),
       updated_at: g.updatedAt.toISOString(),
     })),
