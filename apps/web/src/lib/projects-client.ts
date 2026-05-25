@@ -66,6 +66,12 @@ export interface AccountMember {
   joined_at: string;
 }
 
+export interface ProjectGroupAccessSource {
+  group_id: string;
+  group_name: string;
+  role: ProjectRole;
+}
+
 export interface ProjectAccessMember {
   user_id: string;
   email: string | null;
@@ -73,6 +79,13 @@ export interface ProjectAccessMember {
   project_role: ProjectRole | null;
   effective_project_role: ProjectRole | null;
   has_implicit_access: boolean;
+  /** Which path produced effective_project_role. 'implicit' = account
+   *  owner/admin; 'direct' = explicit project_members row; 'group' =
+   *  inherited via a project_group_grants attachment. null = no access. */
+  effective_source?: 'implicit' | 'direct' | 'group' | null;
+  /** Every group attachment that includes this user, sorted by role
+   *  desc. Used to label "via X group" on the row. */
+  group_sources?: ProjectGroupAccessSource[];
   joined_at: string;
   granted_by: string | null;
   granted_at: string | null;

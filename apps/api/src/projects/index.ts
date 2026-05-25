@@ -15,6 +15,7 @@ import {
   accountGithubInstallations,
   accountGithubInstallationStates,
   accountGroups,
+  accountGroupMembers,
   accountMembers,
   kortixApiKeys,
   projects,
@@ -5315,7 +5316,7 @@ projectsApp.get('/:projectId/access', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const [accountRows, grantRows] = await Promise.all([
+  const [accountRows, grantRows, projectGroupRows] = await Promise.all([
     db
       .select({
         userId: accountMembers.userId,
@@ -5334,18 +5335,105 @@ projectsApp.get('/:projectId/access', async (c) => {
       })
       .from(projectMembers)
       .where(eq(projectMembers.projectId, loaded.row.projectId)),
+    // V2 group grants attached to this project. Each row lifts everyone in
+    // the group to at least the grant's role on this project. Per-user
+    // membership lookup happens below; we fetch group → role mapping +
+    // name in one shot here so we can label sources on the response.
+    db
+      .select({
+        groupId: projectGroupGrants.groupId,
+        groupName: accountGroups.name,
+        role: projectGroupGrants.role,
+      })
+      .from(projectGroupGrants)
+      .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
+      .where(eq(projectGroupGrants.projectId, loaded.row.projectId)),
   ]);
+
+  // For every grant-bearing group, fetch its members so we can fold their
+  // inherited role into each user's effective access. One round-trip
+  // covering all groups at once.
+  const grantGroupIds = projectGroupRows.map((g) => g.groupId);
+  const groupMemberRows = grantGroupIds.length
+    ? await db
+        .select({
+          groupId: accountGroupMembers.groupId,
+          userId: accountGroupMembers.userId,
+        })
+        .from(accountGroupMembers)
+        .where(inArray(accountGroupMembers.groupId, grantGroupIds))
+    : [];
+
+  // Index: userId → list of { group_id, group_name, role } that contribute.
+  type GroupSource = { group_id: string; group_name: string; role: ProjectRole };
+  const groupSourcesByUser = new Map<string, GroupSource[]>();
+  const grantByGroup = new Map(
+    projectGroupRows.map((g) => [g.groupId, g] as const),
+  );
+  for (const m of groupMemberRows) {
+    const grant = grantByGroup.get(m.groupId);
+    if (!grant) continue;
+    const arr = groupSourcesByUser.get(m.userId) ?? [];
+    arr.push({
+      group_id: grant.groupId,
+      group_name: grant.groupName,
+      role: grant.role as ProjectRole,
+    });
+    groupSourcesByUser.set(m.userId, arr);
+  }
 
   const emails = await lookupEmailsByUserIds(accountRows.map((r) => r.userId));
   const grantsByUser = new Map(grantRows.map((r) => [r.userId, r]));
   const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
+  // Project-role ranking — same shape the V2 engine uses. Higher number
+  // = more powerful, max wins when folding sources together.
+  const roleRank: Record<ProjectRole, number> = { viewer: 1, editor: 2, manager: 3 };
+  const maxRole = (a: ProjectRole, b: ProjectRole): ProjectRole =>
+    roleRank[a] >= roleRank[b] ? a : b;
 
   const members = accountRows
     .map((member) => {
       const accountRole = member.accountRole as AccountRole;
       const grant = grantsByUser.get(member.userId);
       const projectRole = (grant?.projectRole as ProjectRole | undefined) ?? null;
-      const effectiveRole = effectiveProjectRole(accountRole, projectRole);
+      const groupSources = groupSourcesByUser.get(member.userId) ?? [];
+
+      // Walk every access source and keep the strongest.
+      // Order matters only for the displayed "primary source" label
+      // when two paths tie at the same role; we prefer implicit, then
+      // direct, then group.
+      let effectiveRole: ProjectRole | null = null;
+      let primarySource: 'implicit' | 'direct' | 'group' | null = null;
+
+      if (isAccountManager(accountRole)) {
+        effectiveRole = 'manager';
+        primarySource = 'implicit';
+      }
+      if (projectRole) {
+        if (!effectiveRole || roleRank[projectRole] > roleRank[effectiveRole]) {
+          effectiveRole = projectRole;
+          primarySource = 'direct';
+        }
+      }
+      for (const gs of groupSources) {
+        if (!effectiveRole) {
+          effectiveRole = gs.role;
+          primarySource = 'group';
+        } else {
+          const merged = maxRole(effectiveRole, gs.role);
+          if (merged !== effectiveRole) {
+            effectiveRole = merged;
+            primarySource = 'group';
+          }
+        }
+      }
+
+      // Sort group sources by descending role so the UI's "via X group"
+      // tag picks the strongest contributor first.
+      const sortedGroupSources = groupSources
+        .slice()
+        .sort((a, b) => roleRank[b.role] - roleRank[a.role]);
+
       return {
         user_id: member.userId,
         email: emails.get(member.userId) ?? null,
@@ -5353,6 +5441,13 @@ projectsApp.get('/:projectId/access', async (c) => {
         project_role: projectRole,
         effective_project_role: effectiveRole,
         has_implicit_access: isAccountManager(accountRole),
+        /** What ultimately decided the effective role. UI labels with
+         *  it: "Manager (account admin)" vs "Editor (via Engineering)". */
+        effective_source: primarySource,
+        /** Every group attachment that includes this user. Lets the UI
+         *  list multi-source access ("Editor via Engineering + Viewer
+         *  via Viewers") without further API calls. */
+        group_sources: sortedGroupSources,
         joined_at: member.joinedAt.toISOString(),
         granted_by: grant?.grantedBy ?? null,
         granted_at: grant?.createdAt?.toISOString() ?? null,

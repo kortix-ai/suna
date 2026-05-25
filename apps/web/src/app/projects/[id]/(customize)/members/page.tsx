@@ -304,6 +304,24 @@ function ProjectAccessCard({
           {sortedMembers.map((member) => {
             const busy = pendingUserId === member.user_id;
             const value = member.project_role ?? (member.has_implicit_access ? 'manager' : 'none');
+            // Group-derived access — at least one project_group_grants
+            // row attaches a group this user belongs to. When this is the
+            // ONLY access path (no direct grant), the dropdown will say
+            // "No access" but the user actually has the group role; the
+            // subtitle below makes that explicit and the badge in the
+            // trailing slot mirrors the effective role.
+            const groupSources = member.group_sources ?? [];
+            const inheritedFromGroup =
+              !member.has_implicit_access &&
+              !member.project_role &&
+              member.effective_project_role !== null &&
+              groupSources.length > 0;
+            const inheritedSummary = inheritedFromGroup
+              ? `Inherited ${PROJECT_ROLE_LABEL[member.effective_project_role!]} via ${
+                  groupSources[0].group_name
+                }${groupSources.length > 1 ? ` + ${groupSources.length - 1} more` : ''}`
+              : null;
+
             return (
               <ListRow
                 key={member.user_id}
@@ -315,9 +333,11 @@ function ProjectAccessCard({
                     <span>
                       {member.has_implicit_access
                         ? 'Implicit account access'
-                        : member.project_role
-                          ? `Granted ${formatDate(member.granted_at)}`
-                          : 'No project access'}
+                        : inheritedSummary
+                          ? inheritedSummary
+                          : member.project_role
+                            ? `Granted ${formatDate(member.granted_at)}`
+                            : 'No project access'}
                     </span>
                   </InlineMeta>
                 }
@@ -329,6 +349,35 @@ function ProjectAccessCard({
                       <Shield className="mr-1 h-3.5 w-3.5" />
                       Manager
                     </Badge>
+                  ) : inheritedFromGroup ? (
+                    // Read-only effective-role chip + a smaller secondary
+                    // select for admins who want to LAYER a direct grant
+                    // on top (which only matters if it would be higher
+                    // than the inherited role). Most of the time the
+                    // chip is the whole story.
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" size="sm" className="capitalize">
+                        <Shield className="mr-1 h-3.5 w-3.5" />
+                        {member.effective_project_role}
+                      </Badge>
+                      {canManage && (
+                        <Select
+                          value={value}
+                          onValueChange={(next) => setRole(member, next)}
+                          disabled={!canManage}
+                        >
+                          <SelectTrigger className="h-8 w-32 text-xs">
+                            <SelectValue placeholder="Grant…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No direct grant</SelectItem>
+                            <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
+                            <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
+                            <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
                   ) : (
                     <Select
                       value={value}
