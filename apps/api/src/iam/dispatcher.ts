@@ -40,11 +40,66 @@ export async function assertAuthorized(
 ): Promise<void> {
   const result = await authorize(userId, accountId, action, target, actingTokenId, requestCtx);
   if (!result.allowed) {
+    // User-facing 403 message: "You don't have permission to create
+    // projects." Falls back to a generic "perform this action" when
+    // the action isn't in the verb map, with the action code suffixed
+    // in parens so support / dev tooling can still identify it. The
+    // reason code (account_role_insufficient, etc.) is intentionally
+    // dropped — it's diagnostic, not actionable for end users.
     throw new HTTPException(403, {
-      message: `forbidden: ${action} (${result.reason ?? 'denied'})`,
+      message: humanizePermissionDenial(action),
     });
   }
 }
+
+/**
+ * Map action codes (`project.create`, `member.invite`, …) to a sentence
+ * the user can act on. Unknown codes get a generic phrase with the code
+ * suffixed for support visibility. Keep this list short — only the
+ * actions that actually show up in user-visible 403s.
+ */
+function humanizePermissionDenial(action: string): string {
+  const verb = ACTION_VERBS[action];
+  if (verb) return `You don't have permission to ${verb}.`;
+  // Generic fallback. Suffix the code so support can still identify
+  // which gate fired without needing server logs.
+  return `You don't have permission to perform this action (${action}).`;
+}
+
+const ACTION_VERBS: Record<string, string> = {
+  // Projects
+  'project.create': 'create projects',
+  'project.write': 'change this project',
+  'project.delete': 'delete projects',
+  'project.deploy': 'deploy this project',
+  // Project members
+  'project.members.manage': 'manage project members',
+  // Account
+  'account.write': 'change account settings',
+  'account.delete': 'delete this account',
+  // Members
+  'member.invite': 'invite members',
+  'member.remove': 'remove members',
+  'member.update': 'change member roles',
+  'member.read': 'view members',
+  'member.super_admin.grant': 'grant super-admin',
+  'member.super_admin.revoke': 'revoke super-admin',
+  // Groups
+  'group.create': 'create groups',
+  'group.update': 'change groups',
+  'group.delete': 'delete groups',
+  'group.read': 'view groups',
+  'group.members.manage': 'manage group members',
+  // Audit
+  'audit.read': 'view the audit log',
+  'audit.export': 'export audit events',
+  // Tokens
+  'token.read': 'view personal access tokens',
+  'token.revoke': 'revoke personal access tokens',
+  // Billing
+  'billing.read': 'view billing',
+  'billing.write': 'change billing',
+};
 
 export async function listAccessibleResources(
   userId: string,

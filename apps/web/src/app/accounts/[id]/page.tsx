@@ -267,9 +267,13 @@ export default function AccountSettingsPage() {
               <TabsList>
                 <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
-                <TabsTrigger value="git">Git</TabsTrigger>
+                {/* Git (account-level GitHub install) + Settings are
+                    admin surfaces — gate on account.write so plain
+                    Members don't see tabs they can't act on. Audit is
+                    gated on its own audit.read permission. */}
+                {canWriteAccount && <TabsTrigger value="git">Git</TabsTrigger>}
                 {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
-                <TabsTrigger value="settings">Settings</TabsTrigger>
+                {canWriteAccount && <TabsTrigger value="settings">Settings</TabsTrigger>}
               </TabsList>
 
               <TabsContent value="members" className="space-y-6">
@@ -301,13 +305,16 @@ export default function AccountSettingsPage() {
                 </TabsContent>
               )}
 
-              <TabsContent value="git" className="space-y-6">
-                <GitHubConnectionCard
-                  account={account}
-                  canManage={canWriteAccount}
-                />
-              </TabsContent>
+              {canWriteAccount && (
+                <TabsContent value="git" className="space-y-6">
+                  <GitHubConnectionCard
+                    account={account}
+                    canManage={canWriteAccount}
+                  />
+                </TabsContent>
+              )}
 
+              {canWriteAccount && (
               <TabsContent value="settings" className="space-y-8">
                 {/* ── General ────────────────────────────────────── */}
                 <SettingsGroup title="General">
@@ -380,6 +387,7 @@ export default function AccountSettingsPage() {
                   </SettingsGroup>
                 )}
               </TabsContent>
+              )}
             </Tabs>
           )}
         </div>
