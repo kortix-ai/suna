@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { chmodSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { access, constants, stat } from 'node:fs/promises'
 
 import type { Config } from './config'
@@ -15,6 +16,12 @@ const READY_TIMEOUT_MS = 20_000
 // the sandbox image at this path (see apps/sandbox/Dockerfile).
 const EXECUTOR_MCP_ENTRY = '/opt/kortix/apps/sandbox/agent-cli/connectors/executor-mcp.ts'
 export const OPENCODE_HOME = '/opt/kortix/home'
+export const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
+export const OPENCODE_CONFIG_HOME = `${OPENCODE_HOME}/.config`
+export const OPENCODE_CACHE_HOME = `${OPENCODE_HOME}/.cache`
+export const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
+export const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
+export const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
 
 /**
  * Build the OPENCODE_CONFIG_CONTENT that registers the Executor as a local MCP
@@ -65,6 +72,35 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
       },
     },
   })
+}
+
+function materializeOpencodeAuth(env: NodeJS.ProcessEnv) {
+  // Prefer the Codex-specific subscription secret. Keep OPENCODE_AUTH_JSON as a
+  // legacy fallback so older projects keep working, but do not let subscription
+  // onboarding clobber generic OpenCode auth settings.
+  const authJson = env[CODEX_AUTH_JSON_SECRET] ?? env[OPENCODE_AUTH_JSON_SECRET]
+  delete env[CODEX_AUTH_JSON_SECRET]
+  delete env[OPENCODE_AUTH_JSON_SECRET]
+  if (!authJson?.trim()) return
+
+  try {
+    const parsed = JSON.parse(authJson)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('auth json must be an object')
+    }
+
+    mkdirSync(dirname(OPENCODE_AUTH_PATH), { recursive: true })
+    writeFileSync(OPENCODE_AUTH_PATH, JSON.stringify(parsed, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600,
+    })
+    chmodSync(OPENCODE_AUTH_PATH, 0o600)
+    logger.info('[opencode] materialized project-scoped Codex auth.json')
+  } catch (err) {
+    logger.warn('[opencode] ignored invalid Codex/OpenCode auth project secret', {
+      err: (err as Error).message,
+    })
+  }
 }
 
 async function isExecutable(path: string): Promise<boolean> {
@@ -158,7 +194,26 @@ export function createOpencodeSupervisor(
     }
   }
 
+  // Bun-compiled binaries (opencode itself) extract a ~4.7MB runtime blob to
+  // $TMPDIR as `.<hash>-00000000.so` on every launch and never clean it up. With
+  // a supervisor that restarts opencode on crash, these pile up fast — a tight
+  // restart loop leaked ~700 files (~3GB) and filled the sandbox's small disk,
+  // after which EVERY write fails with ENOSPC. opencode then reports the generic
+  // "Failed to write auth data" on login, masking the real cause. Sweep the
+  // stale extractions before each (re)spawn so /tmp can't run away. Best-effort.
+  function sweepBunExtractions() {
+    const tmp = process.env.TMPDIR || '/tmp'
+    try {
+      for (const name of readdirSync(tmp)) {
+        if (name.endsWith('-00000000.so')) {
+          try { unlinkSync(join(tmp, name)) } catch {}
+        }
+      }
+    } catch {}
+  }
+
   function spawnChild(bin: string) {
+    sweepBunExtractions()
     // Keep opencode's data store OUT of the project workspace. opencode writes
     // a git-backed snapshot object store (file history) plus caches/logs under
     // $HOME/.local/share/opencode + $HOME/.config. If HOME points at
@@ -181,12 +236,17 @@ export function createOpencodeSupervisor(
       ...baseEnv,
       ...buildGitIdentityEnv(cfg),
       HOME: OPENCODE_HOME,
+      XDG_DATA_HOME: OPENCODE_DATA_HOME,
+      XDG_CONFIG_HOME: OPENCODE_CONFIG_HOME,
+      XDG_CACHE_HOME: OPENCODE_CACHE_HOME,
       OPENCODE_CONFIG_DIR: opencodeConfigDir,
       // Clear inherited PORT/APP_PORT — opencode launches user shells; we
       // don't want to leak the service port as a generic app port.
       PORT: undefined,
       APP_PORT: undefined,
     }
+
+    materializeOpencodeAuth(env)
 
     // Register the Kortix Executor MCP server so the agent reaches every
     // configured connector as native MCP tools — the primary interface in the

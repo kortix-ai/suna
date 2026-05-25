@@ -57,6 +57,14 @@ Then it's yours. Add a remote, push, open in OpenCode.
 ```sh
 pnpm install
 ./bin/kortix --help
-./bin/kortix self-host init
 ./bin/kortix self-host start
+./bin/kortix self-host configure
+./bin/kortix self-host env set PUBLIC_URL=https://kortix.example.com API_PUBLIC_URL=https://api.example.com
+./bin/kortix hosts ls
+./bin/kortix hosts use local
+./bin/kortix hosts use cloud
 ```
+
+`self-host start` creates the config when needed and only asks for product
+integrations: Freestyle, GitHub, and Pipedream. Run `self-host configure` later
+to change those credentials.

@@ -46,19 +46,35 @@ function unwrap<T>(result: { data?: T; error?: unknown }): T {
 
 /**
  * List files and directories at a given path.
+ *
+ * OpenCode's `file.list` resolves `path` RELATIVE to the worktree (/workspace):
+ * passing the absolute "/workspace" makes it look for "/workspace/workspace" and
+ * return [] (this is why the explorer showed an empty folder). So we strip the
+ * workspace prefix to a repo-relative path (root → ".") for the request, then
+ * map the repo-relative results back onto the absolute "/workspace/..." form the
+ * rest of the app navigates and reads with. (File *reads* accept absolute paths;
+ * only `list` is worktree-relative.)
  */
 export async function listFiles(dirPath: string): Promise<FileNode[]> {
   const client = getClient();
-  const result = await client.file.list({ path: normalizePath(dirPath) });
-  return unwrap(result) as FileNode[];
+  const result = await client.file.list({ path: toWorkspaceRelative(dirPath) || '.' });
+  const nodes = unwrap(result) as FileNode[];
+  return nodes.map((node) => ({
+    ...node,
+    path: node.absolute || `/workspace/${node.path}`,
+  }));
 }
 
 /**
- * Normalize a file path to absolute. Relative paths are resolved against /workspace.
+ * Strip the "/workspace" prefix down to a worktree-relative path ("" = root).
+ * OpenCode's read/list endpoints resolve `path` relative to the worktree.
  */
-function normalizePath(filePath: string): string {
-  if (filePath.startsWith('/')) return filePath;
-  return `/workspace/${filePath}`;
+function toWorkspaceRelative(filePath: string): string {
+  let s = filePath || '';
+  if (s === '/workspace' || s === '/workspace/') return '';
+  if (s.startsWith('/workspace/')) s = s.slice('/workspace/'.length);
+  while (s.startsWith('/')) s = s.slice(1);
+  return s;
 }
 
 /**
@@ -70,8 +86,13 @@ function normalizePath(filePath: string): string {
  */
 export async function readFile(filePath: string): Promise<FileContent> {
   const baseUrl = getActiveOpenCodeUrl();
-  const absolutePath = normalizePath(filePath);
-  const url = `${baseUrl}/file/content?path=${encodeURIComponent(absolutePath)}`;
+  // /file/content (opencode) resolves `path` RELATIVE to the worktree
+  // (/workspace) — exactly like file.list. Passing the absolute "/workspace/..."
+  // makes it read "/workspace/workspace/..." and return 200 with EMPTY content,
+  // so the preview shows a blank file. Send a worktree-relative path instead.
+  // (readFileAsBlob also goes through here — binary files come back base64.)
+  const relativePath = toWorkspaceRelative(filePath);
+  const url = `${baseUrl}/file/content?path=${encodeURIComponent(relativePath)}`;
   const response = await authenticatedFetch(url);
 
   if (!response.ok) {
@@ -90,70 +111,16 @@ export async function readFile(filePath: string): Promise<FileContent> {
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch a file as a Blob.
+ * Fetch a file as a Blob (binary previews — PDF, video, audio, images, …).
  *
- * Strategy:
- *   1. Try the `/file/raw` endpoint (streams raw bytes — best for binary files).
- *   2. If that 404s (older server without the route), fall back to the JSON
- *      `/file/content` endpoint and decode from base64 / text.
- *
- * The JSON endpoint now returns base64-encoded content for binary files,
- * so both paths produce correct output.
+ * Goes through the JSON `/file/content` endpoint, which returns base64-encoded
+ * content for binary files. We deliberately do NOT use `/file/raw`: in the
+ * sandbox proxy that route isn't reliably served and falls through to an HTML
+ * SPA shell (HTTP 200, `text/html`) — which `response.ok` would happily hand
+ * back as a corrupt "image" blob, so every image/file in chat failed to load.
+ * `readFile` also handles the worktree-relative path quirk for us.
  */
 export async function readFileAsBlob(filePath: string): Promise<Blob> {
-  const baseUrl = getActiveOpenCodeUrl();
-  const absolutePath = normalizePath(filePath);
-
-  // ── Primary: /file/raw (binary stream) ──
-  let fallThroughToSdk = false;
-  try {
-    const rawUrl = `${baseUrl}/file/raw?path=${encodeURIComponent(absolutePath)}`;
-    const response = await authenticatedFetch(rawUrl);
-
-    if (response.ok) {
-      return response.blob();
-    }
-
-    // 404 — could be "file not found" (JSON body) or "route not found" (old server).
-    // Distinguish by checking if the response is JSON with an `error` field.
-    if (response.status === 404) {
-      const text = await response.text().catch(() => '');
-      let parsed: any = null;
-      try { parsed = JSON.parse(text); } catch { /* not JSON */ }
-      if (parsed?.error) {
-        // Server explicitly says file doesn't exist
-        throw new Error(parsed.error);
-      }
-      // Route doesn't exist on this server version → fall through to SDK
-      fallThroughToSdk = true;
-    } else {
-      // Non-404 HTTP error (403, 500, etc.) — throw with details
-      const text = await response.text().catch(() => '');
-      throw new Error(
-        `Failed to fetch file (${response.status}): ${text || response.statusText}`,
-      );
-    }
-  } catch (err) {
-    // If it's our own thrown error (non-404 HTTP), re-throw immediately
-    if (err instanceof Error && err.message.startsWith('Failed to fetch file')) {
-      throw err;
-    }
-    // Network error (fetch itself failed) — server not reachable.
-    // Don't fall through to SDK — it hits the same server and will also fail.
-    if (err instanceof TypeError) {
-      throw new Error(`Server not reachable: ${err.message}`);
-    }
-    // Unknown error — fall through to SDK as last resort
-    fallThroughToSdk = true;
-  }
-
-  if (!fallThroughToSdk) {
-    // Should not reach here, but safeguard
-    throw new Error('Failed to fetch file: unexpected state');
-  }
-
-  // ── Fallback: /file/content (JSON with base64) ──
-  // Only reached when /file/raw returns 404 (older server without the route)
   const result = await readFile(filePath);
   if (result.encoding === 'base64' && result.content) {
     const bytes = Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0));
@@ -161,8 +128,8 @@ export async function readFileAsBlob(filePath: string): Promise<Blob> {
       type: result.mimeType || 'application/octet-stream',
     });
   }
-  // Text content
-  return new Blob([result.content], {
+  // Text content (no base64 encoding) — return as a text blob.
+  return new Blob([result.content ?? ''], {
     type: result.mimeType || 'text/plain;charset=utf-8',
   });
 }

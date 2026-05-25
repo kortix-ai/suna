@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import {
   archiveProject,
   getProject,
@@ -38,10 +39,7 @@ export default function ProjectSettingsPage({
 export function SettingsView({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <Settings className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-semibold text-foreground">Settings</h1>
-      </div>
+      <CustomizeSectionHeader icon={Settings} title="Settings" />
       <ProjectSettingsBody projectId={projectId} />
     </div>
   );

@@ -3,16 +3,20 @@
 /**
  * ProjectHome — the project's dashboard / landing surface.
  *
- * Replaces the old setup-checklist overlay with a calm, on-brand home:
- *   • a hero ("Welcome to <project>") with a composer to start a session, and
- *   • a grid of section tiles (integrations, schedules, skills, Slack, team, …)
- *     that double as a teaser and a setup prompt, each docs-backed.
+ * A calm, on-brand home that communicates the one important thing first —
+ * "describe a task, your agent works" — and then how to build the project out:
+ *   • the standard Kortix brandmark wallpaper, fading into the page, for
+ *     ambient brand presence,
+ *   • a hero with the project's identity + a premium composer (matching the
+ *     signature look of the session chat input) to start a session, with
+ *     quick-start suggestions, and
+ *   • a grid of section tiles (integrations, schedules, skills, Slack, team,
+ *     agent) that double as a teaser and a setup prompt, each docs-backed.
  *
  * Counts come from the same cached queries the rest of the project uses.
  */
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
@@ -28,10 +32,11 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import type { CustomizeSection } from '@/lib/customize-sections';
 import { cn } from '@/lib/utils';
 import {
   getProjectDetail,
@@ -39,8 +44,15 @@ import {
   listProjectAccess,
   listProjectTriggers,
 } from '@/lib/projects-client';
+import { useCustomizeStore } from '@/stores/customize-store';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
+
+const SUGGESTIONS = [
+  'Give me an overview of this project',
+  'What can you help me with?',
+  'Summarize what changed recently',
+];
 
 export function ProjectHome({
   projectId,
@@ -51,7 +63,6 @@ export function ProjectHome({
   onSend: (text: string) => void;
   busy: boolean;
 }) {
-  const router = useRouter();
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -60,57 +71,135 @@ export function ProjectHome({
   const name = detail.data?.project?.name ?? '';
 
   const [text, setText] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const resize = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+  }, []);
+
+  useEffect(() => {
+    resize();
+  }, [text, resize]);
+
   const submit = () => {
     const t = text.trim();
     if (!t || busy) return;
     onSend(t);
   };
 
+  const applySuggestion = (s: string) => {
+    setText(s);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      resize();
+    });
+  };
+
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto bg-background">
-      <div className="mx-auto w-full max-w-4xl px-6 py-16 sm:py-20">
-        {/* Hero */}
-        <div className="flex flex-col items-center text-center">
-          <KortixLogo size={36} />
-          <h1 className="mt-5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            Welcome to {name || 'your project'}
-          </h1>
-          <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            Describe a task and your agent gets to work — or set things up below.
-          </p>
+    <div className="relative flex-1 min-h-0 overflow-hidden bg-background">
+      {/* Standard Kortix brandmark wallpaper — ambient brand presence behind the
+          hero, masked so it fades out before the setup grid below. */}
+      <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
+        <div className="absolute inset-0 opacity-60 dark:opacity-50 [-webkit-mask-image:linear-gradient(to_bottom,black,black_28%,transparent_68%)] [mask-image:linear-gradient(to_bottom,black,black_28%,transparent_68%)]">
+          <WallpaperBackground wallpaperId="brandmark" />
         </div>
+      </div>
 
-        {/* Composer */}
-        <div className="mx-auto mt-8 max-w-2xl">
-          <Textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            placeholder="Describe a task to start a session…"
-            autoFocus
-            rows={3}
-            className="resize-none text-base"
-          />
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground/70">
-              Enter to start · Shift + Enter for a new line
-            </span>
-            <Button size="sm" className="gap-1.5" onClick={submit} disabled={busy || !text.trim()}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
-              Start session
-            </Button>
+      <div className="relative z-10 h-full overflow-y-auto">
+        <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-6 pb-24 pt-20 sm:pt-28">
+          {/* Hero */}
+          <div className="mx-auto flex w-full max-w-2xl flex-col items-center text-center">
+            <EntityAvatar label={name || 'Project'} size="xl" className="shadow-sm" />
+            <h1 className="mt-5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              {name || 'Your project'}
+            </h1>
+            <p className="mt-2 max-w-md text-sm text-muted-foreground">
+              Describe a task and your agent gets to work — or set things up below.
+            </p>
           </div>
-        </div>
 
-        {/* Sections */}
-        <ProjectHomeSections projectId={projectId} onNavigate={(href) => router.push(href)} />
+          {/* Composer — mirrors the session chat input's signature card */}
+          <div className="mx-auto mt-8 w-full max-w-2xl">
+            <div
+              className={cn(
+                'group relative w-full rounded-[24px] border border-border bg-card transition-all duration-200',
+                'shadow-[0_1px_2px_rgba(0,0,0,0.04),0_18px_40px_-24px_rgba(0,0,0,0.18)]',
+                'focus-within:border-foreground/20 focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.05),0_24px_56px_-28px_rgba(0,0,0,0.28)]',
+              )}
+            >
+              <div className="flex flex-col px-3.5">
+                <textarea
+                  ref={textareaRef}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      submit();
+                    }
+                  }}
+                  placeholder="Describe a task to start a session…"
+                  autoFocus
+                  rows={1}
+                  className="relative max-h-[220px] min-h-[64px] w-full resize-none overflow-y-auto border-none bg-transparent px-0.5 pb-2 pt-4 text-base leading-relaxed outline-none placeholder:text-muted-foreground/60 sm:text-[15px]"
+                />
+                <div className="mb-2 flex items-center justify-between gap-2 pl-1">
+                  <span className="hidden items-center gap-1.5 text-xs text-muted-foreground/60 sm:flex">
+                    <Kbd>Enter</Kbd>
+                    <span>to start</span>
+                    <span className="text-muted-foreground/30">·</span>
+                    <Kbd>Shift</Kbd>
+                    <Kbd>Enter</Kbd>
+                    <span>for a new line</span>
+                  </span>
+                  <Button
+                    size="sm"
+                    onClick={submit}
+                    disabled={busy || !text.trim()}
+                    aria-label="Start session"
+                    className="ml-auto size-8 shrink-0 rounded-full p-0"
+                  >
+                    {busy ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <ArrowUp className="size-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick-start suggestions */}
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => applySuggestion(s)}
+                  className="rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:bg-card hover:text-foreground"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Sections */}
+          <ProjectHomeSections projectId={projectId} />
+        </div>
       </div>
     </div>
+  );
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 font-sans text-[11px] font-medium text-muted-foreground">
+      {children}
+    </kbd>
   );
 }
 
@@ -122,17 +211,13 @@ interface Tile {
   count: number | null;
   /** Label when nothing is set up yet. */
   setupCta: string;
-  href: string;
+  /** Customize section this tile opens. */
+  section: CustomizeSection;
   docs: string;
 }
 
-function ProjectHomeSections({
-  projectId,
-  onNavigate,
-}: {
-  projectId: string;
-  onNavigate: (href: string) => void;
-}) {
+function ProjectHomeSections({ projectId }: { projectId: string }) {
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -154,7 +239,6 @@ function ProjectHomeSections({
     ...Q,
   });
 
-  const base = (p: string) => `/projects/${projectId}/${p}`;
   const memberCount = access.data?.members.length ?? 0;
 
   const tiles: Tile[] = [
@@ -164,7 +248,7 @@ function ProjectHomeSections({
       desc: 'Connect tools your agent can act in.',
       count: connectors.data?.connectors.length ?? 0,
       setupCta: 'Connect a tool',
-      href: base('connectors'),
+      section: 'connectors',
       docs: '/docs/concepts/connections',
     },
     {
@@ -173,7 +257,7 @@ function ProjectHomeSections({
       desc: 'Run work on a schedule or from an event.',
       count: triggers.data?.triggers.length ?? 0,
       setupCta: 'Add an automation',
-      href: base('schedules'),
+      section: 'schedules',
       docs: '/docs/concepts/triggers',
     },
     {
@@ -182,7 +266,7 @@ function ProjectHomeSections({
       desc: 'Repeatable workflows your agent reuses.',
       count: detail.data?.config?.skills.length ?? 0,
       setupCta: 'Create a skill',
-      href: base('skills'),
+      section: 'skills',
       docs: '/docs/concepts/agents',
     },
     {
@@ -191,7 +275,7 @@ function ProjectHomeSections({
       desc: 'Run this project right from chat.',
       count: null,
       setupCta: 'Connect Slack',
-      href: base('channels'),
+      section: 'channels',
       docs: '/docs/concepts/channels',
     },
     {
@@ -200,7 +284,7 @@ function ProjectHomeSections({
       desc: 'Invite people to run and review work.',
       count: memberCount > 1 ? memberCount : 0,
       setupCta: 'Invite your team',
-      href: base('members'),
+      section: 'members',
       docs: '/docs/concepts/accounts',
     },
     {
@@ -209,42 +293,48 @@ function ProjectHomeSections({
       desc: 'Shape how your agent thinks and acts.',
       count: null,
       setupCta: 'Configure',
-      href: base('agents'),
+      section: 'agents',
       docs: '/docs/concepts/agents',
     },
   ];
 
   return (
-    <div className="mt-12">
+    <div className="mt-16">
       <h2 className="mb-3 px-0.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
         Build out your project
       </h2>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {tiles.map((t) => (
-          <SectionTile key={t.title} tile={t} onNavigate={onNavigate} />
+          <SectionTile key={t.title} tile={t} onOpen={openCustomize} />
         ))}
       </div>
     </div>
   );
 }
 
-function SectionTile({ tile, onNavigate }: { tile: Tile; onNavigate: (href: string) => void }) {
-  const { icon: Icon, title, desc, count, setupCta, href, docs } = tile;
+function SectionTile({
+  tile,
+  onOpen,
+}: {
+  tile: Tile;
+  onOpen: (section: CustomizeSection) => void;
+}) {
+  const { icon: Icon, title, desc, count, setupCta, section, docs } = tile;
   const isSet = (count ?? 0) > 0;
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={() => onNavigate(href)}
+      onClick={() => onOpen(section)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onNavigate(href);
+          onOpen(section);
         }
       }}
       className={cn(
-        'group relative flex cursor-pointer flex-col rounded-2xl border border-border/60 bg-card p-4 text-left',
-        'transition-all duration-150 hover:border-foreground/25 hover:bg-muted/20',
+        'group relative flex cursor-pointer flex-col rounded-2xl border border-border/60 bg-card/70 p-4 text-left backdrop-blur-sm',
+        'transition-all duration-150 hover:border-foreground/25 hover:bg-card',
         'hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.18)]',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
       )}

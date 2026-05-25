@@ -7,12 +7,12 @@ import { config } from '../../config';
  * Sources of truth:
  * - Running version: SANDBOX_VERSION, injected at container start.
  * - Stable releases: GitHub Releases API.
- * - Dev builds: Docker Hub tags for kortix/sandbox.
+ * - Dev builds: Docker Hub tags for kortix/kortix-sandbox.
  */
 
 const GITHUB_REPO = 'kortix-ai/suna';
 const GITHUB_API_BASE = 'https://api.github.com';
-const DOCKERHUB_REPO = 'kortix/sandbox';
+const DOCKERHUB_REPO = 'kortix/kortix-sandbox';
 const DOCKERHUB_TAGS_URL = `https://hub.docker.com/v2/repositories/${DOCKERHUB_REPO}/tags`;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 

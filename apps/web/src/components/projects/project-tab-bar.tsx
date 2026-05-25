@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Menu, SlidersHorizontal, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Home, Menu, X } from 'lucide-react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { Share2 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,10 +18,7 @@ import { isDesktop, desktopPlatform } from '@/lib/desktop';
 import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
 import { Button } from '@/components/ui/button';
 import { SessionShareDialog, SessionVisibilityBadge } from '@/components/projects/session-share-dialog';
-import {
-  useProjectSessionTabsStore,
-  CUSTOMIZE_TAB_ID,
-} from '@/stores/project-session-tabs-store';
+import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 
 interface ProjectTabBarProps {
   projectId: string;
@@ -82,24 +79,18 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   const tabsByProject = useProjectSessionTabsStore((s) => s.tabsByProject);
   const openTab = useProjectSessionTabsStore((s) => s.openTab);
   const closeTab = useProjectSessionTabsStore((s) => s.closeTab);
-  const openCustomizeTab = useProjectSessionTabsStore((s) => s.openCustomizeTab);
   const openTabIds = useMemo(
     () => tabsByProject[projectId] ?? [],
     [tabsByProject, projectId],
   );
-  const isCustomizeRoute =
-    pathname?.startsWith(`/projects/${projectId}/customize`) ?? false;
+  const isProjectHome = pathname === `/projects/${projectId}`;
 
   // Auto-open the current session as a tab whenever the URL points at one.
+  // Customize is no longer a tab — it's a full-screen overlay (see
+  // customize-store) — so nothing here tracks it.
   useEffect(() => {
     if (activeSessionId) openTab(projectId, activeSessionId);
   }, [projectId, activeSessionId, openTab]);
-
-  // Auto-open the Customize tab any time the URL lands on /customize — this
-  // covers deep links (e.g. a /files redirect) and back/forward nav.
-  useEffect(() => {
-    if (isCustomizeRoute) openCustomizeTab(projectId);
-  }, [isCustomizeRoute, projectId, openCustomizeTab]);
 
   // Load session metadata so tabs can show the real title instead of a UUID.
   const { data: sessions } = useQuery({
@@ -127,15 +118,10 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   }, []);
   const needsTrafficLightSpace = isMacDesktop && sidebar.state === 'collapsed';
 
-  const hrefForTab = (id: string) =>
-    id === CUSTOMIZE_TAB_ID
-      ? `/projects/${projectId}/customize`
-      : `/projects/${projectId}/sessions/${id}`;
+  const hrefForTab = (id: string) => `/projects/${projectId}/sessions/${id}`;
 
   const isTabActive = (id: string) =>
-    id === CUSTOMIZE_TAB_ID
-      ? isCustomizeRoute
-      : (pathname?.startsWith(`/projects/${projectId}/sessions/${id}`) ?? false);
+    pathname?.startsWith(`/projects/${projectId}/sessions/${id}`) ?? false;
 
   const handleCloseTab = (id: string) => {
     const wasActive = isTabActive(id);
@@ -197,19 +183,36 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
             Forward
           </TooltipContent>
         </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => router.push(`/projects/${projectId}`)}
+              className={cn(
+                'flex items-center justify-center w-6 h-6 rounded transition-colors cursor-pointer',
+                isProjectHome
+                  ? 'text-foreground'
+                  : 'text-muted-foreground/50 hover:text-muted-foreground',
+              )}
+              aria-label="Project home"
+            >
+              <Home className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            Home
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Tabs — mirrors components/tabs/tab-bar.tsx OG styling: flat row,
-          bottom accent line on active, hover-fade close button. Customize is
-          just another entry in the ordered list (no longer pinned first), so
-          it sits wherever it was opened and closes like any other tab. */}
+          bottom accent line on active, hover-fade close button. One tab per
+          open session (Customize is a full-screen overlay, not a tab). */}
       <div className="flex-1 flex items-stretch overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {openTabIds.map((tabId) => {
-          const isCustomize = tabId === CUSTOMIZE_TAB_ID;
           const isActive = isTabActive(tabId);
           // Sessions don't carry a user-set name yet (API model is branch-only).
           // Fall back to a short id slice until naming ships.
-          const label = isCustomize ? 'Customize' : `session ${tabId.slice(0, 8)}`;
+          const label = `session ${tabId.slice(0, 8)}`;
 
           return (
             <div
@@ -218,13 +221,12 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
               aria-selected={isActive}
               onClick={() => router.push(hrefForTab(tabId))}
               className={cn(
-                'group relative flex items-center text-sm select-none cursor-pointer',
+                'group relative flex items-center text-xs select-none cursor-pointer',
                 'transition-colors duration-150 h-full',
                 'gap-1.5 px-2.5 md:gap-2 md:px-3 max-w-[200px] min-w-[96px] md:min-w-[80px]',
                 isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              {isCustomize && <SlidersHorizontal className="h-3 w-3 flex-shrink-0" />}
               <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{label}</span>
               <button
                 type="button"

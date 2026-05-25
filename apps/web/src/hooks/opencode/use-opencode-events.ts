@@ -263,9 +263,14 @@ export function useOpenCodeEventStream() {
 			resetClient();
 			clearConfigOverrides();
 			clearPending();
-			useSyncStore.getState().reset();
+			// NOTE: we intentionally do NOT wipe the sync store or the opencode
+			// query cache here anymore. Those are now scoped per-sandbox (see
+			// opencodeKeys.activeServerKey + the sync store's session-id keying),
+			// so each sandbox's data coexists safely. Wiping them was what made
+			// switching back to an already-open session "reload". Diagnostics are
+			// still cleared because they're keyed by bare file path (no sandbox
+			// scope) and would otherwise bleed across sandboxes.
 			useDiagnosticsStore.getState().clearAll();
-			queryClient.removeQueries({ queryKey: opencodeKeys.all });
 			resetPrefetchState();
 		} else if (didServerUrlChange) {
 			// URL changed on the same logical server (e.g. sandbox/proxy refresh).

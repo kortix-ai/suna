@@ -1,5 +1,6 @@
 import {
   DEFAULT_API_BASE,
+  DEFAULT_HOST_NAME,
   activeHost,
   activeHostName,
   configFilePath,
@@ -65,10 +66,10 @@ export function loadAuthForHost(name: string): Auth | null {
 }
 
 /** Persist the active host. Saves under the active host name, or under
- * `default` if no hosts are configured yet. Marks the touched host
+ * `cloud` if no hosts are configured yet. Marks the touched host
  * active. */
 export function saveAuth(auth: Auth): void {
-  const targetName = activeHostName() ?? 'default';
+  const targetName = activeHostName() ?? DEFAULT_HOST_NAME;
   upsertHost(targetName, authToHost(auth), true);
 }
 

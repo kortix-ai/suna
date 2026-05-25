@@ -17,6 +17,8 @@ import {
 } from '@/lib/projects-client';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useCustomizeStore } from '@/stores/customize-store';
+import { parseCustomizeSection } from '@/lib/customize-sections';
 import {
   Loader2,
   MessageCircle,
@@ -809,15 +811,15 @@ export function CommandPalette() {
   );
 
   const handleSelectFile = useCallback(
-    (filePath: string, lineNumber?: number) => {
+    (_filePath: string, _lineNumber?: number) => {
       if (!projectId) return close();
-      // Open the project Files view focused on the selected file (+ line).
-      const params = new URLSearchParams({ path: filePath });
-      if (lineNumber) params.set('line', String(lineNumber));
-      router.push(`/projects/${projectId}/customize/files?${params.toString()}`);
+      // Files live in the Customize overlay's Files section. Open it in place
+      // (the explorer reads its own selection state; per-file/line deep focus
+      // is a follow-up now that this no longer rides a URL).
+      useCustomizeStore.getState().openCustomize('files');
       close();
     },
-    [projectId, router, close],
+    [projectId, close],
   );
 
   const jumpToMessage = useMessageJumpStore((s) => s.jumpToMessage);
@@ -1019,6 +1021,16 @@ export function CommandPalette() {
     switch (item.kind) {
       case 'navigate': {
         const href = item.href || '';
+        // Customize is a full-screen overlay, not a route — open it in place so
+        // the active session/page stays mounted behind it (no tab, no nav).
+        const custMatch = href.match(/\/customize(?:\/([^/?#]+))?/);
+        if (custMatch) {
+          useCustomizeStore
+            .getState()
+            .openCustomize(parseCustomizeSection(custMatch[1]) ?? undefined);
+          close();
+          break;
+        }
         // New project/account routes use the Next router directly — the project
         // tab bar auto-syncs from the URL. The legacy tabbed shell is bypassed.
         if (href.startsWith('/projects') || href.startsWith('/accounts')) {

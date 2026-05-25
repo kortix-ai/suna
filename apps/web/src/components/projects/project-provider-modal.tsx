@@ -49,14 +49,24 @@ import {
 import { Input } from '@/components/ui/input';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import {
+  SharingPicker,
+  isSharingComplete,
+  selectionToIntent,
+  type SharingSelection,
+} from '@/components/projects/sharing-picker';
+import {
   PROVIDER_LABELS,
   ProviderLogo,
 } from '@/components/providers/provider-branding';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
+  completeProjectChatGptHeadlessAuth,
   deleteProjectSecret,
+  deletePersonalProjectSecret,
   listProjectSecrets,
+  setPersonalProjectSecret,
+  startProjectChatGptHeadlessAuth,
   upsertProjectSecret,
 } from '@/lib/projects-client';
 import {
@@ -64,6 +74,14 @@ import {
   LLM_PROVIDER_BY_ID,
   type LlmProviderEntry,
 } from '@/lib/llm-providers';
+
+const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
+const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
+
+function providerCredentialSummary(provider: LlmProviderEntry): string {
+  if (provider.id === 'openai') return 'OpenAI API key or ChatGPT subscription';
+  return provider.envVars.join(' · ');
+}
 
 type ActiveTab = 'connected' | 'catalog' | 'models';
 type CatalogSubview =
@@ -109,7 +127,11 @@ export function ProjectProviderModal({
   const connectedProviders = useMemo(
     () =>
       LLM_PROVIDERS.filter(
-        (p) => p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v)),
+        (p) =>
+          (p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v))) ||
+          (p.id === 'openai' &&
+            (secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
+              secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME))),
       ),
     [secretNames],
   );
@@ -268,8 +290,18 @@ function ConnectedTab({
   // survive a disconnect on a multi-key provider.
   const disconnect = useMutation({
     mutationFn: async (provider: LlmProviderEntry) => {
+      const names = provider.id === 'openai'
+        ? [
+            ...provider.envVars,
+            CODEX_AUTH_JSON_SECRET_NAME,
+            LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
+          ]
+        : provider.envVars;
       await Promise.all(
-        provider.envVars.map((envVar) => deleteProjectSecret(projectId, envVar)),
+        names.flatMap((envVar) => [
+          deleteProjectSecret(projectId, envVar).catch(() => undefined),
+          deletePersonalProjectSecret(projectId, envVar).catch(() => undefined),
+        ]),
       );
       return provider;
     },
@@ -325,7 +357,7 @@ function ConnectedTab({
               {PROVIDER_LABELS[provider.id] ?? provider.label}
             </div>
             <div className="mt-0.5 truncate text-xs text-muted-foreground">
-              {provider.envVars.join(' · ')} · {provider.models.length} model
+              {providerCredentialSummary(provider)} · {provider.models.length} model
               {provider.models.length === 1 ? '' : 's'}
             </div>
           </div>
@@ -573,7 +605,7 @@ function ProviderDetail({
             )}
           </div>
           <div className="mt-0.5 truncate text-xs text-muted-foreground">
-            {provider.envVars.join(' · ')} · {models.length} model
+            {providerCredentialSummary(provider)} · {models.length} model
             {models.length === 1 ? '' : 's'}
           </div>
         </div>
@@ -689,6 +721,10 @@ function ApiKeyConnectForm({
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(provider.envVars.map((v) => [v, ''])),
   );
+  const [sharing, setSharing] = useState<SharingSelection>({
+    mode: 'project',
+    memberIds: [],
+  });
   const [error, setError] = useState<string | null>(null);
 
   const upsert = useMutation({
@@ -697,10 +733,18 @@ function ApiKeyConnectForm({
       // rejection (reserved name, value length, etc.) surfaces cleanly without
       // having to roll back partial state.
       for (const envVar of provider.envVars) {
-        await upsertProjectSecret(projectId, {
-          name: envVar,
-          value: values[envVar] ?? '',
-        });
+        if (sharing.mode === 'private') {
+          await setPersonalProjectSecret(projectId, envVar, {
+            value: values[envVar] ?? '',
+            active: true,
+          });
+        } else {
+          await upsertProjectSecret(projectId, {
+            name: envVar,
+            value: values[envVar] ?? '',
+            sharing: selectionToIntent(sharing),
+          });
+        }
       }
     },
     onSuccess: () => {
@@ -731,6 +775,10 @@ function ApiKeyConnectForm({
           ? 'API key is required'
           : `All ${provider.envVars.length} fields are required`,
       );
+      return;
+    }
+    if (!isSharingComplete(sharing)) {
+      setError('Pick at least one member, or choose another access option.');
       return;
     }
     upsert.mutate();
@@ -767,6 +815,14 @@ function ApiKeyConnectForm({
         </div>
       </div>
 
+      {provider.id === 'openai' && (
+        <ChatGptSubscriptionConnect
+          projectId={projectId}
+          sharing={sharing}
+          onConnected={onConnected}
+        />
+      )}
+
       <form
         onSubmit={handleSubmit}
         className={cn(
@@ -796,6 +852,13 @@ function ApiKeyConnectForm({
           </div>
         ))}
 
+        <SharingPicker
+          projectId={projectId}
+          value={sharing}
+          onChange={setSharing}
+          showHeading
+        />
+
         {provider.helpUrl && helpHostname && (
           <a
             href={provider.helpUrl}
@@ -818,7 +881,7 @@ function ApiKeyConnectForm({
           type="submit"
           size="sm"
           className="px-4"
-          disabled={upsert.isPending || !allFilled}
+          disabled={upsert.isPending || !allFilled || !isSharingComplete(sharing)}
         >
           {upsert.isPending ? (
             <>
@@ -830,6 +893,176 @@ function ApiKeyConnectForm({
       </form>
 
       <p className="px-1 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line856JsxTextValuesAreEncryptedAtRestAes256Gcm')}</p>
+    </div>
+  );
+}
+
+function ChatGptSubscriptionConnect({
+  projectId,
+  sharing,
+  onConnected,
+}: {
+  projectId: string;
+  sharing: SharingSelection;
+  onConnected: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [authId, setAuthId] = useState<string | null>(null);
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [authInstructions, setAuthInstructions] = useState<string | null>(null);
+
+  function formatProviderError(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (err && typeof err === 'object') {
+      const record = err as Record<string, unknown>;
+      const data = record.data;
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        const message = (data as Record<string, unknown>).message;
+        if (typeof message === 'string' && message.trim()) return message;
+      }
+      const message = record.message;
+      if (typeof message === 'string' && message.trim()) return message;
+      try {
+        return JSON.stringify(err);
+      } catch {
+        // fall through
+      }
+    }
+    return 'Failed to connect ChatGPT subscription';
+  }
+
+  async function handleStartHeadlessConnect() {
+    setBusy(true);
+    setError(null);
+    setAuthId(null);
+    setAuthUrl(null);
+    setAuthInstructions(null);
+    try {
+      const authData = await startProjectChatGptHeadlessAuth(projectId);
+      setAuthId(authData.authId);
+      setAuthUrl(authData.url);
+      setAuthInstructions(authData.instructions);
+      if (authData.url) {
+        window.open(authData.url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err) {
+      setError(formatProviderError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCompleteHeadlessConnect() {
+    if (!authId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (!isSharingComplete(sharing)) {
+        throw new Error('Pick at least one member, or choose another access option.');
+      }
+      await completeProjectChatGptHeadlessAuth(projectId, {
+        authId,
+        sharing: selectionToIntent(sharing),
+      });
+
+      toast.success('ChatGPT subscription connected to this project');
+      queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      onConnected();
+    } catch (err) {
+      setError(formatProviderError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const deviceCode = authInstructions?.match(/\b[A-Z0-9]{4,}(?:-[A-Z0-9]{4,})+\b/)?.[0] ?? null;
+
+  return (
+    <div className="rounded-2xl border border-border/50 bg-muted/20 p-4">
+      <div className="flex items-start gap-3">
+        <ProviderLogo providerID="openai" name="OpenAI" size="default" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-foreground">ChatGPT Plus/Pro</div>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+            Use OpenCode headless auth, then save the resulting login as an encrypted project secret for future sessions.
+          </p>
+        </div>
+      </div>
+      {(authInstructions || authUrl) && (
+        <div className="mt-3 rounded-xl border border-border/50 bg-background/70 p-3">
+          <div className="text-xs font-medium text-foreground">Complete authorization</div>
+          {authUrl && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-2 h-8 gap-1.5 px-3"
+              onClick={() => window.open(authUrl, '_blank', 'noopener,noreferrer')}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open auth page
+            </Button>
+          )}
+          {deviceCode ? (
+            <div className="mt-3">
+              <div className="text-xs text-muted-foreground">Enter this code on the auth page:</div>
+              <div className="mt-1 w-fit rounded-lg border border-border/60 bg-muted px-3 py-2 font-mono text-lg font-semibold tracking-normal text-foreground">
+                {deviceCode}
+              </div>
+            </div>
+          ) : authInstructions ? (
+            <pre className="mt-3 whitespace-pre-wrap rounded-lg border border-border/60 bg-muted p-3 text-xs text-muted-foreground">
+              {authInstructions}
+            </pre>
+          ) : null}
+          {busy && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Connecting
+            </div>
+          )}
+        </div>
+      )}
+      {error && (
+        <div className="mt-3 flex items-start gap-2 rounded-2xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="px-4"
+          onClick={handleStartHeadlessConnect}
+          disabled={busy}
+        >
+          {busy ? (
+            <>
+              {!(authInstructions || authUrl) && (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              )}
+              Connecting
+            </>
+          ) : (
+            'Connect with headless auth'
+          )}
+        </Button>
+        {authId && (
+          <Button
+            type="button"
+            size="sm"
+            className="px-4"
+            onClick={handleCompleteHeadlessConnect}
+            disabled={busy}
+          >
+            Complete authorization
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -863,6 +1096,10 @@ function CustomProviderForm({
     apiKey: '',
     modelId: '',
     modelName: '',
+  });
+  const [sharing, setSharing] = useState<SharingSelection>({
+    mode: 'project',
+    memberIds: [],
   });
   const [error, setError] = useState<string | null>(null);
   const [savedSnippet, setSavedSnippet] = useState<{
@@ -902,7 +1139,21 @@ function CustomProviderForm({
         ? `CUSTOM_${trimmed.providerId.toUpperCase().replace(/-/g, '_')}_API_KEY`
         : null;
       if (secretName) {
-        await upsertProjectSecret(projectId, { name: secretName, value: trimmed.apiKey });
+        if (!isSharingComplete(sharing)) {
+          throw new Error('Pick at least one member, or choose another access option.');
+        }
+        if (sharing.mode === 'private') {
+          await setPersonalProjectSecret(projectId, secretName, {
+            value: trimmed.apiKey,
+            active: true,
+          });
+        } else {
+          await upsertProjectSecret(projectId, {
+            name: secretName,
+            value: trimmed.apiKey,
+            sharing: selectionToIntent(sharing),
+          });
+        }
       }
 
       const snippet = buildCustomProviderSnippet({
@@ -994,6 +1245,15 @@ function CustomProviderForm({
             />
           </div>
         </div>
+
+        {form.apiKey.trim() && (
+          <SharingPicker
+            projectId={projectId}
+            value={sharing}
+            onChange={setSharing}
+            showHeading
+          />
+        )}
         <div>
           <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1033JsxTextBaseUrl')}</label>
           <Input
@@ -1046,7 +1306,12 @@ function CustomProviderForm({
           </div>
         )}
 
-        <Button type="submit" size="sm" className="px-4" disabled={save.isPending}>
+        <Button
+          type="submit"
+          size="sm"
+          className="px-4"
+          disabled={save.isPending || (Boolean(form.apiKey.trim()) && !isSharingComplete(sharing))}
+        >
           {save.isPending ? (
             <>
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1094JsxTextGenerating')}</>

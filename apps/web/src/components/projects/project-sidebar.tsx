@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/tooltip';
 import { listProjectSessions, type ProjectOpenCodeSession, type ProjectSession } from '@/lib/projects-client';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { useCustomizeStore } from '@/stores/customize-store';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { UserMenu } from '@/components/layout/user-menu';
@@ -365,7 +366,6 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
-  const pathname = usePathname();
   const { state, setOpen, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
   const effectiveState = isMobile ? 'expanded' : state;
@@ -435,19 +435,16 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     return () => window.removeEventListener('keydown', handler);
   }, [handleNewSession]);
 
-  // Customize lives as a dedicated tab next to the project sessions. We
-  // track an "open" flag in the same per-project store the session tabs
-  // use so the tab bar can render it consistently, and clicking the
-  // sidebar button both opens the tab and routes to /customize.
-  const openCustomizeTab = useProjectSessionTabsStore((s) => s.openCustomizeTab);
-  const isCustomizeRoute =
-    pathname?.startsWith(`/projects/${projectId}/customize`) ?? false;
+  // Customize is a full-screen overlay that floats over the active page
+  // (driven by the customize store) — no route change, no tab. The button
+  // just toggles it open, so you never lose your session/place.
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const customizeOpen = useCustomizeStore((s) => s.open);
 
   const goCustomize = useCallback(() => {
-    openCustomizeTab(projectId);
-    router.push(`/projects/${projectId}/customize`);
+    openCustomize();
     if (isMobile) setOpenMobile(false);
-  }, [openCustomizeTab, router, projectId, isMobile, setOpenMobile]);
+  }, [openCustomize, isMobile, setOpenMobile]);
 
   return (
     <Sidebar
@@ -543,7 +540,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               icon={<SlidersHorizontal className="h-4 w-4" />}
               label="Customize"
               onClick={goCustomize}
-              isActive={isCustomizeRoute}
+              isActive={customizeOpen}
             />
           </div>
         </div>
@@ -605,7 +602,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   onClick={goCustomize}
-                  isActive={isCustomizeRoute}
+                  isActive={customizeOpen}
                   className="!text-sm font-normal data-[active=true]:font-normal !transition-none transform-none [&_svg]:!size-4"
                 >
                   <SlidersHorizontal />

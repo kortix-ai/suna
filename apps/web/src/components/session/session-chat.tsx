@@ -109,6 +109,7 @@ import {
   useOpenCodeAgents,
   useOpenCodeCommands,
   useOpenCodeProviders,
+  useOpenCodeRuntimeReady,
   useOpenCodeSession,
   useOpenCodeSessions,
 } from '@/hooks/opencode/use-opencode-sessions';
@@ -138,7 +139,7 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useChatSendStore } from '@/stores/chat-send-store';
-import { useServerStore } from '@/stores/server-store';
+import { useServerStore, getActiveOpenCodeUrl } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   buildFileRefsBlock,
@@ -4019,8 +4020,14 @@ export function SessionChat({
   }, [isSidePanelOpen, setIsSidePanelOpen]);
 
   // ---- Hooks ----
-  const { data: session, isLoading: sessionLoading } =
-    useOpenCodeSession(sessionId);
+  // runtimeReady gates the session query (it's disabled until the sandbox
+  // runtime is connected + healthy). We need it here too so the render logic
+  // can tell "still booting" apart from "genuinely gone".
+  const runtimeReady = useOpenCodeRuntimeReady();
+  const {
+    data: session,
+    isFetched: sessionFetched,
+  } = useOpenCodeSession(sessionId);
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
@@ -4265,8 +4272,13 @@ export function SessionChat({
           .messages({ sessionID: sessionId })
           .then((res) => {
             if (res.data) {
+              // hydrate() already drops superseded optimistic messages AND
+              // bridges their text onto the real server message. Do NOT also
+              // call clearOptimisticMessages here: on an error send whose user
+              // message the server hasn't persisted yet, that wipes the user's
+              // typed text and leaves an empty bubble. Keeping the optimistic
+              // message means the user always still sees what they sent.
               useSyncStore.getState().hydrate(sessionId, res.data as any);
-              useSyncStore.getState().clearOptimisticMessages(sessionId);
             } else {
               // No server data — just remove the optimistic message
               removeOptimisticUserMessage(messageID);
@@ -5451,8 +5463,13 @@ export function SessionChat({
           .messages({ sessionID: sessionId })
           .then((res) => {
             if (res.data) {
+              // hydrate() already drops superseded optimistic messages AND
+              // bridges their text onto the real server message. Do NOT also
+              // call clearOptimisticMessages here: on an error send whose user
+              // message the server hasn't persisted yet, that wipes the user's
+              // typed text and leaves an empty bubble. Keeping the optimistic
+              // message means the user always still sees what they sent.
               useSyncStore.getState().hydrate(sessionId, res.data as any);
-              useSyncStore.getState().clearOptimisticMessages(sessionId);
             } else {
               removeOptimisticUserMessage(messageID);
             }
@@ -5504,18 +5521,36 @@ export function SessionChat({
 
         // Thrown = network/transport failure (request didn't complete).
         if (caught) {
+          console.error('[session-chat] send threw', {
+            sessionId,
+            attempt,
+            activeUrl: getActiveOpenCodeUrl(),
+            error: caughtErr,
+          });
           if (attempt < maxAttempts) {
             await sleep(retryBackoffMs[attempt - 1]);
             continue;
           }
           handleSendError();
-          throw caughtErr;
+          throw caughtErr instanceof Error
+            ? caughtErr
+            : new Error('Couldn’t reach the server.');
         }
 
         // The SDK resolves (not rejects) on HTTP errors, returning
         // { error, response } instead of throwing.
         if (res?.error) {
           const status = res?.response?.status as number | undefined;
+          // Full ground truth in the console so we stop guessing the cause:
+          // the exact status, the URL it actually hit, and the error body.
+          console.error('[session-chat] send failed', {
+            sessionId,
+            attempt,
+            status,
+            requestedUrl: res?.response?.url,
+            activeUrl: getActiveOpenCodeUrl(),
+            error: res?.error,
+          });
           const transient =
             status === undefined || status >= 500 || status === 408 || status === 429;
           if (transient && attempt < maxAttempts) {
@@ -5523,11 +5558,17 @@ export function SessionChat({
             continue;
           }
           handleSendError();
-          const message =
+          // Surface the real cause in the toast — a bare "Failed to send
+          // message" hides whether this was a 4xx (bad request/auth/model) or
+          // a 5xx/proxy blip. Lead with the server's message if it gave one,
+          // otherwise show the HTTP status so it's diagnosable at a glance.
+          const detail =
             (typeof res.error?.data?.message === 'string' && res.error.data.message) ||
             (typeof res.error === 'string' && res.error) ||
-            'Failed to send message';
-          throw new Error(message);
+            null;
+          throw new Error(
+            detail ?? `Couldn’t send your message (HTTP ${status ?? 'unknown'}).`,
+          );
         }
 
         // Success — the server accepted the prompt (204) and streams the
@@ -5835,9 +5876,19 @@ export function SessionChat({
   // spinning while we wait to confirm "0 messages", we show the welcome
   // screen right away.
   const hasMessages = messages && messages.length > 0;
+  // "Not found" is a TERMINAL answer, never a loading guess. It's only true once
+  // the runtime is connected AND the session lookup has actually run and come
+  // back empty. While the runtime is still connecting (the query is disabled and
+  // therefore reports isLoading=false) or the lookup is in flight, we know
+  // nothing yet — so we must show the loading state, not the error. This is what
+  // stops the "This session is not accessible right now." flash on boot.
+  const sessionResolved = runtimeReady && sessionFetched;
+  const isNotFound = !session && sessionResolved && !optimisticPrompt;
+  // Everything that isn't "we have content" and isn't the terminal not-found
+  // state is loading — including the boot window where the query is still
+  // disabled (isLoading=false) waiting on the runtime.
   const isDataLoading =
-    !session && sessionLoading && !hasMessages && !optimisticPrompt;
-  const isNotFound = !session && !sessionLoading && !optimisticPrompt;
+    !session && !isNotFound && !hasMessages && !optimisticPrompt;
   const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome =
     !prevHasChatContentRef.current && hasChatContent;

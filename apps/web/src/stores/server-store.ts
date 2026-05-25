@@ -170,6 +170,16 @@ export function resolveServerUrl(server: ServerEntry): string {
   return server.url || getDefaultSandboxUrl();
 }
 
+/**
+ * Derive the OpenCode proxy URL for a sandbox by its provider sandbox id
+ * (a project session's `external_id`). Pure function of the id — no dependency
+ * on the active server — so we can connect to several session sandboxes in
+ * parallel (e.g. background SSE streams for every open session tab).
+ */
+export function getSandboxUrlForExternalId(externalId: string): string {
+  return getSandboxServerUrl(externalId);
+}
+
 const DEFAULT_SERVER_ID = 'default';
 const CLOUD_SANDBOX_SERVER_ID = 'cloud-sandbox';
 

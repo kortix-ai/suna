@@ -28,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, RefreshCw, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Tooltip,
@@ -156,7 +157,7 @@ function SandboxAlertContent({
   health: ProjectSandboxHealth;
   severity: Severity;
 }) {
-  const router = useRouter();
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
   const failure = health.failure;
   const canFixWithAgent = !!failure?.fixable_by_agent && health.ready_count > 0;
@@ -229,7 +230,7 @@ function SandboxAlertContent({
           size="sm"
           variant="ghost"
           className="ml-auto text-muted-foreground"
-          onClick={() => router.push(`/projects/${projectId}/customize/settings`)}
+          onClick={() => openCustomize('settings')}
         >
           Details
         </Button>

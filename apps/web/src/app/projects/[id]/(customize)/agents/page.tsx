@@ -16,14 +16,13 @@ import { useTranslations } from 'next-intl';
  */
 
 import { use, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
   Copy,
   ExternalLink,
-  FileText,
   Pencil,
+  Plus,
   Search,
   ShieldAlert,
   Star,
@@ -48,6 +47,12 @@ import {
   readProjectFile,
   type ProjectConfigSummary,
 } from '@/lib/projects-client';
+import {
+  useConfigureThread,
+  newConfigPrompt,
+  editConfigPrompt,
+} from '@/components/projects/customize/use-configure-thread';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -100,19 +105,27 @@ export function AgentsView({ projectId }: { projectId: string }) {
   }, [agents, query]);
 
   const selected = agents.find((a) => a.path === selectedPath) ?? null;
+  const startThread = useConfigureThread(projectId);
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[300px] md:border-b-0 md:border-r">
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-          <Bot className="h-4 w-4 text-muted-foreground" />
-          <h1 className="flex-1 text-sm font-semibold text-foreground">Agents</h1>
-          {agents.length > 0 && (
-            <Badge variant="secondary" size="sm" className="tabular-nums">
-              {agents.length}
-            </Badge>
-          )}
-        </div>
+      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[240px] md:border-b-0 md:border-r">
+        <CustomizeSectionHeader
+          icon={Bot}
+          title="Agents"
+          count={agents.length}
+          actions={
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => startThread(newConfigPrompt('agent'))}
+            >
+              <Plus className="h-3 w-3" />
+              New
+            </Button>
+          }
+        />
 
         <div className="border-b border-border/40 px-3 py-2.5">
           <div className="relative">
@@ -137,7 +150,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
               onRetry={() => detailQuery.refetch()}
             />
           ) : agents.length === 0 ? (
-            <EmptyList />
+            <EmptyList onCreate={() => startThread(newConfigPrompt('agent'))} />
           ) : filtered.length === 0 ? (
             <NoMatches query={query} />
           ) : (
@@ -223,15 +236,13 @@ function AgentDetail({
   isDefault: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const startThread = useConfigureThread(projectId);
   const fileQuery = useQuery({
     queryKey: ['project-file-source', projectId, agent.path],
     queryFn: () => readProjectFile(projectId, agent.path),
     staleTime: 30_000,
   });
 
-  const fileHref = `/projects/${projectId}/files?path=${encodeURIComponent(
-    agent.path,
-  )}`;
   const fileName = agent.path.split('/').pop() ?? agent.path;
   const modeLabel = agent.mode ? formatMode(agent.mode) : null;
 
@@ -260,7 +271,7 @@ function AgentDetail({
         </span>
         <DetailToolbarActions
           onCopy={onCopy}
-          fileHref={fileHref}
+          onEdit={() => startThread(editConfigPrompt('agent', agent.name, agent.path))}
           copyDisabled={!fileQuery.data?.content}
         />
       </header>
@@ -325,29 +336,16 @@ function AgentDetail({
 
 function DetailToolbarActions({
   onCopy,
-  fileHref,
+  onEdit,
   copyDisabled,
 }: {
   onCopy: () => void;
-  fileHref: string;
+  onEdit: () => void;
   copyDisabled: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="flex items-center gap-0.5">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-            disabled
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line347JsxTextInlineEditingComingSoon')}</TooltipContent>
-      </Tooltip>
+    <div className="flex items-center gap-1">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -362,21 +360,15 @@ function DetailToolbarActions({
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line363JsxTextCopySource')}</TooltipContent>
       </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-          >
-            <Link href={fileHref}>
-              <FileText className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line380JsxTextOpenInFileViewer')}</TooltipContent>
-      </Tooltip>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 gap-1.5 px-2.5 text-xs"
+        onClick={onEdit}
+      >
+        <Pencil className="h-3.5 w-3.5" />
+        Edit with agent
+      </Button>
     </div>
   );
 }
@@ -442,7 +434,7 @@ function NoMatches({ query }: { query: string }) {
   );
 }
 
-function EmptyList() {
+function EmptyList({ onCreate }: { onCreate: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
@@ -454,14 +446,22 @@ function EmptyList() {
           <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line457JsxTextKortixOpencodeAgentsLtNameGtMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line459JsxTextAndItAposLlShowUpHere')}</>
       }
       action={
-        <Button asChild variant="ghost" size="sm" className="gap-1.5">
-          <a
-            href="https://opencode.ai/docs/agents/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line470JsxTextOpencodeAgentsDocs')}</a>
-        </Button>
+        <div className="flex flex-col items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={onCreate}>
+            <Plus className="h-3.5 w-3.5" />
+            Create an agent
+          </Button>
+          <Button asChild variant="ghost" size="sm" className="gap-1.5">
+            <a
+              href="https://opencode.ai/docs/agents/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Docs
+            </a>
+          </Button>
+        </div>
       }
     />
   );

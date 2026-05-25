@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { randomBytes, createHmac } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { createServer } from 'node:net';
+import { fileURLToPath } from 'node:url';
 
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { getHost, upsertHost, type Host } from '../api/config.ts';
-import { confirm, prompt, selectFrom } from '../prompts.ts';
+import { prompt, selectFrom } from '../prompts.ts';
 import { C, status } from '../style.ts';
 
 const DEFAULT_INSTANCE = 'default';
@@ -17,6 +19,7 @@ const DEFAULT_API_URL = 'http://localhost:13738';
 const DEFAULT_FRONTEND_IMAGE_REPO = 'kortix/kortix-frontend';
 const DEFAULT_API_IMAGE_REPO = 'kortix/kortix-api';
 const DEFAULT_SANDBOX_IMAGE_REPO = 'kortix/kortix-sandbox';
+const LOCAL_SOURCE_TAG = 'selfhost-local';
 
 const HELP = `Usage: kortix self-host <subcommand> [options]
 
@@ -24,27 +27,38 @@ Run your own Kortix Cloud locally or on your infrastructure using the
 published Docker images from Docker Hub.
 
 Subcommands:
-  init                 Guided setup. Writes persistent env + compose files.
-  start                Pull images and start the self-hosted stack.
+  init                 Create self-host config with production defaults.
+  start                Pull images and start your self-hosted Kortix.
   stop                 Stop the stack.
   restart              Restart the stack.
   status               Show Docker Compose service status.
   logs [service]       Tail logs.
   open                 Open the local dashboard.
+  configure            Guided integration config (Freestyle, GitHub, Pipedream).
   env ls              Show persistent environment values.
   env set KEY=VALUE    Update persistent environment values.
 
 Options:
   --instance <name>    Instance name (default: ${DEFAULT_INSTANCE}).
   --tag <tag>          Docker image tag (default: ${DEFAULT_TAG}).
+  --local              Use current-source local images instead of registry images.
+  --registry           Force registry images even when running from a source checkout.
   --yes                Accept defaults in non-interactive flows.
   -h, --help           Show this help.
+
+Examples:
+  kortix self-host init
+  kortix self-host start
+  kortix self-host env set PUBLIC_URL=https://kortix.example.com API_PUBLIC_URL=https://api.example.com
+  kortix hosts ls
 `;
 
 interface GlobalFlags {
   instance: string;
   tag: string;
   yes: boolean;
+  local: boolean;
+  registry: boolean;
 }
 
 interface SelfHostEnv {
@@ -74,6 +88,15 @@ interface SelfHostEnv {
   KORTIX_GITHUB_APP_SLUG: string;
   KORTIX_GITHUB_TOKEN: string;
   KORTIX_GITHUB_OWNER: string;
+  FREESTYLE_API_KEY: string;
+  FREESTYLE_API_URL: string;
+  INTEGRATION_AUTH_PROVIDER: string;
+  KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: string;
+  PIPEDREAM_CLIENT_ID: string;
+  PIPEDREAM_CLIENT_SECRET: string;
+  PIPEDREAM_PROJECT_ID: string;
+  PIPEDREAM_ENVIRONMENT: string;
+  PIPEDREAM_WEBHOOK_SECRET: string;
   [key: string]: string;
 }
 
@@ -85,6 +108,10 @@ export async function runSelfHost(argv: string[]): Promise<number> {
 
   const args = [...argv];
   const sub = args.shift()!;
+  if (args.includes('-h') || args.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   let flags: GlobalFlags;
   try {
     flags = parseGlobalFlags(args);
@@ -112,6 +139,9 @@ export async function runSelfHost(argv: string[]): Promise<number> {
       return composeCommand(flags, ['logs', '-f', ...args]);
     case 'open':
       return selfHostOpen(flags);
+    case 'configure':
+    case 'config':
+      return selfHostConfigure(flags);
     case 'env':
       return selfHostEnv(args, flags);
     default:
@@ -122,12 +152,17 @@ export async function runSelfHost(argv: string[]): Promise<number> {
 
 function parseGlobalFlags(args: string[]): GlobalFlags {
   const yes = takeFlagBool(args, ['--yes', '-y']);
+  const local = takeFlagBool(args, ['--local']);
+  const registry = takeFlagBool(args, ['--registry']);
   const instance = takeFlagValue(args, ['--instance']) ?? DEFAULT_INSTANCE;
   const tag = takeFlagValue(args, ['--tag', '--version']) ?? DEFAULT_TAG;
+  if (local && registry) {
+    throw new Error('use either --local or --registry, not both');
+  }
   if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(instance)) {
     throw new Error('instance must start with a letter and contain only letters, digits, dots, underscores, or dashes');
   }
-  return { instance, tag, yes };
+  return { instance, tag, yes, local, registry };
 }
 
 async function selfHostInit(flags: GlobalFlags): Promise<number> {
@@ -135,63 +170,63 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   mkdirSync(dir, { recursive: true });
 
   const existing = loadEnv(flags.instance);
-  const env = existing ?? defaultEnv(flags);
-
-  process.stdout.write(`\n  ${C.bold}Kortix self-host setup${C.reset}\n\n`);
-  if (existing && !flags.yes) {
-    const overwrite = await confirm(`Update existing self-host config at ${dir}?`, true);
-    if (!overwrite) return 0;
-  }
-
-  if (!flags.yes) {
-    env.PUBLIC_URL = await prompt('Dashboard URL', env.PUBLIC_URL);
-    env.API_PUBLIC_URL = await prompt('API URL', env.API_PUBLIC_URL);
-    env.SUPABASE_PUBLIC_URL = await prompt('Supabase public URL', env.SUPABASE_PUBLIC_URL);
-    env.FRONTEND_PORT = await prompt('Frontend port', env.FRONTEND_PORT);
-    env.API_PORT = await prompt('API port', env.API_PORT);
-    env.SUPABASE_PORT = await prompt('Supabase port', env.SUPABASE_PORT);
-    env.POSTGRES_PORT = await prompt('Postgres port', env.POSTGRES_PORT);
-    env.KORTIX_GITHUB_OWNER = await prompt('Default GitHub owner/org (optional)', env.KORTIX_GITHUB_OWNER);
-    const gitMode = await selectFrom('Configure GitHub auth? none/app/pat', ['none', 'app', 'pat'] as const, 'none');
-    if (gitMode === 'app') {
-      env.KORTIX_GITHUB_APP_ID = await prompt('GitHub App ID', env.KORTIX_GITHUB_APP_ID);
-      env.KORTIX_GITHUB_APP_SLUG = await prompt('GitHub App slug', env.KORTIX_GITHUB_APP_SLUG);
-      env.KORTIX_GITHUB_APP_PRIVATE_KEY = await prompt('GitHub App private key (paste with \\n escapes)', env.KORTIX_GITHUB_APP_PRIVATE_KEY);
-      env.KORTIX_GITHUB_TOKEN = '';
-    } else if (gitMode === 'pat') {
-      env.KORTIX_GITHUB_TOKEN = await prompt('GitHub token', env.KORTIX_GITHUB_TOKEN);
-      env.KORTIX_GITHUB_APP_ID = '';
-      env.KORTIX_GITHUB_APP_SLUG = '';
-      env.KORTIX_GITHUB_APP_PRIVATE_KEY = '';
-    }
-  }
+  const env = { ...defaultEnv(flags), ...(existing ?? {}) };
 
   env.KORTIX_VERSION = flags.tag;
-  env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${flags.tag}`;
-  env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${flags.tag}`;
-  env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${flags.tag}`;
+  if (!existing || existing.FRONTEND_IMAGE === `${DEFAULT_FRONTEND_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
+    env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${flags.tag}`;
+  }
+  if (!existing || existing.API_IMAGE === `${DEFAULT_API_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
+    env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${flags.tag}`;
+  }
+  if (!existing || existing.SANDBOX_IMAGE === `${DEFAULT_SANDBOX_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
+    env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${flags.tag}`;
+  }
+
+  if (!existing && shouldPrompt(flags) && integrationReviewNeeded(env)) {
+    await configureIntegrations(env);
+  }
 
   writeEnv(flags.instance, env);
   writeDbInit(flags.instance, env);
   writeKongConfig(flags.instance);
   writeCompose(flags.instance, env);
-  process.stdout.write(`${status.ok(`Wrote self-host config to ${dir}`)}\n`);
-  process.stdout.write(`${C.dim}  Start it with: ${C.reset}${C.cyan}kortix self-host start${C.reset}\n\n`);
+  renderInitSummary(flags.instance, dir, env, existing !== null);
   return 0;
+}
+
+function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refreshed: boolean): void {
+  process.stdout.write(`\n  ${C.bold}Kortix self-host${C.reset}\n\n`);
+  process.stdout.write(`${status.ok(refreshed ? 'Self-host config refreshed' : 'Self-host config created')}\n`);
+  process.stdout.write(`  ${C.dim}instance  ${C.reset}${instance}\n`);
+  process.stdout.write(`  ${C.dim}config    ${C.reset}${dir}\n\n`);
+  process.stdout.write(`  ${C.dim}Dashboard ${C.reset}${C.cyan}${env.PUBLIC_URL}${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}API       ${C.reset}${env.API_PUBLIC_URL}\n`);
+  process.stdout.write(`  ${C.dim}Supabase  ${C.reset}${env.SUPABASE_PUBLIC_URL}\n`);
+  process.stdout.write(`  ${C.dim}Images    ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}, ${env.SANDBOX_IMAGE}\n\n`);
+  renderIntegrationSummary(env);
+  process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}Switch API  ${C.reset}${C.cyan}kortix hosts use local${C.reset}${C.dim} / ${C.reset}${C.cyan}kortix hosts use cloud${C.reset}\n\n`);
 }
 
 async function selfHostStart(flags: GlobalFlags): Promise<number> {
   if (!existsSync(envPath(flags.instance)) || !existsSync(composePath(flags.instance))) {
-    if (flags.yes || process.stdin.isTTY) {
-      const code = await selfHostInit(flags);
-      if (code !== 0) return code;
-    } else {
-      process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
-      return 1;
-    }
+    const code = await selfHostInit(flags);
+    if (code !== 0) return code;
   }
 
-  const env = loadEnv(flags.instance)!;
+  const env = loadEnvWithDefaults(flags)!;
+  if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
+    await configureIntegrations(env);
+  }
+  const localImageMode = shouldUseLocalSourceImages(flags);
+  if (localImageMode) {
+    ensureLocalSourceImages();
+    applyLocalSourceImages(env);
+  }
+  const portChanges = await reconcilePorts(flags.instance, env);
+  writeEnv(flags.instance, env);
   writeDbInit(flags.instance, env);
   writeKongConfig(flags.instance);
   writeCompose(flags.instance, env);
@@ -200,6 +235,12 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
   process.stdout.write(`  ${C.dim}images   ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}api      ${C.reset}${env.API_PUBLIC_URL}\n\n`);
+  if (localImageMode) {
+    process.stdout.write(`${C.dim}  images   current source checkout (${LOCAL_SOURCE_TAG}); pull skipped${C.reset}\n`);
+  }
+  if (portChanges.length > 0) {
+    process.stdout.write(`${C.dim}  ports    ${C.reset}${portChanges.join(', ')}\n\n`);
+  }
 
   if (env.KORTIX_LOCAL_IMAGES === 'true') {
     process.stdout.write(`${C.dim}  pull     skipped (KORTIX_LOCAL_IMAGES=true)${C.reset}\n`);
@@ -209,11 +250,14 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   }
   const up = compose(flags.instance, ['up', '-d']);
   if (up !== 0) return up;
+  const refreshApp = compose(flags.instance, ['up', '-d', '--force-recreate', '--no-deps', 'kortix-api', 'frontend']);
+  if (refreshApp !== 0) return refreshApp;
 
   registerLocalHost(DEFAULT_HOST_NAME, env.API_PUBLIC_URL);
   process.stdout.write(`${status.ok('Self-hosted Kortix is starting')}\n`);
   process.stdout.write(`${C.dim}  Dashboard: ${C.reset}${C.cyan}${env.PUBLIC_URL}${C.reset}\n`);
   process.stdout.write(`${C.dim}  Logs:      ${C.reset}${C.cyan}kortix self-host logs${C.reset}\n\n`);
+  renderIntegrationSummary(env);
   return 0;
 }
 
@@ -244,7 +288,7 @@ function selfHostOpen(flags: GlobalFlags): number {
 
 function selfHostEnv(args: string[], flags: GlobalFlags): number {
   const action = args.shift() ?? 'ls';
-  const env = loadEnv(flags.instance);
+  const env = loadEnvWithDefaults(flags);
   if (!env) {
     process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
     return 1;
@@ -280,6 +324,284 @@ function selfHostEnv(args: string[], flags: GlobalFlags): number {
   return 2;
 }
 
+async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
+  const env = loadEnvWithDefaults(flags);
+  if (!env) {
+    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    return 1;
+  }
+  await configureIntegrations(env);
+  writeEnv(flags.instance, env);
+  writeDbInit(flags.instance, env);
+  writeKongConfig(flags.instance);
+  writeCompose(flags.instance, env);
+  process.stdout.write(`${status.ok('Updated self-host integration config')}\n`);
+  renderIntegrationSummary(env);
+  return 0;
+}
+
+async function configureIntegrations(env: SelfHostEnv): Promise<void> {
+  process.stdout.write(`\n  ${C.bold}Kortix self-host integrations${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}These power managed git, GitHub repo access, and app connectors.${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}Press enter to skip anything you do not use yet.${C.reset}\n\n`);
+
+  const freestyleMode = await selectFrom('Managed git / deployments (Freestyle): skip/configure', ['skip', 'configure'] as const, freestyleConfigured(env) ? 'configure' : 'skip');
+  if (freestyleMode === 'configure') {
+    env.FREESTYLE_API_KEY = await promptSecret('Freestyle API key', env.FREESTYLE_API_KEY);
+    env.FREESTYLE_API_URL = await prompt('Freestyle API URL', env.FREESTYLE_API_URL || 'https://api.freestyle.sh');
+  }
+
+  const githubMode = await selectFrom('GitHub integration: none/app/pat', ['none', 'app', 'pat'] as const, inferGithubMode(env));
+  if (githubMode === 'app') {
+    env.KORTIX_GITHUB_APP_ID = await prompt('GitHub App ID', env.KORTIX_GITHUB_APP_ID);
+    env.KORTIX_GITHUB_APP_SLUG = await prompt('GitHub App slug', env.KORTIX_GITHUB_APP_SLUG);
+    env.KORTIX_GITHUB_APP_PRIVATE_KEY = await promptSecret('GitHub App private key (paste with \\n escapes)', env.KORTIX_GITHUB_APP_PRIVATE_KEY);
+    env.KORTIX_GITHUB_TOKEN = '';
+  } else if (githubMode === 'pat') {
+    env.KORTIX_GITHUB_TOKEN = await promptSecret('GitHub PAT (repo scope)', env.KORTIX_GITHUB_TOKEN);
+    env.KORTIX_GITHUB_OWNER = await prompt('Default GitHub owner/org', env.KORTIX_GITHUB_OWNER);
+    env.KORTIX_GITHUB_APP_ID = '';
+    env.KORTIX_GITHUB_APP_SLUG = '';
+    env.KORTIX_GITHUB_APP_PRIVATE_KEY = '';
+  } else {
+    env.KORTIX_GITHUB_APP_ID = '';
+    env.KORTIX_GITHUB_APP_SLUG = '';
+    env.KORTIX_GITHUB_APP_PRIVATE_KEY = '';
+    env.KORTIX_GITHUB_TOKEN = '';
+  }
+
+  const pdMode = await selectFrom('Pipedream connectors: skip/configure', ['skip', 'configure'] as const, pipedreamConfigured(env) ? 'configure' : 'skip');
+  if (pdMode === 'configure') {
+    env.INTEGRATION_AUTH_PROVIDER = 'pipedream';
+    env.PIPEDREAM_CLIENT_ID = await prompt('Pipedream client ID', env.PIPEDREAM_CLIENT_ID);
+    env.PIPEDREAM_CLIENT_SECRET = await promptSecret('Pipedream client secret', env.PIPEDREAM_CLIENT_SECRET);
+    env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream project ID', env.PIPEDREAM_PROJECT_ID);
+    env.PIPEDREAM_ENVIRONMENT = await selectFrom('Pipedream environment', ['development', 'production'] as const, env.PIPEDREAM_ENVIRONMENT === 'development' ? 'development' : 'production');
+    env.PIPEDREAM_WEBHOOK_SECRET = await promptSecret('Pipedream webhook secret (optional)', env.PIPEDREAM_WEBHOOK_SECRET);
+  }
+  env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED = 'true';
+}
+
+async function promptSecret(label: string, current: string): Promise<string> {
+  const answer = await prompt(current ? `${label} (already set, enter to keep)` : label);
+  return answer || current;
+}
+
+function inferGithubMode(env: SelfHostEnv): 'none' | 'app' | 'pat' {
+  if (env.KORTIX_GITHUB_APP_ID || env.KORTIX_GITHUB_APP_PRIVATE_KEY || env.KORTIX_GITHUB_APP_SLUG) return 'app';
+  if (env.KORTIX_GITHUB_TOKEN) return 'pat';
+  return 'none';
+}
+
+function pipedreamConfigured(env: SelfHostEnv): boolean {
+  return !!(env.PIPEDREAM_CLIENT_ID || env.PIPEDREAM_CLIENT_SECRET || env.PIPEDREAM_PROJECT_ID);
+}
+
+function freestyleConfigured(env: SelfHostEnv): boolean {
+  return !!env.FREESTYLE_API_KEY;
+}
+
+function integrationReviewNeeded(env: SelfHostEnv): boolean {
+  if (env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED === 'true') return false;
+  return !(freestyleConfigured(env) && inferGithubMode(env) !== 'none' && pipedreamConfigured(env));
+}
+
+function shouldPrompt(flags: GlobalFlags): boolean {
+  return !flags.yes && process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
+function renderIntegrationSummary(env: SelfHostEnv): void {
+  const rows = [
+    {
+      name: 'Managed git / deployments',
+      configured: freestyleConfigured(env),
+      hint: 'FREESTYLE_API_KEY',
+    },
+    {
+      name: 'GitHub App',
+      configured: inferGithubMode(env) === 'app',
+      hint: 'KORTIX_GITHUB_APP_ID + KORTIX_GITHUB_APP_PRIVATE_KEY + KORTIX_GITHUB_APP_SLUG',
+    },
+    {
+      name: 'GitHub PAT fallback',
+      configured: inferGithubMode(env) === 'pat',
+      hint: 'KORTIX_GITHUB_TOKEN + KORTIX_GITHUB_OWNER',
+    },
+    {
+      name: 'Pipedream connectors',
+      configured: pipedreamConfigured(env),
+      hint: 'PIPEDREAM_CLIENT_ID + PIPEDREAM_CLIENT_SECRET + PIPEDREAM_PROJECT_ID',
+    },
+  ];
+
+  process.stdout.write(`  ${C.dim}Integrations${C.reset}\n`);
+  for (const row of rows) {
+    const marker = row.configured ? `${C.green}configured${C.reset}` : `${C.yellow}missing${C.reset}`;
+    process.stdout.write(`  ${C.dim}- ${C.reset}${row.name}: ${marker}`);
+    if (!row.configured) process.stdout.write(`${C.dim} (${row.hint})${C.reset}`);
+    process.stdout.write('\n');
+  }
+  const missing = rows.filter((row) => !row.configured).length;
+  if (missing > 0) {
+    process.stdout.write(`  ${C.dim}Configure: ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
+  }
+  process.stdout.write('\n');
+}
+
+function shouldUseLocalSourceImages(flags: GlobalFlags): boolean {
+  if (flags.registry) return false;
+  if (flags.local) return true;
+  return sourceRepoRoot() !== null;
+}
+
+function applyLocalSourceImages(env: SelfHostEnv): void {
+  env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
+  env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
+  env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
+  env.KORTIX_LOCAL_IMAGES = 'true';
+}
+
+function ensureLocalSourceImages(): void {
+  const images = [
+    `${DEFAULT_FRONTEND_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
+    `${DEFAULT_API_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
+    `${DEFAULT_SANDBOX_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
+  ];
+  const missing = images.filter((image) => !dockerImageExists(image));
+  if (missing.length === 0) return;
+
+  const root = sourceRepoRoot();
+  if (!root) {
+    throw new Error(`local self-host images are missing: ${missing.join(', ')}`);
+  }
+
+  process.stdout.write(
+    `${C.dim}  images   building current-source local images (${missing.join(', ')})${C.reset}\n`,
+  );
+  const result = spawnSync('bash', [join(root, 'scripts', 'build-local-images.sh'), '--tag', LOCAL_SOURCE_TAG], {
+    cwd: root,
+    stdio: 'inherit',
+  });
+  if (result.error) {
+    throw result.error;
+  }
+  if ((result.status ?? 1) !== 0) {
+    throw new Error('failed to build current-source local images');
+  }
+}
+
+function dockerImageExists(image: string): boolean {
+  const result = spawnSync('docker', ['image', 'inspect', image], { stdio: 'ignore' });
+  return result.status === 0;
+}
+
+function sourceRepoRoot(): string | null {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const root = resolve(here, '../../../..');
+    if (
+      existsSync(join(root, 'scripts', 'build-local-images.sh')) &&
+      existsSync(join(root, 'apps', 'cli', 'src', 'index.ts'))
+    ) {
+      return root;
+    }
+  } catch {
+    /* not a file-backed source checkout */
+  }
+  return null;
+}
+
+async function reconcilePorts(instance: string, env: SelfHostEnv): Promise<string[]> {
+  if (composeHasRunningServices(instance)) return [];
+
+  const changes: string[] = [];
+  await ensurePort(env, 'FRONTEND_PORT', 'PUBLIC_URL', changes);
+  await ensurePort(env, 'API_PORT', 'API_PUBLIC_URL', changes);
+  await ensurePort(env, 'SUPABASE_PORT', 'SUPABASE_PUBLIC_URL', changes);
+  await ensurePort(env, 'POSTGRES_PORT', undefined, changes);
+
+  if (changes.length > 0) {
+    writeEnv(instance, env);
+  }
+  return changes;
+}
+
+async function ensurePort(
+  env: SelfHostEnv,
+  portKey: 'FRONTEND_PORT' | 'API_PORT' | 'SUPABASE_PORT' | 'POSTGRES_PORT',
+  urlKey: 'PUBLIC_URL' | 'API_PUBLIC_URL' | 'SUPABASE_PUBLIC_URL' | undefined,
+  changes: string[],
+): Promise<void> {
+  const current = Number(env[portKey]);
+  if (!Number.isInteger(current) || current <= 0) return;
+  if (await portAvailable(current)) return;
+
+  const next = await findFreePort();
+  env[portKey] = String(next);
+  if (urlKey && isLocalhostUrlOnPort(env[urlKey], current)) {
+    const url = new URL(env[urlKey]);
+    url.port = String(next);
+    env[urlKey] = url.toString().replace(/\/$/, '');
+  }
+  changes.push(`${portKey} ${current}->${next}`);
+}
+
+function composeHasRunningServices(instance: string): boolean {
+  if (!existsSync(composePath(instance)) || !existsSync(envPath(instance))) return false;
+  const result = spawnSync(
+    'docker',
+    [
+      'compose',
+      '--project-name',
+      composeProject(instance),
+      '--env-file',
+      envPath(instance),
+      '-f',
+      composePath(instance),
+      'ps',
+      '--services',
+      '--filter',
+      'status=running',
+    ],
+    { cwd: instanceDir(instance), encoding: 'utf8' },
+  );
+  return result.status === 0 && result.stdout.trim().length > 0;
+}
+
+function isLocalhostUrlOnPort(value: string, port: number): boolean {
+  try {
+    const url = new URL(value);
+    const effectivePort = url.port || (url.protocol === 'https:' ? '443' : '80');
+    return ['localhost', '127.0.0.1'].includes(url.hostname) && effectivePort === String(port);
+  } catch {
+    return false;
+  }
+}
+
+function portAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.once('listening', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      server.close(() => resolve(port));
+    });
+    server.listen(0, '127.0.0.1');
+  });
+}
+
 function defaultEnv(flags: GlobalFlags): SelfHostEnv {
   const jwtSecret = token(64);
   return {
@@ -309,6 +631,15 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     KORTIX_GITHUB_APP_SLUG: '',
     KORTIX_GITHUB_TOKEN: '',
     KORTIX_GITHUB_OWNER: '',
+    FREESTYLE_API_KEY: '',
+    FREESTYLE_API_URL: 'https://api.freestyle.sh',
+    INTEGRATION_AUTH_PROVIDER: 'pipedream',
+    KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: 'false',
+    PIPEDREAM_CLIENT_ID: '',
+    PIPEDREAM_CLIENT_SECRET: '',
+    PIPEDREAM_PROJECT_ID: '',
+    PIPEDREAM_ENVIRONMENT: 'production',
+    PIPEDREAM_WEBHOOK_SECRET: '',
   };
 }
 
@@ -454,6 +785,7 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
       DOCKER_HOST: unix:///var/run/docker.sock
       KORTIX_URL: http://kortix-api:8008
       FRONTEND_URL: \${PUBLIC_URL}
+      CORS_ALLOWED_ORIGINS: \${PUBLIC_URL},\${API_PUBLIC_URL}
       SANDBOX_IMAGE: \${SANDBOX_IMAGE}
       SANDBOX_NETWORK: ${project}_default
       KORTIX_LOCAL_DOCKER_HOST: host.docker.internal
@@ -628,6 +960,12 @@ function loadEnv(instance: string): SelfHostEnv | null {
     out[line.slice(0, idx)] = line.slice(idx + 1);
   }
   return out as SelfHostEnv;
+}
+
+function loadEnvWithDefaults(flags: GlobalFlags): SelfHostEnv | null {
+  const existing = loadEnv(flags.instance);
+  if (!existing) return null;
+  return { ...defaultEnv(flags), ...existing };
 }
 
 function writeEnv(instance: string, env: SelfHostEnv): void {

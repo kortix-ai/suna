@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { use, useMemo, useState } from 'react';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import {
@@ -85,10 +86,7 @@ export default function ProjectConnectorsPage({ params }: { params: Promise<{ id
 export function ConnectorsView({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <Plug className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-semibold text-foreground">Connectors</h1>
-      </div>
+      <CustomizeSectionHeader icon={Plug} title="Connectors" />
       <ConnectorsBody projectId={projectId} />
     </div>
   );

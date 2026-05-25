@@ -11,20 +11,19 @@ import { useTranslations } from 'next-intl';
  */
 
 import { use, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import {
   Copy,
   ExternalLink,
-  FileText,
   Pencil,
+  Plus,
   Search,
   ShieldAlert,
   TerminalSquare,
 } from 'lucide-react';
 
 import { UnifiedMarkdown } from '@/components/markdown';
-import { Badge } from '@/components/ui/badge';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -42,6 +41,11 @@ import {
   readProjectFile,
   type ProjectConfigSummary,
 } from '@/lib/projects-client';
+import {
+  useConfigureThread,
+  newConfigPrompt,
+  editConfigPrompt,
+} from '@/components/projects/customize/use-configure-thread';
 
 type Command = ProjectConfigSummary['commands'][number];
 
@@ -87,21 +91,27 @@ export function CommandsView({ projectId }: { projectId: string }) {
   }, [commands, query]);
 
   const selected = commands.find((c) => c.path === selectedPath) ?? null;
+  const startThread = useConfigureThread(projectId);
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[300px] md:border-b-0 md:border-r">
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-          <TerminalSquare className="h-4 w-4 text-muted-foreground" />
-          <h1 className="flex-1 text-sm font-semibold text-foreground">
-            Commands
-          </h1>
-          {commands.length > 0 && (
-            <Badge variant="secondary" size="sm" className="tabular-nums">
-              {commands.length}
-            </Badge>
-          )}
-        </div>
+      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[240px] md:border-b-0 md:border-r">
+        <CustomizeSectionHeader
+          icon={TerminalSquare}
+          title="Commands"
+          count={commands.length}
+          actions={
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => startThread(newConfigPrompt('command'))}
+            >
+              <Plus className="h-3 w-3" />
+              New
+            </Button>
+          }
+        />
 
         <div className="border-b border-border/40 px-3 py-2.5">
           <div className="relative">
@@ -126,7 +136,7 @@ export function CommandsView({ projectId }: { projectId: string }) {
               onRetry={() => detailQuery.refetch()}
             />
           ) : commands.length === 0 ? (
-            <EmptyList />
+            <EmptyList onCreate={() => startThread(newConfigPrompt('command'))} />
           ) : filtered.length === 0 ? (
             <NoMatches query={query} />
           ) : (
@@ -204,15 +214,13 @@ function CommandDetail({
   command: Command;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const startThread = useConfigureThread(projectId);
   const fileQuery = useQuery({
     queryKey: ['project-file-source', projectId, command.path],
     queryFn: () => readProjectFile(projectId, command.path),
     staleTime: 30_000,
   });
 
-  const fileHref = `/projects/${projectId}/files?path=${encodeURIComponent(
-    command.path,
-  )}`;
   const fileName = command.path.split('/').pop() ?? command.path;
 
   const onCopy = async () => {
@@ -240,7 +248,7 @@ function CommandDetail({
         </span>
         <DetailToolbarActions
           onCopy={onCopy}
-          fileHref={fileHref}
+          onEdit={() => startThread(editConfigPrompt('command', command.name, command.path))}
           copyDisabled={!fileQuery.data?.content}
         />
       </header>
@@ -287,29 +295,16 @@ function CommandDetail({
 
 function DetailToolbarActions({
   onCopy,
-  fileHref,
+  onEdit,
   copyDisabled,
 }: {
   onCopy: () => void;
-  fileHref: string;
+  onEdit: () => void;
   copyDisabled: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="flex items-center gap-0.5">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-            disabled
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line310JsxTextInlineEditingComingSoon')}</TooltipContent>
-      </Tooltip>
+    <div className="flex items-center gap-1">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -324,21 +319,15 @@ function DetailToolbarActions({
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line326JsxTextCopySource')}</TooltipContent>
       </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-          >
-            <Link href={fileHref}>
-              <FileText className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line343JsxTextOpenInFileViewer')}</TooltipContent>
-      </Tooltip>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 gap-1.5 px-2.5 text-xs"
+        onClick={onEdit}
+      >
+        <Pencil className="h-3.5 w-3.5" />
+        Edit with agent
+      </Button>
     </div>
   );
 }
@@ -404,7 +393,7 @@ function NoMatches({ query }: { query: string }) {
   );
 }
 
-function EmptyList() {
+function EmptyList({ onCreate }: { onCreate: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
@@ -416,14 +405,22 @@ function EmptyList() {
           <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line420JsxTextOpencodeCommandLtSlugGtMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line422JsxTextToAddASlashCommand')}</>
       }
       action={
-        <Button asChild variant="ghost" size="sm" className="gap-1.5">
-          <a
-            href="https://opencode.ai/docs/commands/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line433JsxTextOpencodeCommandsDocs')}</a>
-        </Button>
+        <div className="flex flex-col items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={onCreate}>
+            <Plus className="h-3.5 w-3.5" />
+            Create a command
+          </Button>
+          <Button asChild variant="ghost" size="sm" className="gap-1.5">
+            <a
+              href="https://opencode.ai/docs/commands/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Docs
+            </a>
+          </Button>
+        </div>
       }
     />
   );

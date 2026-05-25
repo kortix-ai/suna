@@ -157,18 +157,28 @@ error from the parser. Don't — it'll just never have a value.
 
 ## `[sandbox]`
 
-Sandbox base image config. **Entirely optional.** Omitting the table
-(or any key) falls back to defaults.
+Sandbox base image **and hardware spec**. **Entirely optional.** Omitting
+the table (or any key) falls back to defaults.
 
 | Key          | Default               | Notes                                                                                  |
 | ------------ | --------------------- | -------------------------------------------------------------------------------------- |
 | `dockerfile` | `.kortix/Dockerfile`  | Repo-relative path. Aliases: none.                                                     |
 | `context`    | `.`                   | Build context, repo-relative. Alias: `context_dir`.                                    |
+| `cpu`        | provider default      | vCPU cores. Alias: `cpus`.                                                             |
+| `memory`     | provider default      | RAM in GiB. Aliases: `memory_gb`, `mem`.                                              |
+| `disk`       | provider default      | Disk in GiB. Alias: `disk_gb`.                                                        |
+| `gpu`        | provider default (none) | GPU units. Requires GPU capacity on the runtime.                                     |
 
 Both paths must be repo-relative. **Absolute paths and `..` traversal
 are silently ignored** — the validator falls back to the default
 without surfacing an error. If your custom path "isn't being read",
 this is the usual cause.
+
+The hardware spec (`cpu`/`memory`/`disk`/`gpu`) is **baked into the
+snapshot**, so changing any value rebuilds the image and takes effect on
+the **next** session — same as a Dockerfile edit. Values round to whole
+numbers; non-positive values fall back to the default and values above
+the platform ceiling (cpu 32, memory 128, disk 500, gpu 8) clamp down.
 
 See the runtime / layered-build documentation for how the snapshot
 builder appends the Kortix runtime layer on top of your image.

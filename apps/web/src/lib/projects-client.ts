@@ -551,6 +551,32 @@ export async function upsertProjectSecret(
   );
 }
 
+export async function startProjectChatGptHeadlessAuth(projectId: string) {
+  return unwrap(
+    await backendApi.post<{
+      authId: string;
+      url: string;
+      instructions: string;
+      code: string | null;
+    }>(
+      `/projects/${projectId}/providers/openai/chatgpt/headless/start`,
+      {},
+    ),
+  );
+}
+
+export async function completeProjectChatGptHeadlessAuth(
+  projectId: string,
+  input: { authId: string; sharing?: ConnectorSharing },
+) {
+  return unwrap(
+    await backendApi.post<ProjectSecret>(
+      `/projects/${projectId}/providers/openai/chatgpt/headless/complete`,
+      { auth_id: input.authId, sharing: input.sharing },
+    ),
+  );
+}
+
 export async function upsertProjectGitCredential(
   projectId: string,
   input: { token: string },

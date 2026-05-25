@@ -173,6 +173,9 @@ mock.module('../shared/daytona', () => ({
       },
     },
   }),
+  isDaytonaConfigured: () => true,
+  listDaytonaSnapshots: async () => [],
+  deleteDaytonaSnapshotById: async () => true,
 }));
 
 mock.module('../projects/git', () => ({

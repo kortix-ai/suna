@@ -278,12 +278,21 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
     >
       <div
         className={cn(
-          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 transition-colors duration-150',
+          'relative flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 transition-colors duration-150',
+          // Active reads distinctly from hover: solid fill + a left accent bar,
+          // while hover is only a half-strength wash. (Before, active and hover
+          // shared the same background, so a selected row looked merely hovered.)
           isActive
-            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+            ? 'bg-sidebar-accent text-sidebar-foreground font-medium'
+            : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
         )}
       >
+        {isActive && (
+          <span
+            aria-hidden
+            className="absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-foreground"
+          />
+        )}
         <SessionStatusDot status={session.status} />
 
         <span
@@ -402,8 +411,8 @@ function ProjectSubsessionRow({
         className={cn(
           'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm transition-colors duration-150',
           isActive
-            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+            ? 'bg-sidebar-accent text-sidebar-foreground font-medium'
+            : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
         )}
       >
         <span className="h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />

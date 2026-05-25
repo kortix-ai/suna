@@ -45,7 +45,7 @@ The local CLI uses a user-scoped token at `~/.config/kortix/config.json` (mode 0
 
 ### Hosts
 
-A host is one Kortix API endpoint. Configure several (cloud, localhost, self-hosted) and switch between them; one is active at a time, and commands use it by default.
+A host is one Kortix API endpoint. `cloud` and `local` are always available, and you can add more self-hosted endpoints. One host is active at a time; the CLI prints the active host before operational commands so Cloud/local actions are harder to mix up.
 
 | Command | Effect |
 | --- | --- |
@@ -57,6 +57,23 @@ A host is one Kortix API endpoint. Configure several (cloud, localhost, self-hos
 | `kortix hosts current` | Print the active host name (script-friendly). |
 
 `--host <name>` overrides the active host for one invocation: `kortix projects ls --host local`.
+
+### Self-host
+
+`kortix self-host start` creates and starts a production-style local Kortix stack
+using Docker Compose. On first interactive setup it only asks for the product
+integrations you may need: Freestyle for managed git/deployments, a GitHub App
+or PAT for repo access, and Pipedream for app connectors. Local ports, Supabase,
+generated secrets, and Docker defaults are handled automatically.
+
+| Command | Effect |
+| --- | --- |
+| `kortix self-host start` | Create config if needed, start the local stack, and register the `local` host. |
+| `kortix self-host configure` | Re-run the Freestyle, GitHub, and Pipedream credential wizard. |
+| `kortix self-host env ls` | Show persistent self-host env values, masking populated secrets. |
+| `kortix self-host env set KEY=VALUE …` | Update advanced persistent env values before the next start. |
+| `kortix self-host logs [service]` | Tail Docker Compose logs. |
+| `kortix self-host stop` | Stop the stack. |
 
 ### Projects
 
@@ -295,6 +312,6 @@ The `KORTIX_*` prefix is reserved for platform-injected values. Don't declare pr
 
 ## What the CLI is not
 
-- **Not a self-host installer.** That legacy lives at the old `~/.kortix/kortix` bash script. To self-host, `kortix login --api http://…` points this binary at your own instance.
+- **Not a separate runtime.** Use `kortix self-host start` to run your own local Kortix Cloud stack, then switch between Cloud and local APIs with `kortix hosts use`.
 - **Not a `git` replacement.** `kortix cr` composes with `git` rather than wrapping it.
 - **Not the runtime.** OpenCode executes the agent in the sandbox; the CLI is the control plane. See [Kortix vs OpenCode config](/docs/reference/config-boundary).

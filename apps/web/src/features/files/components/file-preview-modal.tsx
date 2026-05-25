@@ -2,7 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Download,
@@ -14,7 +15,9 @@ import {
   Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { STATUS_TEXT } from '@/components/ui/status';
 import { useFilesStore } from '../store/files-store';
+import { useGitStatus } from '../hooks';
 import { FileContentRenderer, getLanguageFromExt } from './file-content-renderer';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { getFileIcon } from './file-icon';
@@ -48,6 +51,17 @@ export function FilePreviewModal() {
   // Markdown view toggle — default to rendered preview, allow switching to source.
   const [markdownPreview, setMarkdownPreview] = useState(true);
   const isMarkdownFile = getLanguageFromExt(fileName) === 'markdown';
+
+  // Git state for THIS file — so the preview shows what changed in this version
+  // (added / modified / deleted + line counts) right alongside the content.
+  const { data: gitStatuses } = useGitStatus();
+  const fileStatus = useMemo(() => {
+    if (!selectedFilePath || !gitStatuses) return null;
+    const rel = selectedFilePath.replace(/^\/workspace\//, '');
+    return (
+      gitStatuses.find((s) => s.path === rel || s.path === selectedFilePath) ?? null
+    );
+  }, [selectedFilePath, gitStatuses]);
 
   // Close history and reset preview when file changes
   useEffect(() => {
@@ -122,8 +136,15 @@ export function FilePreviewModal() {
   }, [selectedFilePath, fileName, goBackToBrowser]);
 
   if (!isOpen) return null;
+  // The modal is a full-screen `position: fixed` overlay, but it's rendered deep
+  // inside the session side panel (an overflow-hidden / sometimes display:none
+  // ResizablePanel). A fixed element inside that subtree gets clipped to the
+  // panel — or collapses to 0×0 when the panel is hidden — so the preview never
+  // shows. Portal to <body> so the overlay escapes the panel and covers the
+  // viewport. React context (FilesStoreProvider) is preserved across portals.
+  if (typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop - blurred overlay */}
       <div
@@ -150,6 +171,25 @@ export function FilePreviewModal() {
               {getFileIcon(fileName, { className: 'h-4 w-4 shrink-0', variant: 'monochrome' })}
               <span className="text-sm font-medium truncate max-w-[300px]">{fileName}</span>
             </div>
+            {fileStatus && (
+              <span
+                className={cn(
+                  'flex shrink-0 items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-medium capitalize',
+                  fileStatus.status === 'added' && STATUS_TEXT.success,
+                  fileStatus.status === 'deleted' && STATUS_TEXT.destructive,
+                  fileStatus.status === 'modified' && STATUS_TEXT.warning,
+                )}
+                title={`This file is ${fileStatus.status} in this version`}
+              >
+                {fileStatus.status}
+                {fileStatus.added > 0 && (
+                  <span className="tabular-nums">+{fileStatus.added}</span>
+                )}
+                {fileStatus.removed > 0 && (
+                  <span className="tabular-nums">−{fileStatus.removed}</span>
+                )}
+              </span>
+            )}
             {filePathList.length > 1 && (
               <span className="text-xs text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full shrink-0 tabular-nums">
                 {currentFileIndex + 1} / {filePathList.length}
@@ -262,6 +302,7 @@ export function FilePreviewModal() {
           )}
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
