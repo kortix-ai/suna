@@ -12,7 +12,9 @@ import {
   accounts,
   iamPolicies,
   iamRoles,
+  projectGroupGrants,
   projectMembers,
+  projects,
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { getSupabase } from '../shared/supabase';
@@ -519,6 +521,52 @@ iamRouter.delete('/:accountId/iam/groups/:groupId/members/:userId', async (c) =>
   });
 
   return c.json({ removed: true });
+});
+
+// ─── Group → project attachments (IAM V2) ──────────────────────────────────
+//
+// One read endpoint here so the group detail page can list every project
+// the group is attached to (with role). Per-project CRUD lives under
+// /v1/projects/:projectId/group-grants (already shipped) — those routes
+// gate on project.members.manage and are the right place to detach a
+// single grant. This endpoint just answers "which projects?" for the
+// group view, gated by GROUP_READ.
+
+iamRouter.get('/:accountId/iam/groups/:groupId/project-grants', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const groupId = c.req.param('groupId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+
+  const group = await getGroup(accountId, groupId);
+  if (!group) return c.json({ error: 'group not found' }, 404);
+
+  const rows = await db
+    .select({
+      projectId: projectGroupGrants.projectId,
+      projectName: projects.name,
+      role: projectGroupGrants.role,
+      grantedBy: projectGroupGrants.grantedBy,
+      createdAt: projectGroupGrants.createdAt,
+    })
+    .from(projectGroupGrants)
+    .innerJoin(projects, eq(projects.projectId, projectGroupGrants.projectId))
+    .where(
+      and(
+        eq(projectGroupGrants.groupId, groupId),
+        eq(projectGroupGrants.accountId, accountId),
+      ),
+    );
+
+  return c.json({
+    grants: rows.map((r) => ({
+      project_id: r.projectId,
+      project_name: r.projectName,
+      role: r.role,
+      granted_by: r.grantedBy,
+      created_at: r.createdAt.toISOString(),
+    })),
+  });
 });
 
 // ─── Policies ──────────────────────────────────────────────────────────────

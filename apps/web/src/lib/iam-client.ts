@@ -155,6 +155,26 @@ export async function addGroupMembers(accountId: string, groupId: string, userId
   );
 }
 
+// V2-only: which projects is this group attached to + at what role?
+// Backed by GET /accounts/:id/iam/groups/:gid/project-grants. Each row
+// can be detached via the per-project DELETE /projects/:pid/group-grants/:gid
+// endpoint (already in projects-client as detachGroupFromProject).
+export interface GroupProjectGrant {
+  project_id: string;
+  project_name: string;
+  role: 'manager' | 'editor' | 'viewer';
+  granted_by: string | null;
+  created_at: string;
+}
+
+export async function listGroupProjectGrants(accountId: string, groupId: string) {
+  return unwrap(
+    await backendApi.get<{ grants: GroupProjectGrant[] }>(
+      `/accounts/${accountId}/iam/groups/${groupId}/project-grants`,
+    ),
+  ).grants;
+}
+
 export async function removeGroupMember(accountId: string, groupId: string, userId: string) {
   return unwrap(
     await backendApi.delete<{ removed: boolean }>(

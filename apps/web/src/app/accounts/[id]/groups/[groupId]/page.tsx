@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Loader2, Plus, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, FolderOpen, Loader2, Plus, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/components/AuthProvider';
@@ -36,10 +36,12 @@ import {
   deleteGroup,
   getGroup,
   listGroupMembers,
+  listGroupProjectGrants,
   removeGroupMember,
   updateGroup,
+  type GroupProjectGrant,
 } from '@/lib/iam-client';
-import { getAccount, listAccountMembers } from '@/lib/projects-client';
+import { detachGroupFromProject, getAccount, listAccountMembers } from '@/lib/projects-client';
 import { usePermission } from '@/lib/use-permission';
 import { useIamV2Enabled } from '@/lib/use-iam-version';
 
@@ -162,6 +164,9 @@ export default function GroupDetailPage() {
             <Tabs defaultValue="members" className="space-y-6">
               <TabsList>
                 <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line157JsxTextGroupMembers')}</TabsTrigger>
+                {isIamV2 && (
+                  <TabsTrigger value="projects">Project access</TabsTrigger>
+                )}
                 {!isIamV2 && (
                   <TabsTrigger value="policies">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line158JsxTextPermissionPolicies')}</TabsTrigger>
                 )}
@@ -175,6 +180,16 @@ export default function GroupDetailPage() {
                   canManage={canManageMembers}
                 />
               </TabsContent>
+
+              {isIamV2 && (
+                <TabsContent value="projects">
+                  <GroupProjectGrantsCard
+                    accountId={account.account_id}
+                    groupId={group.group_id}
+                    groupName={group.name}
+                  />
+                </TabsContent>
+              )}
 
               {!isIamV2 && (
                 <TabsContent value="policies">
@@ -586,5 +601,125 @@ function GroupSettingsCard({
         onConfirm={() => deleteMutation.mutate()}
       />
     </div>
+  );
+}
+
+// ─── V2: Projects this group is attached to ───────────────────────────────
+
+function GroupProjectGrantsCard({
+  accountId,
+  groupId,
+  groupName,
+}: {
+  accountId: string;
+  groupId: string;
+  groupName: string;
+}) {
+  const queryClient = useQueryClient();
+  const queryKey = ['group-project-grants', accountId, groupId];
+
+  const grantsQuery = useQuery({
+    queryKey,
+    queryFn: () => listGroupProjectGrants(accountId, groupId),
+    staleTime: 30_000,
+  });
+  const grants = grantsQuery.data ?? [];
+
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+
+  const detachMutation = useMutation({
+    // detach the grant via the per-project route — that's the one gated
+    // by project.members.manage and the canonical write surface.
+    mutationFn: (projectId: string) => detachGroupFromProject(projectId, groupId),
+    onMutate: (projectId) => setPendingProjectId(projectId),
+    onSettled: () => setPendingProjectId(null),
+    onSuccess: () => {
+      toast.success('Group detached from project');
+      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to detach'),
+  });
+
+  return (
+    <SectionCard
+      flush
+      title="Project access"
+      description={`Projects "${groupName}" is attached to. Every group member inherits the chosen role on that project.`}
+      count={grants.length}
+    >
+      {grantsQuery.isLoading && (
+        <div className="px-6 py-5">
+          <Skeleton className="h-8 w-full" />
+        </div>
+      )}
+
+      {!grantsQuery.isLoading && grantsQuery.isError && (
+        <div className="px-6 py-5">
+          <InfoBanner
+            tone="destructive"
+            title="Failed to load project access"
+            action={
+              <Button variant="outline" size="sm" onClick={() => grantsQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          >
+            {(grantsQuery.error as Error)?.message}
+          </InfoBanner>
+        </div>
+      )}
+
+      {!grantsQuery.isLoading && !grantsQuery.isError && grants.length === 0 && (
+        <EmptyState
+          icon={FolderOpen}
+          title="Not attached to any project"
+          description={`Attach "${groupName}" to a project from that project's Members page → "Group access" card.`}
+        />
+      )}
+
+      {!grantsQuery.isLoading && grants.length > 0 && (
+        <List>
+          {grants.map((g: GroupProjectGrant) => {
+            const busy = pendingProjectId === g.project_id;
+            return (
+              <ListRow
+                key={g.project_id}
+                leading={
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/60">
+                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                }
+                title={g.project_name}
+                badges={
+                  <span className="rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize text-muted-foreground">
+                    {g.role}
+                  </span>
+                }
+                subtitle={
+                  <InlineMeta>
+                    <span>Attached {new Date(g.created_at).toLocaleDateString()}</span>
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => detachMutation.mutate(g.project_id)}
+                    >
+                      Detach
+                    </Button>
+                  )
+                }
+              />
+            );
+          })}
+        </List>
+      )}
+    </SectionCard>
   );
 }
