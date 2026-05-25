@@ -340,84 +340,117 @@ export default function AccountSettingsPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="settings" className="space-y-6">
-                <GeneralCard
-                  account={account}
-                  queryClient={queryClient}
-                  canWrite={canWriteAccount}
-                />
-                {/* Strict mode toggles V1's legacy bridges. V2 has no
-                    bridges to toggle, so the card is meaningless there. */}
-                {!isIamV2 && (
-                  <StrictModeCard
+              <TabsContent value="settings" className="space-y-8">
+                {/* ── General ────────────────────────────────────── */}
+                <SettingsGroup title="General">
+                  <GeneralCard
+                    account={account}
+                    queryClient={queryClient}
+                    canWrite={canWriteAccount}
+                  />
+                </SettingsGroup>
+
+                {/* ── Security ──────────────────────────────────── */}
+                <SettingsGroup
+                  title="Security"
+                  description="Account-wide gates that apply to every member."
+                >
+                  <MfaRequiredCard
                     accountId={account.account_id}
                     canManage={canWriteAccount}
                   />
-                )}
-                <MfaRequiredCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <SsoCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <SessionControlsCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <PatPolicyCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                {/* Approval workflows gate policy mutations. V2 has no
-                    policies, so the queue is always empty here. */}
-                {!isIamV2 && (
-                  <ApprovalsCard
-                    accountId={account.account_id}
-                    currentUserId={user.id}
-                    canManage={canWriteAccount}
-                  />
-                )}
-                {/* Project groups (resource groups) only exist in V1's
-                    scope grammar. V2 attaches account_groups to projects
-                    directly via the project Members page. */}
-                {!isIamV2 && (
-                  <ProjectGroupsCard
+                  <SessionControlsCard
                     accountId={account.account_id}
                     canManage={canWriteAccount}
                   />
-                )}
-                <ServiceAccountsCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                {/* Break-glass grants are a V1 super-admin escalation
-                    surface. V2 uses the is_super_admin flag directly. */}
-                {!isIamV2 && (
-                  <BreakGlassCard
+                  {/* V1-only: legacy-bridge toggle. */}
+                  {!isIamV2 && (
+                    <StrictModeCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                  )}
+                  {/* V1-only: approval workflows for policy mutations. */}
+                  {!isIamV2 && (
+                    <ApprovalsCard
+                      accountId={account.account_id}
+                      currentUserId={user.id}
+                      canManage={canWriteAccount}
+                    />
+                  )}
+                  {/* V1-only: break-glass super-admin escalation. */}
+                  {!isIamV2 && (
+                    <BreakGlassCard
+                      accountId={account.account_id}
+                      currentUserId={user.id}
+                      canManage={canWriteAccount}
+                    />
+                  )}
+                </SettingsGroup>
+
+                {/* ── Identity & directory ─────────────────────── */}
+                <SettingsGroup
+                  title="Identity & directory"
+                  description="Bring members in from your IdP. Group memberships sync; admin still picks project access."
+                >
+                  <SsoCard
                     accountId={account.account_id}
-                    currentUserId={user.id}
                     canManage={canWriteAccount}
                   />
-                )}
-                {/* Cross-account sharing via "external" members is a V1
-                    feature that V2 doesn't model. */}
-                {!isIamV2 && (
-                  <ExternalGrantsCard
+                  <ScimCard
                     accountId={account.account_id}
                     canManage={canWriteAccount}
                   />
+                  {/* V1-only: cross-account sharing via "external" members. */}
+                  {!isIamV2 && (
+                    <ExternalGrantsCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                  )}
+                </SettingsGroup>
+
+                {/* ── Tokens & automation ──────────────────────── */}
+                <SettingsGroup
+                  title="Tokens & automation"
+                  description="Programmatic access for CI/CD and headless agents."
+                >
+                  <PatPolicyCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                  <ServiceAccountsCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                </SettingsGroup>
+
+                {/* ── Observability ─────────────────────────────── */}
+                <SettingsGroup
+                  title="Observability"
+                  description="Forward audit events to your own pipeline."
+                >
+                  <AuditWebhooksCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                </SettingsGroup>
+
+                {/* ── V1-only: resource groups ─────────────────── */}
+                {!isIamV2 && (
+                  <SettingsGroup title="Resource groups">
+                    <ProjectGroupsCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                  </SettingsGroup>
                 )}
-                <ScimCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                <AuditWebhooksCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
-                {isTeam && canDeleteAccount && <DangerZoneCard />}
+
+                {isTeam && canDeleteAccount && (
+                  <SettingsGroup title="Danger zone">
+                    <DangerZoneCard />
+                  </SettingsGroup>
+                )}
               </TabsContent>
             </Tabs>
           )}
@@ -667,6 +700,36 @@ function GitHubConnectionCard({
 function permissionLabel(value: unknown): string | null {
   if (typeof value !== 'string' || !value) return null;
   return `Contents ${value}`;
+}
+
+/**
+ * Visual grouping for the Settings tab. With ~10 cards the tab used to
+ * be a wall of similar-looking panels; a small uppercase header per
+ * theme gives the eye a scan path without competing with the cards
+ * themselves.
+ */
+function SettingsGroup({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="space-y-0.5 px-1">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+          {title}
+        </h3>
+        {description && (
+          <p className="text-[11px] text-muted-foreground/80">{description}</p>
+        )}
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
 }
 
 function GeneralCard({

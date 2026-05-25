@@ -97,20 +97,34 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
 
   return (
     <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
+      <header className={provider ? 'border-b border-border/60 px-6 py-4' : 'px-6 py-4'}>
         <div className="flex items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-              {tHardcodedUi.raw('componentsIamSsoCard.line103JsxTextSAMLSSO')}</h2>
+              {tHardcodedUi.raw('componentsIamSsoCard.line103JsxTextSAMLSSO')}
+              {provider && (
+                <Badge
+                  variant="outline"
+                  size="sm"
+                  className="border-emerald-500/40 bg-emerald-500/10 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
+                >
+                  connected
+                </Badge>
+              )}
+            </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {tHardcodedUi.raw('componentsIamSsoCard.line106JsxTextConnectYourIdPUsersSigningInViaSAML')}</p>
+              {provider
+                ? tHardcodedUi.raw('componentsIamSsoCard.line106JsxTextConnectYourIdPUsersSigningInViaSAML')
+                : 'Auto-provision members from your IdP. Group claims sync to IAM groups.'}
+            </p>
           </div>
           {canManage && (
             <Button
               variant={provider ? 'outline' : 'default'}
               onClick={() => setEditOpen(true)}
               size="sm"
+              className="shrink-0"
             >
               {provider ? 'Edit' : 'Configure'}
             </Button>
@@ -118,12 +132,10 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
         </div>
       </header>
 
+      {provider && (
       <div className="px-6 py-4">
         {providerQuery.isLoading ? (
           <Skeleton className="h-16 w-full" />
-        ) : !provider ? (
-          <p className="text-sm text-muted-foreground">
-            {tHardcodedUi.raw('componentsIamSsoCard.line127JsxTextNoSAMLProviderConfiguredSetUpTheIdP')}</p>
         ) : (
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
             <dt className="text-muted-foreground">Provider</dt>
@@ -143,6 +155,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
           </dl>
         )}
       </div>
+      )}
 
       {provider && (
         <>
