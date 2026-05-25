@@ -16,6 +16,7 @@ import {
   Mail,
   MoreHorizontal,
   RefreshCw,
+  Search,
   Shield,
   Trash2,
   Unplug,
@@ -784,18 +785,31 @@ function MembersCard({
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  // Free-text search over email + user_id. Lives in component state so
+  // it doesn't survive tab switches — admins almost never want to jump
+  // back to the same search after navigating away.
+  const [search, setSearch] = useState('');
 
   // canInvite/canRemove/canUpdateRole come in as props (driven by usePermission
   // at the page level). The row-level kebab respects each granularly.
 
   const sorted = useMemo(() => {
     const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
-    return [...members].sort((a, b) => {
+    const q = search.trim().toLowerCase();
+    const filtered = q
+      ? members.filter((m) => {
+          // Match against email (most common) and user_id (for the rare
+          // case where an admin only knows the auth uuid).
+          const email = (m.email ?? '').toLowerCase();
+          return email.includes(q) || m.user_id.toLowerCase().includes(q);
+        })
+      : members;
+    return [...filtered].sort((a, b) => {
       const r = rank[a.account_role] - rank[b.account_role];
       if (r !== 0) return r;
       return memberLabel(a).localeCompare(memberLabel(b));
     });
-  }, [members]);
+  }, [members, search]);
 
   const invalidateMembers = () => {
     queryClient.invalidateQueries({
@@ -902,7 +916,27 @@ function MembersCard({
         />
       )}
 
-      {!isLoading && !isError && (
+      {!isLoading && !isError && members.length > 0 && (
+        <div className="border-b border-border/60 px-6 py-3">
+          <div className="relative max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by email…"
+              className="h-9 pl-9"
+            />
+          </div>
+        </div>
+      )}
+
+      {!isLoading && !isError && members.length > 0 && sorted.length === 0 && (
+        <div className="px-6 py-8 text-center text-sm text-muted-foreground">
+          No members match &quot;{search.trim()}&quot;.
+        </div>
+      )}
+
+      {!isLoading && !isError && sorted.length > 0 && (
         <List>
           {sorted.map((member) => {
             const isSelf = member.user_id === currentUserId;
