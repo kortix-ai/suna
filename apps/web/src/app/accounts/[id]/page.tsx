@@ -346,10 +346,14 @@ export default function AccountSettingsPage() {
                   queryClient={queryClient}
                   canWrite={canWriteAccount}
                 />
-                <StrictModeCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
+                {/* Strict mode toggles V1's legacy bridges. V2 has no
+                    bridges to toggle, so the card is meaningless there. */}
+                {!isIamV2 && (
+                  <StrictModeCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                )}
                 <MfaRequiredCard
                   accountId={account.account_id}
                   canManage={canWriteAccount}
@@ -366,28 +370,45 @@ export default function AccountSettingsPage() {
                   accountId={account.account_id}
                   canManage={canWriteAccount}
                 />
-                <ApprovalsCard
-                  accountId={account.account_id}
-                  currentUserId={user.id}
-                  canManage={canWriteAccount}
-                />
-                <ProjectGroupsCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
+                {/* Approval workflows gate policy mutations. V2 has no
+                    policies, so the queue is always empty here. */}
+                {!isIamV2 && (
+                  <ApprovalsCard
+                    accountId={account.account_id}
+                    currentUserId={user.id}
+                    canManage={canWriteAccount}
+                  />
+                )}
+                {/* Project groups (resource groups) only exist in V1's
+                    scope grammar. V2 attaches account_groups to projects
+                    directly via the project Members page. */}
+                {!isIamV2 && (
+                  <ProjectGroupsCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                )}
                 <ServiceAccountsCard
                   accountId={account.account_id}
                   canManage={canWriteAccount}
                 />
-                <BreakGlassCard
-                  accountId={account.account_id}
-                  currentUserId={user.id}
-                  canManage={canWriteAccount}
-                />
-                <ExternalGrantsCard
-                  accountId={account.account_id}
-                  canManage={canWriteAccount}
-                />
+                {/* Break-glass grants are a V1 super-admin escalation
+                    surface. V2 uses the is_super_admin flag directly. */}
+                {!isIamV2 && (
+                  <BreakGlassCard
+                    accountId={account.account_id}
+                    currentUserId={user.id}
+                    canManage={canWriteAccount}
+                  />
+                )}
+                {/* Cross-account sharing via "external" members is a V1
+                    feature that V2 doesn't model. */}
+                {!isIamV2 && (
+                  <ExternalGrantsCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                )}
                 <ScimCard
                   accountId={account.account_id}
                   canManage={canWriteAccount}
