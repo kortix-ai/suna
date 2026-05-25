@@ -21,6 +21,10 @@ const BoolFlag = z.preprocess((v) => {
 const Schema = z.object({
   KORTIX_SERVICE_PORT: z.coerce.number().int().positive().default(8000),
   KORTIX_OPENCODE_INTERNAL_PORT: z.coerce.number().int().positive().default(4096),
+  // Static web server port. Default 3211 is a hard contract: apps/web
+  // (platform-client STATIC_FILE_SERVER, url.ts) and the starter `show` tool
+  // build preview URLs against this exact port via /proxy/3211 and p3211-* .
+  KORTIX_STATIC_PORT: z.coerce.number().int().positive().default(3211),
   KORTIX_WORKSPACE: z.string().default('/workspace'),
   // Project repo is cloned directly into the workspace. The repo's
   // Kortix-owned files live under <workspace>/.kortix/ (Dockerfile +
@@ -38,11 +42,21 @@ const Schema = z.object({
   KORTIX_REPO_URL: z.string().optional(),
   KORTIX_BRANCH_NAME: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
+  KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
+  KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
+  // Partial-clone filter for the boot-time `git clone`. `blob:none` (the
+  // default) is a blobless clone: it transfers the full commit/tree history
+  // but fetches file blobs lazily, so the initial clone is a fraction of a
+  // full clone's size while `git log`/`blame`/`diff` still work. Set to an
+  // empty string to force a full clone. Remotes that don't advertise
+  // partial-clone fall back to a full clone automatically (see git.ts).
+  KORTIX_CLONE_FILTER: z.string().default('blob:none'),
 })
 
 export type Config = {
   servicePort: number
   opencodeInternalPort: number
+  staticPort: number
   workspace: string
   projectTarget: string
   defaultBranch: string
@@ -55,12 +69,16 @@ export type Config = {
   repoUrl: string | undefined
   branchName: string | undefined
   kortixToken: string | undefined
+  gitUserName: string
+  gitUserEmail: string
+  cloneFilter: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = Schema.parse({
     KORTIX_SERVICE_PORT: env.KORTIX_SERVICE_PORT,
     KORTIX_OPENCODE_INTERNAL_PORT: env.KORTIX_OPENCODE_INTERNAL_PORT,
+    KORTIX_STATIC_PORT: env.KORTIX_STATIC_PORT,
     KORTIX_WORKSPACE: env.KORTIX_WORKSPACE,
     KORTIX_PROJECT_TARGET: env.KORTIX_PROJECT_TARGET,
     KORTIX_DEFAULT_BRANCH: env.KORTIX_DEFAULT_BRANCH,
@@ -73,11 +91,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_REPO_URL: env.KORTIX_REPO_URL,
     KORTIX_BRANCH_NAME: env.KORTIX_BRANCH_NAME,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
+    KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
+    KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
+    KORTIX_CLONE_FILTER: env.KORTIX_CLONE_FILTER,
   })
 
   return {
     servicePort: parsed.KORTIX_SERVICE_PORT,
     opencodeInternalPort: parsed.KORTIX_OPENCODE_INTERNAL_PORT,
+    staticPort: parsed.KORTIX_STATIC_PORT,
     workspace: parsed.KORTIX_WORKSPACE,
     projectTarget: parsed.KORTIX_PROJECT_TARGET,
     defaultBranch: parsed.KORTIX_DEFAULT_BRANCH,
@@ -90,6 +112,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     repoUrl: parsed.KORTIX_REPO_URL,
     branchName: parsed.KORTIX_BRANCH_NAME,
     kortixToken: parsed.KORTIX_TOKEN,
+    gitUserName: parsed.KORTIX_GIT_USER_NAME,
+    gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
+    cloneFilter: parsed.KORTIX_CLONE_FILTER,
   }
 }
 
@@ -108,9 +133,17 @@ export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
   for (const filename of ['opencode.jsonc', 'opencode.json']) {
     try {
       const stat = await fs.stat(`${candidate}/${filename}`)
-      if (stat.isFile()) return candidate
+      if (stat.isFile()) {
+        try {
+          await fs.mkdir(candidate, { recursive: true })
+        } catch {}
+        return candidate
+      }
     } catch {}
   }
+  try {
+    await fs.mkdir(cfg.defaultOpencodeConfigDir, { recursive: true })
+  } catch {}
   return cfg.defaultOpencodeConfigDir
 }
 

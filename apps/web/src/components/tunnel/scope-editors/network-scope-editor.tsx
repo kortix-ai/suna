@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState } from 'react';
 import { X, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -16,6 +18,7 @@ interface NetworkScopeEditorProps {
 }
 
 export function NetworkScopeEditor({ scope, onChange }: NetworkScopeEditorProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [portInput, setPortInput] = useState('');
   const [hostInput, setHostInput] = useState('');
 
@@ -90,7 +93,7 @@ export function NetworkScopeEditor({ scope, onChange }: NetworkScopeEditorProps)
             value={portInput}
             onChange={(e) => setPortInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPort())}
-            placeholder="e.g. 3000, 8080"
+            placeholder={tHardcodedUi.raw('componentsTunnelScopeEditorsNetworkScopeEditor.line93JsxAttrPlaceholderEG30008080')}
             className="w-[140px] rounded-lg border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           <Button variant="outline" size="sm" onClick={addPort} disabled={!portInput.trim()}>
@@ -120,7 +123,7 @@ export function NetworkScopeEditor({ scope, onChange }: NetworkScopeEditorProps)
             value={hostInput}
             onChange={(e) => setHostInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addHost())}
-            placeholder="e.g. localhost, 127.0.0.1"
+            placeholder={tHardcodedUi.raw('componentsTunnelScopeEditorsNetworkScopeEditor.line123JsxAttrPlaceholderEGLocalhost127001')}
             className="flex-1 rounded-lg border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           <Button variant="outline" size="sm" onClick={addHost} disabled={!hostInput.trim()}>

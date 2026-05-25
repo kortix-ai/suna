@@ -40,7 +40,7 @@ export function GridFileCard({ filePath, fileName, onClick, className }: GridFil
       <div className="px-2.5 py-2 border-t border-border/30 h-[38px] flex items-center">
         <div className="flex items-center gap-1.5 min-w-0 w-full">
           {getFileIcon(fileName, { className: 'h-4 w-4 shrink-0', variant: 'monochrome' })}
-          <span className="text-[13px] truncate text-foreground">{fileName}</span>
+          <span className="text-sm truncate text-foreground">{fileName}</span>
         </div>
       </div>
     </div>

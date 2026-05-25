@@ -61,13 +61,13 @@ export function DefinitionRow({
   return (
     <div className="flex items-baseline gap-6 py-2.5">
       <dt
-        className="text-[12px] text-muted-foreground/70 shrink-0 font-medium"
+        className="text-xs text-muted-foreground/70 shrink-0 font-medium"
         style={{ width: labelWidth }}
       >
         {label}
       </dt>
       <dd
-        className="text-[13px] text-foreground/90 min-w-0 flex-1 truncate"
+        className="text-sm text-foreground/90 min-w-0 flex-1 truncate"
         title={title}
       >
         {children}

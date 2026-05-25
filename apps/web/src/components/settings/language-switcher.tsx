@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { locales, type Locale } from '@/i18n/config';
+import { useTranslations } from 'next-intl';
 
 const languageNames: Record<Locale, string> = {
   en: 'English',
@@ -24,11 +25,12 @@ const languageNames: Record<Locale, string> = {
 
 export function LanguageSwitcher() {
   const { locale, setLanguage, availableLanguages } = useLanguage();
+  const t = useTranslations('settings.general.language');
 
   return (
     <div className="space-y-2">
       <Label htmlFor="language-select">
-        Language
+        {t('title')}
       </Label>
       <Select
         value={locale}
@@ -50,4 +52,3 @@ export function LanguageSwitcher() {
     </div>
   );
 }
-

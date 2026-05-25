@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   useDeployments,
@@ -74,6 +76,7 @@ const LoadingSkeleton = () => (
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export function DeploymentsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [statusFilter, setStatusFilter] = useState<DeploymentStatus | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -175,9 +178,7 @@ export function DeploymentsPage() {
         <div className="max-w-4xl mx-auto w-full py-8 px-4">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Failed to load deployments. Please try refreshing the page.
-            </AlertDescription>
+            <AlertDescription>{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line179JsxTextFailedToLoadDeploymentsPleaseTryRefreshingThe')}</AlertDescription>
           </Alert>
         </div>
       </div>
@@ -221,7 +222,7 @@ export function DeploymentsPage() {
             <PageSearchBar
               value={searchQuery}
               onChange={setSearchQuery}
-              placeholder="Search deployments..."
+              placeholder={tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line224JsxAttrPlaceholderSearchDeployments')}
               className="sm:max-w-64"
             />
 
@@ -233,7 +234,7 @@ export function DeploymentsPage() {
               onClick={handleNewDeployment}
             >
               <Plus className="h-4 w-4" />
-              <span className="hidden xs:inline">New Deployment</span>
+              <span className="hidden xs:inline">{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line236JsxTextNewDeployment')}</span>
               <span className="xs:hidden">New</span>
             </Button>
           </div>
@@ -247,13 +248,11 @@ export function DeploymentsPage() {
             deployments.length === 0 && !statusFilter ? (
               <EmptyState
                 icon={Rocket}
-                title="Deploy your first app"
-                description="Deploy applications to production with a single click. Supports Git repos, inline code, file uploads, and tarballs."
+                title={tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line250JsxAttrTitleDeployYourFirstApp')}
+                description={tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line251JsxAttrDescriptionDeployApplicationsToProductionWithASingleClick')}
                 action={
                   <Button onClick={handleNewDeployment} size="sm">
-                    <Plus className="h-4 w-4 mr-2" />
-                    New Deployment
-                  </Button>
+                    <Plus className="h-4 w-4 mr-2" />{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line255JsxTextNewDeployment')}</Button>
                 }
               />
             ) : (
@@ -320,14 +319,9 @@ export function DeploymentsPage() {
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete deployment</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete{' '}
-              <span className="font-semibold">
-                &quot;{deleteTarget?.domains?.[0] || deleteTarget?.deploymentId.slice(0, 8)}&quot;
-              </span>
-              ? This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line323JsxTextDeleteDeployment')}</AlertDialogTitle>
+            <AlertDialogDescription>{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line325JsxTextAreYouSureYouWantToDelete')}{' '}
+              <span className="font-semibold">{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line327JsxTextQuot')}{deleteTarget?.domains?.[0] || deleteTarget?.deploymentId.slice(0, 8)}{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line327JsxTextQuotddb5f48f')}</span>{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line329JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -12,6 +14,7 @@ import { UserEmailLink } from './user-email-link';
 import type { RetentionTabProps } from '../types';
 
 export function RetentionTab({ onUserClick }: RetentionTabProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [params, setParams] = useState({
     page: 1,
     page_size: 15,
@@ -88,9 +91,8 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
       <div className="rounded-2xl border bg-card">
         <div className="p-5 border-b flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-medium">Recurring Users</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Users active in {params.min_weeks_active}+ different weeks over the past {params.weeks_back} weeks
+            <h2 className="text-sm font-medium">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line91JsxTextRecurringUsers')}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line93JsxTextUsersActiveIn')}{params.min_weeks_active}{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line93JsxTextDifferentWeeksOverThePast')}{params.weeks_back} weeks
             </p>
           </div>
 
@@ -105,16 +107,16 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="2">2 weeks</SelectItem>
-                  <SelectItem value="4">4 weeks</SelectItem>
-                  <SelectItem value="8">8 weeks</SelectItem>
-                  <SelectItem value="12">12 weeks</SelectItem>
+                  <SelectItem value="2">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line108JsxTextText2Weeks')}</SelectItem>
+                  <SelectItem value="4">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line109JsxTextText4Weeks')}</SelectItem>
+                  <SelectItem value="8">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line110JsxTextText8Weeks')}</SelectItem>
+                  <SelectItem value="12">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line111JsxTextText12Weeks')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Min Active</Label>
+              <Label className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line117JsxTextMinActive')}</Label>
               <Select
                 value={params.min_weeks_active.toString()}
                 onValueChange={(v) => setParams({ ...params, min_weeks_active: parseInt(v), page: 1 })}
@@ -123,10 +125,10 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">1+ week</SelectItem>
-                  <SelectItem value="2">2+ weeks</SelectItem>
-                  <SelectItem value="3">3+ weeks</SelectItem>
-                  <SelectItem value="4">4+ weeks</SelectItem>
+                  <SelectItem value="1">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line126JsxTextText1Week')}</SelectItem>
+                  <SelectItem value="2">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line127JsxTextText2Weeks')}</SelectItem>
+                  <SelectItem value="3">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line128JsxTextText3Weeks')}</SelectItem>
+                  <SelectItem value="4">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line129JsxTextText4Weeks')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -145,7 +147,7 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
             <DataTable
               columns={columns}
               data={retentionData?.data || []}
-              emptyMessage="No recurring users found"
+              emptyMessage={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line148JsxAttrEmptymessageNoRecurringUsersFound')}
               getItemId={(user) => user.user_id}
             />
           )}

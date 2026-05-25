@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import React from 'react';
 import {
   Card,
@@ -37,6 +38,7 @@ export function DeleteSlideToolView({
   isStreaming = false,
   project,
 }: ToolViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Extract from toolResult.output (from metadata)
   let deleteData: DeleteSlideData | null = null;
   let error: string | null = null;
@@ -64,7 +66,7 @@ export function DeleteSlideToolView({
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
-          <ToolViewIconTitle icon={Trash2} title="Delete Slide" subtitle={deleteData?.deleted_title} />
+          <ToolViewIconTitle icon={Trash2} title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeleteslidetoolview.line67JsxAttrTitleDeleteSlide')} subtitle={deleteData?.deleted_title} />
         </div>
       </CardHeader>
 
@@ -72,10 +74,10 @@ export function DeleteSlideToolView({
         {isStreaming ? (
           <LoadingState
             icon={Trash2}
-            iconColor="text-red-500 dark:text-red-400"
-            bgColor="bg-gradient-to-b from-red-100 to-red-50 shadow-inner dark:from-red-800/40 dark:to-red-900/60 dark:shadow-red-950/20"
-            title="Deleting slide"
-            filePath="Removing slide file..."
+            iconColor={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeleteslidetoolview.line75JsxAttrIconcolorTextRed500DarkTextRed400')}
+            bgColor={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeleteslidetoolview.line76JsxAttrBgcolorBgGradientToBFromRed100To')}
+            title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeleteslidetoolview.line77JsxAttrTitleDeletingSlide')}
+            filePath={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeleteslidetoolview.line78JsxAttrFilepathRemovingSlideFile')}
             showProgress={true}
           />
         ) : error || !deleteData ? (
@@ -86,18 +88,14 @@ export function DeleteSlideToolView({
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
               {error || 'Failed to delete slide'}
             </h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md">
-              There was an error deleting the slide. Please try again.
-            </p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeleteslidetoolview.line90JsxTextThereWasAnErrorDeletingTheSlidePlease')}</p>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-emerald-100 to-emerald-50 shadow-inner dark:from-emerald-800/40 dark:to-emerald-900/60">
               <CheckCircle className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
             </div>
-            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-              Slide deleted successfully
-            </h3>
+            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeleteslidetoolview.line99JsxTextSlideDeletedSuccessfully')}</h3>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md mb-6">
               {deleteData.message}
             </p>
@@ -106,7 +104,7 @@ export function DeleteSlideToolView({
               <Card className="p-4 text-center">
                 <div className="flex items-center justify-center gap-2 mb-2">
                   <Hash className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Deleted Slide</span>
+                  <span className="text-sm font-medium">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeleteslidetoolview.line109JsxTextDeletedSlide')}</span>
                 </div>
                 <p className="text-lg font-semibold text-red-600 dark:text-red-400">
                   #{deleteData.deleted_slide}

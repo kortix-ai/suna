@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -27,9 +29,10 @@ const DataGrid = lazy(() =>
 );
 
 function GridFallback() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex items-center justify-center h-full w-full">
-      <div className="text-sm text-muted-foreground animate-pulse">Loading grid…</div>
+      <div className="text-sm text-muted-foreground animate-pulse">{tHardcodedUi.raw('componentsFileRenderersCsvRenderer.line32JsxTextLoadingGrid')}</div>
     </div>
   );
 }
@@ -66,6 +69,7 @@ export function CsvRenderer({
   className,
   compact = false,
 }: CsvRendererProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [searchTerm, setSearchTerm] = useState('');
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
   const gridApiRef = useRef<GridReadyEvent['api'] | null>(null);
@@ -95,15 +99,15 @@ export function CsvRenderer({
     return (
       <div className={cn('w-full h-full flex items-center justify-center', className)}>
         {compact ? (
-          <div className="text-muted-foreground text-sm">No data</div>
+          <div className="text-muted-foreground text-sm">{tHardcodedUi.raw('componentsFileRenderersCsvRenderer.line98JsxTextNoData')}</div>
         ) : (
           <div className="text-center space-y-4">
             <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
               <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
             </div>
             <div>
-              <h3 className="text-lg font-medium text-foreground">No Data</h3>
-              <p className="text-sm text-muted-foreground">This CSV file appears to be empty or invalid.</p>
+              <h3 className="text-lg font-medium text-foreground">{tHardcodedUi.raw('componentsFileRenderersCsvRenderer.line105JsxTextNoData')}</h3>
+              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersCsvRenderer.line106JsxTextThisCsvFileAppearsToBeEmptyOr')}</p>
             </div>
           </div>
         )}
@@ -136,7 +140,7 @@ export function CsvRenderer({
             <FileSpreadsheet className="h-4 w-4 text-primary" />
             <span className="text-sm font-medium text-foreground">CSV</span>
             <span className="text-xs text-muted-foreground">
-              {data.length.toLocaleString()} rows · {headers.filter((h) => !hiddenColumns.has(h)).length} columns
+              {data.length.toLocaleString()}{tHardcodedUi.raw('componentsFileRenderersCsvRenderer.line139JsxTextRows')}{headers.filter((h) => !hiddenColumns.has(h)).length} columns
             </span>
           </div>
 
@@ -154,7 +158,7 @@ export function CsvRenderer({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48 max-h-80 overflow-auto">
-                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Show/Hide Columns</div>
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersCsvRenderer.line157JsxTextShowHideColumns')}</div>
                 <DropdownMenuSeparator />
                 {headers.map((header) => (
                   <DropdownMenuCheckboxItem
@@ -175,7 +179,7 @@ export function CsvRenderer({
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input type="text"
-            placeholder="Search all columns…" autoComplete="off"
+            placeholder={tHardcodedUi.raw('componentsFileRenderersCsvRenderer.line178JsxAttrPlaceholderSearchAllColumns')} autoComplete="off"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="h-7 pl-8 pr-8 text-xs"

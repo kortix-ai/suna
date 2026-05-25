@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { KortixLoader } from '@/components/ui/kortix-loader';
@@ -9,6 +11,7 @@ type ConnectMessage =
   | { type: 'github-connect-error'; message: string };
 
 export default function GitHubConnectPopup() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [status, setStatus] = useState<'loading' | 'processing' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string>('');
 
@@ -113,7 +116,7 @@ export default function GitHubConnectPopup() {
       <div className="flex max-w-sm flex-col items-center gap-4 text-center">
         {status !== 'error' && <KortixLoader size="large" />}
         <div className="space-y-1">
-          <h1 className="text-base font-medium">Connect GitHub</h1>
+          <h1 className="text-base font-medium">{tHardcodedUi.raw('appAuthGithubConnectPage.line116JsxTextConnectGithub')}</h1>
           <p className={status === 'error' ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
             {statusMessage}
           </p>

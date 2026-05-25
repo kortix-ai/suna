@@ -1,8 +1,8 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import * as ResizablePrimitive from 'react-resizable-panels';
-import { KortixComputer } from '@/components/thread/kortix-computer';
 import { PreviewTabContent } from '@/components/tabs/preview-tab-content';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
@@ -19,20 +19,19 @@ import {
 import {
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
-import {
-  useOpenCodeMessages,
-  useOpenCodeSession,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
 import { useTabStore } from '@/stores/tab-store';
 import {
   sessionPreviewTabId,
   useSessionBrowserStore,
+  type SessionPanelView,
 } from '@/stores/session-browser-store';
+import { SessionFilesExplorer } from '@/components/session/session-files-explorer';
 import {
-  adaptMessagesToToolCalls,
-  adaptAgentStatus,
-} from '@/lib/adapters/opencode-to-kortix-computer';
+  SessionActionsPanel,
+  collectToolParts,
+} from '@/components/session/session-actions-panel';
+import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { X } from 'lucide-react';
 
 // ============================================================================
@@ -51,18 +50,6 @@ export const SessionLayout = memo(function SessionLayout({
   const isMobile = useIsMobile();
 
   const { data: messages } = useOpenCodeMessages(sessionId);
-  const { data: session } = useOpenCodeSession(sessionId);
-
-  const sessionStatus = useSyncStore(
-    (s) => s.sessionStatus[sessionId],
-  );
-  const isBusy = sessionStatus?.type === 'busy';
-
-  const toolCalls = useMemo(
-    () => (messages ? adaptMessagesToToolCalls(messages) : []),
-    [messages],
-  );
-  const agentStatus = adaptAgentStatus(isBusy);
 
   // Use individual selectors to avoid re-rendering on unrelated store changes
   // (e.g. currentSandboxId, files store resets). Destructuring the whole store
@@ -77,8 +64,10 @@ export const SessionLayout = memo(function SessionLayout({
   const toggleExpanded = useKortixComputerStore((s) => s.toggleExpanded);
 
   // Track active tab to restore per-session panel state on tab switch
-  const activeTabId = useTabStore((s) => s.activeTabId);
-  const isActiveTab = activeTabId === sessionId;
+  // Subscribe to the BOOLEAN (am-I-active) rather than the raw activeTabId so a
+  // tab switch only re-renders the two panes whose active state flips — not
+  // every pre-mounted session layout. Keeps switching 0-latency.
+  const isActiveTab = useTabStore((s) => s.activeTabId === sessionId);
 
   useEffect(() => {
     if (isActiveTab) {
@@ -86,13 +75,21 @@ export const SessionLayout = memo(function SessionLayout({
     }
   }, [isActiveTab, sessionId, setActiveSession]);
 
-  const hasToolCalls = toolCalls.length > 0;
+  const hasToolCalls = useMemo(
+    () => collectToolParts(messages).length > 0,
+    [messages],
+  );
 
   // Right-side panel view — actions (tool calls) or internal browser.
   // Per-session, so each session remembers which view the user prefers.
-  const panelView = useSessionBrowserStore((s) => s.viewBySession[sessionId] ?? 'actions');
+  const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId] ?? 'actions');
+  // The standalone "Changes" view ('files') is folded into the Files explorer
+  // (its version banner shows the diff + change-request action), so coerce any
+  // persisted 'files' selection to 'explorer'.
+  const panelView: SessionPanelView = storedPanelView === 'files' ? 'explorer' : storedPanelView;
   const setPanelView = useSessionBrowserStore((s) => s.setView);
   const showBrowser = panelView === 'browser';
+  const showExplorer = panelView === 'explorer';
 
   useEffect(() => {
     if (shouldOpenPanel && !isSidePanelOpen) {
@@ -102,13 +99,6 @@ export const SessionLayout = memo(function SessionLayout({
       clearShouldOpenPanel();
     }
   }, [shouldOpenPanel, isSidePanelOpen, setIsSidePanelOpen, clearShouldOpenPanel]);
-
-  const [currentToolIndex, setCurrentToolIndex] = useState(0);
-  const [externalNavIndex, setExternalNavIndex] = useState<number | undefined>(undefined);
-
-  const handleSidePanelNavigate = useCallback((index: number) => {
-    setCurrentToolIndex(index);
-  }, []);
 
   const handleSidePanelClose = useCallback(() => {
     if (isExpanded) toggleExpanded();
@@ -125,7 +115,30 @@ export const SessionLayout = memo(function SessionLayout({
   // tool calls"; with the browser view it also includes "browser is the
   // active view" — so the user can pop the panel open just to use the
   // internal browser even before the agent has run any tools.
-  const shouldShowPanel = isSidePanelOpen && (hasToolCalls || showBrowser);
+  const shouldShowPanel =
+    isSidePanelOpen && (hasToolCalls || showBrowser || showExplorer);
+
+  // ⌘I / Ctrl+I toggles the side panel open/closed.
+  //
+  // In the dashboard every session tab is pre-mounted (hidden via CSS), so we
+  // must only respond on the active tab. But the standalone session route
+  // mounts a single SessionLayout whose id isn't in the tab system at all —
+  // there `isActiveTab` is always false, so gate on it only when this session
+  // actually is a tab.
+  const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
+  const shouldHandleHotkey = isInTabSystem ? isActiveTab : true;
+  useEffect(() => {
+    if (!shouldHandleHotkey) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'i' || e.key === 'I')) {
+        e.preventDefault();
+        if (isSidePanelOpen) handleSidePanelClose();
+        else setIsSidePanelOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [shouldHandleHotkey, isSidePanelOpen, handleSidePanelClose, setIsSidePanelOpen]);
 
   // Track whether we're mid-animation so we can use relaxed constraints
   // that allow intermediate sizes (e.g. 75%) during the transition.
@@ -214,10 +227,26 @@ export const SessionLayout = memo(function SessionLayout({
     return () => cancelAnimationFrame(raf);
   }, [isAnimating, enablePanelTransition, isExpanded]);
 
-  const renderAssistantMessage = useCallback(() => null, []);
-  const renderToolResult = useCallback(() => null, []);
+  // Side-panel header switcher (Actions / Browser / Files) — shared by the
+  // mobile drawer and the desktop split panel.
+  const panelHeader = (
+    <PanelHeaderSwitcher
+      view={panelView}
+      onChangeView={(v) => setPanelView(sessionId, v)}
+      onClose={handleSidePanelClose}
+    />
+  );
 
-  const agentName = session?.title || 'OpenCode';
+  // The active side-panel body. "Actions" renders through the canonical
+  // ToolPartRenderer (via SessionActionsPanel) — the same handlers the chat
+  // uses — so there is exactly one tool-rendering implementation.
+  const panelBody = showBrowser ? (
+    <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
+  ) : showExplorer ? (
+    <SessionFilesExplorer chatSessionId={sessionId} />
+  ) : (
+    <SessionActionsPanel sessionId={sessionId} messages={messages} />
+  );
 
   // Mobile
   if (isMobile) {
@@ -226,21 +255,17 @@ export const SessionLayout = memo(function SessionLayout({
         <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
           {children}
         </div>
-        <KortixComputer
-          isOpen={isSidePanelOpen && hasToolCalls}
-          onClose={handleSidePanelClose}
-          toolCalls={toolCalls}
-          messages={[]}
-          agentStatus={agentStatus}
-          currentIndex={currentToolIndex}
-          onNavigate={handleSidePanelNavigate}
-          externalNavigateToIndex={externalNavIndex}
-          renderAssistantMessage={renderAssistantMessage}
-          renderToolResult={renderToolResult}
-          isLoading={false}
-          agentName={agentName}
-          disableInitialAnimation={true}
-        />
+        <Drawer
+          open={shouldShowPanel}
+          onOpenChange={(open) => {
+            if (!open) handleSidePanelClose();
+          }}
+        >
+          <DrawerContent className="flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden p-0">
+            {panelHeader}
+            <div className="min-h-0 flex-1 overflow-hidden">{panelBody}</div>
+          </DrawerContent>
+        </Drawer>
       </div>
     );
   }
@@ -282,9 +307,7 @@ export const SessionLayout = memo(function SessionLayout({
             )}
           />
 
-          {/* Side panel — dual purpose:
-                • view='actions' → KortixComputer (tool calls timeline)
-                • view='browser' → internal browser (PreviewTabContent)
+          {/* Side panel — Actions (tool calls) / Browser / Files.
               The user toggles between them via the header switcher. */}
           <ResizablePanel
             ref={sidePanelRef}
@@ -301,46 +324,7 @@ export const SessionLayout = memo(function SessionLayout({
               "h-full transition-[padding] duration-300 ease-out bg-background",
               isExpanded ? "p-0" : "pt-3 pb-6 pr-3 sm:pr-4 pl-1.5"
             )}>
-              {/* The header switcher is rendered once and shared across views;
-                  the body swaps between KortixComputer and the browser iframe. */}
-              {showBrowser ? (
-                <SidePanelFrame
-                  header={
-                    <PanelHeaderSwitcher
-                      view={panelView}
-                      onChangeView={(v) => setPanelView(sessionId, v)}
-                      onClose={handleSidePanelClose}
-                    />
-                  }
-                >
-                  <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
-                </SidePanelFrame>
-              ) : (
-                <KortixComputer
-                  isOpen={isSidePanelOpen && hasToolCalls}
-                  onClose={handleSidePanelClose}
-                  toolCalls={toolCalls}
-                  messages={[]}
-                  agentStatus={agentStatus}
-                  currentIndex={currentToolIndex}
-                  onNavigate={handleSidePanelNavigate}
-                  externalNavigateToIndex={externalNavIndex}
-                  renderAssistantMessage={renderAssistantMessage}
-                  renderToolResult={renderToolResult}
-                  isLoading={false}
-                  agentName={agentName}
-                  disableInitialAnimation={true}
-                  sidePanelRef={sidePanelRef}
-                  hideTopBar={true}
-                  headerSlot={
-                    <PanelHeaderSwitcher
-                      view={panelView}
-                      onChangeView={(v) => setPanelView(sessionId, v)}
-                      onClose={handleSidePanelClose}
-                    />
-                  }
-                />
-              )}
+              <SidePanelFrame header={panelHeader}>{panelBody}</SidePanelFrame>
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -361,14 +345,15 @@ function PanelHeaderSwitcher({
   onChangeView,
   onClose,
 }: {
-  view: 'actions' | 'browser';
-  onChangeView: (next: 'actions' | 'browser') => void;
+  view: SessionPanelView;
+  onChangeView: (next: SessionPanelView) => void;
   onClose: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex-shrink-0 flex items-center justify-between h-10 pl-4 pr-2 border-b border-border/40">
       {/* Plain text tabs with an underline on active — no chip, no fill. */}
-      <div role="tablist" aria-label="Side panel view" className="flex items-center gap-5">
+      <div role="tablist" aria-label={tHardcodedUi.raw('componentsSessionSessionLayout.line348JsxAttrAriaLabelSidePanelView')} className="flex items-center gap-5">
         <PanelTabButton
           active={view === 'actions'}
           onClick={() => onChangeView('actions')}
@@ -379,18 +364,26 @@ function PanelHeaderSwitcher({
           onClick={() => onChangeView('browser')}
           label="Browser"
         />
+        <PanelTabButton
+          active={view === 'explorer'}
+          onClick={() => onChangeView('explorer')}
+          label="Files"
+        />
       </div>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             onClick={onClose}
-            className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
-            aria-label="Close panel"
+            className="inline-flex items-center justify-center h-7 w-7 rounded-full text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+            aria-label={tHardcodedUi.raw('componentsSessionSessionLayout.line370JsxAttrAriaLabelClosePanel')}
           >
             <X className="w-3.5 h-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">Close panel</TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">
+          {tHardcodedUi.raw('componentsSessionSessionLayout.line376JsxTextClosePanel')}<kbd className="ml-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+            {tHardcodedUi.raw('componentsSessionSessionLayout.line378JsxTextI')}</kbd>
+        </TooltipContent>
       </Tooltip>
     </div>
   );
@@ -412,7 +405,7 @@ function PanelTabButton({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        'relative inline-flex items-center h-10 text-[12px] tracking-tight transition-colors cursor-pointer',
+        'relative inline-flex items-center h-10 text-xs tracking-tight transition-colors cursor-pointer',
         active
           ? 'text-foreground font-medium'
           : 'text-muted-foreground/70 hover:text-foreground/90',
@@ -426,8 +419,8 @@ function PanelTabButton({
   );
 }
 
-// Lightweight frame for the browser view so it has the same outer shape
-// (header + bordered card) that KortixComputer renders for the actions view.
+// Shared frame for every side-panel view (Actions / Browser / Files):
+// a bordered card with the header switcher on top and the view body below.
 function SidePanelFrame({
   header,
   children,
@@ -436,7 +429,7 @@ function SidePanelFrame({
   children: React.ReactNode;
 }) {
   return (
-    <div className="h-full w-full flex flex-col bg-card overflow-hidden min-w-0 min-h-0 border rounded-[24px]">
+    <div className="h-full w-full flex flex-col bg-card overflow-hidden min-w-0 min-h-0 border rounded-2xl">
       {header}
       <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
     </div>

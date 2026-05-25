@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -159,6 +161,7 @@ function PptxDownloadFallback({
   isDownloading?: boolean;
   className?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = useCallback(async () => {
@@ -199,18 +202,14 @@ function PptxDownloadFallback({
         </div>
         <div className="space-y-1">
           <p className="text-sm font-medium text-foreground">{fileName}</p>
-          <p className="text-xs text-muted-foreground">
-            PowerPoint preview requires a cloud sandbox
-          </p>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersPptxRenderer.line203JsxTextPowerpointPreviewRequiresACloudSandbox')}</p>
         </div>
         <Button size="sm" onClick={handleDownload} disabled={busy}>
           {busy ? (
             <KortixLoader size="small" />
           ) : (
             <Download className="h-4 w-4 mr-2" />
-          )}
-          Download to view
-        </Button>
+          )}{tHardcodedUi.raw('componentsFileRenderersPptxRenderer.line212JsxTextDownloadToView')}</Button>
       </div>
     </div>
   );

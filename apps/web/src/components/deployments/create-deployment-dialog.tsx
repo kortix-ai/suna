@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   Dialog,
@@ -219,6 +221,7 @@ function FolderBrowser({
   onSelectPath: (path: string, name: string) => void;
   depth?: number;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: nodes, isLoading } = useFileList(dirPath);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
 
@@ -234,9 +237,7 @@ function FolderBrowser({
   if (isLoading && depth === 0) {
     return (
       <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-        Loading workspace...
-      </div>
+        <Loader2 className="h-4 w-4 animate-spin mr-2" />{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line238JsxTextLoadingWorkspace')}</div>
     );
   }
 
@@ -247,9 +248,7 @@ function FolderBrowser({
   if (dirs.length === 0 && depth === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-6 text-sm text-muted-foreground">
-        <FolderOpen className="h-6 w-6 mb-2 opacity-40" />
-        No folders found in workspace
-      </div>
+        <FolderOpen className="h-6 w-6 mb-2 opacity-40" />{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line251JsxTextNoFoldersFoundInWorkspace')}</div>
     );
   }
 
@@ -557,6 +556,7 @@ export function CreateDeploymentDialog({
   onCreated,
   prefillFrom,
 }: CreateDeploymentDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const createMutation = useCreateDeployment();
 
   // Form state
@@ -835,7 +835,7 @@ export function CreateDeploymentDialog({
         <div className="space-y-6 py-2">
           {/* Source Type Selector */}
           <div>
-            <label className={labelClass}>Source Type</label>
+            <label className={labelClass}>{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line838JsxTextSourceType')}</label>
             <div className="grid grid-cols-5 gap-2">
               {sourceTypes.map((st) => {
                 const Icon = st.icon;
@@ -878,21 +878,18 @@ export function CreateDeploymentDialog({
                 onClick={() => setDomains(generateSubdomain())}
                 variant="outline"
                 size="icon"
-                title="Generate random subdomain"
+                title={tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line881JsxAttrTitleGenerateRandomSubdomain')}
                 >
                 <Wand2 className="h-4 w-4" />
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Free subdomains available under <span className="font-medium text-foreground/70">*.style.dev</span>. Use your own verified domain for production.
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line887JsxTextFreeSubdomainsAvailableUnder')}<span className="font-medium text-foreground/70">{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line887JsxTextStyleDev')}</span>{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line887JsxTextUseYourOwnVerifiedDomainForProduction')}</p>
           </div>
 
           {/* Source-specific fields */}
           {sourceType === 'workspace' && (
             <div>
-              <label className={labelClass}>
-                Select Folder <span className="text-destructive">*</span>
+              <label className={labelClass}>{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line895JsxTextSelectFolder')}<span className="text-destructive">*</span>
               </label>
               <div className="rounded-2xl border overflow-hidden">
                 {/* Selected folder indicator */}
@@ -932,15 +929,12 @@ export function CreateDeploymentDialog({
                   />
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground mt-1.5">
-                Select a project folder from your workspace. All files will be collected for deployment.
-              </p>
+              <p className="text-xs text-muted-foreground mt-1.5">{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line936JsxTextSelectAProjectFolderFromYourWorkspaceAll')}</p>
 
               {/* File preview (collapsed) */}
               {workspaceFiles.length > 0 && !isCollectingFiles && (
                 <details className="mt-3">
-                  <summary className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
-                    Preview files ({workspaceFiles.length})
+                  <summary className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line943JsxTextPreviewFiles')}{workspaceFiles.length})
                   </summary>
                   <div className="mt-2 rounded-2xl border bg-muted/20 max-h-[160px] overflow-y-auto">
                     <div className="p-2 space-y-0.5">
@@ -963,8 +957,7 @@ export function CreateDeploymentDialog({
           {sourceType === 'git' && (
             <div className="space-y-4">
               <div>
-                <label className={labelClass}>
-                  Repository URL <span className="text-destructive">*</span>
+                <label className={labelClass}>{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line967JsxTextRepositoryUrl')}<span className="text-destructive">*</span>
                 </label>
                 <Input
                   type="text"
@@ -984,7 +977,7 @@ export function CreateDeploymentDialog({
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Root Path</label>
+                  <label className={labelClass}>{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line987JsxTextRootPath')}</label>
                   <Input
                     type="text"
                     value={rootPath}
@@ -1018,9 +1011,7 @@ export function CreateDeploymentDialog({
                   Files <span className="text-destructive">*</span>
                 </label>
                 <Button type="button" variant="ghost" size="sm" onClick={addFile}>
-                  <Plus className="h-3 w-3 mr-1" />
-                  Add File
-                </Button>
+                  <Plus className="h-3 w-3 mr-1" />{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line1022JsxTextAddFile')}</Button>
               </div>
               <div className="space-y-3">
                 {files.map((file, i) => (
@@ -1047,7 +1038,7 @@ export function CreateDeploymentDialog({
                     <Textarea
                       value={file.content}
                       onChange={(e) => updateFile(i, 'content', e.target.value)}
-                      placeholder="File content..."
+                      placeholder={tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line1050JsxAttrPlaceholderFileContent')}
                       className="min-h-[60px] resize-y font-mono"
                       rows={4}
                     />
@@ -1059,8 +1050,7 @@ export function CreateDeploymentDialog({
 
           {sourceType === 'tar' && (
             <div>
-              <label className={labelClass}>
-                Tarball URL <span className="text-destructive">*</span>
+              <label className={labelClass}>{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line1063JsxTextTarballUrl')}<span className="text-destructive">*</span>
               </label>
               <Input
                 type="text"
@@ -1085,9 +1075,7 @@ export function CreateDeploymentDialog({
                   'h-4 w-4 transition-transform',
                   showAdvanced && 'rotate-180',
                 )}
-              />
-              Advanced Configuration
-              {(entrypoint || framework || buildCommand || envVars.length > 0 || staticOnly) && (
+              />{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line1089JsxTextAdvancedConfiguration')}{(entrypoint || framework || buildCommand || envVars.length > 0 || staticOnly) && (
                 <Badge variant="secondary" className="text-xs">configured</Badge>
               )}
             </Button>
@@ -1110,22 +1098,22 @@ export function CreateDeploymentDialog({
                       type="text"
                       value={framework}
                       onChange={(e) => setFramework(e.target.value)}
-                      placeholder="nextjs, vite, etc."
+                      placeholder={tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line1113JsxAttrPlaceholderNextjsViteEtc')}
                     />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className={labelClass}>Build Command</label>
+                    <label className={labelClass}>{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line1119JsxTextBuildCommand')}</label>
                     <Input
                       type="text"
                       value={buildCommand}
                       onChange={(e) => setBuildCommand(e.target.value)}
-                      placeholder="npm run build"
+                      placeholder={tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line1124JsxAttrPlaceholderNpmRunBuild')}
                     />
                   </div>
                   <div>
-                    <label className={labelClass}>Build Output Dir</label>
+                    <label className={labelClass}>{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line1128JsxTextBuildOutputDir')}</label>
                     <Input
                       type="text"
                       value={buildOutDir}
@@ -1142,15 +1130,13 @@ export function CreateDeploymentDialog({
                     onChange={(e) => setStaticOnly(e.target.checked)}
                     className="rounded border-border"
                   />
-                  <label htmlFor="static-only" className="text-sm text-foreground">
-                    Static site only (no server)
-                  </label>
+                  <label htmlFor="static-only" className="text-sm text-foreground">{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line1146JsxTextStaticSiteOnlyNoServer')}</label>
                 </div>
 
                 {/* Environment Variables */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className={labelClass}>Environment Variables</label>
+                    <label className={labelClass}>{tHardcodedUi.raw('componentsDeploymentsCreateDeploymentDialog.line1153JsxTextEnvironmentVariables')}</label>
                     <Button type="button" variant="ghost" size="sm" onClick={addEnvVar}>
                       <Plus className="h-3 w-3 mr-1" />
                       Add

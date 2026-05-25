@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * AccountSettingsModal — parallel to UserSettingsModal but scoped to
  * the currently-selected account. Houses Billing and Transactions today;
@@ -49,6 +51,7 @@ export function AccountSettingsModal({
   defaultTab = 'billing',
   returnUrl = typeof window !== 'undefined' ? window?.location?.href || '/' : '/',
 }: AccountSettingsModalProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
@@ -65,13 +68,7 @@ export function AccountSettingsModal({
     accountsQuery.data?.[0] ??
     null;
 
-  const accountLabel =
-    activeAccount?.name || (activeAccount?.personal_account ? 'Personal' : 'Account');
-  const roleLine = activeAccount?.personal_account
-    ? 'Personal account'
-    : activeAccount?.account_role
-      ? `${activeAccount.account_role.charAt(0).toUpperCase()}${activeAccount.account_role.slice(1)} · Team`
-      : 'Team account';
+  const accountLabel = activeAccount?.name || 'Account';
 
   const tabs: Tab[] = getAccountTabs(true)
     .filter((t) => t.id === 'billing' || t.id === 'transactions')
@@ -92,7 +89,7 @@ export function AccountSettingsModal({
         )}
         hideCloseButton
       >
-        <DialogTitle className="sr-only">Account settings</DialogTitle>
+        <DialogTitle className="sr-only">{tHardcodedUi.raw('componentsSettingsAccountSettingsModal.line95JsxTextAccountSettings')}</DialogTitle>
 
         {isMobile ? (
           <div className="flex h-screen w-screen flex-col overflow-hidden">
@@ -100,9 +97,9 @@ export function AccountSettingsModal({
             <div className="flex-shrink-0 border-b border-border bg-background px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-lg font-semibold leading-tight">Account settings</div>
-                  <div className="truncate text-[11px] text-muted-foreground leading-tight">
-                    {accountLabel} · {roleLine}
+                  <div className="text-lg font-semibold leading-tight">{tHardcodedUi.raw('componentsSettingsAccountSettingsModal.line103JsxTextAccountSettings')}</div>
+                  <div className="truncate text-xs text-muted-foreground leading-tight">
+                    {accountLabel}
                   </div>
                 </div>
                 <Button
@@ -126,7 +123,7 @@ export function AccountSettingsModal({
                     <Button
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id)}
-                      variant={isActive ? 'secondary' : 'ghost'}
+                      variant={isActive ? 'subtle' : 'ghost'}
                       className={cn(
                         'flex flex-shrink-0 items-center gap-2 justify-start whitespace-nowrap',
                         !isActive && 'text-muted-foreground hover:text-foreground',
@@ -174,11 +171,11 @@ export function AccountSettingsModal({
                   </>
                 ) : (
                   <>
-                    <div className="truncate text-[13px] font-medium leading-tight">
+                    <div className="truncate text-sm font-medium leading-tight">
                       {accountLabel}
                     </div>
-                    <div className="truncate text-[11px] text-muted-foreground leading-tight">
-                      {roleLine}
+                    <div className="truncate text-xs text-muted-foreground leading-tight">
+                      Account settings
                     </div>
                   </>
                 )}
@@ -187,7 +184,7 @@ export function AccountSettingsModal({
               {/* Tabs */}
               <div className="flex flex-col gap-0.5">
                 <div className="px-3 pb-1.5">
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
                     Account
                   </span>
                 </div>

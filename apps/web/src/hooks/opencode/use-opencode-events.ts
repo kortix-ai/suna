@@ -31,7 +31,7 @@ import { ptyKeys } from "./use-opencode-pty";
 import { opencodeKeys, type Session, type MessageWithParts } from "./use-opencode-sessions";
 import { saveSessionToIDB, deleteSessionFromIDB } from "@/lib/idb-sync-cache";
 import { resetPrefetchState } from "./use-session-prefetch";
-import { syncOpencodeSessionTitles } from "@/lib/projects-client";
+import { syncOpencodeSessionData } from "@/lib/projects-client";
 
 const MESSAGE_REHYDRATE_COOLDOWN_MS = 30_000;
 const PROJECT_METADATA_REFETCH_COOLDOWN_MS = 5_000;
@@ -39,6 +39,20 @@ const messageRehydrateInFlight = new Set<string>();
 const messageRehydrateLastAt = new Map<string, number>();
 let projectMetadataRefetchLastAt = 0;
 let projectMetadataRefetchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function syncOpenCodeSessionSnapshot(info: Session): void {
+	void syncOpencodeSessionData([
+		{
+			opencode_session_id: info.id,
+			title: info.title || null,
+			parent_id: info.parentID ?? null,
+			project_id: info.projectID ?? null,
+			created_at: info.time?.created ?? null,
+			updated_at: info.time?.updated ?? null,
+			archived_at: info.time?.archived ?? null,
+		},
+	]).catch(() => {});
+}
 
 function reserveMessageRehydrate(sessionID: string): boolean {
 	if (!sessionID || messageRehydrateInFlight.has(sessionID)) return false;
@@ -249,9 +263,14 @@ export function useOpenCodeEventStream() {
 			resetClient();
 			clearConfigOverrides();
 			clearPending();
-			useSyncStore.getState().reset();
+			// NOTE: we intentionally do NOT wipe the sync store or the opencode
+			// query cache here anymore. Those are now scoped per-sandbox (see
+			// opencodeKeys.activeServerKey + the sync store's session-id keying),
+			// so each sandbox's data coexists safely. Wiping them was what made
+			// switching back to an already-open session "reload". Diagnostics are
+			// still cleared because they're keyed by bare file path (no sandbox
+			// scope) and would otherwise bleed across sandboxes.
 			useDiagnosticsStore.getState().clearAll();
-			queryClient.removeQueries({ queryKey: opencodeKeys.all });
 			resetPrefetchState();
 		} else if (didServerUrlChange) {
 			// URL changed on the same logical server (e.g. sandbox/proxy refresh).
@@ -661,9 +680,7 @@ export function useOpenCodeEventStream() {
 						return [info, ...old].sort((a, b) => b.time.updated - a.time.updated);
 					});
 					queryClient.setQueryData(opencodeKeys.session(info.id), info);
-					void syncOpencodeSessionTitles([
-						{ opencode_session_id: info.id, title: info.title || null },
-					]).catch(() => {});
+					syncOpenCodeSessionSnapshot(info);
 				}
 				break;
 			}
@@ -684,9 +701,7 @@ export function useOpenCodeEventStream() {
 						next[idx] = info;
 						return next.sort((a, b) => b.time.updated - a.time.updated);
 					});
-					void syncOpencodeSessionTitles([
-						{ opencode_session_id: info.id, title: info.title || null },
-					]).catch(() => {});
+					syncOpenCodeSessionSnapshot(info);
 				}
 				break;
 			}

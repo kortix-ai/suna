@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Cross-account external grants on the Settings tab. Attach an existing
 // Kortix user from outside this account so they show up as a principal
 // in the policy editor, without consuming a regular seat. Optional
@@ -37,6 +38,7 @@ interface ExternalGrantsCardProps {
 }
 
 export function ExternalGrantsCard({ accountId, canManage }: ExternalGrantsCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<ExternalGrant | null>(null);
@@ -66,19 +68,14 @@ export function ExternalGrantsCard({ accountId, canManage }: ExternalGrantsCardP
           <div>
             <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <Briefcase className="h-4 w-4 text-muted-foreground" />
-              External access
-            </h2>
+              {tHardcodedUi.raw('componentsIamExternalGrantsCard.line69JsxTextExternalAccess')}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Grant a consultant or partner from a different Kortix account
-              specific access here. They keep their own login; you attach
-              policies normally on the member detail page.
-            </p>
+              {tHardcodedUi.raw('componentsIamExternalGrantsCard.line72JsxTextGrantAConsultantOrPartnerFromADifferent')}</p>
           </div>
           {canManage && (
             <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />
-              Add external user
-            </Button>
+              {tHardcodedUi.raw('componentsIamExternalGrantsCard.line80JsxTextAddExternalUser')}</Button>
           )}
         </div>
       </header>
@@ -88,9 +85,7 @@ export function ExternalGrantsCard({ accountId, canManage }: ExternalGrantsCardP
           <Skeleton className="h-16 w-full" />
         ) : grants.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No external users attached. Use this for consultants and partners
-            who shouldn&apos;t consume a regular seat.
-          </p>
+            {tHardcodedUi.raw('componentsIamExternalGrantsCard.line91JsxTextNoExternalUsersAttachedUseThisForConsultants')}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -131,7 +126,7 @@ export function ExternalGrantsCard({ accountId, canManage }: ExternalGrantsCardP
                         variant="ghost"
                         className="h-7 w-7 text-muted-foreground hover:text-destructive"
                         onClick={() => setRevokeTarget(g)}
-                        aria-label="Revoke external grant"
+                        aria-label={tHardcodedUi.raw('componentsIamExternalGrantsCard.line134JsxAttrAriaLabelRevokeExternalGrant')}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -158,8 +153,8 @@ export function ExternalGrantsCard({ accountId, canManage }: ExternalGrantsCardP
         onOpenChange={(o) => {
           if (!o) setRevokeTarget(null);
         }}
-        title="Revoke external grant?"
-        description="The user immediately loses access to this account. Their own account is unaffected."
+        title={tHardcodedUi.raw('componentsIamExternalGrantsCard.line161JsxAttrTitleRevokeExternalGrant')}
+        description={tHardcodedUi.raw('componentsIamExternalGrantsCard.line162JsxAttrDescriptionTheUserImmediatelyLosesAccessToThisAccount')}
         confirmLabel="Revoke"
         confirmVariant="destructive"
         isPending={revokeMutation.isPending}
@@ -182,6 +177,7 @@ function AddExternalDialog({
   onOpenChange: (o: boolean) => void;
   onCreated: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [email, setEmail] = useState('');
   const [note, setNote] = useState('');
   const [expiresAtISO, setExpiresAtISO] = useState<string>('');
@@ -208,11 +204,9 @@ function AddExternalDialog({
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Attach external user</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsIamExternalGrantsCard.line211JsxTextAttachExternalUser')}</DialogTitle>
           <DialogDescription>
-            The user must already have a Kortix account. Look them up by
-            email; you&apos;ll attach policies on their member page after.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsIamExternalGrantsCard.line213JsxTextTheUserMustAlreadyHaveAKortixAccount')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -221,13 +215,13 @@ function AddExternalDialog({
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="alice@consultancy.com"
+              placeholder={tHardcodedUi.raw('componentsIamExternalGrantsCard.line224JsxAttrPlaceholderAliceConsultancyCom')}
               disabled={mutation.isPending}
               autoFocus
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Auto-revoke (optional)</Label>
+            <Label>{tHardcodedUi.raw('componentsIamExternalGrantsCard.line230JsxTextAutoRevokeOptional')}</Label>
             <Input
               type="datetime-local"
               value={expiresAtISO ? expiresAtISO.slice(0, 16) : ''}
@@ -241,11 +235,11 @@ function AddExternalDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Note (optional)</Label>
+            <Label>{tHardcodedUi.raw('componentsIamExternalGrantsCard.line244JsxTextNoteOptional')}</Label>
             <Input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Q1 audit, contractor from FooCo"
+              placeholder={tHardcodedUi.raw('componentsIamExternalGrantsCard.line248JsxAttrPlaceholderQ1AuditContractorFromFooCo')}
               disabled={mutation.isPending}
             />
           </div>

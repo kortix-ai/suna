@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState } from 'react';
 import {
   Table,
@@ -89,6 +91,7 @@ const FILTER_TABS: { id: FilterTab; label: string }[] = [
 ];
 
 export default function BillingHistory() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [tab, setTab] = useState<FilterTab>('all');
   const [offset, setOffset] = useState(0);
 
@@ -150,7 +153,7 @@ export default function BillingHistory() {
       {transactions.length === 0 ? (
         <div className="py-12 text-center">
           <Receipt className="size-6 text-muted-foreground mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">No billing events</p>
+          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsBillingBillingHistory.line153JsxTextNoBillingEvents')}</p>
           <p className="text-xs text-muted-foreground mt-1">
             {tab !== 'all' ? 'Try "All" to see everything' : 'Charges and refunds will appear here'}
           </p>
@@ -161,10 +164,10 @@ export default function BillingHistory() {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Date</TableHead>
-                  <TableHead className="px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Type</TableHead>
-                  <TableHead className="px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Details</TableHead>
-                  <TableHead className="px-3 text-right text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Amount</TableHead>
+                  <TableHead className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Date</TableHead>
+                  <TableHead className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Type</TableHead>
+                  <TableHead className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Details</TableHead>
+                  <TableHead className="px-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Amount</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

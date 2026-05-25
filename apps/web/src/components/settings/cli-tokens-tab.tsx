@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useState } from 'react';
 import { Check, Copy, KeyRound, Loader2, Plus, Shield, Trash2, X } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -60,6 +62,7 @@ function CopyButton({ value }: { value: string }) {
 }
 
 function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [confirming, setConfirming] = useState(false);
   const revoked = token.status !== 'active';
   const router = useRouter();
@@ -91,7 +94,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
           <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
             <span>Created {formatRelative(token.created_at)}</span>
             <span>·</span>
-            <span>Last used {formatRelative(token.last_used_at)}</span>
+            <span>{tHardcodedUi.raw('componentsSettingsCliTokensTab.line94JsxTextLastUsed')}{formatRelative(token.last_used_at)}</span>
           </div>
         </div>
 
@@ -102,7 +105,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
                 variant="ghost"
                 size="icon"
                 aria-label={`Manage policies for ${token.name}`}
-                title="Manage permission policies"
+                title={tHardcodedUi.raw('componentsSettingsCliTokensTab.line105JsxAttrTitleManagePermissionPolicies')}
                 onClick={() =>
                   router.push(`/accounts/${selectedAccountId}/tokens/${token.token_id}`)
                 }
@@ -125,9 +128,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
       {confirming && !revoked && (
         <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-4 py-3 text-sm">
           <span className="text-muted-foreground">
-            Revoke <strong className="text-foreground">{token.name}</strong>? Any CLI
-            using it will be signed out.
-          </span>
+            Revoke <strong className="text-foreground">{token.name}</strong>{tHardcodedUi.raw('componentsSettingsCliTokensTab.line128JsxTextAnyCliUsingItWillBeSignedOut')}</span>
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -157,6 +158,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
 }
 
 export function CliTokensTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
 
@@ -178,18 +180,13 @@ export function CliTokensTab() {
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xl font-semibold">
-            <KeyRound className="size-5" /> CLI tokens
-          </div>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Personal Access Tokens for the{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">kortix</code>{' '}
-            CLI. Each token authenticates as you — treat them like passwords.
-          </p>
+            <KeyRound className="size-5" />{tHardcodedUi.raw('componentsSettingsCliTokensTab.line181JsxTextCliTokens')}</div>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSettingsCliTokensTab.line184JsxTextPersonalAccessTokensForThe')}{' '}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">kortix</code>{' '}{tHardcodedUi.raw('componentsSettingsCliTokensTab.line186JsxTextCliEachTokenAuthenticatesAsYouTreatThem')}</p>
         </div>
         {!creating && (
           <Button onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> New token
-          </Button>
+            <Plus className="size-4" />{tHardcodedUi.raw('componentsSettingsCliTokensTab.line191JsxTextNewToken')}</Button>
         )}
       </div>
 
@@ -232,7 +229,7 @@ export function CliTokensTab() {
       )}
 
       <div className="mt-8 rounded-2xl border bg-muted/30 p-4 text-sm">
-        <div className="font-medium">Using the CLI</div>
+        <div className="font-medium">{tHardcodedUi.raw('componentsSettingsCliTokensTab.line235JsxTextUsingTheCli')}</div>
         <pre className="mt-2 overflow-x-auto rounded bg-background px-3 py-2 font-mono text-xs">
 {`kortix login --token <paste-from-above>
 kortix whoami
@@ -253,6 +250,7 @@ function InlineCreate({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState('');
   const [created, setCreated] = useState<CreatedAccountToken | null>(null);
 
@@ -270,16 +268,10 @@ function InlineCreate({
       <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
-            <div className="text-sm font-medium">
-              Token created · {created.name}
+            <div className="text-sm font-medium">{tHardcodedUi.raw('componentsSettingsCliTokensTab.line274JsxTextTokenCreated')}{created.name}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Copy it now — it won&apos;t be shown again. Then run{' '}
-              <code className="rounded bg-background px-1 py-0.5 font-mono text-[11px]">
-                kortix login --token &lt;paste&gt;
-              </code>{' '}
-              in your terminal.
-            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSettingsCliTokensTab.line277JsxTextCopyItNowItWonAposTBe')}{' '}
+              <code className="rounded bg-background px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('componentsSettingsCliTokensTab.line279JsxTextKortixLoginTokenLtPasteGt')}</code>{' '}{tHardcodedUi.raw('componentsSettingsCliTokensTab.line281JsxTextInYourTerminal')}</p>
           </div>
           <Button
             type="button"
@@ -313,9 +305,7 @@ function InlineCreate({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 space-y-2">
-          <Label htmlFor="token-name" className="text-sm font-medium">
-            Token name
-          </Label>
+          <Label htmlFor="token-name" className="text-sm font-medium">{tHardcodedUi.raw('componentsSettingsCliTokensTab.line317JsxTextTokenName')}</Label>
           <Input
             id="token-name"
             placeholder="my-laptop"
@@ -325,9 +315,7 @@ function InlineCreate({
             required
             maxLength={255}
           />
-          <p className="text-xs text-muted-foreground">
-            Used only to recognize this token later.
-          </p>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSettingsCliTokensTab.line329JsxTextUsedOnlyToRecognizeThisTokenLater')}</p>
         </div>
         <Button
           type="button"
@@ -357,16 +345,15 @@ function InlineCreate({
 }
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="rounded-2xl border border-dashed py-16 text-center">
       <KeyRound className="mx-auto size-8 text-muted-foreground" />
-      <div className="mt-3 text-sm font-medium">No tokens yet</div>
+      <div className="mt-3 text-sm font-medium">{tHardcodedUi.raw('componentsSettingsCliTokensTab.line363JsxTextNoTokensYet')}</div>
       <div className="mt-1 text-sm text-muted-foreground">
-        Click <strong>New token</strong> above to mint your first one.
-      </div>
+        Click <strong>{tHardcodedUi.raw('componentsSettingsCliTokensTab.line365JsxTextNewToken')}</strong>{tHardcodedUi.raw('componentsSettingsCliTokensTab.line365JsxTextAboveToMintYourFirstOne')}</div>
       <Button className="mt-4" variant="outline" onClick={onCreate}>
-        <Plus className="size-4" /> New token
-      </Button>
+        <Plus className="size-4" />{tHardcodedUi.raw('componentsSettingsCliTokensTab.line368JsxTextNewToken')}</Button>
     </div>
   );
 }

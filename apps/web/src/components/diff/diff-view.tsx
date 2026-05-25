@@ -94,7 +94,7 @@ export function DiffView(props: PatchProps | FilesProps) {
     <PatchDiff
       patch={patch}
       options={options}
-      className={cn('kortix-diff-view text-[12.5px] leading-[1.55]', props.className)}
+      className={cn('kortix-diff-view text-sm leading-[1.55]', props.className)}
     />
   );
 }

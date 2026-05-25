@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Approval workflow card on the Settings tab. Combines the on/off toggle
 // (with the gated-actions list) and the pending-requests inbox so admins
 // have one place to manage two-person rule operations.
@@ -38,6 +39,7 @@ interface ApprovalsCardProps {
 }
 
 export function ApprovalsCard({ accountId, currentUserId, canManage }: ApprovalsCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [decision, setDecision] = useState<
     { kind: 'approve' | 'reject'; request: ApprovalRequest } | null
@@ -111,13 +113,9 @@ export function ApprovalsCard({ accountId, currentUserId, canManage }: Approvals
           <div>
             <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
               <ShieldAlert className="h-4 w-4 text-muted-foreground" />
-              Two-person rule
-            </h2>
+              {tHardcodedUi.raw('componentsIamApprovalsCard.line114JsxTextTwoPersonRule')}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              When on, the curated set of high-blast-radius IAM actions
-              requires approval from a second super-admin before they
-              execute. Requesters can&apos;t approve their own requests.
-            </p>
+              {tHardcodedUi.raw('componentsIamApprovalsCard.line117JsxTextWhenOnTheCuratedSetOfHighBlast')}</p>
           </div>
           {policyQuery.isLoading ? (
             <Skeleton className="h-9 w-24 rounded-md" />
@@ -136,10 +134,10 @@ export function ApprovalsCard({ accountId, currentUserId, canManage }: Approvals
 
       {/* Policy details */}
       <div className="border-b border-border/60 px-6 py-4">
-        <p className="mb-2 text-xs font-medium text-foreground">Gated actions</p>
+        <p className="mb-2 text-xs font-medium text-foreground">{tHardcodedUi.raw('componentsIamApprovalsCard.line139JsxTextGatedActions')}</p>
         <div className="flex flex-wrap gap-1.5">
           {gatedActions.length === 0 ? (
-            <span className="text-xs text-muted-foreground">No actions gated.</span>
+            <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamApprovalsCard.line142JsxTextNoActionsGated')}</span>
           ) : (
             gatedActions.map((a) => (
               <Badge key={a} variant="outline" size="sm" className="font-mono text-[11px]">
@@ -149,22 +147,20 @@ export function ApprovalsCard({ accountId, currentUserId, canManage }: Approvals
           )}
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Requests auto-expire after 24 hours.
-        </p>
+          {tHardcodedUi.raw('componentsIamApprovalsCard.line152JsxTextRequestsAutoExpireAfter24Hours')}</p>
       </div>
 
       {/* Pending requests */}
       <div className="px-6 py-4">
         <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
           <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-          Pending requests ({pending.length})
+          {tHardcodedUi.raw('componentsIamApprovalsCard.line160JsxTextPendingRequests')}{pending.length})
         </h3>
         {pendingQuery.isLoading ? (
           <Skeleton className="h-12 w-full" />
         ) : pending.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No pending approval requests.
-          </p>
+            {tHardcodedUi.raw('componentsIamApprovalsCard.line166JsxTextNoPendingApprovalRequests')}</p>
         ) : (
           <ul className="space-y-2">
             {pending.map((r) => {
@@ -191,11 +187,11 @@ export function ApprovalsCard({ accountId, currentUserId, canManage }: Approvals
                           </Badge>
                         )}
                         {isSelf && (
-                          <Badge variant="outline" size="sm">your request</Badge>
+                          <Badge variant="outline" size="sm">{tHardcodedUi.raw('componentsIamApprovalsCard.line194JsxTextYourRequest')}</Badge>
                         )}
                       </div>
                       <p className="mt-1.5 text-xs text-muted-foreground">
-                        Requested by{' '}
+                        {tHardcodedUi.raw('componentsIamApprovalsCard.line198JsxTextRequestedBy')}{' '}
                         <span className="text-foreground">
                           {emailByUserId.get(r.requested_by) ?? r.requested_by}
                         </span>
@@ -204,8 +200,7 @@ export function ApprovalsCard({ accountId, currentUserId, canManage }: Approvals
                       </p>
                       {r.requester_reason && (
                         <p className="mt-1 text-xs italic text-muted-foreground">
-                          &ldquo;{r.requester_reason}&rdquo;
-                        </p>
+                          {tHardcodedUi.raw('componentsIamApprovalsCard.line207JsxTextText')}{r.requester_reason}{tHardcodedUi.raw('componentsIamApprovalsCard.line207JsxTextText')}</p>
                       )}
                     </div>
                     {canManage && !isSelf && !expired && (
@@ -243,7 +238,7 @@ export function ApprovalsCard({ accountId, currentUserId, canManage }: Approvals
         onOpenChange={(o) => {
           if (!o) setDecision(null);
         }}
-        title="Approve this request?"
+        title={tHardcodedUi.raw('componentsIamApprovalsCard.line246JsxAttrTitleApproveThisRequest')}
         description={
           decision
             ? `Approving will let the requester finalise the change. The action ("${decision.request.action}") only runs when they re-submit with this approval id — you're not executing it yourself.`
@@ -262,7 +257,7 @@ export function ApprovalsCard({ accountId, currentUserId, canManage }: Approvals
         onOpenChange={(o) => {
           if (!o) setDecision(null);
         }}
-        title="Reject this request?"
+        title={tHardcodedUi.raw('componentsIamApprovalsCard.line265JsxAttrTitleRejectThisRequest')}
         description={
           decision
             ? `The requester won't be able to use this approval id. They'll need to re-request if they still want to ${decision.request.action}.`

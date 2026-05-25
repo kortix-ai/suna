@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { FormEvent, use, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -18,12 +20,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import {
   archiveProject,
   getProject,
   updateProject,
 } from '@/lib/projects-client';
-import { SandboxSnapshotCard } from '@/components/projects/sandbox-snapshot-card';
 
 export default function ProjectSettingsPage({
   params,
@@ -37,16 +39,14 @@ export default function ProjectSettingsPage({
 export function SettingsView({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <Settings className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-semibold text-foreground">Settings</h1>
-      </div>
+      <CustomizeSectionHeader icon={Settings} title="Settings" />
       <ProjectSettingsBody projectId={projectId} />
     </div>
   );
 }
 
 function ProjectSettingsBody({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [archiveOpen, setArchiveOpen] = useState(false);
 
@@ -83,7 +83,7 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
         {projectQuery.isError && (
           <SectionCard
             tone="destructive"
-            title="Failed to load project"
+            title={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line86JsxAttrTitleFailedToLoadProject')}
             description={(projectQuery.error as Error).message}
           >
             <Button
@@ -100,24 +100,16 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
           <>
             <GeneralProjectCard project={project} canManage={!!canManage} />
             <RepositoryCard repoUrl={project.repo_url} />
-            <SandboxSnapshotCard
-              projectId={projectId}
-              canManage={!!canManage}
-            />
             {canManage && (
               <SectionCard
                 tone="destructive"
-                title="Danger zone"
-                description="Irreversible and destructive actions."
+                title={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line110JsxAttrTitleDangerZone')}
+                description={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line111JsxAttrDescriptionIrreversibleAndDestructiveActions')}
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">
-                      Archive project
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Hide this project from the active project list.
-                    </p>
+                    <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line116JsxTextArchiveProject')}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line119JsxTextHideThisProjectFromTheActiveProjectList')}</p>
                   </div>
                   <Button
                     variant="outline"
@@ -137,7 +129,7 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
       <ConfirmDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
-        title="Archive project"
+        title={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line140JsxAttrTitleArchiveProject')}
         description={
           project
             ? `Archive ${project.name}? Current sessions remain recoverable.`
@@ -152,6 +144,7 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
 }
 
 function RepositoryCard({ repoUrl }: { repoUrl: string | null | undefined }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const githubUrl = githubRepoWebUrl(repoUrl);
   const repoLabel =
     githubUrl?.replace('https://github.com/', '') || repoUrl || '-';
@@ -160,7 +153,7 @@ function RepositoryCard({ repoUrl }: { repoUrl: string | null | undefined }) {
   return (
     <SectionCard
       title="Repository"
-      description="The Git repo backing this project. Every session pushes a branch here."
+      description={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line163JsxAttrDescriptionTheGitRepoBackingThisProjectEverySession')}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex items-center gap-2.5">
@@ -177,9 +170,7 @@ function RepositoryCard({ repoUrl }: { repoUrl: string | null | undefined }) {
             className="shrink-0 gap-1.5"
           >
             <a href={githubUrl} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open on GitHub
-            </a>
+              <ExternalLink className="h-3.5 w-3.5" />{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line181JsxTextOpenOnGithub')}</a>
           </Button>
         )}
       </div>
@@ -214,6 +205,7 @@ function GeneralProjectCard({
   project: Awaited<ReturnType<typeof getProject>>;
   canManage: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [name, setName] = useState(project.name);
   const [defaultBranch, setDefaultBranch] = useState(project.default_branch);
@@ -256,7 +248,7 @@ function GeneralProjectCard({
     <SectionCard title="General">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="project-name">Project name</Label>
+          <Label htmlFor="project-name">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line259JsxTextProjectName')}</Label>
           <Input
             id="project-name"
             value={name}
@@ -267,7 +259,7 @@ function GeneralProjectCard({
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="default-branch">Default branch</Label>
+            <Label htmlFor="default-branch">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line270JsxTextDefaultBranch')}</Label>
             <Input
               id="default-branch"
               value={defaultBranch}
@@ -277,7 +269,7 @@ function GeneralProjectCard({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="manifest-path">Manifest path</Label>
+            <Label htmlFor="manifest-path">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line280JsxTextManifestPath')}</Label>
             <Input
               id="manifest-path"
               value={manifestPath}

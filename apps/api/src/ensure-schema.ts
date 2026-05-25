@@ -126,7 +126,6 @@ async function warnIfCriticalTablesMissing(): Promise<void> {
     'account_members',
     'accounts',
     'audit_events',
-    'vault_items',
   ];
   const db = postgres(config.DATABASE_URL, { max: 1 });
   try {

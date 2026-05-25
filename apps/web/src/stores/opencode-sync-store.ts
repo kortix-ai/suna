@@ -246,9 +246,22 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			let list: Part[];
 			let bridgeCleared = false;
 			if (bridgedPartIds.has(messageID)) {
-				bridgedPartIds.delete(messageID);
-				list = [];
-				bridgeCleared = true;
+				// Only retire the optimistic/bridged user text once a REAL text
+				// part with actual content arrives. A stray non-text part — or an
+				// empty text snapshot — must NOT wipe the bridge, otherwise the
+				// user's message renders as an empty bubble.
+				const incoming = part as { type?: string; text?: unknown };
+				const incomingIsRealText =
+					incoming?.type === "text" &&
+					typeof incoming.text === "string" &&
+					incoming.text.length > 0;
+				if (incomingIsRealText) {
+					bridgedPartIds.delete(messageID);
+					list = [];
+					bridgeCleared = true;
+				} else {
+					list = s.parts[messageID] ?? [];
+				}
 			} else {
 				list = s.parts[messageID] ?? [];
 			}

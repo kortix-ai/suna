@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import React, { useState } from 'react';
 import { X, Plus, ChevronDown } from 'lucide-react';
@@ -27,6 +29,7 @@ interface FilesystemScopeEditorProps {
 }
 
 export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditorProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [pathInput, setPathInput] = useState('');
   const [excludeInput, setExcludeInput] = useState('');
   const [excludesOpen, setExcludesOpen] = useState((scope.excludePatterns?.length ?? 0) > 0);
@@ -86,7 +89,7 @@ export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditor
 
       {/* Allowed Paths */}
       <div className="space-y-2">
-        <Label className="text-xs font-medium text-muted-foreground">Allowed Paths</Label>
+        <Label className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsTunnelScopeEditorsFilesystemScopeEditor.line89JsxTextAllowedPaths')}</Label>
         {scope.paths.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {scope.paths.map((p) => (
@@ -117,9 +120,7 @@ export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditor
       {/* Exclude Patterns (collapsible) */}
       <Collapsible open={excludesOpen} onOpenChange={setExcludesOpen}>
         <CollapsibleTrigger className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
-          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', excludesOpen ? '' : '-rotate-90')} />
-          Exclude Patterns
-          {(scope.excludePatterns?.length ?? 0) > 0 && (
+          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', excludesOpen ? '' : '-rotate-90')} />{tHardcodedUi.raw('componentsTunnelScopeEditorsFilesystemScopeEditor.line121JsxTextExcludePatterns')}{(scope.excludePatterns?.length ?? 0) > 0 && (
             <Badge variant="secondary" className="text-xs px-1.5 py-0">{scope.excludePatterns!.length}</Badge>
           )}
         </CollapsibleTrigger>
@@ -143,7 +144,7 @@ export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditor
                 value={excludeInput}
                 onChange={(e) => setExcludeInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addExclude())}
-                placeholder="node_modules/**"
+                placeholder={tHardcodedUi.raw('componentsTunnelScopeEditorsFilesystemScopeEditor.line146JsxAttrPlaceholderNodeModules')}
                 className="flex-1 rounded-lg border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
               <Button variant="outline" size="sm" onClick={addExclude} disabled={!excludeInput.trim()}>
@@ -156,7 +157,7 @@ export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditor
 
       {/* Max File Size */}
       <div className="space-y-2">
-        <Label className="text-xs font-medium text-muted-foreground">Max File Size</Label>
+        <Label className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsTunnelScopeEditorsFilesystemScopeEditor.line159JsxTextMaxFileSize')}</Label>
         <Select
           value={String(scope.maxFileSize || 0)}
           onValueChange={(v) => {

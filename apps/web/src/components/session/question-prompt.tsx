@@ -35,7 +35,7 @@ function QuestionMarkdown({ content, className }: { content: string; className?:
 				ol: ({ children }) => <ol className="my-0.5 pl-4 list-decimal">{children}</ol>,
 				li: ({ children }) => <li className="my-0">{children}</li>,
 				code: ({ children }) => (
-					<code className="text-[11px] px-1 py-0.5 rounded bg-muted font-mono">{children}</code>
+					<code className="text-xs px-1 py-0.5 rounded bg-muted font-mono">{children}</code>
 				),
 				a: ({ href, children }) => (
 					<a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/80">

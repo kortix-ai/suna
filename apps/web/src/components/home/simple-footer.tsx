@@ -1,10 +1,13 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { useState, useEffect } from 'react';
 
 export function SimpleFooter() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const currentYear = new Date().getFullYear();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -14,7 +17,7 @@ export function SimpleFooter() {
     <footer className="w-full border-t border-border">
       <div className="max-w-3xl mx-auto px-6 py-8">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
             <span>© {currentYear} Kortix</span>
             <Link href="/support" className="hover:text-foreground transition-colors">Support</Link>
             <Link href="/legal?tab=privacy" className="hover:text-foreground transition-colors">Privacy</Link>
@@ -47,7 +50,7 @@ export function SimpleFooter() {
             {/* Theme */}
             <button
               onClick={() => mounted && setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-              aria-label="Toggle theme"
+              aria-label={tHardcodedUi.raw('componentsHomeSimpleFooter.line50JsxAttrAriaLabelToggleTheme')}
               className="flex items-center justify-center size-6 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               suppressHydrationWarning
             >

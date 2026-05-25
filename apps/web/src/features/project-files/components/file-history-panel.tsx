@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo, useCallback } from 'react';
 import {
   ArrowLeft,
@@ -111,6 +113,7 @@ function CommitDiffDetail({
   filePath: string;
   commitHash: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: diff, isLoading, error } = useFileCommitDiff(filePath, commitHash);
 
   if (isLoading) {
@@ -125,9 +128,7 @@ function CommitDiffDetail({
   if (error) {
     return (
       <div className="p-4 text-xs text-muted-foreground flex items-center gap-2">
-        <AlertCircle className="size-3.5" />
-        Failed to load diff
-      </div>
+        <AlertCircle className="size-3.5" />{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPanel.line129JsxTextFailedToLoadDiff')}</div>
     );
   }
 
@@ -178,9 +179,7 @@ function CommitDiffDetail({
           <DiffView patch={patchContent} layout="unified" hideFileHeader />
         </div>
       ) : (
-        <div className="p-4 text-sm text-muted-foreground text-center">
-          No diff content available
-        </div>
+        <div className="p-4 text-sm text-muted-foreground text-center">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPanel.line182JsxTextNoDiffContentAvailable')}</div>
       )}
     </div>
   );
@@ -201,6 +200,7 @@ function CommitCard({
   isSelected: boolean;
   onSelect: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -270,7 +270,7 @@ function CommitCard({
             'flex items-center gap-1 text-xs font-mono px-1.5 py-0.5 rounded shrink-0',
             'bg-muted/50 hover:bg-muted text-muted-foreground transition-colors',
           )}
-          title="Copy checkpoint id"
+          title={tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPanel.line273JsxAttrTitleCopyCheckpointId')}
         >
           {copied ? (
             <Check className="size-3 text-emerald-500" />
@@ -294,6 +294,7 @@ function CommitCard({
 // ---------------------------------------------------------------------------
 
 export function FileHistoryPanel() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const historyFilePath = useFilesStore((s) => s.historyFilePath);
   const selectedCommitHash = useFilesStore((s) => s.selectedCommitHash);
   const selectCommit = useFilesStore((s) => s.selectCommit);
@@ -355,9 +356,7 @@ export function FileHistoryPanel() {
         {error && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
             <AlertCircle className="h-8 w-8 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">
-              Failed to load checkpoints
-            </p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPanel.line359JsxTextFailedToLoadCheckpoints')}</p>
             <p className="text-xs text-muted-foreground/60 max-w-sm">
               {error instanceof Error ? error.message : 'Unknown error'}
             </p>
@@ -368,10 +367,8 @@ export function FileHistoryPanel() {
         {!isLoading && !error && totalCommits === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
             <GitCommitHorizontal className="h-8 w-8 text-muted-foreground/20" />
-            <p className="text-sm text-muted-foreground">No checkpoints yet</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">
-              This file hasn’t been saved to a checkpoint yet.
-            </p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPanel.line371JsxTextNoCheckpointsYet')}</p>
+            <p className="text-xs text-muted-foreground/50 mt-1">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPanel.line373JsxTextThisFileHasnTBeenSavedToA')}</p>
           </div>
         )}
 
@@ -413,9 +410,7 @@ export function FileHistoryPanel() {
               {/* Load more hint */}
               {history?.hasMore && (
                 <div className="text-center py-2">
-                  <span className="text-xs text-muted-foreground/50">
-                    Showing first {totalCommits} checkpoints — more available
-                  </span>
+                  <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPanel.line417JsxTextShowingFirst')}{totalCommits}{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPanel.line417JsxTextCheckpointsMoreAvailable')}</span>
                 </div>
               )}
             </div>

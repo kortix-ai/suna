@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Check, XCircle, ArrowDownToLine, RotateCw, Terminal, Copy } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -81,6 +83,7 @@ export function UpdateDialog({
   onCancel,
   isDev,
 }: UpdateDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [userRequested, setUserRequested] = useState(false);
   const [isReconnected, setIsReconnected] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -201,9 +204,7 @@ export function UpdateDialog({
     return (
       <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background">
         {step === 'updating' && (
-          <p className="absolute bottom-10 left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground/60">
-            It's not recommended to refresh this tab during the update.
-          </p>
+          <p className="absolute bottom-10 left-1/2 -translate-x-1/2 text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsUpdateDialog.line205JsxTextItSNotRecommendedToRefreshThisTab')}</p>
         )}
         <AnimatePresence mode="wait">
           {step === 'updating' && (
@@ -216,10 +217,10 @@ export function UpdateDialog({
               className="flex flex-col items-center"
             >
               <KortixLogo size={28} variant="symbol" />
-              <p className="mt-5 text-[13px] font-medium text-foreground/90 tracking-tight">
+              <p className="mt-5 text-sm font-medium text-foreground/90 tracking-tight">
                 {activeLabel}
               </p>
-              <p className="mt-1 max-w-[340px] text-center text-[11px] text-muted-foreground/70">
+              <p className="mt-1 max-w-[340px] text-center text-xs text-muted-foreground/70">
                 {phaseMessage || 'Preparing update...'}
               </p>
               <div className="mt-8 h-[2px] w-[240px] rounded-full bg-foreground/10 overflow-hidden">
@@ -267,9 +268,8 @@ export function UpdateDialog({
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.15 }}
-                className="mt-5 text-[13px] font-medium text-foreground/90 tracking-tight"
-              >
-                Updated to <span className="tabular-nums">{formatVersion(updateResult?.currentVersion ?? latestVersion)}</span>
+                className="mt-5 text-sm font-medium text-foreground/90 tracking-tight"
+              >{tHardcodedUi.raw('componentsUpdateDialog.line272JsxTextUpdatedTo')}<span className="tabular-nums">{formatVersion(updateResult?.currentVersion ?? latestVersion)}</span>
               </motion.p>
             </motion.div>
           )}
@@ -286,14 +286,12 @@ export function UpdateDialog({
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
                 <XCircle className="h-5 w-5 text-destructive" />
               </div>
-              <p className="mt-5 text-[13px] font-medium text-foreground/90 tracking-tight">
-                Update failed
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground/70 text-center">
+              <p className="mt-5 text-sm font-medium text-foreground/90 tracking-tight">{tHardcodedUi.raw('componentsUpdateDialog.line290JsxTextUpdateFailed')}</p>
+              <p className="mt-1 text-xs text-muted-foreground/70 text-center">
                 {phaseMessage || 'Something went wrong.'}
               </p>
               {errorMessage && (
-                <div className="mt-5 w-full max-h-32 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-muted/30 px-3 py-2 font-mono text-[10px] text-foreground/70">
+                <div className="mt-5 w-full max-h-32 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-muted/30 px-3 py-2 font-mono text-xs text-foreground/70">
                   {errorMessage}
                 </div>
               )}
@@ -316,15 +314,13 @@ export function UpdateDialog({
       <AlertDialogContent className="sm:max-w-lg">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <ArrowDownToLine className="h-5 w-5 text-primary" />
-            Update to {formatVersion(latestVersion)}
+            <ArrowDownToLine className="h-5 w-5 text-primary" />{tHardcodedUi.raw('componentsUpdateDialog.line320JsxTextUpdateTo')}{formatVersion(latestVersion)}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {currentVersion
-              ? <>Your sandbox is running <span className="font-mono font-medium text-foreground">{formatVersion(currentVersion)}</span>.</>
+              ? <>{tHardcodedUi.raw('componentsUpdateDialog.line324JsxTextYourSandboxIsRunning')}<span className="font-mono font-medium text-foreground">{formatVersion(currentVersion)}</span>.</>
               : 'A new version is available.'}
-            {' '}This will restart your sandbox.
-          </AlertDialogDescription>
+            {' '}{tHardcodedUi.raw('componentsUpdateDialog.line326JsxTextThisWillRestartYourSandbox')}</AlertDialogDescription>
         </AlertDialogHeader>
         <AnimatePresence mode="wait">
           {step === 'confirm' && (
@@ -332,14 +328,10 @@ export function UpdateDialog({
               {isLocalSelfHosted ? (
                 <Alert variant="warning" className="mt-4">
                   <Terminal className="h-4 w-4" />
-                  <AlertTitle>Self-hosted updates run from the host</AlertTitle>
+                  <AlertTitle>{tHardcodedUi.raw('componentsUpdateDialog.line335JsxTextSelfHostedUpdatesRunFromTheHost')}</AlertTitle>
                   <AlertDescription>
-                    <p>
-                      If you installed Kortix via the CLI, updates should be run from your terminal so the full stack updates together.
-                    </p>
-                    <div className="mt-2 rounded-2xl bg-muted/40 px-3 py-2 font-mono text-xs text-foreground/80">
-                      kortix update
-                    </div>
+                    <p>{tHardcodedUi.raw('componentsUpdateDialog.line338JsxTextIfYouInstalledKortixViaTheCliUpdates')}</p>
+                    <div className="mt-2 rounded-2xl bg-muted/40 px-3 py-2 font-mono text-xs text-foreground/80">{tHardcodedUi.raw('componentsUpdateDialog.line341JsxTextKortixUpdate')}</div>
                   </AlertDescription>
                 </Alert>
               ) : changes.length > 0 && (
@@ -355,14 +347,10 @@ export function UpdateDialog({
                 <Button variant="outline" onClick={onClose}>Cancel</Button>
                 {isLocalSelfHosted ? (
                   <Button onClick={copyCliCommand} className="gap-2">
-                    <Copy className="h-4 w-4" />
-                    Copy command
-                  </Button>
+                    <Copy className="h-4 w-4" />{tHardcodedUi.raw('componentsUpdateDialog.line359JsxTextCopyCommand')}</Button>
                 ) : (
                   <Button onClick={handleConfirm} className="gap-2">
-                    <ArrowDownToLine className="h-4 w-4" />
-                    Update now
-                  </Button>
+                    <ArrowDownToLine className="h-4 w-4" />{tHardcodedUi.raw('componentsUpdateDialog.line364JsxTextUpdateNow')}</Button>
                 )}
               </AlertDialogFooter>
             </motion.div>

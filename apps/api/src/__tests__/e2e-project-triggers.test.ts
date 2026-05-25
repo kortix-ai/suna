@@ -211,6 +211,7 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
   listProjectSecrets: async () => ({}),
+  listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
   getProjectSecretValue: async (_projectId: string, name: string) =>
     secretValues.get(name) ?? null,
 }));
@@ -268,6 +269,8 @@ mock.module('../shared/db', () => ({
               agentName: values.agentName ?? 'default',
               status: values.status ?? 'provisioning',
               error: null,
+              createdBy: values.createdBy ?? null,
+              visibility: values.visibility ?? 'private',
               metadata: values.metadata ?? {},
               createdAt: values.createdAt ?? now,
               updatedAt: values.updatedAt ?? now,

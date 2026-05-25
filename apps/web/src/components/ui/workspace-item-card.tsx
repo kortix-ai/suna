@@ -61,7 +61,7 @@ export function WorkspaceItemCard({
               >
                 {item.name}
               </h3>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
+              <Badge variant="secondary" className="text-xs px-1.5 py-0 shrink-0">
                 {item.kindLabel}
               </Badge>
             </div>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 // Create-role flow. Walks the user through: resource type → key + name +
 // description → action picker (grouped + searchable). Validates locally
 // against the action catalog so the user sees mistakes before submit.
@@ -57,6 +59,7 @@ export function CreateRoleDialog({
   onOpenChange,
   accountId,
 }: CreateRoleDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const router = useRouter();
 
@@ -207,27 +210,22 @@ export function CreateRoleDialog({
     >
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">
-            Create a role
-          </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            Bundle a set of actions a member or group can perform. The role
-            becomes attachable in any policy on this account.
-          </DialogDescription>
+          <DialogTitle className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('componentsIamCreateRoleDialog.line211JsxTextCreateARole')}</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsIamCreateRoleDialog.line214JsxTextBundleASetOfActionsAMemberOr')}</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit}>
           <div className="space-y-5 px-6 py-5">
           {/* Resource type */}
           <div className="space-y-1.5">
-            <Label>What kind of resource does this role apply to?</Label>
+            <Label>{tHardcodedUi.raw('componentsIamCreateRoleDialog.line223JsxTextWhatKindOfResourceDoesThisRoleApply')}</Label>
             <Select
               value={resourceType || undefined}
               onValueChange={(v) => setResourceType(v as ResourceType)}
               disabled={createMutation.isPending}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Pick a resource type..." />
+                <SelectValue placeholder={tHardcodedUi.raw('componentsIamCreateRoleDialog.line230JsxAttrPlaceholderPickAResourceType')} />
               </SelectTrigger>
               <SelectContent>
                 {(['account', 'project', 'sandbox', 'trigger', 'channel', 'member', 'group'] as ResourceType[]).map(
@@ -239,11 +237,7 @@ export function CreateRoleDialog({
                 )}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">
-              Policies attach this role at the matching scope. A Project role
-              can only be granted on a project scope; an Account role grants
-              account-wide privileges.
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamCreateRoleDialog.line243JsxTextPoliciesAttachThisRoleAtTheMatchingScope')}</p>
           </div>
 
           {/* Name + key */}
@@ -255,7 +249,7 @@ export function CreateRoleDialog({
                   id="role-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Project Releaser"
+                  placeholder={tHardcodedUi.raw('componentsIamCreateRoleDialog.line258JsxAttrPlaceholderProjectReleaser')}
                   maxLength={128}
                   required
                   disabled={createMutation.isPending}
@@ -279,11 +273,9 @@ export function CreateRoleDialog({
                   className={keyError ? 'border-destructive' : undefined}
                 />
                 {keyError ? (
-                  <p className="text-[11px] text-destructive">{keyError}</p>
+                  <p className="text-xs text-destructive">{keyError}</p>
                 ) : (
-                  <p className="text-[11px] text-muted-foreground">
-                    Immutable identifier. Auto-derived from name until you edit it.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamCreateRoleDialog.line285JsxTextImmutableIdentifierAutoDerivedFromNameUntilYou')}</p>
                 )}
               </div>
             </div>
@@ -302,7 +294,7 @@ export function CreateRoleDialog({
                 id="role-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Can deploy a project but not modify its settings."
+                placeholder={tHardcodedUi.raw('componentsIamCreateRoleDialog.line305JsxAttrPlaceholderCanDeployAProjectButNotModifyIts')}
                 maxLength={256}
                 disabled={createMutation.isPending}
               />
@@ -325,9 +317,7 @@ export function CreateRoleDialog({
                     onClick={selectAllVisible}
                     className="cursor-pointer text-muted-foreground hover:text-foreground"
                     disabled={createMutation.isPending}
-                  >
-                    Select all
-                  </button>
+                  >{tHardcodedUi.raw('componentsIamCreateRoleDialog.line329JsxTextSelectAll')}</button>
                   <span className="text-muted-foreground/40">·</span>
                   <button
                     type="button"
@@ -346,7 +336,7 @@ export function CreateRoleDialog({
                   <Input
                     value={actionSearch}
                     onChange={(e) => setActionSearch(e.target.value)}
-                    placeholder="Search actions..."
+                    placeholder={tHardcodedUi.raw('componentsIamCreateRoleDialog.line349JsxAttrPlaceholderSearchActions')}
                     className="h-8 pl-8 text-sm"
                     disabled={createMutation.isPending}
                   />
@@ -354,23 +344,17 @@ export function CreateRoleDialog({
               )}
 
               {actionsQuery.isLoading && (
-                <div className="rounded-2xl border border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
-                  Loading action catalog...
-                </div>
+                <div className="rounded-2xl border border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamCreateRoleDialog.line358JsxTextLoadingActionCatalog')}</div>
               )}
 
               {!actionsQuery.isLoading && availableActions.length === 0 && (
-                <p className="rounded-2xl border border-dashed border-border/60 px-3 py-3 text-xs text-muted-foreground">
-                  No actions registered for this resource type yet.
-                </p>
+                <p className="rounded-2xl border border-dashed border-border/60 px-3 py-3 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamCreateRoleDialog.line364JsxTextNoActionsRegisteredForThisResourceTypeYet')}</p>
               )}
 
               {!actionsQuery.isLoading && availableActions.length > 0 && (
                 <div className="max-h-64 space-y-0.5 overflow-y-auto rounded-2xl border border-border/60 p-2">
                   {filteredActions.length === 0 ? (
-                    <p className="px-2 py-3 text-center text-xs text-muted-foreground">
-                      No actions match &ldquo;{actionSearch}&rdquo;.
-                    </p>
+                    <p className="px-2 py-3 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamCreateRoleDialog.line372JsxTextNoActionsMatchLdquo')}{actionSearch}{tHardcodedUi.raw('componentsIamCreateRoleDialog.line372JsxTextRdquo')}</p>
                   ) : (
                     filteredActions.map((a) => {
                       const checked = selectedActions.has(a.action);
@@ -395,7 +379,7 @@ export function CreateRoleDialog({
                             <span className="block truncate text-sm text-foreground">
                               {a.label}
                             </span>
-                            <code className="block truncate text-[10px] font-mono text-muted-foreground">
+                            <code className="block truncate text-xs font-mono text-muted-foreground">
                               {a.action}
                             </code>
                           </span>
@@ -419,9 +403,7 @@ export function CreateRoleDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={!ready} className="gap-1.5">
-              {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Create role
-            </Button>
+              {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}{tHardcodedUi.raw('componentsIamCreateRoleDialog.line423JsxTextCreateRole')}</Button>
           </div>
         </form>
       </DialogContent>

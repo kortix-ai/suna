@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useEffect, useState } from 'react';
 import { ExternalLink, FileX, Maximize2, Minimize2 } from 'lucide-react';
 import {
@@ -13,7 +15,7 @@ import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
-import { useOcFileOpen } from '@/components/thread/tool-views/opencode/useOcFileOpen';
+import { useOcFileOpen } from '@/components/session/use-oc-file-open';
 
 /**
  * Global file preview dialog.
@@ -26,6 +28,7 @@ import { useOcFileOpen } from '@/components/thread/tool-views/opencode/useOcFile
  *   - Click outside / X / Escape to close
  */
 export function FilePreviewDialog() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isOpen = useFilePreviewStore((s) => s.isOpen);
   const rawFilePath = useFilePreviewStore((s) => s.filePath);
   const closePreview = useFilePreviewStore((s) => s.closePreview);
@@ -86,7 +89,7 @@ export function FilePreviewDialog() {
         )}
       >
         <VisuallyHidden>
-          <DialogTitle>File Preview: {fileName}</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsCommonFilePreviewDialog.line89JsxTextFilePreview')}{fileName}</DialogTitle>
         </VisuallyHidden>
 
         {/* Header bar */}
@@ -119,7 +122,7 @@ export function FilePreviewDialog() {
               size="icon"
               className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={handleOpenInTab}
-              title="Open in new tab"
+              title={tHardcodedUi.raw('componentsCommonFilePreviewDialog.line122JsxAttrTitleOpenInNewTab')}
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </Button>
@@ -130,7 +133,7 @@ export function FilePreviewDialog() {
               onClick={() => handleOpenChange(false)}
               title="Close"
             >
-              <span className="text-lg leading-none">&times;</span>
+              <span className="text-lg leading-none">{tHardcodedUi.raw('componentsCommonFilePreviewDialog.line133JsxTextTimes')}</span>
             </Button>
           </div>
         </div>
@@ -149,20 +152,15 @@ export function FilePreviewDialog() {
                   {isNotFound ? (
                     <>
                       <FileX className="h-8 w-8 text-muted-foreground/30" />
-                      <p className="text-sm text-muted-foreground">
-                        File does not exist
-                      </p>
+                      <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsCommonFilePreviewDialog.line153JsxTextFileDoesNotExist')}</p>
                       <p className="text-xs font-mono text-muted-foreground/60 max-w-sm break-all">
                         {path}
                       </p>
-                      <p className="text-xs text-muted-foreground/40 mt-1">
-                        This path may be relative or from a different session. Files must use absolute paths to be accessible.
-                      </p>
+                      <p className="text-xs text-muted-foreground/40 mt-1">{tHardcodedUi.raw('componentsCommonFilePreviewDialog.line159JsxTextThisPathMayBeRelativeOrFromA')}</p>
                     </>
                   ) : (
                     <>
-                      <p className="text-sm text-muted-foreground">
-                        Cannot preview <span className="font-mono text-foreground">{path}</span>
+                      <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsCommonFilePreviewDialog.line165JsxTextCannotPreview')}<span className="font-mono text-foreground">{path}</span>
                       </p>
                       <p className="text-xs text-muted-foreground/60">{error}</p>
                       <Button
@@ -171,9 +169,7 @@ export function FilePreviewDialog() {
                         onClick={handleOpenInTab}
                         className="mt-2"
                       >
-                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                        Open in tab instead
-                      </Button>
+                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" />{tHardcodedUi.raw('componentsCommonFilePreviewDialog.line175JsxTextOpenInTabInstead')}</Button>
                     </>
                   )}
                 </div>

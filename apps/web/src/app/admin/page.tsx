@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -21,6 +23,7 @@ const LEGACY_SECTION_REDIRECTS: Record<string, string> = {
 };
 
 export default function AdminOverviewPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const searchParams = useSearchParams();
   const legacySection = searchParams.get('section');
@@ -37,8 +40,8 @@ export default function AdminOverviewPage() {
     <SectionContainer>
       <SectionHeader
         icon={LayoutDashboard}
-        title="Admin overview"
-        description="Production support entrypoint. Operations is the source of truth for live platform health."
+        title={tHardcodedUi.raw('appAdminPage.line40JsxAttrTitleAdminOverview')}
+        description={tHardcodedUi.raw('appAdminPage.line41JsxAttrDescriptionProductionSupportEntrypointOperationsIsTheSourceOf')}
       />
 
       <StatRow>
@@ -50,12 +53,12 @@ export default function AdminOverviewPage() {
         />
         <StatPill label="Accounts" value={(data?.totals.accounts ?? 0).toLocaleString()} />
         <StatPill
-          label="Errored sandboxes"
+          label={tHardcodedUi.raw('appAdminPage.line53JsxAttrLabelErroredSandboxes')}
           value={data?.sandboxes.errored ?? 0}
           tone={(data?.sandboxes.errored ?? 0) > 0 ? 'danger' : 'success'}
         />
         <StatPill
-          label="Queued work"
+          label={tHardcodedUi.raw('appAdminPage.line58JsxAttrLabelQueuedWork')}
           value={data?.queues.queued_total ?? 0}
           tone={(data?.queues.queued_total ?? 0) > 0 ? 'warning' : 'success'}
         />
@@ -66,13 +69,13 @@ export default function AdminOverviewPage() {
           href="/admin/ops"
           icon={Activity}
           title="Operations"
-          description="API, sessions, sandboxes, queues, audit events, usage, and migration status."
+          description={tHardcodedUi.raw('appAdminPage.line69JsxAttrDescriptionApiSessionsSandboxesQueuesAuditEventsUsageAnd')}
         />
         <QuickLink
           href="/admin/utils"
           icon={Wrench}
           title="Maintenance"
-          description="Support workflows for account access, technical issues, and operational recovery."
+          description={tHardcodedUi.raw('appAdminPage.line75JsxAttrDescriptionSupportWorkflowsForAccountAccessTechnicalIssuesAnd')}
         />
       </div>
     </SectionContainer>

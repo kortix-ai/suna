@@ -1,0 +1,19 @@
+---
+title: Reference
+description: The precise, technical reference for the Kortix manifest, CLI, runtime, and config boundary.
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+
+Every field, default, flag, endpoint, and validator. Plain-language versions live in [Core concepts](/docs/concepts) and the [Guides](/docs/guides).
+
+<Cards>
+  <Card title="kortix.toml" href="/docs/reference/manifest">Every table, field, default, and validation rule.</Card>
+  <Card title="CLI reference" href="/docs/reference/cli">Every `kortix` command, token scopes, env vars, exit codes.</Card>
+  <Card title="Change requests" href="/docs/reference/change-requests">Data model, lifecycle, diff/merge semantics, CLI, REST API.</Card>
+  <Card title="Session runtime" href="/docs/reference/session-runtime">Lifecycle, branch model, sandbox layout, injected env, daemon.</Card>
+  <Card title="Secrets" href="/docs/reference/secrets">How `project_secrets` flow from the manifest to your sandbox.</Card>
+  <Card title="Triggers" href="/docs/reference/triggers">Cron and signed-webhook entries — fields, template vars.</Card>
+  <Card title="Sandbox image" href="/docs/reference/sandbox-image">The layered Docker image, what Kortix injects, rebuilds.</Card>
+  <Card title="Kortix vs OpenCode config" href="/docs/reference/config-boundary">The ownership boundary between `kortix.toml` and `.kortix/opencode/`.</Card>
+</Cards>

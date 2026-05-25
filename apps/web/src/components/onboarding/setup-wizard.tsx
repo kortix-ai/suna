@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * SetupWizard — dynamic onboarding shown between boot overlay and the dashboard.
  *
@@ -77,7 +79,7 @@ function StepIndicator({ current, steps }: { current: number; steps: StepDef[] }
           />
         ))}
       </div>
-      <p className="text-[11px] font-medium text-muted-foreground/40 uppercase tracking-wider">
+      <p className="text-xs font-medium text-muted-foreground/40 uppercase tracking-wider">
         {steps[current]?.label}
       </p>
     </div>
@@ -142,7 +144,7 @@ function ConfigureModal({
 
 function CloudBadge({ text }: { text?: string }) {
   return (
-    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium mx-auto w-fit">
+    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium mx-auto w-fit">
       <Zap className="h-3 w-3" />
       {text || 'Included with your Kortix credits'}
     </div>
@@ -152,6 +154,7 @@ function CloudBadge({ text }: { text?: string }) {
 // ─── Step 0: Welcome ─────────────────────────────────────────────────────────
 
 function WelcomePane({ onNext }: { onNext: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex flex-col items-center text-center gap-10">
       {/* Kortix logo — large, centered */}
@@ -170,17 +173,13 @@ function WelcomePane({ onNext }: { onNext: () => void }) {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-        >
-          Welcome to your Kortix
-        </motion.h1>
+        >{tHardcodedUi.raw('componentsOnboardingSetupWizard.line174JsxTextWelcomeToYourKortix')}</motion.h1>
         <motion.p
           className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
-        >
-          Let&apos;s get you set up. This takes about a minute — you can change everything later in Settings.
-        </motion.p>
+        >{tHardcodedUi.raw('componentsOnboardingSetupWizard.line182JsxTextLetAposSGetYouSetUpThis')}</motion.p>
       </div>
 
       {/* CTA */}
@@ -194,8 +193,7 @@ function WelcomePane({ onNext }: { onNext: () => void }) {
           onClick={onNext}
           size="lg"
           className="w-full shadow-none"
-        >
-          Get started <ChevronRight className="h-4 w-4" />
+        >{tHardcodedUi.raw('componentsOnboardingSetupWizard.line198JsxTextGetStarted')}<ChevronRight className="h-4 w-4" />
         </Button>
       </motion.div>
     </div>
@@ -205,6 +203,7 @@ function WelcomePane({ onNext }: { onNext: () => void }) {
 // ─── Step: How It Works ──────────────────────────────────────────────────────
 
 function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="w-full max-w-sm space-y-6 mx-auto">
       <div className="text-center space-y-3">
@@ -214,10 +213,8 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
           </div>
         </div>
         <div className="space-y-1.5">
-          <h2 className="text-lg font-medium text-foreground/90">Connect Your AI</h2>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">
-            Kortix is designed to work with your own AI subscriptions. Here&apos;s how most people connect.
-          </p>
+          <h2 className="text-lg font-medium text-foreground/90">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line217JsxTextConnectYourAi')}</h2>
+          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line219JsxTextKortixIsDesignedToWorkWithYourOwn')}</p>
         </div>
       </div>
 
@@ -228,10 +225,8 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
             <Sparkles className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div className="text-left">
-            <p className="text-[13px] font-medium text-foreground/80">Coding subscriptions</p>
-            <p className="text-[11px] text-foreground/40 leading-relaxed">
-              ChatGPT Max, Claude Pro / Code, or similar. Best value at scale — we strongly recommend this.
-            </p>
+            <p className="text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line231JsxTextCodingSubscriptions')}</p>
+            <p className="text-xs text-foreground/40 leading-relaxed">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line233JsxTextChatgptMaxClaudeProCodeOrSimilarBest')}</p>
           </div>
         </div>
 
@@ -240,10 +235,8 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
             <Key className="h-3.5 w-3.5 text-foreground/40" />
           </div>
           <div className="text-left">
-            <p className="text-[13px] font-medium text-foreground/80">Your own API keys</p>
-            <p className="text-[11px] text-foreground/40 leading-relaxed">
-              OpenAI, Anthropic, Google, OpenRouter — bring any key you already have.
-            </p>
+            <p className="text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line243JsxTextYourOwnApiKeys')}</p>
+            <p className="text-xs text-foreground/40 leading-relaxed">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line245JsxTextOpenaiAnthropicGoogleOpenrouterBringAnyKeyYou')}</p>
           </div>
         </div>
 
@@ -253,10 +246,8 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
               <CreditCard className="h-3.5 w-3.5 text-foreground/40" />
             </div>
             <div className="text-left">
-              <p className="text-[13px] font-medium text-foreground/80">Kortix credits</p>
-              <p className="text-[11px] text-foreground/40 leading-relaxed">
-                Don&apos;t have a key yet? We include a few free credits to get you started.
-              </p>
+              <p className="text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line256JsxTextKortixCredits')}</p>
+              <p className="text-xs text-foreground/40 leading-relaxed">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line258JsxTextDonAposTHaveAKeyYetWe')}</p>
             </div>
           </div>
         )}
@@ -266,8 +257,7 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
         <Button
           onClick={onNext}
           size="lg" className="w-full shadow-none"
-        >
-          Connect a provider <ChevronRight className="h-4 w-4" />
+        >{tHardcodedUi.raw('componentsOnboardingSetupWizard.line270JsxTextConnectAProvider')}<ChevronRight className="h-4 w-4" />
         </Button>
 
         <div className="flex justify-center pt-1">
@@ -283,6 +273,7 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
 /// ─── Step 1: Auto Top-up ────────────────────────────────────────────────────
 
 function AutoTopupPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [saving, setSaving] = useState(false);
   const configRef = useRef<{ enabled: boolean; threshold: number; amount: number } | null>(null);
 
@@ -311,16 +302,11 @@ function AutoTopupPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
       </div>
 
       <div className="space-y-1.5">
-        <h2 className="text-lg font-medium text-foreground/90">Kortix Credits</h2>
-        <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">
-          You start with a few free credits to try things out. Your agent can use these when no provider API key is available.
-        </p>
+        <h2 className="text-lg font-medium text-foreground/90">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line314JsxTextKortixCredits')}</h2>
+        <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line316JsxTextYouStartWithAFewFreeCreditsTo')}</p>
       </div>
 
-      <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-[12.5px] text-muted-foreground/60 leading-relaxed">
-        Credits are used when your agent runs on Kortix-managed models instead of your own API keys.
-        Most users connect their own provider and rarely use credits.
-      </div>
+      <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-sm text-muted-foreground/60 leading-relaxed">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line321JsxTextCreditsAreUsedWhenYourAgentRunsOn')}</div>
 
       {/* Shared auto top-up card */}
       <div className="w-full rounded-2xl border bg-card/50 p-4">
@@ -346,6 +332,7 @@ function AutoTopupPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
 }
 
 function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: providersData, isLoading } = useOpenCodeProviders();
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
 
@@ -363,7 +350,7 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
     return (
       <div className="flex flex-col items-center py-16 space-y-4">
         <KortixLoader size="small" />
-        <p className="text-xs text-muted-foreground/40">Checking providers…</p>
+        <p className="text-xs text-muted-foreground/40">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line366JsxTextCheckingProviders')}</p>
       </div>
     );
   }
@@ -406,7 +393,7 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
               className="flex items-center gap-3 px-3 py-2 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]"
             >
               <ProviderLogo providerID={p.id} name={p.name} size="small" />
-              <span className="text-[13px] font-medium text-foreground/80">
+              <span className="text-sm font-medium text-foreground/80">
                 {PROVIDER_LABELS[p.id] || p.name || p.id}
               </span>
               <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 ml-auto" />
@@ -454,6 +441,7 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
 // ─── Step 2: Default Model ──────────────────────────────────────────────────
 
 function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: providersData, isLoading } = useOpenCodeProviders();
   const allModels = useMemo(() => flattenModels(providersData), [providersData]);
   const modelStore = useModelStore(allModels);
@@ -519,7 +507,7 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
     return (
       <div className="flex flex-col items-center py-16 space-y-4">
         <KortixLoader size="small" />
-        <p className="text-xs text-muted-foreground/40">Loading models…</p>
+        <p className="text-xs text-muted-foreground/40">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line522JsxTextLoadingModels')}</p>
       </div>
     );
   }
@@ -535,7 +523,7 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
           </div>
         </div>
         <div className="space-y-1.5">
-          <h2 className="text-lg font-medium text-foreground/90">Default Model</h2>
+          <h2 className="text-lg font-medium text-foreground/90">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line538JsxTextDefaultModel')}</h2>
           <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">
             {hasModels
               ? 'Choose which model your agent uses by default. You can switch models anytime in chat.'
@@ -551,7 +539,7 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
             <div key={providerID} className="space-y-1">
               <div className="flex items-center gap-2 px-1 pb-1">
                 <ProviderLogo providerID={providerID} name={models[0]?.providerName} size="small" />
-                <span className="text-[11px] font-medium text-foreground/40 uppercase tracking-wider">
+                <span className="text-xs font-medium text-foreground/40 uppercase tracking-wider">
                   {PROVIDER_LABELS[providerID] || providerID}
                 </span>
               </div>
@@ -571,10 +559,10 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
                     )}
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-medium text-foreground/80 truncate">
+                      <div className="text-sm font-medium text-foreground/80 truncate">
                         {model.modelName}
                       </div>
-                      <div className="text-[11px] text-foreground/30 truncate">{model.modelID}</div>
+                      <div className="text-xs text-foreground/30 truncate">{model.modelID}</div>
                     </div>
                     {isSelected && (
                       <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -618,6 +606,7 @@ const TOOL_SECRETS = [
 ] as const;
 
 function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isCloud = isBillingEnabled();
   const [modalOpen, setModalOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -657,32 +646,24 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
             </div>
           </div>
           <div className="space-y-1.5">
-            <h2 className="text-lg font-medium text-foreground/90">Tool API Keys</h2>
-            <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">
-              Your agent uses tools like web search, scraping, and image generation to complete tasks.
-            </p>
+            <h2 className="text-lg font-medium text-foreground/90">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line660JsxTextToolApiKeys')}</h2>
+            <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line662JsxTextYourAgentUsesToolsLikeWebSearchScraping')}</p>
           </div>
-          {isCloud && <CloudBadge text="Included with your Kortix credits" />}
+          {isCloud && <CloudBadge text={tHardcodedUi.raw('componentsOnboardingSetupWizard.line665JsxAttrTextIncludedWithYourKortixCredits')} />}
         </div>
 
         {/* Info box */}
-        <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-[12.5px] text-muted-foreground/60 leading-relaxed">
+        <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-sm text-muted-foreground/60 leading-relaxed">
           {isCloud ? (
-            <>
-              All tool keys are <span className="text-foreground/80 font-medium">pre-configured</span> and
-              usage is billed through your credits. You can optionally use your own API keys if you prefer.
-            </>
+            <>{tHardcodedUi.raw('componentsOnboardingSetupWizard.line672JsxTextAllToolKeysAre')}<span className="text-foreground/80 font-medium">pre-configured</span>{tHardcodedUi.raw('componentsOnboardingSetupWizard.line672JsxTextAndUsageIsBilledThroughYourCreditsYou')}</>
           ) : (
-            <>
-              Add API keys to enable agent capabilities like web search, image generation, and more.
-              All keys are optional — you can add them later in Settings.
-            </>
+            <>{tHardcodedUi.raw('componentsOnboardingSetupWizard.line677JsxTextAddApiKeysToEnableAgentCapabilitiesLike')}</>
           )}
         </div>
 
         {/* Saved confirmation */}
         {saved && (
-          <div className="flex items-center justify-center gap-2 text-[12.5px] text-emerald-600 dark:text-emerald-400 font-medium">
+          <div className="flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 font-medium">
             <Check className="h-3.5 w-3.5" />
             {filled} key{filled > 1 ? 's' : ''} saved
           </div>
@@ -716,7 +697,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
       </div>
 
       {/* Configure modal */}
-      <ConfigureModal open={modalOpen} onClose={() => setModalOpen(false)} title="Tool API Keys">
+      <ConfigureModal open={modalOpen} onClose={() => setModalOpen(false)} title={tHardcodedUi.raw('componentsOnboardingSetupWizard.line719JsxAttrTitleToolApiKeys')}>
         <div className="space-y-4">
           <p className="text-xs text-muted-foreground/50 leading-relaxed">
             {isCloud
@@ -736,8 +717,8 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
                   </div>
                   <div className="flex-1 min-w-0 space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-medium text-foreground/80">{s.label}</span>
-                      <span className="text-[11px] text-foreground/30">{s.description}</span>
+                      <span className="text-sm font-medium text-foreground/80">{s.label}</span>
+                      <span className="text-xs text-foreground/30">{s.description}</span>
                       <a
                         href={s.url}
                         target="_blank"
@@ -766,7 +747,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
             </Button>
             <Button onClick={handleSave} disabled={saving} className="flex-1 h-10 text-sm shadow-none">
               {saving ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
+                <><Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsOnboardingSetupWizard.line769JsxTextSaving')}</>
               ) : filled > 0 ? (
                 `Save ${filled} key${filled > 1 ? 's' : ''}`
               ) : (
@@ -783,6 +764,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
 // ─── Step 4: Get Started ────────────────────────────────────────────────────
 
 function GetStartedPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="w-full max-w-sm space-y-6 mx-auto">
       <div className="text-center space-y-3">
@@ -792,10 +774,8 @@ function GetStartedPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
           </div>
         </div>
         <div className="space-y-1.5">
-          <h2 className="text-lg font-medium text-foreground/90">You&apos;re all set</h2>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">
-            Your Kortix agent is configured and ready. We&apos;ll walk you through the basics in a quick guided conversation.
-          </p>
+          <h2 className="text-lg font-medium text-foreground/90">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line795JsxTextYouAposReAllSet')}</h2>
+          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line797JsxTextYourKortixAgentIsConfiguredAndReadyWe')}</p>
         </div>
       </div>
 
@@ -803,8 +783,7 @@ function GetStartedPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
         <Button
           onClick={onNext}
           size="lg" className="w-full shadow-none"
-        >
-          Start onboarding <ChevronRight className="h-4 w-4" />
+        >{tHardcodedUi.raw('componentsOnboardingSetupWizard.line807JsxTextStartOnboarding')}<ChevronRight className="h-4 w-4" />
         </Button>
 
         <div className="flex justify-center pt-1">
@@ -820,6 +799,7 @@ function GetStartedPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
 // ─── Main wizard ────────────────────────────────────────────────────────────
 
 export function SetupWizard({ onComplete }: { onComplete: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const showBilling = isBillingEnabled();
 
@@ -879,8 +859,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
           size="xs"
           className="absolute top-6 left-6 cursor-pointer"
         >
-          <ArrowLeft className="h-3 w-3" /> Back to Dashboard
-        </Button>
+          <ArrowLeft className="h-3 w-3" />{tHardcodedUi.raw('componentsOnboardingSetupWizard.line882JsxTextBackToDashboard')}</Button>
       )}
 
       {/* Header: Logo + stepper — hidden on welcome step */}
@@ -908,9 +887,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
       {/* Footer — hidden on welcome step */}
       {step > 0 && (
-        <p className="absolute bottom-6 text-[11px] text-foreground/20">
-          You can change all of this later in Settings.
-        </p>
+        <p className="absolute bottom-6 text-xs text-foreground/20">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line912JsxTextYouCanChangeAllOfThisLaterIn')}</p>
       )}
     </div>
   );

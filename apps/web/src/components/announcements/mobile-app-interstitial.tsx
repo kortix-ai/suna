@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
@@ -57,6 +59,7 @@ function GooglePlayLogo({ className }: { className?: string }) {
 }
 
 export function MobileAppInterstitial() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Mobile app interstitial disabled — mobile users go through normal auth flow
   return null;
   const [isVisible, setIsVisible] = useState(false);
@@ -117,12 +120,8 @@ export function MobileAppInterstitial() {
 
               {/* Text */}
               <div className="flex-1 min-w-0">
-                <h3 className="text-base font-semibold text-foreground mb-0.5">
-                  Get Kortix for Mobile
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Your AI Worker, in your pocket
-                </p>
+                <h3 className="text-base font-semibold text-foreground mb-0.5">{tHardcodedUi.raw('componentsAnnouncementsMobileAppInterstitial.line121JsxTextGetKortixForMobile')}</h3>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsAnnouncementsMobileAppInterstitial.line124JsxTextYourAiWorkerInYourPocket')}</p>
               </div>
 
               {/* Store Button - minimal design */}
@@ -131,10 +130,8 @@ export function MobileAppInterstitial() {
                   <>
                     <AppleLogo className="h-5 w-5 text-background" />
                     <div className="flex flex-col items-start">
-                      <span className="text-[8px] text-background/70 leading-none">
-                        App Store
-                      </span>
-                      <span className="text-[11px] font-semibold text-background leading-tight">
+                      <span className="text-xs text-background/70 leading-none">{tHardcodedUi.raw('componentsAnnouncementsMobileAppInterstitial.line135JsxTextAppStore')}</span>
+                      <span className="text-xs font-semibold text-background leading-tight">
                         iOS
                       </span>
                     </div>
@@ -143,10 +140,8 @@ export function MobileAppInterstitial() {
                   <>
                     <GooglePlayLogo className="h-4 w-4 text-background" />
                     <div className="flex flex-col items-start">
-                      <span className="text-[8px] text-background/70 leading-none">
-                        Google Play
-                      </span>
-                      <span className="text-[11px] font-semibold text-background leading-tight">
+                      <span className="text-xs text-background/70 leading-none">{tHardcodedUi.raw('componentsAnnouncementsMobileAppInterstitial.line147JsxTextGooglePlay')}</span>
+                      <span className="text-xs font-semibold text-background leading-tight">
                         Android
                       </span>
                     </div>

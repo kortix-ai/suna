@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useEffect } from 'react';
 import {
   Download,
@@ -151,6 +153,7 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import { EmptyState } from '@/components/ui/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { StatusDot, DiffStat, StatusBadge } from '@/components/ui/status';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
@@ -243,17 +246,18 @@ const LOGO_ASSETS: LogoAsset[] = [
 ];
 
 const TYPE_SCALE = [
-  { token: 'text-[10px]', size: '0.625rem', px: '~10px', twClass: 'text-[0.625rem]', use: 'Timestamps, metadata, badges' },
-  { token: 'text-xs', size: '0.6875rem', px: '~11px', twClass: 'text-xs', use: 'Secondary labels, tooltips, KBD' },
-  { token: 'text-sm', size: '0.8125rem', px: '~13px', twClass: 'text-sm', use: 'Body text, menu items' },
-  { token: 'text-base', size: '0.875rem', px: '~14px', twClass: 'text-base', use: 'Default UI text, inputs' },
-  { token: 'text-md', size: '0.9375rem', px: '~15px', twClass: 'text-[0.9375rem]', use: 'Card titles, emphasized body' },
-  { token: 'text-lg', size: '1rem', px: '~16px', twClass: 'text-lg', use: 'Section headers, dialog titles' },
-  { token: 'text-xl', size: '1.125rem', px: '~18px', twClass: 'text-xl', use: 'Page section titles' },
-  { token: 'text-2xl', size: '1.25rem', px: '~20px', twClass: 'text-2xl', use: 'Page titles' },
-  { token: 'text-3xl', size: '1.5rem', px: '~24px', twClass: 'text-3xl', use: 'Hero subheadings' },
-  { token: 'text-4xl', size: '2rem', px: '~32px', twClass: 'text-4xl', use: 'Display / hero headings' },
-  { token: 'text-5xl', size: '2.5rem', px: '~40px', twClass: 'text-5xl', use: 'Marketing display' },
+  { token: 'text-xs', size: '0.75rem', px: '~12px', twClass: 'text-xs', use: 'Secondary labels, tooltips, KBD' },
+  { token: 'text-sm', size: '0.875rem', px: '~14px', twClass: 'text-sm', use: 'Body text, menu items' },
+  { token: 'text-base', size: '1rem', px: '~16px', twClass: 'text-base', use: 'Default UI text, inputs' },
+  { token: 'text-lg', size: '1.125rem', px: '~18px', twClass: 'text-lg', use: 'Section headers, dialog titles' },
+  { token: 'text-xl', size: '1.25rem', px: '~20px', twClass: 'text-xl', use: 'Page section titles' },
+  { token: 'text-2xl', size: '1.5rem', px: '~24px', twClass: 'text-2xl', use: 'Page titles' },
+  { token: 'text-3xl', size: '1.875rem', px: '~30px', twClass: 'text-3xl', use: 'Hero subheadings' },
+  { token: 'text-4xl', size: '2.25rem', px: '~36px', twClass: 'text-4xl', use: 'Display / hero headings' },
+  { token: 'text-5xl', size: '3rem', px: '~48px', twClass: 'text-5xl', use: 'Marketing display' },
+  { token: 'text-6xl', size: '3.75rem', px: '~60px', twClass: 'text-6xl', use: 'Large display' },
+  { token: 'text-7xl', size: '4.5rem', px: '~72px', twClass: 'text-7xl', use: 'Oversized display' },
+  { token: 'text-8xl', size: '6rem', px: '~96px', twClass: 'text-8xl', use: 'Hero numerals / clocks' },
 ] as const;
 
 const MOTION_DURATIONS = [
@@ -341,6 +345,7 @@ const TOC_SECTIONS = [
     { id: 'pat-inline-meta', label: 'InlineMeta' },
     { id: 'pat-empty-state', label: 'EmptyState' },
     { id: 'pat-info-banner', label: 'InfoBanner' },
+    { id: 'pat-status', label: 'Status (Dot, Badge, Diff)' },
   ]},
   { id: 'anti-patterns', label: 'Anti-Patterns' },
   { id: 'usage', label: 'Usage' },
@@ -367,7 +372,7 @@ function Hex({ value }: { value: string }) {
       }}
       className="inline-flex items-center gap-1.5 group cursor-pointer"
     >
-      <span className="font-mono text-[11px] text-muted-foreground group-hover:text-foreground transition-colors">
+      <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground transition-colors">
         {value}
       </span>
       {copied ? (
@@ -412,7 +417,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
           download={downloadName}
           className="absolute inset-0 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity bg-black/[0.04] dark:bg-white/[0.04] cursor-pointer"
         >
-          <span className="flex items-center gap-1.5 text-[11px] font-medium bg-background ring-1 ring-border rounded-full px-3 py-1.5 shadow-sm">
+          <span className="flex items-center gap-1.5 text-xs font-medium bg-background ring-1 ring-border rounded-full px-3 py-1.5 shadow-sm">
             <Download className="size-3" /> {fmt.toUpperCase()}
           </span>
         </a>
@@ -422,7 +427,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
         <span className="text-xs font-medium text-foreground">
           {asset.label}
         </span>
-        <span className="text-[10px] font-mono text-muted-foreground">
+        <span className="text-xs font-mono text-muted-foreground">
           {asset.variant}
         </span>
       </div>
@@ -444,7 +449,7 @@ function FormatToggle({
           key={f}
           onClick={() => onChange(f)}
           className={cn(
-            'text-[11px] font-mono px-3 py-1 rounded-full transition-colors cursor-pointer',
+            'text-xs font-mono px-3 py-1 rounded-full transition-colors cursor-pointer',
             value === f
               ? 'bg-background text-foreground shadow-sm ring-1 ring-foreground/[0.06]'
               : 'text-muted-foreground hover:text-foreground'
@@ -482,7 +487,7 @@ function SectionDivider() {
 
 function ComponentLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2">
+    <h3 className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
       {children}
     </h3>
   );
@@ -514,7 +519,7 @@ function MotionBar({
       <button
         type="button"
         onClick={() => setActive((p) => !p)}
-        className="text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors cursor-pointer w-24 shrink-0 text-left"
+        className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors cursor-pointer w-24 shrink-0 text-left"
       >
         {label}
       </button>
@@ -529,7 +534,7 @@ function MotionBar({
           }}
         />
       </div>
-      <span className="text-[10px] font-mono text-muted-foreground w-14 shrink-0 text-right">
+      <span className="text-xs font-mono text-muted-foreground w-14 shrink-0 text-right">
         {durationMs}ms
       </span>
     </div>
@@ -549,6 +554,7 @@ function AntiPatternBlock({
   good: string;
   description: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="rounded-xl ring-1 ring-border/50 overflow-hidden">
       <div className="px-5 py-4 border-b border-border/30">
@@ -559,9 +565,7 @@ function AntiPatternBlock({
         <div className="p-4">
           <div className="flex items-center gap-1.5 mb-2.5">
             <X className="size-3 text-red-500" />
-            <span className="text-[10px] uppercase tracking-widest text-red-500/70 font-medium">
-              Don&apos;t
-            </span>
+            <span className="text-xs uppercase tracking-widest text-red-500/70 font-medium">{tHardcodedUi.raw('appHomeDesignSystemPage.line566JsxTextDonAposT')}</span>
           </div>
           <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap leading-relaxed bg-muted/30 rounded-lg p-3 overflow-x-auto">
             {bad}
@@ -570,7 +574,7 @@ function AntiPatternBlock({
         <div className="p-4">
           <div className="flex items-center gap-1.5 mb-2.5">
             <Check className="size-3 text-emerald-500" />
-            <span className="text-[10px] uppercase tracking-widest text-emerald-500/70 font-medium">
+            <span className="text-xs uppercase tracking-widest text-emerald-500/70 font-medium">
               Do
             </span>
           </div>
@@ -628,7 +632,7 @@ function TocSidebar() {
               <a
                 href={`#${s.id}`}
                 className={cn(
-                  'text-[11px] block py-1 transition-colors',
+                  'text-xs block py-1 transition-colors',
                   activeId === s.id || isParentActive
                     ? 'text-foreground font-medium'
                     : 'text-muted-foreground hover:text-foreground'
@@ -643,7 +647,7 @@ function TocSidebar() {
                       <a
                         href={`#${c.id}`}
                         className={cn(
-                          'text-[10px] block py-0.5 transition-colors',
+                          'text-xs block py-0.5 transition-colors',
                           activeId === c.id
                             ? 'text-foreground font-medium'
                             : 'text-muted-foreground hover:text-foreground'
@@ -666,6 +670,7 @@ function TocSidebar() {
 /* ───────────────────── Page ───────────────────── */
 
 export default function BrandPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [logoFmt, setLogoFmt] = useState<LogoFormat>('svg');
   const [checkboxChecked, setCheckboxChecked] = useState(true);
   const [switchOn, setSwitchOn] = useState(true);
@@ -689,18 +694,12 @@ export default function BrandPage() {
             {/* ═══════════════ Hero ═══════════════ */}
             <section id="hero">
               <div className="mb-3">
-                  <Badge variant="outline" className="text-[10px] font-mono">
+                  <Badge variant="outline" className="text-xs font-mono">
                     v1.0
                   </Badge>
                 </div>
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-foreground mb-5">
-                  Brand &amp; Design System
-                </h1>
-                <p className="text-base text-muted-foreground leading-relaxed max-w-xl">
-                  Logo assets, color palette, typography, motion tokens,
-                  component library, and usage rules for building Kortix.
-                  The complete reference for designers and engineers.
-                </p>
+                <h1 className="text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-foreground mb-5">{tHardcodedUi.raw('appHomeDesignSystemPage.line700JsxTextBrandAmpDesignSystem')}</h1>
+                <p className="text-base text-muted-foreground leading-relaxed max-w-xl">{tHardcodedUi.raw('appHomeDesignSystemPage.line703JsxTextLogoAssetsColorPaletteTypographyMotionTokensComponent')}</p>
                 <div className="flex flex-wrap gap-2 mt-6">
                   <Badge variant="secondary">
                     <span className="font-mono">30+</span> Components
@@ -708,8 +707,8 @@ export default function BrandPage() {
                   <Badge variant="secondary">
                     <span className="font-mono">7</span> Themes
                   </Badge>
-                  <Badge variant="secondary">OKLCH Colors</Badge>
-                  <Badge variant="secondary">Radix Primitives</Badge>
+                  <Badge variant="secondary">{tHardcodedUi.raw('appHomeDesignSystemPage.line714JsxTextOklchColors')}</Badge>
+                  <Badge variant="secondary">{tHardcodedUi.raw('appHomeDesignSystemPage.line715JsxTextRadixPrimitives')}</Badge>
                 </div>
             </section>
 
@@ -721,21 +720,13 @@ export default function BrandPage() {
                   </h2>
                   <FormatToggle value={logoFmt} onChange={setLogoFmt} />
                 </div>
-                <p className="text-base text-muted-foreground leading-relaxed mb-6">
-                  Two forms — the symbol and the wordmark. Each in black and
-                  white.
-                </p>
+                <p className="text-base text-muted-foreground leading-relaxed mb-6">{tHardcodedUi.raw('appHomeDesignSystemPage.line728JsxTextTwoFormsTheSymbolAndTheWordmarkEach')}</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {LOGO_ASSETS.map((a) => (
                     <LogoCard key={a.id} asset={a} fmt={logoFmt} />
                   ))}
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed mt-6">
-                  The symbol is derived from the letter K — connectivity and
-                  intelligence abstracted into a geometric mark. Use it as a
-                  favicon, app icon, or whenever the full wordmark isn{"'"}t
-                  practical. Never stretch, rotate, or recolor it.
-                </p>
+                <p className="text-sm text-muted-foreground leading-relaxed mt-6">{tHardcodedUi.raw('appHomeDesignSystemPage.line737JsxTextTheSymbolIsDerivedFromTheLetterK')}{"'"}{tHardcodedUi.raw('appHomeDesignSystemPage.line739JsxTextTPracticalNeverStretchRotateOrRecolorIt')}</p>
             </section>
 
             {/* ═══════════════ Colors ═══════════════ */}
@@ -744,11 +735,7 @@ export default function BrandPage() {
                 <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
                   Colors
                 </h2>
-                <p className="text-base text-muted-foreground leading-relaxed mb-6">
-                  Black and white is the foundation. Each UI theme pairs the
-                  neutral base with exactly one accent color. The OKLCH color
-                  space ensures perceptual uniformity across all themes.
-                </p>
+                <p className="text-base text-muted-foreground leading-relaxed mb-6">{tHardcodedUi.raw('appHomeDesignSystemPage.line751JsxTextBlackAndWhiteIsTheFoundationEachUi')}</p>
 
                 {/* Foundation */}
                 <div className="mb-8">
@@ -784,12 +771,8 @@ export default function BrandPage() {
                     theme is visible at a glance regardless of the current mode. */}
                 <div>
                   <div className="flex items-baseline justify-between mb-3">
-                    <p className="text-xs text-muted-foreground">
-                      Core palette
-                    </p>
-                    <p className="font-mono text-[10px] text-muted-foreground/70">
-                      globals.css · :root / .dark
-                    </p>
+                    <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line791JsxTextCorePalette')}</p>
+                    <p className="font-mono text-xs text-muted-foreground/70">{tHardcodedUi.raw('appHomeDesignSystemPage.line794JsxTextGlobalsCssRootDark')}</p>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {CORE_PALETTE.map((token) => (
@@ -802,7 +785,7 @@ export default function BrandPage() {
                             className="relative ring-1 ring-inset ring-black/[0.06]"
                             style={{ backgroundColor: token.light }}
                           >
-                            <span className="absolute bottom-1 left-2 text-[9px] font-mono text-black/55 uppercase tracking-widest">
+                            <span className="absolute bottom-1 left-2 text-xs font-mono text-black/55 uppercase tracking-widest">
                               light
                             </span>
                           </div>
@@ -810,7 +793,7 @@ export default function BrandPage() {
                             className="relative ring-1 ring-inset ring-white/[0.06]"
                             style={{ backgroundColor: token.dark }}
                           >
-                            <span className="absolute bottom-1 left-2 text-[9px] font-mono text-white/55 uppercase tracking-widest">
+                            <span className="absolute bottom-1 left-2 text-xs font-mono text-white/55 uppercase tracking-widest">
                               dark
                             </span>
                           </div>
@@ -820,7 +803,7 @@ export default function BrandPage() {
                             <span className="text-xs font-medium text-foreground truncate">
                               {token.name}
                             </span>
-                            <span className="font-mono text-[10px] text-muted-foreground shrink-0">
+                            <span className="font-mono text-xs text-muted-foreground shrink-0">
                               {token.var}
                             </span>
                           </div>
@@ -841,10 +824,7 @@ export default function BrandPage() {
                 <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
                   Typography
                 </h2>
-                <p className="text-base text-muted-foreground leading-relaxed mb-8">
-                  Roobert — a geometric sans-serif. Font-medium (500) is the
-                  brand weight. Roobert Mono for code and data.
-                </p>
+                <p className="text-base text-muted-foreground leading-relaxed mb-8">{tHardcodedUi.raw('appHomeDesignSystemPage.line848JsxTextRoobertAGeometricSansSerifFontMedium500')}</p>
 
                 {/* Weight showcase */}
                 <div className="space-y-6">
@@ -856,7 +836,7 @@ export default function BrandPage() {
                       key={s.label}
                       className="border-b border-border/30 pb-5"
                     >
-                      <span className="font-mono text-[10px] text-muted-foreground tracking-widest block mb-2">
+                      <span className="font-mono text-xs text-muted-foreground tracking-widest block mb-2">
                         {s.label}
                       </span>
                       <p
@@ -864,32 +844,21 @@ export default function BrandPage() {
                           'text-3xl md:text-5xl tracking-tight text-foreground',
                           s.cls
                         )}
-                      >
-                        Kortix Computer
-                      </p>
+                      >{tHardcodedUi.raw('appHomeDesignSystemPage.line871JsxTextKortixComputer')}</p>
                     </div>
                   ))}
                 </div>
 
                 {/* Mono showcase */}
                 <div className="bg-neutral-950 text-neutral-100 rounded-lg p-5 md:p-6 mt-6">
-                  <span className="font-mono text-[10px] text-neutral-500 tracking-widest block mb-3">
-                    Roobert Mono
-                  </span>
-                  <p className="font-mono text-lg md:text-2xl tracking-tight">
-                    const agent = new Kortix();
-                  </p>
-                  <p className="font-mono text-[11px] text-neutral-600 mt-4">
-                    ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz
-                    0123456789
-                  </p>
+                  <span className="font-mono text-xs text-neutral-500 tracking-widest block mb-3">{tHardcodedUi.raw('appHomeDesignSystemPage.line880JsxTextRoobertMono')}</span>
+                  <p className="font-mono text-lg md:text-2xl tracking-tight">{tHardcodedUi.raw('appHomeDesignSystemPage.line883JsxTextConstAgentNewKortix')}</p>
+                  <p className="font-mono text-xs text-neutral-600 mt-4">{tHardcodedUi.raw('appHomeDesignSystemPage.line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789')}</p>
                 </div>
 
                 {/* Type scale table */}
                 <div className="mt-8">
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Type Scale
-                  </p>
+                  <p className="text-xs text-muted-foreground mb-4">{tHardcodedUi.raw('appHomeDesignSystemPage.line894JsxTextTypeScale')}</p>
                   <div className="space-y-0">
                     {TYPE_SCALE.map((t) => (
                       <div
@@ -897,12 +866,12 @@ export default function BrandPage() {
                         className="flex items-baseline gap-4 py-3 border-b border-border/20"
                       >
                         <div className="w-24 shrink-0">
-                          <span className="font-mono text-[10px] text-muted-foreground">
+                          <span className="font-mono text-xs text-muted-foreground">
                             {t.token}
                           </span>
                         </div>
                         <div className="w-16 shrink-0">
-                          <span className="font-mono text-[10px] text-muted-foreground">
+                          <span className="font-mono text-xs text-muted-foreground">
                             {t.px}
                           </span>
                         </div>
@@ -910,12 +879,10 @@ export default function BrandPage() {
                           <span
                             className="text-foreground font-medium truncate block"
                             style={{ fontSize: t.size }}
-                          >
-                            The quick brown fox
-                          </span>
+                          >{tHardcodedUi.raw('appHomeDesignSystemPage.line917JsxTextTheQuickBrownFox')}</span>
                         </div>
                         <div className="hidden sm:block shrink-0 max-w-48">
-                          <span className="text-[10px] text-muted-foreground truncate block">
+                          <span className="text-xs text-muted-foreground truncate block">
                             {t.use}
                           </span>
                         </div>
@@ -931,17 +898,11 @@ export default function BrandPage() {
                 <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
                   Motion
                 </h2>
-                <p className="text-base text-muted-foreground leading-relaxed mb-6">
-                  Standardized duration and easing tokens ensure every
-                  transition feels consistent. Click the labels to trigger the
-                  animation.
-                </p>
+                <p className="text-base text-muted-foreground leading-relaxed mb-6">{tHardcodedUi.raw('appHomeDesignSystemPage.line938JsxTextStandardizedDurationAndEasingTokensEnsureEveryTransition')}</p>
 
                 {/* Duration scale */}
                 <div className="mb-8">
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Duration Scale
-                  </p>
+                  <p className="text-xs text-muted-foreground mb-4">{tHardcodedUi.raw('appHomeDesignSystemPage.line946JsxTextDurationScale')}</p>
                   <DemoContainer>
                     <div className="space-y-3">
                       {MOTION_DURATIONS.map((d) => (
@@ -957,9 +918,7 @@ export default function BrandPage() {
 
                 {/* Easing curves */}
                 <div>
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Easing Curves
-                  </p>
+                  <p className="text-xs text-muted-foreground mb-4">{tHardcodedUi.raw('appHomeDesignSystemPage.line964JsxTextEasingCurves')}</p>
                   <DemoContainer>
                     <div className="space-y-3">
                       {EASING_CURVES.map((e) => (
@@ -981,23 +940,20 @@ export default function BrandPage() {
                 <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
                   Spacing
                 </h2>
-                <p className="text-base text-muted-foreground leading-relaxed mb-6">
-                  A consistent spacing scale based on 4px increments. Used for
-                  padding, margins, and gaps throughout the UI.
-                </p>
+                <p className="text-base text-muted-foreground leading-relaxed mb-6">{tHardcodedUi.raw('appHomeDesignSystemPage.line988JsxTextAConsistentSpacingScaleBasedOn4pxIncrements')}</p>
 
                 <DemoContainer>
                   <div className="space-y-2.5">
                     {SPACING_SCALE.map((s) => (
                       <div key={s.token} className="flex items-center gap-4">
-                        <span className="font-mono text-[10px] text-muted-foreground w-8 shrink-0 text-right">
+                        <span className="font-mono text-xs text-muted-foreground w-8 shrink-0 text-right">
                           {s.token}
                         </span>
                         <div
                           className="h-5 rounded-sm bg-foreground/60"
                           style={{ width: `${s.px * 3}px` }}
                         />
-                        <span className="font-mono text-[10px] text-muted-foreground">
+                        <span className="font-mono text-xs text-muted-foreground">
                           {s.px}px
                         </span>
                       </div>
@@ -1012,28 +968,17 @@ export default function BrandPage() {
                 <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
                   Components
                 </h2>
-                <p className="text-base text-muted-foreground leading-relaxed mb-8">
-                  The complete component library. Each component uses a
-                  consistent API with variant and size props managed through
-                  class-variance-authority. Built on Radix UI primitives for
-                  accessibility and composability.
-                </p>
+                <p className="text-base text-muted-foreground leading-relaxed mb-8">{tHardcodedUi.raw('appHomeDesignSystemPage.line1019JsxTextTheCompleteComponentLibraryEachComponentUsesA')}</p>
 
                 {/* ─── Button ─── */}
                 <div id="comp-button" className="mb-12">
                   <ComponentLabel>Button</ComponentLabel>
-                  <ComponentDesc>
-                    10 variants × 8 sizes. The foundation of every interaction.
-                    There are only two radii: pills (buttons, badges) use <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-full</code>;
-                    every container (cards, dialogs, inputs, textareas, selects, info banners, alerts) uses <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-2xl</code>.
-                    Never put <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-sm/md/lg/xl</code> on a box.
-                    The <code className="font-mono text-[11px] bg-muted px-1 rounded">destructive</code> variant is reserved for the <strong>one irreversible confirm</strong> (a ConfirmDialog&apos;s primary action, the Danger Zone) — never for routine actions like Log out or Cancel.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1029JsxTextText10Variants8SizesTheFoundationOfEvery')}<code className="font-mono text-xs bg-muted px-1 rounded">rounded-full</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line1030JsxTextEveryContainerCardsDialogsInputsTextareasSelectsInfo')}<code className="font-mono text-xs bg-muted px-1 rounded">rounded-2xl</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line1031JsxTextNeverPut')}<code className="font-mono text-xs bg-muted px-1 rounded">rounded-sm/md/lg/xl</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line1032JsxTextOnABoxThe')}<code className="font-mono text-xs bg-muted px-1 rounded">destructive</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line1033JsxTextVariantIsReservedForThe')}<strong>{tHardcodedUi.raw('appHomeDesignSystemPage.line1033JsxTextOneIrreversibleConfirm')}</strong>{tHardcodedUi.raw('appHomeDesignSystemPage.line1033JsxTextAConfirmdialogAposSPrimaryActionTheDanger')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-6">
                       {/* Base Variants */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Base Variants</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">{tHardcodedUi.raw('appHomeDesignSystemPage.line1039JsxTextBaseVariants')}</p>
                         <div className="flex flex-wrap gap-2">
                           <Button variant="default">Default</Button>
                           <Button variant="secondary">Secondary</Button>
@@ -1045,7 +990,7 @@ export default function BrandPage() {
                       </div>
                       {/* Kortix Variants */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Kortix Variants</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">{tHardcodedUi.raw('appHomeDesignSystemPage.line1051JsxTextKortixVariants')}</p>
                         <div className="flex flex-wrap gap-2">
                           <Button variant="subtle">Subtle</Button>
                           <Button variant="muted">Muted</Button>
@@ -1055,7 +1000,7 @@ export default function BrandPage() {
                       </div>
                       {/* Standard Sizes */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Standard Sizes</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">{tHardcodedUi.raw('appHomeDesignSystemPage.line1061JsxTextStandardSizes')}</p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button size="lg">Large</Button>
                           <Button size="default">Default</Button>
@@ -1065,7 +1010,7 @@ export default function BrandPage() {
                       </div>
                       {/* Compact Sizes */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Compact Sizes</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">{tHardcodedUi.raw('appHomeDesignSystemPage.line1071JsxTextCompactSizes')}</p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button size="toolbar" variant="muted">Toolbar</Button>
                           <Button size="xs" variant="muted">XSmall</Button>
@@ -1075,9 +1020,9 @@ export default function BrandPage() {
                       </div>
                       {/* With Icons */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">With Icons</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">{tHardcodedUi.raw('appHomeDesignSystemPage.line1081JsxTextWithIcons')}</p>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Button><Mail className="size-4" /> Send Email</Button>
+                          <Button><Mail className="size-4" />{tHardcodedUi.raw('appHomeDesignSystemPage.line1083JsxTextSendEmail')}</Button>
                           <Button variant="outline"><Plus className="size-4" /> Create</Button>
                           <Button variant="subtle"><Search className="size-4" /> Search</Button>
                           <Button variant="destructive"><Trash2 className="size-4" /> Delete</Button>
@@ -1087,10 +1032,10 @@ export default function BrandPage() {
                       </div>
                       {/* States */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">States</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">States</p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button disabled>Disabled</Button>
-                          <Button disabled variant="outline">Disabled Outline</Button>
+                          <Button disabled variant="outline">{tHardcodedUi.raw('appHomeDesignSystemPage.line1096JsxTextDisabledOutline')}</Button>
                           <Button><Loader2 className="size-4 animate-spin" /> Loading</Button>
                         </div>
                       </div>
@@ -1101,14 +1046,11 @@ export default function BrandPage() {
                 {/* ─── Badge ─── */}
                 <div id="comp-badge" className="mb-12">
                   <ComponentLabel>Badge</ComponentLabel>
-                  <ComponentDesc>
-                    Labels, status indicators, and tags. Seven variants from
-                    solid to subtle.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1108JsxTextLabelsStatusIndicatorsAndTagsSevenVariantsFrom')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-4">
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Base Variants</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">{tHardcodedUi.raw('appHomeDesignSystemPage.line1114JsxTextBaseVariants')}</p>
                         <div className="flex flex-wrap gap-2">
                           <Badge variant="default">Default</Badge>
                           <Badge variant="secondary">Secondary</Badge>
@@ -1120,7 +1062,7 @@ export default function BrandPage() {
                         </div>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Semantic Status</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">{tHardcodedUi.raw('appHomeDesignSystemPage.line1126JsxTextSemanticStatus')}</p>
                         <div className="flex flex-wrap gap-2">
                           <Badge variant="success">Success</Badge>
                           <Badge variant="warning">Warning</Badge>
@@ -1129,7 +1071,7 @@ export default function BrandPage() {
                         </div>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">Sizes</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">Sizes</p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="default">Default</Badge>
                           <Badge variant="default" size="sm">Small</Badge>
@@ -1138,7 +1080,7 @@ export default function BrandPage() {
                         </div>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider">With Icons</p>
+                        <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">{tHardcodedUi.raw('appHomeDesignSystemPage.line1144JsxTextWithIcons')}</p>
                         <div className="flex flex-wrap gap-2">
                           <Badge variant="default"><Star className="size-3" />Featured</Badge>
                           <Badge variant="success"><Check className="size-3" />Verified</Badge>
@@ -1153,24 +1095,16 @@ export default function BrandPage() {
                 {/* ─── Card ─── */}
                 <div id="comp-card" className="mb-12">
                   <ComponentLabel>Card</ComponentLabel>
-                  <ComponentDesc>
-                    Container with header, content, and footer slots. Default
-                    and glass (translucent, no blur) variants.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1160JsxTextContainerWithHeaderContentAndFooterSlotsDefault')}</ComponentDesc>
                   <DemoContainer>
                     <div className="grid sm:grid-cols-2 gap-4">
                       <Card variant="default">
                         <CardHeader>
-                          <CardTitle>Default Card</CardTitle>
-                          <CardDescription>
-                            Standard card with solid background.
-                          </CardDescription>
+                          <CardTitle>{tHardcodedUi.raw('appHomeDesignSystemPage.line1167JsxTextDefaultCard')}</CardTitle>
+                          <CardDescription>{tHardcodedUi.raw('appHomeDesignSystemPage.line1169JsxTextStandardCardWithSolidBackground')}</CardDescription>
                         </CardHeader>
                         <CardContent>
-                          <p className="text-sm text-muted-foreground">
-                            Card content goes here. Use for grouping related
-                            information.
-                          </p>
+                          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line1174JsxTextCardContentGoesHereUseForGroupingRelated')}</p>
                         </CardContent>
                         <CardFooter>
                           <Button variant="outline" size="sm">
@@ -1180,16 +1114,11 @@ export default function BrandPage() {
                       </Card>
                       <Card variant="glass">
                         <CardHeader>
-                          <CardTitle>Glass Card</CardTitle>
-                          <CardDescription>
-                            Translucent surface for overlays and panels.
-                          </CardDescription>
+                          <CardTitle>{tHardcodedUi.raw('appHomeDesignSystemPage.line1186JsxTextGlassCard')}</CardTitle>
+                          <CardDescription>{tHardcodedUi.raw('appHomeDesignSystemPage.line1188JsxTextTranslucentSurfaceForOverlaysAndPanels')}</CardDescription>
                         </CardHeader>
                         <CardContent>
-                          <p className="text-sm text-muted-foreground">
-                            Card content goes here. Used for overlays and
-                            floating panels.
-                          </p>
+                          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line1193JsxTextCardContentGoesHereUsedForOverlaysAnd')}</p>
                         </CardContent>
                         <CardFooter>
                           <Button variant="outline" size="sm">
@@ -1204,22 +1133,18 @@ export default function BrandPage() {
                 {/* ─── Input ─── */}
                 <div id="comp-input" className="mb-12">
                   <ComponentLabel>Input</ComponentLabel>
-                  <ComponentDesc>
-                    Text input for forms and search. The canonical form-control
-                    treatment — Textarea &amp; Select inherit the same bg-card
-                    surface, accent focus ring, and rounded-2xl shape.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1211JsxTextTextInputForFormsAndSearchTheCanonical')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-4 max-w-sm">
                       <div className="space-y-2">
                         <Label htmlFor="demo-input">Label</Label>
                         <Input type="text"
                           id="demo-input"
-                          placeholder="Default input"
+                          placeholder={tHardcodedUi.raw('appHomeDesignSystemPage.line1221JsxAttrPlaceholderDefaultInput')}
                         />
                       </div>
-                      <Input type="text" placeholder="With placeholder" />
-                      <Input type="password" placeholder="Password input" />
+                      <Input type="text" placeholder={tHardcodedUi.raw('appHomeDesignSystemPage.line1224JsxAttrPlaceholderWithPlaceholder')} />
+                      <Input type="password" placeholder={tHardcodedUi.raw('appHomeDesignSystemPage.line1225JsxAttrPlaceholderPasswordInput')} />
                       <Input type="text" disabled placeholder="Disabled" />
                     </div>
                   </DemoContainer>
@@ -1228,15 +1153,11 @@ export default function BrandPage() {
                 {/* ─── Textarea ─── */}
                 <div id="comp-textarea" className="mb-12">
                   <ComponentLabel>Textarea</ComponentLabel>
-                  <ComponentDesc>
-                    Multi-line text input for longer content. Shares one treatment
-                    with Input &amp; Select — bg-card surface, accent focus ring,
-                    rounded-2xl, no shadow.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1235JsxTextMultiLineTextInputForLongerContentShares')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-4 max-w-sm">
-                      <Textarea placeholder="Write something..." />
-                      <Textarea disabled placeholder="Disabled textarea" />
+                      <Textarea placeholder={tHardcodedUi.raw('appHomeDesignSystemPage.line1241JsxAttrPlaceholderWriteSomething')} />
+                      <Textarea disabled placeholder={tHardcodedUi.raw('appHomeDesignSystemPage.line1242JsxAttrPlaceholderDisabledTextarea')} />
                     </div>
                   </DemoContainer>
                 </div>
@@ -1244,16 +1165,12 @@ export default function BrandPage() {
                 {/* ─── Select ─── */}
                 <div id="comp-select" className="mb-12">
                   <ComponentLabel>Select</ComponentLabel>
-                  <ComponentDesc>
-                    Dropdown selection from a list of options. Matches Input &amp;
-                    Textarea — same bg-card surface, accent focus ring, and
-                    rounded-2xl shape.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1251JsxTextDropdownSelectionFromAListOfOptionsMatches')}</ComponentDesc>
                   <DemoContainer>
                     <div className="max-w-xs">
                       <Select>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select a framework" />
+                          <SelectValue placeholder={tHardcodedUi.raw('appHomeDesignSystemPage.line1259JsxAttrPlaceholderSelectAFramework')} />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="next">Next.js</SelectItem>
@@ -1269,9 +1186,7 @@ export default function BrandPage() {
                 {/* ─── Checkbox ─── */}
                 <div id="comp-checkbox" className="mb-12">
                   <ComponentLabel>Checkbox</ComponentLabel>
-                  <ComponentDesc>
-                    Toggle for boolean values.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1276JsxTextToggleForBooleanValues')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-4">
                       <div className="flex items-center gap-2">
@@ -1304,9 +1219,7 @@ export default function BrandPage() {
                 {/* ─── Switch ─── */}
                 <div id="comp-switch" className="mb-12">
                   <ComponentLabel>Switch</ComponentLabel>
-                  <ComponentDesc>
-                    Toggle control for on/off states.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1311JsxTextToggleControlForOnOffStates')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-4">
                       <div className="flex items-center gap-3">
@@ -1341,20 +1254,18 @@ export default function BrandPage() {
                 {/* ─── Toggle ─── */}
                 <div id="comp-toggle" className="mb-12">
                   <ComponentLabel>Toggle</ComponentLabel>
-                  <ComponentDesc>
-                    A two-state button with default and outline variants.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1348JsxTextATwoStateButtonWithDefaultAndOutline')}</ComponentDesc>
                   <DemoContainer>
                     <div className="flex flex-wrap gap-2">
                       <Toggle
                         variant="default"
                         pressed={togglePressed}
                         onPressedChange={setTogglePressed}
-                        aria-label="Toggle bold"
+                        aria-label={tHardcodedUi.raw('appHomeDesignSystemPage.line1356JsxAttrAriaLabelToggleBold')}
                       >
                         <Bold className="size-4" />
                       </Toggle>
-                      <Toggle variant="outline" aria-label="Toggle settings">
+                      <Toggle variant="outline" aria-label={tHardcodedUi.raw('appHomeDesignSystemPage.line1360JsxAttrAriaLabelToggleSettings')}>
                         <Settings className="size-4" />
                       </Toggle>
                     </div>
@@ -1363,10 +1274,8 @@ export default function BrandPage() {
 
                 {/* ─── Radio Group ─── */}
                 <div id="comp-radio" className="mb-12">
-                  <ComponentLabel>Radio Group</ComponentLabel>
-                  <ComponentDesc>
-                    Single selection from a set of options.
-                  </ComponentDesc>
+                  <ComponentLabel>{tHardcodedUi.raw('appHomeDesignSystemPage.line1369JsxTextRadioGroup')}</ComponentLabel>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1371JsxTextSingleSelectionFromASetOfOptions')}</ComponentDesc>
                   <DemoContainer>
                     <RadioGroup defaultValue="comfortable">
                       <div className="flex items-center gap-2">
@@ -1388,13 +1297,11 @@ export default function BrandPage() {
                 {/* ─── Tabs ─── */}
                 <div id="comp-tabs" className="mb-12">
                   <ComponentLabel>Tabs</ComponentLabel>
-                  <ComponentDesc>
-                    Tabbed navigation with standard and compact variants.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1395JsxTextTabbedNavigationWithStandardAndCompactVariants')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-6">
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
+                        <p className="text-xs text-muted-foreground mb-3">
                           Standard
                         </p>
                         <Tabs defaultValue="tab1">
@@ -1404,24 +1311,18 @@ export default function BrandPage() {
                             <TabsTrigger value="tab3">Settings</TabsTrigger>
                           </TabsList>
                           <TabsContent value="tab1">
-                            <p className="text-sm text-muted-foreground mt-2">
-                              Account settings and preferences.
-                            </p>
+                            <p className="text-sm text-muted-foreground mt-2">{tHardcodedUi.raw('appHomeDesignSystemPage.line1411JsxTextAccountSettingsAndPreferences')}</p>
                           </TabsContent>
                           <TabsContent value="tab2">
-                            <p className="text-sm text-muted-foreground mt-2">
-                              Change your password.
-                            </p>
+                            <p className="text-sm text-muted-foreground mt-2">{tHardcodedUi.raw('appHomeDesignSystemPage.line1416JsxTextChangeYourPassword')}</p>
                           </TabsContent>
                           <TabsContent value="tab3">
-                            <p className="text-sm text-muted-foreground mt-2">
-                              General settings.
-                            </p>
+                            <p className="text-sm text-muted-foreground mt-2">{tHardcodedUi.raw('appHomeDesignSystemPage.line1421JsxTextGeneralSettings')}</p>
                           </TabsContent>
                         </Tabs>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
+                        <p className="text-xs text-muted-foreground mb-3">
                           Compact
                         </p>
                         <Tabs defaultValue="c1">
@@ -1437,19 +1338,13 @@ export default function BrandPage() {
                             </TabsTriggerCompact>
                           </TabsListCompact>
                           <TabsContent value="c1">
-                            <p className="text-sm text-muted-foreground mt-2">
-                              Daily view content.
-                            </p>
+                            <p className="text-sm text-muted-foreground mt-2">{tHardcodedUi.raw('appHomeDesignSystemPage.line1444JsxTextDailyViewContent')}</p>
                           </TabsContent>
                           <TabsContent value="c2">
-                            <p className="text-sm text-muted-foreground mt-2">
-                              Weekly view content.
-                            </p>
+                            <p className="text-sm text-muted-foreground mt-2">{tHardcodedUi.raw('appHomeDesignSystemPage.line1449JsxTextWeeklyViewContent')}</p>
                           </TabsContent>
                           <TabsContent value="c3">
-                            <p className="text-sm text-muted-foreground mt-2">
-                              Monthly view content.
-                            </p>
+                            <p className="text-sm text-muted-foreground mt-2">{tHardcodedUi.raw('appHomeDesignSystemPage.line1454JsxTextMonthlyViewContent')}</p>
                           </TabsContent>
                         </Tabs>
                       </div>
@@ -1460,26 +1355,19 @@ export default function BrandPage() {
                 {/* ─── Dialog ─── */}
                 <div id="comp-dialog" className="mb-12">
                   <ComponentLabel>Dialog</ComponentLabel>
-                  <ComponentDesc>
-                    Modal overlay for focused interactions.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1467JsxTextModalOverlayForFocusedInteractions')}</ComponentDesc>
                   <DemoContainer>
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button variant="outline">Open Dialog</Button>
+                        <Button variant="outline">{tHardcodedUi.raw('appHomeDesignSystemPage.line1472JsxTextOpenDialog')}</Button>
                       </DialogTrigger>
                       <DialogContent>
                         <DialogHeader>
-                          <DialogTitle>Dialog Title</DialogTitle>
-                          <DialogDescription>
-                            This is a description of the dialog content. It
-                            provides context for the user.
-                          </DialogDescription>
+                          <DialogTitle>{tHardcodedUi.raw('appHomeDesignSystemPage.line1476JsxTextDialogTitle')}</DialogTitle>
+                          <DialogDescription>{tHardcodedUi.raw('appHomeDesignSystemPage.line1478JsxTextThisIsADescriptionOfTheDialogContent')}</DialogDescription>
                         </DialogHeader>
                         <div className="py-4">
-                          <p className="text-sm text-muted-foreground">
-                            Dialog body content goes here.
-                          </p>
+                          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line1484JsxTextDialogBodyContentGoesHere')}</p>
                         </div>
                         <DialogFooter>
                           <Button variant="outline">Cancel</Button>
@@ -1493,25 +1381,19 @@ export default function BrandPage() {
                 {/* ─── Sheet ─── */}
                 <div id="comp-sheet" className="mb-12">
                   <ComponentLabel>Sheet</ComponentLabel>
-                  <ComponentDesc>
-                    Slide-out panel from the edge of the viewport.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1500JsxTextSlideOutPanelFromTheEdgeOfThe')}</ComponentDesc>
                   <DemoContainer>
                     <Sheet>
                       <SheetTrigger asChild>
-                        <Button variant="outline">Open Sheet</Button>
+                        <Button variant="outline">{tHardcodedUi.raw('appHomeDesignSystemPage.line1505JsxTextOpenSheet')}</Button>
                       </SheetTrigger>
                       <SheetContent>
                         <SheetHeader>
-                          <SheetTitle>Sheet Title</SheetTitle>
-                          <SheetDescription>
-                            A side panel for secondary content and actions.
-                          </SheetDescription>
+                          <SheetTitle>{tHardcodedUi.raw('appHomeDesignSystemPage.line1509JsxTextSheetTitle')}</SheetTitle>
+                          <SheetDescription>{tHardcodedUi.raw('appHomeDesignSystemPage.line1511JsxTextASidePanelForSecondaryContentAndActions')}</SheetDescription>
                         </SheetHeader>
                         <div className="py-6">
-                          <p className="text-sm text-muted-foreground">
-                            Sheet body content.
-                          </p>
+                          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line1516JsxTextSheetBodyContent')}</p>
                         </div>
                       </SheetContent>
                     </Sheet>
@@ -1520,13 +1402,9 @@ export default function BrandPage() {
 
                 {/* ─── Dropdown Menu ─── */}
                 <div id="comp-dropdown" className="mb-12">
-                  <ComponentLabel>Dropdown Menu</ComponentLabel>
-                  <ComponentDesc>
-                    Contextual menu triggered by a button. Rows stay{' '}
-                    <strong>neutral</strong> — even destructive ones like Delete or
-                    Remove. Red is the brake, not the paint: it appears only on the
-                    final confirm button, never on a menu row.
-                  </ComponentDesc>
+                  <ComponentLabel>{tHardcodedUi.raw('appHomeDesignSystemPage.line1526JsxTextDropdownMenu')}</ComponentLabel>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1528JsxTextContextualMenuTriggeredByAButtonRowsStay')}{' '}
+                    <strong>neutral</strong>{tHardcodedUi.raw('appHomeDesignSystemPage.line1529JsxTextEvenDestructiveOnesLikeDeleteOrRemoveRed')}</ComponentDesc>
                   <DemoContainer>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -1551,9 +1429,7 @@ export default function BrandPage() {
                 {/* ─── Tooltip ─── */}
                 <div id="comp-tooltip" className="mb-12">
                   <ComponentLabel>Tooltip</ComponentLabel>
-                  <ComponentDesc>
-                    Contextual information on hover.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1558JsxTextContextualInformationOnHover')}</ComponentDesc>
                   <DemoContainer>
                     <div className="flex flex-wrap gap-3">
                       <TooltipProvider>
@@ -1564,7 +1440,7 @@ export default function BrandPage() {
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>This is a helpful tooltip</p>
+                            <p>{tHardcodedUi.raw('appHomeDesignSystemPage.line1570JsxTextThisIsAHelpfulTooltip')}</p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -1591,21 +1467,16 @@ export default function BrandPage() {
                 {/* ─── Popover ─── */}
                 <div id="comp-popover" className="mb-12">
                   <ComponentLabel>Popover</ComponentLabel>
-                  <ComponentDesc>
-                    Floating content panel attached to a trigger.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1598JsxTextFloatingContentPanelAttachedToATrigger')}</ComponentDesc>
                   <DemoContainer>
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button variant="outline">Open Popover</Button>
+                        <Button variant="outline">{tHardcodedUi.raw('appHomeDesignSystemPage.line1603JsxTextOpenPopover')}</Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-64">
                         <div className="space-y-2">
-                          <p className="text-sm font-medium">Popover Title</p>
-                          <p className="text-xs text-muted-foreground">
-                            This is the popover content. It can contain any
-                            elements.
-                          </p>
+                          <p className="text-sm font-medium">{tHardcodedUi.raw('appHomeDesignSystemPage.line1607JsxTextPopoverTitle')}</p>
+                          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line1609JsxTextThisIsThePopoverContentItCanContain')}</p>
                         </div>
                       </PopoverContent>
                     </Popover>
@@ -1615,31 +1486,23 @@ export default function BrandPage() {
                 {/* ─── Alert ─── */}
                 <div id="comp-alert" className="mb-12">
                   <ComponentLabel>Alert</ComponentLabel>
-                  <ComponentDesc>
-                    Inline notification with contextual variants.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1622JsxTextInlineNotificationWithContextualVariants')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-3">
                       <Alert>
                         <Info className="size-4" />
-                        <AlertTitle>Default Alert</AlertTitle>
-                        <AlertDescription>
-                          This is a default informational alert.
-                        </AlertDescription>
+                        <AlertTitle>{tHardcodedUi.raw('appHomeDesignSystemPage.line1628JsxTextDefaultAlert')}</AlertTitle>
+                        <AlertDescription>{tHardcodedUi.raw('appHomeDesignSystemPage.line1630JsxTextThisIsADefaultInformationalAlert')}</AlertDescription>
                       </Alert>
                       <Alert variant="destructive">
                         <AlertCircle className="size-4" />
                         <AlertTitle>Destructive</AlertTitle>
-                        <AlertDescription>
-                          Something went wrong. Please try again.
-                        </AlertDescription>
+                        <AlertDescription>{tHardcodedUi.raw('appHomeDesignSystemPage.line1637JsxTextSomethingWentWrongPleaseTryAgain')}</AlertDescription>
                       </Alert>
                       <Alert variant="warning">
                         <TriangleAlert className="size-4" />
                         <AlertTitle>Warning</AlertTitle>
-                        <AlertDescription>
-                          This action may have unintended consequences.
-                        </AlertDescription>
+                        <AlertDescription>{tHardcodedUi.raw('appHomeDesignSystemPage.line1644JsxTextThisActionMayHaveUnintendedConsequences')}</AlertDescription>
                       </Alert>
                     </div>
                   </DemoContainer>
@@ -1647,24 +1510,17 @@ export default function BrandPage() {
 
                 {/* ─── Alert Dialog ─── */}
                 <div id="comp-alert-dialog" className="mb-12">
-                  <ComponentLabel>Alert Dialog</ComponentLabel>
-                  <ComponentDesc>
-                    Confirmation dialog for destructive or important actions.
-                  </ComponentDesc>
+                  <ComponentLabel>{tHardcodedUi.raw('appHomeDesignSystemPage.line1653JsxTextAlertDialog')}</ComponentLabel>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1655JsxTextConfirmationDialogForDestructiveOrImportantActions')}</ComponentDesc>
                   <DemoContainer>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button variant="destructive">Delete Item</Button>
+                        <Button variant="destructive">{tHardcodedUi.raw('appHomeDesignSystemPage.line1660JsxTextDeleteItem')}</Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            Are you sure?
-                          </AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This action cannot be undone. This will permanently
-                            delete the item and remove all associated data.
-                          </AlertDialogDescription>
+                          <AlertDialogTitle>{tHardcodedUi.raw('appHomeDesignSystemPage.line1665JsxTextAreYouSure')}</AlertDialogTitle>
+                          <AlertDialogDescription>{tHardcodedUi.raw('appHomeDesignSystemPage.line1668JsxTextThisActionCannotBeUndoneThisWillPermanently')}</AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -1678,43 +1534,20 @@ export default function BrandPage() {
                 {/* ─── Accordion ─── */}
                 <div id="comp-accordion" className="mb-12">
                   <ComponentLabel>Accordion</ComponentLabel>
-                  <ComponentDesc>
-                    Collapsible content sections with smooth animation.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1685JsxTextCollapsibleContentSectionsWithSmoothAnimation')}</ComponentDesc>
                   <DemoContainer>
                     <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="item-1">
-                        <AccordionTrigger>
-                          What is Kortix?
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          Kortix is an AI-powered platform for building and
-                          deploying intelligent agents. It provides the
-                          infrastructure, tools, and interfaces needed to create
-                          production-grade AI workflows.
-                        </AccordionContent>
+                        <AccordionTrigger>{tHardcodedUi.raw('appHomeDesignSystemPage.line1691JsxTextWhatIsKortix')}</AccordionTrigger>
+                        <AccordionContent>{tHardcodedUi.raw('appHomeDesignSystemPage.line1694JsxTextKortixIsAnAiPoweredPlatformForBuilding')}</AccordionContent>
                       </AccordionItem>
                       <AccordionItem value="item-2">
-                        <AccordionTrigger>
-                          What design system does it use?
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          Kortix uses a monochromatic design system with
-                          strategic accent colors, built on OKLCH color tokens,
-                          the Roobert type family, and Radix UI primitives.
-                        </AccordionContent>
+                        <AccordionTrigger>{tHardcodedUi.raw('appHomeDesignSystemPage.line1702JsxTextWhatDesignSystemDoesItUse')}</AccordionTrigger>
+                        <AccordionContent>{tHardcodedUi.raw('appHomeDesignSystemPage.line1705JsxTextKortixUsesAMonochromaticDesignSystemWithStrategic')}</AccordionContent>
                       </AccordionItem>
                       <AccordionItem value="item-3">
-                        <AccordionTrigger>
-                          How do themes work?
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          Each theme defines a single accent hue applied to
-                          primary, ring, and chart tokens. All backgrounds,
-                          surfaces, and borders remain neutral. Seven themes are
-                          available: Graphite, Teal, Amber, Rose, Violet,
-                          Emerald, and Neon.
-                        </AccordionContent>
+                        <AccordionTrigger>{tHardcodedUi.raw('appHomeDesignSystemPage.line1712JsxTextHowDoThemesWork')}</AccordionTrigger>
+                        <AccordionContent>{tHardcodedUi.raw('appHomeDesignSystemPage.line1715JsxTextEachThemeDefinesASingleAccentHueApplied')}</AccordionContent>
                       </AccordionItem>
                     </Accordion>
                   </DemoContainer>
@@ -1723,10 +1556,7 @@ export default function BrandPage() {
                 {/* ─── Collapsible ─── */}
                 <div id="comp-collapsible" className="mb-12">
                   <ComponentLabel>Collapsible</ComponentLabel>
-                  <ComponentDesc>
-                    A simpler expand/collapse primitive. Unlike Accordion, it
-                    controls a single section without exclusive selection.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1730JsxTextASimplerExpandCollapsePrimitiveUnlikeAccordionIt')}</ComponentDesc>
                   <DemoContainer>
                     <Collapsible
                       open={collapsibleOpen}
@@ -1734,9 +1564,7 @@ export default function BrandPage() {
                       className="w-full"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">
-                          3 tagged items
-                        </span>
+                        <span className="text-sm font-medium">{tHardcodedUi.raw('appHomeDesignSystemPage.line1741JsxTextText3TaggedItems')}</span>
                         <CollapsibleTrigger asChild>
                           <Button variant="ghost" size="sm">
                             <ChevronsUpDown className="size-4" />
@@ -1744,16 +1572,10 @@ export default function BrandPage() {
                           </Button>
                         </CollapsibleTrigger>
                       </div>
-                      <div className="rounded-md border border-border/50 px-4 py-2 mt-2 text-sm">
-                        @kortix/design-system
-                      </div>
+                      <div className="rounded-md border border-border/50 px-4 py-2 mt-2 text-sm">{tHardcodedUi.raw('appHomeDesignSystemPage.line1751JsxTextKortixDesignSystem')}</div>
                       <CollapsibleContent className="mt-2 space-y-2">
-                        <div className="rounded-md border border-border/50 px-4 py-2 text-sm">
-                          @kortix/components
-                        </div>
-                        <div className="rounded-md border border-border/50 px-4 py-2 text-sm">
-                          @kortix/tokens
-                        </div>
+                        <div className="rounded-md border border-border/50 px-4 py-2 text-sm">{tHardcodedUi.raw('appHomeDesignSystemPage.line1755JsxTextKortixComponents')}</div>
+                        <div className="rounded-md border border-border/50 px-4 py-2 text-sm">{tHardcodedUi.raw('appHomeDesignSystemPage.line1758JsxTextKortixTokens')}</div>
                       </CollapsibleContent>
                     </Collapsible>
                   </DemoContainer>
@@ -1762,18 +1584,12 @@ export default function BrandPage() {
                 {/* ─── Separator ─── */}
                 <div id="comp-separator" className="mb-12">
                   <ComponentLabel>Separator</ComponentLabel>
-                  <ComponentDesc>
-                    Visual divider between content sections.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1769JsxTextVisualDividerBetweenContentSections')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-4">
-                      <p className="text-sm text-muted-foreground">
-                        Content above
-                      </p>
+                      <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line1774JsxTextContentAbove')}</p>
                       <Separator />
-                      <p className="text-sm text-muted-foreground">
-                        Content below
-                      </p>
+                      <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line1778JsxTextContentBelow')}</p>
                     </div>
                   </DemoContainer>
                 </div>
@@ -1781,16 +1597,12 @@ export default function BrandPage() {
                 {/* ─── Skeleton ─── */}
                 <div id="comp-skeleton" className="mb-12">
                   <ComponentLabel>Skeleton</ComponentLabel>
-                  <ComponentDesc>
-                    Loading placeholder for content that hasn{"'"}t loaded yet.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1788JsxTextLoadingPlaceholderForContentThatHasn')}{"'"}{tHardcodedUi.raw('appHomeDesignSystemPage.line1788JsxTextTLoadedYet')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-6">
                       {/* Card-like skeleton */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
-                          Card Skeleton
-                        </p>
+                        <p className="text-xs text-muted-foreground mb-3">{tHardcodedUi.raw('appHomeDesignSystemPage.line1795JsxTextCardSkeleton')}</p>
                         <div className="flex items-start gap-4">
                           <Skeleton className="size-12 rounded-full" />
                           <div className="flex-1 space-y-2">
@@ -1802,9 +1614,7 @@ export default function BrandPage() {
                       </div>
                       {/* Inline skeletons */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
-                          Inline Variants
-                        </p>
+                        <p className="text-xs text-muted-foreground mb-3">{tHardcodedUi.raw('appHomeDesignSystemPage.line1809JsxTextInlineVariants')}</p>
                         <div className="space-y-3">
                           <Skeleton className="h-10 w-full rounded-2xl" />
                           <div className="flex gap-3">
@@ -1821,14 +1631,12 @@ export default function BrandPage() {
                 {/* ─── Progress ─── */}
                 <div id="comp-progress" className="mb-12">
                   <ComponentLabel>Progress</ComponentLabel>
-                  <ComponentDesc>
-                    Visual indicator of completion or loading.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1828JsxTextVisualIndicatorOfCompletionOrLoading')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-4">
                       {[0, 25, 50, 75, 100].map((v) => (
                         <div key={v} className="space-y-1.5">
-                          <span className="text-[10px] font-mono text-muted-foreground">
+                          <span className="text-xs font-mono text-muted-foreground">
                             {v}%
                           </span>
                           <Progress value={v} />
@@ -1841,9 +1649,7 @@ export default function BrandPage() {
                 {/* ─── Slider ─── */}
                 <div id="comp-slider" className="mb-12">
                   <ComponentLabel>Slider</ComponentLabel>
-                  <ComponentDesc>
-                    Range input for selecting numeric values.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1848JsxTextRangeInputForSelectingNumericValues')}</ComponentDesc>
                   <DemoContainer>
                     <div className="max-w-sm space-y-4">
                       <Slider
@@ -1862,16 +1668,14 @@ export default function BrandPage() {
                 {/* ─── Label ─── */}
                 <div id="comp-label" className="mb-12">
                   <ComponentLabel>Label</ComponentLabel>
-                  <ComponentDesc>
-                    Accessible label for form controls.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1869JsxTextAccessibleLabelForFormControls')}</ComponentDesc>
                   <DemoContainer>
                     <div className="max-w-sm space-y-2">
-                      <Label htmlFor="label-demo">Email address</Label>
+                      <Label htmlFor="label-demo">{tHardcodedUi.raw('appHomeDesignSystemPage.line1873JsxTextEmailAddress')}</Label>
                       <Input
                         id="label-demo"
                         type="email"
-                        placeholder="you@example.com"
+                        placeholder={tHardcodedUi.raw('appHomeDesignSystemPage.line1877JsxAttrPlaceholderYouExampleCom')}
                       />
                     </div>
                   </DemoContainer>
@@ -1880,9 +1684,7 @@ export default function BrandPage() {
                 {/* ─── Breadcrumb ─── */}
                 <div id="comp-breadcrumb" className="mb-12">
                   <ComponentLabel>Breadcrumb</ComponentLabel>
-                  <ComponentDesc>
-                    Navigation hierarchy trail.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1887JsxTextNavigationHierarchyTrail')}</ComponentDesc>
                   <DemoContainer>
                     <Breadcrumb>
                       <BreadcrumbList>
@@ -1895,7 +1697,7 @@ export default function BrandPage() {
                         </BreadcrumbItem>
                         <BreadcrumbSeparator />
                         <BreadcrumbItem>
-                          <BreadcrumbPage>Design System</BreadcrumbPage>
+                          <BreadcrumbPage>{tHardcodedUi.raw('appHomeDesignSystemPage.line1901JsxTextDesignSystem')}</BreadcrumbPage>
                         </BreadcrumbItem>
                       </BreadcrumbList>
                     </Breadcrumb>
@@ -1905,9 +1707,7 @@ export default function BrandPage() {
                 {/* ─── Table ─── */}
                 <div id="comp-table" className="mb-12">
                   <ComponentLabel>Table</ComponentLabel>
-                  <ComponentDesc>
-                    Structured data display in rows and columns.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1912JsxTextStructuredDataDisplayInRowsAndColumns')}</ComponentDesc>
                   <DemoContainer className="overflow-x-auto">
                     <Table>
                       <TableHeader>
@@ -1925,7 +1725,7 @@ export default function BrandPage() {
                           <TableCell className="font-medium">Button</TableCell>
                           <TableCell>6</TableCell>
                           <TableCell>
-                            <Badge variant="new" className="text-[10px]">Stable</Badge>
+                            <Badge variant="new" className="text-xs">Stable</Badge>
                           </TableCell>
                           <TableCell className="text-right">624</TableCell>
                         </TableRow>
@@ -1933,7 +1733,7 @@ export default function BrandPage() {
                           <TableCell className="font-medium">Badge</TableCell>
                           <TableCell>7</TableCell>
                           <TableCell>
-                            <Badge variant="new" className="text-[10px]">Stable</Badge>
+                            <Badge variant="new" className="text-xs">Stable</Badge>
                           </TableCell>
                           <TableCell className="text-right">189</TableCell>
                         </TableRow>
@@ -1941,7 +1741,7 @@ export default function BrandPage() {
                           <TableCell className="font-medium">Card</TableCell>
                           <TableCell>2</TableCell>
                           <TableCell>
-                            <Badge variant="new" className="text-[10px]">Stable</Badge>
+                            <Badge variant="new" className="text-xs">Stable</Badge>
                           </TableCell>
                           <TableCell className="text-right">312</TableCell>
                         </TableRow>
@@ -1949,7 +1749,7 @@ export default function BrandPage() {
                           <TableCell className="font-medium">Input</TableCell>
                           <TableCell>1</TableCell>
                           <TableCell>
-                            <Badge variant="beta" className="text-[10px]">Enhancing</Badge>
+                            <Badge variant="beta" className="text-xs">Enhancing</Badge>
                           </TableCell>
                           <TableCell className="text-right">247</TableCell>
                         </TableRow>
@@ -1961,16 +1761,11 @@ export default function BrandPage() {
                 {/* ─── Kbd ─── */}
                 <div id="comp-kbd" className="mb-12">
                   <ComponentLabel>Kbd</ComponentLabel>
-                  <ComponentDesc>
-                    Keyboard shortcut indicators. Theme-aware, including
-                    automatic styling when nested inside tooltips.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line1968JsxTextKeyboardShortcutIndicatorsThemeAwareIncludingAutomaticStyling')}</ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-4">
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
-                          Individual Keys
-                        </p>
+                        <p className="text-xs text-muted-foreground mb-3">{tHardcodedUi.raw('appHomeDesignSystemPage.line1975JsxTextIndividualKeys')}</p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Kbd>⌘</Kbd>
                           <Kbd>K</Kbd>
@@ -1981,31 +1776,29 @@ export default function BrandPage() {
                         </div>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground mb-3">
-                          Key Groups (Shortcuts)
-                        </p>
+                        <p className="text-xs text-muted-foreground mb-3">{tHardcodedUi.raw('appHomeDesignSystemPage.line1988JsxTextKeyGroupsShortcuts')}</p>
                         <div className="flex flex-wrap items-center gap-4">
                           <KbdGroup>
                             <Kbd>⌘</Kbd>
-                            <span className="text-muted-foreground text-[10px]">
+                            <span className="text-muted-foreground text-xs">
                               +
                             </span>
                             <Kbd>K</Kbd>
                           </KbdGroup>
                           <KbdGroup>
                             <Kbd>⌘</Kbd>
-                            <span className="text-muted-foreground text-[10px]">
+                            <span className="text-muted-foreground text-xs">
                               +
                             </span>
                             <Kbd>Shift</Kbd>
-                            <span className="text-muted-foreground text-[10px]">
+                            <span className="text-muted-foreground text-xs">
                               +
                             </span>
                             <Kbd>P</Kbd>
                           </KbdGroup>
                           <KbdGroup>
                             <Kbd>Ctrl</Kbd>
-                            <span className="text-muted-foreground text-[10px]">
+                            <span className="text-muted-foreground text-xs">
                               +
                             </span>
                             <Kbd>C</Kbd>
@@ -2019,9 +1812,7 @@ export default function BrandPage() {
                 {/* ─── Calendar ─── */}
                 <div id="comp-calendar" className="mb-12">
                   <ComponentLabel>Calendar</ComponentLabel>
-                  <ComponentDesc>
-                    Date picker calendar grid.
-                  </ComponentDesc>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2026JsxTextDatePickerCalendarGrid')}</ComponentDesc>
                   <DemoContainer>
                     <Calendar
                       mode="single"
@@ -2034,10 +1825,8 @@ export default function BrandPage() {
 
                 {/* ─── Scroll Area ─── */}
                 <div id="comp-scrollarea" className="mb-12">
-                  <ComponentLabel>Scroll Area</ComponentLabel>
-                  <ComponentDesc>
-                    Custom scrollable container with styled scrollbar.
-                  </ComponentDesc>
+                  <ComponentLabel>{tHardcodedUi.raw('appHomeDesignSystemPage.line2040JsxTextScrollArea')}</ComponentLabel>
+                  <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2042JsxTextCustomScrollableContainerWithStyledScrollbar')}</ComponentDesc>
                   <DemoContainer>
                     <ScrollArea className="h-48 w-full rounded-md border border-border/50 p-4">
                       <div className="space-y-2">
@@ -2046,11 +1835,10 @@ export default function BrandPage() {
                             key={i}
                             className="flex items-center gap-3 py-1.5 border-b border-border/20"
                           >
-                            <span className="text-[10px] font-mono text-muted-foreground w-6">
+                            <span className="text-xs font-mono text-muted-foreground w-6">
                               {String(i + 1).padStart(2, '0')}
                             </span>
-                            <span className="text-sm text-foreground">
-                              List item {i + 1}
+                            <span className="text-sm text-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line2056JsxTextListItem')}{i + 1}
                             </span>
                           </div>
                         ))}
@@ -2063,38 +1851,26 @@ export default function BrandPage() {
             {/* ═══════════════ Page Patterns ═══════════════ */}
             <section id="page-patterns">
               <SectionDivider />
-              <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
-                Page Patterns
-              </h2>
-              <p className="text-base text-muted-foreground leading-relaxed mb-8">
-                How Kortix list / management pages are built. These are the
-                shared chrome pieces used by <code className="text-[11px] font-mono">/scheduled-tasks</code>,{' '}
-                <code className="text-[11px] font-mono">/tunnel</code>. New
-                management-style pages should compose the same pieces in the
-                same order so the whole app feels like one product.
-              </p>
+              <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">{tHardcodedUi.raw('appHomeDesignSystemPage.line2070JsxTextPagePatterns')}</h2>
+              <p className="text-base text-muted-foreground leading-relaxed mb-8">{tHardcodedUi.raw('appHomeDesignSystemPage.line2073JsxTextHowKortixListManagementPagesAreBuiltThese')}<code className="text-xs font-mono">/scheduled-tasks</code>,{' '}
+                <code className="text-xs font-mono">/tunnel</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2075JsxTextNewManagementStylePagesShouldComposeTheSame')}</p>
 
               {/* ── PageHeader ── */}
               <div id="pat-page-header" className="mb-12">
                 <ComponentLabel>PageHeader</ComponentLabel>
-                <ComponentDesc>
-                  The canonical hero for list/management pages. Rounded card
-                  with animated background, centered icon tile, and a single
-                  bold title line. Always rendered inside a container wrapper
-                  with <code className="text-[11px] font-mono">max-w-7xl</code> horizontal padding.
-                </ComponentDesc>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2084JsxTextTheCanonicalHeroForListManagementPagesRounded')}<code className="text-xs font-mono">max-w-7xl</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2087JsxTextHorizontalPadding')}</ComponentDesc>
                 <DemoContainer className="p-0 overflow-hidden">
                   <div className="p-6">
                     <PageHeader icon={Zap}>
                       <div className="space-y-2 sm:space-y-4">
                         <div className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight">
-                          <span className="text-primary">Scheduled Tasks</span>
+                          <span className="text-primary">{tHardcodedUi.raw('appHomeDesignSystemPage.line2094JsxTextScheduledTasks')}</span>
                         </div>
                       </div>
                     </PageHeader>
                   </div>
                 </DemoContainer>
-                <pre className="mt-3 text-[11px] font-mono text-muted-foreground bg-muted/20 rounded-lg px-4 py-3 overflow-x-auto">{`<div className="container mx-auto max-w-7xl px-3 sm:px-4 py-3 sm:py-4">
+                <pre className="mt-3 text-xs font-mono text-muted-foreground bg-muted/20 rounded-lg px-4 py-3 overflow-x-auto">{`<div className="container mx-auto max-w-7xl px-3 sm:px-4 py-3 sm:py-4">
   <PageHeader icon={Zap}>
     <div className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight">
       <span className="text-primary">Scheduled Tasks</span>
@@ -2106,12 +1882,7 @@ export default function BrandPage() {
               {/* ── SpotlightCard ── */}
               <div id="pat-spotlight-card" className="mb-12">
                 <ComponentLabel>SpotlightCard</ComponentLabel>
-                <ComponentDesc>
-                  Item card used across every list page. Mouse-following
-                  radial spotlight on hover plus a subtle border glow. Wrap
-                  with <code className="text-[11px] font-mono">bg-card border border-border/50</code> and
-                  apply your own inner padding.
-                </ComponentDesc>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2113JsxTextItemCardUsedAcrossEveryListPageMouse')}<code className="text-xs font-mono">{tHardcodedUi.raw('appHomeDesignSystemPage.line2115JsxTextBgCardBorderBorderBorder50')}</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2115JsxTextAndApplyYourOwnInnerPadding')}</ComponentDesc>
                 <DemoContainer>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {[
@@ -2149,18 +1920,13 @@ export default function BrandPage() {
               {/* ── PageSearchBar ── */}
               <div id="pat-search-bar" className="mb-12">
                 <ComponentLabel>PageSearchBar</ComponentLabel>
-                <ComponentDesc>
-                  Standard search pill placed in the action bar below the
-                  PageHeader. Leave a <code className="text-[11px] font-mono">max-w-md</code> width so
-                  it sits next to a right-aligned primary action without
-                  taking over.
-                </ComponentDesc>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2156JsxTextStandardSearchPillPlacedInTheActionBar')}<code className="text-xs font-mono">max-w-md</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2157JsxTextWidthSoItSitsNextToARight')}</ComponentDesc>
                 <DemoContainer>
                   <div className="flex items-center justify-between gap-4">
                     <PageSearchBar
                       value=""
                       onChange={() => {}}
-                      placeholder="Search connections..."
+                      placeholder={tHardcodedUi.raw('appHomeDesignSystemPage.line2166JsxAttrPlaceholderSearchConnections')}
                       className="max-w-md"
                     />
                     <Button size="sm" className="gap-1.5">
@@ -2173,14 +1939,11 @@ export default function BrandPage() {
 
               {/* ── Stagger Mount ── */}
               <div id="pat-stagger" className="mb-12">
-                <ComponentLabel>Stagger Mount</ComponentLabel>
-                <ComponentDesc>
-                  Every management page mounts its three zones with a
-                  staggered fade + slide. Header on entry, search bar
-                  at <code className="text-[11px] font-mono">delay-75</code>, content at <code className="text-[11px] font-mono">delay-150</code>.
+                <ComponentLabel>{tHardcodedUi.raw('appHomeDesignSystemPage.line2179JsxTextStaggerMount')}</ComponentLabel>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2181JsxTextEveryManagementPageMountsItsThreeZonesWith')}<code className="text-xs font-mono">delay-75</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2183JsxTextContentAt')}<code className="text-xs font-mono">delay-150</code>.
                 </ComponentDesc>
                 <DemoContainer>
-                  <pre className="text-[11px] font-mono text-muted-foreground bg-muted/20 rounded-lg px-4 py-3 overflow-x-auto leading-relaxed">{`// Page header
+                  <pre className="text-xs font-mono text-muted-foreground bg-muted/20 rounded-lg px-4 py-3 overflow-x-auto leading-relaxed">{`// Page header
 <div className="... animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
 
 // Search + action bar
@@ -2198,27 +1961,21 @@ export default function BrandPage() {
               <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
                 Primitives
               </h2>
-              <p className="text-base text-muted-foreground leading-relaxed mb-8">
-                Small composition pieces used inside project pages, issue
-                details, and other structured internal surfaces that don't
-                fit the hero + list shape.
-              </p>
+              <p className="text-base text-muted-foreground leading-relaxed mb-8">{tHardcodedUi.raw('appHomeDesignSystemPage.line2205JsxTextSmallCompositionPiecesUsedInsideProjectPagesIssue')}</p>
 
               {/* ── PageShell ── */}
               <div id="pat-page-shell" className="mb-12">
                 <ComponentLabel>PageShell</ComponentLabel>
-                <ComponentDesc>
-                  The one layout wrapper. Standardises max-width, horizontal
-                  padding, and scroll behavior. Four width presets:{' '}
-                  <code className="text-[11px] font-mono">reading (720)</code>,{' '}
-                  <code className="text-[11px] font-mono">default (1000)</code>,{' '}
-                  <code className="text-[11px] font-mono">wide (1280)</code>,{' '}
-                  <code className="text-[11px] font-mono">full</code>.
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2214JsxTextTheOneLayoutWrapperStandardisesMaxWidthHorizontal')}{' '}
+                  <code className="text-xs font-mono">{tHardcodedUi.raw('appHomeDesignSystemPage.line2216JsxTextReading720')}</code>,{' '}
+                  <code className="text-xs font-mono">{tHardcodedUi.raw('appHomeDesignSystemPage.line2217JsxTextDefault1000')}</code>,{' '}
+                  <code className="text-xs font-mono">{tHardcodedUi.raw('appHomeDesignSystemPage.line2218JsxTextWide1280')}</code>,{' '}
+                  <code className="text-xs font-mono">full</code>.
                 </ComponentDesc>
                 <DemoContainer>
-                  <div className="rounded-lg border border-dashed border-border/60 py-10 text-center text-[11px] text-muted-foreground">
-                    <code>&lt;PageShell width=&quot;default&quot;&gt; … &lt;/PageShell&gt;</code>
-                    <div className="mt-1 opacity-60">max-w-[1000px] · px-6 lg:px-10 · py-10</div>
+                  <div className="rounded-lg border border-dashed border-border/60 py-10 text-center text-xs text-muted-foreground">
+                    <code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2223JsxTextLtPageshellWidthQuotDefaultQuotGtLt')}</code>
+                    <div className="mt-1 opacity-60">{tHardcodedUi.raw('appHomeDesignSystemPage.line2224JsxTextMaxW1000pxPx6LgPx10')}</div>
                   </div>
                 </DemoContainer>
               </div>
@@ -2226,30 +1983,20 @@ export default function BrandPage() {
               {/* ── Section ── */}
               <div id="pat-section" className="mb-12">
                 <ComponentLabel>Section</ComponentLabel>
-                <ComponentDesc>
-                  Labelled section inside a PageShell. Uppercase micro-label,
-                  optional trailing action, opinionated top margin between
-                  siblings. No box, no chrome — typography and whitespace do
-                  the work.
-                </ComponentDesc>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2233JsxTextLabelledSectionInsideAPageshellUppercaseMicroLabel')}</ComponentDesc>
                 <DemoContainer>
                   <BrandSection label="About">
-                    <p className="text-[14px] text-foreground leading-relaxed">
-                      Description content lives here. Sections separate
-                      concerns on a page without ever drawing a card.
-                    </p>
+                    <p className="text-sm text-foreground leading-relaxed">{tHardcodedUi.raw('appHomeDesignSystemPage.line2241JsxTextDescriptionContentLivesHereSectionsSeparateConcernsOn')}</p>
                   </BrandSection>
                   <BrandSection
                     label="Details"
                     action={
-                      <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]">
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
                         Edit
                       </Button>
                     }
                   >
-                    <p className="text-[13px] text-muted-foreground">
-                      A second section with a trailing action.
-                    </p>
+                    <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line2254JsxTextASecondSectionWithATrailingAction')}</p>
                   </BrandSection>
                 </DemoContainer>
               </div>
@@ -2257,46 +2004,31 @@ export default function BrandPage() {
               {/* ── SectionCard ── */}
               <div id="pat-section-card" className="mb-12">
                 <ComponentLabel>SectionCard</ComponentLabel>
-                <ComponentDesc>
-                  The one panel pattern. Composes the design-system Card
-                  (rounded-2xl) and adds the divided header every settings/list
-                  surface needs: title, muted count, description, trailing
-                  action. Use <code>flush</code> to seat a List edge-to-edge, and{' '}
-                  <code>tone=&quot;destructive&quot;</code> for danger zones — no
-                  separate component. A danger zone stays calm: a neutral panel
-                  with a faint warm edge and a <strong>neutral</strong> trigger.
-                  Red is the brake, not the paint — it shows up only on the final
-                  confirm (the ConfirmDialog button), never on the panel.
-                </ComponentDesc>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2264JsxTextTheOnePanelPatternComposesTheDesignSystem')}<code>flush</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2267JsxTextToSeatAListEdgeToEdgeAnd')}{' '}
+                  <code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2268JsxTextToneQuotDestructiveQuot')}</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2268JsxTextForDangerZonesNoSeparateComponentADanger')}<strong>neutral</strong>{tHardcodedUi.raw('appHomeDesignSystemPage.line2270JsxTextTriggerRedIsTheBrakeNotThePaint')}</ComponentDesc>
                 <DemoContainer className="space-y-4">
                   <SectionCard
                     title="Members"
                     count={2}
-                    description="People with access to this account."
+                    description={tHardcodedUi.raw('appHomeDesignSystemPage.line2278JsxAttrDescriptionPeopleWithAccessToThisAccount')}
                     action={
-                      <Button size="sm" className="h-8 px-3 text-[13px]">
+                      <Button size="sm" className="h-8 px-3 text-sm">
                         Invite
                       </Button>
                     }
                   >
-                    <p className="text-[13px] text-muted-foreground">
-                      Body content sits in the padded region. Pass{' '}
-                      <code>flush</code> to drop the padding for a List.
-                    </p>
+                    <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line2286JsxTextBodyContentSitsInThePaddedRegionPass')}{' '}
+                      <code>flush</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2287JsxTextToDropThePaddingForAList')}</p>
                   </SectionCard>
                   <SectionCard
                     tone="destructive"
-                    title="Danger zone"
-                    description="Irreversible actions live here."
+                    title={tHardcodedUi.raw('appHomeDesignSystemPage.line2292JsxAttrTitleDangerZone')}
+                    description={tHardcodedUi.raw('appHomeDesignSystemPage.line2293JsxAttrDescriptionIrreversibleActionsLiveHere')}
                   >
                     <div className="flex items-center justify-between gap-4">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground">
-                          Delete this account
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          Permanently removes the account and all its data.
-                        </p>
+                        <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line2298JsxTextDeleteThisAccount')}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line2301JsxTextPermanentlyRemovesTheAccountAndAllItsData')}</p>
                       </div>
                       <Button variant="outline" size="sm" className="shrink-0">
                         Delete
@@ -2309,30 +2041,23 @@ export default function BrandPage() {
               {/* ── Avatars ── */}
               <div id="pat-avatars" className="mb-12">
                 <ComponentLabel>Avatars</ComponentLabel>
-                <ComponentDesc>
-                  One rule: <strong>people are round, things are square</strong>.{' '}
-                  <code>UserAvatar</code> renders a circular avatar for a person —
-                  the supabase profile picture when present, otherwise{' '}
-                  <strong>neutral monochrome initials</strong> (no coloured
-                  backgrounds). <code>EntityAvatar</code> renders a rounded-square
-                  tile for accounts, projects, groups and other non-person entities
-                  — an initial or an icon. Both share the same neutral material and
-                  size scale so they align on a row.
-                </ComponentDesc>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2316JsxTextOneRule')}<strong>{tHardcodedUi.raw('appHomeDesignSystemPage.line2316JsxTextPeopleAreRoundThingsAreSquare')}</strong>.{' '}
+                  <code>UserAvatar</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2317JsxTextRendersACircularAvatarForAPersonThe')}{' '}
+                  <strong>{tHardcodedUi.raw('appHomeDesignSystemPage.line2319JsxTextNeutralMonochromeInitials')}</strong>{tHardcodedUi.raw('appHomeDesignSystemPage.line2319JsxTextNoColouredBackgrounds')}<code>EntityAvatar</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2320JsxTextRendersARoundedSquareTileForAccountsProjects')}</ComponentDesc>
                 <DemoContainer className="space-y-5">
                   <div className="flex items-center gap-4">
-                    <span className="w-24 text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <span className="w-24 text-xs uppercase tracking-wider text-muted-foreground">
                       People
                     </span>
-                    <UserAvatar email="ada@kortix.ai" name="Ada Lovelace" size="sm" />
-                    <UserAvatar email="grace@kortix.ai" name="Grace Hopper" />
-                    <UserAvatar email="alan@kortix.ai" name="Alan Turing" size="lg" />
+                    <UserAvatar email={tHardcodedUi.raw('appHomeDesignSystemPage.line2330JsxAttrEmailAdaKortixAi')} name="Ada Lovelace" size="sm" />
+                    <UserAvatar email={tHardcodedUi.raw('appHomeDesignSystemPage.line2331JsxAttrEmailGraceKortixAi')} name="Grace Hopper" />
+                    <UserAvatar email={tHardcodedUi.raw('appHomeDesignSystemPage.line2332JsxAttrEmailAlanKortixAi')} name="Alan Turing" size="lg" />
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="w-24 text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <span className="w-24 text-xs uppercase tracking-wider text-muted-foreground">
                       Things
                     </span>
-                    <EntityAvatar label="Acme AGI" size="sm" />
+                    <EntityAvatar label={tHardcodedUi.raw('appHomeDesignSystemPage.line2338JsxAttrLabelAcmeAgi')} size="sm" />
                     <EntityAvatar label="Kortix" />
                     <EntityAvatar icon={FolderGit2} />
                     <EntityAvatar icon={Users} size="lg" />
@@ -2342,21 +2067,17 @@ export default function BrandPage() {
 
               {/* ── List & ListRow ── */}
               <div id="pat-list" className="mb-12">
-                <ComponentLabel>List &amp; ListRow</ComponentLabel>
-                <ComponentDesc>
-                  The standard list. A divider-separated <code>List</code> of{' '}
-                  <code>ListRow</code>s, each with a leading avatar slot (UserAvatar
-                  for people, EntityAvatar for things), a title with inline badges, a
-                  subtitle (an InlineMeta strip reads well), and a trailing slot for
-                  status badges or a kebab. Drop it inside a{' '}
-                  <code>SectionCard flush</code>.
+                <ComponentLabel>{tHardcodedUi.raw('appHomeDesignSystemPage.line2348JsxTextListAmpListrow')}</ComponentLabel>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2350JsxTextTheStandardListADividerSeparated')}<code>List</code> of{' '}
+                  <code>ListRow</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2351JsxTextSEachWithALeadingAvatarSlotUseravatar')}{' '}
+                  <code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2355JsxTextSectioncardFlush')}</code>.
                 </ComponentDesc>
                 <DemoContainer className="p-0">
                   <SectionCard title="Members" count={2} flush>
                     <List>
                       <ListRow
-                        leading={<UserAvatar email="grace@kortix.ai" name="Grace Hopper" />}
-                        title="grace@kortix.ai"
+                        leading={<UserAvatar email={tHardcodedUi.raw('appHomeDesignSystemPage.line2361JsxAttrEmailGraceKortixAi')} name="Grace Hopper" />}
+                        title={tHardcodedUi.raw('appHomeDesignSystemPage.line2362JsxAttrTitleGraceKortixAi')}
                         badges={
                           <Badge variant="outline" size="sm">
                             You
@@ -2364,8 +2085,8 @@ export default function BrandPage() {
                         }
                         subtitle={
                           <InlineMeta>
-                            <span>Joined Mar 3, 2026</span>
-                            <span>4 projects</span>
+                            <span>{tHardcodedUi.raw('appHomeDesignSystemPage.line2370JsxTextJoinedMar32026')}</span>
+                            <span>{tHardcodedUi.raw('appHomeDesignSystemPage.line2371JsxTextText4Projects')}</span>
                           </InlineMeta>
                         }
                         trailing={
@@ -2375,11 +2096,11 @@ export default function BrandPage() {
                         }
                       />
                       <ListRow
-                        leading={<UserAvatar email="alan@kortix.ai" name="Alan Turing" />}
-                        title="alan@kortix.ai"
+                        leading={<UserAvatar email={tHardcodedUi.raw('appHomeDesignSystemPage.line2381JsxAttrEmailAlanKortixAi')} name="Alan Turing" />}
+                        title={tHardcodedUi.raw('appHomeDesignSystemPage.line2382JsxAttrTitleAlanKortixAi')}
                         subtitle={
                           <InlineMeta>
-                            <span>Joined Apr 1, 2026</span>
+                            <span>{tHardcodedUi.raw('appHomeDesignSystemPage.line2385JsxTextJoinedApr12026')}</span>
                           </InlineMeta>
                         }
                         trailing={
@@ -2396,20 +2117,17 @@ export default function BrandPage() {
               {/* ── DefinitionList ── */}
               <div id="pat-definition-list" className="mb-12">
                 <ComponentLabel>DefinitionList</ComponentLabel>
-                <ComponentDesc>
-                  Key/value pairs. Fixed-width label column so values align
-                  vertically. Optional dividers for a Linear-style meta list.
-                </ComponentDesc>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2403JsxTextKeyValuePairsFixedWidthLabelColumnSo')}</ComponentDesc>
                 <DemoContainer>
                   <DefinitionList dividers>
                     <DefinitionRow label="Path">
-                      <code className="text-[12px] font-mono text-foreground">
+                      <code className="text-xs font-mono text-foreground">
                         /workspace/jjk-domain-search
                       </code>
                     </DefinitionRow>
-                    <DefinitionRow label="Created">2 days ago</DefinitionRow>
+                    <DefinitionRow label="Created">{tHardcodedUi.raw('appHomeDesignSystemPage.line2413JsxTextText2DaysAgo')}</DefinitionRow>
                     <DefinitionRow label="Updated">
-                      <span className="tabular-nums">3m ago</span>
+                      <span className="tabular-nums">{tHardcodedUi.raw('appHomeDesignSystemPage.line2415JsxTextText3mAgo')}</span>
                     </DefinitionRow>
                     <DefinitionRow label="Sessions">8</DefinitionRow>
                   </DefinitionList>
@@ -2419,19 +2137,15 @@ export default function BrandPage() {
               {/* ── InlineMeta ── */}
               <div id="pat-inline-meta" className="mb-12">
                 <ComponentLabel>InlineMeta</ComponentLabel>
-                <ComponentDesc>
-                  Dot-separated facts. Drop any number of children — falsy
-                  ones are skipped. Used in page headers, row subtitles, card
-                  footers.
-                </ComponentDesc>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2426JsxTextDotSeparatedFactsDropAnyNumberOfChildren')}</ComponentDesc>
                 <DemoContainer>
                   <InlineMeta>
                     <span className="font-mono text-foreground">
                       /workspace/jjk
                     </span>
-                    <span>24 issues</span>
-                    <span>created 2d ago</span>
-                    <span>8 sessions</span>
+                    <span>{tHardcodedUi.raw('appHomeDesignSystemPage.line2435JsxTextText24Issues')}</span>
+                    <span>{tHardcodedUi.raw('appHomeDesignSystemPage.line2436JsxTextCreated2dAgo')}</span>
+                    <span>{tHardcodedUi.raw('appHomeDesignSystemPage.line2437JsxTextText8Sessions')}</span>
                   </InlineMeta>
                 </DemoContainer>
               </div>
@@ -2439,25 +2153,17 @@ export default function BrandPage() {
               {/* ── EmptyState ── */}
               <div id="pat-empty-state" className="mb-12">
                 <ComponentLabel>EmptyState</ComponentLabel>
-                <ComponentDesc>
-                  The calm teaching moment. Icon, headline, one-line
-                  description, up to two actions. Used for zero-state views
-                  across every list and detail page.
-                </ComponentDesc>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2446JsxTextTheCalmTeachingMomentIconHeadlineOneLine')}</ComponentDesc>
                 <DemoContainer className="p-0">
                   <EmptyState
                     icon={IconInbox}
-                    title="No issues yet"
-                    description="Create your first issue with C, or import from a session."
+                    title={tHardcodedUi.raw('appHomeDesignSystemPage.line2453JsxAttrTitleNoIssuesYet')}
+                    description={tHardcodedUi.raw('appHomeDesignSystemPage.line2454JsxAttrDescriptionCreateYourFirstIssueWithCOrImport')}
                     action={
-                      <Button size="sm" className="h-8 px-4 text-[13px]">
-                        New issue
-                      </Button>
+                      <Button size="sm" className="h-8 px-4 text-sm">{tHardcodedUi.raw('appHomeDesignSystemPage.line2457JsxTextNewIssue')}</Button>
                     }
                     secondaryAction={
-                      <Button variant="ghost" size="sm" className="h-8 px-3 text-[13px]">
-                        Learn more
-                      </Button>
+                      <Button variant="ghost" size="sm" className="h-8 px-3 text-sm">{tHardcodedUi.raw('appHomeDesignSystemPage.line2462JsxTextLearnMore')}</Button>
                     }
                   />
                 </DemoContainer>
@@ -2466,31 +2172,61 @@ export default function BrandPage() {
               {/* ── InfoBanner ── */}
               <div id="pat-info-banner" className="mb-12">
                 <ComponentLabel>InfoBanner</ComponentLabel>
-                <ComponentDesc>
-                  An inline status / info notice — manifest status, a skipped
-                  email, a tip. Semantic <code>tone</code> (neutral / info /
-                  success / warning / destructive) instead of hand-rolled tinted
-                  borders. Icon + optional title + body + trailing action.
-                </ComponentDesc>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2473JsxTextAnInlineStatusInfoNoticeManifestStatusA')}<code>tone</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2474JsxTextNeutralInfoSuccessWarningDestructiveInsteadOfHand')}</ComponentDesc>
                 <DemoContainer className="space-y-3">
-                  <InfoBanner tone="info" icon={Info} title="Heads up">
-                    The manifest is being re-synced — secrets apply in a moment.
-                  </InfoBanner>
-                  <InfoBanner tone="warning" icon={TriangleAlert} title="Email skipped">
-                    Mailtrap isn&apos;t configured locally. Copy the invite link to share it.
-                  </InfoBanner>
+                  <InfoBanner tone="info" icon={Info} title={tHardcodedUi.raw('appHomeDesignSystemPage.line2479JsxAttrTitleHeadsUp')}>{tHardcodedUi.raw('appHomeDesignSystemPage.line2480JsxTextTheManifestIsBeingReSyncedSecretsApply')}</InfoBanner>
+                  <InfoBanner tone="warning" icon={TriangleAlert} title={tHardcodedUi.raw('appHomeDesignSystemPage.line2482JsxAttrTitleEmailSkipped')}>{tHardcodedUi.raw('appHomeDesignSystemPage.line2483JsxTextMailtrapIsnAposTConfiguredLocallyCopyThe')}</InfoBanner>
                   <InfoBanner
                     tone="success"
                     icon={Check}
-                    title="All set"
+                    title={tHardcodedUi.raw('appHomeDesignSystemPage.line2488JsxAttrTitleAllSet')}
                     action={
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-[12px]">
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">
                         Dismiss
                       </Button>
                     }
-                  >
-                    Your repository is connected.
-                  </InfoBanner>
+                  >{tHardcodedUi.raw('appHomeDesignSystemPage.line2495JsxTextYourRepositoryIsConnected')}</InfoBanner>
+                </DemoContainer>
+              </div>
+
+              <div id="pat-status" className="mb-12">
+                <ComponentLabel>{tHardcodedUi.raw('appHomeDesignSystemPage.line2501JsxTextStatusDotBadgeAmpDiffstat')}</ComponentLabel>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2503JsxTextTheSingleSourceOfTruthForLdquoThis')}{' '}
+                  <code>Badge</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2505JsxTextBoxesUse')}<code>InfoBanner</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2505JsxTextForTheCasesAComponentCanAposT')}<code>StatusDot</code>
+                  , <code>DiffStat</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2508JsxTextOrThe')}<code>STATUS_TEXT/BG/BORDER</code>{' '}{tHardcodedUi.raw('appHomeDesignSystemPage.line2509JsxTextMapsInsteadOfReInlining')}<code>text-emerald-500</code>.
+                </ComponentDesc>
+                <DemoContainer className="flex flex-col gap-4">
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusDot tone="success" /> Idle
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusDot tone="success" pulse /> Running
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusDot tone="warning" /> Warning
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusDot tone="destructive" /> Error
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusDot tone="info" /> Info
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm">
+                    <DiffStat additions={42} deletions={7} />
+                    <DiffStat additions={12} />
+                    <DiffStat deletions={3} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge tone="success">{tHardcodedUi.raw('appHomeDesignSystemPage.line2535JsxTextText3Passed')}</StatusBadge>
+                    <StatusBadge tone="warning">{tHardcodedUi.raw('appHomeDesignSystemPage.line2536JsxTextText5Warnings')}</StatusBadge>
+                    <StatusBadge tone="destructive">{tHardcodedUi.raw('appHomeDesignSystemPage.line2537JsxTextText2Errors')}</StatusBadge>
+                    <StatusBadge tone="info">Modified</StatusBadge>
+                    <StatusBadge tone="neutral">Idle</StatusBadge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Use <code>StatusBadge</code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2542JsxTextForInformationalStatusFaintInclRed')}<code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2543JsxTextBadgeVariantQuotDestructiveQuot')}</code>{' '}{tHardcodedUi.raw('appHomeDesignSystemPage.line2544JsxTextIsASolidRedPillReserveItFor')}</p>
                 </DemoContainer>
               </div>
             </section>
@@ -2501,51 +2237,52 @@ export default function BrandPage() {
                 <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
                   Anti-Patterns
                 </h2>
-                <p className="text-base text-muted-foreground leading-relaxed mb-8">
-                  Code patterns that violate the design system. Follow these
-                  rules to maintain consistency, accessibility, and performance
-                  across the codebase.
-                </p>
+                <p className="text-base text-muted-foreground leading-relaxed mb-8">{tHardcodedUi.raw('appHomeDesignSystemPage.line2557JsxTextCodePatternsThatViolateTheDesignSystemFollow')}</p>
 
                 <div className="space-y-6">
                   <AntiPatternBlock
-                    title="AP-1: No inline style={} for fixed values"
-                    description="Bypasses the utility system, can't be purged, creates specificity issues, invisible to design system audits."
+                    title={tHardcodedUi.raw('appHomeDesignSystemPage.line2564JsxAttrTitleAp1NoInlineStyleForFixedValues')}
+                    description={tHardcodedUi.raw('appHomeDesignSystemPage.line2565JsxAttrDescriptionBypassesTheUtilitySystemCanTBePurged')}
                     bad={`<div style={{ height: '14px', overflow: 'hidden' }}>\n  Content\n</div>`}
                     good={`<div className="h-3.5 overflow-hidden">\n  Content\n</div>`}
                   />
 
                   <AntiPatternBlock
-                    title="AP-2: No arbitrary text sizes"
-                    description="Creates 1,188+ inconsistent type sizes. No semantic meaning. No relationship to the type scale."
-                    bad={`<span className="text-[10px]">Label</span>\n<span className="text-[11px]">Meta</span>\n<span className="text-[13px]">Body</span>`}
-                    good={`<span className="text-[10px]">Label</span>\n<span className="text-xs">Meta</span>\n<span className="text-sm">Body</span>`}
+                    title={tHardcodedUi.raw('appHomeDesignSystemPage.line2571JsxAttrTitleAp2NoArbitraryTextSizes')}
+                    description={tHardcodedUi.raw('appHomeDesignSystemPage.line2572JsxAttrDescriptionCreatesInconsistentTypeSizesWithNoSemanticMeaning')}
+                    bad={
+                      '<span className="text-' +
+                      '[11px]">Label</span>\n<span className="text-' +
+                      '[13.5px]">Meta</span>\n<span className="text-' +
+                      '[0.875em]">Body</span>'
+                    }
+                    good={`<span className="text-xs">Label</span>\n<span className="text-xs">Meta</span>\n<span className="text-sm">Body</span>`}
                   />
 
                   <AntiPatternBlock
-                    title="AP-3: No raw <button> elements"
-                    description="Raw buttons bypass variant system, have inconsistent sizing/padding/radius, no focus ring guarantee, no loading state support."
+                    title={tHardcodedUi.raw('appHomeDesignSystemPage.line2583JsxAttrTitleAp3NoRawButtonElements')}
+                    description={tHardcodedUi.raw('appHomeDesignSystemPage.line2584JsxAttrDescriptionRawButtonsBypassVariantSystemHaveInconsistentSizing')}
                     bad={`<button\n  className="px-3 py-1.5 rounded-lg\n    bg-neutral-100 hover:bg-neutral-200"\n  onClick={handleClick}\n>\n  Save\n</button>`}
                     good={`<Button\n  variant="secondary"\n  size="sm"\n  onClick={handleClick}\n>\n  Save\n</Button>`}
                   />
 
                   <AntiPatternBlock
-                    title="AP-4: No transition-colors"
-                    description="Animates every CSS property including width, height, padding. Causes layout thrashing. Performance killer on large lists."
+                    title={tHardcodedUi.raw('appHomeDesignSystemPage.line2590JsxAttrTitleAp4NoTransitionColors')}
+                    description={tHardcodedUi.raw('appHomeDesignSystemPage.line2591JsxAttrDescriptionAnimatesEveryCssPropertyIncludingWidthHeightPadding')}
                     bad={`<div className="transition-colors duration-200\n  hover:bg-accent">`}
                     good={`<div className="transition-colors\n  duration-moderate hover:bg-accent">`}
                   />
 
                   <AntiPatternBlock
-                    title="AP-5: No hardcoded hex colors"
-                    description="Completely bypasses the theme system. Will look wrong in non-default themes. Breaks dark mode."
+                    title={tHardcodedUi.raw('appHomeDesignSystemPage.line2597JsxAttrTitleAp5NoHardcodedHexColors')}
+                    description={tHardcodedUi.raw('appHomeDesignSystemPage.line2598JsxAttrDescriptionCompletelyBypassesTheThemeSystemWillLookWrong')}
                     bad={`<div className="text-emerald-500">\n  Success\n</div>\n<div style={{ color: '#3b82f6' }}>\n  Info\n</div>`}
                     good={`<div className="text-success">\n  Success\n</div>\n<div className="text-info">\n  Info\n</div>`}
                   />
 
                   <AntiPatternBlock
-                    title="AP-6: No clickable <div> elements"
-                    description="Not keyboard accessible. No focus ring. Not announced as interactive by screen readers."
+                    title={tHardcodedUi.raw('appHomeDesignSystemPage.line2604JsxAttrTitleAp6NoClickableDivElements')}
+                    description={tHardcodedUi.raw('appHomeDesignSystemPage.line2605JsxAttrDescriptionNotKeyboardAccessibleNoFocusRingNotAnnounced')}
                     bad={`<div\n  onClick={handler}\n  className="cursor-pointer"\n>\n  Click me\n</div>`}
                     good={`<Button\n  variant="ghost"\n  onClick={handler}\n>\n  Click me\n</Button>`}
                   />
@@ -2600,7 +2337,7 @@ export default function BrandPage() {
                       'Use unapproved color combinations',
                       'Use bold (700) for headings',
                       'Use colored or tinted backgrounds',
-                      'Use text-[Npx] arbitrary sizes',
+                      'Use arbitrary pixel text sizes',
                       'Use transition-colors on elements',
                       'Use raw <button> for interactions',
                       'Use hardcoded hex colors in components',

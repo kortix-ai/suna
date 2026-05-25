@@ -78,6 +78,10 @@ mock.module('../repositories/api-keys', () => ({
   createApiKey: async () => ({ secretKey: 'fake-token', apiKey: { keyId: 'k1' } }),
 }));
 
+mock.module('../repositories/account-tokens', () => ({
+  createAccountToken: async () => ({ secretKey: 'fake-executor-token', token: { tokenId: 'executor-token-1' } }),
+}));
+
 mock.module('../platform/providers', () => {
   const fakeProvider = {
     name: 'daytona',
@@ -191,6 +195,10 @@ describe('provisionSessionSandbox snapshot resolution', () => {
 
     expect(providerCreateCalls).toHaveLength(1);
     expect(providerCreateCalls[0].snapshot).toBe('kortix-snap-aaaa-1234567890ab');
+    expect(providerCreateCalls[0].envVars).toMatchObject({
+      KORTIX_TOKEN: 'fake-token',
+      KORTIX_EXECUTOR_TOKEN: 'fake-executor-token',
+    });
     expect(ensureBuildCalls).toHaveLength(1);
     expect(ensureBuildCalls[0].source).toBe('session-start');
   });

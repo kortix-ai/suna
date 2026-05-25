@@ -1,0 +1,139 @@
+---
+title: Triggers
+description: Cron and signed-webhook entries that spawn fresh sessions — fields, template variables, and gotchas.
+---
+
+Field-level reference for triggers. For the plain-language version, see [Automations](/docs/concepts/triggers).
+
+A trigger fires and spawns a new session that runs the rendered prompt as its initial message. The platform creates a session branch like an interactive session; the agent works, commits, pushes. Landing on `main` goes through a [change request](/docs/reference/change-requests).
+
+Triggers live in `kortix.toml` as `[[triggers]]` array entries. The manifest is the source of truth for *config*; runtime state (`last_fired_at` only — there is no fire count) lives in `project_trigger_runtime` so a fire doesn't commit on every tick. For when a trigger last fired, check the dashboard, not the repo.
+
+## Cron triggers
+
+```toml
+[[triggers]]
+slug     = "daily-digest"
+name     = "Daily digest"
+type     = "cron"
+agent    = "kortix"
+enabled  = true
+cron     = "0 0 9 * * 1-5"
+timezone = "America/Los_Angeles"
+prompt   = """
+Summarize yesterday's commits across the repo. Save the result to
+notes/digest-{{ cron.fired_at }}.md and open a CR against main.
+"""
+```
+
+`cron` is a **6-field croner expression**: `second minute hour day month weekday`. `timezone` is an IANA name (default `UTC`). The scheduler polls every 60 s (`KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS`), so sub-minute precision is best-effort.
+
+## Webhook triggers
+
+```toml
+[[triggers]]
+slug       = "slack-hook"
+name       = "Slack handler"
+type       = "webhook"
+agent      = "kortix"
+enabled    = true
+secret_env = "WEBHOOK_SLACK_SECRET"
+prompt     = "Slack event: {{ body.text }}"
+```
+
+Fires on signed `POST` requests to:
+
+```
+POST /v1/webhooks/projects/<project_id>/<slug>
+```
+
+The secret value lives in `project_secrets`; the manifest references it by name. Declare it in `[env].optional` so it shows up in the Secrets Manager.
+
+### Signature
+
+- Primary header: `X-Kortix-Signature: sha256=<hmac>`. The `sha256=` prefix is optional — the receiver strips it if present.
+- GitHub-compatible: `X-Hub-Signature-256` is also accepted, so GitHub webhooks point straight at this URL with no adapter.
+- Algorithm: HMAC-SHA256 over the **raw** request body using the secret named by `secret_env`.
+- Format: exactly 64 hex chars (mixed case accepted).
+- Compared with constant-time `timingSafeEqual`.
+
+### Response codes
+
+| Status | Meaning |
+| --- | --- |
+| 200 | Signature valid, session queued. |
+| 401 | Signature missing or mismatched. |
+| 404 | Trigger not found, disabled, or not a webhook. |
+| 409 | `secret_env` value is not configured in Secrets Manager. |
+
+## Field reference
+
+### Common fields
+
+| Field | Required | Type | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `slug` | yes | string | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers. |
+| `type` | yes | string | — | `"cron"` or `"webhook"`. |
+| `prompt` | yes | string | — | Mustache-templated body. May be multi-line via `"""…"""`. Alias: `prompt_template`. |
+| `name` | no | string | `slug` | Human label. |
+| `agent` | no | string | `"default"` | OpenCode agent name from `<config_dir>/agents/<name>.md`. Alias: `agent_name`. |
+| `enabled` | no | bool | `true` | When `false`, the scheduler / receiver skip the entry. Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
+
+### Cron-only fields
+
+| Field | Required | Type | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `cron` | yes | string | — | 6-field croner expression. Alias: `schedule`. |
+| `timezone` | no | string | `"UTC"` | IANA name, e.g. `"America/Los_Angeles"`. |
+
+### Webhook-only fields
+
+| Field | Required | Type | Notes |
+| --- | --- | --- | --- |
+| `secret_env` | yes | string | Name of a `project_secrets` entry holding the HMAC secret. Alias: `secretEnv`. Manifest-side regex is `^[A-Z_][A-Z0-9_]*$` (unbounded). |
+
+The parser accepts both alias forms; the platform serializes back with canonical names, so editing-then-saving from the UI normalizes aliases away.
+
+## Template variables
+
+`prompt` renders with a mustache-style engine: `{{ token.dotted.path }}`. Missing values render as empty strings — no error, no leftover `{{ x }}`. Objects and arrays render as JSON.
+
+The variables differ by **how the trigger fired** — there is no single combined
+set. On every fire you get `{{ trigger.slug }}`, `{{ trigger.type }}`, and
+`{{ trigger.kind }}` (always `"git"`).
+
+**Cron fires** — note there is no top-level `fired_at`; use `cron.fired_at`:
+
+| Variable | Source |
+| --- | --- |
+| `{{ cron.schedule }}` | The croner expression that fired. |
+| `{{ cron.timezone }}` | Configured tz (default `"UTC"`). |
+| `{{ cron.fired_at }}` | ISO-8601 timestamp of this fire. |
+| `{{ cron.last_fired_at }}` | Previous fire timestamp (or empty). |
+
+**Webhook fires:**
+
+| Variable | Source |
+| --- | --- |
+| `{{ fired_at }}` | ISO-8601 timestamp of this fire. |
+| `{{ body.* }}` | JSON-parsed request body (dotted access). Unparseable body → `{{ body.raw }}`. |
+| `{{ headers.content_type }}` · `{{ headers.user_agent }}` · `{{ headers.forwarded_for }}` | Request headers. |
+
+**Manual fires** (dashboard "fire now"):
+
+| Variable | Source |
+| --- | --- |
+| `{{ fired_at }}` | ISO-8601 timestamp. |
+| `{{ source }}` | `"manual"`. |
+| `{{ actor }}` | User id that fired it. |
+| `{{ message.text }}` · `{{ message.source }}` | Manual-fire context. |
+
+Missing values render as empty strings — no error, no leftover `{{ x }}`. Objects and arrays render as JSON.
+
+## Common gotchas
+
+- `[triggers]` (single brackets) is wrong — must be `[[triggers]]` (array of tables). The parser surfaces a clear error.
+- Slugs must be lowercase + URL-safe. Uppercase or spaces fail.
+- A webhook trigger without `secret_env` is rejected. There is no unauthenticated webhook surface — by design.
+- A cron trigger without a `cron` expression is rejected.
+- Bad entries surface in the listing's `errors` array next to the good ones — they don't break the whole manifest.

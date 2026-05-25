@@ -39,7 +39,7 @@ export function FileThumbnail({ filePath, fileName, className }: FileThumbnailPr
         <FileContentRenderer filePath={filePath} readOnly showHeader={false} />
       </div>
       {ext && !isImage && (
-        <span className="absolute bottom-1.5 right-1.5 text-[0.5625rem] font-medium text-muted-foreground/50 uppercase tracking-wider bg-background/80 px-1.5 py-0.5 rounded-full z-10">
+        <span className="absolute bottom-1.5 right-1.5 text-xs font-medium text-muted-foreground/50 uppercase tracking-wider bg-background/80 px-1.5 py-0.5 rounded-full z-10">
           {ext}
         </span>
       )}

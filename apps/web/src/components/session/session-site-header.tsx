@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -55,6 +57,7 @@ export function SessionSiteHeader({
   canOpenSidePanel = true,
   leadingAction,
 }: SessionSiteHeaderProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [exportOpen, setExportOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
@@ -102,7 +105,7 @@ export function SessionSiteHeader({
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" sideOffset={4}>
-                    <p>More actions</p>
+                    <p>{tHardcodedUi.raw('componentsSessionSessionSiteHeader.line105JsxTextMoreActions')}</p>
                   </TooltipContent>
                 </Tooltip>
 
@@ -114,21 +117,15 @@ export function SessionSiteHeader({
 
                   {/* View Changes */}
                   <DropdownMenuItem onClick={() => setDiffOpen(true)}>
-                    <GitCompareArrows className="mr-2 h-4 w-4" />
-                    View changes
-                  </DropdownMenuItem>
+                    <GitCompareArrows className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsSessionSessionSiteHeader.line118JsxTextViewChanges')}</DropdownMenuItem>
 
                   {/* Export transcript */}
                   <DropdownMenuItem onClick={() => setExportOpen(true)}>
-                    <FileDown className="mr-2 h-4 w-4" />
-                    Export transcript
-                  </DropdownMenuItem>
+                    <FileDown className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsSessionSessionSiteHeader.line124JsxTextExportTranscript')}</DropdownMenuItem>
 
                   {/* Compact session */}
                   <DropdownMenuItem onClick={() => setCompactOpen(true)}>
-                    <Layers className="mr-2 h-4 w-4" />
-                    Compact session
-                  </DropdownMenuItem>
+                    <Layers className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsSessionSessionSiteHeader.line130JsxTextCompactSession')}</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 
@@ -159,7 +156,7 @@ export function SessionSiteHeader({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" sideOffset={4}>
-                    <p>Open browser</p>
+                    <p>{tHardcodedUi.raw('componentsSessionSessionSiteHeader.line162JsxTextOpenBrowser')}</p>
                   </TooltipContent>
                 </Tooltip>
               )}
@@ -182,7 +179,11 @@ export function SessionSiteHeader({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" sideOffset={4}>
-                    <p>{isSidePanelOpen ? 'Close' : 'Open'} panel</p>
+                    <p className="flex items-center gap-1.5">
+                      {isSidePanelOpen ? 'Close' : 'Open'} panel
+                      <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                        {tHardcodedUi.raw('componentsSessionSessionSiteHeader.line185JsxTextI')}</kbd>
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               )}

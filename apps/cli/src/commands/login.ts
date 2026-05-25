@@ -207,7 +207,7 @@ function safeHostname(): string {
 
 /** Best-effort mapping of api.kortix.com → kortix.com for the dashboard link. */
 function webDashboardUrl(apiBase: string): string {
-  // Local dev: api at :8008 → dashboard at :3000.
+  // Local self-host: api at :8008 → dashboard at :3000.
   try {
     const url = new URL(apiBase);
     if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {

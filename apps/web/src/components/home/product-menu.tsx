@@ -80,7 +80,7 @@ export function ProductMegaMenu() {
                       </span>
                       <span className="min-w-0">
                         <span className="block text-sm font-medium text-foreground">{item.title}</span>
-                        <span className="block text-[12px] leading-snug text-muted-foreground">{item.desc}</span>
+                        <span className="block text-xs leading-snug text-muted-foreground">{item.desc}</span>
                       </span>
                     </Link>
                   );

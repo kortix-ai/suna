@@ -1,0 +1,26 @@
+---
+title: Connecting your tools
+description: How to let your agent act in the external tools and services you already use.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+**Connections** let an agent act in external tools and services on your behalf. Setup depends on the tool, and you stay in control of what's connected.
+
+## What a connection gives you
+
+A connection links a [project](/docs/concepts/projects) to an external tool so the agent can take actions there. Without one, the agent is limited to its own session environment; with one, its reach extends to the tools you allow.
+
+## Connections are per project
+
+Connections belong to a single project, like [secrets](/docs/guides/managing-secrets). Connecting a tool for one project doesn't make it available to another.
+
+## You stay in control
+
+- Nothing is connected unless you connect it.
+- You choose which tools a project can reach.
+- You can disconnect a tool when it's no longer needed.
+
+<Callout title="Under the hood">
+Some integrations are credential-based and overlap with [secrets](/docs/guides/managing-secrets) — the agent uses a stored API key or token to call the service. Where a connection needs a credential, declare it by name in the manifest and set its value in the Secrets Manager so it never lands in your repo.
+</Callout>

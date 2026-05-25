@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo } from 'react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import {
@@ -114,6 +116,7 @@ interface ChangeRequestDetailDialogProps {
 }
 
 export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetailDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const open = crId !== null;
   const detailQuery = useChangeRequest(crId);
   const diffQuery = useChangeRequestDiff(crId);
@@ -189,10 +192,10 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                   <span className="font-mono text-xs text-muted-foreground tabular-nums">
                     #{cr.number}
                   </span>
-                  <h2 className="text-[15px] font-medium leading-tight">{cr.title}</h2>
+                  <h2 className="text-sm font-medium leading-tight">{cr.title}</h2>
                   <StatusBadge status={cr.status} />
                 </div>
-                <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
+                <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
                   <GitBranch className="h-3 w-3" />
                   <span className="font-mono">{cr.head_ref}</span>
                   <span className="text-muted-foreground/60">→</span>
@@ -265,13 +268,9 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             {/* Merge state banner */}
             {cr?.status === 'open' && preview && (
               preview.is_up_to_date ? (
-                <InfoBanner tone="neutral" icon={RefreshCcw} className="px-3 py-2">
-                  This version is already at the base — nothing to merge.
-                </InfoBanner>
+                <InfoBanner tone="neutral" icon={RefreshCcw} className="px-3 py-2">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line269JsxTextThisVersionIsAlreadyAtTheBaseNothing')}</InfoBanner>
               ) : preview.can_merge ? (
-                <InfoBanner tone="success" icon={Check} className="px-3 py-2">
-                  Mergeable cleanly
-                  {preview.can_fast_forward ? ' (fast-forward)' : ' (3-way merge)'}.
+                <InfoBanner tone="success" icon={Check} className="px-3 py-2">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line273JsxTextMergeableCleanly')}{preview.can_fast_forward ? ' (fast-forward)' : ' (3-way merge)'}.
                 </InfoBanner>
               ) : (
                 <InfoBanner
@@ -279,8 +278,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                   icon={AlertTriangle}
                   className="px-3 py-2"
                   title={
-                    <>
-                      Conflicts in {preview.conflicts.length} file
+                    <>{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line283JsxTextConflictsIn')}{preview.conflicts.length} file
                       {preview.conflicts.length === 1 ? '' : 's'}
                     </>
                   }
@@ -316,7 +314,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                   <h3 className="text-xs font-medium text-foreground">
                     {diff.files.length} file{diff.files.length === 1 ? '' : 's'} changed
                   </h3>
-                  <span className="text-[11px] text-muted-foreground tabular-nums">
+                  <span className="text-xs text-muted-foreground tabular-nums">
                     <span className="text-emerald-600">+{totalLines.adds}</span>{' '}
                     <span className="text-red-600">-{totalLines.dels}</span>
                   </span>
@@ -326,7 +324,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     <div key={f.path} className="flex items-center gap-2 px-3 py-1.5 text-xs">
                       <FileStatusIcon status={f.status} />
                       <span className="font-mono text-foreground truncate">{f.path}</span>
-                      <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
+                      <span className="ml-auto text-xs text-muted-foreground tabular-nums">
                         <span className="text-emerald-600">+{f.additions}</span>{' '}
                         <span className="text-red-600">-{f.deletions}</span>
                       </span>
@@ -341,7 +339,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                         className="border-b border-border/40 last:border-b-0"
                       >
                         {chunk.path && (
-                          <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 text-[11px] font-mono text-muted-foreground border-b border-border/40">
+                          <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 text-xs font-mono text-muted-foreground border-b border-border/40">
                             {chunk.path}
                           </div>
                         )}
@@ -352,9 +350,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 )}
               </div>
             ) : (
-              <p className="rounded-2xl border border-dashed border-border/60 p-5 text-center text-xs text-muted-foreground">
-                No changes detected.
-              </p>
+              <p className="rounded-2xl border border-dashed border-border/60 p-5 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line356JsxTextNoChangesDetected')}</p>
             )}
           </div>
         </ScrollArea>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { ExternalLink, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFilesStore } from '../store/files-store';
@@ -12,6 +14,7 @@ import { FileContentRenderer } from './file-content-renderer';
  * and adds explorer-specific actions (e.g. history, open in new tab).
  */
 export function FileViewer() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const selectedFilePath = useFilesStore((s) => s.selectedFilePath);
   const openHistory = useFilesStore((s) => s.openHistory);
 
@@ -38,7 +41,7 @@ export function FileViewer() {
                 href: `/files/${encodeURIComponent(selectedFilePath)}`,
               });
             }}
-            title="Open in new tab"
+            title={tHardcodedUi.raw('featuresProjectFilesComponentsFileViewer.line41JsxAttrTitleOpenInNewTab')}
           >
             <ExternalLink className="h-4 w-4" />
           </Button>

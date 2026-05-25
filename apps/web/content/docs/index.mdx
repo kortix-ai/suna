@@ -1,69 +1,26 @@
 ---
 title: Kortix
-description: Run agents in disposable VM sandboxes against your own GitHub repos.
+description: Run agents against your own git repos in disposable cloud sandboxes, and land their work through review.
 ---
 
-Kortix is a control plane for agentic work. Each project is **one GitHub
-repo**. Each conversation runs in **one isolated VM sandbox** with that
-repo cloned onto its own ephemeral branch — the agent (OpenCode under
-the hood) can install, edit, run anything; only what it commits and
-pushes survives. The user reviews the branch and merges when ready.
+import { Card, Cards } from 'fumadocs-ui/components/card';
 
-The contract between you and the platform is a single file at your
-repo root: **`kortix.toml`**. Everything else — agent personas, skills,
-slash commands, the Dockerfile for your sandbox — lives inside a
-`.kortix/` folder next to it. That repo *is* the project. There's no
-external dashboard state, no separate "project settings" UI to keep in
-sync. Edit a file, commit, the next session picks it up.
-
-Triggers (cron + webhook), env-var spec, the sandbox image, and
-deployable apps all live in `kortix.toml` as TOML blocks. The dashboard
-just reads + writes that file via the GitHub API. You can edit it from
-inside a session, from the web UI, or from your own editor —
-round-trips cleanly either way.
-
-## Quickstart
-
-```sh
-# 1. Scaffold a new project locally
-bunx @kortix/cli init my-project
-cd my-project
-
-# 2. Push to GitHub
-git remote add origin https://github.com/you/my-project.git
-git push -u origin main
-
-# 3. Register the repo as a Kortix project (via the dashboard)
-#    and start your first session.
-```
-
-Or skip the local step entirely and use **Create new project** in the
-dashboard — it creates the GitHub repo, scaffolds the starter, registers
-the project, and opens the first session in one flow.
-
-## The shape of a Kortix repo
+Kortix runs AI agents against your own git repositories in disposable cloud
+sandboxes, then lands their work through review.
 
 ```
-my-project/
-├── kortix.toml                              ← project manifest (Kortix reads this)
-├── README.md
-└── .kortix/                                 ← everything Kortix-owned
-    ├── Dockerfile                           ← sandbox base image
-    └── opencode/                            ← opencode's config dir
-        ├── opencode.jsonc
-        ├── agents/kortix.md
-        ├── skills/kortix-system/SKILL.md
-        └── tools/show.ts
+project (git repo + kortix.toml)
+   └─ session ──> isolated sandbox VM on branch "<session-id>"
+                     └─ agent (OpenCode) commits + pushes
+                           └─ change request ──> merge ──> default branch
 ```
 
-Two paths in the manifest control where these live. Defaults are
-`.kortix/Dockerfile` and `.kortix/opencode` — relocate either if you
-need to share an opencode config across multiple repos.
+A **project** is one repo. A **session** is one agent run in an isolated sandbox
+on its own branch. A **change request** merges that work back. That's the system.
 
-## Next
-
-- **[Manifest reference](/docs/manifest)** — every field in `kortix.toml`.
-- **[Sandbox image](/docs/dockerfile)** — what the Kortix layer injects on top of your Dockerfile, and what's off-limits.
-- **[Triggers](/docs/triggers)** — cron + signed webhooks.
-- **[Sessions](/docs/sessions)** — lifecycle, branches, env vars.
-- **[Secrets](/docs/secrets)** — how `[env]` flows from manifest to sandbox.
+<Cards>
+  <Card title="Concepts" href="/docs/concepts">How it works — projects, sessions, change requests, agents, secrets, triggers, connections, channels, accounts.</Card>
+  <Card title="Reference" href="/docs/reference">Exact detail — manifest, CLI, runtime, secrets, triggers, sandbox image.</Card>
+  <Card title="Quickstart" href="/docs/quickstart">Create a project, run a session, keep the work.</Card>
+  <Card title="Guides" href="/docs/guides">Task how-tos in the dashboard.</Card>
+</Cards>

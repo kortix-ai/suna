@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * /projects/[id]/skills — Project skills browser.
  *
@@ -14,18 +16,28 @@
  * Edit button in the detail toolbar is the future hook for inline editing.
  */
 
-import { use, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
+import {
+  use,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  createFileTreeIconResolver,
+  getBuiltInFileIconColor,
+  getBuiltInSpriteSheet,
+} from '@pierre/trees';
+import {
   ExternalLink,
-  FileText,
+  Pencil,
+  Plus,
   Search,
   ShieldAlert,
   Sparkles,
 } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -48,10 +60,15 @@ import {
   type ProjectConfigSummary,
   type ProjectFileEntry,
 } from '@/lib/projects-client';
-import { FileTree, useFileTree } from '@pierre/trees/react';
-import { FILE_TREE_DEFAULT_ITEM_HEIGHT, type FileTreeSortComparator } from '@pierre/trees';
+import {
+  useConfigureThread,
+  newConfigPrompt,
+  editConfigPrompt,
+} from '@/components/projects/customize/use-configure-thread';
 
 type Skill = ProjectConfigSummary['skills'][number];
+const pierreIconResolver = createFileTreeIconResolver('complete');
+const pierreSpriteSheet = getBuiltInSpriteSheet('complete');
 
 /* ─── Page entry ────────────────────────────────────────────────────────── */
 
@@ -65,6 +82,7 @@ export default function ProjectSkillsPage({
 }
 
 export function SkillsView({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -72,7 +90,10 @@ export function SkillsView({ projectId }: { projectId: string }) {
   });
 
   const defaultBranch = detailQuery.data?.project?.default_branch ?? '';
-  const skills = detailQuery.data?.config?.skills ?? [];
+  const skills = useMemo(
+    () => detailQuery.data?.config?.skills ?? [],
+    [detailQuery.data?.config?.skills],
+  );
   const isForbidden =
     detailQuery.isError &&
     /403|forbidden/i.test((detailQuery.error as Error)?.message ?? '');
@@ -109,6 +130,7 @@ export function SkillsView({ projectId }: { projectId: string }) {
 
   const selectedSkill = skills.find((s) => s.path === selectedSkillPath) ?? null;
   const activeFilePath = selectedFilePath ?? selectedSkill?.path ?? null;
+  const startThread = useConfigureThread(projectId);
 
   // ProjectFilesProvider supplies project + ref to the shared
   // <FileContentRenderer/> in the right pane, so we get the same file
@@ -118,25 +140,32 @@ export function SkillsView({ projectId }: { projectId: string }) {
     <ProjectFilesProvider value={{ projectId, ref: defaultBranch }}>
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       {/* ── List column (skills + inline file trees) ─────────────────── */}
-      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[300px] md:border-b-0 md:border-r">
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-          <Sparkles className="h-4 w-4 text-muted-foreground" />
-          <h1 className="flex-1 text-sm font-semibold text-foreground">Skills</h1>
-          {skills.length > 0 && (
-            <Badge variant="secondary" size="sm" className="tabular-nums">
-              {skills.length}
-            </Badge>
-          )}
-        </div>
+      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[240px] md:border-b-0 md:border-r">
+        <CustomizeSectionHeader
+          icon={Sparkles}
+          title="Skills"
+          count={skills.length}
+          actions={
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => startThread(newConfigPrompt('skill'))}
+            >
+              <Plus className="h-3 w-3" />
+              New
+            </Button>
+          }
+        />
 
         <div className="border-b border-border/40 px-3 py-2.5">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <Input
-              placeholder="Search skills"
+              placeholder={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line149JsxAttrPlaceholderSearchSkills')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-8 pl-8 text-[12.5px] placeholder:text-muted-foreground/60"
+              className="h-8 pl-8 text-sm placeholder:text-muted-foreground/60"
             />
           </div>
         </div>
@@ -152,7 +181,11 @@ export function SkillsView({ projectId }: { projectId: string }) {
               onRetry={() => detailQuery.refetch()}
             />
           ) : skills.length === 0 ? (
-            <EmptyList icon={Sparkles} label="No skills yet" />
+            <EmptyList
+              icon={Sparkles}
+              label={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line168JsxAttrLabelNoSkillsYet')}
+              onCreate={() => startThread(newConfigPrompt('skill'))}
+            />
           ) : filtered.length === 0 ? (
             <NoMatches query={query} />
           ) : (
@@ -226,7 +259,7 @@ function SkillListItem({
         )}
         aria-expanded={expanded}
       >
-        <span className="truncate text-[12.5px] font-medium">{skill.name}</span>
+        <span className="truncate text-sm font-medium">{skill.name}</span>
       </button>
 
       {expanded && (
@@ -241,15 +274,6 @@ function SkillListItem({
   );
 }
 
-// SKILL.md pinned to the top of its directory level; otherwise fall through
-// to Pierre's default ordering (directories first, then files alphabetically).
-const skillSort: FileTreeSortComparator = (a, b) => {
-  if (!a.isDirectory && a.basename === 'SKILL.md') return -1;
-  if (!b.isDirectory && b.basename === 'SKILL.md') return 1;
-  if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-  return a.basename.localeCompare(b.basename);
-};
-
 function InlineSkillTree({
   projectId,
   skill,
@@ -261,6 +285,7 @@ function InlineSkillTree({
   selectedFilePath: string | null;
   onPickFile: (path: string) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const skillDir = useMemo(() => {
     const idx = skill.path.lastIndexOf('/');
     return idx > 0 ? skill.path.slice(0, idx) : skill.path;
@@ -272,8 +297,6 @@ function InlineSkillTree({
     staleTime: 30_000,
   });
 
-  // Paths fed to Pierre are skill-dir relative — that way the tree renders
-  // with the skill folder as the (implicit) root, matching the previous UI.
   const relativePaths = useMemo<readonly string[]>(() => {
     const fromApi = (filesQuery.data ?? [])
       .map((f: ProjectFileEntry) => f.path)
@@ -292,87 +315,21 @@ function InlineSkillTree({
     return rels;
   }, [filesQuery.data, skillDir, skill.path]);
 
-  // Pierre's FileTree virtualizes, so the host must have an explicit height
-  // for any row to actually paint. Skill folders are usually small (1–20
-  // entries) — size to content, with a soft cap so a huge skill folder still
-  // scrolls instead of pushing the rest of the page off-screen.
-  const visibleRowEstimate = relativePaths.length + countParentDirs(relativePaths);
-  const treeHeightPx = Math.min(
-    Math.max(visibleRowEstimate, 1) * FILE_TREE_DEFAULT_ITEM_HEIGHT,
-    320,
-  );
-
-  // `relativePaths` is captured in a ref so `onSelectionChange` (created once
-  // when the model is created) can read the current list — otherwise it
-  // closes over the empty initial array and rejects every click.
-  const relativePathsRef = useRef<readonly string[]>(relativePaths);
-  relativePathsRef.current = relativePaths;
-
-  const { model } = useFileTree({
-    paths: relativePaths,
-    initialExpansion: 'open',
-    sort: skillSort,
-    onSelectionChange: (paths) => {
-      const rel = paths[0];
-      if (!rel) return;
-      if (!relativePathsRef.current.includes(rel)) return;
-      onPickFile(`${skillDir}/${rel}`);
-    },
-  });
-
-  // CRITICAL: `useFileTree` creates the FileTree model ONCE on mount and
-  // ignores options after that (verified in @pierre/trees source). When the
-  // file listing resolves async, those new paths never reach the model —
-  // `getItem(rel)` returns null and selection silently no-ops. Imperatively
-  // syncing paths via `resetPaths()` is the only way to keep the model in
-  // step with the React state.
-  useEffect(() => {
-    model.resetPaths(relativePaths);
-  }, [relativePaths, model]);
-
-  // Drive Pierre's selection from the parent's `selectedFilePath`. Runs after
-  // the resetPaths effect above so the target path is guaranteed to exist
-  // in the model before we ask it to select.
-  useEffect(() => {
-    const rel = selectedFilePath && selectedFilePath.startsWith(skillDir + '/')
-      ? selectedFilePath.slice(skillDir.length + 1)
-      : null;
-    const current = model.getSelectedPaths()[0] ?? null;
-    if (rel === current) return;
-    if (current) model.getItem(current)?.deselect();
-    if (rel && relativePaths.includes(rel)) {
-      // `selectOnlyPath` is single-call select-and-replace, more robust than
-      // deselect-then-select against intermediate render races.
-      const handle = model.getItem(rel);
-      if (handle) handle.select();
-    }
-  }, [selectedFilePath, skillDir, relativePaths, model]);
-
-  // Pierre's tree reads `--trees-*-override` CSS vars to theme its shadow
-  // root. Map them to our Tailwind tokens so the tree blends into the
-  // customize panel: transparent background, muted text for idle rows, a
-  // crisp `bg-muted` highlight on the selected row, and a beefier per-level
-  // indent so nested files actually read as nested.
-  const pierreBlendStyle: React.CSSProperties = {
-    height: treeHeightPx,
-    '--trees-bg-override': 'transparent',
-    '--trees-bg-muted-override': 'transparent',
-    '--trees-fg-override': 'hsl(var(--foreground))',
-    '--trees-fg-muted-override': 'hsl(var(--muted-foreground))',
-    '--trees-border-color-override': 'transparent',
-    '--trees-selected-bg-override': 'hsl(var(--muted))',
-    '--trees-selected-fg-override': 'hsl(var(--foreground))',
-    '--trees-selected-focused-border-color-override': 'transparent',
-    '--trees-accent-override': 'hsl(var(--primary))',
-    // Layout — bump outer padding back to ~0 (we control it via wrapper) and
-    // push per-level indent so children of a folder are visibly inset.
-    '--trees-padding-inline-override': '0px',
-    '--trees-level-gap-override': '14px',
-    '--trees-item-padding-x-override': '8px',
-  } as React.CSSProperties;
+  const treeRows = useMemo(() => buildInlineSkillRows(relativePaths), [relativePaths]);
+  const rowHeightPx = 28;
+  const verticalPaddingPx = 8;
+  const fullTreeHeightPx = Math.max(treeRows.length, 1) * rowHeightPx + verticalPaddingPx;
+  const treeHeightPx = Math.min(fullTreeHeightPx, 280);
+  const isTreeScrollable = fullTreeHeightPx > treeHeightPx;
+  const showFades = isTreeScrollable && treeRows.length > 1;
 
   return (
-    <div className="mt-0.5 pl-3">
+    <div className="mt-1 pl-3 pr-1">
+      <span
+        className="pointer-events-none absolute h-0 w-0 overflow-hidden"
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: pierreSpriteSheet }}
+      />
       {filesQuery.isLoading && !filesQuery.data ? (
         <div className="space-y-1 py-1">
           {Array.from({ length: 2 }).map((_, i) => (
@@ -380,33 +337,158 @@ function InlineSkillTree({
           ))}
         </div>
       ) : filesQuery.isError ? (
-        <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
-          Couldn&apos;t load files.
-        </p>
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line320JsxTextCouldnAposTLoadFiles')}</p>
       ) : (
-        <FileTree model={model} style={pierreBlendStyle} />
+        <div className="relative">
+          <div
+            className="overflow-y-auto overflow-x-hidden overscroll-contain py-1"
+            style={{
+              height: treeHeightPx,
+              maxHeight: treeHeightPx,
+              contain: 'layout paint',
+            }}
+          >
+            <div className="py-0.5">
+              {treeRows.map((row) => {
+                const fullPath = row.kind === 'file' ? `${skillDir}/${row.path}` : null;
+                const selected = fullPath === selectedFilePath;
+                return (
+                  <button
+                    key={row.path}
+                    type="button"
+                    disabled={row.kind === 'directory'}
+                    onClick={() => {
+                      if (fullPath) onPickFile(fullPath);
+                    }}
+                    className={cn(
+                      'group flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left text-sm transition-colors',
+                      row.kind === 'directory'
+                        ? 'cursor-default text-muted-foreground/75'
+                        : 'text-muted-foreground hover:bg-muted/45 hover:text-foreground',
+                      selected && 'bg-muted text-foreground',
+                    )}
+                    style={{ paddingLeft: 8 + row.depth * 14 }}
+                  >
+                    <PierreTreeIcon
+                      path={row.path}
+                      kind={row.kind}
+                      className={cn(
+                        'h-4 w-4 shrink-0',
+                        row.kind === 'directory' && 'text-muted-foreground/70',
+                      )}
+                    />
+                    <span className="min-w-0 truncate">{row.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {showFades && (
+            <>
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-3 bg-gradient-to-b from-background/90 to-transparent" />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-background via-background/85 to-transparent" />
+            </>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-/** Count unique ancestor directories implied by a set of relative file paths. */
-function countParentDirs(paths: readonly string[]): number {
-  const dirs = new Set<string>();
+interface InlineSkillRow {
+  depth: number;
+  kind: 'directory' | 'file';
+  name: string;
+  path: string;
+}
+
+function buildInlineSkillRows(paths: readonly string[]): InlineSkillRow[] {
+  const dirs = new Map<string, InlineSkillRow>();
+  const files = new Map<string, InlineSkillRow>();
   for (const p of paths) {
     const parts = p.split('/');
+    const fileName = parts.at(-1);
+    if (!fileName) continue;
     for (let i = 1; i < parts.length; i++) {
-      dirs.add(parts.slice(0, i).join('/'));
+      const path = parts.slice(0, i).join('/');
+      if (!dirs.has(path)) {
+        dirs.set(path, {
+          depth: i - 1,
+          kind: 'directory',
+          name: parts[i - 1]!,
+          path,
+        });
+      }
     }
+    files.set(p, {
+      depth: parts.length - 1,
+      kind: 'file',
+      name: fileName,
+      path: p,
+    });
   }
-  return dirs.size;
+
+  const allRows = [...dirs.values(), ...files.values()];
+  allRows.sort((a, b) => {
+    if (a.kind === 'file' && a.name === 'SKILL.md') return -1;
+    if (b.kind === 'file' && b.name === 'SKILL.md') return 1;
+    const parentA = parentPath(a.path);
+    const parentB = parentPath(b.path);
+    if (parentA === parentB && a.kind !== b.kind) {
+      return a.kind === 'directory' ? -1 : 1;
+    }
+    return a.path.localeCompare(b.path);
+  });
+  return allRows;
+}
+
+function parentPath(path: string): string {
+  const idx = path.lastIndexOf('/');
+  return idx === -1 ? '' : path.slice(0, idx);
+}
+
+function PierreTreeIcon({
+  path,
+  kind,
+  className,
+}: {
+  path: string;
+  kind: InlineSkillRow['kind'];
+  className?: string;
+}) {
+  const icon =
+    kind === 'directory'
+      ? pierreIconResolver.resolveIcon('file-tree-icon-chevron')
+      : pierreIconResolver.resolveIcon('file-tree-icon-file', path);
+  const color =
+    kind === 'file' && icon.token
+      ? getBuiltInFileIconColor(icon.token)
+      : undefined;
+  const name = icon.name.replace(/^#/, '');
+  const width = icon.width ?? 16;
+  const height = icon.height ?? 16;
+
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      data-icon-name={icon.remappedFrom ?? icon.name}
+      data-icon-token={icon.token}
+      viewBox={icon.viewBox ?? `0 0 ${width} ${height}`}
+      width={width}
+      height={height}
+      style={{ color }}
+    >
+      <use href={`#${name}`} />
+    </svg>
+  );
 }
 
 /* ─── File viewer (right pane) ─────────────────────────────────────────── */
 
 function SkillFileViewer({
   projectId,
-  skill: _skill,
+  skill,
   selectedPath,
 }: {
   projectId: string;
@@ -419,7 +501,7 @@ function SkillFileViewer({
   // Markdown preview, syntax-highlighted code, JSON tree, CSV table,
   // image preview, etc. — for free, kept in sync with the file viewer.
   const fileName = selectedPath.split('/').pop() ?? selectedPath;
-  const fileHref = `/projects/${projectId}/files?path=${encodeURIComponent(selectedPath)}`;
+  const startThread = useConfigureThread(projectId);
 
   return (
     <>
@@ -428,10 +510,12 @@ function SkillFileViewer({
           {fileName}
         </span>
         <span className="text-muted-foreground/40">·</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground/70">
           {selectedPath}
         </span>
-        <DetailToolbarActions fileHref={fileHref} />
+        <DetailToolbarActions
+          onEdit={() => startThread(editConfigPrompt('skill', skill.name, skill.path))}
+        />
       </header>
 
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -449,34 +533,18 @@ function SkillFileViewer({
   );
 }
 
-function DetailToolbarActions({
-  fileHref,
-}: {
-  fileHref: string;
-}) {
-  // Copy / edit live inside the shared FileContentRenderer chrome (when
-  // showHeader is enabled there). Here we only own the "deep link to the
-  // file viewer" action, since the rest of the customize chrome shows it
-  // consistently across sections.
+function DetailToolbarActions({ onEdit }: { onEdit: () => void }) {
   return (
-    <div className="flex items-center gap-0.5">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-          >
-            <Link href={fileHref}>
-              <FileText className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-[10px]">
-          Open in file viewer
-        </TooltipContent>
-      </Tooltip>
+    <div className="flex items-center gap-1">
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 gap-1.5 px-2.5 text-xs"
+        onClick={onEdit}
+      >
+        <Pencil className="h-3.5 w-3.5" />
+        Edit with agent
+      </Button>
     </div>
   );
 }
@@ -521,20 +589,21 @@ function DetailBodySkeleton() {
 }
 
 function DetailEmpty() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
       icon={Sparkles}
-      title="Select a skill"
-      description="Pick a SKILL.md from the list to preview it."
+      title={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line590JsxAttrTitleSelectASkill')}
+      description={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line591JsxAttrDescriptionPickASkillMdFromTheListTo')}
     />
   );
 }
 
 function NoMatches({ query }: { query: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-6 text-center">
-      <p className="text-[11.5px] text-muted-foreground">
-        No matches for{' '}
+      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line600JsxTextNoMatchesFor')}{' '}
         <span className="font-mono text-foreground">{query}</span>.
       </p>
     </div>
@@ -544,45 +613,48 @@ function NoMatches({ query }: { query: string }) {
 function EmptyList({
   icon,
   label,
+  onCreate,
 }: {
   icon: Icon;
   label: string;
+  onCreate: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
       icon={icon}
       size="sm"
       title={label}
       description={
-        <>
-          Commit a{' '}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-            .kortix/opencode/skills/&lt;slug&gt;/SKILL.md
-          </code>{' '}
-          and it&apos;ll show up here.
-        </>
+        <>{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line621JsxTextCommitA')}{' '}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line623JsxTextKortixOpencodeSkillsLtSlugGtSkillMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line625JsxTextAndItAposLlShowUpHere')}</>
       }
       action={
-        <Button asChild variant="ghost" size="sm" className="gap-1.5">
-          <a
-            href="https://opencode.ai/docs/skills/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <ExternalLink className="h-3 w-3" />
-            OpenCode skills docs
-          </a>
-        </Button>
+        <div className="flex flex-col items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={onCreate}>
+            <Plus className="h-3.5 w-3.5" />
+            Create a skill
+          </Button>
+          <Button asChild variant="ghost" size="sm" className="gap-1.5">
+            <a
+              href="https://opencode.ai/docs/skills/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Docs
+            </a>
+          </Button>
+        </div>
       }
     />
   );
 }
 
 function ForbiddenNotice() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <InfoBanner icon={ShieldAlert} title="Access required">
-      No permission to read this repo.
-    </InfoBanner>
+    <InfoBanner icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line646JsxAttrTitleAccessRequired')}>{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line647JsxTextNoPermissionToReadThisRepo')}</InfoBanner>
   );
 }
 
@@ -593,14 +665,14 @@ function ErrorNotice({
   message: string;
   onRetry: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-4">
-      <p className="text-[12.5px] font-medium text-red-600 dark:text-red-400">Failed to load</p>
-      <p className="mt-1 text-[11px] text-red-600/80 dark:text-red-400/80">{message}</p>
+      <p className="text-sm font-medium text-destructive">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line661JsxTextFailedToLoad')}</p>
+      <p className="mt-1 text-xs text-destructive/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry
       </Button>
     </div>
   );
 }
-

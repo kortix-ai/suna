@@ -2,7 +2,7 @@
 #
 # install-shims.sh — generate /usr/local/bin shims for every agent CLI.
 #
-# Walks $ROOT (typically /opt/kortix/agent-cli) for *.ts files, skipping
+# Walks $ROOT (typically /opt/kortix/apps/sandbox/agent-cli) for *.ts files, skipping
 # the shared lib/ dir. For each file, writes a tiny shell shim at
 # /usr/local/bin/<basename> that execs bun on the source.
 #
@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-ROOT="${1:-/opt/kortix/agent-cli}"
+ROOT="${1:-/opt/kortix/apps/sandbox/agent-cli}"
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"
 
 if [[ ! -d "$ROOT" ]]; then

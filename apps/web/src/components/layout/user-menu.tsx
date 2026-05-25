@@ -1,11 +1,13 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * UserMenu — the ONE "you" menu.
  *
- * Pure identity: who you are, a Home shortcut, user settings, theme, and log
- * out. "Which account" lives in the sibling <AccountSwitcher> (the breadcrumb),
- * "which project" in <ProjectSwitcher> — neither belongs here.
+ * Identity-first: who you are, your current account (its name + a shortcut to
+ * its settings — not a switcher), Home/Docs shortcuts, user settings, theme, and
+ * log out. *Switching* accounts lives in the sibling <AccountSwitcher> (the
+ * breadcrumb); "which project" in <ProjectSwitcher>.
  *
  * Because this menu is mounted on every authenticated page, it still owns the
  * one cross-cutting account concern: guaranteeing a default selected account
@@ -24,6 +26,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
+  BookOpen,
   ChevronsUpDown,
   Home,
   LogOut,
@@ -44,6 +47,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -66,10 +70,6 @@ export interface UserMenuUser {
   planName?: string;
 }
 
-const isMacUA =
-  typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-const MOD = isMacUA ? '⌘' : 'Ctrl';
-
 export function UserMenu({
   user,
   variant = 'sidebar',
@@ -77,6 +77,7 @@ export function UserMenu({
   user: UserMenuUser;
   variant?: UserMenuVariant;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   // Read the context directly (not useSidebar, which throws) so the header
   // variant works where there's no SidebarProvider.
@@ -104,6 +105,9 @@ export function UserMenu({
       setSelectedAccountId(accounts[0].account_id);
     }
   }, [accountsQuery.data, selectedAccountId, setSelectedAccountId]);
+
+  const currentAccount =
+    accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ?? null;
 
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
@@ -143,7 +147,7 @@ export function UserMenu({
           'flex h-8 cursor-pointer items-center gap-2 rounded-full border border-border/50 bg-transparent pl-1 pr-2 transition-colors',
           'hover:bg-muted/40 data-[state=open]:bg-muted/50',
         )}
-        aria-label="Your menu"
+        aria-label={tHardcodedUi.raw('componentsLayoutUserMenu.line142JsxAttrAriaLabelYourMenu')}
       >
         <UserAvatar email={user.email} name={user.name} avatarUrl={user.avatar} size="sm" />
         <ChevronsUpDown className="size-3 text-muted-foreground/60" />
@@ -165,10 +169,10 @@ export function UserMenu({
           className="ring-1 ring-border/40"
         />
         <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
-          <span className="truncate text-[12px] font-medium tracking-tight text-foreground">
+          <span className="truncate text-sm font-medium tracking-tight text-foreground">
             {user.name}
           </span>
-          <span className="mt-0.5 truncate text-[10.5px] text-muted-foreground/80">
+          <span className="mt-0.5 truncate text-xs text-muted-foreground/80">
             {user.email}
           </span>
         </div>
@@ -189,8 +193,8 @@ export function UserMenu({
         <div className="flex items-center gap-2.5 px-3 pt-3 pb-2.5">
           <UserAvatar email={user.email} name={user.name} avatarUrl={user.avatar} size="md" />
           <div className="min-w-0 flex-1 leading-tight">
-            <div className="truncate text-[13px] font-medium text-foreground">{user.name}</div>
-            <div className="mt-0.5 truncate text-[11px] text-muted-foreground/80">{user.email}</div>
+            <div className="truncate text-sm font-medium text-foreground">{user.name}</div>
+            <div className="mt-0.5 truncate text-xs text-muted-foreground/80">{user.email}</div>
           </div>
           {user.planName && (
             <Badge size="sm" variant="secondary" className="shrink-0 font-semibold uppercase tracking-[0.06em]">
@@ -201,6 +205,36 @@ export function UserMenu({
 
         <Divider />
 
+        {/* Current account — orientation + a shortcut to its settings. This is
+            NOT a switcher; switching accounts lives in the header breadcrumb. */}
+        {currentAccount && (
+          <>
+            <div className="p-1">
+              <DropdownMenuItem
+                onSelect={() =>
+                  deferAfterClose(() => router.push(`/accounts/${currentAccount.account_id}`))
+                }
+                className={cn(
+                  'flex h-11 cursor-pointer items-center gap-2.5 rounded-lg px-2 py-0 text-left',
+                  '[&_svg:not([class*=size-])]:size-3.5 [&_svg]:!text-muted-foreground/70',
+                )}
+              >
+                <EntityAvatar label={currentAccount.name} size="sm" />
+                <div className="min-w-0 flex-1 leading-tight">
+                  <div className="truncate text-sm font-medium text-foreground">
+                    {currentAccount.name}
+                  </div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground/70">
+                    Account settings
+                  </div>
+                </div>
+                <SettingsIcon className="size-3.5" />
+              </DropdownMenuItem>
+            </div>
+            <Divider />
+          </>
+        )}
+
         {/* One action group — kept divider-light by design. */}
         <div className="p-1">
           <ActionRow
@@ -209,15 +243,19 @@ export function UserMenu({
             onSelect={() => deferAfterClose(() => router.push('/projects'))}
           />
           <ActionRow
+            icon={<BookOpen className="size-3.5" />}
+            label="Docs"
+            onSelect={() => deferAfterClose(() => router.push('/docs'))}
+          />
+          <ActionRow
             icon={<SettingsIcon className="size-3.5" />}
-            label="User settings"
-            shortcut={`${MOD},`}
+            label={tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
             onSelect={() => openUserSettings('general')}
           />
 
           {/* Theme — inline segmented control, pill radius (on-brand). */}
           <div className="flex h-8 items-center justify-between rounded-lg px-2">
-            <span className="text-[12.5px] font-medium text-foreground/85">Theme</span>
+            <span className="text-sm font-medium text-foreground/85">Theme</span>
             <div
               role="radiogroup"
               aria-label="Theme"
@@ -250,7 +288,7 @@ export function UserMenu({
 
           <ActionRow
             icon={<LogOut className="size-3.5" />}
-            label="Log out"
+            label={tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
             onSelect={handleLogout}
           />
         </div>
@@ -307,9 +345,9 @@ function ActionRow({
       )}
     >
       {icon}
-      <span className="flex-1 truncate text-[12.5px] font-medium leading-tight">{label}</span>
+      <span className="flex-1 truncate text-sm font-medium leading-tight">{label}</span>
       {shortcut && (
-        <kbd className="rounded bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground/70">
+        <kbd className="rounded bg-muted/60 px-1.5 py-0.5 text-xs font-medium tabular-nums text-muted-foreground/70">
           {shortcut}
         </kbd>
       )}

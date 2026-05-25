@@ -200,6 +200,7 @@ export interface CreateProjectRepoInput {
   installation_id?: string;
   private?: boolean;
   description?: string;
+  starter_template?: 'general-knowledge-worker' | 'minimal';
 }
 
 export interface ProvisionProjectInput {
@@ -207,6 +208,7 @@ export interface ProvisionProjectInput {
   name: string;
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
+  starter_template?: 'general-knowledge-worker' | 'minimal';
 }
 
 export interface ProjectGitConnection {
@@ -287,19 +289,37 @@ export interface GitHubInstallationsResponse extends GitHubInstallationStatus {
   installations: GitHubInstallationStatus[];
 }
 
+/**
+ * The per-user view of one secret KEY: the shared/project row merged with the
+ * requesting member's own override, plus which one wins for them at runtime.
+ */
 export interface ProjectSecret {
-  secret_id: string;
-  project_id: string;
   name: string;
+  project_id: string;
+  /** Shared row id; null when only a personal override (or nothing) exists. */
+  secret_id: string | null;
   created_by: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
   system?: boolean;
   readonly?: boolean;
   purpose?: string | null;
-  configured?: boolean;
   can_rotate?: boolean;
   managed_by?: string | null;
+  /** A shared/project value is set. */
+  configured: boolean;
+  /** Persisted share scope — 'project' (everyone) or 'restricted' (allow-list). */
+  share_scope?: 'project' | 'restricted';
+  /** Who can use the shared value. Same shape as connector sharing. */
+  sharing?: ConnectorSharing | null;
+  /** The shared value reaches me (project-wide, or I'm in the allow-list). */
+  usable_by_me: boolean;
+  /** My own per-key override (value never returned), and whether it's active. */
+  mine: { active: boolean; updated_at: string } | null;
+  /** What actually runs in my sessions for this key. */
+  effective_source: 'mine' | 'shared' | 'none';
+  /** I'm allowed to edit the shared row (project manager). */
+  can_manage_shared: boolean;
 }
 
 function unwrap<T>(response: { data?: T; success: boolean; error?: Error }) {
@@ -544,6 +564,8 @@ export async function detachGroupFromProject(projectId: string, groupId: string)
 
 export interface ProjectSecretsResponse {
   items: ProjectSecret[];
+  /** Whether the requesting member can edit shared rows (vs only their own overrides). */
+  can_manage?: boolean;
   /** Env keys declared as required in the project's kortix.toml manifest. */
   required: string[];
   /** Env keys declared as optional in the project's kortix.toml manifest. */
@@ -572,13 +594,41 @@ export async function upsertProjectSecret(
   projectId: string,
   input: {
     name: string;
-    value: string;
+    /** Omit to change sharing only on an existing secret (value left untouched). */
+    value?: string;
+    sharing?: ConnectorSharing;
   },
 ) {
   return unwrap(
     await backendApi.post<ProjectSecret>(
       `/projects/${projectId}/secrets`,
       input,
+    ),
+  );
+}
+
+export async function startProjectChatGptHeadlessAuth(projectId: string) {
+  return unwrap(
+    await backendApi.post<{
+      authId: string;
+      url: string;
+      instructions: string;
+      code: string | null;
+    }>(
+      `/projects/${projectId}/providers/openai/chatgpt/headless/start`,
+      {},
+    ),
+  );
+}
+
+export async function completeProjectChatGptHeadlessAuth(
+  projectId: string,
+  input: { authId: string; sharing?: ConnectorSharing },
+) {
+  return unwrap(
+    await backendApi.post<ProjectSecret>(
+      `/projects/${projectId}/providers/openai/chatgpt/headless/complete`,
+      { auth_id: input.authId, sharing: input.sharing },
     ),
   );
 }
@@ -604,10 +654,196 @@ export async function deleteProjectSecret(projectId: string, name: string) {
   );
 }
 
+/**
+ * Set/update the caller's OWN per-key override ("use mine") and/or flip whether
+ * it's active. Any project member may call this; it never touches the shared
+ * value or anyone else's override.
+ */
+export async function setPersonalProjectSecret(
+  projectId: string,
+  name: string,
+  input: { value?: string; active?: boolean },
+) {
+  return unwrap(
+    await backendApi.put<ProjectSecret>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
+      input,
+    ),
+  );
+}
+
+/** Remove the caller's own override for a key (falls back to the shared value). */
+export async function deletePersonalProjectSecret(projectId: string, name: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
+    ),
+  );
+}
+
+// ─── Executor connectors ──────────────────────────────────────────────────
+
+export interface ConnectorAction {
+  path: string;
+  name: string;
+  description: string;
+  risk: 'read' | 'write' | 'destructive';
+  inputSchema: Record<string, unknown> | null;
+}
+
+export type ConnectorSharing =
+  | { mode: 'project' }
+  | { mode: 'private'; ownerId: string }
+  | { mode: 'members'; memberIds?: string[]; groupIds?: string[] };
+
+export interface AdminConnector {
+  slug: string;
+  name: string;
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+  status: 'active' | 'disabled' | 'needs_auth' | 'error';
+  /** Credential storage model — one shared project credential vs each member's own. */
+  credentialMode: 'shared' | 'per_user';
+  actions: ConnectorAction[];
+  authSecret: string | null;
+  sharing: ConnectorSharing | null;
+  secretSet: boolean;
+}
+
+export interface ConnectorsResponse {
+  connectors: AdminConnector[];
+}
+
+export interface ConnectorSyncResult {
+  synced: number;
+  errors: Array<{ slug: string; error: string }>;
+}
+
+export async function listConnectors(projectId: string) {
+  return unwrap(
+    await backendApi.get<ConnectorsResponse>(`/executor/projects/${projectId}/connectors`),
+  );
+}
+
+export async function syncConnectors(projectId: string) {
+  return unwrap(
+    await backendApi.post<ConnectorSyncResult>(`/executor/projects/${projectId}/connectors/sync`, {}),
+  );
+}
+
+export async function setConnectorSharing(
+  projectId: string,
+  slug: string,
+  intent: ConnectorSharing,
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sharing`,
+      intent,
+    ),
+  );
+}
+
+export async function pipedreamConnect(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.post<{ token?: string; app?: string; connectUrl?: string }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
+      {},
+    ),
+  );
+}
+
+export interface ConnectorDraftInput {
+  slug: string;
+  name?: string;
+  provider: AdminConnector['provider'];
+  app?: string;
+  account?: string;
+  url?: string;
+  transport?: 'http' | 'sse';
+  endpoint?: string;
+  baseUrl?: string;
+  spec?: string;
+  /** Credential storage mode. */
+  credential?: 'shared' | 'per_user';
+  /** Access — who can use it (applied after create). */
+  sharing?: ConnectorSharing;
+  auth?: {
+    type?: 'none' | 'bearer' | 'basic' | 'custom';
+    in?: 'header' | 'query';
+    name?: string;
+    prefix?: string;
+  };
+}
+
+export async function createConnector(projectId: string, draft: ConnectorDraftInput) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors`,
+      draft,
+    ),
+  );
+}
+
+export async function deleteConnector(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}`,
+    ),
+  );
+}
+
+export interface PipedreamApp {
+  slug: string;
+  name: string;
+  description: string | null;
+  imgSrc: string | null;
+  categories: string[];
+}
+
+export async function listPipedreamApps(projectId: string, q?: string, cursor?: string) {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (cursor) params.set('cursor', cursor);
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<{ apps: PipedreamApp[]; nextCursor?: string; hasMore: boolean }>(
+      `/executor/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+export async function setConnectorCredential(projectId: string, slug: string, value: string) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
+      { value },
+    ),
+  );
+}
+
+export async function pipedreamFinalize(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.post<{ connected: boolean; accountId?: string }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
+      {},
+    ),
+  );
+}
+
 // ─── Sandbox snapshots ────────────────────────────────────────────────────
 
 /** Build status of a project's Daytona snapshot row. */
 export type ProjectSnapshotStatus = 'queued' | 'building' | 'ready' | 'failed';
+
+/** Classified reason a snapshot build failed (see apps/api/.../error-classify.ts). */
+export type SnapshotErrorCategory =
+  | 'dockerfile'
+  | 'tunnel'
+  | 'provider'
+  | 'timeout'
+  | 'runtime'
+  | 'git'
+  | 'unknown';
 
 export interface ProjectSnapshot {
   snapshot_row_id: string;
@@ -618,9 +854,43 @@ export interface ProjectSnapshot {
   snapshot_id: string | null;
   status: ProjectSnapshotStatus;
   error: string | null;
+  /** Classified category when `error` is set; null otherwise. */
+  error_category: SnapshotErrorCategory | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+/** Project-level sandbox health summary for the sidebar alert + panel banner. */
+export interface ProjectSandboxHealth {
+  branch: string;
+  provider: string;
+  /** Retained ready snapshots (any runtime) — kept as fallbacks. */
+  ready_count: number;
+  /** Ready snapshots matching the current runtime — bootable for HEAD without a rebuild. */
+  bootable_count: number;
+  /** Total snapshot rows (any status); 0 means the project never built. */
+  total_count: number;
+  /** Configured retention target. */
+  retention: number;
+  /** ≥1 retained ready snapshot exists → a session can boot (possibly an older runtime). */
+  healthy: boolean;
+  /** A build is in flight, or a ready snapshot is rebuilding in place. */
+  building: boolean;
+  /** True only the very first time a project builds (no ready snapshot ever). */
+  first_build: boolean;
+  /** Retained ready snapshots exist but none match the current runtime — refresh pending. */
+  runtime_outdated: boolean;
+  latest_ready_commit_sha: string | null;
+  latest_status: ProjectSnapshotStatus | null;
+  /** Present when the most recent build for the branch failed. */
+  failure: {
+    commit_sha: string;
+    error: string;
+    category: SnapshotErrorCategory;
+    fixable_by_agent: boolean;
+    failed_at: string;
+  } | null;
 }
 
 export interface ProjectSnapshotsResponse {
@@ -630,6 +900,8 @@ export interface ProjectSnapshotsResponse {
   head_commit_sha: string | null;
   /** Error string when head_commit_sha is null (e.g. GitHub App not installed). */
   head_resolve_error: string | null;
+  /** Project-level health summary (null only if the API couldn't compute it). */
+  health: ProjectSandboxHealth | null;
 }
 
 export interface RebuildSnapshotResponse {
@@ -646,10 +918,34 @@ export async function listProjectSnapshots(projectId: string) {
   );
 }
 
+/** Lightweight, DB-only sandbox health — cheap enough to poll from the sidebar. */
+export async function getProjectSandboxHealth(projectId: string) {
+  return unwrap(
+    await backendApi.get<ProjectSandboxHealth>(
+      `/projects/${projectId}/sandbox-health`,
+    ),
+  );
+}
+
 export async function rebuildProjectSnapshot(projectId: string) {
   return unwrap(
     await backendApi.post<RebuildSnapshotResponse>(
       `/projects/${projectId}/snapshots/rebuild`,
+      {},
+    ),
+  );
+}
+
+/**
+ * Spin up a session pre-seeded with the latest snapshot build failure so an
+ * agent can diagnose + fix it and open a change request. Returns the new
+ * session id (navigate to it). Throws if there's no failed build, or no ready
+ * snapshot to run the fix in (cold first-build failure).
+ */
+export async function fixSandboxWithAgent(projectId: string) {
+  return unwrap(
+    await backendApi.post<{ session_id: string }>(
+      `/projects/${projectId}/snapshots/fix-with-agent`,
       {},
     ),
   );
@@ -1097,20 +1393,55 @@ export interface ProjectSession {
   opencode_session_id: string | null;
   /**
    * Session title, mirrored from opencode's session.title via
-   * /v1/projects/sync-opencode-titles. Backed by metadata.name in the DB.
+   * /v1/projects/sync-opencode-sessions. Backed by metadata.name in the DB.
    */
   name: string | null;
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
   metadata: Record<string, unknown>;
+  opencode_sessions: ProjectOpenCodeSession[];
+  // Ownership + org-visibility (Phase 2 session sharing).
+  created_by?: string | null;
+  owner_email?: string | null;
+  visibility?: 'private' | 'project' | 'restricted';
+  sharing?: ConnectorSharing | null;
+  is_owner?: boolean;
+  can_manage_sharing?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProjectOpenCodeSession {
+  id: string;
+  title: string | null;
+  parent_id: string | null;
+  project_id: string | null;
+  created_at: number | null;
+  updated_at: number | null;
+  archived_at: number | null;
 }
 
 export async function listProjectSessions(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions`),
+  );
+}
+
+/**
+ * Set who can see/open a session (private | project | members). Owner or
+ * project manager only. Reuses the connector/secret sharing intent shape.
+ */
+export async function setProjectSessionSharing(
+  projectId: string,
+  sessionId: string,
+  intent: ConnectorSharing,
+) {
+  return unwrap(
+    await backendApi.put<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}/sharing`,
+      intent,
+    ),
   );
 }
 
@@ -1122,6 +1453,35 @@ export async function createProjectSession(
     await backendApi.post<ProjectSession>(
       `/projects/${projectId}/sessions`,
       input ?? {},
+    ),
+  );
+}
+
+export async function getProjectSession(
+  projectId: string,
+  sessionId: string,
+) {
+  return unwrap(
+    await backendApi.get<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+    ),
+  );
+}
+
+export async function updateProjectSession(
+  projectId: string,
+  sessionId: string,
+  input: {
+    name?: string;
+    opencode_session_id?: string;
+    opencodeSessionId?: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  return unwrap(
+    await backendApi.patch<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+      input,
     ),
   );
 }
@@ -1149,18 +1509,37 @@ export async function restartProjectSession(
   );
 }
 
-export interface SyncOpencodeTitleEntry {
-  opencode_session_id: string;
-  title: string | null;
+/**
+ * Wake a sandbox the provider auto-stopped while idle. Cheap status no-op when
+ * it's running; starts it in the background when stopped. Fire on session open
+ * so an idled sandbox warms immediately instead of spinning the health poll.
+ */
+export async function wakeProjectSession(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.post<{ status: 'running' | 'waking' | 'unknown' }>(
+      `/projects/${projectId}/sessions/${sessionId}/wake`,
+      {},
+    ),
+  );
 }
 
-export async function syncOpencodeSessionTitles(
-  entries: SyncOpencodeTitleEntry[],
+export interface SyncOpencodeSessionEntry {
+  opencode_session_id: string;
+  title: string | null;
+  parent_id?: string | null;
+  project_id?: string | null;
+  created_at?: number | null;
+  updated_at?: number | null;
+  archived_at?: number | null;
+}
+
+export async function syncOpencodeSessionData(
+  entries: SyncOpencodeSessionEntry[],
 ) {
   if (entries.length === 0) return { updated: 0 };
   return unwrap(
     await backendApi.post<{ updated: number }>(
-      `/projects/sync-opencode-titles`,
+      `/projects/sync-opencode-sessions`,
       { entries },
     ),
   );

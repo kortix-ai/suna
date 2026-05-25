@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,10 +20,11 @@ import { listAccounts, type KortixAccount } from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 export default function AccountsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
-  const { selectedAccountId } = useCurrentAccountStore();
+  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
@@ -35,21 +38,21 @@ export default function AccountsPage() {
     staleTime: 60_000,
   });
 
-  // Personal first, then alpha. One flat list — the distinction is just a badge.
-  const sortedAccounts = useMemo(
-    () => {
-      const accounts = accountsQuery.data ?? [];
-      return [...accounts].sort((a, b) => {
-        if (a.personal_account && !b.personal_account) return -1;
-        if (!a.personal_account && b.personal_account) return 1;
-        return (a.name || '').localeCompare(b.name || '');
-      });
-    },
-    [accountsQuery.data],
-  );
+  const sortedAccounts = useMemo(() => {
+    const accounts = accountsQuery.data ?? [];
+    return [...accounts].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || ''),
+    );
+  }, [accountsQuery.data]);
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return (
+      <ConnectingScreen
+        forceConnecting
+        overrideStage="auth"
+        hideWorkspacePicker
+      />
+    );
   }
 
   return (
@@ -63,16 +66,22 @@ export default function AccountsPage() {
             className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Back to projects
+            {tHardcodedUi.raw('appAccountsPage.line66JsxTextBackToProjects')}
           </button>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Accounts</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Accounts you belong to.</p>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                Accounts
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {tHardcodedUi.raw(
+                  'appAccountsPage.line71JsxTextAccountsYouBelongTo',
+                )}
+              </p>
             </div>
             <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />
-              New account
+              {tHardcodedUi.raw('appAccountsPage.line75JsxTextNewAccount')}
             </Button>
           </div>
 
@@ -98,7 +107,9 @@ export default function AccountsPage() {
                     key={account.account_id}
                     account={account}
                     active={account.account_id === selectedAccountId}
-                    onClick={() => router.push(`/accounts/${account.account_id}`)}
+                    onClick={() =>
+                      router.push(`/accounts/${account.account_id}`)
+                    }
                   />
                 ))}
               </List>
@@ -110,10 +121,26 @@ export default function AccountsPage() {
       <CreateAccountModal
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={() => {
-          // Stay on /accounts and refresh the list so the new account shows up
-          // immediately — no manual hard refresh, no redirect to /projects.
-          queryClient.invalidateQueries({ queryKey: ['accounts'] });
+        onCreated={(account) => {
+          queryClient.setQueryData<KortixAccount[]>(
+            ['accounts'],
+            (accounts) => {
+              const current = accounts ?? [];
+              return current.some(
+                (item) => item.account_id === account.account_id,
+              )
+                ? current.map((item) =>
+                    item.account_id === account.account_id ? account : item,
+                  )
+                : [account, ...current];
+            },
+          );
+          void queryClient.invalidateQueries({ queryKey: ['accounts'] });
+          setSelectedAccountId(account.account_id);
+          void queryClient.invalidateQueries({
+            queryKey: ['projects', account.account_id],
+          });
+          router.replace('/projects');
         }}
       />
     </div>
@@ -129,7 +156,7 @@ function AccountRow({
   active: boolean;
   onClick: () => void;
 }) {
-  const label = account.name || (account.personal_account ? 'Personal' : 'Account');
+  const label = account.name || 'Account';
   return (
     <ListRow
       onClick={onClick}
@@ -137,11 +164,6 @@ function AccountRow({
       title={label}
       badges={
         <>
-          {account.personal_account && (
-            <Badge variant="outline" size="sm">
-              Personal
-            </Badge>
-          )}
           {active && (
             <Badge variant="outline" size="sm">
               <Check />
@@ -149,11 +171,6 @@ function AccountRow({
             </Badge>
           )}
         </>
-      }
-      subtitle={
-        <span className="text-xs capitalize text-muted-foreground">
-          {account.account_role || 'owner'}
-        </span>
       }
       trailing={
         <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />

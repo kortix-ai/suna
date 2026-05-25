@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 // Groups tab on the account page. List + create + delete + navigate to
 // detail. Mirrors Cloudflare's "User Groups" surface.
 
@@ -48,6 +50,7 @@ interface GroupsTabProps {
 }
 
 export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -84,13 +87,11 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
   return (
     <SectionCard
       title="Groups"
-      description="Bundle members together and grant permission policies to the whole group."
+      description={tHardcodedUi.raw('componentsIamGroupsTab.line87JsxAttrDescriptionBundleMembersTogetherAndGrantPermissionPoliciesTo')}
       action={
         canCreate && (
           <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            Create a group
-          </Button>
+            <Plus className="h-4 w-4" />{tHardcodedUi.raw('componentsIamGroupsTab.line92JsxTextCreateAGroup')}</Button>
         )
       }
       flush
@@ -101,7 +102,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by user group name..."
+            placeholder={tHardcodedUi.raw('componentsIamGroupsTab.line104JsxAttrPlaceholderSearchByUserGroupName')}
             className="h-9 pl-9"
           />
         </div>
@@ -111,7 +112,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
         <div className="px-6 py-5">
           <InfoBanner
             tone="destructive"
-            title="Failed to load groups"
+            title={tHardcodedUi.raw('componentsIamGroupsTab.line114JsxAttrTitleFailedToLoadGroups')}
             action={
               <Button
                 variant="outline"
@@ -156,11 +157,11 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
         <div className="overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border/60 bg-muted/20 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              <tr className="border-b border-border/60 bg-muted/20 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 <th className="px-6 py-2.5 font-medium">Name</th>
                 <th className="px-3 py-2.5 font-medium">Source</th>
                 <th className="px-3 py-2.5 font-medium">Members</th>
-                <th className="px-3 py-2.5 font-medium">Permission policies</th>
+                <th className="px-3 py-2.5 font-medium">{tHardcodedUi.raw('componentsIamGroupsTab.line163JsxTextPermissionPolicies')}</th>
                 <th className="w-12 px-3 py-2.5" />
               </tr>
             </thead>
@@ -215,9 +216,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
                             onSelect={() => setDeleteTarget(g)}
                             className="gap-2"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Delete group
-                          </DropdownMenuItem>
+                            <Trash2 className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsIamGroupsTab.line219JsxTextDeleteGroup')}</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )}
@@ -240,13 +239,13 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        title="Delete group"
+        title={tHardcodedUi.raw('componentsIamGroupsTab.line243JsxAttrTitleDeleteGroup')}
         description={
           deleteTarget
             ? `Delete "${deleteTarget.name}"? Any permission policies attached to this group will be removed.`
             : ''
         }
-        confirmLabel="Delete group"
+        confirmLabel={tHardcodedUi.raw('componentsIamGroupsTab.line249JsxAttrConfirmlabelDeleteGroup')}
         isPending={deleteMutation.isPending}
         onConfirm={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.group_id);
@@ -265,6 +264,7 @@ function CreateGroupDialog({
   onOpenChange: (open: boolean) => void;
   accountId: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const router = useRouter();
   const [name, setName] = useState('');
@@ -304,18 +304,13 @@ function CreateGroupDialog({
     >
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">
-            Create a group
-          </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            Groups bundle members together. Attach permission policies to the
-            group so every member inherits them.
-          </DialogDescription>
+          <DialogTitle className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('componentsIamGroupsTab.line308JsxTextCreateAGroup')}</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsIamGroupsTab.line311JsxTextGroupsBundleMembersTogetherAttachPermissionPoliciesTo')}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="space-y-4 px-6 py-5">
             <div className="space-y-1.5">
-              <Label htmlFor="group-name">Group name</Label>
+              <Label htmlFor="group-name">{tHardcodedUi.raw('componentsIamGroupsTab.line318JsxTextGroupName')}</Label>
               <Input
                 id="group-name"
                 value={name}
@@ -336,7 +331,7 @@ function CreateGroupDialog({
                 id="group-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Engineers shipping the platform"
+                placeholder={tHardcodedUi.raw('componentsIamGroupsTab.line339JsxAttrPlaceholderEngineersShippingThePlatform')}
                 maxLength={256}
                 disabled={createMutation.isPending}
               />
@@ -356,9 +351,7 @@ function CreateGroupDialog({
               disabled={!name.trim() || createMutation.isPending}
               className="gap-1.5"
             >
-              {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Create group
-            </Button>
+              {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}{tHardcodedUi.raw('componentsIamGroupsTab.line360JsxTextCreateGroup')}</Button>
           </div>
         </form>
       </DialogContent>

@@ -10,14 +10,13 @@ import { C, status } from '../style.ts';
 const HELP = `Usage: kortix uninstall [options]
 
 Remove the Kortix CLI binary, the /usr/local/bin shim, the stored auth
-token, and (optionally) the legacy ~/.kortix install directory.
+token, and (optionally) the ~/.kortix install directory.
 
 Options:
   -y, --yes        Skip the confirmation prompt.
   --keep-auth      Don't delete ~/.config/kortix/auth.json.
   --keep-home      Don't touch ~/.kortix/ — only remove the binary +
-                   symlink. Use this if you still self-host the legacy
-                   Docker Compose stack.
+                   symlink.
   -h, --help       Show this help.
 `;
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo } from "react";
 import { 
   Box, 
@@ -34,6 +36,7 @@ import {
 import { LegacyBanner } from "@/components/admin/legacy-banner";
 
 export default function SandboxPoolAdminPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [createCount, setCreateCount] = useState(1);
 
   const { data: health, isLoading: healthLoading } = useSandboxPoolHealth();
@@ -133,7 +136,7 @@ export default function SandboxPoolAdminPage() {
   return (
     <div className="flex flex-col min-h-screen bg-background">
       <div className="max-w-7xl mx-auto px-6 pt-6 w-full">
-        <LegacyBanner feature="Sandbox pool" />
+        <LegacyBanner feature={tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line136JsxAttrFeatureSandboxPool')} />
       </div>
       {/* Header */}
       <div className="flex-none border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
@@ -144,10 +147,8 @@ export default function SandboxPoolAdminPage() {
                 <Server className="w-6 h-6 text-primary" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold tracking-tight">Sandbox Pool</h1>
-                <p className="text-sm text-muted-foreground">
-                  Real-time pool monitoring and management
-                </p>
+                <h1 className="text-2xl font-bold tracking-tight">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line147JsxTextSandboxPool')}</h1>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line149JsxTextRealTimePoolMonitoringAndManagement')}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -165,7 +166,7 @@ export default function SandboxPoolAdminPage() {
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-amber-400 mt-0.5" />
                   <div>
-                    <p className="font-medium text-amber-400">Issues Detected</p>
+                    <p className="font-medium text-amber-400">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line168JsxTextIssuesDetected')}</p>
                     <ul className="mt-1 space-y-0.5">
                       {health.issues.map((issue, i) => (
                         <li key={i} className="text-sm text-muted-foreground">• {issue}</li>
@@ -182,12 +183,12 @@ export default function SandboxPoolAdminPage() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Pool Size</p>
+                    <p className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line185JsxTextPoolSize')}</p>
                     <p className="text-4xl font-bold tracking-tight mt-1">
                       {isLoading ? "..." : stats?.pool_size ?? 0}
                     </p>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {stats?.config?.min_size ?? "-"} min / {stats?.config?.max_size ?? "-"} max
+                      {stats?.config?.min_size ?? "-"}{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line190JsxTextMin')}{stats?.config?.max_size ?? "-"} max
                     </p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center">
@@ -205,13 +206,11 @@ export default function SandboxPoolAdminPage() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Created</p>
+                    <p className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line208JsxTextTotalCreated')}</p>
                     <p className="text-4xl font-bold tracking-tight mt-1">
                       {isLoading ? "..." : stats?.total_created ?? 0}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Since service start
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line213JsxTextSinceServiceStart')}</p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center">
                     <Plus className="w-6 h-6 text-secondary" />
@@ -224,12 +223,11 @@ export default function SandboxPoolAdminPage() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Claimed</p>
+                    <p className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line227JsxTextTotalClaimed')}</p>
                     <p className="text-4xl font-bold tracking-tight mt-1">
                       {isLoading ? "..." : stats?.total_claimed ?? 0}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Hit rate: {stats?.pool_hit_rate?.toFixed(1) ?? 0}%
+                    <p className="text-xs text-muted-foreground mt-2">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line232JsxTextHitRate')}{stats?.pool_hit_rate?.toFixed(1) ?? 0}%
                     </p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center">
@@ -243,7 +241,7 @@ export default function SandboxPoolAdminPage() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Avg Claim Time</p>
+                    <p className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line246JsxTextAvgClaimTime')}</p>
                     <p className="text-4xl font-bold tracking-tight mt-1">
                       {isLoading ? "..." : `${stats?.avg_claim_time_ms?.toFixed(0) ?? 0}`}
                       <span className="text-lg font-normal text-muted-foreground">ms</span>
@@ -264,10 +262,8 @@ export default function SandboxPoolAdminPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-secondary" />
-                  Quick Actions
-                </CardTitle>
-                <CardDescription>Emergency controls and pool management</CardDescription>
+                  <Zap className="w-5 h-5 text-secondary" />{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line268JsxTextQuickActions')}</CardTitle>
+                <CardDescription>{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line270JsxTextEmergencyControlsAndPoolManagement')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-3 gap-3">
@@ -318,7 +314,7 @@ export default function SandboxPoolAdminPage() {
                 </div>
 
                 <div className="pt-4 border-t border-border">
-                  <p className="text-sm font-medium mb-3">Force Create Sandboxes</p>
+                  <p className="text-sm font-medium mb-3">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line321JsxTextForceCreateSandboxes')}</p>
                   <div className="flex items-center gap-3">
                     <Input
                       type="number"
@@ -350,7 +346,7 @@ export default function SandboxPoolAdminPage() {
                   <Settings className="w-5 h-5 text-secondary" />
                   Configuration
                 </CardTitle>
-                <CardDescription>Current pool service settings</CardDescription>
+                <CardDescription>{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line353JsxTextCurrentPoolServiceSettings')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
@@ -359,15 +355,15 @@ export default function SandboxPoolAdminPage() {
                     <p className="text-sm font-semibold">{stats?.config?.enabled ? "Enabled" : "Disabled"}</p>
                   </div>
                   <div className="space-y-1 p-3 rounded-2xl border border-border">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Check Interval</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line362JsxTextCheckInterval')}</p>
                     <p className="text-sm font-semibold">{stats?.config?.check_interval ?? "-"}s</p>
                   </div>
                   <div className="space-y-1 p-3 rounded-2xl border border-border">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Max Age</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line366JsxTextMaxAge')}</p>
                     <p className="text-sm font-semibold">{stats?.config?.max_age ? `${Math.round(stats.config.max_age / 60)}min` : "-"}</p>
                   </div>
                   <div className="space-y-1 p-3 rounded-2xl border border-border">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Replenish At</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line370JsxTextReplenishAt')}</p>
                     <p className="text-sm font-semibold">
                       {stats?.config?.replenish_threshold && stats?.config?.min_size
                         ? `${Math.round(stats.config.min_size * stats.config.replenish_threshold)} (${(stats.config.replenish_threshold * 100).toFixed(0)}%)`
@@ -375,13 +371,13 @@ export default function SandboxPoolAdminPage() {
                     </p>
                   </div>
                   <div className="space-y-1 p-3 rounded-2xl border border-border">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Replenish</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line378JsxTextLastReplenish')}</p>
                     <p className="text-sm font-semibold">
                       {stats?.last_replenish_at ? new Date(stats.last_replenish_at).toLocaleTimeString() : "Never"}
                     </p>
                   </div>
                   <div className="space-y-1 p-3 rounded-2xl border border-border">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Cleanup</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line384JsxTextLastCleanup')}</p>
                     <p className="text-sm font-semibold">
                       {stats?.last_cleanup_at ? new Date(stats.last_cleanup_at).toLocaleTimeString() : "Never"}
                     </p>
@@ -396,12 +392,9 @@ export default function SandboxPoolAdminPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
-                    <Server className="w-5 h-5 text-secondary" />
-                    Pooled Sandboxes
-                  </CardTitle>
+                    <Server className="w-5 h-5 text-secondary" />{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line400JsxTextPooledSandboxes')}</CardTitle>
                   <CardDescription>
-                    {sandboxes?.count ?? 0} sandboxes currently available in the pool
-                  </CardDescription>
+                    {sandboxes?.count ?? 0}{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line403JsxTextSandboxesCurrentlyAvailableInThePool')}</CardDescription>
                 </div>
                 <Badge variant="outline" className="text-lg px-4 py-1">
                   {sandboxes?.count ?? 0}
@@ -440,10 +433,8 @@ export default function SandboxPoolAdminPage() {
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Box className="w-12 h-12 text-muted-foreground/50 mb-3" />
-                  <p className="text-muted-foreground">No sandboxes in pool</p>
-                  <p className="text-sm text-muted-foreground/70 mt-1">
-                    Click &quot;Replenish Pool&quot; to create new sandboxes
-                  </p>
+                  <p className="text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line443JsxTextNoSandboxesInPool')}</p>
+                  <p className="text-sm text-muted-foreground/70 mt-1">{tHardcodedUi.raw('componentsPagesAdminSandboxPoolPage.line445JsxTextClickQuotReplenishPoolQuotToCreateNew')}</p>
                 </div>
               )}
             </CardContent>

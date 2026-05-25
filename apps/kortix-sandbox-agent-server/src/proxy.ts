@@ -7,8 +7,11 @@ import { isRepoMaterialized } from './git'
 import { createHealthRouter, type SandboxBootState } from './routes/health'
 import { createRefreshRouter } from './routes/refresh'
 import { createPromptRouter } from './routes/prompt'
+import { createAbortRouter } from './routes/abort'
+import { createEnvRouter } from './routes/env'
 import { createPortProxyRouter } from './routes/port-proxy'
 import webProxyRouter from './routes/web-proxy'
+import type { ProjectEnvStore } from './project-env'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -28,7 +31,9 @@ export function buildOpencodeApp(
   cfg: Config,
   opencode: Opencode,
   bootTime: number,
-  bootState: SandboxBootState = { repoMaterializationError: null },
+  bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
+  projectEnv?: ProjectEnvStore,
+  staticWebPort: number | null = null,
 ): Hono {
   const app = new Hono()
 
@@ -37,15 +42,23 @@ export function buildOpencodeApp(
   // a trailing slash doesn't fall through to the reverse proxy.
   // Health bypasses auth — it's how the cloud probes liveness mid-boot.
   const kortixRouter = new Hono()
-  const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState)
+  const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
   const refreshRouter = createRefreshRouter(cfg, opencode)
   const promptRouter = createPromptRouter(cfg)
+  const abortRouter = createAbortRouter(cfg)
+  const envRouter = projectEnv ? createEnvRouter(cfg, opencode, projectEnv) : null
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
   kortixRouter.route('/refresh/', refreshRouter)
   kortixRouter.route('/prompt', promptRouter)
   kortixRouter.route('/prompt/', promptRouter)
+  kortixRouter.route('/abort', abortRouter)
+  kortixRouter.route('/abort/', abortRouter)
+  if (envRouter) {
+    kortixRouter.route('/env', envRouter)
+    kortixRouter.route('/env/', envRouter)
+  }
 
   app.route('/kortix', kortixRouter)
 
@@ -174,9 +187,11 @@ export function startProxy(
   cfg: Config,
   opencode: Opencode,
   bootTime: number,
-  bootState: SandboxBootState = { repoMaterializationError: null },
+  bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
+  projectEnv?: ProjectEnvStore,
+  staticWebPort: number | null = null,
 ): ProxyServer {
-  const app = buildOpencodeApp(cfg, opencode, bootTime, bootState)
+  const app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort)
 
   const server = Bun.serve({
     port: cfg.servicePort,

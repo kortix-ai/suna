@@ -18,8 +18,9 @@ import { describe, expect, it } from 'bun:test'
 import { loadConfig, type Config } from '../config'
 import type { Opencode } from '../opencode'
 import { buildOpencodeApp } from '../proxy'
+import { createProjectEnvStore, mergeProjectEnv } from '../project-env'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { buildGitAuthArgs, materializeRepo } from '../git'
+import { buildGitAuthArgs, configureGlobalGitIdentity, materializeRepo } from '../git'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
@@ -27,6 +28,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
     defaultBranch: 'main',
@@ -39,6 +41,9 @@ function baseConfig(over: Partial<Config> = {}): Config {
     repoUrl: undefined,
     branchName: undefined,
     kortixToken: TEST_TOKEN,
+    gitUserName: 'Kortix Agent',
+    gitUserEmail: 'agent@kortix.ai',
+    cloneFilter: '',
     ...over,
   }
 }
@@ -87,6 +92,18 @@ function git(args: string[], cwd?: string) {
       GIT_TERMINAL_PROMPT: '0',
     },
   })
+}
+
+function gitOutput(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): string {
+  return execFileSync('git', args, {
+    cwd: opts.cwd,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      ...opts.env,
+      GIT_TERMINAL_PROMPT: '0',
+    },
+  }).trim()
 }
 
 describe('daemon proxy auth gate', () => {
@@ -153,8 +170,21 @@ describe('daemon proxy auth gate', () => {
       expect(requests[0]!.url).toBe('http://api.local/v1/projects/project-123/git/clone-credential')
       expect((requests[0]!.init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${TEST_TOKEN}`)
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('v1\n')
+      expect(gitOutput(['-C', target, 'config', 'user.name'])).toBe('Kortix Agent')
+      expect(gitOutput(['-C', target, 'config', 'user.email'])).toBe('agent@kortix.ai')
     } finally {
       globalThis.fetch = originalFetch
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('configures the default git identity in the OpenCode home', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-git-home-'))
+    try {
+      await configureGlobalGitIdentity(baseConfig(), root)
+      expect(gitOutput(['config', '--global', 'user.name'], { env: { HOME: root } })).toBe('Kortix Agent')
+      expect(gitOutput(['config', '--global', 'user.email'], { env: { HOME: root } })).toBe('agent@kortix.ai')
+    } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -180,7 +210,7 @@ describe('daemon proxy auth gate', () => {
       baseConfig({ autoClone: true }),
       fakeOpencode('ok'),
       Date.now(),
-      { repoMaterializationError: 'git clone failed: authentication required' },
+      { repoMaterializationError: 'git clone failed: authentication required', timeline: [] },
     )
 
     const health = await app.request('/kortix/health')
@@ -353,6 +383,86 @@ describe('daemon proxy auth gate', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  it('syncs project env through /kortix/env and restarts opencode only on changes', async () => {
+    let restartCalls = 0
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRET_NAMES: 'OLD_SECRET,REMOVED_SECRET',
+      OLD_SECRET: 'old',
+      REMOVED_SECRET: 'gone',
+    } as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      store,
+    )
+
+    const res = await app.request('/kortix/env', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TEST_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        revision: 'rev-1',
+        env: { OLD_SECRET: 'new', NEW_SECRET: 'fresh', KORTIX_TOKEN: 'blocked' },
+        names: ['OLD_SECRET', 'NEW_SECRET', 'REMOVED_SECRET'],
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      changed: true,
+      revision: 'rev-1',
+      names: ['NEW_SECRET', 'OLD_SECRET', 'REMOVED_SECRET'],
+    })
+    expect(restartCalls).toBe(1)
+    expect(mergeProjectEnv({
+      OLD_SECRET: 'old-process',
+      REMOVED_SECRET: 'gone-process',
+      KEEP: 'yes',
+    } as NodeJS.ProcessEnv, store)).toEqual({
+      OLD_SECRET: 'new',
+      NEW_SECRET: 'fresh',
+      KEEP: 'yes',
+    })
+
+    const replay = await app.request('/kortix/env', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TEST_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        revision: 'rev-1',
+        env: { OLD_SECRET: 'new', NEW_SECRET: 'fresh' },
+        names: ['OLD_SECRET', 'NEW_SECRET', 'REMOVED_SECRET'],
+      }),
+    })
+    expect(replay.status).toBe(200)
+    expect(await replay.json()).toMatchObject({ ok: true, changed: false })
+    expect(restartCalls).toBe(1)
+  })
+
+  it('rejects /kortix/env without sandbox service bearer token', async () => {
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok'),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      createProjectEnvStore(),
+    )
+
+    const res = await app.request('/kortix/env', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revision: 'rev', env: {} }),
+    })
+    expect(res.status).toBe(401)
   })
 
   it('does not delete an existing workspace when the initial clone fails', async () => {

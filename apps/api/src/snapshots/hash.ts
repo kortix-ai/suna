@@ -17,6 +17,10 @@
  *   3. Runtime fingerprint — opaque string we control. The snapshot builder
  *      normally derives this from SANDBOX_VERSION plus the runtime artifact
  *      bytes copied into the image (kortix-agent, entrypoint, CLI files).
+ *   4. Hardware spec — the `[sandbox]` cpu/memory/disk/gpu, baked into the
+ *      snapshot at build time. Only mixed in when at least one field is set,
+ *      so projects that don't declare a spec keep their existing hashes (no
+ *      mass rebuild when this field rolls out).
  *
  * The output is a hex SHA-256 (64 chars). Snapshot names take the first
  * 12 chars to stay readable while keeping collision probability
@@ -25,12 +29,19 @@
 
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION } from '../config';
+import type { SandboxSpec } from './dockerfile-layer';
 
 export interface SnapshotHashInputs {
   /** UTF-8 contents of the user's Dockerfile at the build commit. */
   dockerfile: string;
   /** Git tree OID of `[sandbox] context` at the build commit. */
   contextTreeOid: string;
+  /**
+   * Hardware spec from `[sandbox]`. Baked into the snapshot, so it's part
+   * of the identity: change cpu/memory/disk/gpu, rebuild. Omitted from the
+   * digest entirely when empty so unspecced projects keep their hashes.
+   */
+  spec?: SandboxSpec;
   /**
    * Override of the runtime fingerprint. Defaults to SANDBOX_VERSION
    * — the platform-wide constant that bumps on every Kortix release.
@@ -66,14 +77,34 @@ export function computeSnapshotHash(inputs: SnapshotHashInputs): SnapshotHashRes
     `dockerfile=${inputs.dockerfile.length}:${inputs.dockerfile}`,
     `tree_oid=${inputs.contextTreeOid}`,
     `runtime=${runtimeFingerprint}`,
-  ].join('\n');
+  ];
+  // Only append the spec segment when something is actually set, so a
+  // manifest without `[sandbox]` resources hashes identically to before
+  // this field existed — no surprise rebuild of every project's snapshot.
+  const specSegment = serializeSpec(inputs.spec);
+  if (specSegment) blob.push(`spec=${specSegment}`);
 
-  const contentHash = createHash('sha256').update(blob).digest('hex');
+  const contentHash = createHash('sha256').update(blob.join('\n')).digest('hex');
   return {
     contentHash,
     shortHash: contentHash.slice(0, 12),
     runtimeFingerprint,
   };
+}
+
+/**
+ * Canonical serialization of a sandbox spec for the content hash. Fixed
+ * key order, only present fields, e.g. `cpu:2,memory:4,disk:20`. Returns
+ * an empty string when nothing is set (the no-spec, no-rebuild case).
+ */
+function serializeSpec(spec?: SandboxSpec): string {
+  if (!spec) return '';
+  const parts: string[] = [];
+  if (spec.cpu !== undefined) parts.push(`cpu:${spec.cpu}`);
+  if (spec.memory !== undefined) parts.push(`memory:${spec.memory}`);
+  if (spec.disk !== undefined) parts.push(`disk:${spec.disk}`);
+  if (spec.gpu !== undefined) parts.push(`gpu:${spec.gpu}`);
+  return parts.join(',');
 }
 
 /**

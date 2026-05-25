@@ -182,7 +182,7 @@ const lineNumberClassNames = cn(
   '[&_.line]:before:[counter-increment:line]',
   '[&_.line]:before:w-4',
   '[&_.line]:before:mr-4',
-  '[&_.line]:before:text-[13px]',
+  '[&_.line]:before:text-sm',
   '[&_.line]:before:text-right',
   '[&_.line]:before:text-muted-foreground/50',
   '[&_.line]:before:font-mono',

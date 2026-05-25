@@ -59,7 +59,7 @@ export function UserRow({
             {displayPrimary}
           </span>
           {isSelf ? (
-            <span className="text-muted-foreground/80 text-[10px] font-medium uppercase tracking-wider">
+            <span className="text-muted-foreground/80 text-xs font-medium uppercase tracking-wider">
               · you
             </span>
           ) : null}

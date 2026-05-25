@@ -40,7 +40,7 @@ export function MaintenanceLevelCard({ level, isSelected, onClick }: Maintenance
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{config.label}</span>
               {isSelected && (
-                <Badge className={cn('text-[10px] px-1.5 py-0', config.bgColor, config.color, config.borderColor)}>
+                <Badge className={cn('text-xs px-1.5 py-0', config.bgColor, config.color, config.borderColor)}>
                   Active
                 </Badge>
               )}

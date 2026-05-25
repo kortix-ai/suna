@@ -52,7 +52,7 @@ printf "[build-local-images] Building frontend standalone output...\n"
   NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co \
   NEXT_PUBLIC_SUPABASE_ANON_KEY=local-build-placeholder-anon-key \
   NEXT_OUTPUT=standalone \
-  pnpm run build
+  pnpm exec next build --experimental-app-only
 )
 
 printf "[build-local-images] Building kortix/kortix-frontend:%s...\n" "$TAG"
@@ -61,8 +61,8 @@ docker build --no-cache -f "$REPO_ROOT/apps/web/Dockerfile" -t "kortix/kortix-fr
 printf "[build-local-images] Building kortix/kortix-api:%s...\n" "$TAG"
 docker build --build-arg SERVICE=apps/api -f "$REPO_ROOT/apps/api/Dockerfile" -t "kortix/kortix-api:${TAG}" "$REPO_ROOT"
 
-printf "[build-local-images] Building kortix/sandbox:%s...\n" "$TAG"
-docker build -f "$REPO_ROOT/apps/sandbox/Dockerfile" -t "kortix/sandbox:${TAG}" "$REPO_ROOT"
+printf "[build-local-images] Building kortix/kortix-sandbox:%s...\n" "$TAG"
+docker build -f "$REPO_ROOT/apps/sandbox/Dockerfile" -t "kortix/kortix-sandbox:${TAG}" "$REPO_ROOT"
 
 printf "[build-local-images] Local project sessions use the sandbox image through the local_docker provider.\n"
 

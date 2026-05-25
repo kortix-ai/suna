@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Activity,
@@ -152,7 +154,7 @@ function ServiceCard({
                 <h3 className="text-sm font-semibold text-foreground truncate">{service.name}</h3>
                 <Badge
                   variant={service.status === 'running' ? 'highlight' : service.status === 'failed' ? 'destructive' : 'secondary'}
-                  className="text-[10px] shrink-0"
+                  className="text-xs shrink-0"
                 >
                   {service.status === 'running' ? 'Running' : service.status === 'starting' ? 'Starting' : service.status === 'failed' ? 'Failed' : 'Stopped'}
                 </Badge>
@@ -182,13 +184,13 @@ function ServiceCard({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {service.startedAt && (
-                <span className="text-[11px] text-muted-foreground/50">{formatTimeAgo(service.startedAt)}</span>
+                <span className="text-xs text-muted-foreground/50">{formatTimeAgo(service.startedAt)}</span>
               )}
               {service.builtin && (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Built-in</Badge>
+                <Badge variant="secondary" className="text-xs px-1.5 py-0">Built-in</Badge>
               )}
               {!service.managed && (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 border-dashed">Observed</Badge>
+                <Badge variant="secondary" className="text-xs px-1.5 py-0 border-dashed">Observed</Badge>
               )}
             </div>
             <div className="flex items-center gap-0.5">
@@ -275,6 +277,7 @@ function LoadingSkeleton() {
 // ─── Empty state ────────────────────────────────────────────────────────────
 
 function EmptyState() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="relative bg-muted/20 rounded-3xl border border-dashed border-border/50 flex flex-col items-center justify-center py-20 px-4 overflow-hidden">
       <Ripple mainCircleSize={160} mainCircleOpacity={0.12} numCircles={6} />
@@ -282,10 +285,8 @@ function EmptyState() {
         <div className="w-16 h-16 bg-muted border rounded-2xl flex items-center justify-center mb-4">
           <Server className="h-7 w-7 text-muted-foreground" />
         </div>
-        <h3 className="text-lg font-semibold text-foreground mb-2">No services found</h3>
-        <p className="text-sm text-muted-foreground text-center leading-relaxed max-w-md">
-          Services will appear here when Kortix Master starts managing them. Register a project app or wait for the built-in services to come online.
-        </p>
+        <h3 className="text-lg font-semibold text-foreground mb-2">{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line285JsxTextNoServicesFound')}</h3>
+        <p className="text-sm text-muted-foreground text-center leading-relaxed max-w-md">{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line287JsxTextServicesWillAppearHereWhenKortixMasterStarts')}</p>
       </div>
     </div>
   );
@@ -294,6 +295,7 @@ function EmptyState() {
 // ─── Main panel ─────────────────────────────────────────────────────────────
 
 export function RunningServicesPanel() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { getServiceUrl } = useSandboxProxy();
   const { data: services = [], isLoading, error } = useSandboxServices({ includeAll: true });
   const { data: templates = [] } = useSandboxServiceTemplates();
@@ -435,7 +437,7 @@ export function RunningServicesPanel() {
         <PageHeader icon={Server}>
           <div className="space-y-2 sm:space-y-4">
             <div className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight">
-              <span className="text-primary">Service Manager</span>
+              <span className="text-primary">{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line438JsxTextServiceManager')}</span>
             </div>
           </div>
         </PageHeader>
@@ -447,7 +449,7 @@ export function RunningServicesPanel() {
           <PageSearchBar
             value={searchQuery}
             onChange={setSearchQuery}
-            placeholder="Search services..."
+            placeholder={tHardcodedUi.raw('componentsTabsRunningServicesPanel.line450JsxAttrPlaceholderSearchServices')}
             className="max-w-md"
           />
 
@@ -496,9 +498,7 @@ export function RunningServicesPanel() {
             <LoadingSkeleton />
           ) : filtered.length === 0 ? (
             searchQuery ? (
-              <div className="text-center py-12 text-muted-foreground text-sm">
-                No services matching &ldquo;{searchQuery}&rdquo;
-              </div>
+              <div className="text-center py-12 text-muted-foreground text-sm">{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line500JsxTextNoServicesMatchingLdquo')}{searchQuery}{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line500JsxTextRdquo')}</div>
             ) : (
               <EmptyState />
             )
@@ -545,10 +545,9 @@ export function RunningServicesPanel() {
               <div className="p-4">
                 {logsLoading ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-                  </div>
+                    <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line548JsxTextLoading')}</div>
                 ) : logLines.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No logs captured yet.</p>
+                  <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line551JsxTextNoLogsCapturedYet')}</p>
                 ) : (
                   <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-6 text-foreground">{logLines.join('\n')}</pre>
                 )}
@@ -562,26 +561,24 @@ export function RunningServicesPanel() {
       <Dialog open={isRegisterOpen} onOpenChange={setIsRegisterOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Register a service</DialogTitle>
-            <DialogDescription>
-              Register a project app. It will autostart and survive reloads.
-            </DialogDescription>
+            <DialogTitle>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line565JsxTextRegisterAService')}</DialogTitle>
+            <DialogDescription>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line567JsxTextRegisterAProjectAppItWillAutostartAnd')}</DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={handleRegister}>
             <label className="space-y-2 text-sm font-medium">
-              <span>Service ID</span>
+              <span>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line572JsxTextServiceId')}</span>
               <Input type="text" value={form.id} onChange={(e) => setForm((c) => ({ ...c, id: e.target.value }))} placeholder="my-web-app" />
             </label>
             <label className="space-y-2 text-sm font-medium">
-              <span>Source path</span>
+              <span>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line576JsxTextSourcePath')}</span>
               <Input type="text" value={form.sourcePath} onChange={(e) => setForm((c) => ({ ...c, sourcePath: e.target.value }))} placeholder="/workspace/my-app" />
             </label>
             <label className="space-y-2 text-sm font-medium">
-              <span>Start command</span>
-              <Input type="text" value={form.startCommand} onChange={(e) => setForm((c) => ({ ...c, startCommand: e.target.value }))} placeholder="bun server.js" />
+              <span>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line580JsxTextStartCommand')}</span>
+              <Input type="text" value={form.startCommand} onChange={(e) => setForm((c) => ({ ...c, startCommand: e.target.value }))} placeholder={tHardcodedUi.raw('componentsTabsRunningServicesPanel.line581JsxAttrPlaceholderBunServerJs')} />
             </label>
             <label className="space-y-2 text-sm font-medium">
-              <span>Port <span className="text-muted-foreground font-normal">(optional — auto-assigned if empty)</span></span>
+              <span>Port <span className="text-muted-foreground font-normal">{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line584JsxTextOptionalAutoAssignedIfEmpty')}</span></span>
               <Input type="text" value={form.port} onChange={(e) => setForm((c) => ({ ...c, port: e.target.value }))} placeholder="3000" inputMode="numeric" />
             </label>
             <DialogFooter>
@@ -599,19 +596,17 @@ export function RunningServicesPanel() {
       <AlertDialog open={restartDialogOpen} onOpenChange={setRestartDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Restart Instance</AlertDialogTitle>
+            <AlertDialogTitle>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line602JsxTextRestartInstance')}</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p><strong>Config Only</strong> — Hot-reload agents, skills, commands, and config. Fast (~2s). Use after editing .md files or opencode.jsonc.</p>
-                <p><strong>Full Restart</strong> — Kill and restart every service (OpenCode, static server, kortix-master). Clears all module caches. Use after editing .ts plugin/route code. Active sessions will be interrupted.</p>
+                <p><strong>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line605JsxTextConfigOnly')}</strong>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line605JsxTextHotReloadAgentsSkillsCommandsAndConfigFast')}</p>
+                <p><strong>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line606JsxTextFullRestart')}</strong>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line606JsxTextKillAndRestartEveryServiceOpencodeStaticServer')}</p>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col sm:flex-row gap-2">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <Button variant="outline" onClick={() => void handleRestart('dispose-only')} disabled={!!pendingGlobal}>
-              Config Only
-            </Button>
+            <Button variant="outline" onClick={() => void handleRestart('dispose-only')} disabled={!!pendingGlobal}>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line613JsxTextConfigOnly')}</Button>
             <Button variant="destructive" onClick={() => void handleRestart('full')} disabled={!!pendingGlobal}>
               {pendingGlobal ? 'Restarting\u2026' : 'Full Restart'}
             </Button>

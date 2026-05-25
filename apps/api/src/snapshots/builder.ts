@@ -27,14 +27,22 @@
  * DB row keyed on commit.
  */
 
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { copyFile, cp, rm, stat } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pipeline } from 'node:stream/promises';
+import { createGzip } from 'node:zlib';
 import { Image } from '@daytonaio/sdk';
 import { projectRuntimeSnapshots } from '@kortix/db';
 import { db } from '../shared/db';
-import { getDaytona } from '../shared/daytona';
+import {
+  deleteDaytonaSnapshotById,
+  getDaytona,
+  isDaytonaConfigured,
+  listDaytonaSnapshots,
+} from '../shared/daytona';
 import { SANDBOX_VERSION } from '../config';
 import type { SandboxProviderName } from '../config';
 
@@ -44,6 +52,13 @@ import type { SandboxProviderName } from '../config';
  * the Daytona snapshot cache even if SANDBOX_VERSION is unchanged in dev.
  */
 const OPENCODE_VERSION = '1.14.28';
+
+/**
+ * Pinned `agent-browser` (Vercel agent-browser) CLI version baked into every
+ * snapshot alongside a Chrome-for-Testing build. Folded into the runtime
+ * fingerprint below so bumping it invalidates the Daytona snapshot cache.
+ */
+const AGENT_BROWSER_VERSION = '0.27.0';
 
 /**
  * Filesystem paths to the runtime artifacts the layered Dockerfile
@@ -60,6 +75,8 @@ const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/agent-cli');
+const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
+  || resolve(REPO_ROOT, 'packages/executor-sdk');
 import {
   materializeRepoContext,
   readRepoFile,
@@ -71,13 +88,26 @@ import { readManifest } from '../projects/triggers';
 import {
   buildLayeredDockerfile,
   extractSandboxPaths,
+  extractSandboxSpec,
+  sandboxSpecIsEmpty,
   type SandboxPaths,
+  type SandboxSpec,
 } from './dockerfile-layer';
 import { computeSnapshotHash, formatSnapshotName } from './hash';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
+import {
+  classifySnapshotError,
+  describeSnapshotError,
+  type SnapshotErrorCategory,
+} from './error-classify';
 
 /** Cap how long the Daytona-side snapshot build is allowed to take. */
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
+/** How many times to retry a snapshot build that fails with a transient error. */
+const BUILD_ATTEMPTS = 3;
+const BUILD_RETRY_BASE_MS = 2_000;
+const SNAPSHOT_LOG_TAIL_LIMIT = 20;
+const RUNTIME_LAYER_VERSION = 'agent-browser-v1';
 
 /**
  * Default retention: how many `ready` snapshots we keep per
@@ -126,8 +156,43 @@ export class SnapshotBuildError extends Error {
  *   awaited by the session-creation path.
  * - `manual` — user clicked "Rebuild now" in the dashboard or an admin
  *   ran the script.
+ * - `cr-merge` — fired after a change request merges into the default branch
+ *   so the new tip is built ahead of the next session (proactive pre-build).
  */
-export type SnapshotBuildSource = 'project-create' | 'session-start' | 'manual';
+export type SnapshotBuildSource = 'project-create' | 'session-start' | 'manual' | 'cr-merge';
+
+/**
+ * Mark a snapshot row `failed`, recording both the raw error and its
+ * classified category (merged into metadata) so the dashboard + the
+ * fix-with-agent flow can route the failure. Best-effort — a DB blip here
+ * must not mask the underlying build error to the caller.
+ */
+async function markSnapshotFailed(
+  projectId: string,
+  commitSha: string,
+  provider: SandboxProviderName,
+  message: string,
+): Promise<void> {
+  const errorCategory = classifySnapshotError(message);
+  await db
+    .update(projectRuntimeSnapshots)
+    .set({
+      status: 'failed',
+      error: message.slice(0, 2000),
+      // jsonb-merge so we keep any build-stage breadcrumbs (logs, contentHash)
+      // already written by the live build and just stamp the category on top.
+      metadata: sql`COALESCE(${projectRuntimeSnapshots.metadata}, '{}'::jsonb) || ${JSON.stringify({ errorCategory })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.commitSha, commitSha),
+        eq(projectRuntimeSnapshots.provider, provider),
+      ),
+    )
+    .catch(() => {});
+}
 
 /**
  * Build (or rebuild) the snapshot for a specific commit. Idempotent:
@@ -155,24 +220,59 @@ export async function buildSnapshotForCommit(
 
   const existing = await findSnapshotRow(project.projectId, commitSha, provider);
   if (existing?.status === 'ready' && existing.snapshotId) {
-    const prepared = await prepareBuildContext(project, commitSha);
+    // Cheap identity compare — no context materialize / gzip needed just to
+    // confirm the existing ready row still matches this commit's inputs.
+    const identity = await computeSnapshotIdentity(project, commitSha);
     if (
-      existing.snapshotId === prepared.snapshotName &&
-      extractMetadataHash(existing.metadata) === prepared.contentHash &&
-      extractMetadataRuntimeFingerprint(existing.metadata) === prepared.runtimeFingerprint
+      existing.snapshotId === identity.snapshotName &&
+      extractMetadataHash(existing.metadata) === identity.contentHash &&
+      extractMetadataRuntimeFingerprint(existing.metadata) === identity.runtimeFingerprint
     ) {
-      await rm(prepared.contextDir, { recursive: true, force: true }).catch(() => {});
       return {
         daytonaName: existing.snapshotId,
         commitSha,
-        contentHash: prepared.contentHash,
-        runtimeFingerprint: prepared.runtimeFingerprint,
+        contentHash: identity.contentHash,
+        runtimeFingerprint: identity.runtimeFingerprint,
         built: false,
       };
     }
 
+    // Non-destructive rebuild: the row is `ready` with a still-bootable image
+    // and we're only rebuilding because the runtime fingerprint changed. Keep
+    // the old snapshot `ready`/bootable throughout (so "latest ready" never
+    // blanks out for an existing project) and swap to the new image atomically
+    // on success.
+    const rebuildAt = extractMetadataNumber(existing.metadata, 'rebuildStartedAt');
+    if (rebuildAt != null && Date.now() - rebuildAt < BUILD_TIMEOUT_MS) {
+      // Another worker is already rebuilding this commit for the new runtime —
+      // boot the existing (older-runtime) image now instead of duplicating it.
+      return {
+        daytonaName: existing.snapshotId,
+        commitSha,
+        contentHash: extractMetadataHash(existing.metadata) ?? identity.contentHash,
+        runtimeFingerprint:
+          extractMetadataRuntimeFingerprint(existing.metadata) ?? identity.runtimeFingerprint,
+        built: false,
+      };
+    }
+    // Claim the rebuild by stamping a marker — without disturbing status/snapshotId.
+    await db
+      .update(projectRuntimeSnapshots)
+      .set({
+        metadata: sql`COALESCE(${projectRuntimeSnapshots.metadata}, '{}'::jsonb) || ${JSON.stringify({ rebuildStartedAt: Date.now() })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(projectRuntimeSnapshots.projectId, project.projectId),
+          eq(projectRuntimeSnapshots.commitSha, commitSha),
+          eq(projectRuntimeSnapshots.provider, provider),
+        ),
+      )
+      .catch(() => {});
+
     try {
-      const result = await runBuild(project, commitSha, provider, prepared);
+      const result = await runBuild(project, commitSha, provider, undefined, { silent: true });
       await updateSnapshotRow(project.projectId, commitSha, provider, options.source, result);
       return {
         daytonaName: result.daytonaName,
@@ -183,11 +283,14 @@ export async function buildSnapshotForCommit(
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      // Keep the old ready snapshot bootable; clear the rebuild marker and note
+      // the error so a later attempt retries cleanly.
       await db
         .update(projectRuntimeSnapshots)
         .set({
           status: 'ready',
           error: message.slice(0, 2000),
+          metadata: sql`(COALESCE(${projectRuntimeSnapshots.metadata}, '{}'::jsonb) - 'rebuildStartedAt')`,
           updatedAt: new Date(),
         })
         .where(
@@ -256,21 +359,7 @@ export async function buildSnapshotForCommit(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await db
-      .update(projectRuntimeSnapshots)
-      .set({
-        status: 'failed',
-        error: message.slice(0, 2000),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(projectRuntimeSnapshots.projectId, project.projectId),
-          eq(projectRuntimeSnapshots.commitSha, commitSha),
-          eq(projectRuntimeSnapshots.provider, provider),
-        ),
-      )
-      .catch(() => {});
+    await markSnapshotFailed(project.projectId, commitSha, provider, message);
     throw new SnapshotBuildError(`Snapshot build failed: ${message}`, err);
   }
 }
@@ -285,7 +374,6 @@ export async function getLatestReadySnapshot(
   branch: string,
   provider: SandboxProviderName = 'daytona',
 ): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
-  const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   const rows = await db
     .select()
     .from(projectRuntimeSnapshots)
@@ -299,6 +387,10 @@ export async function getLatestReadySnapshot(
     )
     .orderBy(desc(projectRuntimeSnapshots.createdAt))
     .limit(10);
+  if (provider === 'local_docker') {
+    return rows[0] ?? null;
+  }
+  const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   return rows.find((row) =>
     extractMetadataRuntimeFingerprint(row.metadata) === runtimeFingerprint
   ) ?? null;
@@ -491,6 +583,41 @@ export async function ensureBuildForLatestCommit(
 }
 
 /**
+ * Mark snapshot builds stuck in `building`/`queued` past the build deadline as
+ * `failed`. Orphans happen when the API restarts mid-build — the detached build
+ * promise dies with the process, leaving the row `building` forever. Until it's
+ * cleared, every session on that commit waits the full snapshot deadline
+ * (~10min) before the per-commit recovery path kicks in, which reads as a long
+ * spin then failure. Sweeping on startup (restarts are exactly when orphans are
+ * created) clears them so the next session rebuilds cleanly.
+ *
+ * The cutoff is on `updated_at`: a live build refreshes it via the snapshot
+ * build-log stream, so only genuinely-dead rows are swept.
+ */
+export async function sweepStaleSnapshotBuilds(): Promise<number> {
+  const cutoff = new Date(Date.now() - BUILD_TIMEOUT_MS);
+  const swept = await db
+    .update(projectRuntimeSnapshots)
+    .set({
+      status: 'failed',
+      error: 'build orphaned (API restart or timeout) — rebuilds on next use',
+      metadata: sql`COALESCE(${projectRuntimeSnapshots.metadata}, '{}'::jsonb) || ${JSON.stringify({ errorCategory: 'timeout' as SnapshotErrorCategory })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        inArray(projectRuntimeSnapshots.status, ['building', 'queued']),
+        lt(projectRuntimeSnapshots.updatedAt, cutoff),
+      ),
+    )
+    .returning({ id: projectRuntimeSnapshots.snapshotRowId });
+  if (swept.length > 0) {
+    console.warn(`[snapshots] swept ${swept.length} stale build row(s) → failed (orphaned by restart/timeout)`);
+  }
+  return swept.length;
+}
+
+/**
  * List snapshot history for a project, most recent first. Powers the
  * "Sandbox snapshot" panel in the dashboard.
  */
@@ -510,6 +637,131 @@ export async function listSnapshotsForProject(
     )
     .orderBy(desc(projectRuntimeSnapshots.createdAt))
     .limit(limit);
+}
+
+/**
+ * Project-level sandbox health for the alert/badge surfaces. DB-only (no git
+ * HEAD resolution) so it's cheap enough to poll from the project sidebar.
+ *
+ * The key signals the UI needs:
+ *   - `readyCount`  → how many *healthy* (current-runtime) ready snapshots
+ *     exist for the branch. ≥1 means sessions can boot (possibly degraded);
+ *     0 means the project is one failed build away from being unusable.
+ *   - `building`    → a build is actively in flight (not stale).
+ *   - `latestStatus`→ status of the most recent row for the branch.
+ *   - `failure`     → present when the most recent build failed, carrying the
+ *     classified category so the UI can show "retry" vs "fix with agent".
+ */
+export interface ProjectSandboxHealth {
+  branch: string;
+  provider: SandboxProviderName;
+  /** Retained ready snapshots for the branch (any runtime) — what's kept as a fallback. */
+  readyCount: number;
+  /** Ready snapshots matching the CURRENT runtime — bootable for HEAD without a rebuild. */
+  bootableCount: number;
+  /** Total snapshot rows for the branch (any status) — 0 means the project never built. */
+  totalCount: number;
+  /** Configured retention target. */
+  retention: number;
+  /** ≥1 retained ready snapshot exists → a session can boot (possibly an older runtime). */
+  healthy: boolean;
+  /** A build is in flight (queued/building, not stale), or a ready row is rebuilding in place. */
+  building: boolean;
+  /** True the very first time a project builds (no rows yet). Distinguishes "first" from "updating". */
+  firstBuild: boolean;
+  /** Retained ready snapshots exist but none match the current runtime — a refresh is pending. */
+  runtimeOutdated: boolean;
+  /** SHA of the most recent ready snapshot, or null. */
+  latestReadyCommitSha: string | null;
+  /** Most recent row's status for the branch, or null when none exist. */
+  latestStatus: ProjectSnapshotStatusValue | null;
+  /** Present when the most recent build for the branch failed. */
+  failure: {
+    commitSha: string;
+    error: string;
+    category: SnapshotErrorCategory;
+    fixableByAgent: boolean;
+    failedAt: string;
+  } | null;
+}
+
+type ProjectSnapshotStatusValue = typeof projectRuntimeSnapshots.$inferSelect['status'];
+
+export async function getProjectSandboxHealth(
+  projectId: string,
+  branch: string,
+  provider: SandboxProviderName = 'daytona',
+): Promise<ProjectSandboxHealth> {
+  const retention = snapshotRetentionCount();
+  const runtimeFingerprint = await currentRuntimeArtifactFingerprint().catch(() => null);
+
+  const rows = await db
+    .select()
+    .from(projectRuntimeSnapshots)
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.branch, branch),
+        eq(projectRuntimeSnapshots.provider, provider),
+      ),
+    )
+    .orderBy(desc(projectRuntimeSnapshots.createdAt))
+    .limit(50);
+
+  // Retained = every ready snapshot (any runtime). These are real, kept builds —
+  // counting only current-runtime ones made an existing project read as "0
+  // retained / building first sandbox" right after a runtime bump, which looked
+  // like builds were vanishing. Bootable = the subset that matches the current
+  // runtime (boots HEAD with no rebuild).
+  const readyRows = rows.filter((r) => r.status === 'ready' && r.snapshotId);
+  const bootableRows =
+    runtimeFingerprint === null
+      ? readyRows
+      : readyRows.filter((r) => extractMetadataRuntimeFingerprint(r.metadata) === runtimeFingerprint);
+  // A ready row carrying a `rebuildStartedAt` marker is mid non-destructive
+  // rebuild (still bootable) — surface that as "building" too.
+  const building = rows.some(
+    (r) =>
+      ((r.status === 'building' || r.status === 'queued') && !isInProgressSnapshotStale(r)) ||
+      (r.status === 'ready' && extractMetadataNumber(r.metadata, 'rebuildStartedAt') != null),
+  );
+
+  const latest = rows[0] ?? null;
+  let failure: ProjectSandboxHealth['failure'] = null;
+  if (latest && latest.status === 'failed') {
+    const message = latest.error ?? 'Snapshot build failed';
+    const category =
+      extractMetadataErrorCategory(latest.metadata) ?? classifySnapshotError(message);
+    failure = {
+      commitSha: latest.commitSha,
+      error: message,
+      category,
+      fixableByAgent: describeSnapshotError(category).fixableByAgent,
+      failedAt: (latest.updatedAt instanceof Date
+        ? latest.updatedAt
+        : new Date(latest.updatedAt)
+      ).toISOString(),
+    };
+  }
+
+  return {
+    branch,
+    provider,
+    readyCount: Math.min(readyRows.length, retention),
+    bootableCount: Math.min(bootableRows.length, retention),
+    totalCount: rows.length,
+    retention,
+    healthy: readyRows.length > 0,
+    building,
+    // "First build" only when no usable ready snapshot has *ever* been produced
+    // — so an existing project rebuilding for a runtime bump reads as "updating",
+    // not "building first sandbox".
+    firstBuild: readyRows.length === 0,
+    runtimeOutdated: readyRows.length > 0 && bootableRows.length === 0,
+    latestReadyCommitSha: readyRows[0]?.commitSha ?? null,
+    latestStatus: latest?.status ?? null,
+    failure,
+  };
 }
 
 /**
@@ -603,6 +855,164 @@ export async function pruneOldSnapshots(
   return { deletedRows: expired.length, deletedDaytonaSnapshots };
 }
 
+/** Content-addressed name prefix for every per-project session snapshot. */
+const SNAPSHOT_NAME_PREFIX = 'kortix-snap-';
+
+/**
+ * Org-wide ceiling on how many `ready` per-project snapshots we let pile up on
+ * Daytona. Daytona enforces a HARD global cap (100/org); per-project retention
+ * (`DEFAULT_SNAPSHOT_RETENTION`, keep-N each) can't bound a *global* total —
+ * N projects × keep-5 blows past 100. This budget is the real bound: stay
+ * comfortably under the provider cap so a runtime-fingerprint bump (which
+ * rebuilds every project at once) has headroom. Tunable via
+ * `KORTIX_SNAPSHOT_GLOBAL_BUDGET`.
+ */
+const DEFAULT_GLOBAL_SNAPSHOT_BUDGET = 80;
+
+function globalSnapshotBudget(): number {
+  const raw = Number.parseInt(process.env.KORTIX_SNAPSHOT_GLOBAL_BUDGET || '', 10);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return DEFAULT_GLOBAL_SNAPSHOT_BUDGET;
+}
+
+/** Stale `failed` rows older than this are swept (a fresh build re-creates them). */
+const FAILED_ROW_TTL_MS = 24 * 60 * 60 * 1000;
+
+function rowUpdatedMs(row: { updatedAt: Date | string }): number {
+  const t = row.updatedAt instanceof Date ? row.updatedAt.getTime() : new Date(row.updatedAt).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+let reconcileRunning = false;
+
+/**
+ * Org-wide snapshot reconciliation — the global counterpart to the per-project
+ * `pruneOldSnapshots`. Idempotent, best-effort, safe to run on a timer.
+ *
+ *   1. ORPHANS: Daytona snapshots named `kortix-snap-*` that no `ready` DB row
+ *      references — leaked when a rebuild/version-bump replaced a row's
+ *      snapshotId without deleting the old image. Deleted from Daytona.
+ *   2. DEAD ROWS: DB rows marked `ready` whose image is gone from Daytona.
+ *      Deleted so the next session rebuilds cleanly instead of booting a 404.
+ *   3. GLOBAL BUDGET: if more than `budget` ready snapshots survive, evict the
+ *      globally least-recently-updated ones (DB row + image) — never a
+ *      project's most-recent row, so every project stays bootable.
+ *   4. STALE FAILURES: `failed` rows older than `FAILED_ROW_TTL_MS`.
+ *
+ * Refuses to delete anything if the Daytona snapshot list can't be fetched
+ * (never act on a partial view). No-op when Daytona isn't configured.
+ */
+export async function reconcileDaytonaSnapshots(opts: { budget?: number } = {}): Promise<{
+  orphansDeleted: number;
+  deadRowsCleared: number;
+  evicted: number;
+  failedCleared: number;
+  liveBefore: number;
+}> {
+  const noop = { orphansDeleted: 0, deadRowsCleared: 0, evicted: 0, failedCleared: 0, liveBefore: 0 };
+  if (!isDaytonaConfigured() || reconcileRunning) return noop;
+  reconcileRunning = true;
+  try {
+    // Throws if the list is unavailable — we never delete based on a partial view.
+    const live = (await listDaytonaSnapshots()).filter((s) => s.name.startsWith(SNAPSHOT_NAME_PREFIX));
+    const liveByName = new Map(live.map((s) => [s.name, s]));
+    const liveBefore = live.length;
+
+    const readyRows = await db
+      .select()
+      .from(projectRuntimeSnapshots)
+      .where(
+        and(
+          eq(projectRuntimeSnapshots.provider, 'daytona'),
+          eq(projectRuntimeSnapshots.status, 'ready'),
+        ),
+      );
+    const referenced = new Set(
+      readyRows.map((r) => r.snapshotId).filter((s): s is string => Boolean(s)),
+    );
+
+    // 1. Orphans — on Daytona, named like ours, unreferenced.
+    let orphansDeleted = 0;
+    for (const snap of live) {
+      if (referenced.has(snap.name)) continue;
+      if (await deleteDaytonaSnapshotById(snap.id)) orphansDeleted += 1;
+    }
+
+    // 2. Dead cache rows — `ready` but the image no longer exists.
+    const deadRowIds = readyRows
+      .filter((r) => r.snapshotId && !liveByName.has(r.snapshotId))
+      .map((r) => r.snapshotRowId);
+    if (deadRowIds.length > 0) {
+      await db
+        .delete(projectRuntimeSnapshots)
+        .where(inArray(projectRuntimeSnapshots.snapshotRowId, deadRowIds));
+    }
+
+    // 3. Global budget — evict oldest-updated surviving rows beyond the cap,
+    //    keeping each project's most-recent row as a protected floor.
+    const deadSet = new Set(deadRowIds);
+    const surviving = readyRows.filter(
+      (r) => r.snapshotId && liveByName.has(r.snapshotId) && !deadSet.has(r.snapshotRowId),
+    );
+    const budget = opts.budget ?? globalSnapshotBudget();
+    let evicted = 0;
+    if (surviving.length > budget) {
+      const newestPerProject = new Map<string, string>();
+      for (const r of [...surviving].sort((a, b) => rowUpdatedMs(b) - rowUpdatedMs(a))) {
+        if (!newestPerProject.has(r.projectId)) newestPerProject.set(r.projectId, r.snapshotRowId);
+      }
+      const evictRows = [...surviving]
+        .filter((r) => newestPerProject.get(r.projectId) !== r.snapshotRowId)
+        .sort((a, b) => rowUpdatedMs(a) - rowUpdatedMs(b))
+        .slice(0, surviving.length - budget);
+      const evictRowIds = new Set(evictRows.map((r) => r.snapshotRowId));
+      // Images still pointed at by a surviving (non-evicted) row must not be deleted.
+      const keptRefs = new Set(
+        surviving
+          .filter((r) => !evictRowIds.has(r.snapshotRowId))
+          .map((r) => r.snapshotId)
+          .filter((s): s is string => Boolean(s)),
+      );
+      if (evictRowIds.size > 0) {
+        await db
+          .delete(projectRuntimeSnapshots)
+          .where(inArray(projectRuntimeSnapshots.snapshotRowId, [...evictRowIds]));
+        for (const sid of new Set(evictRows.map((r) => r.snapshotId).filter((s): s is string => Boolean(s)))) {
+          if (keptRefs.has(sid)) continue;
+          const snap = liveByName.get(sid);
+          if (snap) await deleteDaytonaSnapshotById(snap.id);
+        }
+        evicted = evictRowIds.size;
+      }
+    }
+
+    // 4. Stale failed rows.
+    const failed = await db
+      .delete(projectRuntimeSnapshots)
+      .where(
+        and(
+          eq(projectRuntimeSnapshots.status, 'failed'),
+          lt(projectRuntimeSnapshots.updatedAt, new Date(Date.now() - FAILED_ROW_TTL_MS)),
+        ),
+      )
+      .returning({ id: projectRuntimeSnapshots.snapshotRowId });
+
+    const result = {
+      orphansDeleted,
+      deadRowsCleared: deadRowIds.length,
+      evicted,
+      failedCleared: failed.length,
+      liveBefore,
+    };
+    if (orphansDeleted || result.deadRowsCleared || evicted || result.failedCleared) {
+      console.log('[snapshots] reconcile', { ...result, budget });
+    }
+    return result;
+  } finally {
+    reconcileRunning = false;
+  }
+}
+
 /* ─── Internals ────────────────────────────────────────────────────────── */
 
 interface BuildOutcome {
@@ -618,58 +1028,259 @@ async function runBuild(
   commitSha: string,
   provider: SandboxProviderName,
   prepared?: PreparedContext,
+  opts: { silent?: boolean } = {},
 ): Promise<BuildOutcome> {
-  // Flip to `building` first so concurrent waiters can distinguish "in
-  // progress" from "queued and stuck". Best-effort — if the update misses
-  // (row vanished, db blip), the build still proceeds.
-  await db
-    .update(projectRuntimeSnapshots)
-    .set({ status: 'building', updatedAt: new Date() })
-    .where(
-      and(
-        eq(projectRuntimeSnapshots.projectId, project.projectId),
-        eq(projectRuntimeSnapshots.commitSha, commitSha),
-        eq(projectRuntimeSnapshots.provider, provider),
-      ),
-    )
-    .catch(() => {});
+  // `silent` = non-destructive rebuild: the row is currently `ready` with a
+  // still-bootable snapshot (we're only rebuilding because the runtime
+  // fingerprint changed). Keep it `ready` and avoid the progress writes that
+  // would overwrite the live snapshotId — sessions keep booting the old image
+  // until the new one is swapped in atomically by updateSnapshotRow on success.
+  if (!opts.silent) {
+    // Flip to `building` first so concurrent waiters can distinguish "in
+    // progress" from "queued and stuck". Best-effort — if the update misses
+    // (row vanished, db blip), the build still proceeds.
+    await db
+      .update(projectRuntimeSnapshots)
+      .set({ status: 'building', updatedAt: new Date() })
+      .where(
+        and(
+          eq(projectRuntimeSnapshots.projectId, project.projectId),
+          eq(projectRuntimeSnapshots.commitSha, commitSha),
+          eq(projectRuntimeSnapshots.provider, provider),
+        ),
+      )
+      .catch(() => {});
+  }
 
-  const ctx = prepared ?? await prepareBuildContext(project, commitSha);
+  // Daytona is the only provider with a build path today. New providers
+  // can be added here as cases; the rest of the function stays the same.
+  if (provider !== 'daytona') {
+    throw new SnapshotBuildError(
+      `snapshot builder not implemented for provider '${provider}'`,
+    );
+  }
+  const daytona = getDaytona();
+
+  // Identity-first: compute the cheap content-addressed name and probe the
+  // registry BEFORE materializing the repo context / gzipping the ~99MB agent
+  // binary. A content-hash hit (unchanged Dockerfile + deps — the common case
+  // on every new code commit) returns here in well under a second.
+  const identity = prepared ? null : await computeSnapshotIdentity(project, commitSha);
+  const snapshotName = prepared ? prepared.snapshotName : identity!.snapshotName;
+  if (await getUsableSnapshot(daytona, snapshotName)) {
+    return {
+      daytonaName: snapshotName,
+      contentHash: prepared ? prepared.contentHash : identity!.contentHash,
+      shortHash: prepared ? prepared.shortHash : identity!.shortHash,
+      runtimeFingerprint: prepared ? prepared.runtimeFingerprint : identity!.runtimeFingerprint,
+      built: false,
+    };
+  }
+
+  // Cache miss — now pay for the expensive context (or reuse the caller's).
+  const ctx = prepared ?? await prepareBuildContext(project, commitSha, identity!);
   try {
-    // Daytona is the only provider with a build path today. New providers
-    // can be added here as cases; the rest of the function stays the same.
-    if (provider !== 'daytona') {
-      throw new SnapshotBuildError(
-        `snapshot builder not implemented for provider '${provider}'`,
+    if (!opts.silent) {
+      await updateBuildingSnapshotStage(project.projectId, commitSha, provider, {
+        snapshotId: ctx.snapshotName,
+        stage: 'uploading-context',
+        contentHash: ctx.contentHash,
+        shortHash: ctx.shortHash,
+        runtimeFingerprint: ctx.runtimeFingerprint,
+        message: 'Uploading Daytona snapshot build context',
+      });
+    }
+
+    // Daytona snapshot builds intermittently drop the control connection
+    // ("Your socket connection ... idle connections will be closed"), a
+    // transient gateway error that otherwise hard-fails the whole session
+    // (build failures aren't retried by the provision loop). Retry transient
+    // failures, and after any failure re-check the registry first — the socket
+    // can drop AFTER the image finished building server-side.
+    // A custom `[sandbox]` spec is baked into the snapshot here — Daytona
+    // inherits a sandbox's resources from its snapshot, so this is the one
+    // place they can be set. Empty spec → omit `resources` and take the
+    // provider default.
+    const resources = sandboxSpecIsEmpty(ctx.spec) ? undefined : ctx.spec;
+    if (resources) {
+      console.info(
+        `[snapshots] ${ctx.snapshotName}: building with custom spec ${JSON.stringify(resources)}`,
       );
     }
-    const daytona = getDaytona();
-    try {
-      const existing = await daytona.snapshot.get(ctx.snapshotName);
-      if (existing) {
+
+    let lastErr: unknown;
+    let quotaRecovered = false;
+    for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
+      const buildLogs: string[] = [];
+      try {
+        await daytona.snapshot.create(
+          {
+            name: ctx.snapshotName,
+            image: Image.fromDockerfile(ctx.composedPath),
+            ...(resources ? { resources } : {}),
+          },
+          {
+            timeout: Math.floor(BUILD_TIMEOUT_MS / 1000),
+            onLogs: (chunk) => {
+              const line = chunk.trim();
+              if (!line) return;
+              buildLogs.push(line);
+              if (buildLogs.length > SNAPSHOT_LOG_TAIL_LIMIT) {
+                buildLogs.splice(0, buildLogs.length - SNAPSHOT_LOG_TAIL_LIMIT);
+              }
+              console.info(`[snapshots] ${ctx.snapshotName}: ${line}`);
+              if (!opts.silent) {
+                void updateBuildingSnapshotStage(project.projectId, commitSha, provider, {
+                  snapshotId: ctx.snapshotName,
+                  stage: 'building-image',
+                  contentHash: ctx.contentHash,
+                  shortHash: ctx.shortHash,
+                  runtimeFingerprint: ctx.runtimeFingerprint,
+                  message: line,
+                  logs: buildLogs,
+                });
+              }
+            },
+          },
+        );
         return {
           daytonaName: ctx.snapshotName,
           contentHash: ctx.contentHash,
           shortHash: ctx.shortHash,
           runtimeFingerprint: ctx.runtimeFingerprint,
-          built: false,
+          built: true,
         };
+      } catch (err) {
+        lastErr = err;
+        // The connection may have dropped after the build actually completed —
+        // if the snapshot is now active, treat it as success. getUsableSnapshot
+        // also reaps an errored/build_failed snapshot so the retry rebuilds
+        // clean instead of seeing it as a (poisoned) cache hit.
+        if (await getUsableSnapshot(daytona, ctx.snapshotName)) {
+          return {
+            daytonaName: ctx.snapshotName,
+            contentHash: ctx.contentHash,
+            shortHash: ctx.shortHash,
+            runtimeFingerprint: ctx.runtimeFingerprint,
+            built: true,
+          };
+        }
+        // Org-wide snapshot quota hit — reclaim orphaned / over-budget
+        // snapshots once, then retry. Without this the cap is a death-spiral:
+        // builds fail, so per-project prune (which only runs after a *successful*
+        // build) never runs, so the quota never frees. Don't burn an attempt on
+        // the pre-reconcile failure.
+        if (isQuotaError(err) && !quotaRecovered) {
+          quotaRecovered = true;
+          const rec = await reconcileDaytonaSnapshots().catch(() => null);
+          console.warn(`[snapshots] quota hit building ${ctx.snapshotName}; reconciled ${JSON.stringify(rec)} — retrying`);
+          attempt--;
+          continue;
+        }
+        if (!isTransientDaytonaError(err) || attempt === BUILD_ATTEMPTS) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[snapshots] build attempt ${attempt}/${BUILD_ATTEMPTS} for ${ctx.snapshotName} failed transiently — retrying: ${msg.slice(0, 120)}`);
+        await new Promise((r) => setTimeout(r, BUILD_RETRY_BASE_MS * attempt));
       }
-    } catch { /* not present — proceed with build */ }
-    await daytona.snapshot.create(
-      { name: ctx.snapshotName, image: Image.fromDockerfile(ctx.composedPath) },
-      { timeout: Math.floor(BUILD_TIMEOUT_MS / 1000) },
-    );
-    return {
-      daytonaName: ctx.snapshotName,
-      contentHash: ctx.contentHash,
-      shortHash: ctx.shortHash,
-      runtimeFingerprint: ctx.runtimeFingerprint,
-      built: true,
-    };
+    }
+    throw lastErr;
   } finally {
     await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/**
+ * Return true only if a content-addressed snapshot already exists AND is usable
+ * (`active`). Snapshots are content-addressed, so a build that errored leaves a
+ * snapshot in `error`/`build_failed` under the SAME name — without this guard it
+ * would be reused forever as a false cache hit (every session then fails with
+ * "Snapshot … is error"). Reap those so the build runs fresh.
+ */
+async function getUsableSnapshot(
+  daytona: ReturnType<typeof getDaytona>,
+  name: string,
+): Promise<boolean> {
+  try {
+    const snap = await daytona.snapshot.get(name);
+    if (!snap) return false;
+    const state = (snap as { state?: string }).state;
+    if (state === 'active') return true;
+    if (state === 'error' || state === 'build_failed') {
+      await daytona.snapshot.delete(snap).catch(() => {});
+    }
+    return false;
+  } catch {
+    return false; // not found / transient — treat as absent, caller proceeds to build
+  }
+}
+
+/** Org-wide snapshot quota exhaustion — recoverable by reconciling first. */
+function isQuotaError(err: unknown): boolean {
+  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return m.includes('quota') || m.includes('maximum allowed');
+}
+
+/** Transient Daytona build/transport errors worth retrying (vs a real build failure). */
+function isTransientDaytonaError(err: unknown): boolean {
+  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    m.includes('socket connection') ||
+    m.includes('idle connection') ||
+    m.includes('not read from or written to') ||
+    m.includes('socket hang up') ||
+    m.includes('timeout') ||
+    m.includes('timed out') ||
+    m.includes('econnreset') ||
+    m.includes('econnrefused') ||
+    m.includes('etimedout') ||
+    m.includes('eof') ||
+    m.includes('network') ||
+    m.includes('gateway') ||
+    m.includes(' 502') || m.includes(' 503') || m.includes(' 504')
+  );
+}
+
+async function updateBuildingSnapshotStage(
+  projectId: string,
+  commitSha: string,
+  provider: SandboxProviderName,
+  build: {
+    snapshotId: string;
+    stage: 'uploading-context' | 'building-image';
+    contentHash: string;
+    shortHash: string;
+    runtimeFingerprint: string;
+    message: string;
+    logs?: string[];
+  },
+): Promise<void> {
+  const metadata: Record<string, unknown> = {
+    stage: build.stage,
+    contentHash: build.contentHash,
+    shortHash: build.shortHash,
+    runtimeFingerprint: build.runtimeFingerprint,
+    sandboxVersion: SANDBOX_VERSION,
+    lastMessage: build.message,
+    updatedAt: new Date().toISOString(),
+  };
+  if (build.logs?.length) {
+    metadata.logs = build.logs;
+  }
+  await db
+    .update(projectRuntimeSnapshots)
+    .set({
+      snapshotId: build.snapshotId,
+      metadata,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.commitSha, commitSha),
+        eq(projectRuntimeSnapshots.provider, provider),
+      ),
+    )
+    .catch(() => {});
 }
 
 async function recoverInProgressSnapshotRow(
@@ -717,75 +1328,135 @@ interface PreparedContext {
   contentHash: string;
   shortHash: string;
   runtimeFingerprint: string;
+  /** Hardware spec to bake into the Daytona snapshot ({} == provider default). */
+  spec: SandboxSpec;
 }
 
-async function prepareBuildContext(
+interface SnapshotIdentity {
+  snapshotName: string;
+  contentHash: string;
+  shortHash: string;
+  runtimeFingerprint: string;
+  /** Repo subdir used as the build context (null == repo root). */
+  contextSubdir: string | null;
+  userDockerfile: string;
+  /** Hardware spec from `[sandbox]` ({} == provider default). */
+  spec: SandboxSpec;
+}
+
+/**
+ * Cheap half of the prepare step: read the project's Dockerfile + tree oid and
+ * compute the content-addressed snapshot name. Deliberately does NOT touch the
+ * ~99MB agent binary or materialize the repo context — callers check whether
+ * the image already exists (a content-hash cache hit) before paying for the
+ * gzip + tarball, which is the common case on every new code commit.
+ */
+async function computeSnapshotIdentity(
   project: GitBackedProject,
   commitSha: string,
-): Promise<PreparedContext> {
-  const sandboxPaths = await resolveSandboxPaths(project, commitSha);
+): Promise<SnapshotIdentity> {
+  const { paths: sandboxPaths, spec } = await resolveSandboxConfig(project, commitSha);
   const userDockerfile = await readRepoFile(project, sandboxPaths.dockerfile, commitSha);
   if (!userDockerfile.trim()) {
     throw new SnapshotBuildError(
       `Empty Dockerfile at ${sandboxPaths.dockerfile} (commit ${commitSha.slice(0, 8)})`,
     );
   }
-  const contextTreeOid = await resolveTreeOid(
-    project,
-    commitSha,
-    sandboxPaths.context === '.' ? null : sandboxPaths.context,
-  );
-  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
-  await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
-  await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
-
+  const contextSubdir = sandboxPaths.context === '.' ? null : sandboxPaths.context;
+  const contextTreeOid = await resolveTreeOid(project, commitSha, contextSubdir);
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   const hash = computeSnapshotHash({
     dockerfile: userDockerfile,
     contextTreeOid,
+    spec,
     runtimeFingerprint,
   });
-  const snapshotName = formatSnapshotName(project.projectId, hash.contentHash);
+  return {
+    snapshotName: formatSnapshotName(project.projectId, hash.contentHash),
+    contentHash: hash.contentHash,
+    shortHash: hash.shortHash,
+    runtimeFingerprint,
+    contextSubdir,
+    userDockerfile,
+    spec,
+  };
+}
 
-  const contextDir = await materializeRepoContext(
-    project,
-    commitSha,
-    sandboxPaths.context === '.' ? null : sandboxPaths.context,
-  );
-  await copyFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent'));
+/**
+ * Expensive half: materialize the git context, stage the kortix-agent binary
+ * (gzip ~99MB) + CLI/SDK, and compose the layered Dockerfile. Only call this
+ * when an actual image build is required — runBuild() checks the snapshot
+ * registry first and reaches here only on a miss.
+ */
+async function prepareBuildContext(
+  project: GitBackedProject,
+  commitSha: string,
+  identity?: SnapshotIdentity,
+): Promise<PreparedContext> {
+  const id = identity ?? await computeSnapshotIdentity(project, commitSha);
+  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
+  await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
+  await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
+
+  const contextDir = await materializeRepoContext(project, commitSha, id.contextSubdir);
+  await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
   await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
+  await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), { recursive: true });
 
   const composedPath = join(contextDir, '.kortix-snapshot.Dockerfile');
   const composed = buildLayeredDockerfile({
-    userDockerfile,
+    userDockerfile: id.userDockerfile,
     opencodeVersion: OPENCODE_VERSION,
-    agentBinaryPath: 'kortix-agent',
+    agentBrowserVersion: AGENT_BROWSER_VERSION,
+    agentBinaryPath: 'kortix-agent.gz',
     entrypointScriptPath: 'kortix-entrypoint',
     agentCliPath: 'kortix-agent-cli',
+    executorSdkPath: 'kortix-executor-sdk',
   });
   await Bun.write(composedPath, composed);
 
   return {
     contextDir,
     composedPath,
-    snapshotName,
-    contentHash: hash.contentHash,
-    shortHash: hash.shortHash,
-    runtimeFingerprint,
+    snapshotName: id.snapshotName,
+    contentHash: id.contentHash,
+    shortHash: id.shortHash,
+    runtimeFingerprint: id.runtimeFingerprint,
+    spec: id.spec,
   };
 }
 
+let runtimeFingerprintCache: { key: string; value: string } | null = null;
+
 async function currentRuntimeArtifactFingerprint(): Promise<string> {
-  return buildRuntimeArtifactFingerprint({
-    sandboxVersion: SANDBOX_VERSION,
+  // The fingerprint hashes the ~99MB agent binary; doing that on every session
+  // start is wasteful since the runtime artifacts only change when the API is
+  // rebuilt/redeployed. Memoize keyed on the agent binary's mtime+size so a dev
+  // rebuild (which restages the CLI/SDK alongside it) still busts the cache.
+  let key = '';
+  try {
+    const s = await stat(AGENT_BIN_PATH);
+    key = `${s.mtimeMs}:${s.size}:${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
+  } catch {
+    key = ''; // couldn't stat — compute uncached this call
+  }
+  if (key && runtimeFingerprintCache?.key === key) {
+    return runtimeFingerprintCache.value;
+  }
+  const value = await buildRuntimeArtifactFingerprint({
+    sandboxVersion: `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:ab:${AGENT_BROWSER_VERSION}`,
     opencodeVersion: OPENCODE_VERSION,
     artifacts: [
       { label: 'kortix-agent', path: AGENT_BIN_PATH },
       { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
       { label: 'kortix-agent-cli', path: AGENT_CLI_SRC_PATH },
+      { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH },
     ],
   });
+  if (key) runtimeFingerprintCache = { key, value };
+  return value;
 }
 
 async function updateSnapshotRow(
@@ -860,14 +1531,21 @@ async function assertExistsDir(path: string, envVarHint: string): Promise<void> 
   }
 }
 
-async function resolveSandboxPaths(project: GitBackedProject, _commitSha: string): Promise<SandboxPaths> {
+async function resolveSandboxConfig(
+  project: GitBackedProject,
+  _commitSha: string,
+): Promise<{ paths: SandboxPaths; spec: SandboxSpec }> {
   // readManifest reads from the default branch HEAD — for v1 we accept
   // that as the source of truth even when building for a different
   // commit. A more conservative version would read the manifest at
   // commitSha; the difference only matters for projects that edit
-  // [sandbox] paths on feature branches.
+  // [sandbox] paths/spec on feature branches.
   const parsed = await readManifest(project);
-  return extractSandboxPaths(parsed?.raw ?? null);
+  const raw = parsed?.raw ?? null;
+  return {
+    paths: extractSandboxPaths(raw),
+    spec: extractSandboxSpec(raw),
+  };
 }
 
 async function findSnapshotRow(
@@ -889,6 +1567,14 @@ async function findSnapshotRow(
   return row ?? null;
 }
 
+async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
+  await pipeline(
+    createReadStream(sourcePath),
+    createGzip({ level: 9 }),
+    createWriteStream(targetPath),
+  );
+}
+
 function extractMetadataHash(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== 'object') return null;
   const value = (metadata as Record<string, unknown>).contentHash;
@@ -899,4 +1585,16 @@ function extractMetadataRuntimeFingerprint(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== 'object') return null;
   const value = (metadata as Record<string, unknown>).runtimeFingerprint;
   return typeof value === 'string' ? value : null;
+}
+
+function extractMetadataErrorCategory(metadata: unknown): SnapshotErrorCategory | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const value = (metadata as Record<string, unknown>).errorCategory;
+  return typeof value === 'string' ? (value as SnapshotErrorCategory) : null;
+}
+
+function extractMetadataNumber(metadata: unknown, key: string): number | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }

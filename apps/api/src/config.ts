@@ -11,10 +11,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-// Only Daytona is supported end-to-end. The DB enum still carries the
-// historical 'local_docker' value for legacy rows, but the API will never
-// produce one.
-export type SandboxProviderName = 'daytona';
+export type SandboxProviderName = 'daytona' | 'local_docker';
 export type InternalKortixEnv = 'dev' | 'staging' | 'prod';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -121,6 +118,9 @@ const envSchema = z.object({
   // means the OAuth flow grants fewer scopes than the manifest advertises
   // and tools like `slack channels`/`slack users` fail with missing_scope.
   SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,channels:history,channels:read,channels:join,chat:write,chat:write.public,files:read,files:write,groups:history,groups:read,im:history,im:read,im:write,mpim:history,mpim:read,reactions:read,reactions:write,users:read'),
+  // Optional banner image rendered at the top of the App Home tab. Must be a
+  // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
+  SLACK_HOME_HERO_URL:         optStr,
   KORTIX_API_KEY_ENC_KEY:      optStr,
   KORTIX_DASHBOARD_URL:        optStr,
 
@@ -158,9 +158,11 @@ const envSchema = z.object({
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL:                  optStr,
   KORTIX_YOLO_URL:             optUrl('https://api-yolo.kortix.com/v1'),
-  // Legacy: kept so old .env files don't fail validation. Value is ignored —
-  // every sandbox now provisions on Daytona.
   ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
+  SANDBOX_IMAGE:               optStr,
+  KORTIX_LOCAL_IMAGES:         optBoolFalse,
+  DOCKER_HOST:                 optStr,
+  SANDBOX_NETWORK:             optStr,
   // Default port base for sandbox port mapping; kept for the queue drainer
   // and deployments router which still reference it.
   SANDBOX_PORT_BASE:           optInt(14000),
@@ -171,6 +173,13 @@ const envSchema = z.object({
 
   // ── Frontend (optional) ──────────────────────────────────────────────────
   FRONTEND_URL:                optUrl('http://localhost:3000'),
+
+  // ── Pipedream Connect (optional — powers the Executor's 1-click connectors) ─
+  PIPEDREAM_CLIENT_ID:         optStr,
+  PIPEDREAM_CLIENT_SECRET:     optStr,
+  PIPEDREAM_PROJECT_ID:        optStr,
+  PIPEDREAM_ENVIRONMENT:       optStrDefault('production'),
+  PIPEDREAM_WEBHOOK_SECRET:    optStr,
 
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
   TUNNEL_SIGNING_SECRET:             optStr,
@@ -225,10 +234,9 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona'] as const;
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'local_docker'] as const;
 
-/** Parse comma-separated provider list (e.g. "daytona"). Unknown entries
- *  are dropped with a warning so an old .env doesn't break boot. */
+/** Parse comma-separated provider list (e.g. "daytona,local_docker"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
   if (!raw) return ['daytona'];
   const names = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -266,6 +274,9 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (!raw.DAYTONA_API_KEY)    issues.push({ var: 'DAYTONA_API_KEY',    message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_SERVER_URL) issues.push({ var: 'DAYTONA_SERVER_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
+  }
+  if (providers.includes('local_docker') && !raw.DOCKER_HOST) {
+    issues.push({ var: 'DOCKER_HOST', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "local_docker"', level: 'error' });
   }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
@@ -376,6 +387,13 @@ export const config = {
   // ─── API Key Hashing ──────────────────────────────────────────────────────
   API_KEY_SECRET: env.API_KEY_SECRET,
 
+  // ─── Pipedream Connect (Executor 1-click connectors) ──────────────────────
+  PIPEDREAM_CLIENT_ID: env.PIPEDREAM_CLIENT_ID,
+  PIPEDREAM_CLIENT_SECRET: env.PIPEDREAM_CLIENT_SECRET,
+  PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,
+  PIPEDREAM_ENVIRONMENT: env.PIPEDREAM_ENVIRONMENT,
+  PIPEDREAM_WEBHOOK_SECRET: env.PIPEDREAM_WEBHOOK_SECRET,
+
   // ─── Search Providers ──────────────────────────────────────────────────────
   TAVILY_API_URL: env.TAVILY_API_URL,
   TAVILY_API_KEY: env.TAVILY_API_KEY,
@@ -403,6 +421,7 @@ export const config = {
   SLACK_CLIENT_SECRET: env.SLACK_CLIENT_SECRET,
   SLACK_REDIRECT_URI: env.SLACK_REDIRECT_URI,
   SLACK_OAUTH_SCOPES: env.SLACK_OAUTH_SCOPES,
+  SLACK_HOME_HERO_URL: env.SLACK_HOME_HERO_URL,
   KORTIX_DASHBOARD_URL: env.KORTIX_DASHBOARD_URL,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
@@ -437,6 +456,10 @@ export const config = {
   KORTIX_URL: env.KORTIX_URL,
   KORTIX_YOLO_URL: env.KORTIX_YOLO_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
+  SANDBOX_IMAGE: env.SANDBOX_IMAGE || 'kortix/kortix-sandbox:latest',
+  KORTIX_LOCAL_IMAGES: env.KORTIX_LOCAL_IMAGES,
+  DOCKER_HOST: env.DOCKER_HOST,
+  SANDBOX_NETWORK: env.SANDBOX_NETWORK,
   SANDBOX_PORT_BASE: env.SANDBOX_PORT_BASE,
   SANDBOX_CONTAINER_NAME: env.SANDBOX_CONTAINER_NAME,
 
@@ -543,6 +566,7 @@ export const config = {
     if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
     switch (name) {
       case 'daytona': return !!this.DAYTONA_API_KEY;
+      case 'local_docker': return !!this.DOCKER_HOST;
       default: {
         const exhaustive: never = name;
         return exhaustive;
@@ -559,6 +583,14 @@ export const config = {
    */
   getDefaultProvider(): SandboxProviderName {
     return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
+  },
+
+  isDaytonaEnabled(): boolean {
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('daytona') && !!this.DAYTONA_API_KEY;
+  },
+
+  isLocalDockerEnabled(): boolean {
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker') && !!this.DOCKER_HOST;
   },
 
 };

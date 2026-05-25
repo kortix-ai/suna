@@ -1,9 +1,11 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import * as React from 'react';
-import { Check, Monitor, Sun, Moon, Palette, ImageIcon } from 'lucide-react';
+import { Check, Monitor, Sun, Moon, Palette, ImageIcon, PanelTop } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { transitionFromElement } from '@/lib/view-transition';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
@@ -41,8 +43,8 @@ function WallpaperCard({
         {/* Hover overlay */}
         <div
           className={cn(
-            'absolute inset-0 transition-opacity duration-200 pointer-events-none',
-            isActive ? 'bg-black/10' : 'bg-black/0 group-hover:bg-black/10'
+            'absolute inset-0 transition-colors duration-200 pointer-events-none',
+            isActive ? 'bg-transparent' : 'bg-transparent group-hover:bg-foreground/[0.06]'
           )}
         />
         {/* Check badge */}
@@ -53,10 +55,10 @@ function WallpaperCard({
         )}
       </div>
       <div className="px-1.5 py-1">
-        <span className="text-[11px] font-medium text-foreground flex items-center gap-1">
+        <span className="text-xs font-medium text-foreground flex items-center gap-1">
           {wallpaper.name}
           {wallpaper.id === DEFAULT_WALLPAPER_ID && (
-            <span className="text-[0.5625rem] font-medium px-1 py-px rounded-full bg-muted text-muted-foreground">
+            <span className="text-xs font-medium px-1 py-px rounded-full bg-muted text-muted-foreground">
               Default
             </span>
           )}
@@ -78,11 +80,16 @@ const BASE_MODES = [
 const DARK_ONLY_WALLPAPER_IDS = new Set(['matrix', 'ascii-tunnel']);
 
 export function AppearanceTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { theme: baseMode, setTheme: setBaseMode, resolvedTheme } = useTheme();
   const wallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID
   );
   const setWallpaperId = useUserPreferencesStore((s) => s.setWallpaperId);
+  const disableTabSelector = useUserPreferencesStore(
+    (s) => s.preferences.disableTabSelector ?? false,
+  );
+  const setDisableTabSelector = useUserPreferencesStore((s) => s.setDisableTabSelector);
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -112,15 +119,13 @@ export function AppearanceTab() {
           <h3 className="text-lg font-semibold">Appearance</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Choose a color mode and wallpaper.
-        </p>
+          {tHardcodedUi.raw('componentsSettingsAppearanceTab.line120JsxTextChooseAColorModeWallpaperAndLayoutOptions')}</p>
       </div>
 
       <div className="space-y-5 sm:space-y-6">
         <div>
           <label className="text-xs font-medium text-muted-foreground mb-2 block">
-            Color Mode
-          </label>
+            {tHardcodedUi.raw('componentsSettingsAppearanceTab.line127JsxTextColorMode')}</label>
           <FilterBar>
             {BASE_MODES.map((mode) => {
               const Icon = mode.icon;
@@ -159,6 +164,28 @@ export function AppearanceTab() {
                 onSelect={() => setWallpaperId(wp.id)}
               />
             ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <PanelTop className="size-4 text-muted-foreground" />
+            <label className="text-xs font-medium text-muted-foreground">
+              Layout
+            </label>
+          </div>
+          <div className="rounded-2xl border divide-y">
+            <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">{tHardcodedUi.raw('componentsSettingsAppearanceTab.line180JsxTextSessionTabs')}</div>
+                <div className="text-xs text-muted-foreground">
+                  {tHardcodedUi.raw('componentsSettingsAppearanceTab.line182JsxTextShowATabBarAtTheTopOf')}</div>
+              </div>
+              <Switch
+                checked={!disableTabSelector}
+                onCheckedChange={(v) => setDisableTabSelector(!v)}
+              />
+            </div>
           </div>
         </div>
 

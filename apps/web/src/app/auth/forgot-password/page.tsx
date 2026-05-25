@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { FormEvent, Suspense, useState } from 'react';
 import { AlertCircle, MailCheck } from 'lucide-react';
 
@@ -10,6 +12,7 @@ import { AuthCardShell, BackToSignIn } from '@/components/auth/auth-card-shell';
 import { forgotPassword } from '../actions';
 
 function ForgotPasswordContent() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [pending, setPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -40,14 +43,13 @@ function ForgotPasswordContent() {
   if (sentTo) {
     return (
       <AuthCardShell
-        title="Check your email"
-        description="We've sent you a password reset link"
+        title={tHardcodedUi.raw('appAuthForgotPasswordPage.line43JsxAttrTitleCheckYourEmail')}
+        description={tHardcodedUi.raw('appAuthForgotPasswordPage.line44JsxAttrDescriptionWeVeSentYouAPasswordResetLink')}
         footer={<BackToSignIn />}
       >
         <div className="p-3 rounded-2xl flex items-center gap-2 bg-foreground/[0.05] border border-foreground/[0.08] text-foreground/80">
           <MailCheck className="h-4 w-4 flex-shrink-0" />
-          <span className="text-[13px] truncate">
-            Reset link sent to <span className="text-foreground/95">{sentTo}</span>
+          <span className="text-sm truncate">{tHardcodedUi.raw('appAuthForgotPasswordPage.line50JsxTextResetLinkSentTo')}<span className="text-foreground/95">{sentTo}</span>
           </span>
         </div>
       </AuthCardShell>
@@ -56,14 +58,14 @@ function ForgotPasswordContent() {
 
   return (
     <AuthCardShell
-      title="Reset your password"
-      description="Enter your email and we'll send you a reset link"
+      title={tHardcodedUi.raw('appAuthForgotPasswordPage.line59JsxAttrTitleResetYourPassword')}
+      description={tHardcodedUi.raw('appAuthForgotPasswordPage.line60JsxAttrDescriptionEnterYourEmailAndWeLlSendYou')}
       footer={<BackToSignIn />}
     >
       {errorMessage && (
         <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-[13px]">{errorMessage}</span>
+          <span className="text-sm">{errorMessage}</span>
         </div>
       )}
 
@@ -72,16 +74,16 @@ function ForgotPasswordContent() {
           id="email"
           name="email"
           type="email"
-          placeholder="Email address"
+          placeholder={tHardcodedUi.raw('appAuthForgotPasswordPage.line75JsxAttrPlaceholderEmailAddress')}
           required
           autoComplete="email"
-          className="text-[15px]"
+          className="text-sm"
         />
         <Button
           type="submit"
           size="lg"
           disabled={pending}
-          className="w-full text-[13px]"
+          className="w-full text-sm"
         >
           {pending ? 'Sending link…' : 'Send reset link'}
         </Button>

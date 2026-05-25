@@ -1,8 +1,11 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState } from 'react';
 import { Copy, Check, ChevronDown, ChevronRight, Network } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
   Dialog,
@@ -242,21 +245,22 @@ function RawMessage({ message, parts, formatTime }: {
       <AccordionTrigger className="py-2 px-3 text-xs hover:no-underline hover:bg-muted/40 rounded-md">
         <div className="flex items-center justify-between gap-2 w-full pr-2">
           <div className="min-w-0 truncate font-mono">
-            <span className={cn(
-              'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase mr-2',
-              message.role === 'user' ? 'bg-blue-500/20 text-blue-500' : 'bg-emerald-500/20 text-emerald-500',
-            )}>
+            <Badge
+              variant={message.role === 'user' ? 'info' : 'success'}
+              size="sm"
+              className="uppercase font-semibold mr-2"
+            >
               {message.role}
-            </span>
+            </Badge>
             <span className="text-muted-foreground">{message.id}</span>
           </div>
-          <div className="shrink-0 text-[10px] text-muted-foreground/60">
+          <div className="shrink-0 text-xs text-muted-foreground/60">
             {formatTime(message.time?.created)}
           </div>
         </div>
       </AccordionTrigger>
       <AccordionContent className="px-3 pb-2">
-        <pre className="p-3 rounded-2xl bg-muted/40 overflow-x-auto text-[11px] font-mono whitespace-pre-wrap break-all select-text max-h-[400px] overflow-y-auto">
+        <pre className="p-3 rounded-2xl bg-muted/40 overflow-x-auto text-xs font-mono whitespace-pre-wrap break-all select-text max-h-[400px] overflow-y-auto">
           {JSON.stringify({ message, parts }, null, 2)}
         </pre>
       </AccordionContent>
@@ -406,11 +410,11 @@ function SubSessionTreeNode({
           {usd.format(node.cost)}
         </span>
         {hasChildren && (
-          <span className="shrink-0 text-muted-foreground/50 text-[10px] tabular-nums">
+          <span className="shrink-0 text-muted-foreground/50 text-xs tabular-nums">
             (tree: {usd.format(totals.cost)})
           </span>
         )}
-        <span className="shrink-0 text-muted-foreground/60 text-[10px]">
+        <span className="shrink-0 text-muted-foreground/60 text-xs">
           {node.messages} msgs
         </span>
       </button>
@@ -446,6 +450,7 @@ export function SessionContextModal({
   providers,
   allSessions,
 }: SessionContextModalProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copiedAll, setCopiedAll] = useState(false);
 
   const rawMessages = useMemo(
@@ -552,31 +557,26 @@ export function SessionContextModal({
             <div className="flex flex-col gap-3 p-4 rounded-2xl border border-primary/20 bg-primary/5">
               <div className="flex items-center gap-2">
                 <Network className="size-4 text-primary" />
-                <div className="text-sm font-semibold text-foreground">
-                  Aggregate Totals
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">
-                    (this session + {descendantIds.length} sub-session{descendantIds.length !== 1 ? 's' : ''})
+                <div className="text-sm font-semibold text-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line558JsxTextAggregateTotals')}<span className="ml-2 text-xs font-normal text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line560JsxTextThisSession')}{descendantIds.length} sub-session{descendantIds.length !== 1 ? 's' : ''})
                   </span>
                 </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Stat label="Total Cost" value={
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line565JsxAttrLabelTotalCost')} value={
                   <span className="text-primary font-semibold">{usd.format(aggregateTotals.cost)}</span>
                 } />
-                <Stat label="Total Messages" value={aggregateTotals.messages.toLocaleString()} />
-                <Stat label="Input Tokens" value={fmt.number(aggregateTotals.inputTokens)} />
-                <Stat label="Output Tokens" value={fmt.number(aggregateTotals.outputTokens)} />
-                <Stat label="Reasoning Tokens" value={fmt.number(aggregateTotals.reasoningTokens)} />
-                <Stat label="Cache Tokens" value={`${fmt.number(aggregateTotals.cacheReadTokens)} / ${fmt.number(aggregateTotals.cacheWriteTokens)}`} />
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line568JsxAttrLabelTotalMessages')} value={aggregateTotals.messages.toLocaleString()} />
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line569JsxAttrLabelInputTokens')} value={fmt.number(aggregateTotals.inputTokens)} />
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line570JsxAttrLabelOutputTokens')} value={fmt.number(aggregateTotals.outputTokens)} />
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line571JsxAttrLabelReasoningTokens')} value={fmt.number(aggregateTotals.reasoningTokens)} />
+                <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line572JsxAttrLabelCacheTokens')} value={`${fmt.number(aggregateTotals.cacheReadTokens)} / ${fmt.number(aggregateTotals.cacheWriteTokens)}`} />
               </div>
             </div>
           )}
 
           {/* This session label when sub-sessions exist */}
           {hasSubSessions && (
-            <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-              This Session Only
-            </div>
+            <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{tHardcodedUi.raw('componentsSessionSessionContextModal.line580JsxTextThisSessionOnly')}</div>
           )}
 
           {/* Stats grid — 1:1 from SolidJS */}
@@ -589,7 +589,7 @@ export function SessionContextModal({
           {/* Context breakdown bar — 1:1 from SolidJS */}
           {breakdown.length > 0 && (
             <div className="flex flex-col gap-2">
-              <div className="text-xs text-muted-foreground">Context Breakdown</div>
+              <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line594JsxTextContextBreakdown')}</div>
               <div className="h-2 w-full rounded-full bg-muted overflow-hidden flex">
                 {breakdown.map((segment) => (
                   <div
@@ -601,7 +601,7 @@ export function SessionContextModal({
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1">
                 {breakdown.map((segment) => (
-                  <div key={segment.key} className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <div key={segment.key} className="flex items-center gap-1 text-xs text-muted-foreground">
                     <div className="size-2 rounded-sm" style={{ backgroundColor: BREAKDOWN_COLORS[segment.key] }} />
                     <div>{BREAKDOWN_LABELS[segment.key]}</div>
                     <div className="text-muted-foreground/60">{segment.percent}%</div>
@@ -614,7 +614,7 @@ export function SessionContextModal({
           {/* Sub-session cost tree */}
           {hasSubSessions && subSessionTree && subSessionTree.children.length > 0 && (
             <div className="flex flex-col gap-2">
-              <div className="text-xs text-muted-foreground">Sub-Session Breakdown</div>
+              <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line619JsxTextSubSessionBreakdown')}</div>
               <div className="border rounded-2xl p-3 bg-muted/20">
                 {subSessionTree.children.map((child) => (
                   <SubSessionTreeNode key={child.id} node={child} usd={usd} />
@@ -625,8 +625,7 @@ export function SessionContextModal({
 
           {/* Raw messages — 1:1 from SolidJS */}
           <div className="flex flex-col gap-2">
-            <div className="text-xs text-muted-foreground">
-              Raw Messages ({counts.all})
+            <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line631JsxTextRawMessages')}{counts.all})
             </div>
             <Accordion type="multiple" className="border rounded-2xl overflow-hidden">
               {(messages ?? []).map((msg) => (

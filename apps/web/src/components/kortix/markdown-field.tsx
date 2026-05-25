@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Edit-in-place markdown field.
  *
@@ -64,6 +66,7 @@ export function MarkdownField({
   minHeight = 200,
   saveOnCmdEnter,
 }: MarkdownFieldProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [localEditing, setLocalEditing] = useState(false);
   const editing = editingOverride?.editing ?? localEditing;
   const setEditing = (v: boolean) => {
@@ -140,7 +143,7 @@ export function MarkdownField({
           <span className="text-[10px] text-muted-foreground/45">
             <kbd className="inline-flex items-center min-w-[18px] h-4 px-1 rounded border border-border/50 bg-muted/40 text-[10px] font-mono">⌘</kbd>
             <kbd className="inline-flex items-center min-w-[18px] h-4 px-1 ml-0.5 rounded border border-border/50 bg-muted/40 text-[10px] font-mono">S</kbd>
-            <span className="ml-1.5">save · Esc cancel</span>
+            <span className="ml-1.5">{tHardcodedUi.raw('componentsKortixMarkdownField.line143JsxTextSaveEscCancel')}</span>
           </span>
           <div className="ml-auto flex items-center gap-1">
             <Button

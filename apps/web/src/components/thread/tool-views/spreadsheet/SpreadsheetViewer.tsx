@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { SpreadsheetComponent } from '@syncfusion/ej2-react-spreadsheet';
 import { registerLicense } from '@syncfusion/ej2-base';
@@ -78,6 +80,7 @@ export function SpreadsheetViewer({
   onDownloadReady,
   onDownloadingChange,
 }: SpreadsheetViewerProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const ssRef = useRef<SpreadsheetComponent>(null);
   const { session } = useAuth();
   const [isDownloading, setIsDownloading] = useState(false);
@@ -234,8 +237,8 @@ export function SpreadsheetViewer({
             <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">No file path provided</h3>
-            <p className="text-xs text-muted-foreground">FilePath is required to load the spreadsheet</p>
+            <h3 className="text-lg font-medium text-foreground">{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSpreadsheetviewer.line237JsxTextNoFilePathProvided')}</h3>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSpreadsheetviewer.line238JsxTextFilepathIsRequiredToLoadTheSpreadsheet')}</p>
           </div>
         </div>
       </div>
@@ -250,7 +253,7 @@ export function SpreadsheetViewer({
             <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">Failed to load spreadsheet</h3>
+            <h3 className="text-lg font-medium text-foreground">{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSpreadsheetviewer.line253JsxTextFailedToLoadSpreadsheet')}</h3>
             <p className="text-xs text-muted-foreground">{syncState.errorMessage || 'Unknown error'}</p>
             {resolvedFilePath && (
               <p className="text-xs text-muted-foreground mt-1">Path: {resolvedFilePath}</p>

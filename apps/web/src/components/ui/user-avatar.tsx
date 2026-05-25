@@ -31,11 +31,11 @@ function initialsFromIdentity(name: string | undefined, email: string): string {
 }
 
 const SIZE_MAP = {
-  xs: 'size-5 text-[9px]',
-  sm: 'size-6 text-[10px]',
-  md: 'size-8 text-[11px]',
-  lg: 'size-10 text-[13px]',
-  xl: 'size-14 text-[17px]',
+  xs: 'size-5 text-xs',
+  sm: 'size-6 text-xs',
+  md: 'size-8 text-xs',
+  lg: 'size-10 text-sm',
+  xl: 'size-14 text-base',
 } as const;
 
 export type UserAvatarSize = keyof typeof SIZE_MAP;

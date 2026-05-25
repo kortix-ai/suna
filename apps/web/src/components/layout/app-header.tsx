@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * AppHeader — the canonical top bar used outside the (dashboard) shell.
  *
@@ -43,6 +45,7 @@ export function AppHeader({
    * landing). Pass an explicit href to override on a specific surface. */
   logoHref?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const displayName =
     (user.user_metadata?.name as string | undefined) ||
     user.email?.split('@')[0] ||
@@ -57,7 +60,7 @@ export function AppHeader({
     <>
     <header
       className={cn(
-        'flex shrink-0 items-center justify-between gap-3 px-6 py-4',
+        'kx-app-header flex shrink-0 items-center justify-between gap-3 px-6 py-4',
         variant === 'overlay' && 'pointer-events-none absolute inset-x-0 top-0 z-20',
       )}
     >
@@ -69,7 +72,7 @@ export function AppHeader({
       >
         <Link
           href={logoHref}
-          aria-label="Kortix home"
+          aria-label={tHardcodedUi.raw('componentsLayoutAppHeader.line72JsxAttrAriaLabelKortixHome')}
           className="mr-1 inline-flex cursor-pointer items-center rounded-md transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <KortixLogo size={20} />
@@ -82,7 +85,7 @@ export function AppHeader({
         {breadcrumb != null && (
           <>
             <BreadcrumbDivider />
-            <span className="select-none px-2 text-[13px] font-medium text-foreground">
+            <span className="select-none px-2 text-sm font-medium text-foreground">
               {breadcrumb}
             </span>
           </>
@@ -114,7 +117,7 @@ function BreadcrumbDivider() {
   return (
     <span
       aria-hidden="true"
-      className="select-none px-0.5 text-[14px] font-light text-muted-foreground/40 transform -skew-x-12"
+      className="select-none px-0.5 text-sm font-light text-muted-foreground/40 transform -skew-x-12"
     >
       /
     </span>

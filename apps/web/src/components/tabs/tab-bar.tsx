@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
@@ -202,7 +204,7 @@ function TabContextMenu({ tab, position, onAction, onClose }: ContextMenuProps) 
       {icon}
       <span className="flex-1">{label}</span>
       {shortcut && (
-        <span className="text-[10px] text-muted-foreground/40 ml-4">{shortcut}</span>
+        <span className="text-xs text-muted-foreground/40 ml-4">{shortcut}</span>
       )}
     </button>
   );
@@ -241,6 +243,7 @@ interface TabListDropdownProps {
 }
 
 function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, getStatus }: TabListDropdownProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredTabs = useMemo(() => {
@@ -309,7 +312,7 @@ function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, ge
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.stopPropagation()}
-              placeholder="Filter tabs..."
+              placeholder={tHardcodedUi.raw('componentsTabsTabBar.line312JsxAttrPlaceholderFilterTabs')}
               autoFocus
               className="h-8 text-xs"
             />
@@ -320,7 +323,7 @@ function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, ge
           {sessionTabs.length > 0 && (
             <DropdownMenuGroup>
               {otherTabs.length > 0 && (
-                <DropdownMenuLabel className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider py-1">
+                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider py-1">
                   Sessions
                 </DropdownMenuLabel>
               )}
@@ -331,7 +334,7 @@ function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, ge
           {otherTabs.length > 0 && (
             <DropdownMenuGroup>
               {sessionTabs.length > 0 && (
-                <DropdownMenuLabel className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider py-1">
+                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider py-1">
                   Pages
                 </DropdownMenuLabel>
               )}
@@ -339,13 +342,11 @@ function TabListDropdown({ tabs, activeTabId, onActivate, open, onOpenChange, ge
             </DropdownMenuGroup>
           )}
           {filteredTabs.length === 0 && (
-            <div className="px-2 py-4 text-xs text-muted-foreground text-center">
-              No matching tabs
-            </div>
+            <div className="px-2 py-4 text-xs text-muted-foreground text-center">{tHardcodedUi.raw('componentsTabsTabBar.line343JsxTextNoMatchingTabs')}</div>
           )}
         </div>
 
-        <div className="px-2.5 py-1.5 border-t border-border/40 text-[10px] text-muted-foreground/60">
+        <div className="px-2.5 py-1.5 border-t border-border/40 text-xs text-muted-foreground/60">
           {tabs.length} tab{tabs.length !== 1 ? 's' : ''} open
         </div>
       </DropdownMenuContent>
@@ -465,7 +466,7 @@ function TabItem({
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       className={cn(
-        'group relative flex items-center text-[12.5px] select-none cursor-pointer',
+        'group relative flex items-center text-sm select-none cursor-pointer',
         'transition-colors duration-150',
         'h-full',
         isDashboard
@@ -561,6 +562,7 @@ function TabItem({
 // ============================================================================
 
 export function TabBar() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const rawPathname = usePathname();
   const pathname = normalizeAppPathname(rawPathname);
   const currentInstanceId = getCurrentInstanceIdFromPathname(rawPathname) || getActiveInstanceIdFromCookie();
@@ -964,8 +966,14 @@ export function TabBar() {
         return;
       }
 
-      // ── Close tab: always Ctrl+W (Cmd+W is intercepted by the browser on macOS)
-      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyW') {
+      // ── Close tab: Ctrl+W everywhere; Cmd+W too in the desktop app (no
+      //    browser there to intercept it — on the web Cmd+W stays the browser's).
+      if (
+        e.code === 'KeyW' &&
+        !e.shiftKey &&
+        !e.altKey &&
+        ((e.ctrlKey && !e.metaKey) || (isDesktop() && e.metaKey && !e.ctrlKey))
+      ) {
         e.preventDefault();
         const { activeTabId: active, tabs: allTabs } = useTabStore.getState();
         if (active && allTabs[active] && !allTabs[active].pinned) {
@@ -1025,8 +1033,11 @@ export function TabBar() {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // Capture phase: WKWebView (desktop) and inner elements can swallow some
+    // key combos before a bubble-phase window listener runs — the same reason
+    // DesktopChrome captures Cmd+R. Capturing guarantees Ctrl+W et al. fire.
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [setActiveTab, handleClose, tabSwitchModifier, currentInstanceId]);
 
   // Scroll active tab into view when it changes
@@ -1091,14 +1102,14 @@ export function TabBar() {
           <button
             onClick={() => { sidebar.setOpenMobile(true); }}
             className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-            aria-label="Open menu"
+            aria-label={tHardcodedUi.raw('componentsTabsTabBar.line1094JsxAttrAriaLabelOpenMenu')}
           >
             <Menu className="h-4 w-4" />
           </button>
           <button
             onClick={() => { rightSidebar?.setOpenMobile(true); }}
             className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-            aria-label="Quick actions"
+            aria-label={tHardcodedUi.raw('componentsTabsTabBar.line1101JsxAttrAriaLabelQuickActions')}
           >
             <PanelRight className="h-4 w-4" />
           </button>
@@ -1185,7 +1196,7 @@ export function TabBar() {
                 <Plus className="h-3 w-3" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">New tab</TooltipContent>
+            <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsTabsTabBar.line1188JsxTextNewTab')}</TooltipContent>
           </Tooltip>
 
           <Tooltip>
@@ -1201,7 +1212,7 @@ export function TabBar() {
                 />
               </div>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">Open tab list</TooltipContent>
+            <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsTabsTabBar.line1204JsxTextOpenTabList')}</TooltipContent>
           </Tooltip>
 
         </div>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 // Audit log tab on the account page. Reads from the global
 // kortix.audit_events table — combines the generic middleware-logged HTTP
 // audit rows with the detailed IAM mutation rows (iam.policy.*,
@@ -57,6 +59,7 @@ interface AuditTabProps {
 }
 
 export function AuditTab({ accountId }: AuditTabProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [filterIndex, setFilterIndex] = useState(0);
   const [exporting, setExporting] = useState(false);
   const active = QUICK_FILTERS[filterIndex];
@@ -152,8 +155,8 @@ export function AuditTab({ accountId }: AuditTabProps) {
 
   return (
     <SectionCard
-      title="Audit log"
-      description="Every state-changing API hit, plus before/after snapshots for IAM mutations. Read-only."
+      title={tHardcodedUi.raw('componentsIamAuditTab.line90JsxAttrTitleAuditLog')}
+      description={tHardcodedUi.raw('componentsIamAuditTab.line91JsxAttrDescriptionEveryStateChangingApiHitPlusBeforeAfter')}
       flush
     >
       <div className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-3">
@@ -186,11 +189,9 @@ export function AuditTab({ accountId }: AuditTabProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
             <DropdownMenuItem onSelect={() => exportEvents('csv')}>
-              Download CSV
-            </DropdownMenuItem>
+              {tHardcodedUi.raw('componentsIamAuditTab.line192JsxTextDownloadCSV')}</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => exportEvents('jsonl')}>
-              Download JSONL
-            </DropdownMenuItem>
+              {tHardcodedUi.raw('componentsIamAuditTab.line195JsxTextDownloadJSONL')}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -224,10 +225,8 @@ export function AuditTab({ accountId }: AuditTabProps) {
 
       {!query.isLoading && allEvents.length === 0 && (
         <div className="px-6 py-12 text-center">
-          <p className="text-sm font-medium text-foreground">No events match this filter</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Try a broader filter or check back after some activity.
-          </p>
+          <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsIamAuditTab.line140JsxTextNoEventsMatchThisFilter')}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamAuditTab.line142JsxTextTryABroaderFilterOrCheckBackAfter')}</p>
         </div>
       )}
 
@@ -252,9 +251,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
             disabled={query.isFetchingNextPage}
             className="gap-1.5"
           >
-            {query.isFetchingNextPage && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Load more
-          </Button>
+            {query.isFetchingNextPage && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{tHardcodedUi.raw('componentsIamAuditTab.line169JsxTextLoadMore')}</Button>
         </div>
       )}
     </SectionCard>
@@ -290,14 +287,14 @@ function AuditRow({
         </div>
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex items-baseline gap-2">
-            <code className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+            <code className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-xs text-foreground">
               {event.action}
             </code>
             <span className="truncate text-xs text-muted-foreground">
               by <strong className="font-medium text-foreground">{actorLabel}</strong>
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>{formatRelative(occurred)}</span>
             <span className="text-muted-foreground/40">·</span>
             <span title={occurred.toISOString()}>{occurred.toLocaleString()}</span>
@@ -329,13 +326,14 @@ function AuditRow({
 }
 
 function DiffPane({ label, data }: { label: string; data: Record<string, unknown> | null }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div>
-      <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+      <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
-      <pre className="max-h-48 overflow-auto rounded-2xl border border-border/60 bg-background px-2.5 py-2 text-[11px] leading-relaxed text-foreground">
-        {data === null ? <span className="text-muted-foreground">— (none)</span> : JSON.stringify(data, null, 2)}
+      <pre className="max-h-48 overflow-auto rounded-2xl border border-border/60 bg-background px-2.5 py-2 text-xs leading-relaxed text-foreground">
+        {data === null ? <span className="text-muted-foreground">{tHardcodedUi.raw('componentsIamAuditTab.line251JsxTextNone')}</span> : JSON.stringify(data, null, 2)}
       </pre>
     </div>
   );

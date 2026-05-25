@@ -10,7 +10,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Cron } from 'croner';
 import { Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGithubInstallations,
   accountGithubInstallationStates,
@@ -23,9 +23,7 @@ import {
   projectGitConnections,
   projectGitCredentials,
   projectSecrets,
-  projectTriggerEvents,
   projectTriggerRuntime,
-  projectTriggers,
   projectSessions,
   sessionSandboxes,
   changeRequests,
@@ -37,6 +35,7 @@ import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
 import {
   archiveRepoSubtree,
+  commitFileToBranch,
   createRemoteSessionBranch,
   getBranchDiff,
   getCommit,
@@ -78,7 +77,7 @@ import {
   type GitHubRepo,
   verifyGitHubAppInstallStatePayload,
 } from './github';
-import { buildStarterFiles } from './starter';
+import { buildStarterFiles, normalizeStarterTemplateId } from './starter';
 import {
   createManagedRepo,
   mintRepoPushToken,
@@ -99,10 +98,27 @@ import {
 } from '../iam';
 import { deriveRequestContext } from '../iam/cache';
 import {
+  isSecretUsableBy,
+  isSessionVisibleTo,
+  loadGrants,
+  loadSessionGrants,
+  parseSharingIntent,
+  resolveShareSubject,
+  scopeToIntent,
+  setSecretSharing,
+  setSessionSharing,
+  visibilityToIntent,
+  type SecretGrant,
+  type ShareSubject,
+} from '../executor/share';
+import {
   ensureBuildForLatestCommit,
+  getProjectSandboxHealth,
   listSnapshotsForProject,
 } from '../snapshots/builder';
+import { classifySnapshotError, describeSnapshotError } from '../snapshots/error-classify';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
+import { ProvisionTimeline } from '../platform/services/provision-timeline';
 import { getProvider } from '../platform/providers';
 import { config, type SandboxProviderName } from '../config';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../shared/account-limits';
@@ -112,8 +128,14 @@ import {
   encryptProjectSecret,
   getProjectSecretValue,
   isValidSecretName,
-  listProjectSecrets,
+  listProjectSecretsSnapshotForUser,
 } from './secrets';
+import {
+  completeChatGptHeadlessAuth,
+  startChatGptHeadlessAuth,
+} from './opencode-chatgpt-auth';
+
+const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 import {
   effectiveProjectRole,
   isAccountManager,
@@ -149,6 +171,9 @@ import {
   loadSlackInstall,
   saveSlackInstall,
 } from '../channels/install-store';
+import { relayTurnStep, relayTurnAnswer, postQuestionAndWait, type QuestionInfo } from '../channels/slack-webhook';
+import { buildSlackInstallUrl } from '../channels/slack-oauth';
+import { slackOauthMode } from '../channels/slack-oauth-mode';
 import {
   buildDeploymentRequest,
   deployAppSpec,
@@ -172,8 +197,6 @@ type ProjectRow = typeof projects.$inferSelect;
 type ProjectGitConnectionRow = typeof projectGitConnections.$inferSelect;
 type ProjectGitCredentialRow = typeof projectGitCredentials.$inferSelect;
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
-type ProjectTriggerRow = typeof projectTriggers.$inferSelect;
-type ProjectTriggerEventRow = typeof projectTriggerEvents.$inferSelect;
 type RequestAuditContext = {
   method: string;
   path: string;
@@ -191,7 +214,23 @@ const ACTIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running
 const PROVISIONING_SESSION_STATUSES = ['queued', 'branching', 'provisioning'] as const;
 const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
 
-function serializeSession(row: ProjectSessionRow) {
+function serializeSession(
+  row: ProjectSessionRow,
+  ctx?: {
+    /** The grants on this session (for restricted visibility). */
+    grants?: SecretGrant[];
+    /** The viewing user, to compute is_owner / can_manage_sharing. */
+    viewerId?: string;
+    /** Viewer can manage the project (owner/admin/manager). */
+    canManageProject?: boolean;
+    /** Resolved email of the session owner, for "shared by X" display. */
+    ownerEmail?: string | null;
+  },
+) {
+  const opencodeSessions = Array.isArray(row.metadata?.opencode_sessions)
+    ? row.metadata.opencode_sessions
+    : [];
+  const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -207,9 +246,54 @@ function serializeSession(row: ProjectSessionRow) {
     status: row.status,
     error: row.error,
     metadata: row.metadata ?? {},
+    opencode_sessions: opencodeSessions,
+    // Ownership + org-visibility (Phase 2 session sharing).
+    created_by: row.createdBy,
+    owner_email: ctx?.ownerEmail ?? null,
+    visibility: row.visibility,
+    sharing: visibilityToIntent(row.visibility as 'private' | 'project' | 'restricted', ctx?.grants ?? []),
+    is_owner: isOwner,
+    can_manage_sharing: isOwner || Boolean(ctx?.canManageProject),
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Load a session and enforce that the viewer can SEE it (owner, project-wide,
+ * or in the allow-list). Returns null for both not-found and not-visible so we
+ * never reveal the existence of a private session. Also reports whether the
+ * viewer may manage its sharing (owner or project manager).
+ */
+async function loadVisibleSession(
+  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
+  sessionId: string,
+): Promise<{
+  row: ProjectSessionRow;
+  subject: ShareSubject;
+  grants: SecretGrant[];
+  isOwner: boolean;
+  canManageProject: boolean;
+  canManageSharing: boolean;
+} | null> {
+  const [row] = await db
+    .select()
+    .from(projectSessions)
+    .where(and(
+      eq(projectSessions.sessionId, sessionId),
+      eq(projectSessions.projectId, loaded.row.projectId),
+      eq(projectSessions.accountId, loaded.row.accountId),
+    ))
+    .limit(1);
+  if (!row) return null;
+  const subject = await resolveShareSubject(loaded.userId);
+  const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
+  if (!isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject)) {
+    return null;
+  }
+  const isOwner = row.createdBy === loaded.userId;
+  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  return { row, subject, grants, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };
 }
 
 function dashboardBaseUrl(): string {
@@ -428,74 +512,104 @@ async function checkConcurrentSessionCap(accountId: string, userId: string, requ
   };
 }
 
-function serializeProjectSecret(row: typeof projectSecrets.$inferSelect) {
-  const system = isSystemProjectSecretName(row.name);
-  const isGitAuth = row.name === PROJECT_GIT_AUTH_SECRET_NAME;
+type SecretRow = typeof projectSecrets.$inferSelect;
+
+/**
+ * The per-user view of one secret KEY: the shared/project row (what managers
+ * control + who it's shared with) merged with the requesting member's own
+ * private override, plus which one actually wins for them at runtime. This is
+ * what powers the "use shared / use mine" choice in the UI.
+ */
+function buildSecretView(input: {
+  name: string;
+  shared?: SecretRow;
+  sharedGrants?: SecretGrant[];
+  personal?: SecretRow;
+  subject: ShareSubject;
+  canManageShared: boolean;
+}) {
+  const { name, shared, sharedGrants = [], personal, subject, canManageShared } = input;
+  const system = isSystemProjectSecretName(name);
+  const isGitAuth = name === PROJECT_GIT_AUTH_SECRET_NAME;
+  const usableByMe = shared
+    ? isSecretUsableBy(shared.shareScope as 'project' | 'restricted', sharedGrants, subject)
+    : false;
+  const mineActive = Boolean(personal?.active);
+  const effectiveSource: 'mine' | 'shared' | 'none' =
+    personal && mineActive ? 'mine' : usableByMe ? 'shared' : 'none';
   return {
-    secret_id: row.secretId,
-    project_id: row.projectId,
-    name: row.name,
-    created_by: row.createdBy,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
+    name,
+    project_id: (shared ?? personal)!.projectId,
+    secret_id: shared?.secretId ?? null,
+    created_by: shared?.createdBy ?? null,
+    created_at: (shared?.createdAt ?? personal?.createdAt)?.toISOString() ?? null,
+    updated_at: (shared?.updatedAt ?? personal?.updatedAt)?.toISOString() ?? null,
     system,
     readonly: system,
     purpose: isGitAuth ? 'git_auth' : null,
-    configured: true,
     can_rotate: isGitAuth,
     managed_by: isGitAuth ? 'project_secret' : null,
+    // The SHARED row: is a project value set, who can use it, and can it reach me.
+    configured: Boolean(shared),
+    share_scope: shared?.shareScope ?? 'project',
+    sharing: shared ? scopeToIntent(shared.shareScope as 'project' | 'restricted', sharedGrants) : null,
+    usable_by_me: usableByMe,
+    // MY private override (value never returned), and whether I'm using it.
+    mine: personal ? { active: personal.active, updated_at: personal.updatedAt.toISOString() } : null,
+    // What actually gets injected into my sessions for this key.
+    effective_source: effectiveSource,
+    // Members manage only their own override; managers also manage the shared row.
+    can_manage_shared: canManageShared && !system,
   };
+}
+
+/**
+ * Load every secret KEY in a project as the per-user view (shared + my own
+ * override merged). Used by the secrets list + returned after a write.
+ */
+async function loadSecretViewsForUser(
+  projectId: string,
+  subject: ShareSubject,
+  canManageShared: boolean,
+): Promise<ReturnType<typeof buildSecretView>[]> {
+  const rows = await db
+    .select()
+    .from(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, subject.userId)),
+    ))
+    .orderBy(desc(projectSecrets.updatedAt));
+
+  const byName = new Map<string, { shared?: SecretRow; personal?: SecretRow }>();
+  for (const row of rows) {
+    const slot = byName.get(row.name) ?? {};
+    if (row.ownerUserId === null) slot.shared = row;
+    else slot.personal = row;
+    byName.set(row.name, slot);
+  }
+  const grants = await loadGrants(rows.filter((r) => r.ownerUserId === null).map((r) => r.secretId));
+
+  return [...byName.entries()].map(([name, slot]) =>
+    buildSecretView({
+      name,
+      shared: slot.shared,
+      sharedGrants: slot.shared ? grants.get(slot.shared.secretId) ?? [] : [],
+      personal: slot.personal,
+      subject,
+      canManageShared,
+    }),
+  );
 }
 
 function isSystemProjectSecretName(name: string): boolean {
   return name.toUpperCase().startsWith('KORTIX_');
 }
 
-function serializeProjectTrigger(row: ProjectTriggerRow) {
-  const publicConfig = { ...normalizeJsonObject(row.config) };
-  const hasSecret = Boolean(publicConfig.secret || publicConfig.webhook_secret || publicConfig.webhookSecret);
-  delete publicConfig.secret;
-  delete publicConfig.webhook_secret;
-  delete publicConfig.webhookSecret;
-  if (hasSecret) publicConfig.has_secret = true;
-
-  return {
-    trigger_id: row.triggerId,
-    account_id: row.accountId,
-    project_id: row.projectId,
-    type: row.type,
-    config: publicConfig,
-    agent_name: row.agentName,
-    prompt_template: row.promptTemplate,
-    enabled: row.enabled,
-    created_by: row.createdBy,
-    metadata: row.metadata ?? {},
-    last_fired_at: row.lastFiredAt?.toISOString() ?? null,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-  };
-}
-
 function serializeSessionSandboxConfig(configValue: Record<string, unknown> | null | undefined): Record<string, unknown> {
   const config = { ...(configValue ?? {}) };
   delete config.serviceKey;
   return config;
-}
-
-function serializeProjectTriggerEvent(row: ProjectTriggerEventRow) {
-  return {
-    event_id: row.eventId,
-    trigger_id: row.triggerId,
-    account_id: row.accountId,
-    project_id: row.projectId,
-    status: row.status,
-    payload: row.payload ?? {},
-    rendered_prompt: row.renderedPrompt,
-    session_id: row.sessionId,
-    error: row.error,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-  };
 }
 
 function serializeGitHubInstallation(
@@ -1049,7 +1163,7 @@ async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   return { authSource: 'none' };
 }
 
-async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRow & { gitAuthToken: string | null }> {
+export async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRow & { gitAuthToken: string | null }> {
   const gitAuth = await resolveProjectGitAuth(project);
   return {
     ...project,
@@ -1412,13 +1526,22 @@ async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
+  opencodeModel?: string | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
   // then reused by the daemon for both API calls and proxy HMAC validation.
-  const runtimeSecrets = await listProjectSecrets(input.projectId);
+  // Resolved AS the launching user, so personal overrides win and "Only me" /
+  // "Select members" secrets only reach members they're shared with.
+  const subject = await resolveShareSubject(input.userId);
+  const runtimeSecrets = await listProjectSecretsSnapshotForUser(input.projectId, subject);
+  // The Slack signing secret only verifies inbound webhooks (an apps/api job).
+  // The in-sandbox agent never needs it — keep it out of the sandbox env.
+  delete runtimeSecrets.env.SLACK_SIGNING_SECRET;
   return {
-    ...runtimeSecrets,
+    ...runtimeSecrets.env,
+    KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
+    KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     KORTIX_PROJECT_AUTO_CLONE: '1',
     KORTIX_REPO_URL: input.repoUrl,
     KORTIX_DEFAULT_BRANCH: input.baseRef,
@@ -1429,7 +1552,11 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: deriveKortixApiBase(),
+    KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
+    // Per-session model override (e.g. Slack turns pin a specific model).
+    // The sandbox agent reads this and sets it on every opencode prompt call.
+    ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
   };
 }
 
@@ -1438,12 +1565,49 @@ function deriveKortixApiBase(): string {
   return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1`;
 }
 
+/**
+ * Cloud sandboxes (the only kind we provision) reach the control plane over the
+ * public internet via `$KORTIX_API_URL`. A loopback/unspecified host is never
+ * reachable from inside a remote sandbox, so a session booted against one is
+ * dead-on-arrival: repo materialization can't fetch its git clone credential and
+ * the daemon ends up reporting "OpenCode runtime is not ready" with a cryptic
+ * "Unable to connect" boot error ~60s later. Detect it up front so session
+ * creation fails fast with an actionable message instead.
+ *
+ * Returns a human-readable reason string when unreachable, or null when fine.
+ */
+function sandboxCallbackUnreachableReason(): string | null {
+  let host: string;
+  try {
+    host = new URL(deriveKortixApiBase()).hostname.toLowerCase();
+  } catch {
+    return `KORTIX_URL is not a valid URL: ${config.KORTIX_URL || '(unset)'}`;
+  }
+  const isLoopback =
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === '127.0.0.1' ||
+    host.startsWith('127.') ||
+    host === '0.0.0.0' ||
+    host === '::1' ||
+    host === '[::1]';
+  if (!isLoopback) return null;
+  return (
+    `KORTIX_URL points at a loopback address (${config.KORTIX_URL}). ` +
+    `Cloud sandboxes run remotely and cannot call back to your machine's localhost, ` +
+    `so the agent runtime will never boot. Start the dev tunnel with \`pnpm dev\` ` +
+    `(it provisions a public Cloudflare URL automatically and exports it as KORTIX_URL), ` +
+    `or set a public KORTIX_URL in apps/api/.env.`
+  );
+}
+
 export async function createProjectSession(input: {
   project: ProjectRow;
   userId: string;
   body: Record<string, unknown>;
   enforceAccountCap?: boolean;
   metadata?: Record<string, unknown>;
+  extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
 }): Promise<{ row?: ProjectSessionRow; error?: SessionCreateError; headers?: Record<string, string> }> {
   const { project, userId, body } = input;
@@ -1459,6 +1623,15 @@ export async function createProjectSession(input: {
       return { error: { status: 400, body: { error: `Unknown or disabled sandbox provider: ${requestedProvider}` } } };
     }
     providerName = requestedProvider as SandboxProviderName;
+  }
+
+  // Fail fast on an unreachable callback URL — a loopback KORTIX_URL guarantees
+  // a dead sandbox (repo clone-credential fetch can't reach us). Refusing here
+  // avoids minting a doomed session row + remote branch and surfaces the real
+  // fix to the user instead of a cryptic "OpenCode runtime is not ready" later.
+  const callbackUnreachable = providerName === 'local_docker' ? null : sandboxCallbackUnreachableReason();
+  if (callbackUnreachable) {
+    return { error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } } };
   }
 
   let responseHeaders: Record<string, string> | undefined;
@@ -1477,29 +1650,16 @@ export async function createProjectSession(input: {
   const branchAlreadyCreated =
     body.branch_already_created === true ||
     body.branchAlreadyCreated === true;
-  const gitAuth = await resolveProjectGitAuth(project);
-
-  const projectWithGitAuth = {
-    ...project,
-    gitAuthToken: gitAuth.auth?.token ?? null,
-  };
-
-  if (!branchAlreadyCreated) {
-    try {
-      await createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef);
-    } catch (error) {
-      const message = (error as Error).message || 'Failed to create remote branch';
-      return { error: { status: 502, body: { error: message } } };
-    }
-  }
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+  const opencodeModel = normalizeString(body.opencode_model ?? body.opencodeModel);
   const sessionName = normalizeString(body.name);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
+    ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(input.metadata ?? {}),
   };
 
@@ -1517,6 +1677,10 @@ export async function createProjectSession(input: {
         sandboxId: sessionId,
         agentName,
         status: 'provisioning',
+        // Sessions are private to their creator by default; share via the
+        // session-header control (visibility = project | restricted).
+        createdBy: userId,
+        visibility: 'private',
         metadata,
         updatedAt: new Date(),
       })
@@ -1532,8 +1696,20 @@ export async function createProjectSession(input: {
   // Fire-and-forget sandbox provisioning. The dashboard polls the sandbox
   // status endpoint and shows the ConnectingScreen during the long tail.
   void (async () => {
+    const tl = new ProvisionTimeline(sessionId, 'session-create');
     try {
-      const extraEnvVars = await buildSessionSandboxEnvVars({
+      // Resolve git auth and user env concurrently. Git auth is needed for
+      // background freshness checks / remote branch publishing, but a warm
+      // session can boot from an existing ready snapshot without waiting for it.
+      const gitAuthPromise = resolveProjectGitAuth(project).then((gitAuth) => {
+        tl.mark('git-auth');
+        return gitAuth;
+      });
+      const projectWithGitAuthPromise = gitAuthPromise.then((gitAuth) => ({
+        ...project,
+        gitAuthToken: gitAuth.auth?.token ?? null,
+      }));
+      const envPromise = buildSessionSandboxEnvVars({
         accountId,
         projectId,
         sessionId,
@@ -1542,8 +1718,63 @@ export async function createProjectSession(input: {
         baseRef,
         agentName,
         initialPrompt,
+        opencodeModel,
+      }).then((envVars) => {
+        tl.mark('env-vars');
+        return envVars;
       });
-      await provisionSessionSandbox({
+
+      const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
+        const [current] = await db
+          .select({ metadata: projectSessions.metadata })
+          .from(projectSessions)
+          .where(eq(projectSessions.sessionId, sessionId))
+          .limit(1);
+        const currentMetadata =
+          current?.metadata && typeof current.metadata === 'object'
+            ? (current.metadata as Record<string, unknown>)
+            : {};
+        await db
+          .update(projectSessions)
+          .set({
+            metadata: { ...currentMetadata, ...extra },
+            updatedAt: new Date(),
+          })
+          .where(eq(projectSessions.sessionId, sessionId));
+      };
+
+      // Origin branch creation is publishing work, not readiness work. The
+      // sandbox now creates the session branch locally from the base checkout
+      // immediately, so this remote push runs fully in the background.
+      const branchPromise: Promise<void> = branchAlreadyCreated
+        ? Promise.resolve()
+        : projectWithGitAuthPromise.then((projectWithGitAuth) =>
+            createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
+          ).then(async () => {
+            tl.mark('branch-pushed');
+            await mergeSessionMetadata({
+              remote_branch: { status: 'ready', branch: sessionId, updated_at: new Date().toISOString() },
+            });
+          });
+      branchPromise.catch(async (err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[projects] Remote branch creation failed for session ${sessionId}:`, err);
+        await mergeSessionMetadata({
+          remote_branch: {
+            status: 'failed',
+            branch: sessionId,
+            error: message.slice(0, 500),
+            updated_at: new Date().toISOString(),
+          },
+        }).catch(() => {});
+      });
+
+      const extraEnvVars = {
+        ...(await envPromise),
+        ...(input.extraEnvVars ?? {}),
+      };
+
+      const provisionPromise = provisionSessionSandbox({
         sandboxId: sessionId,
         accountId,
         projectId,
@@ -1556,10 +1787,18 @@ export async function createProjectSession(input: {
           repoUrl: project.repoUrl,
           defaultBranch: project.defaultBranch,
           manifestPath: project.manifestPath,
-          gitAuthToken: gitAuth.auth?.token ?? null,
+          gitAuthToken: null,
         },
+        resolveGitAuthToken: async () => (await gitAuthPromise).auth?.token ?? null,
         baseRef,
       });
+
+      // provisionSessionSandbox returns once its row is inserted; provider
+      // create and remote branch push both continue in detached background work.
+      await provisionPromise;
+      tl.mark('kicked');
+      const sessionStartTimeline = tl.log();
+      await mergeSessionMetadata({ session_start_timeline: sessionStartTimeline }).catch(() => {});
     } catch (err) {
       const message = (err as Error)?.message || 'Sandbox provisioning failed';
       console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
@@ -1580,11 +1819,6 @@ export async function createProjectSession(input: {
   })();
 
   return { row: sessionRow, headers: responseHeaders };
-}
-
-function triggerWebhookSecret(row: ProjectTriggerRow): string | null {
-  const cfg = normalizeJsonObject(row.config);
-  return normalizeString(cfg.secret ?? cfg.webhook_secret ?? cfg.webhookSecret);
 }
 
 function normalizeSignatureHeader(value: string | null): string | null {
@@ -1673,133 +1907,6 @@ async function triggerBackpressureState(accountId: string, projectId: string) {
   };
 }
 
-async function fireProjectTrigger(input: {
-  trigger: ProjectTriggerRow;
-  project: ProjectRow;
-  payload: Record<string, unknown>;
-  renderedPrompt: string;
-  request?: RequestAuditContext;
-  markAcceptedAt?: Date;
-}): Promise<{
-  status: 'queued' | 'fired' | 'failed';
-  reason?: string;
-  error?: string;
-  event: ProjectTriggerEventRow;
-  session?: ProjectSessionRow;
-  httpStatus?: number;
-  backpressure?: Awaited<ReturnType<typeof triggerBackpressureState>>;
-}> {
-  const { trigger, project, payload, renderedPrompt } = input;
-  const backpressure = await triggerBackpressureState(trigger.accountId, trigger.projectId);
-  const [event] = await db
-    .insert(projectTriggerEvents)
-    .values({
-      triggerId: trigger.triggerId,
-      accountId: trigger.accountId,
-      projectId: trigger.projectId,
-      status: 'queued',
-      payload,
-      renderedPrompt,
-      updatedAt: new Date(),
-    })
-    .returning();
-
-  if (backpressure.shouldQueue) {
-    if (input.markAcceptedAt) {
-      await db
-        .update(projectTriggers)
-        .set({ lastFiredAt: input.markAcceptedAt, updatedAt: new Date() })
-        .where(eq(projectTriggers.triggerId, trigger.triggerId))
-        .returning();
-    }
-    return {
-      status: 'queued',
-      reason: backpressure.provisioning >= backpressure.projectProvisioningLimit
-        ? 'project provisioning backpressure'
-        : 'account session cap',
-      event,
-      backpressure,
-    };
-  }
-
-  if (!trigger.createdBy) {
-    const message = 'Trigger has no actor to own the session';
-    const [failedEvent] = await db
-      .update(projectTriggerEvents)
-      .set({ status: 'failed', error: message, updatedAt: new Date() })
-      .where(eq(projectTriggerEvents.eventId, event.eventId))
-      .returning();
-    return {
-      status: 'failed',
-      error: message,
-      event: failedEvent ?? event,
-      httpStatus: 409,
-    };
-  }
-
-  const triggerConfig = normalizeJsonObject(trigger.config);
-  const provider = normalizeString(triggerConfig.provider);
-  const sessionResult = await createProjectSession({
-    project,
-    userId: trigger.createdBy,
-    enforceAccountCap: false,
-    request: input.request,
-    body: {
-      agent_name: trigger.agentName,
-      initial_prompt: renderedPrompt,
-      ...(provider ? { provider } : {}),
-      metadata: {
-        trigger_id: trigger.triggerId,
-        trigger_event_id: event.eventId,
-        trigger_type: trigger.type,
-      },
-    },
-    metadata: {
-      trigger_id: trigger.triggerId,
-      trigger_event_id: event.eventId,
-      trigger_type: trigger.type,
-    },
-  });
-
-  if (sessionResult.error) {
-    const message = String(sessionResult.error.body.error ?? 'Failed to create trigger session');
-    const [failedEvent] = await db
-      .update(projectTriggerEvents)
-      .set({ status: 'failed', error: message, updatedAt: new Date() })
-      .where(eq(projectTriggerEvents.eventId, event.eventId))
-      .returning();
-    return {
-      status: 'failed',
-      error: message,
-      event: failedEvent ?? event,
-      httpStatus: sessionResult.error.status,
-    };
-  }
-
-  const session = sessionResult.row!;
-  const [updatedEvent] = await db
-    .update(projectTriggerEvents)
-    .set({
-      status: 'fired',
-      sessionId: session.sessionId,
-      updatedAt: new Date(),
-    })
-    .where(eq(projectTriggerEvents.eventId, event.eventId))
-    .returning();
-
-  await db
-    .update(projectTriggers)
-    .set({ lastFiredAt: input.markAcceptedAt ?? new Date(), updatedAt: new Date() })
-    .where(eq(projectTriggers.triggerId, trigger.triggerId))
-    .returning();
-
-  return {
-    status: 'fired',
-    event: updatedEvent ?? event,
-    session,
-  };
-}
-
 // POST /v1/webhooks/projects/:projectId/:slug
 //
 // Public fire endpoint for GIT-BACKED webhook triggers. The trigger config
@@ -1826,12 +1933,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
     .limit(1);
   if (!project) return c.json({ error: 'Not found' }, 404);
 
-  const { specs } = await loadProjectTriggers({
-    projectId: project.projectId,
-    repoUrl: project.repoUrl,
-    defaultBranch: project.defaultBranch,
-    manifestPath: project.manifestPath,
-  });
+  const { specs } = await loadProjectTriggers(await withProjectGitAuth(project));
   const spec = specs.find((s) => s.slug === slug);
   if (!spec || spec.type !== 'webhook' || !spec.enabled) {
     return c.json({ error: 'Not found' }, 404);
@@ -1890,19 +1992,17 @@ const globalForProjectTriggers = globalThis as typeof globalThis & {
 let triggerSchedulerTimer: TriggerSchedulerTimer | null = null;
 let triggerSweepRunning = false;
 
+// Connector reconcile sweep — runs on a slower cadence than the trigger sweep.
+let connectorSweepRunning = false;
+let lastConnectorSweepAt = 0;
+function connectorSweepIntervalMs() {
+  const raw = Number(process.env.KORTIX_CONNECTOR_SWEEP_INTERVAL_MS);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 120_000;
+}
+
 function triggerSchedulerIntervalMs() {
   const raw = Number((config as any).KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 60_000;
-}
-
-function cronTriggerSchedule(row: ProjectTriggerRow): string | null {
-  const cfg = normalizeJsonObject(row.config);
-  return normalizeString(cfg.cron ?? cfg.schedule);
-}
-
-function cronTriggerTimezone(row: ProjectTriggerRow): string | undefined {
-  const cfg = normalizeJsonObject(row.config);
-  return normalizeString(cfg.timezone) ?? undefined;
 }
 
 export function nextCronRun(schedule: string, from: Date, timezone?: string): Date | null {
@@ -1910,17 +2010,10 @@ export function nextCronRun(schedule: string, from: Date, timezone?: string): Da
   return job.nextRun(from);
 }
 
-export function isCronTriggerDue(row: ProjectTriggerRow, now = new Date()): boolean {
-  const schedule = cronTriggerSchedule(row);
-  if (!schedule) return false;
-  const next = nextCronRun(schedule, row.lastFiredAt ?? row.createdAt, cronTriggerTimezone(row));
-  return Boolean(next && next.getTime() <= now.getTime());
-}
-
 /**
  * Walks every active project's git repo for `.opencode/triggers/*.md` and
- * fires due cron triggers. Triggers are 100% file-defined now — the DB
- * `project_triggers` table is no longer scanned.
+ * fires due cron triggers. Triggers are 100% file-defined now (kortix.toml);
+ * the old DB-backed trigger tables have been removed.
  */
 export async function runProjectTriggerSweep(now = new Date()): Promise<{
   scanned: number;
@@ -1940,6 +2033,44 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
     return result;
   } finally {
     triggerSweepRunning = false;
+  }
+}
+
+/**
+ * Reconcile every active project's connector DB cache against its kortix.toml.
+ * This is the reliability backstop for connectors: the UI CRUD path and the
+ * CR-merge hook reconcile inline, but a raw `git push` / `kortix` CLI edit that
+ * bypasses both is only caught here. We invalidate the git mirror per project
+ * so an out-of-band manifest edit is seen this sweep (not up to a minute later,
+ * behind the mirror refresh throttle). `syncProjectConnectors` is hash-aware,
+ * so unchanged connectors cost a manifest read, not a catalog re-fetch.
+ */
+export async function runProjectConnectorSweep(): Promise<{ scanned: number; synced: number; errors: number }> {
+  if (connectorSweepRunning) return { scanned: 0, synced: 0, errors: 0 };
+  connectorSweepRunning = true;
+  const out = { scanned: 0, synced: 0, errors: 0 };
+  try {
+    const { syncProjectConnectors } = await import('../executor/sync');
+    const projectsForSweep = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.status, 'active'))
+      .limit(200);
+    for (const project of projectsForSweep) {
+      out.scanned += 1;
+      try {
+        invalidateProjectMirror(project.projectId);
+        const res = await syncProjectConnectors(project.projectId, project.accountId);
+        out.synced += res.synced;
+        out.errors += res.errors.length;
+      } catch (err) {
+        out.errors += 1;
+        console.warn('[project-connectors] sweep failed', project.projectId, err instanceof Error ? err.message : err);
+      }
+    }
+    return out;
+  } finally {
+    connectorSweepRunning = false;
   }
 }
 
@@ -2003,11 +2134,9 @@ async function markGitTriggerFired(projectId: string, slug: string, when: Date) 
 }
 
 /**
- * Fire a git-backed trigger. Parallels `fireProjectTrigger` but skips the
- * `project_trigger_events` row (the events table is FK-bound to
- * `project_triggers`, and we want to keep that constraint clean). The
- * project_sessions row carries `trigger_slug` in metadata so audits still
- * reconstruct the firing path.
+ * Fire a git-backed trigger. Triggers are file-defined (kortix.toml), so there
+ * is no DB trigger/event row — the project_sessions row carries `trigger_slug`
+ * in metadata so audits can still reconstruct the firing path.
  */
 async function fireGitTrigger(input: {
   spec: GitTriggerSpec;
@@ -2077,9 +2206,8 @@ function summarizeTriggerPayload(payload: Record<string, unknown>): Record<strin
 
 /**
  * Walk all active projects, load their git-backed triggers, and fire any
- * cron triggers that are due. Mirrors `runProjectTriggerSweep` for the
- * DB-backed path but writes to `project_trigger_runtime` instead of
- * `project_triggers.last_fired_at`.
+ * cron triggers that are due. Runtime state (last_fired_at) lives in
+ * `project_trigger_runtime`, keyed by project + slug.
  *
  * We swallow per-project errors so one busted repo can't break the sweep
  * for everyone else.
@@ -2096,12 +2224,7 @@ async function runGitTriggerSweep(now: Date, accumulator: {
   for (const project of projectsForSweep) {
     let specs: GitTriggerSpec[];
     try {
-      const loaded = await loadProjectTriggers({
-        projectId: project.projectId,
-        repoUrl: project.repoUrl,
-        defaultBranch: project.defaultBranch,
-        manifestPath: project.manifestPath,
-      });
+      const loaded = await loadProjectTriggers(await withProjectGitAuth(project));
       specs = loaded.specs;
     } catch (err) {
       console.warn('[project-triggers/git] load failed', project.projectId, err instanceof Error ? err.message : err);
@@ -2173,6 +2296,20 @@ export function startProjectTriggerScheduler(): void {
         }
       }).catch((error) => {
         console.error('[project-apps] sweep failed:', error);
+      });
+    }
+
+    // Connector reconcile backstop — slower cadence than the trigger sweep so
+    // we don't re-read every manifest each tick. Catches out-of-band manifest
+    // edits (raw git push / CLI) and heals any DB drift / retries error rows.
+    if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
+      lastConnectorSweepAt = Date.now();
+      runProjectConnectorSweep().then((result) => {
+        if (result.synced || result.errors) {
+          console.log('[project-connectors] sweep completed', result);
+        }
+      }).catch((error) => {
+        console.error('[project-connectors] sweep failed:', error);
       });
     }
 
@@ -2389,10 +2526,15 @@ projectsApp.post('/provision', async (c) => {
   // its own files on first `kortix ship`. If seeding fails we roll back the
   // orphan repo so we never leave a half-created project behind.
   const seedStarter = body.seed_starter === true || body.seedStarter === true;
+  const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
   let seeded = false;
   if (seedStarter) {
     try {
-      const starter = buildStarterFiles({ projectName: name, repoFullName: repoSlug });
+      const starter = buildStarterFiles({
+        projectName: name,
+        repoFullName: repoSlug,
+        template: starterTemplate,
+      });
       await seedRepoWithFiles({
         repoId: repo.repoId,
         token: push.token,
@@ -2831,13 +2973,17 @@ projectsApp.post('/create-repo', async (c) => {
   const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(repo.full_name);
   const defaultBranch = repo.default_branch || 'main';
 
-  // Commit the minimal Kortix starter (kortix.toml + .opencode runtime +
-  // default agent + README + .gitignore) into the fresh repo so users land
-  // with a working project shape on first session boot. GitHub's Contents
-  // API updates the branch tip on every write, so these must be sequential.
+  // Commit the Kortix starter into the fresh repo so users land with a
+  // working project shape on first session boot. GitHub's Contents API
+  // updates the branch tip on every write, so these must be sequential.
   // A partial starter is not a usable project.
   const [ownerLogin, repoSlug] = repo.full_name.split('/');
-  const starter = buildStarterFiles({ projectName, repoFullName: repo.full_name });
+  const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
+  const starter = buildStarterFiles({
+    projectName,
+    repoFullName: repo.full_name,
+    template: starterTemplate,
+  });
   for (const file of starter) {
     try {
       // README.md exists already from `auto_init: true` — upsert via sha.
@@ -2909,9 +3055,42 @@ function serializeProjectSnapshot(row: {
     snapshot_id: row.snapshotId,
     status: row.status,
     error: row.error,
+    error_category: row.error
+      ? (typeof row.metadata?.errorCategory === 'string'
+          ? row.metadata.errorCategory
+          : classifySnapshotError(row.error))
+      : null,
     metadata: row.metadata ?? {},
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+function serializeSandboxHealth(
+  health: Awaited<ReturnType<typeof getProjectSandboxHealth>>,
+) {
+  return {
+    branch: health.branch,
+    provider: health.provider,
+    ready_count: health.readyCount,
+    bootable_count: health.bootableCount,
+    total_count: health.totalCount,
+    retention: health.retention,
+    healthy: health.healthy,
+    building: health.building,
+    first_build: health.firstBuild,
+    runtime_outdated: health.runtimeOutdated,
+    latest_ready_commit_sha: health.latestReadyCommitSha,
+    latest_status: health.latestStatus,
+    failure: health.failure
+      ? {
+          commit_sha: health.failure.commitSha,
+          error: health.failure.error,
+          category: health.failure.category,
+          fixable_by_agent: health.failure.fixableByAgent,
+          failed_at: health.failure.failedAt,
+        }
+      : null,
   };
 }
 
@@ -2955,12 +3134,37 @@ projectsApp.get('/:projectId/snapshots', async (c) => {
     headResolveError = err instanceof Error ? err.message : String(err);
   }
 
+  let health: Awaited<ReturnType<typeof getProjectSandboxHealth>> | null = null;
+  try {
+    health = await getProjectSandboxHealth(projectId, loaded.row.defaultBranch);
+  } catch {
+    /* non-fatal — the panel still renders from `items` */
+  }
+
   return c.json({
     items: rows.map(serializeProjectSnapshot),
     default_branch: loaded.row.defaultBranch,
     head_commit_sha: headCommitSha,
     head_resolve_error: headResolveError,
+    health: health ? serializeSandboxHealth(health) : null,
   });
+});
+
+// GET /v1/projects/:projectId/sandbox-health
+// Lightweight, DB-only sandbox health for the project sidebar alert. Skips the
+// git HEAD resolution that GET /snapshots does, so it's cheap to poll.
+projectsApp.get('/:projectId/sandbox-health', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  try {
+    const health = await getProjectSandboxHealth(projectId, loaded.row.defaultBranch);
+    return c.json(serializeSandboxHealth(health));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Failed to read sandbox health: ${message}` }, 500);
+  }
 });
 
 // ─── Project-scoped CLI tokens ─────────────────────────────────────────────
@@ -3153,6 +3357,89 @@ projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
   });
 });
 
+// POST /v1/projects/:projectId/snapshots/fix-with-agent
+// Spin up a session pre-seeded with the latest build failure so an agent can
+// diagnose + fix the Dockerfile and open a change request. Requires at least
+// one ready snapshot to boot the fixing session in — graceful degradation lets
+// it run on the most recent healthy image while the broken tip is repaired.
+projectsApp.post('/:projectId/snapshots/fix-with-agent', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const userId = c.get('userId') as string;
+  const branch = loaded.row.defaultBranch;
+
+  let rows: Awaited<ReturnType<typeof listSnapshotsForProject>> = [];
+  try {
+    rows = await listSnapshotsForProject(projectId, { limit: 25 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Failed to read snapshots: ${message}` }, 500);
+  }
+  const failed =
+    rows.find((r) => r.branch === branch && r.status === 'failed') ??
+    rows.find((r) => r.status === 'failed');
+  if (!failed) {
+    return c.json({ error: 'No failed snapshot build to fix.' }, 409);
+  }
+
+  // Need a healthy snapshot to boot the fixing session in. Without one there's
+  // nothing to run the agent on (the cold first-build-failure case) — the user
+  // must retry or fix the Dockerfile manually.
+  const health = await getProjectSandboxHealth(projectId, branch);
+  if (health.readyCount === 0) {
+    return c.json(
+      {
+        error:
+          'No ready sandbox to run the fix in yet. Retry the build, or edit the Dockerfile manually.',
+        code: 'NO_READY_SANDBOX',
+      },
+      409,
+    );
+  }
+
+  const errorText = failed.error ?? 'Snapshot build failed';
+  const category =
+    typeof failed.metadata?.errorCategory === 'string'
+      ? (failed.metadata.errorCategory as ReturnType<typeof classifySnapshotError>)
+      : classifySnapshotError(errorText);
+  const info = describeSnapshotError(category);
+
+  const prompt = [
+    `The sandbox snapshot build for this project is failing, so new sessions can't boot from a fresh image. Diagnose the root cause and fix it, then open a change request.`,
+    ``,
+    `Failing commit: ${failed.commitSha.slice(0, 8)} (branch ${failed.branch || branch})`,
+    `Error type: ${category} — ${info.title}`,
+    info.hint,
+    ``,
+    `Build error:`,
+    '```',
+    errorText.slice(0, 4000),
+    '```',
+    ``,
+    `The sandbox image is built from the project's Dockerfile (see kortix.toml [sandbox]; default \`.kortix/Dockerfile\`).`,
+    ``,
+    `Steps:`,
+    `1. Inspect the Dockerfile and the build error above.`,
+    `2. Fix the root cause.`,
+    `3. Open a change request targeting \`${branch}\`. Once it merges, the snapshot rebuilds automatically.`,
+  ].join('\n');
+
+  const result = await createProjectSession({
+    project: loaded.row,
+    userId,
+    body: {
+      initial_prompt: prompt,
+      name: 'Fix sandbox build',
+      metadata: { kind: 'sandbox-build-fix', failed_commit_sha: failed.commitSha },
+    },
+    request: requestAuditContext(c),
+  });
+  if (result.error) return sendSessionCreateError(c, result.error);
+
+  return c.json({ session_id: result.row!.sessionId }, 201);
+});
+
 // PUT /v1/projects/:projectId/git-credential
 // Stores provider-neutral BYO git credentials as platform credentials, not as
 // user-readable/injectable runtime secrets. Managed providers (Freestyle and
@@ -3210,19 +3497,17 @@ projectsApp.put('/:projectId/git-credential', async (c) => {
 });
 
 // GET /v1/projects/:projectId/secrets
-// Returns stored secrets (names only, no plaintext) plus the manifest-
-// declared required/optional env keys, so the UI can show a "must-set"
-// checklist alongside what's already configured.
+// Readable by any project member: returns each secret KEY as the per-user view
+// (the shared row + that member's own override, names only, no plaintext) plus
+// the manifest-declared required/optional env keys. Members manage only their
+// own override; managers additionally manage the shared row (`can_manage_shared`).
 projectsApp.get('/:projectId/secrets', async (c) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const rows = await db
-    .select()
-    .from(projectSecrets)
-    .where(eq(projectSecrets.projectId, projectId))
-    .orderBy(desc(projectSecrets.updatedAt));
+  const subject = await resolveShareSubject(loaded.userId);
+  const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
 
   // Manifest is optional — a project without kortix.toml just gets empty
   // required/optional lists. We surface loaded/missing/error explicitly so the
@@ -3246,14 +3531,16 @@ projectsApp.get('/:projectId/secrets', async (c) => {
     });
   }
 
-  const items = rows
-    .filter((row) => !isSystemProjectSecretName(row.name))
-    .map(serializeProjectSecret);
+  const items = (await loadSecretViewsForUser(projectId, subject, canManageShared))
+    .filter((item) => !item.system);
 
   return c.json({
     items,
     required,
     optional,
+    // Page-level: may this member edit shared rows (add/set/share), or only
+    // manage their own overrides?
+    can_manage: canManageShared,
     manifest_status: manifestStatus,
     manifest_path: loaded.row.manifestPath,
     ...(manifestError ? { manifest_error: manifestError } : {}),
@@ -3276,30 +3563,198 @@ projectsApp.post('/:projectId/secrets', async (c) => {
   if (name.startsWith('KORTIX_')) {
     return c.json({ error: 'KORTIX_* names are reserved for platform/runtime-managed variables' }, 400);
   }
+  if (name === CODEX_AUTH_JSON_SECRET_NAME) {
+    return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
+  }
 
   const value = typeof body.value === 'string' ? body.value : null;
-  if (value === null) return c.json({ error: 'value is required' }, 400);
+
+  // Optional sharing intent (project | private | members). Absent → leave
+  // sharing as-is (column defaults to 'project' on first insert).
+  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
+  if (body.sharing != null) {
+    sharing = parseSharingIntent(body.sharing, loaded.userId);
+    if (!sharing) {
+      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+    }
+  }
+
+  // Look up the existing SHARED row so a sharing-only edit doesn't force
+  // re-entering the value. Creating a brand-new secret still requires a value.
+  const [existing] = await db
+    .select({ secretId: projectSecrets.secretId })
+    .from(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, name),
+      isNull(projectSecrets.ownerUserId),
+    ))
+    .limit(1);
+  if (!existing && value === null) {
+    return c.json({ error: 'value is required' }, 400);
+  }
 
   const now = new Date();
-  const [row] = await db
-    .insert(projectSecrets)
-    .values({
-      projectId,
-      name,
-      valueEnc: encryptProjectSecret(projectId, value),
-      createdBy: loaded.userId,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projectSecrets.projectId, projectSecrets.name],
-      set: {
+  let secretId: string;
+  if (value !== null) {
+    const [row] = await db
+      .insert(projectSecrets)
+      .values({
+        projectId,
+        name,
         valueEnc: encryptProjectSecret(projectId, value),
+        createdBy: loaded.userId,
         updatedAt: now,
-      },
-    })
-    .returning();
+      })
+      .onConflictDoUpdate({
+        // The shared row is unique on (project, name) WHERE owner_user_id IS NULL.
+        target: [projectSecrets.projectId, projectSecrets.name],
+        targetWhere: isNull(projectSecrets.ownerUserId),
+        set: {
+          valueEnc: encryptProjectSecret(projectId, value),
+          updatedAt: now,
+        },
+      })
+      .returning({ secretId: projectSecrets.secretId });
+    secretId = row.secretId;
+  } else {
+    // Sharing-only update — touch updatedAt so the list reflects the change.
+    await db
+      .update(projectSecrets)
+      .set({ updatedAt: now })
+      .where(eq(projectSecrets.secretId, existing!.secretId));
+    secretId = existing!.secretId;
+  }
 
-  return c.json(serializeProjectSecret(row), 200);
+  if (sharing) await setSecretSharing(secretId, sharing);
+
+  const subject = await resolveShareSubject(loaded.userId);
+  const views = await loadSecretViewsForUser(projectId, subject, true);
+  const view = views.find((v) => v.name === name);
+  return c.json(view ?? { name }, 200);
+});
+
+// POST /v1/projects/:projectId/providers/openai/chatgpt/headless/start
+// Starts the OpenCode ChatGPT Pro/Plus headless device-code flow on the API
+// server. This deliberately does not require a running sandbox: provider
+// credentials are project configuration, and sandboxes only consume the saved
+// CODEX_AUTH_JSON secret later.
+projectsApp.post('/:projectId/providers/openai/chatgpt/headless/start', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  try {
+    return c.json(await startChatGptHeadlessAuth({
+      projectId,
+      userId: loaded.userId,
+    }));
+  } catch (err) {
+    return c.json({
+      error: err instanceof Error ? err.message : 'Failed to start ChatGPT authorization',
+    }, 500);
+  }
+});
+
+// POST /v1/projects/:projectId/providers/openai/chatgpt/headless/complete
+// Waits for the server-side OpenCode device flow to complete, then writes the
+// resulting auth.json into project_secrets as CODEX_AUTH_JSON. This is
+// intentionally Codex-specific; generic OpenCode auth can keep using its own
+// OPENCODE_AUTH_JSON row without being overwritten by subscription onboarding.
+projectsApp.post('/:projectId/providers/openai/chatgpt/headless/complete', async (c) => {
+  const projectId = c.req.param('projectId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const authId = normalizeString(body.auth_id);
+  if (!authId) return c.json({ error: 'auth_id is required' }, 400);
+
+  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
+  if (body.sharing != null) {
+    sharing = parseSharingIntent(body.sharing, loaded.userId);
+    if (!sharing) {
+      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+    }
+  }
+  if (sharing?.mode !== 'private' && !roleAllows(loaded.effectiveRole, 'manage')) {
+    return c.json({ error: 'Only project managers can configure shared provider credentials' }, 403);
+  }
+
+  try {
+    const value = await completeChatGptHeadlessAuth({
+      authId,
+      projectId,
+      userId: loaded.userId,
+    });
+
+    const now = new Date();
+    if (sharing?.mode === 'private') {
+      await db
+        .insert(projectSecrets)
+        .values({
+          projectId,
+          name: CODEX_AUTH_JSON_SECRET_NAME,
+          valueEnc: encryptProjectSecret(projectId, value),
+          ownerUserId: loaded.userId,
+          active: true,
+          createdBy: loaded.userId,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [projectSecrets.projectId, projectSecrets.name, projectSecrets.ownerUserId],
+          targetWhere: sql`${projectSecrets.ownerUserId} is not null`,
+          set: {
+            valueEnc: encryptProjectSecret(projectId, value),
+            active: true,
+            updatedAt: now,
+          },
+        });
+
+      const subject = await resolveShareSubject(loaded.userId);
+      const views = await loadSecretViewsForUser(projectId, subject, true);
+      const view = views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME);
+      return c.json(view ?? { name: CODEX_AUTH_JSON_SECRET_NAME }, 200);
+    }
+
+    await db
+      .insert(projectSecrets)
+      .values({
+        projectId,
+        name: CODEX_AUTH_JSON_SECRET_NAME,
+        valueEnc: encryptProjectSecret(projectId, value),
+        createdBy: loaded.userId,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [projectSecrets.projectId, projectSecrets.name],
+        targetWhere: isNull(projectSecrets.ownerUserId),
+        set: {
+          valueEnc: encryptProjectSecret(projectId, value),
+          updatedAt: now,
+        },
+      });
+
+    const [row] = await db
+      .select({ secretId: projectSecrets.secretId })
+      .from(projectSecrets)
+      .where(and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.name, CODEX_AUTH_JSON_SECRET_NAME),
+        isNull(projectSecrets.ownerUserId),
+      ))
+      .limit(1);
+    if (sharing && row) await setSecretSharing(row.secretId, sharing);
+
+    const subject = await resolveShareSubject(loaded.userId);
+    const views = await loadSecretViewsForUser(projectId, subject, true);
+    const view = views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME);
+    return c.json(view ?? { name: CODEX_AUTH_JSON_SECRET_NAME }, 200);
+  } catch (err) {
+    return c.json({
+      error: err instanceof Error ? err.message : 'Failed to complete ChatGPT authorization',
+    }, 500);
+  }
 });
 
 // DELETE /v1/projects/:projectId/secrets/:name
@@ -3315,11 +3770,103 @@ projectsApp.delete('/:projectId/secrets/:name', async (c) => {
     return c.json({ error: `${name} is managed by Kortix and cannot be removed` }, 403);
   }
 
+  // Only the shared row — members' personal overrides for this key are theirs to
+  // remove (via the /personal route) and are left intact.
   await db
     .delete(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
       eq(projectSecrets.name, name),
+      isNull(projectSecrets.ownerUserId),
+    ));
+
+  return c.json({ ok: true });
+});
+
+// PUT /v1/projects/:projectId/secrets/:name/personal
+// Any project member sets/updates THEIR OWN per-key override (the "use mine"
+// value) and/or flips whether it's active. Operates only on the caller's row;
+// never touches the shared value or anyone else's override.
+projectsApp.put('/:projectId/secrets/:name/personal', async (c) => {
+  const projectId = c.req.param('projectId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const name = c.req.param('name')?.trim().toUpperCase();
+  if (!name || !isValidSecretName(name)) {
+    return c.json({ error: 'Invalid secret name' }, 400);
+  }
+  if (isSystemProjectSecretName(name)) {
+    return c.json({ error: 'KORTIX_* names are reserved and cannot be overridden' }, 400);
+  }
+  if (name === CODEX_AUTH_JSON_SECRET_NAME) {
+    return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
+  }
+
+  const value = typeof body.value === 'string' ? body.value : null;
+  const active = typeof body.active === 'boolean' ? body.active : undefined;
+  if (value === null && active === undefined) {
+    return c.json({ error: 'value or active is required' }, 400);
+  }
+
+  const [existingMine] = await db
+    .select({ secretId: projectSecrets.secretId })
+    .from(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, name),
+      eq(projectSecrets.ownerUserId, loaded.userId),
+    ))
+    .limit(1);
+
+  const now = new Date();
+  if (!existingMine) {
+    if (value === null) {
+      return c.json({ error: 'value is required to create an override' }, 400);
+    }
+    await db.insert(projectSecrets).values({
+      projectId,
+      name,
+      valueEnc: encryptProjectSecret(projectId, value),
+      ownerUserId: loaded.userId,
+      active: active ?? true,
+      createdBy: loaded.userId,
+      updatedAt: now,
+    });
+  } else {
+    await db
+      .update(projectSecrets)
+      .set({
+        ...(value !== null ? { valueEnc: encryptProjectSecret(projectId, value) } : {}),
+        ...(active !== undefined ? { active } : {}),
+        updatedAt: now,
+      })
+      .where(eq(projectSecrets.secretId, existingMine.secretId));
+  }
+
+  const subject = await resolveShareSubject(loaded.userId);
+  const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'));
+  return c.json(views.find((v) => v.name === name) ?? { name }, 200);
+});
+
+// DELETE /v1/projects/:projectId/secrets/:name/personal
+// Remove the caller's own override for this key (falls back to the shared value).
+projectsApp.delete('/:projectId/secrets/:name/personal', async (c) => {
+  const projectId = c.req.param('projectId');
+  const name = c.req.param('name')?.trim().toUpperCase();
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!name || !isValidSecretName(name)) {
+    return c.json({ error: 'Invalid secret name' }, 400);
+  }
+
+  await db
+    .delete(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, name),
+      eq(projectSecrets.ownerUserId, loaded.userId),
     ));
 
   return c.json({ ok: true });
@@ -3348,7 +3895,7 @@ function buildPublicWebhookUrl(projectId: string, slug: string): string {
 
 /** Builds the GET-listing response shape (specs + runtime + errors). */
 async function loadTriggersForResponse(projectId: string, project: ProjectRow) {
-  const { specs, errors } = await loadProjectTriggers(project);
+  const { specs, errors } = await loadProjectTriggers(await withProjectGitAuth(project));
   const runtimeRows = specs.length === 0
     ? []
     : await db
@@ -3485,11 +4032,6 @@ function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | 
   return { owner: m[1]!, repo: m[2]! };
 }
 
-async function resolveTriggerCommitAuth(project: ProjectRow) {
-  const auth = await resolveProjectGitAuth(project);
-  return auth.auth ?? undefined;
-}
-
 /**
  * Convert a validated draft into the spec shape the manifest writer
  * expects (and the trigger loader returns).
@@ -3514,7 +4056,7 @@ function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
  * repo), synthesize a minimal valid one so the first POST /triggers can
  * scaffold it on save.
  */
-async function loadManifestForEdit(project: ProjectRow): Promise<ParsedManifest> {
+export async function loadManifestForEdit(project: ProjectRow): Promise<ParsedManifest> {
   const existing = await readManifest(await withProjectGitAuth(project));
   if (existing) return existing;
   return {
@@ -3563,49 +4105,69 @@ function removeTriggerFromManifest(
  * Commit a new revision of kortix.toml to the project's default branch.
  * All trigger CRUD funnels through this — one file, one commit per edit.
  */
-async function commitManifest(
+export async function commitManifest(
   project: ProjectRow,
   manifest: ParsedManifest,
   message: string,
 ): Promise<{ ok: true } | { error: string; status: number }> {
-  const repo = parseGitHubRepoUrl(project.repoUrl);
-  if (!repo) return { error: 'Project repo URL is not a GitHub URL', status: 400 };
+  const content = serializeManifest(manifest);
+  const branch = project.defaultBranch;
 
-  let auth: GitHubAuthContext | undefined;
-  try {
-    auth = await resolveTriggerCommitAuth(project);
-  } catch (err) {
-    return {
-      error: `GitHub auth unavailable: ${(err as Error).message || String(err)}`,
-      status: 502,
-    };
+  // GitHub repos: commit through the Contents API (App / PAT auth) — the
+  // lightweight single-file path that doesn't need a full clone.
+  const repo = parseGitHubRepoUrl(project.repoUrl);
+  if (repo) {
+    let auth: GitHubAuthContext | undefined;
+    try {
+      auth = (await resolveProjectGitAuth(project)).auth ?? undefined;
+    } catch (err) {
+      return { error: `GitHub auth unavailable: ${(err as Error).message || String(err)}`, status: 502 };
+    }
+    const existingSha = await getFileSha({ owner: repo.owner, repo: repo.repo, path: MANIFEST_FILENAME, branch, auth });
+    try {
+      await commitFile({
+        owner: repo.owner,
+        repo: repo.repo,
+        path: MANIFEST_FILENAME,
+        content,
+        message,
+        branch,
+        existingSha: existingSha ?? undefined,
+        auth,
+      });
+    } catch (err) {
+      return { error: `Failed to commit ${MANIFEST_FILENAME}: ${(err as Error).message || String(err)}`, status: 502 };
+    }
+    invalidateProjectMirror(project.projectId);
+    return { ok: true };
   }
 
-  const branch = project.defaultBranch;
-  const existingSha = await getFileSha({
-    owner: repo.owner,
-    repo: repo.repo,
-    path: MANIFEST_FILENAME,
-    branch,
-    auth,
-  });
+  // Any other host (Freestyle managed git, GitLab, generic HTTPS remote):
+  // commit via the git CLI. The old code bailed here with "Project repo URL is
+  // not a GitHub URL", which broke every manifest edit (connectors, triggers,
+  // apps) on managed/self-hosted projects. Mirrors createRemoteSessionBranch's
+  // GitHub-fast-path / git-CLI-fallback split.
+  let gitProject: ProjectRow & { gitAuthToken: string | null };
+  try {
+    gitProject = await withProjectGitAuth(project);
+  } catch (err) {
+    return { error: `Git auth unavailable: ${(err as Error).message || String(err)}`, status: 502 };
+  }
+  if (!gitProject.gitAuthToken) {
+    return { error: 'No git credentials available to write to the project repo', status: 502 };
+  }
 
   try {
-    await commitFile({
-      owner: repo.owner,
-      repo: repo.repo,
+    await commitFileToBranch(gitProject, {
       path: MANIFEST_FILENAME,
-      content: serializeManifest(manifest),
+      content,
       message,
       branch,
-      existingSha: existingSha ?? undefined,
-      auth,
+      authorName: 'Kortix',
+      authorEmail: 'noreply@kortix.ai',
     });
   } catch (err) {
-    return {
-      error: `Failed to commit ${MANIFEST_FILENAME}: ${(err as Error).message || String(err)}`,
-      status: 502,
-    };
+    return { error: `Failed to commit ${MANIFEST_FILENAME}: ${(err as Error).message || String(err)}`, status: 502 };
   }
 
   invalidateProjectMirror(project.projectId);
@@ -3746,6 +4308,26 @@ projectsApp.get('/:projectId/channels/slack/installation', async (c) => {
   return c.json(install ?? null);
 });
 
+// GET /v1/projects/:projectId/channels/slack/mode
+// Tells the dashboard whether one-click "Add to Slack" is available (server
+// has SLACK_CLIENT_ID + SECRET + SIGNING_SECRET set) and the pre-signed
+// install URL to redirect the user to.
+projectsApp.get('/:projectId/channels/slack/mode', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const mode = slackOauthMode();
+  if (!mode.available) {
+    return c.json({ oauth_available: false, install_url: null });
+  }
+  try {
+    const installUrl = buildSlackInstallUrl(projectId, loaded.userId);
+    return c.json({ oauth_available: true, install_url: installUrl });
+  } catch {
+    return c.json({ oauth_available: false, install_url: null });
+  }
+});
+
 // POST /v1/projects/:projectId/channels/slack/connect
 projectsApp.post('/:projectId/channels/slack/connect', async (c) => {
   const projectId = c.req.param('projectId');
@@ -3804,6 +4386,161 @@ projectsApp.delete('/:projectId/channels/slack/installation', async (c) => {
   return c.json({ status: 'disconnected' });
 });
 
+// POST /v1/projects/:projectId/turn-stream
+// Agent-cli relay for the live Slack plan: kind=step appends a checkpoint,
+// kind=answer finalizes the turn's streamed message with the agent's reply.
+projectsApp.post('/:projectId/turn-stream', async (c) => {
+  const projectId = c.req.param('projectId');
+
+  // Two valid callers: a project-scoped PAT (dashboard or operator) and the
+  // session sandbox's own KORTIX_TOKEN (so the in-sandbox agent CLI can relay
+  // its plan steps without a second token). Each is scoped to one projectId.
+  const authType = (c as any).get('authType') as string | undefined;
+  if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    const accountId = (c as any).get('accountId') as string | undefined;
+    const sandboxId = (c as any).get('sandboxId') as string | undefined;
+    if (!accountId || !sandboxId) {
+      return c.json({ error: 'turn-stream requires a sandbox token' }, 403);
+    }
+    const [sandbox] = await db
+      .select({ sandboxId: sessionSandboxes.sandboxId })
+      .from(sessionSandboxes)
+      .where(and(
+        eq(sessionSandboxes.sandboxId, sandboxId),
+        eq(sessionSandboxes.projectId, projectId),
+        eq(sessionSandboxes.accountId, accountId),
+        inArray(sessionSandboxes.status, ['provisioning', 'active']),
+      ))
+      .limit(1);
+    if (!sandbox) {
+      return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+    }
+  } else {
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+  }
+
+  let body: {
+    session_id?: string;
+    kind?: string;
+    text?: string;
+    detail?: string;
+    output?: string;
+    sources?: Array<{ url?: string; text?: string }>;
+    blocks?: unknown[];
+  };
+  try {
+    body = (await c.req.json()) as typeof body;
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+  const sessionId = body.session_id?.trim();
+  const text = (body.text ?? '').trim();
+  if (!sessionId || !text) {
+    return c.json({ error: 'session_id and text are required' }, 400);
+  }
+
+  const detail = body.detail?.trim() || undefined;
+  const outputForPrev = body.output?.trim() || undefined;
+  const sourcesForPrev = Array.isArray(body.sources)
+    ? body.sources
+        .filter((s): s is { url: string; text: string } => !!s?.url && !!s?.text)
+        .map((s) => ({ url: s.url, text: s.text }))
+    : undefined;
+  const blocks = Array.isArray(body.blocks) && body.blocks.length > 0 ? body.blocks : undefined;
+
+  const ok =
+    body.kind === 'answer'
+      ? await relayTurnAnswer(sessionId, text, blocks)
+      : await relayTurnStep(sessionId, text, { detail, outputForPrev, sourcesForPrev });
+  return c.json({ ok });
+});
+
+// POST /v1/projects/:projectId/turn-question
+// Sandbox-to-apps/api relay for opencode's `question.asked` event. The
+// sandbox subscribes to opencode's SSE stream; when the agent calls the
+// built-in `question` tool, the sandbox relays the QuestionInfo[] here.
+// We post a Block Kit form, block on Submit, return `answers: string[][]`,
+// and the sandbox POSTs the same payload to opencode's
+// /question/{requestID}/reply so the tool resumes.
+projectsApp.post('/:projectId/turn-question', async (c) => {
+  const projectId = c.req.param('projectId');
+
+  const authType = (c as any).get('authType') as string | undefined;
+  if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    const accountId = (c as any).get('accountId') as string | undefined;
+    const sandboxId = (c as any).get('sandboxId') as string | undefined;
+    if (!accountId || !sandboxId) {
+      return c.json({ error: 'turn-question requires a sandbox token' }, 403);
+    }
+    const [sandbox] = await db
+      .select({ sandboxId: sessionSandboxes.sandboxId })
+      .from(sessionSandboxes)
+      .where(and(
+        eq(sessionSandboxes.sandboxId, sandboxId),
+        eq(sessionSandboxes.projectId, projectId),
+        eq(sessionSandboxes.accountId, accountId),
+        inArray(sessionSandboxes.status, ['provisioning', 'active']),
+      ))
+      .limit(1);
+    if (!sandbox) {
+      return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+    }
+  } else {
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+  }
+
+  let body: {
+    session_id?: string;
+    request_id?: string;
+    questions?: unknown[];
+  };
+  try {
+    body = (await c.req.json()) as typeof body;
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+  const sessionId = body.session_id?.trim();
+  if (!sessionId) {
+    return c.json({ error: 'session_id is required' }, 400);
+  }
+  if (!Array.isArray(body.questions) || body.questions.length === 0) {
+    return c.json({ error: 'at least one question is required' }, 400);
+  }
+
+  // Validate + coerce to QuestionInfo[]. Tolerate the v2 SDK schema variants.
+  const questions: QuestionInfo[] = [];
+  for (const q of body.questions) {
+    if (!q || typeof q !== 'object') continue;
+    const obj = q as Record<string, unknown>;
+    const question = String(obj.question ?? '').trim();
+    if (!question) continue;
+    const optionsRaw = Array.isArray(obj.options) ? obj.options : [];
+    const options = optionsRaw
+      .map((o) => (o && typeof o === 'object' ? (o as Record<string, unknown>) : null))
+      .filter((o): o is Record<string, unknown> => !!o && typeof o.label === 'string')
+      .map((o) => ({
+        label: String(o.label),
+        description: typeof o.description === 'string' ? String(o.description) : undefined,
+      }));
+    questions.push({
+      question,
+      header: obj.header ? String(obj.header) : undefined,
+      options,
+      multiple: !!obj.multiple,
+      custom: obj.custom === false ? false : true,
+    });
+  }
+  if (questions.length === 0) {
+    return c.json({ error: 'no valid questions provided' }, 400);
+  }
+
+  const result = await postQuestionAndWait(sessionId, questions);
+  if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
+  return c.json({ ok: true, ask_id: result.ask_id, answers: result.answers });
+});
+
 // POST /v1/projects/:projectId/triggers/:slug/fire
 //
 // Manual fire for git-backed triggers. Reads the file, renders the prompt
@@ -3814,7 +4551,7 @@ projectsApp.post('/:projectId/triggers/:slug/fire', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const { specs } = await loadProjectTriggers(loaded.row);
+  const { specs } = await loadProjectTriggers(await withProjectGitAuth(loaded.row));
   const spec = specs.find((s) => s.slug === slug);
   if (!spec) return c.json({ error: 'Not found' }, 404);
 
@@ -4967,7 +5704,13 @@ projectsApp.post('/:projectId/sessions', async (c) => {
   for (const [key, value] of Object.entries(result.headers ?? {})) {
     c.header(key, value);
   }
-  return c.json(serializeSession(result.row!), 201);
+  return c.json(
+    serializeSession(result.row!, {
+      viewerId: loaded.userId,
+      canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
+    }),
+    201,
+  );
 });
 
 // GET /v1/projects/:projectId/sessions
@@ -4983,7 +5726,36 @@ projectsApp.get('/:projectId/sessions', async (c) => {
     .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.accountId, loaded.row.accountId)))
     .orderBy(desc(projectSessions.updatedAt));
 
-  return c.json(rows.map(serializeSession));
+  // Filter to sessions the viewer may see: their own, project-wide, or ones
+  // shared with them (restricted + grant). Then surface owner + sharing so the
+  // list can show "shared by X".
+  const subject = await resolveShareSubject(loaded.userId);
+  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  const grantsBySession = await loadSessionGrants(
+    rows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
+  );
+  const visible = rows.filter((r) =>
+    isSessionVisibleTo(
+      r.visibility as 'private' | 'project' | 'restricted',
+      r.createdBy,
+      grantsBySession.get(r.sessionId) ?? [],
+      subject,
+    ),
+  );
+  // Owner emails only for sessions someone else owns (for the "shared by" label).
+  const ownerIds = [...new Set(visible.map((r) => r.createdBy).filter((id): id is string => !!id && id !== loaded.userId))];
+  const emails = await lookupEmailsByUserIds(ownerIds);
+
+  return c.json(
+    visible.map((r) =>
+      serializeSession(r, {
+        grants: grantsBySession.get(r.sessionId) ?? [],
+        viewerId: loaded.userId,
+        canManageProject,
+        ownerEmail: r.createdBy ? emails.get(r.createdBy) ?? null : null,
+      }),
+    ),
+  );
 });
 
 // GET /v1/projects/:projectId/sessions/:sessionId
@@ -4995,18 +5767,49 @@ projectsApp.get('/:projectId/sessions/:sessionId', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const [row] = await db
-    .select()
-    .from(projectSessions)
-    .where(and(
-      eq(projectSessions.sessionId, sessionId),
-      eq(projectSessions.projectId, projectId),
-      eq(projectSessions.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
 
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json(serializeSession(row));
+  const ownerEmail = visible.row.createdBy && !visible.isOwner
+    ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
+    : null;
+  return c.json(serializeSession(visible.row, {
+    grants: visible.grants,
+    viewerId: loaded.userId,
+    canManageProject: visible.canManageProject,
+    ownerEmail,
+  }));
+});
+
+// PUT /v1/projects/:projectId/sessions/:sessionId/sharing
+// Owner or project manager sets who can see/open this session
+// (private | project | members). Mirrors connector/secret sharing.
+projectsApp.put('/:projectId/sessions/:sessionId/sharing', async (c) => {
+  const projectId = c.req.param('projectId');
+  const sessionId = c.req.param('sessionId');
+  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+  if (!visible.canManageSharing) {
+    return c.json({ error: 'Only the session owner or a project manager can change sharing' }, 403);
+  }
+
+  const intent = parseSharingIntent(body, loaded.userId);
+  if (!intent) return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+
+  await setSessionSharing(sessionId, intent);
+
+  const fresh = await loadVisibleSession(loaded, sessionId);
+  return c.json(fresh ? serializeSession(fresh.row, {
+    grants: fresh.grants,
+    viewerId: loaded.userId,
+    canManageProject: fresh.canManageProject,
+  }) : { ok: true });
 });
 
 // PATCH /v1/projects/:projectId/sessions/:sessionId
@@ -5031,17 +5834,9 @@ projectsApp.patch('/:projectId/sessions/:sessionId', async (c) => {
     return c.json({ error: `field is not user-editable: ${unknownField}` }, 400);
   }
 
-  const [existing] = await db
-    .select()
-    .from(projectSessions)
-    .where(and(
-      eq(projectSessions.sessionId, sessionId),
-      eq(projectSessions.projectId, projectId),
-      eq(projectSessions.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
-
-  if (!existing) return c.json({ error: 'Not found' }, 404);
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+  const existing = visible.row;
 
   const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
 
@@ -5072,17 +5867,19 @@ projectsApp.patch('/:projectId/sessions/:sessionId', async (c) => {
     .returning();
 
   if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json(serializeSession(row));
+  return c.json(serializeSession(row, {
+    grants: visible.grants,
+    viewerId: loaded.userId,
+    canManageProject: visible.canManageProject,
+  }));
 });
 
-// POST /v1/projects/sync-opencode-titles
-// Mirrors session titles from the sandbox-local opencode DB into our cloud DB
-// (project_sessions.metadata.name). Opencode is the source of truth for the
-// title; the frontend pipes opencode's session.list response and SSE
-// session.updated events through this endpoint so the name is available even
-// when the sandbox isn't running. Rename direction (UI -> opencode) goes via
-// the SDK's session.update and lands back here through the same SSE pipe.
-projectsApp.post('/sync-opencode-titles', async (c) => {
+// POST /v1/projects/sync-opencode-sessions
+// Mirrors session data from the sandbox-local opencode DB into our cloud DB.
+// The project_sessions row remains the branch+sandbox root;
+// metadata.opencode_sessions stores the local OpenCode root/sub-session graph
+// for sidebar/list rendering when the sandbox is not the active runtime.
+const syncOpencodeSessionsHandler = async (c: Context<AppEnv>) => {
   const userId = c.get('userId') as string;
   const body = await readBody(c);
   const rawEntries = body.entries;
@@ -5090,7 +5887,17 @@ projectsApp.post('/sync-opencode-titles', async (c) => {
     return c.json({ error: 'entries must be an array' }, 400);
   }
 
-  const desiredByOcId = new Map<string, string | null>();
+  type OpenCodeSessionSnapshot = {
+    id: string;
+    title: string | null;
+    parent_id: string | null;
+    project_id: string | null;
+    created_at: number | null;
+    updated_at: number | null;
+    archived_at: number | null;
+  };
+
+  const desiredByOcId = new Map<string, OpenCodeSessionSnapshot>();
   for (const raw of rawEntries) {
     if (!isPlainObject(raw)) continue;
     const opencodeSessionId = normalizeString(
@@ -5098,15 +5905,62 @@ projectsApp.post('/sync-opencode-titles', async (c) => {
     );
     if (!opencodeSessionId) continue;
     const title = normalizeString(raw.title);
-    desiredByOcId.set(opencodeSessionId, title);
+    const parentId = normalizeString(raw.parent_id ?? raw.parentID ?? raw.parentId);
+    const projectId = normalizeString(raw.project_id ?? raw.projectID ?? raw.projectId);
+    const createdAt = typeof raw.created_at === 'number'
+      ? raw.created_at
+      : typeof raw.createdAt === 'number'
+        ? raw.createdAt
+        : null;
+    const updatedAt = typeof raw.updated_at === 'number'
+      ? raw.updated_at
+      : typeof raw.updatedAt === 'number'
+        ? raw.updatedAt
+        : null;
+    const archivedAt = typeof raw.archived_at === 'number'
+      ? raw.archived_at
+      : typeof raw.archivedAt === 'number'
+        ? raw.archivedAt
+        : null;
+    desiredByOcId.set(opencodeSessionId, {
+      id: opencodeSessionId,
+      title,
+      parent_id: parentId,
+      project_id: projectId,
+      created_at: createdAt,
+      updated_at: updatedAt,
+      archived_at: archivedAt,
+    });
   }
   if (desiredByOcId.size === 0) return c.json({ updated: 0 });
 
   const ids = Array.from(desiredByOcId.keys());
+  const rootByOcId = new Map<string, string>();
+  const resolveRoot = (id: string): string => {
+    const cached = rootByOcId.get(id);
+    if (cached) return cached;
+    const seen = new Set<string>();
+    let current = id;
+    while (true) {
+      if (seen.has(current)) break;
+      seen.add(current);
+      const parent = desiredByOcId.get(current)?.parent_id;
+      if (!parent) break;
+      if (!desiredByOcId.has(parent)) {
+        current = parent;
+        break;
+      }
+      current = parent;
+    }
+    for (const seenId of seen) rootByOcId.set(seenId, current);
+    return current;
+  };
+  for (const id of ids) resolveRoot(id);
+  const rootIds = Array.from(new Set(Array.from(rootByOcId.values())));
   const rows = await db
     .select()
     .from(projectSessions)
-    .where(inArray(projectSessions.opencodeSessionId, ids));
+    .where(inArray(projectSessions.opencodeSessionId, Array.from(new Set([...ids, ...rootIds]))));
   if (rows.length === 0) return c.json({ updated: 0 });
 
   // Per-row IAM authz. The engine answers from a per-request cache
@@ -5132,12 +5986,20 @@ projectsApp.post('/sync-opencode-titles', async (c) => {
     if (!verdict.allowed) continue;
     const ocId = row.opencodeSessionId;
     if (!ocId) continue;
-    const desired = desiredByOcId.get(ocId) ?? null;
+    const rootId = rootByOcId.get(ocId) ?? ocId;
     const current = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
-    if (desired === current) continue;
+    const rootEntry = desiredByOcId.get(ocId);
+    const desired = rootEntry ? rootEntry.title : current;
+    const scopedSessions = Array.from(desiredByOcId.values())
+      .filter((entry) => (rootByOcId.get(entry.id) ?? entry.id) === rootId)
+      .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
+    const currentSessions = JSON.stringify(row.metadata?.opencode_sessions ?? []);
+    const nextSessions = JSON.stringify(scopedSessions);
+    if (desired === current && currentSessions === nextSessions) continue;
     const nextMetadata: Record<string, unknown> = { ...(row.metadata ?? {}) };
     if (desired) nextMetadata.name = desired;
     else delete nextMetadata.name;
+    nextMetadata.opencode_sessions = scopedSessions;
     await db
       .update(projectSessions)
       .set({ metadata: nextMetadata, updatedAt: new Date() })
@@ -5145,7 +6007,9 @@ projectsApp.post('/sync-opencode-titles', async (c) => {
     updated += 1;
   }
   return c.json({ updated });
-});
+};
+
+projectsApp.post('/sync-opencode-sessions', syncOpencodeSessionsHandler);
 
 // GET /v1/projects/:projectId/sessions/:sessionId/sandbox
 // Returns the session's sandbox runtime row from `kortix.session_sandboxes`.
@@ -5159,6 +6023,9 @@ projectsApp.get('/:projectId/sessions/:sessionId/sandbox', async (c) => {
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  // Only members who can see the session may reach its sandbox.
+  if (!(await loadVisibleSession(loaded, sessionId))) return c.json({ error: 'Not found' }, 404);
 
   const [row] = await db
     .select()
@@ -5200,6 +6067,13 @@ projectsApp.delete('/:projectId/sessions/:sessionId', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
+  // Stopping a session is reserved for its owner or a project manager.
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+  if (!visible.canManageSharing) {
+    return c.json({ error: 'Only the session owner or a project manager can stop this session' }, 403);
+  }
+
   const [row] = await db
     .update(projectSessions)
     .set({ status: 'stopped', updatedAt: new Date() })
@@ -5214,6 +6088,56 @@ projectsApp.delete('/:projectId/sessions/:sessionId', async (c) => {
   return c.json({ ok: true });
 });
 
+// POST /v1/projects/:projectId/sessions/:sessionId/wake
+// Wake a sandbox that the provider auto-stopped while idle. The DB row still
+// reads `active` (nothing updates it when Daytona auto-stops after ~15min), so
+// opening such a session would otherwise hit a dead container and spin on the
+// health poll. The frontend fires this on open: a running sandbox is a cheap
+// status no-op; a stopped one gets started in the background while the health
+// poll picks up readiness — so the request returns instantly either way.
+projectsApp.post('/:projectId/sessions/:sessionId/wake', async (c) => {
+  const projectId = c.req.param('projectId');
+  const sessionId = c.req.param('sessionId');
+  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!(await loadVisibleSession(loaded, sessionId))) return c.json({ error: 'Not found' }, 404);
+
+  const [row] = await db
+    .select()
+    .from(sessionSandboxes)
+    .where(and(
+      eq(sessionSandboxes.sessionId, sessionId),
+      eq(sessionSandboxes.projectId, projectId),
+      eq(sessionSandboxes.accountId, loaded.row.accountId),
+    ))
+    .limit(1);
+  if (!row || !row.externalId) return c.json({ status: 'unknown' });
+
+  const providerName = row.provider as SandboxProviderName;
+  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
+    return c.json({ status: 'unknown' });
+  }
+  const provider = getProvider(providerName);
+
+  let status: string;
+  try {
+    status = await provider.getStatus(row.externalId);
+  } catch {
+    return c.json({ status: 'unknown' });
+  }
+  if (status === 'running') return c.json({ status: 'running' });
+
+  // Stopped/archived → kick the start in the background so the caller gets an
+  // instant answer and the health poll observes readiness. Don't block the
+  // request on the provider's start (~10-30s on a cold wake).
+  void provider.start(row.externalId).catch((err) =>
+    console.warn(`[wake] failed to start sandbox ${row.externalId} (session ${sessionId}):`, err),
+  );
+  return c.json({ status: 'waking' });
+});
+
 // POST /v1/projects/:projectId/sessions/:sessionId/restart
 // Tear down the current sandbox container, revoke its sandbox-scoped api keys,
 // and re-provision a fresh one with the latest project secrets + rotated
@@ -5226,20 +6150,24 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const [session] = await db
-    .select()
-    .from(projectSessions)
-    .where(and(
-      eq(projectSessions.sessionId, sessionId),
-      eq(projectSessions.projectId, projectId),
-      eq(projectSessions.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
-  if (!session) return c.json({ error: 'Not found' }, 404);
+  // Restart is reserved for the session owner or a project manager.
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+  if (!visible.canManageSharing) {
+    return c.json({ error: 'Only the session owner or a project manager can restart this session' }, 403);
+  }
+  const session = visible.row;
 
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
     return c.json({ error: `Restart is not supported for provider ${providerName}` }, 400);
+  }
+
+  // Same loopback-callback guard as create: restarting into an unreachable
+  // KORTIX_URL just rebuilds the same dead sandbox.
+  const restartUnreachable = sandboxCallbackUnreachableReason();
+  if (restartUnreachable) {
+    return c.json({ error: restartUnreachable, code: 'KORTIX_URL_UNREACHABLE' }, 503);
   }
 
   // Resolve git auth fresh — installation tokens rotate.
@@ -5247,6 +6175,9 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
 
   const initialPrompt = typeof session.metadata?.initial_prompt === 'string'
     ? session.metadata.initial_prompt as string
+    : null;
+  const opencodeModel = typeof session.metadata?.opencode_model === 'string'
+    ? session.metadata.opencode_model as string
     : null;
 
   // Best-effort tear down: remove the old external container and revoke its
@@ -5312,6 +6243,7 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         initialPrompt,
+        opencodeModel,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
@@ -5656,6 +6588,38 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
     .returning();
 
   invalidateProjectMirror(projectId);
+
+  // Proactive pre-build: the merge advanced the default branch, so kick a
+  // snapshot build for the new tip now instead of waiting for the next session
+  // to pay a cold build. Fire-and-forget; the previous ready snapshot keeps
+  // serving sessions until this finishes (graceful degradation on boot).
+  void ensureBuildForLatestCommit(projectForGit, {
+    branch: cr.baseRef,
+    accountId: loaded.row.accountId,
+    source: 'cr-merge',
+  }).catch((err) =>
+    console.warn(
+      '[change-requests] pre-build after merge failed',
+      projectId,
+      err instanceof Error ? err.message : err,
+    ),
+  );
+
+  // A merged CR may have edited kortix.toml's [[connectors]]. The connector DB
+  // cache (what the gateway + dashboard read) is derived from the manifest, so
+  // reconcile it from the new tip — best-effort, never blocks the merge
+  // response. The manifest in git stays the source of truth either way; the
+  // periodic sweep is the backstop if this best-effort call fails.
+  void import('../executor/sync')
+    .then(({ syncProjectConnectors }) => syncProjectConnectors(projectId, loaded.row.accountId))
+    .then((res) => {
+      if (res.errors.length) {
+        console.warn('[change-requests] connector reconcile had errors', projectId, res.errors);
+      }
+    })
+    .catch((err) =>
+      console.warn('[change-requests] connector reconcile failed', projectId, err instanceof Error ? err.message : err),
+    );
 
   return c.json({
     change_request: serializeChangeRequest(row),

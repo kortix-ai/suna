@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from 'next-intl';
+
 import { ExternalLink, SquareKanban, X } from "lucide-react";
 import { useCallback } from "react";
 import { SessionChat } from "@/components/session/session-chat";
@@ -27,6 +29,7 @@ export function SubSessionModal({
 	parentSessionId,
 	title,
 }: SubSessionModalProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	const handleOpenInTab = useCallback(() => {
 		onOpenChange(false);
 		openTabAndNavigate({
@@ -65,7 +68,7 @@ export function SubSessionModal({
 						)}
 					>
 						<ExternalLink className="size-3" />
-						<span>Open in tab</span>
+						<span>{tHardcodedUi.raw('componentsSessionSubSessionModal.line68JsxTextOpenInTab')}</span>
 					</button>
 					<button
 						type="button"

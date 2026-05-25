@@ -42,7 +42,7 @@ export function Section({
       {(label || action) && (
         <div className="flex items-center justify-between mb-3">
           {label && (
-            <h3 className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/60 font-semibold">
+            <h3 className="text-xs uppercase tracking-[0.08em] text-muted-foreground/60 font-semibold">
               {label}
             </h3>
           )}

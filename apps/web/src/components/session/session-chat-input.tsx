@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { normalizeAppPathname } from '@/lib/instance-routes';
@@ -14,7 +16,6 @@ import {
   Loader2,
   Paperclip,
   X,
-  ListPlus,
   ListTodo,
   MessageSquare,
   Terminal,
@@ -22,7 +23,9 @@ import {
   Folder,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
+import { STATUS_TEXT } from '@/components/ui/status';
 /* AutoContinue — commented out
 import {
   Dialog,
@@ -54,7 +57,6 @@ import { getFileIcon } from '@/features/files/components/file-icon';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
 import { featureFlags } from '@/lib/feature-flags';
 
-import { useMessageQueueStore } from '@/stores/message-queue-store';
 import {
   CommandPopover,
   CommandPopoverTrigger,
@@ -162,6 +164,7 @@ export function AgentSelector({
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [flash, setFlash] = useState(false);
@@ -207,7 +210,7 @@ export function AgentSelector({
           <CommandPopoverTrigger>
             <button
               type="button"
-              aria-label="Agent picker"
+              aria-label={tHardcodedUi.raw('componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker')}
               className={cn(
                 'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-200 capitalize cursor-pointer',
                 flash && 'bg-primary/10 text-foreground',
@@ -220,14 +223,14 @@ export function AgentSelector({
           </CommandPopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
-          <p>Switch agent <kbd className="ml-1 px-1.5 py-0.5 rounded bg-foreground/10 text-[10px] font-mono">Tab</kbd></p>
+          <p>{tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}<kbd className="ml-1 px-1.5 py-0.5 rounded bg-foreground/10 text-xs font-mono">Tab</kbd></p>
         </TooltipContent>
       </Tooltip>
 
       <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
         <CommandInput
           compact
-          placeholder="Search agents..."
+          placeholder={tHardcodedUi.raw('componentsSessionSessionChatInput.line231JsxAttrPlaceholderSearchAgents')}
           value={search}
           onValueChange={setSearch}
         />
@@ -250,13 +253,13 @@ export function AgentSelector({
                   >
                     <div className="min-w-0 flex-1 py-0.5">
                       <div className={cn(
-                        'truncate text-[13px] leading-tight capitalize',
+                        'truncate text-sm leading-tight capitalize',
                         isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
                       )}>
                         {agent.name}
                       </div>
                       {agent.description && (
-                        <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-1">{agent.description}</p>
+                        <p className="truncate text-xs text-muted-foreground/55 leading-snug mt-1">{agent.description}</p>
                       )}
                     </div>
                     {isSelected && <Check className="text-foreground shrink-0" />}
@@ -268,9 +271,7 @@ export function AgentSelector({
 
           {/* No results */}
           {filteredPrimary.length === 0 && search.trim() && (
-            <div className="py-8 text-center text-xs text-muted-foreground/50">
-              No agents match &ldquo;{search.trim()}&rdquo;
-            </div>
+            <div className="py-8 text-center text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo')}{search.trim()}{tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextRdquo')}</div>
           )}
         </CommandList>
       </CommandPopoverContent>
@@ -293,6 +294,7 @@ function VariantSelector({
   selectedVariant: string | null;
   onSelect: (variant: string | null) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const currentIndex = selectedVariant ? variants.indexOf(selectedVariant) : -1;
 
   function cycle() {
@@ -318,7 +320,7 @@ function VariantSelector({
         </button>
       </TooltipTrigger>
       <TooltipContent side="top">
-        <p className="text-xs">Cycle thinking effort</p>
+        <p className="text-xs">{tHardcodedUi.raw('componentsSessionSessionChatInput.line322JsxTextCycleThinkingEffort')}</p>
       </TooltipContent>
     </Tooltip>
   );
@@ -509,7 +511,7 @@ function AutoContinueSelector({
                 <InfinityOff className="size-4" />
               )}
               {isActive && (
-                <span className="text-[11px]">{explicitPick && currentAlg ? currentAlg.label : 'Auto'}</span>
+                <span className="text-xs">{explicitPick && currentAlg ? currentAlg.label : 'Auto'}</span>
               )}
               <ChevronDown className={cn('size-3 opacity-50 transition-transform duration-200', open && 'rotate-180')} />
             </button>
@@ -526,14 +528,14 @@ function AutoContinueSelector({
             className="absolute bottom-full left-0 mb-1.5 z-50 w-80 bg-popover border border-border rounded-2xl overflow-hidden animate-in fade-in-0 slide-in-from-bottom-2 duration-150"
           >
             <div className="p-1">
-              <div className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              <div className="px-2.5 pt-1.5 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 AutoContinue
               </div>
 
               <button
                 onClick={() => { onSelect(null); setExplicitPick(false); setExpanded(false); setOpen(false); }}
                 className={cn(
-                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors cursor-pointer',
+                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors cursor-pointer',
                   !isActive ? 'bg-muted' : 'hover:bg-muted',
                 )}
               >
@@ -548,7 +550,7 @@ function AutoContinueSelector({
                   setExpanded(true);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors cursor-pointer',
+                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors cursor-pointer',
                   isActive && !expanded ? 'bg-muted' : isActive ? 'bg-primary/5' : 'hover:bg-muted',
                 )}
               >
@@ -574,7 +576,7 @@ function AutoContinueSelector({
                     <div
                       key={alg.id}
                       className={cn(
-                        'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors',
+                        'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors',
                         isSelected ? 'bg-muted' : 'hover:bg-muted',
                       )}
                     >
@@ -583,8 +585,8 @@ function AutoContinueSelector({
                         className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                       >
                         <span className="font-medium shrink-0">{alg.label}</span>
-                        <span className="text-[10px] text-muted-foreground/70 shrink-0">{alg.role}</span>
-                        <span className="text-[11px] text-muted-foreground truncate">{alg.description}</span>
+                        <span className="text-xs text-muted-foreground/70 shrink-0">{alg.role}</span>
+                        <span className="text-xs text-muted-foreground truncate">{alg.description}</span>
                         {isSelected && <Check className="size-3 text-foreground shrink-0 ml-auto" />}
                       </button>
                       <button
@@ -631,7 +633,7 @@ function AutoContinueSelector({
                     <ul className="space-y-1">
                       {detailAlg.strengths.map((s, i) => (
                         <li key={i} className="text-sm text-muted-foreground flex gap-1.5">
-                          <span className="text-emerald-500 shrink-0 mt-0.5">+</span>
+                          <span className={cn('shrink-0 mt-0.5', STATUS_TEXT.success)}>+</span>
                           <span>{s}</span>
                         </li>
                       ))}
@@ -642,7 +644,7 @@ function AutoContinueSelector({
                     <ul className="space-y-1">
                       {detailAlg.weaknesses.map((w, i) => (
                         <li key={i} className="text-sm text-muted-foreground flex gap-1.5">
-                          <span className="text-orange-500 shrink-0 mt-0.5">-</span>
+                          <span className={cn('shrink-0 mt-0.5', STATUS_TEXT.warning)}>-</span>
                           <span>{w}</span>
                         </li>
                       ))}
@@ -699,6 +701,7 @@ function getContextLimit(models: FlatModel[] | undefined, selectedModel: { provi
 }
 
 function TokenProgress({ messages, models, selectedModel, onContextClick }: TokenProgressProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const contextTokens = useMemo(() => getLastAssistantTokenTotal(messages), [messages]);
   const contextLimit = useMemo(() => getContextLimit(models, selectedModel), [models, selectedModel]);
   const ratio = contextTokens > 0 ? Math.min(contextTokens / contextLimit, 1) : 0;
@@ -707,8 +710,8 @@ function TokenProgress({ messages, models, selectedModel, onContextClick }: Toke
 
   const circumference = 2 * Math.PI * 7;
   const offset = circumference * (1 - ratio);
-  const color = ratio >= 0.9 ? 'text-amber-400'
-    : ratio > 0.8 ? 'text-orange-500'
+  const color = ratio >= 0.9 ? STATUS_TEXT.destructive
+    : ratio > 0.8 ? STATUS_TEXT.warning
     : 'text-muted-foreground';
 
   return (
@@ -732,8 +735,8 @@ function TokenProgress({ messages, models, selectedModel, onContextClick }: Toke
         </TooltipTrigger>
         <TooltipContent side="top">
           <div className="text-xs font-mono space-y-0.5">
-            <div>Context: {(contextTokens / 1000).toFixed(1)}k / {(contextLimit / 1000).toFixed(0)}k tokens</div>
-            <div className="text-muted-foreground">{Math.round(ratio * 100)}% used</div>
+            <div>Context: {(contextTokens / 1000).toFixed(1)}{tHardcodedUi.raw('componentsSessionSessionChatInput.line736JsxTextK')}{(contextLimit / 1000).toFixed(0)}{tHardcodedUi.raw('componentsSessionSessionChatInput.line736JsxTextKTokens')}</div>
+            <div className="text-muted-foreground">{Math.round(ratio * 100)}{tHardcodedUi.raw('componentsSessionSessionChatInput.line737JsxTextUsed')}</div>
           </div>
         </TooltipContent>
       </Tooltip>
@@ -827,7 +830,7 @@ function AttachmentThumbnail({ af, name }: { af: AttachedFile; name: string }) {
   if (textPreview) {
     return (
       <div className="absolute inset-0 p-1 overflow-hidden">
-        <pre className="m-0 p-0 text-[6px] leading-[1.4] text-muted-foreground/70 font-mono whitespace-pre overflow-hidden select-none pointer-events-none">
+        <pre className="m-0 p-0 text-xs leading-[1.4] text-muted-foreground/70 font-mono whitespace-pre overflow-hidden select-none pointer-events-none">
           {textPreview}
         </pre>
         <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-muted/20 to-transparent" />
@@ -866,7 +869,7 @@ function AttachmentPreview({
                 <AttachmentThumbnail af={af} name={name} />
                 {/* Extension badge */}
                 {ext && !af.isImage && (
-                  <span className="absolute bottom-1 right-1 text-[0.5rem] font-medium text-muted-foreground/50 uppercase tracking-wider bg-background/80 px-1 py-0.5 rounded z-[5]">
+                  <span className="absolute bottom-1 right-1 text-xs font-medium text-muted-foreground/50 uppercase tracking-wider bg-background/80 px-1 py-0.5 rounded z-[5]">
                     {ext.toUpperCase()}
                   </span>
                 )}
@@ -875,7 +878,7 @@ function AttachmentPreview({
               <div className="px-2 py-1.5 border-t border-border/30 h-[32px] flex items-center">
                 <div className="flex items-center gap-1 min-w-0 w-full">
                   {getFileIcon(name, { className: 'h-3.5 w-3.5 shrink-0', variant: 'monochrome' })}
-                  <span className="text-[11px] truncate text-foreground">{name}</span>
+                  <span className="text-xs truncate text-foreground">{name}</span>
                 </div>
               </div>
             </div>
@@ -997,6 +1000,7 @@ function MentionPopover({
   loading?: boolean;
   anchorRef: React.RefObject<HTMLElement | null>;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const listRef = useRef<HTMLDivElement>(null);
 
   // Scroll selected item into view
@@ -1026,7 +1030,7 @@ function MentionPopover({
       <div ref={listRef} className="max-h-72 overflow-y-auto py-1">
         {agents.length > 0 && (
           <>
-            <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Agents</div>
+            <div className="px-3 py-1 text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">Agents</div>
             {agents.map((item) => {
               const idx = globalIndex++;
               return (
@@ -1039,9 +1043,9 @@ function MentionPopover({
                     idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
                   )}
                 >
-                  <span className="size-4 rounded flex items-center justify-center bg-foreground/10 text-foreground/60 text-[10px] font-semibold shrink-0">@</span>
+                  <span className="size-4 rounded flex items-center justify-center bg-foreground/10 text-foreground/60 text-xs font-semibold shrink-0">@</span>
                   <span className="truncate font-medium capitalize">{item.label}</span>
-                  {item.description && <span className="text-muted-foreground/40 truncate text-[10px]">{item.description}</span>}
+                  {item.description && <span className="text-muted-foreground/40 truncate text-xs">{item.description}</span>}
                 </button>
               );
             })}
@@ -1049,7 +1053,7 @@ function MentionPopover({
         )}
         {sessions.length > 0 && (
           <>
-            <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Sessions</div>
+            <div className="px-3 py-1 text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">Sessions</div>
             {sessions.map((item) => {
               const idx = globalIndex++;
               return (
@@ -1064,7 +1068,7 @@ function MentionPopover({
                 >
                   <MessageSquare className="size-4 text-foreground/50 shrink-0" />
                   <span className="truncate text-sm font-medium">{item.label}</span>
-                  {item.description && <span className="text-[10px] text-muted-foreground/35 truncate ml-auto">{item.description}</span>}
+                  {item.description && <span className="text-xs text-muted-foreground/35 truncate ml-auto">{item.description}</span>}
                 </button>
               );
             })}
@@ -1072,7 +1076,7 @@ function MentionPopover({
         )}
         {files.length > 0 && (
           <>
-            <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Files</div>
+            <div className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Files</div>
             {files.map((item) => {
               const idx = globalIndex++;
               const filePath = item.value || item.label;
@@ -1096,7 +1100,7 @@ function MentionPopover({
                   )}
                   <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
                     <span className="truncate text-sm font-medium">{fileName}</span>
-                    <span className="text-[10px] text-muted-foreground/35 font-mono truncate flex-shrink min-w-0">
+                    <span className="text-xs text-muted-foreground/35 font-mono truncate flex-shrink min-w-0">
                       {cleanPath}
                     </span>
                   </div>
@@ -1109,7 +1113,7 @@ function MentionPopover({
         {loading && files.length === 0 && (
           <div className="px-3 py-2 flex items-center gap-2 text-muted-foreground/50">
             <Loader2 className="size-3.5 animate-spin" />
-            <span className="text-xs">Searching…</span>
+            <span className="text-xs">{tHardcodedUi.raw('componentsSessionSessionChatInput.line1113JsxTextSearching')}</span>
           </div>
         )}
       </div>
@@ -1124,6 +1128,7 @@ function MentionPopover({
 // --- Todo Chip (inline inside the chat input card, same style as sub-session context) ---
 
 function TodoChip({ sessionId }: { sessionId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: todos } = useOpenCodeSessionTodo(sessionId);
   const [expanded, setExpanded] = useState(false);
 
@@ -1149,8 +1154,7 @@ function TodoChip({ sessionId }: { sessionId: string }) {
       >
         <ListTodo className="size-3.5 text-muted-foreground flex-shrink-0" />
         <span className="text-xs text-muted-foreground flex-1 min-w-0 truncate text-left">
-          {completed} of {total} tasks done
-          {inProgress && (
+          {completed} of {total}{tHardcodedUi.raw('componentsSessionSessionChatInput.line1153JsxTextTasksDone')}{inProgress && (
             <span className="text-foreground/80 font-medium"> · {inProgress.content}</span>
           )}
         </span>
@@ -1180,7 +1184,7 @@ function TodoChip({ sessionId }: { sessionId: string }) {
                   {active && <div className="size-1 rounded-full bg-foreground" />}
                 </span>
                 <span className={cn(
-                  'text-[11px] leading-tight truncate',
+                  'text-xs leading-tight truncate',
                   done && 'line-through text-muted-foreground',
                   !done && 'text-foreground',
                 )}>
@@ -1317,6 +1321,7 @@ export function SessionChatInput({
   onQuestionAction,
   escCount = 0,
 }: SessionChatInputProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const placeholderVariants = useMemo(
     () => [
       placeholder,
@@ -1703,7 +1708,6 @@ export function SessionChatInput({
     }
   }, [mentionItems.length]);
 
-  const enqueue = useMessageQueueStore((s) => s.enqueue);
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
 
   const handleSubmit = useCallback(async () => {
@@ -1776,39 +1780,31 @@ export function SessionChatInput({
     setSlashFilter(null);
     setMentionQuery(null);
     setMentions([]);
-    // Don't revoke URLs for files going into the queue — they're still needed
-    if (!isBusy) {
-      for (const af of attachedFiles) {
-        if (af.kind === 'local') URL.revokeObjectURL(af.localUrl);
-      }
+    for (const af of attachedFiles) {
+      if (af.kind === 'local') URL.revokeObjectURL(af.localUrl);
     }
     setAttachedFiles([]);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
 
-    // If busy, queue the message instead of sending immediately.
-    // Capture the active agent/model/variant at enqueue time so the message
-    // drains under the same settings the user picked when typing it
-    // (matches OpenCode FollowupDraft semantics).
-    if (isBusy && sessionId) {
-      enqueue(sessionId, {
-        text: trimmed,
-        files: filesToSend,
-        agent: selectedAgent ?? null,
-        model: selectedModel ?? null,
-        variant: selectedVariant ?? null,
-      });
-      return;
-    }
-
+    // Send directly. The OpenCode server serializes concurrent prompt_async
+    // calls per-session, so sending while the agent is busy is safe — the
+    // server queues it. (No client-side message queue.)
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
-    } catch {
-      // Restore the text so the user can retry
+    } catch (err) {
+      // Restore the text so the user can retry — AND surface why. Previously
+      // this catch was silent, so a failed send looked like the message simply
+      // "bounced back" into the box with no explanation.
       setText(trimmed);
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Couldn’t send your message. Please try again.',
+      );
     }
-  }, [text, isBusy, disabled, onSend, onCommand, stagedCommand, attachedFiles, mentions, sessionId, enqueue, selectedAgent, selectedModel, selectedVariant, lockForQuestion, onCustomAnswer, onQuestionAction]);
+  }, [text, isBusy, disabled, onSend, onCommand, stagedCommand, attachedFiles, mentions, sessionId, lockForQuestion, onCustomAnswer, onQuestionAction]);
 
   const handleSelectCommand = (cmd: Command) => {
     // Stage the command — show an args input instead of executing immediately
@@ -2033,9 +2029,7 @@ export function SessionChatInput({
         <div className="relative flex flex-col w-full gap-2 overflow-visible">
           {isDragOver && (
             <div className="absolute inset-0 z-30 rounded-[24px] border-2 border-dashed border-primary/70 bg-primary/5 pointer-events-none flex items-center justify-center">
-              <span className="px-3 py-1 rounded-md bg-background/90 text-xs font-medium text-foreground">
-                Drop files to attach
-              </span>
+              <span className="px-3 py-1 rounded-md bg-background/90 text-xs font-medium text-foreground">{tHardcodedUi.raw('componentsSessionSessionChatInput.line2038JsxTextDropFilesToAttach')}</span>
             </div>
           )}
           {/* Slash command popover (portalled to body to escape overflow-hidden ancestors) */}
@@ -2074,7 +2068,7 @@ export function SessionChatInput({
                       type="button"
                       onClick={onClearReply}
                       className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                      aria-label="Clear reply"
+                      aria-label={tHardcodedUi.raw('componentsSessionSessionChatInput.line2078JsxAttrAriaLabelClearReply')}
                     >
                       <X className="size-3" />
                     </button>
@@ -2114,7 +2108,7 @@ export function SessionChatInput({
                   type="button"
                   onClick={() => { setStagedCommand(null); setText(''); }}
                   className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label="Cancel command"
+                  aria-label={tHardcodedUi.raw('componentsSessionSessionChatInput.line2118JsxAttrAriaLabelCancelCommand')}
                 >
                   <X className="size-3" />
                 </button>
@@ -2127,27 +2121,13 @@ export function SessionChatInput({
             className="flex flex-col gap-1 px-3.5 max-h-[320px] opacity-100 translate-y-0"
           >
             <div className="relative w-full">
-              {/* Add to queue button — floats top-right of textarea when busy and text is typed */}
-              {isBusy && canSubmit && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      onClick={handleSubmit}
-                      variant="ghost"
-                      className="absolute right-0 top-1 z-20 h-7 gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80"
-                    >
-                      <ListPlus className="size-3.5" />
-                      <span>Queue</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top"><p>Add to queue</p></TooltipContent>
-                </Tooltip>
-              )}
+              {/* Sending while the agent is busy already works — Enter (or the
+                  send button) posts straight to the server, which queues it
+                  per-session. No separate "Add to queue" affordance needed. */}
               {text.trim().length === 0 && !stagedCommand && (
                 <div
                   aria-hidden
-                  className="absolute left-0.5 top-4 h-6 w-[calc(100%-0.5rem)] text-base sm:text-[15px] text-muted-foreground pointer-events-none overflow-hidden"
+                  className="absolute left-0.5 top-4 h-6 w-[calc(100%-0.5rem)] text-base sm:text-sm text-muted-foreground pointer-events-none overflow-hidden"
                 >
                   {lockForQuestion ? (
                     <div className="absolute inset-0">
@@ -2179,17 +2159,15 @@ export function SessionChatInput({
               {text.trim().length === 0 && stagedCommand && (
                 <div
                   aria-hidden
-                  className="absolute left-0.5 top-4 text-base sm:text-[15px] text-muted-foreground/50 pointer-events-none"
-                >
-                  Enter details and press Enter, or press Esc to cancel
-                </div>
+                  className="absolute left-0.5 top-4 text-base sm:text-sm text-muted-foreground/50 pointer-events-none"
+                >{tHardcodedUi.raw('componentsSessionSessionChatInput.line2185JsxTextEnterDetailsAndPressEnterOrPressEsc')}</div>
               )}
               {/* Highlight overlay — mirrors textarea text with colored mention spans */}
               {highlightSegments && (
                 <div
                   ref={highlightRef}
                   aria-hidden
-                  className="absolute inset-0 pointer-events-none px-0.5 pb-6 pt-4 text-base sm:text-[15px] whitespace-pre-wrap break-words leading-normal text-foreground"
+                  className="absolute inset-0 pointer-events-none px-0.5 pb-6 pt-4 text-base sm:text-sm whitespace-pre-wrap break-words leading-normal text-foreground"
                 >
                   {highlightSegments.map((seg, i) => (
                     <span
@@ -2205,7 +2183,6 @@ export function SessionChatInput({
               )}
               <textarea
                 ref={textareaRef}
-                data-session-chat-stop-scope="true"
                 value={text}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
@@ -2218,7 +2195,7 @@ export function SessionChatInput({
                 rows={1}
                 disabled={disabled}
                 className={cn(
-                  'relative w-full bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px] text-base sm:text-[15px] outline-none placeholder:text-muted-foreground disabled:opacity-50',
+                  'relative w-full bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px] text-base sm:text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50',
                   highlightSegments && 'caret-foreground text-transparent',
                 )}
                 autoFocus={shouldAutoFocus}
@@ -2233,7 +2210,7 @@ export function SessionChatInput({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar"
+                accept={tHardcodedUi.raw('componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml')}
                 multiple
                 className="hidden"
                 onChange={handleFileSelect}
@@ -2248,7 +2225,7 @@ export function SessionChatInput({
                     <Paperclip className="h-4 w-4" strokeWidth={2} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="top"><p>Attach files</p></TooltipContent>
+                <TooltipContent side="top"><p>{tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}</p></TooltipContent>
               </Tooltip>
 
               {primaryAgents.length > 0 && onAgentChange && (
@@ -2305,7 +2282,7 @@ export function SessionChatInput({
                       className="absolute bottom-full right-1/2 translate-x-1/2 mb-2 pointer-events-none animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 duration-150"
                     >
                       <div className="bg-primary text-primary-foreground rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap flex items-center gap-1.5">
-                        <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-[11px] font-medium">ESC</kbd>
+                        <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">ESC</kbd>
                         <span>{escCount === 1 ? '×2 to stop' : '×1 to stop'}</span>
                       </div>
                       {/* Arrow matching TooltipContent */}
@@ -2325,7 +2302,7 @@ export function SessionChatInput({
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top">
-                      <p>Stop <kbd className="ml-1 bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-[10px] font-medium">ESC</kbd> ×3</p>
+                      <p>Stop <kbd className="ml-1 bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">ESC</kbd> ×3</p>
                     </TooltipContent>
                   </Tooltip>
                 </div>

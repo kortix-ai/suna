@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
-import { chatChannelBindings, projects } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { config } from '../config';
 import { slackOauthMode } from './slack-oauth-mode';
-import { saveSlackInstall } from './install-store';
+import { saveSlackOauthInstall } from './install-store';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -101,26 +101,13 @@ slackOauthApp.get('/callback', async (c) => {
     .limit(1);
   if (!project) return redirectToDashboard(c, { error: 'project_not_found' });
 
-  await saveSlackInstall({
+  await saveSlackOauthInstall({
     projectId: payload.projectId,
+    workspaceId: tokenJson.team.id,
     botToken: tokenJson.access_token,
-    signingSecret: mode.signingSecret ?? '',
-    teamId: tokenJson.team.id,
-    teamName: tokenJson.team.name ?? null,
     botUserId: tokenJson.bot_user_id ?? '',
+    teamName: tokenJson.team.name ?? null,
   });
-
-  await db
-    .insert(chatChannelBindings)
-    .values({
-      projectId: payload.projectId,
-      platform: 'slack',
-      workspaceId: tokenJson.team.id,
-    })
-    .onConflictDoUpdate({
-      target: [chatChannelBindings.platform, chatChannelBindings.workspaceId],
-      set: { projectId: payload.projectId, installedAt: sql`now()` },
-    });
 
   return redirectToDashboard(c, { projectId: payload.projectId, success: '1' });
 });

@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { logger } from '../logger'
-import { readPinnedOpencodeSessionId } from '../main'
+import { readPinnedOpencodeSessionId, resolveOpencodeModel } from '../main'
 import type { Config } from '../config'
 
 /**
@@ -42,10 +42,14 @@ export function createPromptRouter(cfg: Config): Hono {
       workspace,
     )}`
 
+    const model = resolveOpencodeModel()
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parts: [{ type: 'text', text }] }),
+      body: JSON.stringify({
+        parts: [{ type: 'text', text }],
+        ...(model ? { model } : {}),
+      }),
       signal: AbortSignal.timeout(15_000),
     })
     if (!res.ok) {

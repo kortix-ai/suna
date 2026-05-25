@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,6 +30,7 @@ export function ThreadBrowser({
   onClearTier,
   onUserClick
 }: ThreadBrowserProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [params, setParams] = useState<ThreadBrowseParams>({
     page: 1,
     page_size: 15,
@@ -128,7 +131,7 @@ export function ThreadBrowser({
               {thread.project_name || 'Untitled'}
             </span>
             {thread.is_public && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0">Public</Badge>
+              <Badge variant="outline" className="text-xs px-1.5 py-0">Public</Badge>
             )}
           </div>
           <div className="text-xs mt-0.5">
@@ -143,7 +146,7 @@ export function ThreadBrowser({
       cell: (thread) => (
         <div className="text-center">
           <div className="font-semibold">{thread.user_message_count}</div>
-          <p className="text-[10px] text-muted-foreground">{thread.message_count} total</p>
+          <p className="text-xs text-muted-foreground">{thread.message_count} total</p>
         </div>
       ),
       width: 'w-16',
@@ -173,13 +176,13 @@ export function ThreadBrowser({
                   </Button>
                 )}
                 {translation && (
-                  <Badge variant="secondary" className="mt-1 text-[10px]">
+                  <Badge variant="secondary" className="mt-1 text-xs">
                     Translated
                   </Badge>
                 )}
               </div>
             ) : (
-              <span className="text-muted-foreground text-sm">No messages</span>
+              <span className="text-muted-foreground text-sm">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line182JsxTextNoMessages')}</span>
             )}
           </div>
         );
@@ -228,7 +231,7 @@ export function ThreadBrowser({
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input type="text"
-                placeholder="Search by email..." autoComplete="off"
+                placeholder={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line231JsxAttrPlaceholderSearchByEmail')} autoComplete="off"
                 value={emailSearch}
                 onChange={(e) => setEmailSearch(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleEmailSearch()}
@@ -242,10 +245,10 @@ export function ThreadBrowser({
               <SelectValue placeholder="Messages" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All threads</SelectItem>
-              <SelectItem value="1">1 message</SelectItem>
-              <SelectItem value="2-3">2-3 messages</SelectItem>
-              <SelectItem value="5+">5+ messages</SelectItem>
+              <SelectItem value="all">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line245JsxTextAllThreads')}</SelectItem>
+              <SelectItem value="1">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line246JsxTextText1Message')}</SelectItem>
+              <SelectItem value="2-3">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line247JsxTextText23Messages')}</SelectItem>
+              <SelectItem value="5+">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line248JsxTextText5Messages')}</SelectItem>
             </SelectContent>
           </Select>
 
@@ -282,7 +285,7 @@ export function ThreadBrowser({
           <DataTable
             columns={columns}
             data={threadsData?.data || []}
-            emptyMessage="No threads found"
+            emptyMessage={tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsThreadBrowser.line285JsxAttrEmptymessageNoThreadsFound')}
             getItemId={(thread) => thread.thread_id}
           />
         )}

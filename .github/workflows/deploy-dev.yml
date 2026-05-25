@@ -239,10 +239,10 @@ jobs:
           SHA8="${GITHUB_SHA::8}"
           docker build --file apps/sandbox/Dockerfile \
             --build-arg "SANDBOX_VERSION=dev-${SHA8}" \
-            --tag "kortix/sandbox:dev-${SHA8}-amd64" \
-            --tag "kortix/sandbox:dev-latest-amd64" .
-          docker push "kortix/sandbox:dev-${SHA8}-amd64"
-          docker push "kortix/sandbox:dev-latest-amd64"
+            --tag "kortix/kortix-sandbox:dev-${SHA8}-amd64" \
+            --tag "kortix/kortix-sandbox:dev-latest-amd64" .
+          docker push "kortix/kortix-sandbox:dev-${SHA8}-amd64"
+          docker push "kortix/kortix-sandbox:dev-latest-amd64"
 
   build-sandbox-arm64:
     name: Sandbox (arm64)
@@ -262,10 +262,10 @@ jobs:
           SHA8="${GITHUB_SHA::8}"
           docker build --file apps/sandbox/Dockerfile \
             --build-arg "SANDBOX_VERSION=dev-${SHA8}" \
-            --tag "kortix/sandbox:dev-${SHA8}-arm64" \
-            --tag "kortix/sandbox:dev-latest-arm64" .
-          docker push "kortix/sandbox:dev-${SHA8}-arm64"
-          docker push "kortix/sandbox:dev-latest-arm64"
+            --tag "kortix/kortix-sandbox:dev-${SHA8}-arm64" \
+            --tag "kortix/kortix-sandbox:dev-latest-arm64" .
+          docker push "kortix/kortix-sandbox:dev-${SHA8}-arm64"
+          docker push "kortix/kortix-sandbox:dev-latest-arm64"
 
   merge-sandbox:
     name: Sandbox manifest
@@ -282,15 +282,15 @@ jobs:
         id: meta
         run: |
           SHA8="${GITHUB_SHA::8}"
-          docker manifest create "kortix/sandbox:dev-${SHA8}" \
-            "kortix/sandbox:dev-${SHA8}-amd64" \
-            "kortix/sandbox:dev-${SHA8}-arm64"
-          docker manifest push "kortix/sandbox:dev-${SHA8}"
+          docker manifest create "kortix/kortix-sandbox:dev-${SHA8}" \
+            "kortix/kortix-sandbox:dev-${SHA8}-amd64" \
+            "kortix/kortix-sandbox:dev-${SHA8}-arm64"
+          docker manifest push "kortix/kortix-sandbox:dev-${SHA8}"
 
-          docker manifest create "kortix/sandbox:dev-latest" \
-            "kortix/sandbox:dev-latest-amd64" \
-            "kortix/sandbox:dev-latest-arm64"
-          docker manifest push "kortix/sandbox:dev-latest"
+          docker manifest create "kortix/kortix-sandbox:dev-latest" \
+            "kortix/kortix-sandbox:dev-latest-amd64" \
+            "kortix/kortix-sandbox:dev-latest-arm64"
+          docker manifest push "kortix/kortix-sandbox:dev-latest"
 
           echo "tag=dev-${SHA8}" >> "$GITHUB_OUTPUT"
 

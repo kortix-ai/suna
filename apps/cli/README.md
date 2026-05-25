@@ -16,6 +16,7 @@ the whole CLI.
 ```sh
 kortix                  # prompt for a project name, then create
 kortix my-project       # use the given name, no prompt
+kortix self-host start  # run your own Kortix Cloud from Docker images
 ```
 
 ### Flags
@@ -51,9 +52,19 @@ chore: init kortix project
 
 Then it's yours. Add a remote, push, open in OpenCode.
 
-## Local dev (this monorepo)
+## Self-host
 
 ```sh
 pnpm install
 ./bin/kortix --help
+./bin/kortix self-host start
+./bin/kortix self-host configure
+./bin/kortix self-host env set PUBLIC_URL=https://kortix.example.com API_PUBLIC_URL=https://api.example.com
+./bin/kortix hosts ls
+./bin/kortix hosts use local
+./bin/kortix hosts use cloud
 ```
+
+`self-host start` creates the config when needed and only asks for product
+integrations: Freestyle, GitHub, and Pipedream. Run `self-host configure` later
+to change those credentials.

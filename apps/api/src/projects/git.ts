@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from './github';
@@ -356,9 +356,9 @@ export async function resolveTreeOid(
 /**
  * Materialize a subtree of the repo at a commit into a fresh local
  * directory — the snapshot builder feeds this to Daytona's Image API
- * which expects a local Dockerfile + context. Streams via `git archive`
- * piped into `tar -x` so it's fast and doesn't litter intermediate
- * working trees on the mirror.
+ * which expects a local Dockerfile + context. Archives to a temporary tarball
+ * before extraction so Bun child-process stream backpressure cannot truncate
+ * large trees under load.
  *
  * Returns the absolute path where the context was extracted. Caller is
  * responsible for `rm -rf`ing it when done.
@@ -390,22 +390,19 @@ export async function materializeRepoContext(
     }
   }
 
-  await new Promise<void>((resolve, reject) => {
-    const archive = spawn('git', ['archive', '--format=tar', treeish], {
-      cwd: repoPath,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  const archivePath = `${target}.tar`;
+  try {
+    await runGit(['archive', '--format=tar', '-o', archivePath, treeish], repoPath, false);
+    await execFileAsync('tar', ['-xf', archivePath, '-C', target], {
+      env: { ...process.env },
+      timeout: 60_000,
     });
-    const extract = spawn('tar', ['-x', '-C', target], { stdio: ['pipe', 'inherit', 'inherit'] });
-    let archiveErr = '';
-    archive.stderr.on('data', (b: Buffer) => { archiveErr += b.toString(); });
-    archive.stdout.pipe(extract.stdin);
-    archive.on('error', reject);
-    extract.on('error', reject);
-    extract.on('close', (code) => {
-      if (code === 0 && archive.exitCode === 0) resolve();
-      else reject(new Error(archiveErr.trim() || `archive/extract exit code ${code}`));
-    });
-  });
+  } catch (error) {
+    await fs.rm(target, { recursive: true, force: true });
+    throw error;
+  } finally {
+    await fs.rm(archivePath, { force: true }).catch(() => {});
+  }
 
   try {
     await assertNoSymlinks(target);
@@ -549,6 +546,101 @@ export async function deleteRemoteSessionBranch(
   await runGit(['update-ref', '-d', `refs/heads/${branchName}`], repoPath, false)
     .catch(() => undefined);
   return true;
+}
+
+/**
+ * Commit a single file's contents onto `branch` and push — provider-agnostic.
+ * Works for GitHub, Freestyle managed git, GitLab, or any HTTPS git remote,
+ * unlike the GitHub Contents-API path which only understands github.com URLs.
+ *
+ * Implemented with git plumbing in the bare mirror: hash the new blob, splice
+ * it into the branch tip's tree through a throwaway index, `commit-tree`, then
+ * push. If the branch doesn't exist yet (brand-new repo) it's created from an
+ * empty tree. Returns the new commit SHA.
+ */
+export async function commitFileToBranch(
+  project: GitBackedProject,
+  opts: {
+    path: string;
+    content: string;
+    message: string;
+    branch?: string;
+    authorName?: string;
+    authorEmail?: string;
+  },
+): Promise<{ commitSha: string }> {
+  const filePath = normalizeTreePath(opts.path);
+  if (!filePath) throw new Error('File path is required');
+  const branch = validateRef(opts.branch || project.defaultBranch);
+  const authHost = hostFromRepoUrl(project.repoUrl);
+  // Force a fresh fetch so the parent we build on is the real remote tip; the
+  // non-force push below then fails cleanly if a concurrent write raced us.
+  const repoPath = await refreshMirror(project, true);
+
+  // Branch tip, if the branch already exists (absent on a fresh repo).
+  const tip = await runGitCapture(['rev-parse', '--verify', `refs/heads/${branch}`], repoPath);
+  const parentSha = tip.exitCode === 0 ? tip.stdout.trim() : null;
+
+  const author = opts.authorName || 'Kortix';
+  const email = opts.authorEmail || 'noreply@kortix.ai';
+  const identEnv = {
+    GIT_AUTHOR_NAME: author,
+    GIT_AUTHOR_EMAIL: email,
+    GIT_COMMITTER_NAME: author,
+    GIT_COMMITTER_EMAIL: email,
+  };
+
+  // Scratch blob + index files inside the bare mirror dir; cleaned up below.
+  const suffix = createHash('sha256')
+    .update(`${branch}:${filePath}:${Date.now()}:${Math.random()}`)
+    .digest('hex')
+    .slice(0, 16);
+  const blobFile = join(repoPath, `.kortix-blob-${suffix}`);
+  const indexFile = join(repoPath, `.kortix-index-${suffix}`);
+  const indexEnv = { GIT_INDEX_FILE: indexFile };
+
+  try {
+    await writeFile(blobFile, opts.content);
+    const blobSha = (await runGit(['hash-object', '-w', blobFile], repoPath, false)).stdout.trim();
+    if (!/^[0-9a-f]{40}$/.test(blobSha)) throw new Error('git hash-object did not return a blob SHA');
+
+    // Seed the throwaway index from the parent tree (or empty), splice the file.
+    if (parentSha) await runGit(['read-tree', parentSha], repoPath, false, null, indexEnv);
+    else await runGit(['read-tree', '--empty'], repoPath, false, null, indexEnv);
+    await runGit(
+      ['update-index', '--add', '--cacheinfo', `100644,${blobSha},${filePath}`],
+      repoPath,
+      false,
+      null,
+      indexEnv,
+    );
+    const treeSha = (await runGit(['write-tree'], repoPath, false, null, indexEnv)).stdout.trim();
+    if (!/^[0-9a-f]{40}$/.test(treeSha)) throw new Error('git write-tree did not return a tree SHA');
+
+    const commitArgs = ['commit-tree', treeSha];
+    if (parentSha) commitArgs.push('-p', parentSha);
+    commitArgs.push('-m', opts.message);
+    const commitSha = (await runGit(commitArgs, repoPath, false, null, identEnv)).stdout.trim();
+    if (!/^[0-9a-f]{40}$/.test(commitSha)) throw new Error('git commit-tree did not return a commit SHA');
+
+    // Advance the local ref (compare-and-swap when we knew the tip) and push.
+    if (parentSha) await runGit(['update-ref', `refs/heads/${branch}`, commitSha, parentSha], repoPath, false);
+    else await runGit(['update-ref', `refs/heads/${branch}`, commitSha], repoPath, false);
+    await runGit(
+      ['push', 'origin', `${commitSha}:refs/heads/${branch}`],
+      repoPath,
+      true,
+      project.gitAuthToken,
+      undefined,
+      authHost,
+    );
+
+    invalidateProjectMirror(project.projectId);
+    return { commitSha };
+  } finally {
+    await rm(blobFile, { force: true }).catch(() => undefined);
+    await rm(indexFile, { force: true }).catch(() => undefined);
+  }
 }
 
 export async function diffStat(project: GitBackedProject, branchName: string, baseRef?: string) {

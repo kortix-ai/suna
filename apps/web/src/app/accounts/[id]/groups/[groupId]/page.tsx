@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -42,6 +44,7 @@ import { usePermission } from '@/lib/use-permission';
 import { useIamV2Enabled } from '@/lib/use-iam-version';
 
 export default function GroupDetailPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useParams<{ id: string; groupId: string }>();
   const accountId = params?.id;
@@ -101,9 +104,7 @@ export default function GroupDetailPage() {
               onClick={() => router.push('/projects')}
               className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to projects
-            </button>
+              <ArrowLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line99JsxTextBackToProjects')}</button>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <button
                 type="button"
@@ -142,7 +143,7 @@ export default function GroupDetailPage() {
           {groupQuery.isError && (
             <InfoBanner
               tone="destructive"
-              title="Failed to load group"
+              title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line139JsxAttrTitleFailedToLoadGroup')}
               action={
                 <Button
                   variant="outline"
@@ -160,9 +161,9 @@ export default function GroupDetailPage() {
           {group && account && (
             <Tabs defaultValue="members" className="space-y-6">
               <TabsList>
-                <TabsTrigger value="members">Group members</TabsTrigger>
+                <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line157JsxTextGroupMembers')}</TabsTrigger>
                 {!isIamV2 && (
-                  <TabsTrigger value="policies">Permission policies</TabsTrigger>
+                  <TabsTrigger value="policies">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line158JsxTextPermissionPolicies')}</TabsTrigger>
                 )}
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
@@ -217,6 +218,7 @@ function GroupMembersCard({
   groupId: string;
   canManage: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
@@ -256,15 +258,13 @@ function GroupMembersCard({
 
   return (
     <SectionCard
-      title="Group members"
+      title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line249JsxAttrTitleGroupMembers')}
       count={members.length}
-      description="Members of this group inherit every policy attached to it."
+      description={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line251JsxAttrDescriptionMembersOfThisGroupInheritEveryPolicyAttached')}
       action={
         canManage && (
           <Button onClick={() => setAddOpen(true)} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            Add members
-          </Button>
+            <Plus className="h-4 w-4" />{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line256JsxTextAddMembers')}</Button>
         )
       }
       flush
@@ -282,7 +282,7 @@ function GroupMembersCard({
       {!membersQuery.isLoading && members.length === 0 && (
         <EmptyState
           icon={Users}
-          title="No members in this group"
+          title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line275JsxAttrTitleNoMembersInThisGroup')}
           description={
             canManage
               ? "Add account members to grant them this group's policies."
@@ -319,7 +319,7 @@ function GroupMembersCard({
                       size="icon"
                       className="h-7 w-7 text-muted-foreground hover:text-foreground"
                       onClick={() => setRemoveTarget(m.user_id)}
-                      aria-label="Remove from group"
+                      aria-label={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line312JsxAttrAriaLabelRemoveFromGroup')}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -345,8 +345,8 @@ function GroupMembersCard({
         onOpenChange={(open) => {
           if (!open) setRemoveTarget(null);
         }}
-        title="Remove from group"
-        description="The user stays a member of the account but loses any access granted via this group."
+        title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line338JsxAttrTitleRemoveFromGroup')}
+        description={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line339JsxAttrDescriptionTheUserStaysAMemberOfTheAccount')}
         confirmLabel="Remove"
         isPending={removeMutation.isPending}
         onConfirm={() => {
@@ -372,6 +372,7 @@ function AddGroupMembersDialog({
   existingUserIds: Set<string>;
   candidates: Awaited<ReturnType<typeof listAccountMembers>>;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -412,18 +413,12 @@ function AddGroupMembersDialog({
     >
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">
-            Add members
-          </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            Pick the account members to add to this group.
-          </DialogDescription>
+          <DialogTitle className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line406JsxTextAddMembers')}</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line409JsxTextPickTheAccountMembersToAddToThis')}</DialogDescription>
         </DialogHeader>
         <div className="px-6 py-5">
           {eligible.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
-              Every account member is already in this group.
-            </p>
+            <p className="rounded-2xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line415JsxTextEveryAccountMemberIsAlreadyInThisGroup')}</p>
           ) : (
             <div className="max-h-72 space-y-1 overflow-y-auto rounded-2xl border border-border/60 p-2">
               {eligible.map((m) => {
@@ -495,6 +490,7 @@ function GroupSettingsCard({
   canDelete: boolean;
   onDeleted: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [name, setName] = useState(initialName);
   const [description, setDescription] = useState(initialDescription);
@@ -529,7 +525,7 @@ function GroupSettingsCard({
 
   return (
     <div className="space-y-6">
-      <SectionCard title="Group details">
+      <SectionCard title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line522JsxAttrTitleGroupDetails')}>
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="group-name">Name</Label>
@@ -569,15 +565,13 @@ function GroupSettingsCard({
       {canDelete && (
         <SectionCard
           tone="destructive"
-          title="Danger zone"
-          description="Deleting a group removes every permission policy attached to it. Members keep their account membership."
+          title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line562JsxAttrTitleDangerZone')}
+          description={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line563JsxAttrDescriptionDeletingAGroupRemovesEveryPermissionPolicyAttached')}
           flush
         >
           <div className="flex items-center justify-between px-6 py-4">
-            <p className="text-sm text-foreground">Delete this group</p>
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-              Delete group
-            </Button>
+            <p className="text-sm text-foreground">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line567JsxTextDeleteThisGroup')}</p>
+            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line569JsxTextDeleteGroup')}</Button>
           </div>
         </SectionCard>
       )}
@@ -585,9 +579,9 @@ function GroupSettingsCard({
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete group"
+        title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line578JsxAttrTitleDeleteGroup')}
         description={`Delete "${initialName}"? This cannot be undone.`}
-        confirmLabel="Delete group"
+        confirmLabel={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line580JsxAttrConfirmlabelDeleteGroup')}
         isPending={deleteMutation.isPending}
         onConfirm={() => deleteMutation.mutate()}
       />

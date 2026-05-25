@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, useState } from 'react';
@@ -12,6 +14,7 @@ import { AuthCardShell, BackToSignIn } from '@/components/auth/auth-card-shell';
 import { resetPassword } from '../actions';
 
 function ResetPasswordContent() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const searchParams = useSearchParams();
   const code = searchParams.get('code');
 
@@ -42,12 +45,12 @@ function ResetPasswordContent() {
   if (!code) {
     return (
       <AuthCardShell
-        title="Link expired"
-        description="This password reset link is invalid or has expired"
+        title={tHardcodedUi.raw('appAuthResetPasswordPage.line45JsxAttrTitleLinkExpired')}
+        description={tHardcodedUi.raw('appAuthResetPasswordPage.line46JsxAttrDescriptionThisPasswordResetLinkIsInvalidOrHas')}
         footer={<BackToSignIn />}
       >
-        <Button asChild size="lg" className="w-full text-[13px]">
-          <Link href="/auth/forgot-password">Request a new link</Link>
+        <Button asChild size="lg" className="w-full text-sm">
+          <Link href="/auth/forgot-password">{tHardcodedUi.raw('appAuthResetPasswordPage.line50JsxTextRequestANewLink')}</Link>
         </Button>
       </AuthCardShell>
     );
@@ -56,16 +59,16 @@ function ResetPasswordContent() {
   if (success) {
     return (
       <AuthCardShell
-        title="Password updated"
-        description="You can now sign in with your new password"
+        title={tHardcodedUi.raw('appAuthResetPasswordPage.line59JsxAttrTitlePasswordUpdated')}
+        description={tHardcodedUi.raw('appAuthResetPasswordPage.line60JsxAttrDescriptionYouCanNowSignInWithYourNew')}
         footer={<BackToSignIn />}
       >
         <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-foreground/[0.05] border border-foreground/[0.08] text-foreground/80">
           <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-          <span className="text-[13px]">Your password has been changed.</span>
+          <span className="text-sm">{tHardcodedUi.raw('appAuthResetPasswordPage.line65JsxTextYourPasswordHasBeenChanged')}</span>
         </div>
-        <Button asChild size="lg" className="w-full text-[13px]">
-          <Link href="/auth">Go to sign in</Link>
+        <Button asChild size="lg" className="w-full text-sm">
+          <Link href="/auth">{tHardcodedUi.raw('appAuthResetPasswordPage.line68JsxTextGoToSignIn')}</Link>
         </Button>
       </AuthCardShell>
     );
@@ -73,14 +76,14 @@ function ResetPasswordContent() {
 
   return (
     <AuthCardShell
-      title="Set a new password"
-      description="Choose a new password for your account"
+      title={tHardcodedUi.raw('appAuthResetPasswordPage.line76JsxAttrTitleSetANewPassword')}
+      description={tHardcodedUi.raw('appAuthResetPasswordPage.line77JsxAttrDescriptionChooseANewPasswordForYourAccount')}
       footer={<BackToSignIn />}
     >
       {errorMessage && (
         <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-[13px]">{errorMessage}</span>
+          <span className="text-sm">{errorMessage}</span>
         </div>
       )}
 
@@ -89,25 +92,25 @@ function ResetPasswordContent() {
           id="password"
           name="password"
           type="password"
-          placeholder="New password"
+          placeholder={tHardcodedUi.raw('appAuthResetPasswordPage.line92JsxAttrPlaceholderNewPassword')}
           required
           autoComplete="new-password"
-          className="text-[15px]"
+          className="text-sm"
         />
         <Input
           id="confirmPassword"
           name="confirmPassword"
           type="password"
-          placeholder="Confirm new password"
+          placeholder={tHardcodedUi.raw('appAuthResetPasswordPage.line101JsxAttrPlaceholderConfirmNewPassword')}
           required
           autoComplete="new-password"
-          className="text-[15px]"
+          className="text-sm"
         />
         <Button
           type="submit"
           size="lg"
           disabled={pending}
-          className="w-full text-[13px]"
+          className="w-full text-sm"
         >
           {pending ? 'Updating password…' : 'Reset password'}
         </Button>
@@ -117,8 +120,9 @@ function ResetPasswordContent() {
 }
 
 export default function ResetPassword() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Resetting password" />}>
+    <Suspense fallback={<ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appAuthResetPasswordPage.line121JsxAttrTitleResettingPassword')} />}>
       <ResetPasswordContent />
     </Suspense>
   );

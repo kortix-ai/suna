@@ -18,8 +18,13 @@ set -euo pipefail
 
 WORKSPACE="${KORTIX_WORKSPACE:-/workspace}"
 DEADLINE_S=120
-STABLE_REQUIRED=4
-INTERVAL_S=0.5
+# Require 2 consecutive clean probes at a tight 0.25s cadence (~0.5s on the
+# common path where the dir is stable immediately) instead of 4×0.5s=2s. The
+# daemon also anchors its cwd at / and uses absolute ${WORKSPACE} paths, so a
+# brief post-exec flap is already tolerated — 2 probes is enough to clear the
+# Daytona overlayfs init race without paying a flat 2s on every boot.
+STABLE_REQUIRED=2
+INTERVAL_S=0.25
 
 start=$(date +%s)
 stable=0

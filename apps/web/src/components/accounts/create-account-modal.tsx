@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { FormEvent, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Loader2, Plus } from 'lucide-react';
@@ -30,6 +32,7 @@ export function CreateAccountModal({
   onOpenChange: (open: boolean) => void;
   onCreated?: (account: KortixAccount) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState('');
 
   const mutation = useMutation({
@@ -60,26 +63,20 @@ export function CreateAccountModal({
     >
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">
-            Create an account
-          </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            Group people, projects, and billing under one account.
-          </DialogDescription>
+          <DialogTitle className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('componentsAccountsCreateAccountModal.line64JsxTextCreateAnAccount')}</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsAccountsCreateAccountModal.line67JsxTextGroupPeopleProjectsAndBillingUnderOneAccount')}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="space-y-1.5 px-6 py-5">
-            <Label htmlFor="create-account-name">Account name</Label>
+            <Label htmlFor="create-account-name">{tHardcodedUi.raw('componentsAccountsCreateAccountModal.line72JsxTextAccountName')}</Label>
             <Input
               id="create-account-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Acme AGI"
+              placeholder={tHardcodedUi.raw('componentsAccountsCreateAccountModal.line77JsxAttrPlaceholderAcmeAgi')}
               autoFocus
             />
-            <p className="text-xs text-muted-foreground">
-              You can invite members and add projects after creation.
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsAccountsCreateAccountModal.line81JsxTextYouCanInviteMembersAndAddProjectsAfter')}</p>
           </div>
           <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
             <Button
@@ -95,9 +92,7 @@ export function CreateAccountModal({
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Plus className="h-4 w-4" />
-              )}
-              Create account
-            </Button>
+              )}{tHardcodedUi.raw('componentsAccountsCreateAccountModal.line99JsxTextCreateAccount')}</Button>
           </div>
         </form>
       </DialogContent>

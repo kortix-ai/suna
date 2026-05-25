@@ -208,6 +208,13 @@ export async function handleSubdomainRequest(
     body = await req.arrayBuffer();
   }
 
+  // Strip the one-shot `?token` (used only to authenticate the first request)
+  // so the sandbox app never sees it. Everything else passes through.
+  const forwardSearchParams = new URLSearchParams(url.search);
+  forwardSearchParams.delete('token');
+  const forwardSearch = forwardSearchParams.toString();
+  const queryString = forwardSearch ? `?${forwardSearch}` : '';
+
   // Hand off to the existing forwarder. It handles provider dispatch,
   // X-Kortix-User-Context signing, auto-wake retries, etc.
   //
@@ -221,10 +228,13 @@ export async function handleSubdomainRequest(
       authed.userId,
       req.method,
       url.pathname,
-      url.search,
+      queryString,
       req.headers,
       body,
       origin,
+      // Subdomain previews serve at the host root, so redirects stay
+      // root-relative (no /v1/p/<sandbox>/<port> prefix).
+      '',
     );
   } catch (err) {
     console.error(

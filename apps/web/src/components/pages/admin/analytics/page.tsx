@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -54,6 +56,7 @@ function getBerlinToday(): Date {
 }
 
 export default function AdminAnalyticsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [dateRange, setDateRange] = useState<DateRange>({
     from: getBerlinToday(),
     to: getBerlinToday(),
@@ -177,9 +180,7 @@ export default function AdminAnalyticsPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Platform health and business metrics
-              </p>
+              <p className="text-sm text-muted-foreground mt-0.5">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line181JsxTextPlatformHealthAndBusinessMetrics')}</p>
             </div>
 
             {/* Date Navigation */}
@@ -312,9 +313,7 @@ export default function AdminAnalyticsPage() {
               <section className="rounded-2xl border bg-card">
                 <div className="p-5 pb-4 border-b">
                   <h2 className="text-sm font-medium flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-muted-foreground" />
-                    Tasks & Users
-                  </h2>
+                    <Zap className="h-4 w-4 text-muted-foreground" />{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line316JsxTextTasksUsers')}</h2>
                 </div>
 
                 <div className="p-5">
@@ -335,19 +334,19 @@ export default function AdminAnalyticsPage() {
                         </div>
                         <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-2xl font-bold">{conversionFunnel?.signups?.toLocaleString() || 0}</p>
-                          <p className="text-xs text-muted-foreground">New Signups</p>
+                          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line338JsxTextNewSignups')}</p>
                         </div>
                         <div className="text-center p-3 rounded-2xl bg-emerald-500/10">
                           <p className="text-2xl font-bold text-emerald-600">{conversionFunnel?.subscriptions || 0}</p>
-                          <p className="text-xs text-muted-foreground">New Paid</p>
+                          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line342JsxTextNewPaid')}</p>
                         </div>
                         <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-2xl font-bold">{taskPerformance?.total_runs?.toLocaleString() || 0}</p>
-                          <p className="text-xs text-muted-foreground">Total Tasks</p>
+                          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line346JsxTextTotalTasks')}</p>
                         </div>
                         <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-2xl font-bold">{engagementSummary?.dau || 0}</p>
-                          <p className="text-xs text-muted-foreground">Active Users</p>
+                          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line350JsxTextActiveUsers')}</p>
                         </div>
                         <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-2xl font-bold">{engagementSummary?.avg_threads_per_active_user?.toFixed(1) || '0'}</p>
@@ -361,7 +360,7 @@ export default function AdminAnalyticsPage() {
                           )}>
                             {taskPerformance?.success_rate || 0}%
                           </p>
-                          <p className="text-xs text-muted-foreground">Success Rate</p>
+                          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line364JsxTextSuccessRate')}</p>
                         </div>
                       </div>
 
@@ -370,7 +369,7 @@ export default function AdminAnalyticsPage() {
                         {/* Task Distribution - expanded */}
                         <div className="col-span-5 p-4 rounded-2xl bg-muted/30">
                           <div className="flex items-center justify-between mb-3">
-                            <p className="text-xs font-medium text-muted-foreground">Task Distribution by Category</p>
+                            <p className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line373JsxTextTaskDistributionByCategory')}</p>
                             {categoryDistribution && (
                               <p className="text-xs text-muted-foreground">
                                 {Object.values(categoryDistribution.distribution).reduce((a, b) => a + b, 0)} total
@@ -387,12 +386,12 @@ export default function AdminAnalyticsPage() {
                                   <div key={cat} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background border">
                                     <span className="text-sm font-medium">{cat}</span>
                                     <span className="text-xs text-muted-foreground">{count}</span>
-                                    <span className="text-[10px] text-muted-foreground/70">({percent}%)</span>
+                                    <span className="text-xs text-muted-foreground/70">({percent}%)</span>
                                   </div>
                                 );
                               })}
                             {(!categoryDistribution || Object.keys(categoryDistribution.distribution).length === 0) && (
-                              <p className="text-sm text-muted-foreground">No task data</p>
+                              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line395JsxTextNoTaskData')}</p>
                             )}
                           </div>
                         </div>
@@ -410,12 +409,12 @@ export default function AdminAnalyticsPage() {
                                 : `${(duration / 60).toFixed(1)}m`;
                             })()}
                           </p>
-                          <p className="text-xs text-muted-foreground mt-1">Avg Task Duration</p>
+                          <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line413JsxTextAvgTaskDuration')}</p>
                           {(taskPerformance?.stuck_task_count ?? 0) > 0 && (
                             <button
                               onClick={() => setIncludeStuckTasks(!includeStuckTasks)}
                               className={cn(
-                                "text-[0.5625rem] mt-1 px-1.5 py-0.5 rounded cursor-pointer transition-colors",
+                                "text-xs mt-1 px-1.5 py-0.5 rounded cursor-pointer transition-colors",
                                 includeStuckTasks
                                   ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
                                   : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -451,22 +450,22 @@ export default function AdminAnalyticsPage() {
                       <div className="text-center p-4 rounded-2xl bg-muted/30">
                         <p className="text-3xl font-bold">{engagementSummary?.dau || 0}</p>
                         <p className="text-xs text-muted-foreground mt-1">DAU</p>
-                        <p className="text-[10px] text-muted-foreground">Daily Active Users</p>
+                        <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line454JsxTextDailyActiveUsers')}</p>
                       </div>
                       <div className="text-center p-4 rounded-2xl bg-muted/30">
                         <p className="text-3xl font-bold">{engagementSummary?.wau || 0}</p>
                         <p className="text-xs text-muted-foreground mt-1">WAU</p>
-                        <p className="text-[10px] text-muted-foreground">Weekly Active Users</p>
+                        <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line459JsxTextWeeklyActiveUsers')}</p>
                       </div>
                       <div className="text-center p-4 rounded-2xl bg-muted/30">
                         <p className="text-3xl font-bold">{engagementSummary?.mau || 0}</p>
                         <p className="text-xs text-muted-foreground mt-1">MAU</p>
-                        <p className="text-[10px] text-muted-foreground">Monthly Active Users</p>
+                        <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line464JsxTextMonthlyActiveUsers')}</p>
                       </div>
                       <div className="text-center p-4 rounded-2xl bg-blue-500/10">
                         <p className="text-3xl font-bold text-blue-600">{engagementSummary?.dau_mau_ratio || 0}%</p>
                         <p className="text-xs text-muted-foreground mt-1">DAU/MAU</p>
-                        <p className="text-[10px] text-muted-foreground">Stickiness Ratio</p>
+                        <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line469JsxTextStickinessRatio')}</p>
                       </div>
                     </div>
                   )}
@@ -477,9 +476,7 @@ export default function AdminAnalyticsPage() {
               <section className="rounded-2xl border bg-card">
                 <div className="flex items-center justify-between p-5 pb-4 border-b">
                   <h2 className="text-sm font-medium flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                    Conversion Funnel
-                  </h2>
+                    <TrendingUp className="h-4 w-4 text-muted-foreground" />{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line481JsxTextConversionFunnel')}</h2>
                 </div>
 
                 <div className="p-5">
@@ -510,7 +507,7 @@ export default function AdminAnalyticsPage() {
                           {conversionFunnel.signups.toLocaleString()}
                         </p>
                         <p className="text-sm font-medium mt-1">Signups</p>
-                        <p className="text-xs text-muted-foreground">{conversionFunnel.visitor_to_signup_rate}% of visitors</p>
+                        <p className="text-xs text-muted-foreground">{conversionFunnel.visitor_to_signup_rate}{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line513JsxTextOfVisitors')}</p>
                       </div>
 
                       {/* Arrow */}
@@ -530,8 +527,7 @@ export default function AdminAnalyticsPage() {
                         <p className="text-xs text-muted-foreground">
                           {conversionFunnel.visitors > 0
                             ? ((conversionFunnel.subscriptions / conversionFunnel.visitors) * 100).toFixed(2)
-                            : 0}% of visitors
-                        </p>
+                            : 0}{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line533JsxTextOfVisitors')}</p>
                         {/* Web/App breakdown */}
                         <div className="flex justify-center gap-3 mt-2 text-xs">
                           <Popover>
@@ -541,7 +537,7 @@ export default function AdminAnalyticsPage() {
                               </button>
                             </PopoverTrigger>
                             <PopoverContent className="w-72 max-h-60 overflow-y-auto">
-                              <h4 className="font-medium text-sm mb-2">Web Subscribers</h4>
+                              <h4 className="font-medium text-sm mb-2">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line544JsxTextWebSubscribers')}</h4>
                               {conversionFunnel.web_subscriber_emails?.length > 0 ? (
                                 <ul className="space-y-1">
                                   {conversionFunnel.web_subscriber_emails.map((email, idx) => (
@@ -551,7 +547,7 @@ export default function AdminAnalyticsPage() {
                                   ))}
                                 </ul>
                               ) : (
-                                <p className="text-sm text-muted-foreground">No web subscribers</p>
+                                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line554JsxTextNoWebSubscribers')}</p>
                               )}
                             </PopoverContent>
                           </Popover>
@@ -563,7 +559,7 @@ export default function AdminAnalyticsPage() {
                               </button>
                             </PopoverTrigger>
                             <PopoverContent className="w-72 max-h-60 overflow-y-auto">
-                              <h4 className="font-medium text-sm mb-2">App Subscribers</h4>
+                              <h4 className="font-medium text-sm mb-2">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line566JsxTextAppSubscribers')}</h4>
                               {conversionFunnel.app_subscriber_emails?.length > 0 ? (
                                 <ul className="space-y-1">
                                   {conversionFunnel.app_subscriber_emails.map((email, idx) => (
@@ -573,7 +569,7 @@ export default function AdminAnalyticsPage() {
                                   ))}
                                 </ul>
                               ) : (
-                                <p className="text-sm text-muted-foreground">No app subscribers</p>
+                                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line576JsxTextNoAppSubscribers')}</p>
                               )}
                             </PopoverContent>
                           </Popover>
@@ -581,9 +577,7 @@ export default function AdminAnalyticsPage() {
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      Analytics not configured
-                    </p>
+                    <p className="text-sm text-muted-foreground text-center py-4">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line585JsxTextAnalyticsNotConfigured')}</p>
                   )}
                 </div>
               </section>
@@ -599,11 +593,10 @@ export default function AdminAnalyticsPage() {
                     <Popover>
                       <PopoverTrigger asChild>
                         <button className="text-xs text-primary hover:underline">
-                          View {profitability.unique_paying_users} paying users
-                        </button>
+                          View {profitability.unique_paying_users}{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line602JsxTextPayingUsers')}</button>
                       </PopoverTrigger>
                       <PopoverContent className="w-72 max-h-60 overflow-y-auto">
-                        <h4 className="font-medium text-sm mb-2">Paying Users</h4>
+                        <h4 className="font-medium text-sm mb-2">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line606JsxTextPayingUsers')}</h4>
                         <ul className="space-y-1">
                           {profitability.paying_user_emails.map((email, idx) => (
                             <li key={idx} className="text-sm">
@@ -630,9 +623,9 @@ export default function AdminAnalyticsPage() {
                       <div className="grid grid-cols-6 gap-4">
                         <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-xl font-bold">{profitability.total_active_subscriptions?.toLocaleString() ?? '—'}</p>
-                          <p className="text-xs text-muted-foreground">Total Active Subs</p>
-                          <p className="text-[10px] text-muted-foreground mt-1">
-                            Web: {profitability.stripe_active_subscriptions?.toLocaleString() ?? '—'} | App: {profitability.revenuecat_active_subscriptions?.toLocaleString() ?? '—'}
+                          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line633JsxTextTotalActiveSubs')}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Web: {profitability.stripe_active_subscriptions?.toLocaleString() ?? '—'}{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line635JsxTextApp')}{profitability.revenuecat_active_subscriptions?.toLocaleString() ?? '—'}
                           </p>
                         </div>
                         <div className="text-center p-3 rounded-2xl bg-muted/30">
@@ -653,7 +646,7 @@ export default function AdminAnalyticsPage() {
                               ? `${((churnData.total / profitability.total_active_subscriptions) * 100).toFixed(2)}%`
                               : '—')}
                           </p>
-                          <p className="text-xs text-muted-foreground">Churn Rate</p>
+                          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line656JsxTextChurnRate')}</p>
                         </div>
                         <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-xl font-bold">—</p>
@@ -691,17 +684,17 @@ export default function AdminAnalyticsPage() {
 
                           {/* Per User Metrics */}
                           <div className="relative flex items-center justify-between p-3 pt-4 rounded-2xl border mt-2">
-                            <span className="absolute top-1 left-2 text-[0.5625rem] text-muted-foreground">Per Paying User ({profitability.unique_paying_users})</span>
+                            <span className="absolute top-1 left-2 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line694JsxTextPerPayingUser')}{profitability.unique_paying_users})</span>
                             <div>
-                              <p className="text-[10px] text-muted-foreground">Revenue/User</p>
+                              <p className="text-xs text-muted-foreground">Revenue/User</p>
                               <p className="text-sm font-semibold">${profitability.avg_revenue_per_paid_user.toFixed(2)}</p>
                             </div>
                             <div className="text-right">
-                              <p className="text-[10px] text-muted-foreground">Cost/User</p>
+                              <p className="text-xs text-muted-foreground">Cost/User</p>
                               <p className="text-sm font-semibold">${profitability.avg_cost_per_active_user.toFixed(2)}</p>
                             </div>
                             <div className="text-right">
-                              <p className="text-[10px] text-muted-foreground">Profit/User</p>
+                              <p className="text-xs text-muted-foreground">Profit/User</p>
                               <p className={cn(
                                 "text-sm font-semibold",
                                 (profitability.avg_revenue_per_paid_user - profitability.avg_cost_per_active_user) >= 0 ? "text-emerald-600" : "text-red-500"
@@ -714,14 +707,14 @@ export default function AdminAnalyticsPage() {
                           {/* Platform Split */}
                           <div className="grid grid-cols-2 gap-3">
                             <div className="p-3 rounded-2xl border">
-                              <p className="text-xs text-muted-foreground mb-1">Web (Stripe)</p>
+                              <p className="text-xs text-muted-foreground mb-1">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line717JsxTextWebStripe')}</p>
                               <p className="text-lg font-bold">${profitability.web_revenue.toLocaleString()}</p>
-                              <p className="text-xs text-muted-foreground">Cost: ${profitability.web_cost.toFixed(2)}</p>
+                              <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line719JsxTextCost')}{profitability.web_cost.toFixed(2)}</p>
                             </div>
                             <div className="p-3 rounded-2xl border">
-                              <p className="text-xs text-muted-foreground mb-1">App (RevenueCat)</p>
+                              <p className="text-xs text-muted-foreground mb-1">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line722JsxTextAppRevenuecat')}</p>
                               <p className="text-lg font-bold">${profitability.app_revenue.toLocaleString()}</p>
-                              <p className="text-xs text-muted-foreground">Cost: ${profitability.app_cost.toFixed(2)}</p>
+                              <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line724JsxTextCost')}{profitability.app_cost.toFixed(2)}</p>
                             </div>
                           </div>
                         </div>
@@ -729,12 +722,12 @@ export default function AdminAnalyticsPage() {
                         {/* Users & Revenue per Tier */}
                         <div>
                           <div className="flex items-center justify-between mb-3">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">By Tier</p>
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line732JsxTextByTier')}</p>
                             <div className="flex items-center gap-1 bg-muted rounded-full p-0.5">
                               <button
                                 onClick={() => setTierViewMode('revenue')}
                                 className={cn(
-                                  'text-[10px] px-2 py-0.5 rounded-full transition-colors',
+                                  'text-xs px-2 py-0.5 rounded-full transition-colors',
                                   tierViewMode === 'revenue' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
                                 )}
                               >
@@ -743,7 +736,7 @@ export default function AdminAnalyticsPage() {
                               <button
                                 onClick={() => setTierViewMode('cost')}
                                 className={cn(
-                                  'text-[10px] px-2 py-0.5 rounded-full transition-colors',
+                                  'text-xs px-2 py-0.5 rounded-full transition-colors',
                                   tierViewMode === 'cost' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
                                 )}
                               >
@@ -752,7 +745,7 @@ export default function AdminAnalyticsPage() {
                               <button
                                 onClick={() => setTierViewMode('profit')}
                                 className={cn(
-                                  'text-[10px] px-2 py-0.5 rounded-full transition-colors',
+                                  'text-xs px-2 py-0.5 rounded-full transition-colors',
                                   tierViewMode === 'profit' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
                                 )}
                               >
@@ -777,7 +770,7 @@ export default function AdminAnalyticsPage() {
                             return filteredTiers.length > 0 ? (
                               <div className="space-y-1.5">
                                 {/* Header */}
-                                <div className="grid grid-cols-3 gap-2 text-[10px] text-muted-foreground px-2 pb-1">
+                                <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground px-2 pb-1">
                                   <div>Tier</div>
                                   <div className="text-right">Users</div>
                                   <div className="text-right">{tierViewMode === 'revenue' ? 'Revenue' : tierViewMode === 'cost' ? 'Cost' : 'Profit'}</div>
@@ -795,17 +788,17 @@ export default function AdminAnalyticsPage() {
                                     >
                                       <div className="font-medium truncate flex items-center gap-1">
                                         {tier.display_name}
-                                        <span className="text-[10px] text-muted-foreground">
+                                        <span className="text-xs text-muted-foreground">
                                           ({tier.provider === 'stripe' ? 'Web' : 'App'})
                                         </span>
                                       </div>
                                       <div className="text-right">
                                         {userCount}
-                                        <span className="text-[10px] text-muted-foreground ml-1">({userPercent}%)</span>
+                                        <span className="text-xs text-muted-foreground ml-1">({userPercent}%)</span>
                                       </div>
                                       <div className={cn("text-right", tierViewMode === 'profit' && (value >= 0 ? 'text-green-600' : 'text-red-600'))}>
                                         {tierViewMode === 'profit' && value < 0 ? '-' : ''}${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        <span className="text-[10px] text-muted-foreground ml-1">({valuePercent}%)</span>
+                                        <span className="text-xs text-muted-foreground ml-1">({valuePercent}%)</span>
                                       </div>
                                     </div>
                                   );
@@ -817,15 +810,13 @@ export default function AdminAnalyticsPage() {
                               </p>
                             );
                           })() : (
-                            <p className="text-sm text-muted-foreground text-center py-4">No tier data</p>
+                            <p className="text-sm text-muted-foreground text-center py-4">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line820JsxTextNoTierData')}</p>
                           )}
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground text-center py-8">
-                      No financial data available
-                    </p>
+                    <p className="text-sm text-muted-foreground text-center py-8">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line827JsxTextNoFinancialDataAvailable')}</p>
                   )}
                 </div>
               </section>
@@ -852,8 +843,7 @@ export default function AdminAnalyticsPage() {
                   >
                     All
                   </button>
-                  <span className="text-xs text-muted-foreground">
-                    1 msg: {distribution.distribution['1_message']} ·
+                  <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line856JsxTextText1Msg')}{distribution.distribution['1_message']} ·
                     2-3: {distribution.distribution['2_3_messages']} ·
                     5+: {distribution.distribution['5_plus_messages']}
                   </span>
@@ -869,10 +859,10 @@ export default function AdminAnalyticsPage() {
                     >
                       <SelectTrigger className="w-36 h-8 text-xs">
                         <CreditCard className="h-3 w-3 mr-1.5 text-muted-foreground" />
-                        <SelectValue placeholder="All Tiers" />
+                        <SelectValue placeholder={tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line872JsxAttrPlaceholderAllTiers')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All Tiers</SelectItem>
+                        <SelectItem value="all">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line875JsxTextAllTiers')}</SelectItem>
                         {Object.entries(tierDistribution.distribution).map(([tier, count]) => {
                           const displayName = tier === 'none' ? 'No Sub' :
                             tier === 'free' ? 'Free' :
@@ -932,10 +922,8 @@ export default function AdminAnalyticsPage() {
           <TabsContent value="users" className="mt-0">
             <div className="rounded-2xl border bg-card">
               <div className="p-5 border-b">
-                <h2 className="text-sm font-medium">User Management</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Search users, view billing, manage credits
-                </p>
+                <h2 className="text-sm font-medium">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line935JsxTextUserManagement')}</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line937JsxTextSearchUsersViewBillingManageCredits')}</p>
               </div>
               <div className="p-5">
                 <AdminUserTable onUserSelect={handleUserSelect} />
@@ -966,7 +954,7 @@ export default function AdminAnalyticsPage() {
         {isSearchingUser && pendingUserEmail && (
           <div className="fixed bottom-4 right-4 bg-card border rounded-2xl shadow-lg p-3 flex items-center gap-2">
             <KortixLoader size="small" />
-            <span className="text-sm">Loading user...</span>
+            <span className="text-sm">{tHardcodedUi.raw('componentsPagesAdminAnalyticsPage.line969JsxTextLoadingUser')}</span>
           </div>
         )}
       </div>

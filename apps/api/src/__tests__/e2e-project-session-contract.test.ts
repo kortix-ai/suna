@@ -80,6 +80,8 @@ function resetState() {
     agentName: 'default',
     status: 'provisioning',
     error: null,
+    createdBy: USER_ID,
+    visibility: 'private',
     metadata: { existing: true },
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -201,91 +203,6 @@ mock.module('../platform/services/session-sandbox', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
-}));
-
-mock.module('../vault', () => ({
-  upsertProjectItem: async (input: {
-    projectId: string;
-    name: string;
-    value: string;
-    kind?: string;
-    ownerUserId?: string | null;
-    createdBy: string;
-  }) => {
-    const existingIndex = secretRows.findIndex((row) =>
-      row.projectId === input.projectId &&
-      row.name === input.name &&
-      (row as any).ownerUserId === (input.ownerUserId ?? null),
-    );
-    const now = new Date('2026-01-02T00:00:00Z');
-    const row = {
-      secretId: existingIndex >= 0
-        ? secretRows[existingIndex]!.secretId
-        : `00000000-0000-4000-a000-${String(401 + secretRows.length).padStart(12, '0')}`,
-      projectId: input.projectId,
-      name: input.name,
-      valueEnc: `enc:${Buffer.from(input.value).toString('base64url')}`,
-      createdBy: input.createdBy,
-      createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
-      updatedAt: now,
-      ownerUserId: input.ownerUserId ?? null,
-    } as typeof projectSecrets.$inferSelect & { ownerUserId: string | null };
-    if (existingIndex >= 0) secretRows[existingIndex] = row;
-    else secretRows.push(row);
-    secretValues.set(row.secretId, input.value);
-    return {
-      itemId: row.secretId,
-      projectId: row.projectId,
-      kind: input.kind ?? 'env',
-      name: row.name,
-      ownerUserId: row.ownerUserId,
-      providerId: null,
-      createdBy: row.createdBy,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
-  },
-  listProjectItems: async (projectId: string) =>
-    secretRows
-      .filter((row) => row.projectId === projectId)
-      .map((row: any) => ({
-        itemId: row.secretId,
-        projectId: row.projectId,
-        kind: 'env',
-        name: row.name,
-        ownerUserId: row.ownerUserId ?? null,
-        providerId: null,
-        createdBy: row.createdBy,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        grantUserIds: [],
-      })),
-  deleteProjectItemByScope: async (projectId: string, name: string, ownerUserId: string | null) => {
-    const removed = secretRows.filter((row: any) =>
-      row.projectId === projectId &&
-      row.name === name &&
-      (row.ownerUserId ?? null) === ownerUserId,
-    );
-    for (const row of removed) secretValues.delete(row.secretId);
-    secretRows = secretRows.filter((row: any) =>
-      row.projectId !== projectId ||
-      row.name !== name ||
-      (row.ownerUserId ?? null) !== ownerUserId,
-    );
-  },
-  setItemGrants: async () => {},
-  visibilityOf: (item: { ownerUserId: string | null }, grantCount: number) =>
-    item.ownerUserId ? 'private' : grantCount > 0 ? 'select' : 'everyone',
-  resolveVaultForActor: async ({ projectId }: { projectId: string }) =>
-    Object.fromEntries(
-      secretRows
-        .filter((row) => row.projectId === projectId)
-        .map((row) => [row.name, secretValues.get(row.secretId) ?? '']),
-    ),
-  resolveProjectGlobalSecret: async (projectId: string, name: string) => {
-    const row = secretRows.find((item) => item.projectId === projectId && item.name === name);
-    return row ? secretValues.get(row.secretId) ?? null : null;
-  },
 }));
 
 mockIamEngineAllowAll();
@@ -425,6 +342,8 @@ mock.module('../shared/db', () => ({
             agentName: values.agentName,
             status: values.status,
             error: null,
+            createdBy: values.createdBy ?? null,
+            visibility: values.visibility ?? 'private',
             metadata: values.metadata ?? {},
             createdAt: new Date('2026-01-02T00:00:00Z'),
             updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
@@ -498,6 +417,10 @@ mock.module('../shared/db', () => ({
               projectId: values.projectId!,
               name: values.name!,
               valueEnc: (set.valueEnc ?? values.valueEnc)!,
+              scope: values.scope ?? 'runtime',
+              shareScope: values.shareScope ?? 'project',
+              ownerUserId: values.ownerUserId ?? null,
+              active: values.active ?? true,
               createdBy: values.createdBy ?? null,
               createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
               updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,

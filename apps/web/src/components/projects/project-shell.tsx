@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/components/AuthProvider';
 import { AppProviders } from '@/components/layout/app-providers';
+import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
 import { ProjectSidebar } from '@/components/projects/project-sidebar';
 import { ProjectMobileMenuBar, ProjectTabBar } from '@/components/projects/project-tab-bar';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
@@ -155,6 +156,10 @@ export function ProjectShell({
           {children}
         </div>
       </div>
+
+      {/* Customize — a full-screen overlay floating over the active page, so
+          opening config never swaps the content area or spawns a tab. */}
+      <CustomizeOverlay projectId={projectId} />
     </AppProviders>
   );
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * ProjectSwitcher — the standalone "which project" switcher.
  *
@@ -67,6 +69,7 @@ export function ProjectSwitcher({
   variant?: ProjectSwitcherVariant;
   className?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
@@ -159,7 +162,7 @@ export function ProjectSwitcher({
         )}
       >
         {tile}
-        <span className="max-w-40 truncate text-[13px] font-medium">{label}</span>
+        <span className="max-w-40 truncate text-sm font-medium">{label}</span>
         <ChevronsUpDown className="h-3 w-3 text-muted-foreground/50" />
       </button>
     ) : (
@@ -172,7 +175,7 @@ export function ProjectSwitcher({
         )}
       >
         {tile}
-        <span className="min-w-0 flex-1 truncate text-left text-[12.5px] font-semibold tracking-tight text-foreground group-data-[collapsible=icon]:hidden">
+        <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold tracking-tight text-foreground group-data-[collapsible=icon]:hidden">
           {label}
         </span>
         <ChevronsUpDown className="ml-auto size-3 shrink-0 text-muted-foreground/40 group-data-[collapsible=icon]:hidden" />
@@ -207,15 +210,15 @@ export function ProjectSwitcher({
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Find project…"
-                className="h-7 pl-7 pr-2 text-[12px] placeholder:text-muted-foreground/50"
+                placeholder={tHardcodedUi.raw('componentsLayoutProjectSwitcher.line210JsxAttrPlaceholderFindProject')}
+                className="h-8 pl-7 pr-2 text-sm placeholder:text-muted-foreground/50"
               />
             </div>
           </div>
         )}
 
         <div className="py-1.5">
-          <div className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/50">
+          <div className="px-3 pb-1 pt-1 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground/50">
             Projects
           </div>
           <div className="max-h-[280px] overflow-y-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -226,7 +229,7 @@ export function ProjectSwitcher({
                 ))}
               </div>
             ) : filteredProjects.length === 0 ? (
-              <div className="px-2 py-3 text-[11.5px] text-muted-foreground/60">
+              <div className="px-2 py-3 text-xs text-muted-foreground/60">
                 {query.trim() ? 'No projects match' : 'No projects yet'}
               </div>
             ) : (
@@ -247,9 +250,9 @@ export function ProjectSwitcher({
                   >
                     <EntityAvatar label={project.name} size="xs" />
                     <div className="grid min-w-0 flex-1 leading-tight">
-                      <span className="truncate text-[12.5px] font-medium">{project.name}</span>
+                      <span className="truncate text-sm font-medium">{project.name}</span>
                       {relative && (
-                        <span className="truncate text-[10.5px] text-muted-foreground/60">
+                        <span className="truncate text-xs text-muted-foreground/60">
                           {relative}
                         </span>
                       )}
@@ -277,9 +280,7 @@ export function ProjectSwitcher({
             className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <ArrowUpRight className="size-3.5" />
-            <span className="flex-1 truncate text-[12.5px] font-medium text-foreground/80">
-              All projects
-            </span>
+            <span className="flex-1 truncate text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsLayoutProjectSwitcher.line281JsxTextAllProjects')}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => {
@@ -289,9 +290,7 @@ export function ProjectSwitcher({
             className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <Plus className="size-3.5" />
-            <span className="flex-1 truncate text-[12.5px] font-medium text-foreground/80">
-              New project
-            </span>
+            <span className="flex-1 truncate text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsLayoutProjectSwitcher.line293JsxTextNewProject')}</span>
           </DropdownMenuItem>
         </div>
       </DropdownMenuContent>

@@ -3,7 +3,11 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import {
+  useProjectSessionTabsStore,
+  CUSTOMIZE_TAB_ID,
+} from '@/stores/project-session-tabs-store';
+import { isDesktop } from '@/lib/desktop';
 
 /**
  * Project-shell keyboard shortcuts — equivalents to the legacy dashboard's
@@ -48,16 +52,20 @@ export function useProjectShellShortcuts({
       const modHeld = tabSwitchModifier === 'meta' ? e.metaKey : e.ctrlKey;
       const modOther = tabSwitchModifier === 'meta' ? e.ctrlKey : e.metaKey;
 
-      // Resolve active session from URL (cheaper than threading params).
-      const m = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
-      const urlProject = m?.[1];
-      const activeSessionId = m?.[2] ?? null;
+      // Resolve the active tab from the URL (cheaper than threading params).
+      // The active tab is either a session id, the Customize sentinel, or none.
+      const sessMatch = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
+      const custMatch = pathname?.match(/^\/projects\/([^/]+)\/customize/);
+      const urlProject = sessMatch?.[1] ?? custMatch?.[1] ?? null;
+      const activeTabId = sessMatch?.[2] ?? (custMatch ? CUSTOMIZE_TAB_ID : null);
       const tabs =
         useProjectSessionTabsStore.getState().tabsByProject[projectId] ?? [];
 
-      const goToTab = (sessionId: string) => {
-        router.push(`/projects/${projectId}/sessions/${sessionId}`);
-      };
+      const hrefForTab = (id: string) =>
+        id === CUSTOMIZE_TAB_ID
+          ? `/projects/${projectId}/customize`
+          : `/projects/${projectId}/sessions/${id}`;
+      const goToTab = (id: string) => router.push(hrefForTab(id));
 
       // New tab — Mod+T
       if (modHeld && !modOther && !e.shiftKey && !e.altKey && e.code === 'KeyT') {
@@ -74,17 +82,24 @@ export function useProjectShellShortcuts({
         return;
       }
 
-      // Close active tab — always Ctrl+W (Cmd+W is hijacked by macOS browsers).
-      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyW') {
-        if (urlProject !== projectId || !activeSessionId) return;
+      // Close active tab — Ctrl+W everywhere; Cmd+W too in the desktop app
+      // (no browser there to hijack it). Works for sessions and Customize.
+      if (
+        e.code === 'KeyW' &&
+        !e.shiftKey &&
+        !e.altKey &&
+        ((e.ctrlKey && !e.metaKey) || (isDesktop() && e.metaKey && !e.ctrlKey))
+      ) {
+        if (urlProject !== projectId || !activeTabId) return;
         e.preventDefault();
-        const remaining = tabs.filter((id) => id !== activeSessionId);
-        closeTab(projectId, activeSessionId);
+        const remaining = tabs.filter((id) => id !== activeTabId);
+        closeTab(projectId, activeTabId);
         if (remaining.length > 0) {
-          const idx = tabs.indexOf(activeSessionId);
+          const idx = tabs.indexOf(activeTabId);
           goToTab(remaining[Math.min(idx, remaining.length - 1)]);
         } else {
-          router.push(`/projects/${projectId}/sessions`);
+          // Nothing left → project index (the new-session composer).
+          router.push(`/projects/${projectId}`);
         }
         return;
       }
@@ -93,7 +108,7 @@ export function useProjectShellShortcuts({
       if (modHeld && !modOther && !e.shiftKey && e.altKey && e.code === 'ArrowRight') {
         if (tabs.length === 0) return;
         e.preventDefault();
-        const idx = activeSessionId ? tabs.indexOf(activeSessionId) : -1;
+        const idx = activeTabId ? tabs.indexOf(activeTabId) : -1;
         goToTab(tabs[(idx + 1 + tabs.length) % tabs.length]);
         return;
       }
@@ -102,7 +117,7 @@ export function useProjectShellShortcuts({
       if (modHeld && !modOther && !e.shiftKey && e.altKey && e.code === 'ArrowLeft') {
         if (tabs.length === 0) return;
         e.preventDefault();
-        const idx = activeSessionId ? tabs.indexOf(activeSessionId) : 0;
+        const idx = activeTabId ? tabs.indexOf(activeTabId) : 0;
         goToTab(tabs[(idx - 1 + tabs.length) % tabs.length]);
         return;
       }
@@ -113,7 +128,7 @@ export function useProjectShellShortcuts({
       if (modHeld && !modOther && e.shiftKey && e.code === 'BracketRight') {
         if (tabs.length === 0) return;
         e.preventDefault();
-        const idx = activeSessionId ? tabs.indexOf(activeSessionId) : -1;
+        const idx = activeTabId ? tabs.indexOf(activeTabId) : -1;
         goToTab(tabs[(idx + 1 + tabs.length) % tabs.length]);
         return;
       }
@@ -122,7 +137,7 @@ export function useProjectShellShortcuts({
       if (modHeld && !modOther && e.shiftKey && e.code === 'BracketLeft') {
         if (tabs.length === 0) return;
         e.preventDefault();
-        const idx = activeSessionId ? tabs.indexOf(activeSessionId) : 0;
+        const idx = activeTabId ? tabs.indexOf(activeTabId) : 0;
         goToTab(tabs[(idx - 1 + tabs.length) % tabs.length]);
         return;
       }
@@ -149,7 +164,10 @@ export function useProjectShellShortcuts({
       }
     };
 
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    // Capture phase: WKWebView (desktop) and inner elements can swallow some
+    // key combos before a bubble-phase window listener runs — the same reason
+    // DesktopChrome captures Cmd+R. Capturing guarantees Ctrl+W et al. fire.
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
   }, [projectId, pathname, router, tabSwitchModifier, onNewSession, closeTab, reopenLastClosed]);
 }

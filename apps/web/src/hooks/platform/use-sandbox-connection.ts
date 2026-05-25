@@ -31,7 +31,10 @@ const FAIL_THRESHOLD_RECONNECT = 2;
 
 /** Interval between health checks (ms) */
 const POLL_CONNECTED = 30_000; // 30s when healthy
-const POLL_FAILING = 3_000; // 3s when any failure detected (fast retry)
+// 1.5s while a sandbox is booting/unhealthy — this is the gate between "sandbox
+// active" and "opencode healthy", so a tight cadence is what makes a freshly
+// booted runtime appear immediately instead of waiting out a poll interval.
+const POLL_FAILING = 1_500;
 const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
 
 const CHECK_TIMEOUT = 20_000;
@@ -235,7 +238,7 @@ export function useSandboxConnection() {
 			if (!alive) return;
 			if (timerRef.current) clearTimeout(timerRef.current);
 
-			const { status, failCount, healthy } = useSandboxConnectionStore.getState();
+			const { status, healthy } = useSandboxConnectionStore.getState();
 			let delay: number;
 			if (status === "connected" && healthy === false) {
 				delay = POLL_FAILING;
@@ -244,7 +247,10 @@ export function useSandboxConnection() {
 			} else if (status === "unreachable") {
 				delay = POLL_UNREACHABLE;
 			} else {
-				delay = failCount > 0 ? POLL_FAILING : POLL_UNREACHABLE;
+				// Initial "connecting" phase (sandbox just went active, opencode
+				// still booting) — poll fast so the runtime appears the moment it's
+				// healthy instead of waiting out a long interval.
+				delay = POLL_FAILING;
 			}
 			timerRef.current = setTimeout(check, delay);
 		}

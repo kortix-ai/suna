@@ -66,7 +66,7 @@ export function InlineTextEditor({
       className={cn(
         'w-full resize-none overflow-hidden',
         'bg-transparent border-0 outline-none p-0 m-0',
-        'text-[14px] text-foreground/85 leading-[1.7] tracking-normal',
+        'text-sm text-foreground/85 leading-[1.7] tracking-normal',
         'placeholder:text-muted-foreground/40 placeholder:italic',
         'focus:bg-muted/10 focus:ring-0 transition-colors rounded-md',
         'px-3 -mx-3 py-1',

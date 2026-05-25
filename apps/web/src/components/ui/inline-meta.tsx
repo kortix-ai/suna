@@ -31,7 +31,7 @@ export function InlineMeta({ className, children }: InlineMetaProps) {
   return (
     <div
       className={cn(
-        'flex items-center gap-2 text-[12px] text-muted-foreground/70',
+        'flex items-center gap-2 text-xs text-muted-foreground/70',
         'min-w-0',
         className,
       )}

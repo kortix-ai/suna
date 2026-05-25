@@ -1,6 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Download,
@@ -12,7 +15,9 @@ import {
   Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { STATUS_TEXT } from '@/components/ui/status';
 import { useFilesStore } from '../store/files-store';
+import { useGitStatus } from '../hooks';
 import { FileContentRenderer, getLanguageFromExt } from './file-content-renderer';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { getFileIcon } from './file-icon';
@@ -26,6 +31,7 @@ import { toast } from '@/lib/toast';
  * History opens as a floating popover inside the modal.
  */
 export function FilePreviewModal() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const selectedFilePath = useFilesStore((s) => s.selectedFilePath);
   const panelMode = useFilesStore((s) => s.panelMode);
   const goBackToBrowser = useFilesStore((s) => s.goBackToBrowser);
@@ -45,6 +51,17 @@ export function FilePreviewModal() {
   // Markdown view toggle — default to rendered preview, allow switching to source.
   const [markdownPreview, setMarkdownPreview] = useState(true);
   const isMarkdownFile = getLanguageFromExt(fileName) === 'markdown';
+
+  // Git state for THIS file — so the preview shows what changed in this version
+  // (added / modified / deleted + line counts) right alongside the content.
+  const { data: gitStatuses } = useGitStatus();
+  const fileStatus = useMemo(() => {
+    if (!selectedFilePath || !gitStatuses) return null;
+    const rel = selectedFilePath.replace(/^\/workspace\//, '');
+    return (
+      gitStatuses.find((s) => s.path === rel || s.path === selectedFilePath) ?? null
+    );
+  }, [selectedFilePath, gitStatuses]);
 
   // Close history and reset preview when file changes
   useEffect(() => {
@@ -119,8 +136,15 @@ export function FilePreviewModal() {
   }, [selectedFilePath, fileName, goBackToBrowser]);
 
   if (!isOpen) return null;
+  // The modal is a full-screen `position: fixed` overlay, but it's rendered deep
+  // inside the session side panel (an overflow-hidden / sometimes display:none
+  // ResizablePanel). A fixed element inside that subtree gets clipped to the
+  // panel — or collapses to 0×0 when the panel is hidden — so the preview never
+  // shows. Portal to <body> so the overlay escapes the panel and covers the
+  // viewport. React context (FilesStoreProvider) is preserved across portals.
+  if (typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop - blurred overlay */}
       <div
@@ -130,8 +154,9 @@ export function FilePreviewModal() {
 
       {/* Modal container */}
       <div className="fixed inset-0 z-50 flex flex-col pointer-events-none animate-in fade-in-0 zoom-in-95 duration-200">
-        {/* Top bar - floating */}
-        <div className="pointer-events-auto mx-auto mt-3 flex items-center justify-between gap-4 px-4 h-12 bg-background/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-lg max-w-3xl w-[calc(100%-2rem)]">
+        {/* Top bar - floating. `kx-titlebar-safe-mt` keeps it below the
+            desktop title-bar inset so it clears the macOS traffic lights. */}
+        <div className="kx-titlebar-safe-mt pointer-events-auto mx-auto flex items-center justify-between gap-4 px-4 h-12 bg-background/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-lg max-w-3xl w-[calc(100%-2rem)]">
           {/* Left: back + file info */}
           <div className="flex items-center gap-2.5 min-w-0">
             <Button
@@ -146,6 +171,25 @@ export function FilePreviewModal() {
               {getFileIcon(fileName, { className: 'h-4 w-4 shrink-0', variant: 'monochrome' })}
               <span className="text-sm font-medium truncate max-w-[300px]">{fileName}</span>
             </div>
+            {fileStatus && (
+              <span
+                className={cn(
+                  'flex shrink-0 items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-medium capitalize',
+                  fileStatus.status === 'added' && STATUS_TEXT.success,
+                  fileStatus.status === 'deleted' && STATUS_TEXT.destructive,
+                  fileStatus.status === 'modified' && STATUS_TEXT.warning,
+                )}
+                title={`This file is ${fileStatus.status} in this version`}
+              >
+                {fileStatus.status}
+                {fileStatus.added > 0 && (
+                  <span className="tabular-nums">+{fileStatus.added}</span>
+                )}
+                {fileStatus.removed > 0 && (
+                  <span className="tabular-nums">−{fileStatus.removed}</span>
+                )}
+              </span>
+            )}
             {filePathList.length > 1 && (
               <span className="text-xs text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full shrink-0 tabular-nums">
                 {currentFileIndex + 1} / {filePathList.length}
@@ -195,7 +239,7 @@ export function FilePreviewModal() {
               size="icon"
               className="h-8 w-8 text-muted-foreground hover:text-foreground"
               onClick={handleOpenInTab}
-              title="Open in tab"
+              title={tHardcodedUi.raw('featuresFilesComponentsFilePreviewModal.line198JsxAttrTitleOpenInTab')}
             >
               <ExternalLink className="h-4 w-4" />
             </Button>
@@ -205,7 +249,7 @@ export function FilePreviewModal() {
               size="icon"
               className="h-8 w-8 text-muted-foreground hover:text-foreground"
               onClick={goBackToBrowser}
-              title="Close (Esc)"
+              title={tHardcodedUi.raw('featuresFilesComponentsFilePreviewModal.line208JsxAttrTitleCloseEsc')}
             >
               <X className="h-4 w-4" />
             </Button>
@@ -219,7 +263,7 @@ export function FilePreviewModal() {
             <button
               onClick={prevFile}
               className="absolute left-3 top-1/2 -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm border border-border/50 shadow-md hover:bg-background flex items-center justify-center transition-colors cursor-pointer hover:scale-105"
-              title="Previous file"
+              title={tHardcodedUi.raw('featuresFilesComponentsFilePreviewModal.line222JsxAttrTitlePreviousFile')}
             >
               <ChevronLeft className="h-5 w-5 text-foreground" />
             </button>
@@ -230,7 +274,7 @@ export function FilePreviewModal() {
             <button
               onClick={nextFile}
               className="absolute right-3 top-1/2 -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm border border-border/50 shadow-md hover:bg-background flex items-center justify-center transition-colors cursor-pointer hover:scale-105"
-              title="Next file"
+              title={tHardcodedUi.raw('featuresFilesComponentsFilePreviewModal.line233JsxAttrTitleNextFile')}
             >
               <ChevronRight className="h-5 w-5 text-foreground" />
             </button>
@@ -258,6 +302,7 @@ export function FilePreviewModal() {
           )}
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

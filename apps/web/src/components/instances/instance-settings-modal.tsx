@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -193,18 +195,18 @@ function ConfigDegradationPanel({
   taskPending: boolean;
   taskTargetLabel?: string | null;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   if (loading) {
     return (
       <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading config diagnostics…
-      </div>
+        <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line199JsxTextLoadingConfigDiagnostics')}</div>
     );
   }
 
   if (error) {
     return (
       <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-2">
-        <div className="text-sm font-medium">Config diagnostics unavailable</div>
+        <div className="text-sm font-medium">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line207JsxTextConfigDiagnosticsUnavailable')}</div>
         <div className="text-xs text-muted-foreground break-words">{error}</div>
       </div>
     );
@@ -216,18 +218,15 @@ function ConfigDegradationPanel({
     <InfoBanner
       tone="warning"
       icon={AlertCircle}
-      title="Config degraded — runtime still healthy"
+      title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line219JsxAttrTitleConfigDegradedRuntimeStillHealthy')}
     >
       <div className="space-y-4">
-        <div>
-          OpenCode ignored {status.problems.length} invalid config source{status.problems.length === 1 ? '' : 's'} so the workspace stays online.
-          Fix the skipped source{status.problems.length === 1 ? '' : 's'} to restore a clean config state.
-        </div>
+        <div>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line223JsxTextOpencodeIgnored')}{status.problems.length}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line223JsxTextInvalidConfigSource')}{status.problems.length === 1 ? '' : 's'}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line223JsxTextSoTheWorkspaceStaysOnlineFixTheSkipped')}{status.problems.length === 1 ? '' : 's'}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line224JsxTextToRestoreACleanConfigState')}</div>
 
         <div className="space-y-3">
           {status.problems.map((problem, index) => (
             <div key={`${problem.source}-${index}`} className="rounded-2xl border border-border/60 bg-background/70 px-3 py-3 space-y-2">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
                 <span>{formatProblemLabel(problem)}</span>
                 <span className="rounded-full border border-border/60 px-2 py-0.5 font-mono normal-case tracking-normal text-foreground/80">{problem.source}</span>
               </div>
@@ -245,16 +244,12 @@ function ConfigDegradationPanel({
 
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={onCopyPrompt}>
-            <Copy className="h-3.5 w-3.5 mr-2" />
-            Copy fix prompt
-          </Button>
+            <Copy className="h-3.5 w-3.5 mr-2" />{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line249JsxTextCopyFixPrompt')}</Button>
           <Button size="sm" onClick={onStartTask} disabled={taskPending}>
-            {taskPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <Cpu className="h-3.5 w-3.5 mr-2" />}
-            Start fix task
-          </Button>
+            {taskPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <Cpu className="h-3.5 w-3.5 mr-2" />}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line253JsxTextStartFixTask')}</Button>
         </div>
 
-        <div className="text-[11px] text-muted-foreground">
+        <div className="text-xs text-muted-foreground">
           {taskTargetLabel
             ? `The fix task will be created and started in ${taskTargetLabel}.`
             : 'If this instance has no project yet, Kortix will create a Workspace project automatically before starting the fix task.'}
@@ -336,7 +331,7 @@ function CommandCopyField({
             {copied ? 'Copied' : '1-click copy'}
           </Badge>
         </div>
-        <div className="text-muted-foreground mt-1.5 text-[11px] leading-relaxed">
+        <div className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
           {hint || 'Command hidden for security. The full command is copied to your clipboard.'}
         </div>
       </button>
@@ -364,7 +359,7 @@ function BackupRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium truncate">{backup.description || `Backup ${backup.id}`}</div>
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
           <span>{formatDate(backup.created)}</span>
           <span>·</span>
           <span>{formatBytes(backup.size)}</span>
@@ -408,7 +403,7 @@ function HealthBar({
       <div className="h-1.5 bg-foreground/[0.06] rounded-full overflow-hidden">
         {value !== null && <div className={cn('h-full transition-all', color)} style={{ width: `${value}%` }} />}
       </div>
-      {detail ? <div className="text-[11px] text-muted-foreground">{detail}</div> : null}
+      {detail ? <div className="text-xs text-muted-foreground">{detail}</div> : null}
     </div>
   );
 }
@@ -424,6 +419,7 @@ export function InstanceSettingsModal({
   onOpenChange: (open: boolean) => void;
   defaultTab?: TabId;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const { data: adminRole } = useAdminRole();
@@ -886,13 +882,13 @@ export function InstanceSettingsModal({
           )}
           hideCloseButton
         >
-          <DialogTitle className="sr-only">Instance settings</DialogTitle>
+          <DialogTitle className="sr-only">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line889JsxTextInstanceSettings')}</DialogTitle>
 
           {isMobile ? (
             <div className="flex flex-col h-screen w-screen overflow-hidden">
               <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-background">
                 <div>
-                  <div className="text-lg font-semibold">Instance settings</div>
+                  <div className="text-lg font-semibold">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line895JsxTextInstanceSettings')}</div>
                   <div className="text-xs text-muted-foreground truncate max-w-[70vw]">
                     {sandbox?.name || sandbox?.sandbox_id || 'No instance selected'}
                   </div>
@@ -910,7 +906,7 @@ export function InstanceSettingsModal({
                       <Button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        variant={activeTab === tab.id ? 'secondary' : 'ghost'}
+                        variant={activeTab === tab.id ? 'subtle' : 'ghost'}
                         className="flex items-center gap-2 whitespace-nowrap flex-shrink-0 justify-start"
                       >
                         <Icon className="h-4 w-4" />
@@ -925,9 +921,7 @@ export function InstanceSettingsModal({
 
               {sandbox ? (
                 <div className="border-t border-border bg-background/95 px-4 py-3 flex justify-end">
-                  <Button onClick={() => window.open(`/instances/${sandbox.sandbox_id}`, '_blank', 'noopener,noreferrer')}>
-                    Open instance
-                  </Button>
+                  <Button onClick={() => window.open(`/instances/${sandbox.sandbox_id}`, '_blank', 'noopener,noreferrer')}>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line929JsxTextOpenInstance')}</Button>
                 </div>
               ) : null}
             </div>
@@ -942,7 +936,7 @@ export function InstanceSettingsModal({
 
                 <div className="px-4 pb-3">
                   <div className="text-sm font-semibold truncate">{sandbox?.name || 'Instance settings'}</div>
-                  <div className="text-[11px] text-muted-foreground font-mono truncate mt-1">
+                  <div className="text-xs text-muted-foreground font-mono truncate mt-1">
                     {sandbox?.sandbox_id || '—'}
                   </div>
                 </div>
@@ -970,9 +964,7 @@ export function InstanceSettingsModal({
 
                 {sandbox ? (
                   <div className="mt-auto pt-4">
-                    <Button className="w-full" onClick={() => window.open(`/instances/${sandbox.sandbox_id}`, '_blank', 'noopener,noreferrer')}>
-                      Open instance
-                    </Button>
+                    <Button className="w-full" onClick={() => window.open(`/instances/${sandbox.sandbox_id}`, '_blank', 'noopener,noreferrer')}>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line974JsxTextOpenInstance')}</Button>
                   </div>
                 ) : null}
               </div>
@@ -988,8 +980,8 @@ export function InstanceSettingsModal({
       <ConfirmDialog
         open={!!restoreTarget}
         onOpenChange={(open) => !open && setRestoreTarget(null)}
-        title="Restore this backup?"
-        description="Your current instance state will be replaced with the selected backup. This cannot be undone."
+        title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line991JsxAttrTitleRestoreThisBackup')}
+        description={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line992JsxAttrDescriptionYourCurrentInstanceStateWillBeReplacedWith')}
         confirmLabel="Restore"
         onConfirm={handleRestoreBackup}
         isPending={backups.restore.isPending}
@@ -998,8 +990,8 @@ export function InstanceSettingsModal({
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="Delete this backup?"
-        description="This backup will be permanently removed."
+        title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1001JsxAttrTitleDeleteThisBackup')}
+        description={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1002JsxAttrDescriptionThisBackupWillBePermanentlyRemoved')}
         confirmLabel="Delete"
         onConfirm={handleDeleteBackup}
         isPending={backups.remove.isPending}
@@ -1018,7 +1010,7 @@ export function InstanceSettingsModal({
 
   function renderContent() {
     if (!sandbox) {
-      return <div className="p-6 text-sm text-muted-foreground">No instance selected.</div>;
+      return <div className="p-6 text-sm text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1021JsxTextNoInstanceSelected')}</div>;
     }
 
     if (activeTab === 'overview') {
@@ -1031,7 +1023,7 @@ export function InstanceSettingsModal({
           <section className="space-y-3">
             <div>
               <h2 className="text-lg font-semibold">General</h2>
-              <p className="text-sm text-muted-foreground">Core details and entry points for this instance.</p>
+              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1034JsxTextCoreDetailsAndEntryPointsForThisInstance')}</p>
             </div>
               <ConfigDegradationPanel
                 status={configStatusQuery.data}
@@ -1060,18 +1052,18 @@ export function InstanceSettingsModal({
                       ? 'Health is split into host, workload, and runtime layers. Use the Health tab to inspect and repair the failing layer directly.'
                       : 'Refresh the health data to inspect the failing layer directly.'}
                   </div>
-                  {providerError ? <div className="text-[11px] break-words">{providerError}</div> : null}
+                  {providerError ? <div className="text-xs break-words">{providerError}</div> : null}
                   {adminHealth ? (
                     <div className="grid gap-2 sm:grid-cols-3">
                       {(['host', 'workload', 'runtime'] as const).map((key) => {
                         const layer = adminHealth.layers[key];
                         return (
                           <div key={key} className="rounded-2xl border border-border/60 bg-muted/10 px-3 py-2">
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{layer.label}</div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">{layer.label}</div>
                             <div className="mt-1">
                               <Badge size="sm" variant={layerBadgeVariant(layer.status)} className="capitalize">{layer.status}</Badge>
                             </div>
-                            <div className="mt-1 text-[11px] text-muted-foreground">{layer.summary}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">{layer.summary}</div>
                           </div>
                         );
                       })}
@@ -1110,7 +1102,7 @@ export function InstanceSettingsModal({
                       setIsEditingName(true);
                     }}
                     className="text-left font-medium hover:text-foreground/80 transition-colors"
-                    title="Click to rename"
+                    title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1113JsxAttrTitleClickToRename')}
                   >
                     {sandbox.name || 'Untitled instance'}
                   </button>
@@ -1119,12 +1111,12 @@ export function InstanceSettingsModal({
                 )}
               </div>
               <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
-                <div className="text-xs text-muted-foreground">Init status</div>
+                <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1122JsxTextInitStatus')}</div>
                 <div className="font-medium capitalize">{initStatus}</div>
-                {sandbox.init_attempts && sandbox.init_attempts > 1 ? <div className="text-[11px] text-muted-foreground">Attempt {sandbox.init_attempts}</div> : null}
+                {sandbox.init_attempts && sandbox.init_attempts > 1 ? <div className="text-xs text-muted-foreground">Attempt {sandbox.init_attempts}</div> : null}
               </div>
               <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
-                <div className="text-xs text-muted-foreground">Health status</div>
+                <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1127JsxTextHealthStatus')}</div>
                 <div className="font-medium capitalize">{healthStatus}</div>
               </div>
               <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
@@ -1140,12 +1132,12 @@ export function InstanceSettingsModal({
                 <div className="font-medium">{(meta?.location as string) || '—'}</div>
               </div>
               <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
-                <div className="text-xs text-muted-foreground">Server type</div>
+                <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1143JsxTextServerType')}</div>
                 <div className="font-medium font-mono">{(meta?.serverType as string) || '—'}</div>
               </div>
             </div>
             {lastInitError ? (
-              <InfoBanner tone="destructive" icon={AlertCircle} title="Last initialization error">
+              <InfoBanner tone="destructive" icon={AlertCircle} title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1148JsxAttrTitleLastInitializationError')}>
                 <span className="break-words">{lastInitError}</span>
               </InfoBanner>
             ) : null}
@@ -1154,16 +1146,12 @@ export function InstanceSettingsModal({
           <SectionCard
             title={
               <span className="flex items-center gap-2">
-                <Server className="h-4 w-4 text-muted-foreground" />
-                Quick actions
-              </span>
+                <Server className="h-4 w-4 text-muted-foreground" />{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1158JsxTextQuickActions')}</span>
             }
             bodyClassName="space-y-3"
           >
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] })}>
-                Reload details
-              </Button>
+              <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] })}>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1165JsxTextReloadDetails')}</Button>
               {isAdmin && initStatus === 'failed' ? (
                 <Button variant="secondary" onClick={() => triggerRepairAction('reinitialize')} disabled={hostActionPending}>
                   {hostActionPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
@@ -1171,14 +1159,10 @@ export function InstanceSettingsModal({
                 </Button>
               ) : null}
               {isAdmin ? (
-                <Button variant="outline" onClick={() => setActiveTab('host')}>
-                  Open health
-                </Button>
+                <Button variant="outline" onClick={() => setActiveTab('host')}>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1175JsxTextOpenHealth')}</Button>
               ) : null}
             </div>
-            <p className="text-xs text-muted-foreground">
-              Initialization tracks workspace bootstrapping. Health tracks the live host, workload, and runtime after initialization.
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1180JsxTextInitializationTracksWorkspaceBootstrappingHealthTracksTheLive')}</p>
           </SectionCard>
         </div>
       );
@@ -1189,12 +1173,10 @@ export function InstanceSettingsModal({
         <div className="p-6 space-y-6">
           <div>
             <h2 className="text-lg font-semibold">Health</h2>
-            <p className="text-sm text-muted-foreground">Three explicit layers: host machine, workload container, and core runtime services.</p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1192JsxTextThreeExplicitLayersHostMachineWorkloadContainerAnd')}</p>
           </div>
 
-          <InfoBanner tone="warning" icon={TriangleAlert} title="Choose the smallest repair level first">
-            Runtime restart is cheapest, workload restart is next, and host reboot is last resort.
-          </InfoBanner>
+          <InfoBanner tone="warning" icon={TriangleAlert} title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1195JsxAttrTitleChooseTheSmallestRepairLevelFirst')}>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1196JsxTextRuntimeRestartIsCheapestWorkloadRestartIsNext')}</InfoBanner>
 
           <ConfigDegradationPanel
             status={configStatusQuery.data}
@@ -1209,12 +1191,11 @@ export function InstanceSettingsModal({
           {isAdmin ? (
             adminHealthQuery.isLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading layered health…
-              </div>
+                <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1212JsxTextLoadingLayeredHealth')}</div>
             ) : adminHealth ? (
               <div className="space-y-4">
                 <SectionCard
-                  title="Overall status"
+                  title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1217JsxAttrTitleOverallStatus')}
                   description={overallHealthHint(adminHealth)}
                   action={
                     <Badge size="sm" className="capitalize" variant={layerBadgeVariant(adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy' && adminHealth.layers.runtime.status === 'healthy' ? 'healthy' : adminHealth.overall_status === 'offline' ? 'offline' : adminHealth.overall_status === 'degraded' ? 'degraded' : 'unknown')}>
@@ -1261,7 +1242,7 @@ export function InstanceSettingsModal({
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 text-xs">
                         {Object.entries(layer.details).filter(([detailKey]) => detailKey !== 'services').map(([detailKey, value]) => (
                           <div key={detailKey} className="rounded-2xl border border-border/60 bg-background/60 px-3 py-2">
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{detailKey.replace(/_/g, ' ')}</div>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">{detailKey.replace(/_/g, ' ')}</div>
                             <div className="mt-1 break-words font-mono text-foreground/85">{typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—')}</div>
                           </div>
                         ))}
@@ -1269,7 +1250,7 @@ export function InstanceSettingsModal({
 
                       {key === 'runtime' && layerServices.length > 0 ? (
                         <div className="space-y-2">
-                          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Managed services</div>
+                          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1272JsxTextManagedServices')}</div>
                           <div className="space-y-2">
                             {layerServices.map((service) => (
                               <div key={service.id} className="rounded-2xl border border-border/60 bg-background/60 px-3 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1281,12 +1262,10 @@ export function InstanceSettingsModal({
                                     </Badge>
                                   </div>
                                   <div className="mt-1 text-xs text-muted-foreground font-mono">{service.id}</div>
-                                  {service.lastError ? <div className="mt-1 text-[11px] text-muted-foreground break-words">{service.lastError}</div> : null}
+                                  {service.lastError ? <div className="mt-1 text-xs text-muted-foreground break-words">{service.lastError}</div> : null}
                                 </div>
                                 <Button size="sm" variant="outline" onClick={() => triggerRepairAction('restart_service', service.id)} disabled={adminRepairMutation.isPending}>
-                                  {adminRepairMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <RotateCw className="h-3.5 w-3.5 mr-2" />}
-                                  Restart service
-                                </Button>
+                                  {adminRepairMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <RotateCw className="h-3.5 w-3.5 mr-2" />}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1288JsxTextRestartService')}</Button>
                               </div>
                             ))}
                           </div>
@@ -1297,24 +1276,18 @@ export function InstanceSettingsModal({
                 })}
               </div>
             ) : (
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
-                Health data unavailable.
-              </div>
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1301JsxTextHealthDataUnavailable')}</div>
             )
           ) : (
             <SectionCard
               title="Recovery"
-              description="Detailed host/workload/runtime controls are available to admins. You can still restart the workload and manage SSH access here."
+              description={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1307JsxAttrDescriptionDetailedHostWorkloadRuntimeControlsAreAvailableTo')}
             >
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" onClick={() => restartMutation.mutate()} disabled={hostActionPending}>
-                  {hostActionPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCw className="h-4 w-4 mr-2" />}
-                  Restart workload
-                </Button>
+                  {hostActionPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCw className="h-4 w-4 mr-2" />}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1312JsxTextRestartWorkload')}</Button>
                 <Button variant="outline" onClick={() => triggerHostAction('stop')} disabled={effectiveStatus === 'stopped' || hostActionPending}>
-                  {hostActionPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Stop host
-                </Button>
+                  {hostActionPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1316JsxTextStopHost')}</Button>
               </div>
             </SectionCard>
           )}
@@ -1322,55 +1295,49 @@ export function InstanceSettingsModal({
           <div className="space-y-4">
               {isAdmin && adminDetailQuery.isLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Resolving host access details…
-                </div>
+                  <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1325JsxTextResolvingHostAccessDetails')}</div>
               ) : isAdmin && (adminSshCommand || adminSetupCommand) ? (
                 <div className="space-y-4">
-                  {adminSshCommand ? <CommandCopyField label="SSH command" value={adminSshCommand} hint="Copies the direct SSH command without exposing it on screen." /> : null}
-                  {adminSetupCommand ? <CommandCopyField label="Setup command" value={adminSetupCommand} hint="Copies the full setup command, including any hidden key material." /> : null}
+                  {adminSshCommand ? <CommandCopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1329JsxAttrLabelSshCommand')} value={adminSshCommand} hint={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1329JsxAttrHintCopiesTheDirectSshCommandWithoutExposingIt')} /> : null}
+                  {adminSetupCommand ? <CommandCopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1330JsxAttrLabelSetupCommand')} value={adminSetupCommand} hint={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1330JsxAttrHintCopiesTheFullSetupCommandIncludingAnyHidden')} /> : null}
                   {(effectiveIp || effectiveRegion || effectiveServerType) && (
                     <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-2">
-                      <div className="text-xs text-muted-foreground">Host details</div>
+                      <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1333JsxTextHostDetails')}</div>
                       {effectiveIp ? <div className="text-sm font-mono">IP: {effectiveIp}</div> : null}
                       {effectiveRegion ? <div className="text-sm">Region: {effectiveRegion}</div> : null}
-                      {effectiveServerType ? <div className="text-sm font-mono">Server type: {effectiveServerType}</div> : null}
+                      {effectiveServerType ? <div className="text-sm font-mono">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1336JsxTextServerType')}{effectiveServerType}</div> : null}
                     </div>
                   )}
                 </div>
               ) : sshQuery.isLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Resolving connection details…
-                </div>
+                  <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1342JsxTextResolvingConnectionDetails')}</div>
               ) : sshQuery.error ? (
                 <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-3">
-                  <div className="text-sm text-muted-foreground">SSH is not configured for this instance yet.</div>
+                  <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1346JsxTextSshIsNotConfiguredForThisInstanceYet')}</div>
                   <Button onClick={() => setupSshMutation.mutate()} disabled={setupSshMutation.isPending}>
-                    {setupSshMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <KeyRound className="h-4 w-4 mr-2" />}
-                    Set up SSH
-                  </Button>
+                    {setupSshMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <KeyRound className="h-4 w-4 mr-2" />}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1349JsxTextSetUpSsh')}</Button>
                 </div>
               ) : sshQuery.data ? (
                 <div className="space-y-4">
-                  <CommandCopyField label="SSH command" value={setupResult?.ssh_command || sshQuery.data.ssh_command} hint="Copies the SSH command without exposing the full host command inline." />
-                  <CommandCopyField label="Reconnect command" value={setupResult?.reconnect_command || sshQuery.data.reconnect_command} hint="Copies the reconnect command for future sessions." />
-                  <CommandCopyField label="SSH config command" value={setupResult?.ssh_config_command || sshQuery.data.ssh_config_command} hint="Copies the SSH config snippet command for your local machine." />
+                  <CommandCopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1354JsxAttrLabelSshCommand')} value={setupResult?.ssh_command || sshQuery.data.ssh_command} hint={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1354JsxAttrHintCopiesTheSshCommandWithoutExposingTheFull')} />
+                  <CommandCopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1355JsxAttrLabelReconnectCommand')} value={setupResult?.reconnect_command || sshQuery.data.reconnect_command} hint={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1355JsxAttrHintCopiesTheReconnectCommandForFutureSessions')} />
+                  <CommandCopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1356JsxAttrLabelSshConfigCommand')} value={setupResult?.ssh_config_command || sshQuery.data.ssh_config_command} hint={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1356JsxAttrHintCopiesTheSshConfigSnippetCommandForYour')} />
                   <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-2">
-                    <div className="text-xs text-muted-foreground">Connection details</div>
+                    <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1358JsxTextConnectionDetails')}</div>
                     <div className="text-sm">{sshQuery.data.username}@{sshQuery.data.host}:{sshQuery.data.port}</div>
-                    <div className="text-xs text-muted-foreground font-mono">Host alias: {sshQuery.data.host_alias}</div>
+                    <div className="text-xs text-muted-foreground font-mono">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1360JsxTextHostAlias')}{sshQuery.data.host_alias}</div>
                   </div>
                   {!setupResult && (
                     <Button variant="outline" onClick={() => setupSshMutation.mutate()} disabled={setupSshMutation.isPending}>
-                      {setupSshMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Shield className="h-4 w-4 mr-2" />}
-                      Regenerate SSH setup
-                    </Button>
+                      {setupSshMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Shield className="h-4 w-4 mr-2" />}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1365JsxTextRegenerateSshSetup')}</Button>
                   )}
-                  {setupResult && <CommandCopyField label="Setup command" value={setupResult.setup_command} hint="Copies the full setup command, including any hidden key material." />}
+                  {setupResult && <CommandCopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1368JsxAttrLabelSetupCommand')} value={setupResult.setup_command} hint={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1368JsxAttrHintCopiesTheFullSetupCommandIncludingAnyHidden')} />}
                 </div>
               ) : null}
 
               {providerDetail?.health ? (
-                <SectionCard title="Resource usage">
+                <SectionCard title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1373JsxAttrTitleResourceUsage')}>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <HealthBar label="CPU" pct={providerDetail.health.cpu} icon={Cpu} detail={matchedServerType ? formatCapacityDetail(cpuPercent, matchedServerType.cores, 'vCPU', 'total') : undefined} />
                     <HealthBar label="Memory" pct={providerDetail.health.memory} icon={MemoryStick} detail={matchedServerType ? formatCapacityDetail(memoryPercent, matchedServerType.memory, 'GB', 'RAM') : undefined} />
@@ -1379,14 +1346,14 @@ export function InstanceSettingsModal({
                 </SectionCard>
               ) : null}
 
-              <SectionCard title="Provider details">
+              <SectionCard title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1382JsxAttrTitleProviderDetails')}>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <div className="text-xs text-muted-foreground">Status</div>
                     <div className="text-sm font-medium capitalize">{effectiveStatus || '—'}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground">IP address</div>
+                    <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1389JsxTextIpAddress')}</div>
                     <div className="text-sm font-medium font-mono">{effectiveIp || '—'}</div>
                   </div>
                   <div>
@@ -1394,28 +1361,24 @@ export function InstanceSettingsModal({
                     <div className="text-sm font-medium">{effectiveRegion || '—'}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground">Server type</div>
+                    <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1397JsxTextServerType')}</div>
                     <div className="text-sm font-medium font-mono">{effectiveServerType || '—'}</div>
                   </div>
                 </div>
               </SectionCard>
 
               <SectionCard
-                title="Deep debugging"
+                title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1404JsxAttrTitleDeepDebugging')}
                 description={
-                  <span className="leading-relaxed">
-                    If you SSH into the host machine itself, you can inspect the running Kortix container directly. Typical flow: run <span className="font-mono text-foreground">docker ps</span>, identify the <span className="font-mono text-foreground">kortix/computer</span> container or <span className="font-mono text-foreground">justavps-workload</span> name, then exec into it for full root access inside the container.
-                  </span>
+                  <span className="leading-relaxed">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1407JsxTextIfYouSshIntoTheHostMachineItself')}<span className="font-mono text-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1407JsxTextDockerPs')}</span>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1407JsxTextIdentifyThe')}<span className="font-mono text-foreground">kortix/computer</span>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1407JsxTextContainerOr')}<span className="font-mono text-foreground">justavps-workload</span>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1407JsxTextNameThenExecIntoItForFullRoot')}</span>
                 }
                 bodyClassName="space-y-3"
               >
                 <div className="grid gap-3 md:grid-cols-2">
-                  <CopyField label="List running containers" value="docker ps" />
-                  <CopyField label="Open running Kortix container" value="docker exec -it justavps-workload bash" />
+                  <CopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1413JsxAttrLabelListRunningContainers')} value="docker ps" />
+                  <CopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1414JsxAttrLabelOpenRunningKortixContainer')} value="docker exec -it justavps-workload bash" />
                 </div>
-                <div className="rounded-2xl border border-border/60 bg-background/60 px-3 py-2 text-[11px] text-muted-foreground">
-                  Inside the container, you can inspect <span className="font-mono text-foreground">/workspace</span>, verify runtime state, and debug the live Kortix environment directly.
-                </div>
+                <div className="rounded-2xl border border-border/60 bg-background/60 px-3 py-2 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1417JsxTextInsideTheContainerYouCanInspect')}<span className="font-mono text-foreground">/workspace</span>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1417JsxTextVerifyRuntimeStateAndDebugTheLiveKortix')}</div>
               </SectionCard>
           </div>
         </div>
@@ -1431,16 +1394,16 @@ export function InstanceSettingsModal({
         <div className="p-6 space-y-6">
           <div>
             <h2 className="text-lg font-semibold">Updates</h2>
-            <p className="text-sm text-muted-foreground">Check the latest available version and open the updater flow.</p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1434JsxTextCheckTheLatestAvailableVersionAndOpenThe')}</p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
-              <div className="text-xs text-muted-foreground">Current version</div>
+              <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1439JsxTextCurrentVersion')}</div>
               <div className="font-medium font-mono">{effectiveVersion || 'Unknown'}</div>
             </div>
             <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
-              <div className="text-xs text-muted-foreground">Latest version</div>
+              <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1443JsxTextLatestVersion')}</div>
               <div className="font-medium font-mono">
                 {latestVersionQuery.isLoading ? 'Checking…' : latestVersion || 'Unavailable'}
               </div>
@@ -1450,19 +1413,15 @@ export function InstanceSettingsModal({
           <SectionCard title="Auto-update" bodyClassName="space-y-2">
             <div className="flex items-center gap-2 text-sm">
               <span className="font-medium">{sandbox?.auto_update_enabled === false ? 'Disabled' : 'Enabled by default'}</span>
-              <span className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] font-mono text-muted-foreground">
+              <span className="rounded-full border border-border/60 px-2 py-0.5 text-xs font-mono text-muted-foreground">
                 {sandbox?.auto_update_channel === 'dev' ? 'dev channel' : 'stable channel'}
               </span>
             </div>
-            <p className="text-xs text-muted-foreground">
-              New releases are installed automatically on this instance unless explicitly turned off. Each auto-update targets the exact versioned image and runs the same post-update verification as manual updates.
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1458JsxTextNewReleasesAreInstalledAutomaticallyOnThisInstance')}</p>
           </SectionCard>
 
           {!canUpgrade.loading && !canUpgrade.allowed ? (
-            <InfoBanner tone="warning" icon={Shield}>
-              You don't have permission to run updates on this instance.
-            </InfoBanner>
+            <InfoBanner tone="warning" icon={Shield}>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1464JsxTextYouDonTHavePermissionToRunUpdates')}</InfoBanner>
           ) : null}
 
           <VersionHistoryPanel
@@ -1476,7 +1435,7 @@ export function InstanceSettingsModal({
             initialShowDev={(effectiveVersion || '').startsWith('dev-')}
             compact
             headerTitle="Versions"
-            headerDescription="Same full changelog/version history content as the main changelog page."
+            headerDescription={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1479JsxAttrHeaderdescriptionSameFullChangelogVersionHistoryContentAsThe')}
           />
         </div>
       );
@@ -1486,33 +1445,28 @@ export function InstanceSettingsModal({
       <div className="p-6 space-y-6">
         <div>
           <h2 className="text-lg font-semibold">Backups</h2>
-          <p className="text-sm text-muted-foreground">Create, restore, and delete instance backups.</p>
-          <p className="text-xs text-muted-foreground mt-2">
-            Backups are created automatically every day, retained for up to 7 days, and a fresh backup is automatically created before any update runs.
-          </p>
+          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1489JsxTextCreateRestoreAndDeleteInstanceBackups')}</p>
+          <p className="text-xs text-muted-foreground mt-2">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1491JsxTextBackupsAreCreatedAutomaticallyEveryDayRetainedFor')}</p>
         </div>
 
         <div className="flex items-center gap-2">
           <Input
             value={backupDescription}
             onChange={(e) => setBackupDescription(e.target.value)}
-            placeholder="Backup description (optional)"
+            placeholder={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1499JsxAttrPlaceholderBackupDescriptionOptional')}
           />
           <Button onClick={handleCreateBackup} disabled={backups.create.isPending}>
-            {backups.create.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Archive className="h-4 w-4 mr-2" />}
-            Backup now
-          </Button>
+            {backups.create.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Archive className="h-4 w-4 mr-2" />}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1503JsxTextBackupNow')}</Button>
         </div>
 
         {backups.isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading backups…
-          </div>
+            <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1509JsxTextLoadingBackups')}</div>
         ) : backups.error ? (
           <InfoBanner
             tone="warning"
             icon={AlertCircle}
-            title="Unable to load backups"
+            title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1515JsxAttrTitleUnableToLoadBackups')}
             action={
               <Button variant="outline" size="sm" onClick={() => void backups.refetch()}>
                 Retry
@@ -1522,9 +1476,7 @@ export function InstanceSettingsModal({
             {backups.error instanceof Error ? backups.error.message : 'Failed to load backups for this instance.'}
           </InfoBanner>
         ) : backups.backups.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border/60 bg-muted/10 p-8 text-center text-sm text-muted-foreground">
-            No backups yet.
-          </div>
+          <div className="rounded-2xl border border-dashed border-border/60 bg-muted/10 p-8 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1526JsxTextNoBackupsYet')}</div>
         ) : (
           <div className="space-y-2">
             {backups.backups.map((backup) => (

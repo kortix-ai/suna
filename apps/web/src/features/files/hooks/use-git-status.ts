@@ -51,17 +51,24 @@ export function buildGitStatusMap(
   const map = new Map<string, GitFileStatus['status']>();
   if (!statuses) return map;
 
+  // git status returns repo-relative paths ("site/index.html"), but the explorer
+  // keys lookups by the file node's path, which is the /workspace-absolute form
+  // ("/workspace/site/index.html"). Index BOTH so dots match regardless.
+  const setBoth = (p: string, status: GitFileStatus['status'], overwrite = true) => {
+    const abs = p.startsWith('/workspace/') ? p : `/workspace/${p}`;
+    if (overwrite || !map.has(p)) map.set(p, status);
+    if (overwrite || !map.has(abs)) map.set(abs, status);
+  };
+
   for (const file of statuses) {
     // Direct file status
-    map.set(file.path, file.status);
+    setBoth(file.path, file.status);
 
-    // Propagate to ancestor directories
+    // Propagate to ancestor directories (don't clobber a real file status)
     const parts = file.path.split('/');
     for (let i = 1; i < parts.length; i++) {
       const dirPath = parts.slice(0, i).join('/');
-      if (!map.has(dirPath)) {
-        map.set(dirPath, 'modified');
-      }
+      setBoth(dirPath, 'modified', false);
     }
   }
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   LayoutGrid,
@@ -78,6 +80,7 @@ export function DriveToolbar({
   changeRequestsToggle,
   openChangeRequestAction,
 }: DriveToolbarProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
   const viewMode = useFilesStore((s) => s.viewMode);
@@ -188,7 +191,7 @@ export function DriveToolbar({
           <nav
             className="flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto"
             onDoubleClick={handleDoubleClick}
-            title="Double-click to edit path"
+            title={tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line191JsxAttrTitleDoubleClickToEditPath')}
           >
             {/* Home / root */}
             <Button
@@ -259,7 +262,7 @@ export function DriveToolbar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuLabel className="text-xs text-muted-foreground">Sort by</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line262JsxTextSortBy')}</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={sortBy} onValueChange={(v) => setSortBy(v as SortField)}>
               <DropdownMenuRadioItem value="name">Name</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="type">Type</DropdownMenuRadioItem>
@@ -292,7 +295,7 @@ export function DriveToolbar({
           className="h-8 w-8 text-muted-foreground hover:text-foreground"
           onClick={onDownloadDir}
           disabled={isDownloading}
-          title="Download directory as zip"
+          title={tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line295JsxAttrTitleDownloadDirectoryAsZip')}
         >
           {isDownloading ? (
             <RefreshCw className="h-4 w-4 animate-spin" />
@@ -309,25 +312,19 @@ export function DriveToolbar({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                title="New file or folder"
+                title={tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line312JsxAttrTitleNewFileOrFolder')}
               >
                 <Plus className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem onClick={onNewFolder}>
-                <FolderPlus className="mr-2 h-4 w-4" />
-                New folder
-              </DropdownMenuItem>
+                <FolderPlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line320JsxTextNewFolder')}</DropdownMenuItem>
               <DropdownMenuItem onClick={onNewFile}>
-                <FilePlus className="mr-2 h-4 w-4" />
-                New file
-              </DropdownMenuItem>
+                <FilePlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line324JsxTextNewFile')}</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onUpload}>
-                <Upload className="mr-2 h-4 w-4" />
-                File upload
-              </DropdownMenuItem>
+                <Upload className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line329JsxTextFileUpload')}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -345,11 +342,11 @@ export function DriveToolbar({
               size="sm"
               onClick={openChangeRequestAction.onClick}
               disabled={openChangeRequestAction.disabled}
-              title="Open a new change request"
+              title={tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line348JsxAttrTitleOpenANewChangeRequest')}
               className="h-8 text-xs text-muted-foreground hover:text-foreground"
             >
               <GitPullRequest className="h-3.5 w-3.5" />
-              <span>Open CR</span>
+              <span>{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line352JsxTextOpenCr')}</span>
             </Button>
           </>
         )}
@@ -360,10 +357,10 @@ export function DriveToolbar({
             <div className="h-4 w-px bg-border/50 mx-1 shrink-0" />
             <Button
               type="button"
-              variant={checkpointsToggle.open ? 'secondary' : 'ghost'}
+              variant={checkpointsToggle.open ? 'subtle' : 'ghost'}
               size="sm"
               onClick={checkpointsToggle.onToggle}
-              title="Toggle Checkpoints panel"
+              title={tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line366JsxAttrTitleToggleCheckpointsPanel')}
               className={cn(
                 'h-8 text-xs',
                 !checkpointsToggle.open && 'text-muted-foreground hover:text-foreground',
@@ -384,7 +381,7 @@ export function DriveToolbar({
           return (
             <Button
               type="button"
-              variant={changeRequestsToggle.open ? 'secondary' : 'ghost'}
+              variant={changeRequestsToggle.open ? 'subtle' : 'ghost'}
               size="sm"
               onClick={changeRequestsToggle.onToggle}
               title={
@@ -409,7 +406,7 @@ export function DriveToolbar({
                   />
                 )}
               </span>
-              <span>Change requests</span>
+              <span>{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line412JsxTextChangeRequests')}</span>
               {hasOpen && (
                 <Badge variant="success" size="sm" className="ml-0.5 tabular-nums">
                   {count}

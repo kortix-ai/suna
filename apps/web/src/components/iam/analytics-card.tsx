@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Permission usage analytics card. Two tables side by side:
 //   • Top principals (members + tokens) by allowed-action count
 //   • Most-used actions
@@ -25,6 +26,7 @@ interface AnalyticsCardProps {
 }
 
 export function AnalyticsCard({ accountId }: AnalyticsCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const topQuery = useQuery({
     queryKey: ['iam-analytics-top', accountId],
     queryFn: () => listTopPrincipals(accountId),
@@ -77,7 +79,7 @@ export function AnalyticsCard({ accountId }: AnalyticsCardProps) {
 
   return (
     <SectionCard
-      title="Permission usage analytics"
+      title={tHardcodedUi.raw('componentsIamAnalyticsCard.line80JsxAttrTitlePermissionUsageAnalytics')}
       description={
         totalCalls > 0
           ? `${totalCalls.toLocaleString()} allowed actions tracked across ${(topQuery.data ?? []).length} principals.`
@@ -89,14 +91,12 @@ export function AnalyticsCard({ accountId }: AnalyticsCardProps) {
         <div>
           <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
             <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-            Top principals
-          </h3>
+            {tHardcodedUi.raw('componentsIamAnalyticsCard.line92JsxTextTopPrincipals')}</h3>
           {topQuery.isLoading ? (
             <Skeleton className="h-32 w-full" />
           ) : (topQuery.data ?? []).length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No principals tracked yet.
-            </p>
+              {tHardcodedUi.raw('componentsIamAnalyticsCard.line98JsxTextNoPrincipalsTrackedYet')}</p>
           ) : (
             <table className="w-full text-xs">
               <thead>
@@ -140,14 +140,12 @@ export function AnalyticsCard({ accountId }: AnalyticsCardProps) {
         <div>
           <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
             <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-            Most-used actions
-          </h3>
+            {tHardcodedUi.raw('componentsIamAnalyticsCard.line143JsxTextMostUsedActions')}</h3>
           {usageQuery.isLoading ? (
             <Skeleton className="h-32 w-full" />
           ) : actionTotals.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No actions tracked yet.
-            </p>
+              {tHardcodedUi.raw('componentsIamAnalyticsCard.line149JsxTextNoActionsTrackedYet')}</p>
           ) : (
             <table className="w-full text-xs">
               <thead>

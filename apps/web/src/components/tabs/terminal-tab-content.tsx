@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useCallback, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { CircleDashed, Plus, Terminal } from 'lucide-react';
@@ -11,7 +13,7 @@ import { useTabStore, openTabAndNavigate } from '@/stores/tab-store';
 
 // Lazy-load terminal components to avoid SSR issues with xterm.js
 const SSHTerminal = dynamic(
-  () => import('@/components/thread/kortix-computer/components/SSHTerminal').then(mod => ({ default: mod.SSHTerminal })),
+  () => import('@/components/session/ssh-terminal').then(mod => ({ default: mod.SSHTerminal })),
   { ssr: false }
 );
 
@@ -36,6 +38,7 @@ interface TerminalTabContentProps {
  * For sandbox mode, renders SSHTerminal instead (shared across all terminal tabs).
  */
 export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTabContentProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const currentSandboxId = useKortixComputerStore((s) => s.currentSandboxId);
   const serverUrl = useServerStore((s) => {
     const server = s.servers.find((srv) => srv.id === s.activeServerId);
@@ -132,16 +135,14 @@ export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTab
     return (
       <div className="h-full w-full flex flex-col items-center justify-center bg-background gap-3">
         <Terminal className="h-8 w-8 text-muted-foreground/30" />
-        <span className="text-xs text-muted-foreground">Terminal session ended</span>
+        <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsTabsTerminalTabContent.line135JsxTextTerminalSessionEnded')}</span>
         <Button
           variant="outline"
           size="sm"
           onClick={handleNewTerminal}
           className="gap-1.5"
         >
-          <Plus className="h-3.5 w-3.5" />
-          New Terminal
-        </Button>
+          <Plus className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsTabsTerminalTabContent.line143JsxTextNewTerminal')}</Button>
       </div>
     );
   }

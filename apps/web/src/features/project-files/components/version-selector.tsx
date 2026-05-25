@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState } from 'react';
 import {
   ArrowDownLeft,
@@ -28,6 +30,7 @@ import type { ProjectBranch } from '@/lib/projects-client';
  * Popover: search + list, with the default branch pinned at the top.
  */
 export function VersionSelector() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const activeRef = ctx?.ref ?? '';
@@ -82,15 +85,15 @@ export function VersionSelector() {
             'group inline-flex items-center gap-2 h-8 pl-2 pr-1.5 rounded-2xl',
             'border border-border/60 bg-background hover:bg-muted/40',
             'transition-colors',
-            'text-[12.5px] font-medium',
+            'text-sm font-medium',
             'shrink-0 min-w-0 max-w-[280px]',
           )}
-          title="Switch version"
+          title={tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line88JsxAttrTitleSwitchVersion')}
         >
           <GitBranch className="h-3.5 w-3.5 text-muted-foreground/80 shrink-0" />
           <span className="truncate">{activeRef || 'Version'}</span>
           {isOnMain && (
-            <span className="hidden sm:inline-flex items-center rounded-full bg-muted px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="hidden sm:inline-flex items-center rounded-full bg-muted px-1.5 py-px text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Main
             </span>
           )}
@@ -109,8 +112,8 @@ export function VersionSelector() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find a version…"
-            className="flex-1 min-w-0 h-7 bg-transparent border-0 outline-none px-0 text-[12.5px] text-foreground placeholder:text-muted-foreground/50"
+            placeholder={tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line112JsxAttrPlaceholderFindAVersion')}
+            className="flex-1 min-w-0 h-7 bg-transparent border-0 outline-none px-0 text-sm text-foreground placeholder:text-muted-foreground/50"
             autoFocus
           />
         </div>
@@ -118,26 +121,21 @@ export function VersionSelector() {
         <div className="max-h-[380px] overflow-y-auto overscroll-contain">
           {isLoading && (
             <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Loading versions…
-            </div>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line122JsxTextLoadingVersions')}</div>
           )}
 
           {error && !isLoading && (
-            <div className="py-8 px-4 text-center text-xs text-muted-foreground">
-              Failed to load versions
-            </div>
+            <div className="py-8 px-4 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line128JsxTextFailedToLoadVersions')}</div>
           )}
 
           {!isLoading && !error && filtered.length === 0 && (
-            <div className="py-8 px-4 text-center text-xs text-muted-foreground">
-              No versions match {query ? `“${query}”` : ''}
+            <div className="py-8 px-4 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line134JsxTextNoVersionsMatch')}{query ? `“${query}”` : ''}
             </div>
           )}
 
           {primary.length > 0 && (
             <div>
-              <SectionLabel>Main version</SectionLabel>
+              <SectionLabel>{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line140JsxTextMainVersion')}</SectionLabel>
               {primary.map((b) => (
                 <VersionRow
                   key={b.name}
@@ -151,7 +149,7 @@ export function VersionSelector() {
 
           {others.length > 0 && (
             <div className="border-t border-border/30">
-              <SectionLabel>Other versions</SectionLabel>
+              <SectionLabel>{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line154JsxTextOtherVersions')}</SectionLabel>
               {others.map((b) => (
                 <VersionRow
                   key={b.name}
@@ -170,7 +168,7 @@ export function VersionSelector() {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-[0.08em] font-semibold text-muted-foreground/60">
+    <div className="px-3 pt-2 pb-1 text-xs uppercase tracking-[0.08em] font-semibold text-muted-foreground/60">
       {children}
     </div>
   );
@@ -185,6 +183,7 @@ function VersionRow({
   isActive: boolean;
   onClick: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const date = branch.committed_at
     ? new Date(branch.committed_at).toLocaleDateString(undefined, {
         month: 'short',
@@ -212,17 +211,17 @@ function VersionRow({
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-[13px] font-medium text-foreground truncate">
+          <span className="text-sm font-medium text-foreground truncate">
             {branch.name}
           </span>
           {branch.is_default && (
-            <span className="inline-flex items-center rounded bg-muted px-1 py-px text-[9.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="inline-flex items-center rounded bg-muted px-1 py-px text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Main
             </span>
           )}
         </div>
 
-        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground/80">
           <span className="font-mono">{branch.tip_short}</span>
           {date && <span className="text-muted-foreground/40">·</span>}
           {date && <span>{date}</span>}
@@ -231,7 +230,7 @@ function VersionRow({
               <span className="text-muted-foreground/40">·</span>
               <span
                 className="inline-flex items-center gap-1"
-                title="Ahead / behind main version"
+                title={tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line234JsxAttrTitleAheadBehindMainVersion')}
               >
                 <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-500">
                   <ArrowUpRight className="h-2.5 w-2.5" />
@@ -247,7 +246,7 @@ function VersionRow({
         </div>
 
         {branch.subject && (
-          <div className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">
+          <div className="text-xs text-muted-foreground/70 mt-0.5 truncate">
             {branch.subject}
           </div>
         )}

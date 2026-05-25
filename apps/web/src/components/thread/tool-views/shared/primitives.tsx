@@ -82,16 +82,16 @@ export function ToolViewHead({
           <button
             type="button"
             onClick={onTitleClick}
-            className="text-[12.5px] font-medium tracking-tight truncate hover:text-foreground/70 transition-colors cursor-pointer"
+            className="text-sm font-medium tracking-tight truncate hover:text-foreground/70 transition-colors cursor-pointer"
           >
             {title}
           </button>
         ) : (
-          <span className="text-[12.5px] font-medium tracking-tight truncate">{title}</span>
+          <span className="text-sm font-medium tracking-tight truncate">{title}</span>
         )}
         {detail && (
           <span
-            className="text-[11.5px] text-muted-foreground/60 font-mono truncate"
+            className="text-xs text-muted-foreground/60 font-mono truncate"
             title={detail}
           >
             {detail}
@@ -160,7 +160,7 @@ export function ToolViewSection({
         <div className="flex items-center justify-between">
           {label ? <ToolViewLabel>{label}</ToolViewLabel> : <span />}
           {labelRight && (
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground/70 tracking-tight">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/70 tracking-tight">
               {labelRight}
             </div>
           )}
@@ -175,7 +175,7 @@ export function ToolViewSection({
 
 export function ToolViewLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">
+    <span className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground/60">
       {children}
     </span>
   );
@@ -195,7 +195,7 @@ export function ToolViewFoot({ children, timestamp, className }: ToolViewFootPro
   return (
     <div
       className={cn(
-        'flex-shrink-0 h-9 px-4 flex items-center justify-between gap-3 border-t border-border/50 text-[11.5px] tracking-tight',
+        'flex-shrink-0 h-9 px-4 flex items-center justify-between gap-3 border-t border-border/50 text-xs tracking-tight',
         className,
       )}
     >
@@ -203,7 +203,7 @@ export function ToolViewFoot({ children, timestamp, className }: ToolViewFootPro
         {children}
       </div>
       {timestamp && (
-        <span className="text-[11px] text-muted-foreground/60 tabular-nums flex-shrink-0">
+        <span className="text-xs text-muted-foreground/60 tabular-nums flex-shrink-0">
           {timestamp}
         </span>
       )}
@@ -248,7 +248,7 @@ export function Status({ tone = 'idle', children }: StatusProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 text-[11px] tracking-tight',
+        'inline-flex items-center gap-1.5 text-xs tracking-tight',
         tone === 'error' ? 'text-red-500/90' : 'text-muted-foreground/80',
       )}
     >
@@ -272,12 +272,12 @@ interface KeyValueRowProps {
  */
 export function KeyValueRow({ label, value, mono = false }: KeyValueRowProps) {
   return (
-    <div className="flex items-baseline gap-3 text-[12px] py-1">
+    <div className="flex items-baseline gap-3 text-xs py-1">
       <span className="text-muted-foreground/60 w-20 flex-shrink-0 tracking-tight">{label}</span>
       <span
         className={cn(
           'min-w-0 flex-1 truncate text-foreground/90',
-          mono && 'font-mono text-[11.5px]',
+          mono && 'font-mono text-xs',
         )}
       >
         {value}
@@ -308,11 +308,11 @@ export function CodeBlock({ children, lang, className }: CodeBlockProps) {
       )}
     >
       {lang && (
-        <span className="absolute top-1.5 right-2 text-[10px] font-mono text-muted-foreground/40 uppercase tracking-wider select-none">
+        <span className="absolute top-1.5 right-2 text-xs font-mono text-muted-foreground/40 uppercase tracking-wider select-none">
           {lang}
         </span>
       )}
-      <pre className="p-3 font-mono text-[12px] leading-relaxed text-foreground/85 whitespace-pre-wrap break-words overflow-x-auto">
+      <pre className="p-3 font-mono text-xs leading-relaxed text-foreground/85 whitespace-pre-wrap break-words overflow-x-auto">
         {children}
       </pre>
     </div>
@@ -335,7 +335,7 @@ export function Counter({
   label?: string;
 }) {
   return (
-    <span className="inline-flex items-baseline gap-1 text-[11px] text-muted-foreground/80 tracking-tight tabular-nums">
+    <span className="inline-flex items-baseline gap-1 text-xs text-muted-foreground/80 tracking-tight tabular-nums">
       <span className="text-foreground/90 font-medium">{value}</span>
       {label && <span>{label}</span>}
     </span>
@@ -346,7 +346,7 @@ export function Counter({
 export function DiffCounter({ adds = 0, dels = 0 }: { adds?: number; dels?: number }) {
   if (!adds && !dels) return null;
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-mono tracking-tight tabular-nums">
+    <span className="inline-flex items-center gap-1.5 text-xs font-mono tracking-tight tabular-nums">
       {adds > 0 && <span className="text-foreground/85">+{adds}</span>}
       {dels > 0 && <span className="text-muted-foreground/70">−{dels}</span>}
     </span>

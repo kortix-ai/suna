@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -31,6 +33,7 @@ import { cn } from '@/lib/utils';
 import { LegacyBanner } from '@/components/admin/legacy-banner';
 
 export default function AdminStressTestPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [numRequestsInput, setNumRequestsInput] = useState('5');
   const numRequests = Math.min(200, Math.max(1, parseInt(numRequestsInput) || 5));
   
@@ -101,17 +104,13 @@ export default function AdminStressTestPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto p-6 space-y-8">
-        <LegacyBanner feature="Stress test" />
+        <LegacyBanner feature={tHardcodedUi.raw('componentsPagesAdminStressTestPage.line104JsxAttrFeatureStressTest')} />
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-              <Zap className="h-6 w-6 text-yellow-500" />
-              Stress Test - Admin
-            </h1>
-            <p className="text-md text-muted-foreground mt-2">
-              Run load tests with detailed timing breakdown (bypasses concurrent run limits)
-            </p>
+              <Zap className="h-6 w-6 text-yellow-500" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line110JsxTextStressTestAdmin')}</h1>
+            <p className="text-base text-muted-foreground mt-2">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line113JsxTextRunLoadTestsWithDetailedTimingBreakdownBypasses')}</p>
           </div>
         </div>
 
@@ -121,7 +120,7 @@ export default function AdminStressTestPage() {
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <Info className="h-5 w-5 text-blue-500" />
-                <p className="font-semibold text-blue-600 dark:text-blue-400">Timing Metrics Timeline</p>
+                <p className="font-semibold text-blue-600 dark:text-blue-400">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line124JsxTextTimingMetricsTimeline')}</p>
               </div>
               
               {/* Visual Timeline Diagram */}
@@ -129,17 +128,17 @@ export default function AdminStressTestPage() {
                 <div className="min-w-[600px]">
                   {/* Timeline header */}
                   <div className="flex items-center gap-2 mb-4 text-xs text-muted-foreground">
-                    <span className="font-mono">User clicks &quot;Send&quot;</span>
+                    <span className="font-mono">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line132JsxTextUserClicksQuotSendQuot')}</span>
                     <div className="flex-1 border-t border-dashed border-border" />
-                    <span className="font-mono">First token visible</span>
+                    <span className="font-mono">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line134JsxTextFirstTokenVisible')}</span>
                   </div>
                   
                   {/* Total TTFT bar */}
                   <div className="mb-3">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-medium text-purple-600 dark:text-purple-400 w-32">Total TTFT</span>
+                      <span className="text-xs font-medium text-purple-600 dark:text-purple-400 w-32">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line140JsxTextTotalTtft')}</span>
                       <div className="flex-1 h-8 bg-purple-100 dark:bg-purple-500/20 border border-purple-300 dark:border-purple-500/40 rounded flex items-center justify-center">
-                        <span className="text-xs text-purple-700 dark:text-purple-300">Request Time + First Response</span>
+                        <span className="text-xs text-purple-700 dark:text-purple-300">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line142JsxTextRequestTimeFirstResponse')}</span>
                       </div>
                     </div>
                   </div>
@@ -149,11 +148,11 @@ export default function AdminStressTestPage() {
                     <div className="w-32" />
                     {/* Request Time */}
                     <div className="flex-1 h-8 bg-blue-100 dark:bg-blue-500/20 border border-blue-300 dark:border-blue-500/40 rounded flex items-center justify-center">
-                      <span className="text-xs text-blue-700 dark:text-blue-300">Request Time</span>
+                      <span className="text-xs text-blue-700 dark:text-blue-300">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line152JsxTextRequestTime')}</span>
                     </div>
                     {/* First Response */}
                     <div className="flex-1 h-8 bg-orange-100 dark:bg-orange-500/20 border border-orange-300 dark:border-orange-500/40 rounded flex items-center justify-center">
-                      <span className="text-xs text-orange-700 dark:text-orange-300">First Response</span>
+                      <span className="text-xs text-orange-700 dark:text-orange-300">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line156JsxTextFirstResponse')}</span>
                     </div>
                   </div>
                   
@@ -163,25 +162,25 @@ export default function AdminStressTestPage() {
                     {/* Request Time details */}
                     <div className="flex-1 flex gap-0.5">
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
-                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">HTTP Call</span>
+                        <span className="text-xs text-blue-700 dark:text-blue-300 truncate px-1">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line166JsxTextHttpCall')}</span>
                       </div>
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
-                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Setup</span>
+                        <span className="text-xs text-blue-700 dark:text-blue-300 truncate px-1">Setup</span>
                       </div>
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
-                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Thread</span>
+                        <span className="text-xs text-blue-700 dark:text-blue-300 truncate px-1">Thread</span>
                       </div>
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
-                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Agent</span>
+                        <span className="text-xs text-blue-700 dark:text-blue-300 truncate px-1">Agent</span>
                       </div>
                     </div>
                     {/* First Response details */}
                     <div className="flex-1 flex gap-0.5">
                       <div className="flex-[2] h-6 bg-orange-200 dark:bg-orange-900/40 rounded-sm flex items-center justify-center border border-orange-300 dark:border-orange-800/50">
-                        <span className="text-[10px] text-orange-700 dark:text-orange-300 truncate px-1">Agent Setup</span>
+                        <span className="text-xs text-orange-700 dark:text-orange-300 truncate px-1">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line181JsxTextAgentSetup')}</span>
                       </div>
                       <div className="flex-[3] h-6 bg-green-200 dark:bg-green-500/20 rounded-sm flex items-center justify-center border border-green-400 dark:border-green-500/40">
-                        <span className="text-[10px] text-green-700 dark:text-green-300 font-medium truncate px-1">LLM TTFT</span>
+                        <span className="text-xs text-green-700 dark:text-green-300 font-medium truncate px-1">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line184JsxTextLlmTtft')}</span>
                       </div>
                     </div>
                   </div>
@@ -190,23 +189,23 @@ export default function AdminStressTestPage() {
                   <div className="flex flex-wrap gap-4 pt-3 border-t border-border text-xs">
                     <div className="flex items-center gap-1.5">
                       <div className="w-3 h-3 rounded-sm bg-blue-400 dark:bg-blue-500/40 border border-blue-500 dark:border-blue-500/60" />
-                      <span className="text-muted-foreground">Request Time</span>
-                      <span className="text-blue-600 dark:text-blue-400 font-mono">HTTP + setup</span>
+                      <span className="text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line193JsxTextRequestTime')}</span>
+                      <span className="text-blue-600 dark:text-blue-400 font-mono">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line194JsxTextHttpSetup')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3 h-3 rounded-sm bg-orange-400 dark:bg-orange-500/40 border border-orange-500 dark:border-orange-500/60" />
-                      <span className="text-muted-foreground">First Response</span>
-                      <span className="text-orange-600 dark:text-orange-400 font-mono">Agent overhead</span>
+                      <span className="text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line198JsxTextFirstResponse')}</span>
+                      <span className="text-orange-600 dark:text-orange-400 font-mono">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line199JsxTextAgentOverhead')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3 h-3 rounded-sm bg-green-400 dark:bg-green-500/40 border border-green-500 dark:border-green-500/60" />
-                      <span className="text-muted-foreground">LLM TTFT</span>
-                      <span className="text-green-600 dark:text-green-400 font-mono">Pure model latency</span>
+                      <span className="text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line203JsxTextLlmTtft')}</span>
+                      <span className="text-green-600 dark:text-green-400 font-mono">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line204JsxTextPureModelLatency')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3 h-3 rounded-sm bg-purple-400 dark:bg-purple-500/40 border border-purple-500 dark:border-purple-500/60" />
-                      <span className="text-muted-foreground">Total TTFT</span>
-                      <span className="text-purple-600 dark:text-purple-400 font-mono">User wait time</span>
+                      <span className="text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line208JsxTextTotalTtft')}</span>
+                      <span className="text-purple-600 dark:text-purple-400 font-mono">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line209JsxTextUserWaitTime')}</span>
                     </div>
                   </div>
                 </div>
@@ -215,12 +214,12 @@ export default function AdminStressTestPage() {
               {/* Formulas */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                 <div className="bg-muted/50 rounded-2xl p-3 border border-border">
-                  <p className="text-muted-foreground mb-1">Key Formula:</p>
-                  <p className="font-mono text-purple-600 dark:text-purple-400">Total TTFT = Request Time + First Response</p>
+                  <p className="text-muted-foreground mb-1">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line218JsxTextKeyFormula')}</p>
+                  <p className="font-mono text-purple-600 dark:text-purple-400">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line219JsxTextTotalTtftRequestTimeFirstResponse')}</p>
                 </div>
                 <div className="bg-muted/50 rounded-2xl p-3 border border-border">
-                  <p className="text-muted-foreground mb-1">Agent Overhead:</p>
-                  <p className="font-mono text-orange-600 dark:text-orange-400">Agent Overhead = First Response - LLM TTFT</p>
+                  <p className="text-muted-foreground mb-1">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line222JsxTextAgentOverhead')}</p>
+                  <p className="font-mono text-orange-600 dark:text-orange-400">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line223JsxTextAgentOverheadFirstResponseLlmTtft')}</p>
                 </div>
               </div>
             </div>
@@ -230,12 +229,12 @@ export default function AdminStressTestPage() {
         {/* Configuration */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Test Configuration</CardTitle>
+            <CardTitle className="text-lg">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line233JsxTextTestConfiguration')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap items-end gap-6">
               <div className="space-y-2">
-                <Label htmlFor="numRequests">Number of Requests</Label>
+                <Label htmlFor="numRequests">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line238JsxTextNumberOfRequests')}</Label>
                 <Input
                   id="numRequests"
                   type="number"
@@ -257,14 +256,10 @@ export default function AdminStressTestPage() {
               <div className="flex gap-2">
                 {!state.isRunning ? (
                   <Button onClick={handleStart} className="gap-2">
-                    <Play className="h-4 w-4" />
-                    Start Test
-                  </Button>
+                    <Play className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line261JsxTextStartTest')}</Button>
                 ) : (
                   <Button onClick={cancelTest} variant="destructive" className="gap-2">
-                    <Square className="h-4 w-4" />
-                    Stop Test
-                  </Button>
+                    <Square className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line266JsxTextStopTest')}</Button>
                 )}
                 
                 {(state.summary || state.error) && !state.isRunning && (
@@ -288,7 +283,7 @@ export default function AdminStressTestPage() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">
                       {state.isRunning ? (
-                        <>Batch {state.currentBatch}/{state.totalBatches} (waiting for LLM response...)</>
+                        <>Batch {state.currentBatch}/{state.totalBatches}{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line291JsxTextWaitingForLlmResponse')}</>
                       ) : (
                         'Completed'
                       )}
@@ -324,9 +319,7 @@ export default function AdminStressTestPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Activity className="h-5 w-5" />
-                  Live Results
-                </CardTitle>
+                  <Activity className="h-5 w-5" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line328JsxTextLiveResults')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="rounded-2xl border overflow-x-auto">
@@ -336,12 +329,12 @@ export default function AdminStressTestPage() {
                         <th className="h-10 px-4 text-left text-sm font-medium">#</th>
                         <th className="h-10 px-4 text-left text-sm font-medium">Status</th>
                         <th className="h-10 px-4 text-left text-sm font-medium">Thread</th>
-                        <th className="h-10 px-4 text-right text-sm font-medium">Request Time</th>
-                        <th className="h-10 px-4 text-right text-sm font-medium">First Response</th>
+                        <th className="h-10 px-4 text-right text-sm font-medium">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line339JsxTextRequestTime')}</th>
+                        <th className="h-10 px-4 text-right text-sm font-medium">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line340JsxTextFirstResponse')}</th>
                         <th className="h-10 px-4 text-right text-sm font-medium">
-                          <span className="text-green-600">LLM TTFT</span>
+                          <span className="text-green-600">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line342JsxTextLlmTtft')}</span>
                         </th>
-                        <th className="h-10 px-4 text-right text-sm font-medium">Total TTFT</th>
+                        <th className="h-10 px-4 text-right text-sm font-medium">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line344JsxTextTotalTtft')}</th>
                         <th className="h-10 px-4 text-left text-sm font-medium">Error</th>
                       </tr>
                     </thead>
@@ -424,9 +417,7 @@ export default function AdminStressTestPage() {
                       })}
                       {visibleResults.length === 0 && (
                         <tr>
-                          <td colSpan={8} className="h-24 text-center text-muted-foreground">
-                            No results yet
-                          </td>
+                          <td colSpan={8} className="h-24 text-center text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line428JsxTextNoResultsYet')}</td>
                         </tr>
                       )}
                     </tbody>
@@ -447,14 +438,12 @@ export default function AdminStressTestPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                Test Summary
-              </CardTitle>
+                <TrendingUp className="h-5 w-5" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line451JsxTextTestSummary')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div className="space-y-1">
-                  <p className="text-sm text-muted-foreground">Total Requests</p>
+                  <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line457JsxTextTotalRequests')}</p>
                   <p className="text-2xl font-bold">{state.summary.total_requests}</p>
                 </div>
                 <div className="space-y-1">
@@ -476,7 +465,7 @@ export default function AdminStressTestPage() {
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm text-muted-foreground">Total Test Time</p>
+                  <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line479JsxTextTotalTestTime')}</p>
                   <p className="text-2xl font-bold">{state.summary.total_time}s</p>
                 </div>
               </div>
@@ -484,12 +473,8 @@ export default function AdminStressTestPage() {
               {/* Request Times */}
               <div className="border-t mt-6 pt-6">
                 <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
-                  Request Times
-                </h4>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Time for HTTP request to complete (distributed across workers like real traffic)
-                </p>
+                  <Clock className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line488JsxTextRequestTimes')}</h4>
+                <p className="text-xs text-muted-foreground mb-4">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line491JsxTextTimeForHttpRequestToCompleteDistributedAcross')}</p>
                 <div className="grid grid-cols-3 gap-6">
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Min</p>
@@ -510,13 +495,9 @@ export default function AdminStressTestPage() {
               {state.summary.first_response_measured > 0 && (
                 <div className="border-t mt-6 pt-6">
                   <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Timer className="h-4 w-4 text-orange-500" />
-                    Time to First Response
-                    <Badge variant="secondary" className="ml-2">{state.summary.first_response_measured} measured</Badge>
+                    <Timer className="h-4 w-4 text-orange-500" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line514JsxTextTimeToFirstResponse')}<Badge variant="secondary" className="ml-2">{state.summary.first_response_measured} measured</Badge>
                   </h4>
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Time from agent start until first LLM response chunk (includes MCP init, prompt building, LLM TTFT)
-                  </p>
+                  <p className="text-xs text-muted-foreground mb-4">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line518JsxTextTimeFromAgentStartUntilFirstLlmResponse')}</p>
                   <div className="grid grid-cols-3 gap-6">
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">Min</p>
@@ -544,13 +525,9 @@ export default function AdminStressTestPage() {
               {state.summary.llm_ttft_measured > 0 && (
                 <div className="border-t mt-6 pt-6">
                   <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-green-500" />
-                    LLM TTFT (Pure Model Latency)
-                    <Badge variant="secondary" className="ml-2 bg-green-500/10 text-green-600">{state.summary.llm_ttft_measured} measured</Badge>
+                    <Zap className="h-4 w-4 text-green-500" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line548JsxTextLlmTtftPureModelLatency')}<Badge variant="secondary" className="ml-2 bg-green-500/10 text-green-600">{state.summary.llm_ttft_measured} measured</Badge>
                   </h4>
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Actual time for the LLM API call to return first token (from litellm.acompletion call to first chunk)
-                  </p>
+                  <p className="text-xs text-muted-foreground mb-4">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line552JsxTextActualTimeForTheLlmApiCallTo')}</p>
                   <div className="grid grid-cols-3 gap-6">
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">Min</p>
@@ -578,12 +555,8 @@ export default function AdminStressTestPage() {
               {state.summary.min_total_ttft != null && (
                 <div className="border-t mt-6 pt-6">
                   <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-purple-500" />
-                    Total TTFT (End-to-End)
-                  </h4>
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Complete time from user request until first response = Request Time + Time to First Response
-                  </p>
+                    <Zap className="h-4 w-4 text-purple-500" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line582JsxTextTotalTtftEndToEnd')}</h4>
+                  <p className="text-xs text-muted-foreground mb-4">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line585JsxTextCompleteTimeFromUserRequestUntilFirstResponse')}</p>
                   <div className="grid grid-cols-3 gap-6">
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">Min</p>
@@ -615,9 +588,7 @@ export default function AdminStressTestPage() {
               {Object.keys(state.summary.error_breakdown).length > 0 && (
                 <div className="border-t mt-6 pt-6">
                   <h4 className="text-sm font-medium mb-4 flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                    Error Breakdown
-                  </h4>
+                    <AlertTriangle className="h-4 w-4 text-yellow-500" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line619JsxTextErrorBreakdown')}</h4>
                   <div className="space-y-2">
                     {Object.entries(state.summary.error_breakdown).map(([error, count]) => (
                       <div key={error} className="flex items-start gap-2 text-sm">
@@ -633,26 +604,22 @@ export default function AdminStressTestPage() {
               {state.summary.timing_breakdown && Object.keys(state.summary.timing_breakdown).length > 0 && (
                 <div className="border-t mt-6 pt-6">
                   <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Timer className="h-4 w-4 text-blue-500" />
-                    Request Timing Breakdown
-                  </h4>
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Detailed breakdown of time spent in each phase during thread/project creation
-                  </p>
+                    <Timer className="h-4 w-4 text-blue-500" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line637JsxTextRequestTimingBreakdown')}</h4>
+                  <p className="text-xs text-muted-foreground mb-4">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line640JsxTextDetailedBreakdownOfTimeSpentInEachPhase')}</p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b">
                           <th className="text-left py-2 px-2 font-medium">Phase</th>
-                          <th className="text-right py-2 px-2 font-medium">Min (ms)</th>
-                          <th className="text-right py-2 px-2 font-medium">Avg (ms)</th>
-                          <th className="text-right py-2 px-2 font-medium">Max (ms)</th>
+                          <th className="text-right py-2 px-2 font-medium">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line647JsxTextMinMs')}</th>
+                          <th className="text-right py-2 px-2 font-medium">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line648JsxTextAvgMs')}</th>
+                          <th className="text-right py-2 px-2 font-medium">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line649JsxTextMaxMs')}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {state.summary.timing_breakdown.load_config_ms && (
                           <tr className="border-b border-border/50">
-                            <td className="py-2 px-2">Load Config</td>
+                            <td className="py-2 px-2">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line655JsxTextLoadConfig')}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.load_config_ms.min}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.load_config_ms.avg}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.load_config_ms.max}</td>
@@ -660,7 +627,7 @@ export default function AdminStressTestPage() {
                         )}
                         {state.summary.timing_breakdown.get_model_ms && (
                           <tr className="border-b border-border/50">
-                            <td className="py-2 px-2">Get Model</td>
+                            <td className="py-2 px-2">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line663JsxTextGetModel')}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.get_model_ms.min}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.get_model_ms.avg}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.get_model_ms.max}</td>
@@ -668,7 +635,7 @@ export default function AdminStressTestPage() {
                         )}
                         {state.summary.timing_breakdown.create_project_ms && (
                           <tr className="border-b border-border/50">
-                            <td className="py-2 px-2">Create Project</td>
+                            <td className="py-2 px-2">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line671JsxTextCreateProject')}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_project_ms.min}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_project_ms.avg}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_project_ms.max}</td>
@@ -676,7 +643,7 @@ export default function AdminStressTestPage() {
                         )}
                         {state.summary.timing_breakdown.create_thread_ms && (
                           <tr className="border-b border-border/50">
-                            <td className="py-2 px-2">Create Thread</td>
+                            <td className="py-2 px-2">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line679JsxTextCreateThread')}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_thread_ms.min}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_thread_ms.avg}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_thread_ms.max}</td>
@@ -684,7 +651,7 @@ export default function AdminStressTestPage() {
                         )}
                         {state.summary.timing_breakdown.create_message_and_run_ms && (
                           <tr className="border-b border-border/50">
-                            <td className="py-2 px-2">Create Message + Run</td>
+                            <td className="py-2 px-2">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line687JsxTextCreateMessageRun')}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_message_and_run_ms.min}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_message_and_run_ms.avg}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_message_and_run_ms.max}</td>
@@ -692,7 +659,7 @@ export default function AdminStressTestPage() {
                         )}
                         {state.summary.timing_breakdown.total_setup_ms && (
                           <tr className="bg-muted/30 font-medium">
-                            <td className="py-2 px-2">Total Setup</td>
+                            <td className="py-2 px-2">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line695JsxTextTotalSetup')}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.total_setup_ms.min}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.total_setup_ms.avg}</td>
                             <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.total_setup_ms.max}</td>

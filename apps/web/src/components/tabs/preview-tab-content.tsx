@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -14,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useTabStore } from '@/stores/tab-store';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
+import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import {
   parseLocalhostUrl,
@@ -38,6 +41,7 @@ interface PreviewTabContentProps {
  * any localhost:PORT address to navigate within the sandbox.
  */
 export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const tab = useTabStore((s) => s.tabs[tabId]);
   const updateTabMetadata = useTabStore((s) => s.openTab);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -341,7 +345,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
 
           {/* Address bar */}
           <form onSubmit={handleAddressSubmit} className="flex-1 flex items-center">
-            <div className="w-full flex items-center h-7 px-2.5 bg-foreground/[0.035] border border-transparent rounded-2xl text-[12px] tracking-tight focus-within:bg-background focus-within:border-border/60 transition-colors">
+            <div className="w-full flex items-center h-7 px-2.5 bg-foreground/[0.035] border border-transparent rounded-2xl text-xs tracking-tight focus-within:bg-background focus-within:border-border/60 transition-colors">
               <Globe className="h-3 w-3 mr-2 shrink-0 opacity-50" />
               <input
                 ref={addressInputRef}
@@ -354,7 +358,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
                   setTimeout(() => addressInputRef.current?.select(), 0);
                 }}
                 onBlur={() => setIsAddressEditing(false)}
-                placeholder="Type a URL or localhost:PORT..."
+                placeholder={tHardcodedUi.raw('componentsTabsPreviewTabContent.line357JsxAttrPlaceholderTypeAUrlOrLocalhostPort')}
                 className="flex-1 bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
                 autoFocus
               />
@@ -367,11 +371,8 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
           <div className="flex flex-col items-center gap-4 text-muted-foreground max-w-md text-center px-4">
             <Globe className="h-12 w-12 opacity-20" />
             <div>
-              <p className="text-sm font-medium text-foreground">Internal Browser</p>
-              <p className="text-xs mt-1.5 leading-relaxed">
-                Browse any website or service running inside the sandbox.
-                Type a URL like <span className="font-mono text-foreground/80">google.com</span> or <span className="font-mono text-foreground/80">localhost:3000</span> in the address bar above.
-              </p>
+              <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsTabsPreviewTabContent.line370JsxTextInternalBrowser')}</p>
+              <p className="text-xs mt-1.5 leading-relaxed">{tHardcodedUi.raw('componentsTabsPreviewTabContent.line372JsxTextBrowseAnyWebsiteOrServiceRunningInsideThe')}<span className="font-mono text-foreground/80">google.com</span> or <span className="font-mono text-foreground/80">localhost:3000</span>{tHardcodedUi.raw('componentsTabsPreviewTabContent.line373JsxTextInTheAddressBarAbove')}</p>
             </div>
           </div>
         </div>
@@ -448,11 +449,11 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
                   addressInputRef.current?.blur();
                 }
               }}
-              placeholder="Type a URL or localhost:PORT..."
+              placeholder={tHardcodedUi.raw('componentsTabsPreviewTabContent.line451JsxAttrPlaceholderTypeAUrlOrLocalhostPort')}
               className="flex-1 bg-transparent outline-none text-foreground placeholder:text-muted-foreground truncate"
             />
             {port > 0 && !isAddressEditing && !isExternalBrowsing && (
-              <span className="ml-2 shrink-0 text-[11px] text-muted-foreground/70">
+              <span className="ml-2 shrink-0 text-xs text-muted-foreground/70">
                 :{port}
               </span>
             )}
@@ -465,7 +466,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
           size="icon"
           className="h-7 w-7"
           onClick={handleOpenExternal}
-          title="Open in browser"
+          title={tHardcodedUi.raw('componentsTabsPreviewTabContent.line468JsxAttrTitleOpenInBrowser')}
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </Button>
@@ -478,7 +479,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
           <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
             <div className="flex flex-col items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <p className="text-xs">Loading preview...</p>
+              <p className="text-xs">{tHardcodedUi.raw('componentsTabsPreviewTabContent.line481JsxTextLoadingPreview')}</p>
             </div>
           </div>
         )}
@@ -489,7 +490,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
             <div className="flex flex-col items-center gap-3 text-muted-foreground max-w-sm text-center">
               <AlertTriangle className="h-8 w-8 text-amber-500" />
               <div>
-                <p className="text-sm font-medium">Failed to load preview</p>
+                <p className="text-sm font-medium">{tHardcodedUi.raw('componentsTabsPreviewTabContent.line492JsxTextFailedToLoadPreview')}</p>
                 <p className="text-xs mt-1">
                   {isExternalBrowsing
                     ? 'Could not reach the target website.'
@@ -510,7 +511,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
           src={previewUrl}
           title={isExternalBrowsing ? `Browse: ${originalUrl}` : `Preview :${port}`}
           className="w-full h-full border-0"
-          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads allow-modals"
+          sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
           onLoad={handleLoad}
           onError={handleError}
         />

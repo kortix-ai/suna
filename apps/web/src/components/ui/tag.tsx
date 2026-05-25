@@ -4,7 +4,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const tagVariants = cva(
-  'px-1.5 py-0.5 rounded text-[0.625rem] font-medium leading-none shrink-0 inline-flex items-center',
+  'px-1.5 py-0.5 rounded text-xs font-medium leading-none shrink-0 inline-flex items-center',
   {
     variants: {
       variant: {

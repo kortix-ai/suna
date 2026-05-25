@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import {
   Search,
@@ -67,7 +69,19 @@ import { DRAG_MIME } from './file-tree-item';
  * 
  * File preview opens as a full-screen modal overlay.
  */
-export function FileExplorerPage() {
+export function FileExplorerPage({
+  fileOpenMode = 'tab',
+}: {
+  /**
+   * What "opening" a file does (double-click / context-menu "Open in new tab").
+   * - `'tab'` (default): open a workspace file tab — used by the /files page.
+   * - `'preview'`: open the in-place preview modal — used inside the session
+   *   side panel, which has no workspace tab bar to host a file tab.
+   * Single-click always previews regardless of mode.
+   */
+  fileOpenMode?: 'tab' | 'preview';
+} = {}) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
   const viewMode = useFilesStore((s) => s.viewMode);
@@ -248,16 +262,6 @@ export function FileExplorerPage() {
     navigateToPath(node.path);
   }, [navigateToPath]);
 
-  const handleOpenFile = useCallback((node: FileNode) => {
-    // Open in tab
-    openTabAndNavigate({
-      id: `file:${node.path}`,
-      title: node.name,
-      type: 'file',
-      href: `/files/${encodeURIComponent(node.path)}`,
-    });
-  }, []);
-
   const handlePreviewFile = useCallback((node: FileNode) => {
     // Open in preview modal
     const allFiles = fileItems.map((f) => f.path);
@@ -265,14 +269,33 @@ export function FileExplorerPage() {
     openFileWithList(node.path, allFiles, Math.max(0, index));
   }, [fileItems, openFileWithList]);
 
-  const handleOpenInTab = useCallback((node: FileNode) => {
+  const handleOpenFile = useCallback((node: FileNode) => {
+    // In preview mode (side panel) there is no workspace tab bar — fall back to
+    // the in-place preview modal instead of opening a /files tab.
+    if (fileOpenMode === 'preview') {
+      handlePreviewFile(node);
+      return;
+    }
     openTabAndNavigate({
       id: `file:${node.path}`,
       title: node.name,
       type: 'file',
       href: `/files/${encodeURIComponent(node.path)}`,
     });
-  }, []);
+  }, [fileOpenMode, handlePreviewFile]);
+
+  const handleOpenInTab = useCallback((node: FileNode) => {
+    if (fileOpenMode === 'preview') {
+      handlePreviewFile(node);
+      return;
+    }
+    openTabAndNavigate({
+      id: `file:${node.path}`,
+      title: node.name,
+      type: 'file',
+      href: `/files/${encodeURIComponent(node.path)}`,
+    });
+  }, [fileOpenMode, handlePreviewFile]);
 
   const handleDownload = useCallback(async (node: FileNode) => {
     try {
@@ -543,9 +566,8 @@ export function FileExplorerPage() {
       <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center bg-background">
         <ServerOff className="h-12 w-12 text-muted-foreground/30" />
         <div>
-          <h3 className="text-base font-medium text-foreground">Server not reachable</h3>
-          <p className="text-sm text-muted-foreground mt-1.5">
-            Could not connect to{' '}
+          <h3 className="text-base font-medium text-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line546JsxTextServerNotReachable')}</h3>
+          <p className="text-sm text-muted-foreground mt-1.5">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line548JsxTextCouldNotConnectTo')}{' '}
             <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{serverUrl}</code>
           </p>
         </div>
@@ -600,7 +622,7 @@ export function FileExplorerPage() {
                 }}
                 onBlur={handleCreateFolder}
                 className="flex-1 text-sm bg-transparent border border-border rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
-                placeholder="Folder name"
+                placeholder={tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line603JsxAttrPlaceholderFolderName')}
               />
             </div>
           )}
@@ -618,7 +640,7 @@ export function FileExplorerPage() {
                 }}
                 onBlur={handleCreateFile}
                 className="flex-1 text-sm bg-transparent border border-border rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
-                placeholder="File name"
+                placeholder={tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line621JsxAttrPlaceholderFileName')}
               />
             </div>
           )}
@@ -662,7 +684,7 @@ export function FileExplorerPage() {
         {/* Error */}
         {error && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-            <p className="text-sm text-muted-foreground">Failed to load files</p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line665JsxTextFailedToLoadFiles')}</p>
             <p className="text-xs text-muted-foreground max-w-sm">
               {error instanceof Error ? error.message : 'Unknown error'}
             </p>
@@ -741,10 +763,8 @@ export function FileExplorerPage() {
               <Upload className="h-8 w-8 text-primary" />
             </div>
             <div>
-              <p className="text-base font-medium text-foreground">Drop files to upload</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Files will be uploaded to the current directory
-              </p>
+              <p className="text-base font-medium text-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line744JsxTextDropFilesToUpload')}</p>
+              <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line746JsxTextFilesWillBeUploadedToTheCurrentDirectory')}</p>
             </div>
           </div>
         </div>
@@ -767,9 +787,7 @@ export function FileExplorerPage() {
               className="h-6 text-xs"
               onClick={handlePaste}
               disabled={copyMutation.isPending || renameMutation.isPending}
-            >
-              Paste here
-            </Button>
+            >{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line771JsxTextPasteHere')}</Button>
             <button
               onClick={clearClipboard}
               className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -803,11 +821,8 @@ export function FileExplorerPage() {
             <AlertDialogTitle>
               Delete {deleteTarget?.type === 'directory' ? 'folder' : 'file'}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete{' '}
-              <span className="font-semibold text-foreground">&quot;{deleteTarget?.name}&quot;</span>?
-              This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line807JsxTextAreYouSureYouWantToDelete')}{' '}
+              <span className="font-semibold text-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line808JsxTextQuot')}{deleteTarget?.name}{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line808JsxTextQuot306b697a')}</span>{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line808JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>

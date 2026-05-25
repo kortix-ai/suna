@@ -27,7 +27,7 @@ at create-time (secrets) or HTTP calls from outside (triggers).
 From the repo root:
 
 ```sh
-docker build -f apps/sandbox/Dockerfile -t kortix/sandbox:dev .
+docker build -f apps/sandbox/Dockerfile -t kortix/kortix-sandbox:dev .
 ```
 
 ## How sessions actually boot

@@ -1,6 +1,8 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
+
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -11,6 +13,7 @@ import {
   Github,
   Loader2,
   Plus,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -40,9 +43,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import {
   linkRepository,
   type GitHubRepository,
+  type KortixProject,
   listGitHubInstallations,
   listGitHubRepositories,
   provisionProject,
@@ -63,6 +68,21 @@ function rememberGitHubSetupReturn(path: string) {
   }
 }
 
+function upsertProject(
+  projects: KortixProject[] | undefined,
+  project: KortixProject,
+) {
+  const current = projects ?? [];
+  const existingIndex = current.findIndex(
+    (item) => item.project_id === project.project_id,
+  );
+  if (existingIndex === -1) return [project, ...current];
+
+  const next = [...current];
+  next[existingIndex] = project;
+  return next;
+}
+
 /**
  * New project defaults to a managed Kortix git repo, with an explicit GitHub
  * import path backed by the GitHub App installation.
@@ -72,11 +92,14 @@ export function ProjectCreateModal({
   onOpenChange,
   accountId,
 }: ProjectCreateModalProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
 
   const [mode, setMode] = useState<'managed' | 'github'>('managed');
   const [newName, setNewName] = useState('');
+  const [includeGeneralKnowledgeSkills, setIncludeGeneralKnowledgeSkills] =
+    useState(true);
   const [selectedInstallationId, setSelectedInstallationId] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
   const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
@@ -84,6 +107,7 @@ export function ProjectCreateModal({
   function resetAndClose() {
     setMode('managed');
     setNewName('');
+    setIncludeGeneralKnowledgeSkills(true);
     setSelectedInstallationId('');
     setSelectedRepo('');
     onOpenChange(false);
@@ -93,9 +117,20 @@ export function ProjectCreateModal({
     mutationFn: provisionProject,
     onSuccess: (project) => {
       toast.success('Project created');
-      router.replace(`/projects/${project.project_id}`);
-      resetAndClose();
+      queryClient.setQueryData<KortixProject[]>(
+        ['projects', project.account_id],
+        (projects) => upsertProject(projects, project),
+      );
+      queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
+        upsertProject(projects, project),
+      );
       void queryClient.invalidateQueries({ queryKey: ['projects'] });
+      void queryClient.refetchQueries({
+        queryKey: ['projects'],
+        type: 'active',
+      });
+      resetAndClose();
+      router.replace(`/projects/${project.project_id}`);
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to create project');
@@ -109,8 +144,10 @@ export function ProjectCreateModal({
     staleTime: 0,
   });
 
-  const githubInstallations =
-    githubInstallationsQuery.data?.installations ?? [];
+  const githubInstallations = useMemo(
+    () => githubInstallationsQuery.data?.installations ?? [],
+    [githubInstallationsQuery.data?.installations],
+  );
   const selectedInstallation =
     githubInstallations.find(
       (installation) => installation.installation_id === selectedInstallationId,
@@ -147,9 +184,20 @@ export function ProjectCreateModal({
     mutationFn: linkRepository,
     onSuccess: (result) => {
       toast.success('Repository linked');
-      router.replace(`/projects/${result.project.project_id}`);
-      resetAndClose();
+      queryClient.setQueryData<KortixProject[]>(
+        ['projects', result.project.account_id],
+        (projects) => upsertProject(projects, result.project),
+      );
+      queryClient.setQueryData<KortixProject[]>(['projects'], (projects) =>
+        upsertProject(projects, result.project),
+      );
       void queryClient.invalidateQueries({ queryKey: ['projects'] });
+      void queryClient.refetchQueries({
+        queryKey: ['projects'],
+        type: 'active',
+      });
+      resetAndClose();
+      router.replace(`/projects/${result.project.project_id}`);
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to link repository');
@@ -163,7 +211,13 @@ export function ProjectCreateModal({
     // safe repo slug from whatever clean name we send.
     const name = newName.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
     if (!name) return toast.error('Project name is required');
-    createMutation.mutate({ account_id: accountId, name });
+    createMutation.mutate({
+      account_id: accountId,
+      name,
+      starter_template: includeGeneralKnowledgeSkills
+        ? 'general-knowledge-worker'
+        : 'minimal',
+    });
   }
 
   function handleLinkGitHub(event: FormEvent<HTMLFormElement>) {
@@ -225,11 +279,14 @@ export function ProjectCreateModal({
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
           <DialogTitle className="text-lg font-semibold tracking-tight">
-            New project
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectCreateModal.line237JsxTextNewProject',
+            )}
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            Start with a private managed repo. Existing GitHub repos can be
-            imported instead.
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectCreateModal.line240JsxTextStartWithAPrivateManagedRepoExistingGithub',
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -238,15 +295,22 @@ export function ProjectCreateModal({
             <div className="space-y-5 px-6 py-5">
               <InfoBanner
                 tone="neutral"
-                icon={GitBranch}
-                title="Kortix-managed repository"
+                icon={Sparkles}
+                title={tHardcodedUi.raw(
+                  'componentsProjectsProjectCreateModal.line251JsxAttrTitleKortixManagedRepository',
+                )}
               >
-                Creates a private managed repo, seeds the starter project, and
-                builds the first sandbox snapshot from the default branch.
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectCreateModal.line253JsxTextCreatesAPrivateManagedRepoSeedsTheStarter',
+                )}
               </InfoBanner>
 
               <div className="space-y-1.5">
-                <Label htmlFor="new-name">Project name</Label>
+                <Label htmlFor="new-name">
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectCreateModal.line258JsxTextProjectName',
+                  )}
+                </Label>
                 <Input
                   id="new-name"
                   value={newName}
@@ -259,6 +323,27 @@ export function ProjectCreateModal({
                 />
               </div>
 
+              <div className="flex items-start justify-between gap-4 rounded-md border border-border/60 px-3 py-3">
+                <div className="min-w-0 space-y-1">
+                  <Label htmlFor="gkw-skills">
+                    {tHardcodedUi.raw(
+                      'componentsProjectsProjectCreateModal.line273JsxTextGeneralKnowledgeWorkerSkills',
+                    )}
+                  </Label>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {tHardcodedUi.raw(
+                      'componentsProjectsProjectCreateModal.line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand',
+                    )}
+                  </p>
+                </div>
+                <Switch
+                  id="gkw-skills"
+                  checked={includeGeneralKnowledgeSkills}
+                  onCheckedChange={setIncludeGeneralKnowledgeSkills}
+                  disabled={submitting}
+                />
+              </div>
+
               <Button
                 type="button"
                 variant="ghost"
@@ -268,7 +353,9 @@ export function ProjectCreateModal({
                 onClick={() => setMode('github')}
               >
                 <Github className="h-3.5 w-3.5" />
-                Import existing GitHub repo
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectCreateModal.line297JsxTextImportExistingGithubRepo',
+                )}
               </Button>
             </div>
 
@@ -291,7 +378,9 @@ export function ProjectCreateModal({
                 ) : (
                   <Plus className="h-4 w-4" />
                 )}
-                Create project
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectCreateModal.line320JsxTextCreateProject',
+                )}
               </Button>
             </div>
           </form>
@@ -301,10 +390,14 @@ export function ProjectCreateModal({
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <h3 className="text-base font-semibold">
-                    Import GitHub repository
+                    {tHardcodedUi.raw(
+                      'componentsProjectsProjectCreateModal.line330JsxTextImportGithubRepository',
+                    )}
                   </h3>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Pick a connected GitHub account, then search its repos.
+                    {tHardcodedUi.raw(
+                      'componentsProjectsProjectCreateModal.line333JsxTextPickAConnectedGithubAccountThenSearchIts',
+                    )}
                   </p>
                 </div>
                 <Button
@@ -316,14 +409,18 @@ export function ProjectCreateModal({
                   onClick={() => setMode('managed')}
                 >
                   <GitBranch className="h-4 w-4" />
-                  Managed repo
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectCreateModal.line345JsxTextManagedRepo',
+                  )}
                 </Button>
               </div>
 
               {githubInstallationsQuery.isLoading ? (
                 <div className="flex h-28 items-center justify-center text-sm text-muted-foreground">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Loading GitHub connections
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectCreateModal.line352JsxTextLoadingGithubConnections',
+                  )}
                 </div>
               ) : githubInstallations.length === 0 ? (
                 <InfoBanner
@@ -333,7 +430,9 @@ export function ProjectCreateModal({
                       : 'info'
                   }
                   icon={Github}
-                  title="Connect the Kortix GitHub App"
+                  title={tHardcodedUi.raw(
+                    'componentsProjectsProjectCreateModal.line362JsxAttrTitleConnectTheKortixGithubApp',
+                  )}
                   action={
                     <Button
                       type="button"
@@ -354,15 +453,19 @@ export function ProjectCreateModal({
                     </Button>
                   }
                 >
-                  Kortix uses the GitHub App to list repositories and mint
-                  short-lived clone tokens. Git credentials are not stored as
-                  project environment secrets.
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectCreateModal.line383JsxTextKortixUsesTheGithubAppToListRepositories',
+                  )}
                 </InfoBanner>
               ) : (
                 <>
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-3">
-                      <Label htmlFor="github-installation">Git account</Label>
+                      <Label htmlFor="github-installation">
+                        {tHardcodedUi.raw(
+                          'componentsProjectsProjectCreateModal.line391JsxTextGitAccount',
+                        )}
+                      </Label>
                       <Button
                         type="button"
                         variant="ghost"
@@ -376,7 +479,9 @@ export function ProjectCreateModal({
                         ) : (
                           <Github className="h-4 w-4" />
                         )}
-                        Add account
+                        {tHardcodedUi.raw(
+                          'componentsProjectsProjectCreateModal.line405JsxTextAddAccount',
+                        )}
                       </Button>
                     </div>
                     <Select
@@ -388,7 +493,11 @@ export function ProjectCreateModal({
                         id="github-installation"
                         className="w-full"
                       >
-                        <SelectValue placeholder="Select a GitHub account" />
+                        <SelectValue
+                          placeholder={tHardcodedUi.raw(
+                            'componentsProjectsProjectCreateModal.line417JsxAttrPlaceholderSelectAGithubAccount',
+                          )}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {githubInstallations.map((installation) => (
@@ -422,7 +531,9 @@ export function ProjectCreateModal({
                             router.push(`/accounts/${accountId}?tab=git`)
                           }
                         >
-                          Manage Git connections
+                          {tHardcodedUi.raw(
+                            'componentsProjectsProjectCreateModal.line451JsxTextManageGitConnections',
+                          )}
                         </button>
                       </InlineMeta>
                     </div>
@@ -455,8 +566,12 @@ export function ProjectCreateModal({
                   {repos.length === 0 && !githubReposQuery.isLoading ? (
                     <EmptyState
                       icon={Github}
-                      title="No repositories available"
-                      description="Update the GitHub App installation to grant Kortix access to at least one repository."
+                      title={tHardcodedUi.raw(
+                        'componentsProjectsProjectCreateModal.line484JsxAttrTitleNoRepositoriesAvailable',
+                      )}
+                      description={tHardcodedUi.raw(
+                        'componentsProjectsProjectCreateModal.line485JsxAttrDescriptionUpdateTheGithubAppInstallationToGrantKortix',
+                      )}
                       size="sm"
                       action={
                         selectedInstallation?.installation_url ? (
@@ -482,12 +597,18 @@ export function ProjectCreateModal({
                   ) : null}
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="github-project-name">Project name</Label>
+                    <Label htmlFor="github-project-name">
+                      {tHardcodedUi.raw(
+                        'componentsProjectsProjectCreateModal.line511JsxTextProjectName',
+                      )}
+                    </Label>
                     <Input
                       id="github-project-name"
                       value={newName}
                       onChange={(e) => setNewName(e.target.value)}
-                      placeholder="Use repository name"
+                      placeholder={tHardcodedUi.raw(
+                        'componentsProjectsProjectCreateModal.line516JsxAttrPlaceholderUseRepositoryName',
+                      )}
                       autoCapitalize="none"
                       autoCorrect="off"
                     />
@@ -520,7 +641,9 @@ export function ProjectCreateModal({
                 ) : (
                   <Github className="h-4 w-4" />
                 )}
-                Import repo
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectCreateModal.line549JsxTextImportRepo',
+                )}
               </Button>
             </div>
           </form>
@@ -543,6 +666,7 @@ function RepositoryPicker({
   disabled: boolean;
   onValueChange: (value: string) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const selectedRepository = repos.find((repo) => repo.full_name === value);
@@ -594,7 +718,9 @@ function RepositoryPicker({
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search repositories..."
+            placeholder={tHardcodedUi.raw(
+              'componentsProjectsProjectCreateModal.line623JsxAttrPlaceholderSearchRepositories',
+            )}
             autoCapitalize="none"
             autoCorrect="off"
             autoFocus
@@ -602,7 +728,9 @@ function RepositoryPicker({
         </div>
         {filteredRepos.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No repositories found
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectCreateModal.line631JsxTextNoRepositoriesFound',
+            )}
           </div>
         ) : (
           <List className="max-h-[min(50vh,360px)] overflow-y-auto">

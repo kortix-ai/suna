@@ -1,0 +1,98 @@
+---
+title: Session runtime
+description: Status model, branch creation, sandbox layout, injected environment, and the in-sandbox daemon.
+---
+
+The runtime mechanics of a session. For the technical model of what a session is, see [Sessions](/docs/concepts/sessions).
+
+A session is one conversation with the agent, run in an isolated sandbox VM (provisioned on Daytona) with the project repo cloned and checked out on a branch named after the session id. The sandbox is ephemeral; the branch persists. Work reaches the default branch only through a [change request](/docs/reference/change-requests).
+
+## Status model
+
+A session row (`project_sessions`) carries a `status`. The enum defines `queued`, `branching`, `provisioning`, `running`, `stopped`, `failed`, `completed`; the runtime only writes a subset:
+
+| Status | Set when |
+| --- | --- |
+| `provisioning` | At session create — the row is inserted directly as `provisioning`. The session branch is created and the sandbox is requested during this phase. |
+| `running` | Once the sandbox is live and reachable. |
+| `stopped` | On explicit stop, or by the idle sweep that hibernates inactive sandboxes. |
+| `failed` | If provisioning errors out. |
+
+`queued` and `branching` exist in the enum but are not part of the live session flow; `completed` is defined but not currently written. The sandbox itself is tracked in a separate `session_sandboxes` row with its own states (`provisioning → active → stopped | error`).
+
+Concurrent-session caps are enforced per account; exceeding your tier returns `429`.
+
+## Branch model
+
+- The session branch is **named after the session id** (a UUID). `KORTIX_SESSION_ID` and `KORTIX_BRANCH_NAME` are the same value.
+- It is cut from `base_ref`, which defaults to the project's `default_branch` (usually `main`), at create time.
+- Creation path depends on the backend: GitHub repos use the GitHub API (read the base tip, create the branch ref); generic git backends (e.g. Freestyle) push `refs/heads/<base>:refs/heads/<session-id>`.
+- Triggers create their session branch the same way an interactive session does. Nothing writes the default branch directly except a change-request merge.
+
+## What survives
+
+Only what the agent commits and pushes to the session branch. The sandbox filesystem is disposable — re-cloned fresh on every boot, torn down on stop, hibernation, or restart. Commit in small chunks so a mid-run teardown loses nothing already pushed. The branch reaches the default branch only once a [change request](/docs/reference/change-requests) merges it.
+
+## Layout inside the sandbox
+
+```
+/workspace                       ← WORKDIR. The project repo is cloned here.
+/workspace/.kortix/              ← Repo-internal Kortix folder (Dockerfile + opencode config dir).
+/usr/local/bin/kortix-agent      ← The daemon (supervisor + reverse proxy).
+/usr/local/bin/kortix-entrypoint ← The container ENTRYPOINT (PID 1).
+/opt/kortix/home                 ← OpenCode's HOME — its object store lives here, off the repo.
+```
+
+OpenCode's `HOME` is `/opt/kortix/home`, not `/workspace`, so its store never lands among your repo files.
+
+## Injected environment
+
+Injected at boot, alongside your project's [secrets](/docs/reference/secrets) (which arrive as plain env vars):
+
+| Variable | What |
+| --- | --- |
+| `KORTIX_PROJECT_ID` | UUID of this project. |
+| `KORTIX_SESSION_ID` | UUID of this session. Also the branch name. |
+| `KORTIX_BRANCH_NAME` | Same as `KORTIX_SESSION_ID` — the branch your work pushes to. |
+| `KORTIX_REPO_URL` | Clone URL for the project repo. |
+| `KORTIX_DEFAULT_BRANCH` | The base ref (the repo's default branch). |
+| `KORTIX_BASE_REF` | The ref this session branched from. |
+| `KORTIX_SERVICE_PORT` | `8000` — the daemon's external port. |
+| `KORTIX_API_URL` | The platform API base (`…/v1`). |
+| `KORTIX_AGENT_NAME` | The OpenCode agent the session was created with. |
+| `KORTIX_OPENCODE_MODEL` | The model to run, when set. |
+| `KORTIX_INITIAL_PROMPT` | The first prompt, when the session was spawned by a trigger or created with one. |
+| `KORTIX_PROJECT_AUTO_CLONE` | `1` — tells the daemon to clone the repo on boot. |
+| `KORTIX_PROJECT_SECRET_NAMES` | Comma-separated names of the project's secrets. |
+| `KORTIX_PROJECT_SECRETS_REVISION` | Revision marker for the secret set. |
+| `KORTIX_TOKEN` | Project-scoped token. The `kortix` CLI reads it; the daemon also signs proxy requests with it. |
+| `KORTIX_EXECUTOR_TOKEN` | Acts as the launching user, scoped to the project (used by the Executor). |
+| `ENV_MODE` | `cloud` on Daytona-provisioned sandboxes. |
+
+Not injected: `KORTIX_WORKSPACE` (`/workspace`) is baked into the image, not per session. No `KORTIX_GITHUB_TOKEN` — git credentials are fetched just-in-time by the daemon (below). No LLM routing variable — model provider keys travel as ordinary project secrets OpenCode reads at boot.
+
+The `KORTIX_*` prefix is reserved for platform variables; a user secret using it is rejected ([Secrets](/docs/reference/secrets)).
+
+## Pushing from a session
+
+The daemon fetches a short-lived clone credential (`GET /v1/projects/:id/git/clone-credential`) using `KORTIX_TOKEN` — no static token in the environment. With that, `git push origin HEAD` sends commits to the session branch. Landing on the default branch goes through a [change request](/docs/reference/change-requests).
+
+## The agent runtime
+
+The agent is **OpenCode**, launched by the daemon as `opencode serve --port 4096 --hostname 127.0.0.1` with `OPENCODE_CONFIG_DIR` at the project's config dir (`[opencode] config_dir`, default `.kortix/opencode`), resolved from the cloned repo. See [Kortix vs OpenCode config](/docs/reference/config-boundary).
+
+## The daemon control surface
+
+The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_SERVICE_PORT` (`8000`). Everything outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header (validated against `KORTIX_TOKEN`).
+
+| Path | Purpose |
+| --- | --- |
+| `GET /kortix/health` | Liveness (auth-bypassed). Reports daemon + OpenCode state, repo, branch, commit. |
+| `POST /kortix/refresh` | Re-pull the session branch and restart OpenCode in place. |
+| `POST /kortix/prompt` | Deliver a prompt to the running agent. |
+| `POST /kortix/abort` | Abort the current run. |
+| `POST /kortix/env` | Update the runtime environment. |
+| `/proxy/{port}/*` | Reverse-proxy to a port inside the sandbox (its own port is blocked). |
+| `*` | Catch-all reverse-proxy to OpenCode on `127.0.0.1:4096` (`503` while it boots). |
+
+`/kortix/refresh` is how the dashboard applies an out-of-band change (e.g. a manifest edit committed from a parallel session) without re-provisioning the sandbox.
