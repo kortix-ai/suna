@@ -9,7 +9,11 @@ import {
   getDailyCreditConfig,
   isPaidTier,
   isLegacyPaidTier,
+  isPerSeatAccount,
   MINIMUM_CREDIT_FOR_RUN,
+  PER_SEAT_PRICE_USD,
+  INCLUDED_COMPUTE_PER_SEAT_USD,
+  INCLUDED_YOLO_PER_SEAT_USD,
 } from './tiers';
 import { getCreditSummary } from './credits';
 import { getAutoTopupSettings } from './auto-topup';
@@ -179,6 +183,17 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     yolo_usage: yoloUsage,
     can_add_instances: isAdmin || isPaidTier(tierName),
     can_claim_computer: canClaimComputer,
+    billing_model: (isPerSeatAccount(sub?.billingModel) ? 'per_seat' : 'legacy') as 'per_seat' | 'legacy',
+    seats: isPerSeatAccount(sub?.billingModel)
+      ? {
+          count: sub?.seatCount ?? 1,
+          price_per_seat_usd: PER_SEAT_PRICE_USD,
+          included_compute_per_seat_usd: INCLUDED_COMPUTE_PER_SEAT_USD,
+          included_yolo_per_seat_usd: INCLUDED_YOLO_PER_SEAT_USD,
+          included_compute_remaining_usd: Number(sub?.includedComputeBalance ?? 0),
+          included_yolo_remaining_usd: Number(sub?.includedYoloBalance ?? 0),
+        }
+      : undefined,
   };
 
   return state;
@@ -237,6 +252,7 @@ export function buildLocalAccountState(): AccountStateResponse {
     yolo_usage: null,
     can_add_instances: false,
     can_claim_computer: false,
+    billing_model: 'legacy',
   };
 }
 

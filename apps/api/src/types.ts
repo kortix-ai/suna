@@ -234,6 +234,18 @@ export interface AccountStateResponse {
   can_add_instances: boolean;
   /** True when a legacy paid user has no active machine and can claim one. */
   can_claim_computer?: boolean;
+
+  // Billing v2 — surfaced for per-seat accounts only. Legacy accounts get
+  // billing_model='legacy' here and the frontend renders the legacy UI.
+  billing_model: 'legacy' | 'per_seat';
+  seats?: {
+    count: number;
+    price_per_seat_usd: number;
+    included_compute_per_seat_usd: number;
+    included_yolo_per_seat_usd: number;
+    included_compute_remaining_usd: number;
+    included_yolo_remaining_usd: number;
+  };
 }
 
 export interface ScheduledChange {

@@ -1343,9 +1343,79 @@ export const creditAccounts = kortixSchema.table(
     autoTopupThreshold: numeric('auto_topup_threshold', { precision: 10, scale: 2 }).default('5').notNull(),
     autoTopupAmount: numeric('auto_topup_amount', { precision: 10, scale: 2 }).default('20').notNull(),
     autoTopupLastCharged: timestamp('auto_topup_last_charged', { withTimezone: true, mode: 'string' }),
+    // Billing v2 — per-seat model. Existing rows default to 'legacy' so legacy
+    // customers are untouched; new signups use 'per_seat'.
+    billingModel: text('billing_model').default('legacy').notNull(),
+    seatCount: integer('seat_count').default(1).notNull(),
+    seatSubscriptionItemId: text('seat_subscription_item_id'),
+    includedComputePerSeatUsd: numeric('included_compute_per_seat_usd', { precision: 10, scale: 4 }),
+    includedYoloPerSeatUsd: numeric('included_yolo_per_seat_usd', { precision: 10, scale: 4 }),
+    includedComputeBalance: numeric('included_compute_balance', { precision: 12, scale: 4 }).default('0').notNull(),
+    includedYoloBalance: numeric('included_yolo_balance', { precision: 12, scale: 4 }).default('0').notNull(),
+    autoTopupCustomized: boolean('auto_topup_customized').default(false).notNull(),
   },
   (table) => [
     index('kortix_credit_accounts_account_id_idx').on(table.accountId),
+    index('idx_credit_accounts_billing_model').on(table.billingModel),
+  ],
+);
+
+// Billing v2 — per-second sandbox compute metering.
+// One row per active window. Hibernate closes the row; resume opens a new one.
+// Cost flows into credit_ledger as 'compute_debit'; this table is the audit trail.
+export const sandboxComputeSessions = kortixSchema.table(
+  'sandbox_compute_sessions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    sandboxId: uuid('sandbox_id').notNull(),
+    sessionId: text('session_id'),
+    actorUserId: uuid('actor_user_id'),
+    cpuCores: integer('cpu_cores').notNull(),
+    memoryGb: integer('memory_gb').notNull(),
+    diskGb: integer('disk_gb').notNull(),
+    gpuCount: integer('gpu_count').default(0).notNull(),
+    state: text().default('active').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true, mode: 'string' }),
+    lastBilledAt: timestamp('last_billed_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
+    ledgerId: uuid('ledger_id'),
+    metadata: jsonb().default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
+    index('idx_sandbox_compute_sessions_open')
+      .on(table.sandboxId)
+      .where(sql`${table.endedAt} IS NULL`),
+    index('idx_sandbox_compute_sessions_last_billed')
+      .on(table.lastBilledAt)
+      .where(sql`${table.state} = 'active'`),
+  ],
+);
+
+// Billing v2 — per-member Kortix YOLO tokens.
+// Token plaintext is returned once at mint and never stored. Sandbox bootstrap
+// fetches plaintext from an in-memory/KV cache; cache miss = rotate.
+export const yoloMemberTokens = kortixSchema.table(
+  'yolo_member_tokens',
+  {
+    userId: uuid('user_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    tokenPrefix: varchar('token_prefix', { length: 16 }).notNull(),
+    tokenHash: varchar('token_hash', { length: 128 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true, mode: 'string' }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.accountId] }),
+    index('idx_yolo_member_tokens_prefix')
+      .on(table.tokenPrefix)
+      .where(sql`${table.revokedAt} IS NULL`),
+    index('idx_yolo_member_tokens_account').on(table.accountId),
   ],
 );
 

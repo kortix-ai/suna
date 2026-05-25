@@ -12,6 +12,60 @@ export const MACHINE_CREDIT_BONUS = 5;
 /** Markup applied to managed VPS prices for additional instances. */
 export const COMPUTE_PRICE_MARKUP = 1.2;
 
+// ─── Billing v2 — per-seat model ─────────────────────────────────────────────
+// Each account is billed $20/month × number of accepted account_members.
+// $20/seat is split into an included budget for sandbox compute and YOLO usage.
+// Overage on either pulls from the shared wallet; if the wallet hits the
+// scaled threshold and auto-topup is on, auto-refill kicks in.
+
+export const PER_SEAT_PRICE_USD = 20;
+export const INCLUDED_COMPUTE_PER_SEAT_USD = 12;
+export const INCLUDED_YOLO_PER_SEAT_USD = 8;
+
+// Per-second pricing for reserved sandbox spec (declared in kortix.toml [sandbox]).
+// Numbers are pre-markup; debit emitter multiplies by COMPUTE_PRICE_MARKUP.
+//   $0.04 / core-hour  → 0.04 / 3600 ≈ 0.0000111 per core-second
+//   $0.005 / GB-hour   → 0.005 / 3600 ≈ 0.00000139 per GB-second
+//   $0.0001 / GB-hour  → 0.0001 / 3600 ≈ 0.0000000278 per GB-second
+export const COMPUTE_CPU_PRICE_PER_CORE_SECOND   = 0.0000111;
+export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND  = 0.00000139;
+export const COMPUTE_DISK_PRICE_PER_GB_SECOND    = 0.0000000278;
+/** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
+export const COMPUTE_ARCHIVE_DISK_MULTIPLIER     = 0.25;
+
+// Auto-topup defaults for per-seat accounts scale with seat count.
+// effectiveThreshold = AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT × seat_count
+// effectiveAmount    = AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT × seat_count
+// Legacy accounts keep their flat $5/$20 (auto_topup_customized=true or just unaffected).
+export const AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT = 5;
+export const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT    = 20;
+
+// Sensible caps for the per-seat plan. Effectively uncapped for normal use.
+export const MAX_PROJECTS_PER_ACCOUNT       = 200;
+export const MAX_CONCURRENT_SANDBOXES_PER_SEAT = 3;
+export const MAX_SEATS_PER_ACCOUNT          = 100;
+
+export type BillingModel = 'legacy' | 'per_seat';
+
+/** Default auto-topup for a per-seat account given its current seat count. */
+export function defaultAutoTopupForSeats(seatCount: number): { threshold: number; amount: number } {
+  const seats = Math.max(1, seatCount);
+  return {
+    threshold: AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT * seats,
+    amount: AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT * seats,
+  };
+}
+
+/** Monthly included compute credits granted on subscription start/renew. */
+export function includedComputeForSeats(seatCount: number): number {
+  return INCLUDED_COMPUTE_PER_SEAT_USD * Math.max(1, seatCount);
+}
+
+/** Monthly included YOLO credits granted on subscription start/renew. */
+export function includedYoloForSeats(seatCount: number): number {
+  return INCLUDED_YOLO_PER_SEAT_USD * Math.max(1, seatCount);
+}
+
 // ─── Compute instance definitions ───────────────────────────────────────────
 // Single source of truth for the machine tiers we sell.  Prices and specs must
 // stay in sync with the frontend's DISPLAY_PRICES / FALLBACK_TYPES in
@@ -86,6 +140,22 @@ const TIERS: Record<string, TierConfig> = {
     hidden: false,
   },
 
+  // Billing v2 — per-member seat plan. $20 × seat_count / month.
+  // The TIERS entry models a single seat; actual seat math is in
+  // includedComputeForSeats() / includedYoloForSeats() and applied at
+  // subscription create + renew.
+  per_seat: {
+    name: 'per_seat',
+    displayName: 'Team',
+    monthlyPrice: PER_SEAT_PRICE_USD,
+    yearlyPrice: 0,
+    monthlyCredits: INCLUDED_COMPUTE_PER_SEAT_USD + INCLUDED_YOLO_PER_SEAT_USD,
+    canPurchaseCredits: true,
+    models: ['all'],
+    dailyCreditConfig: null,
+    hidden: false,
+  },
+
   // ── Legacy tiers (kept for backward compat with existing DB rows) ────────
   // All hidden, resolve to their closest equivalent for display.
   // Legacy tiers: monthlyCredits = monthlyPrice (1:1 ratio, i.e. $20 plan → $20 credits → 2000 display credits)
@@ -114,10 +184,18 @@ interface StripePriceConfig {
   computeProductId: string;
 }
 
+// TODO(billing-v2-ops): create the per-seat Stripe price in prod + staging.
+//   - Recurring monthly, $20 USD per unit, unit = 1 seat.
+//   - Replace the PLACEHOLDER below with the resulting price IDs before deploy.
+//   - Webhook handler for customer.subscription.updated (services/webhooks.ts)
+//     reconciles the `quantity` field on this price item into credit_accounts.seat_count.
+export const PER_SEAT_STRIPE_PRICE_ID_PLACEHOLDER = 'price_PLACEHOLDER_PER_SEAT';
+
 const STRIPE_PRICES_PROD: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
     pro:  { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO' }, // TODO: create prod Pro price and replace
+    per_seat: { monthly: PER_SEAT_STRIPE_PRICE_ID_PLACEHOLDER }, // TODO(ops): fill in prod per-seat price ID
     // Legacy price → tier mappings (for webhook resolution of existing subs)
     tier_2_20:     { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO', yearly: 'price_1ReHB5G6l1KZGqIrD70I1xqM', yearlyCommitment: 'price_1RqtqiG6l1KZGqIrhjVPtE1s' },
     tier_6_50:     { monthly: 'price_1RILb4G6l1KZGqIr5q0sybWn', yearly: 'price_1ReHAsG6l1KZGqIrlAog487C', yearlyCommitment: 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi' },
@@ -143,6 +221,7 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
     pro:  { monthly: 'price_1T7yiuG6CaZppiKc7VsgnlKI' },
+    per_seat: { monthly: PER_SEAT_STRIPE_PRICE_ID_PLACEHOLDER }, // TODO(ops): fill in staging per-seat price ID
   },
   credits: {
     10:  'price_1T56YGG6CaZppiKcSwnwZSoE',
@@ -252,6 +331,27 @@ export function canPurchaseCredits(tierName: string): boolean {
 /** Returns true if the tier is a paid tier (not free/none). */
 export function isPaidTier(tierName: string): boolean {
   return tierName !== 'free' && tierName !== 'none';
+}
+
+/** Returns the per-seat Stripe price ID for the current environment. */
+export function resolvePerSeatPriceId(): string | null {
+  const prices = getStripePrices();
+  return prices.subscriptions.per_seat?.monthly ?? null;
+}
+
+/**
+ * Per-seat code paths must no-op for legacy customers. Use this guard at every
+ * branch that would otherwise mutate Stripe quantity / grant seat credits /
+ * meter compute / mint per-member YOLO tokens.
+ */
+export function isPerSeatAccount(billingModel: string | null | undefined): boolean {
+  return billingModel === 'per_seat';
+}
+
+export function isLegacyAccount(billingModel: string | null | undefined): boolean {
+  // Default for null/undefined is legacy — safer to skip new behaviour than to
+  // accidentally bill a legacy customer twice.
+  return billingModel !== 'per_seat';
 }
 
 /** Legacy paid tiers eligible for the "claim computer" flow. */

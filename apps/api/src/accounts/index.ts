@@ -16,6 +16,7 @@ import {
 import { sendAccountInviteEmail } from './email';
 import { config } from '../config';
 import { authorize, ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
+import { onMemberAdded, onMemberRemoved } from '../billing/services/seat-management';
 
 // Public, share-anywhere invite URL. Matches the link generated inside the
 // email template (apps/api/src/accounts/email.ts), so an invite copied here
@@ -706,6 +707,9 @@ accountsRouter.post('/:accountId/members', async (c) => {
       accountRole: role,
     });
 
+    // Billing v2 — mint YOLO + push +1 seat to Stripe (no-op for legacy).
+    void onMemberAdded(accountId, targetUserId).catch(() => {});
+
     return c.json(
       {
         status: 'added',
@@ -909,6 +913,9 @@ accountsRouter.delete('/:accountId/members/:userId', async (c) => {
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)));
 
+  // Billing v2 — revoke per-member YOLO + push -1 seat to Stripe.
+  void onMemberRemoved(accountId, targetUserId).catch(() => {});
+
   return c.json({ ok: true });
 });
 
@@ -1009,6 +1016,9 @@ accountsRouter.post('/:accountId/leave', async (c) => {
   await db
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+
+  // Billing v2 — revoke YOLO + push -1 seat to Stripe on self-leave.
+  void onMemberRemoved(accountId, userId).catch(() => {});
 
   return c.json({ ok: true });
 });

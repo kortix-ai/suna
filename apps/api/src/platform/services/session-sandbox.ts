@@ -38,6 +38,43 @@ import {
 import { config } from '../../config';
 import { ProvisionTimeline } from './provision-timeline';
 import type { GitBackedProject } from '../../projects/git';
+import { startComputeSession } from '../../billing/services/compute-metering';
+import { resolveYoloTokenForMember } from '../../billing/services/yolo-tokens';
+import { getCreditAccount } from '../../billing/repositories/credit-accounts';
+import { isPerSeatAccount } from '../../billing/services/tiers';
+import { readManifest } from '../../projects/triggers';
+import { extractSandboxSpec } from '../../snapshots/dockerfile-layer';
+
+// Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
+// Mirrors a sensible Daytona default (1 vCPU / 2 GB / 10 GB).
+const DEFAULT_METERING_SPEC = { cpuCores: 1, memoryGb: 2, diskGb: 10, gpuCount: 0 };
+
+async function openComputeSessionForSandbox(
+  sandboxId: string,
+  accountId: string,
+  project: GitBackedProject,
+  userId: string | null | undefined,
+): Promise<void> {
+  let spec = { ...DEFAULT_METERING_SPEC };
+  try {
+    const manifest = await readManifest(project);
+    const declared = extractSandboxSpec(manifest?.raw ?? null);
+    if (declared.cpu !== undefined) spec.cpuCores = declared.cpu;
+    if (declared.memory !== undefined) spec.memoryGb = declared.memory;
+    if (declared.disk !== undefined) spec.diskGb = declared.disk;
+    if (declared.gpu !== undefined) spec.gpuCount = declared.gpu;
+  } catch {
+    // Manifest read failed (repo unreachable, parse error, etc.). Fall back
+    // to defaults so metering still records the session.
+  }
+  await startComputeSession({
+    sandboxId,
+    accountId,
+    sessionId: sandboxId,
+    actorUserId: userId ?? null,
+    spec,
+  });
+}
 
 const DEFAULT_SNAPSHOT_READY_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_SNAPSHOT_READY_POLL_MS = 5 * 1000;
@@ -240,6 +277,25 @@ export async function provisionSessionSandbox(opts: {
   tl.mark('tokens');
 
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
+
+  // Billing v2 — for per-seat accounts, inject the requesting member's per-
+  // member YOLO token instead of relying on the legacy account-wide token. For
+  // legacy accounts the env var is omitted; the kortix-agent-sandbox-server
+  // demon falls back to its existing behaviour (account-wide token at the
+  // sandbox-auth.ts injection point).
+  let yoloApiKey: string | null = null;
+  try {
+    const account = await getCreditAccount(accountId);
+    if (isPerSeatAccount(account?.billingModel) && userId) {
+      yoloApiKey = await resolveYoloTokenForMember(userId, accountId);
+    }
+  } catch (err) {
+    console.warn(
+      `[session-sandbox] failed to resolve YOLO token for ${userId}@${accountId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
     userId,
@@ -250,6 +306,7 @@ export async function provisionSessionSandbox(opts: {
       ...(opts.extraEnvVars ?? {}),
       KORTIX_TOKEN: sandboxKey.secretKey,
       ...(executorToken ? { KORTIX_EXECUTOR_TOKEN: executorToken } : {}),
+      ...(yoloApiKey ? { KORTIX_YOLO_API_KEY: yoloApiKey } : {}),
     },
   };
 
@@ -484,6 +541,16 @@ export async function provisionSessionSandbox(opts: {
 
       tl.mark('row-active');
       tl.log({ provider: providerName, degraded: bootedDegraded, attempts });
+
+      // Billing v2 — open a compute metering row. No-op for legacy accounts.
+      // Spec is resolved from the project manifest with provider-default fallbacks.
+      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId).catch(
+        (err) =>
+          console.warn(
+            `[session-sandbox] failed to open compute metering for ${sandbox.sandboxId}:`,
+            err instanceof Error ? err.message : String(err),
+          ),
+      );
     } catch (bgErr) {
       console.error(`[session-sandbox] Background provisioning failed for ${sandbox.sandboxId}:`, bgErr);
       const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);

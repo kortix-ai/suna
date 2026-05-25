@@ -121,6 +121,16 @@ export interface AccountState {
   } | null;
   can_add_instances?: boolean;
   can_claim_computer?: boolean;
+  // Billing v2 — present for accounts on the new per-seat plan.
+  billing_model?: 'legacy' | 'per_seat';
+  seats?: {
+    count: number;
+    price_per_seat_usd: number;
+    included_compute_per_seat_usd: number;
+    included_yolo_per_seat_usd: number;
+    included_compute_remaining_usd: number;
+    included_yolo_remaining_usd: number;
+  };
   _cache?: {
     cached: boolean;
     ttl_seconds?: number;

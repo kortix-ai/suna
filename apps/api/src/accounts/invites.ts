@@ -6,6 +6,7 @@ import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
 import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
+import { onMemberAdded } from '../billing/services/seat-management';
 
 export const accountInvitesRouter = new Hono<AppEnv>();
 
@@ -120,6 +121,9 @@ accountInvitesRouter.post('/:inviteId/accept', async (c) => {
       .onConflictDoNothing({
         target: [accountMembers.userId, accountMembers.accountId],
       });
+    // Billing v2 — idempotent for already-accepted invites: onMemberAdded
+    // re-mints YOLO if no active token exists and re-syncs Stripe quantity.
+    void onMemberAdded(invite.accountId, userId).catch(() => {});
     return c.json({
       account_id: invite.accountId,
       account_role: invite.initialRole,
@@ -155,6 +159,11 @@ accountInvitesRouter.post('/:inviteId/accept', async (c) => {
       ),
     )
     .returning({ inviteId: accountInvitations.inviteId });
+
+  // Billing v2 — mint per-member YOLO + push +1 seat to Stripe. No-op for
+  // legacy accounts (guarded inside the service). Fire-and-forget so Stripe
+  // hiccups don't block the user from finishing their invite acceptance.
+  void onMemberAdded(invite.accountId, userId).catch(() => {});
 
   if (acceptedRows.length === 0) {
     return c.json({

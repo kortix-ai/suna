@@ -13,8 +13,10 @@ import {
   getCheckoutSessionDetails,
   confirmCheckoutSession,
   getProrationPreview,
+  createPerSeatCheckoutSession,
 } from '../services/subscriptions';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { syncSeatQuantity } from '../services/seat-management';
 
 export const subscriptionsRouter = new Hono<AppEnv>();
 
@@ -35,6 +37,33 @@ subscriptionsRouter.post('/create-checkout-session', async (c) => {
     location: body.location,
   });
 
+  return c.json(result);
+});
+
+// Billing v2 — per-seat plan checkout. Quantity is derived from current
+// account_members count; Stripe handles proration on subsequent member changes.
+subscriptionsRouter.post('/create-per-seat-checkout', async (c) => {
+  const accountId = await resolveAccountId(c.get('userId'));
+  const email = c.get('userEmail');
+  const body = await c.req.json();
+
+  const result = await createPerSeatCheckoutSession({
+    accountId,
+    email,
+    successUrl: body.success_url,
+    cancelUrl: body.cancel_url,
+    locale: body.locale,
+  });
+
+  return c.json(result);
+});
+
+// Billing v2 — manually trigger a seat-count reconciliation. The Stripe
+// webhook normally handles this on member changes; this endpoint is a manual
+// "kick" for ops / for handling cases where the webhook was dropped.
+subscriptionsRouter.post('/sync-seat-quantity', async (c) => {
+  const accountId = await resolveAccountId(c.get('userId'));
+  const result = await syncSeatQuantity(accountId);
   return c.json(result);
 });
 

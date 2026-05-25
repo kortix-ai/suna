@@ -122,6 +122,7 @@ import { getProvider } from '../platform/providers';
 import { config, type SandboxProviderName } from '../config';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../shared/account-limits';
 import { recordAuditEvent } from '../shared/audit';
+import { pauseComputeSession, endComputeSession } from '../billing/services/compute-metering';
 import {
   decryptProjectSecret,
   encryptProjectSecret,
@@ -6487,6 +6488,10 @@ projectsApp.delete('/:projectId/sessions/:sessionId', async (c) => {
     }
   }
 
+  void pauseComputeSession(sessionId).catch((err) =>
+    console.warn(`[projects] compute pause failed for ${sessionId}:`, err),
+  );
+
   return c.json({ ok: true });
 });
 
@@ -6601,6 +6606,14 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
     } catch (err) {
       console.warn(`[projects] restart: failed to remove provider container for ${sessionId}:`, err);
     }
+  }
+
+  // Billing v2 — finalize compute metering for the pre-restart sandbox.
+  // The new sandbox will open a fresh metering row when it boots.
+  if (existingSandbox) {
+    void endComputeSession(sessionId).catch((err) =>
+      console.warn(`[projects] restart: compute endComputeSession failed for ${sessionId}:`, err),
+    );
   }
 
   await db
