@@ -118,14 +118,15 @@ async function warnIfCriticalTablesMissing(): Promise<void> {
   // noise. We check only tables in the `kortix` schema (no tuple
   // joins, no driver-specific helpers) so the query stays portable.
   const required = [
-    'iam_roles',
-    'iam_role_permissions',
-    'iam_policies',
     'account_groups',
     'account_group_members',
     'account_members',
     'accounts',
     'audit_events',
+    'project_group_grants',
+    'project_members',
+    'project_secrets',
+    'projects',
   ];
   const db = postgres(config.DATABASE_URL, { max: 1 });
   try {
