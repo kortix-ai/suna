@@ -49,6 +49,13 @@ import {
   type GroupProjectGrant,
 } from '@/lib/iam-client';
 import {
+  countOverridingMembers,
+  floatCurrentUserFirst,
+  isOverridingAccountRole,
+  sortGroupMembersByOverride,
+  type AccountMeta,
+} from '@/components/iam/iam-display-helpers';
+import {
   attachGroupToProject,
   detachGroupFromProject,
   getAccount,
@@ -245,11 +252,6 @@ function GroupMembersCard({
   // any group-level role on that project. Worth flagging here so an
   // admin who adds another admin to a "Viewer" group understands the
   // grant is mostly cosmetic for that user.
-  type AccountMeta = {
-    email: string | null;
-    accountRole: 'owner' | 'admin' | 'member';
-    isSuperAdmin: boolean;
-  };
   const accountMetaByUserId = useMemo(() => {
     const map = new Map<string, AccountMeta>();
     for (const m of accountMembersQuery.data ?? []) {
@@ -269,19 +271,11 @@ function GroupMembersCard({
     return map;
   }, [accountMetaByUserId]);
 
-  // Members whose account role overrides this group's project grants.
-  // Owners + admins both get implicit Manager on every project; super
-  // admins bypass every IAM check entirely.
-  const overrideCount = useMemo(() => {
-    const members = membersQuery.data ?? [];
-    let n = 0;
-    for (const m of members) {
-      const meta = accountMetaByUserId.get(m.user_id);
-      if (!meta) continue;
-      if (meta.isSuperAdmin || meta.accountRole === 'owner' || meta.accountRole === 'admin') n++;
-    }
-    return n;
-  }, [membersQuery.data, accountMetaByUserId]);
+  // Pure helpers in iam-display-helpers (unit-tested).
+  const overrideCount = useMemo(
+    () => countOverridingMembers(membersQuery.data ?? [], accountMetaByUserId),
+    [membersQuery.data, accountMetaByUserId],
+  );
 
   const removeMutation = useMutation({
     mutationFn: (userId: string) => removeGroupMember(accountId, groupId, userId),
@@ -342,31 +336,11 @@ function GroupMembersCard({
 
       {!membersQuery.isLoading && members.length > 0 && (
         <List>
-          {[...members]
-            .sort((a, b) => {
-              // Override-prone rows (owner / admin / super-admin) float to the
-              // top so the warning above maps cleanly onto the first N rows.
-              const rank = (uid: string) => {
-                const meta = accountMetaByUserId.get(uid);
-                if (!meta) return 4;
-                if (meta.isSuperAdmin) return 0;
-                if (meta.accountRole === 'owner') return 1;
-                if (meta.accountRole === 'admin') return 2;
-                return 3;
-              };
-              const ra = rank(a.user_id);
-              const rb = rank(b.user_id);
-              if (ra !== rb) return ra - rb;
-              return new Date(a.added_at).getTime() - new Date(b.added_at).getTime();
-            })
+          {sortGroupMembersByOverride(members, accountMetaByUserId)
             .map((m) => {
               const label = emailByUserId.get(m.user_id) ?? m.user_id;
               const meta = accountMetaByUserId.get(m.user_id);
-              const overrides =
-                !!meta &&
-                (meta.isSuperAdmin ||
-                  meta.accountRole === 'owner' ||
-                  meta.accountRole === 'admin');
+              const overrides = !!meta && isOverridingAccountRole(meta);
               const badgeLabel = meta?.isSuperAdmin
                 ? 'super admin'
                 : meta?.accountRole;
@@ -471,15 +445,15 @@ function AddGroupMembersDialog({
   // user (if still eligible) to the first row. Adding yourself to a
   // group you just created is one of the most common actions in this
   // dialog — pinning your own row makes it a one-click step instead of
-  // a scan-and-find.
-  const eligible = useMemo(() => {
-    const filtered = candidates.filter((m) => !existingUserIds.has(m.user_id));
-    if (!currentUserId) return filtered;
-    const idx = filtered.findIndex((m) => m.user_id === currentUserId);
-    if (idx <= 0) return filtered; // not present or already first
-    const me = filtered[idx];
-    return [me, ...filtered.slice(0, idx), ...filtered.slice(idx + 1)];
-  }, [candidates, existingUserIds, currentUserId]);
+  // a scan-and-find. Pure sort in iam-display-helpers, unit-tested.
+  const eligible = useMemo(
+    () =>
+      floatCurrentUserFirst(
+        candidates.filter((m) => !existingUserIds.has(m.user_id)),
+        currentUserId,
+      ),
+    [candidates, existingUserIds, currentUserId],
+  );
 
   const addMutation = useMutation({
     mutationFn: () => addGroupMembers(accountId, groupId, Array.from(selected)),

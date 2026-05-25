@@ -39,6 +39,10 @@ import {
   type ProjectRole,
 } from '@/lib/projects-client';
 import { listGroups, type AccountGroup } from '@/lib/iam-client';
+import {
+  inheritedFromGroupSummary,
+  isInheritedFromGroupOnly,
+} from '@/components/iam/iam-display-helpers';
 
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   manager: 'Manager',
@@ -310,17 +314,9 @@ function ProjectAccessCard({
             // "No access" but the user actually has the group role; the
             // subtitle below makes that explicit and the badge in the
             // trailing slot mirrors the effective role.
-            const groupSources = member.group_sources ?? [];
-            const inheritedFromGroup =
-              !member.has_implicit_access &&
-              !member.project_role &&
-              member.effective_project_role !== null &&
-              groupSources.length > 0;
-            const inheritedSummary = inheritedFromGroup
-              ? `Inherited ${PROJECT_ROLE_LABEL[member.effective_project_role!]} via ${
-                  groupSources[0].group_name
-                }${groupSources.length > 1 ? ` + ${groupSources.length - 1} more` : ''}`
-              : null;
+            // Pure helpers in iam-display-helpers, unit-tested.
+            const inheritedFromGroup = isInheritedFromGroupOnly(member);
+            const inheritedSummary = inheritedFromGroupSummary(member);
 
             return (
               <ListRow

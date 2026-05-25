@@ -136,6 +136,7 @@ import {
 const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 import {
   effectiveProjectRole,
+  foldEffectiveProjectAccess,
   isAccountManager,
   parseProjectRole,
   roleAllows,
@@ -5355,11 +5356,6 @@ projectsApp.get('/:projectId/access', async (c) => {
   const emails = await lookupEmailsByUserIds(accountRows.map((r) => r.userId));
   const grantsByUser = new Map(grantRows.map((r) => [r.userId, r]));
   const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
-  // Project-role ranking — same shape the V2 engine uses. Higher number
-  // = more powerful, max wins when folding sources together.
-  const roleRank: Record<ProjectRole, number> = { viewer: 1, editor: 2, manager: 3 };
-  const maxRole = (a: ProjectRole, b: ProjectRole): ProjectRole =>
-    roleRank[a] >= roleRank[b] ? a : b;
 
   const members = accountRows
     .map((member) => {
@@ -5368,56 +5364,27 @@ projectsApp.get('/:projectId/access', async (c) => {
       const projectRole = (grant?.projectRole as ProjectRole | undefined) ?? null;
       const groupSources = groupSourcesByUser.get(member.userId) ?? [];
 
-      // Walk every access source and keep the strongest.
-      // Order matters only for the displayed "primary source" label
-      // when two paths tie at the same role; we prefer implicit, then
-      // direct, then group.
-      let effectiveRole: ProjectRole | null = null;
-      let primarySource: 'implicit' | 'direct' | 'group' | null = null;
-
-      if (isAccountManager(accountRole)) {
-        effectiveRole = 'manager';
-        primarySource = 'implicit';
-      }
-      if (projectRole) {
-        if (!effectiveRole || roleRank[projectRole] > roleRank[effectiveRole]) {
-          effectiveRole = projectRole;
-          primarySource = 'direct';
-        }
-      }
-      for (const gs of groupSources) {
-        if (!effectiveRole) {
-          effectiveRole = gs.role;
-          primarySource = 'group';
-        } else {
-          const merged = maxRole(effectiveRole, gs.role);
-          if (merged !== effectiveRole) {
-            effectiveRole = merged;
-            primarySource = 'group';
-          }
-        }
-      }
-
-      // Sort group sources by descending role so the UI's "via X group"
-      // tag picks the strongest contributor first.
-      const sortedGroupSources = groupSources
-        .slice()
-        .sort((a, b) => roleRank[b.role] - roleRank[a.role]);
+      // Pure fold — see projects/access.ts for the precedence rules.
+      const fold = foldEffectiveProjectAccess({
+        accountRole,
+        directRole: projectRole,
+        groupSources,
+      });
 
       return {
         user_id: member.userId,
         email: emails.get(member.userId) ?? null,
         account_role: accountRole,
         project_role: projectRole,
-        effective_project_role: effectiveRole,
+        effective_project_role: fold.effective_project_role,
         has_implicit_access: isAccountManager(accountRole),
         /** What ultimately decided the effective role. UI labels with
          *  it: "Manager (account admin)" vs "Editor (via Engineering)". */
-        effective_source: primarySource,
+        effective_source: fold.effective_source,
         /** Every group attachment that includes this user. Lets the UI
          *  list multi-source access ("Editor via Engineering + Viewer
          *  via Viewers") without further API calls. */
-        group_sources: sortedGroupSources,
+        group_sources: fold.group_sources,
         joined_at: member.joinedAt.toISOString(),
         granted_by: grant?.grantedBy ?? null,
         granted_at: grant?.createdAt?.toISOString() ?? null,
