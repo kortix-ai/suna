@@ -418,10 +418,15 @@ export function CommandPalette() {
     enabled: open,
     staleTime: 60_000,
   });
+  const activeAccount =
+    accountsList?.find((account) => account.account_id === selectedAccountId) ??
+    accountsList?.[0] ??
+    null;
+  const activeAccountId = activeAccount?.account_id ?? null;
   const { data: projectsList } = useQuery({
-    queryKey: ['projects', selectedAccountId],
-    queryFn: () => listProjectsForAccount(selectedAccountId || undefined),
-    enabled: open && !!selectedAccountId,
+    queryKey: ['projects', activeAccountId],
+    queryFn: () => listProjectsForAccount(activeAccountId || undefined),
+    enabled: open && !!activeAccountId,
     staleTime: 30_000,
   });
   const { data: projectSessionsList } = useQuery({
@@ -1669,7 +1674,7 @@ export function CommandPalette() {
                     >
                       <Users className="h-4 w-4 shrink-0 text-muted-foreground/70" />
                       <span className="flex-1 truncate">{label}</span>
-                      {account.account_id === selectedAccountId && (
+                      {account.account_id === activeAccountId && (
                         <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
                       )}
                     </CommandItem>

@@ -135,7 +135,7 @@ export default function ProjectsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
-  const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
+  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const [query, setQuery] = useState('');
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -157,13 +157,6 @@ export default function ProjectsPage() {
     }
   }, [searchParams]);
 
-  const projectsQuery = useQuery({
-    queryKey: ['projects', selectedAccountId],
-    queryFn: () => listProjectsForAccount(selectedAccountId || undefined),
-    enabled: !!user && !!selectedAccountId,
-    staleTime: 20_000,
-  });
-
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
     queryFn: listAccounts,
@@ -171,9 +164,30 @@ export default function ProjectsPage() {
     staleTime: 60_000,
   });
 
-  const selectedAccount = accountsQuery.data?.find((account) => account.account_id === selectedAccountId);
+  useEffect(() => {
+    const accounts = accountsQuery.data;
+    if (!accounts) return;
+
+    const selectedExists = accounts.some((account) => account.account_id === selectedAccountId);
+    const nextAccountId = selectedExists ? selectedAccountId : (accounts[0]?.account_id ?? null);
+    if (nextAccountId !== selectedAccountId) setSelectedAccountId(nextAccountId);
+  }, [accountsQuery.data, selectedAccountId, setSelectedAccountId]);
+
+  const activeAccount =
+    accountsQuery.data?.find((account) => account.account_id === selectedAccountId) ??
+    accountsQuery.data?.[0] ??
+    null;
+  const activeAccountId = activeAccount?.account_id ?? null;
+
+  const projectsQuery = useQuery({
+    queryKey: ['projects', activeAccountId],
+    queryFn: () => listProjectsForAccount(activeAccountId || undefined),
+    enabled: !!user && !!activeAccountId,
+    staleTime: 20_000,
+  });
+
   const canCreateProjects =
-    selectedAccount?.account_role === 'owner' || selectedAccount?.account_role === 'admin';
+    activeAccount?.account_role === 'owner' || activeAccount?.account_role === 'admin';
 
   const archiveMutation = useMutation({
     mutationFn: archiveProject,
@@ -203,8 +217,9 @@ export default function ProjectsPage() {
   }
 
   const total = projectsQuery.data?.length ?? 0;
-  const showEmptyState = !projectsQuery.isLoading && !projectsQuery.isError && total === 0;
-  const showNoResults = !projectsQuery.isLoading && !projectsQuery.isError && total > 0 && filtered.length === 0;
+  const showProjectsLoading = accountsQuery.isLoading || projectsQuery.isLoading;
+  const showEmptyState = !!activeAccountId && !showProjectsLoading && !projectsQuery.isError && total === 0;
+  const showNoResults = !!activeAccountId && !showProjectsLoading && !projectsQuery.isError && total > 0 && filtered.length === 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -230,7 +245,7 @@ export default function ProjectsPage() {
               </div>
               <Button
                 onClick={() => setModalOpen(true)}
-                disabled={!selectedAccountId || !canCreateProjects}
+                disabled={!activeAccountId || !canCreateProjects}
                 size="sm"
                 className="h-9 gap-1.5"
               >
@@ -238,7 +253,7 @@ export default function ProjectsPage() {
             </div>
           </div>
 
-          {projectsQuery.isLoading && (
+          {showProjectsLoading && (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-[92px] rounded-2xl" />
@@ -261,7 +276,7 @@ export default function ProjectsPage() {
           {showEmptyState && (
             <div className="flex justify-center pt-2">
               <AccountOnboardingGuide
-                accountId={selectedAccountId}
+                accountId={activeAccountId}
                 onCreateProject={() => setModalOpen(true)}
               />
             </div>
@@ -280,7 +295,7 @@ export default function ProjectsPage() {
 
           {total > 0 && (
             <AccountOnboardingGuide
-              accountId={selectedAccountId}
+              accountId={activeAccountId}
               onCreateProject={() => setModalOpen(true)}
               dismissible
               className="max-w-none"
@@ -306,7 +321,7 @@ export default function ProjectsPage() {
       <ProjectCreateModal
         open={modalOpen}
         onOpenChange={setModalOpen}
-        accountId={selectedAccountId}
+        accountId={activeAccountId}
       />
     </div>
   );
