@@ -1,4 +1,5 @@
-// IAM V2 engine. Parallel implementation gated by accounts.iam_v2_enabled.
+// IAM V2 engine. The only authorization path — the V1 policy engine and
+// its accounts.iam_v2_enabled rollout flag were retired in PR5.
 //
 // Decides access from three tables:
 //   - account_members         (account_role, is_super_admin)

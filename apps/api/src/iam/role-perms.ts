@@ -8,9 +8,6 @@
 // admin has, admin has everything member has, etc. Per-role sets below
 // are the *full* permission set (not the delta), so the engine just does
 // a Set.has() — no inheritance walk at request time.
-//
-// V1 lives alongside this for as long as the iam_v2_enabled flag is
-// false; the engine dispatches between the two.
 
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from './actions';
 

@@ -1,15 +1,12 @@
 // Public IAM surface for the rest of the codebase.
 //
 // authorize / assertAuthorized / listAccessibleResources all go through
-// the V2 engine (the V1 policy engine and its dispatcher were retired
-// in PR5). invalidateIamV2Flag is kept as a no-op for binary
-// compatibility with the V1→V2 migration script, which is the last
-// caller of it.
+// the V2 engine (the V1 policy engine and the dispatcher's flag-routing
+// were retired in PR5).
 export {
   authorize,
   assertAuthorized,
   listAccessibleResources,
-  invalidateIamV2Flag,
 } from './dispatcher';
 export {
   type AccessibleResources,
