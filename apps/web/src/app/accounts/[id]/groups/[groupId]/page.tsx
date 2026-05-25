@@ -17,9 +17,17 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -40,7 +48,14 @@ import {
   updateGroup,
   type GroupProjectGrant,
 } from '@/lib/iam-client';
-import { detachGroupFromProject, getAccount, listAccountMembers } from '@/lib/projects-client';
+import {
+  attachGroupToProject,
+  detachGroupFromProject,
+  getAccount,
+  listAccountMembers,
+  listProjectsForAccount,
+  type ProjectRole,
+} from '@/lib/projects-client';
 import { usePermission } from '@/lib/use-permission';
 
 export default function GroupDetailPage() {
@@ -363,12 +378,23 @@ function AddGroupMembersDialog({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? null;
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const eligible = useMemo(
-    () => candidates.filter((m) => !existingUserIds.has(m.user_id)),
-    [candidates, existingUserIds],
-  );
+  // Filter out members already in the group, then float the current
+  // user (if still eligible) to the first row. Adding yourself to a
+  // group you just created is one of the most common actions in this
+  // dialog — pinning your own row makes it a one-click step instead of
+  // a scan-and-find.
+  const eligible = useMemo(() => {
+    const filtered = candidates.filter((m) => !existingUserIds.has(m.user_id));
+    if (!currentUserId) return filtered;
+    const idx = filtered.findIndex((m) => m.user_id === currentUserId);
+    if (idx <= 0) return filtered; // not present or already first
+    const me = filtered[idx];
+    return [me, ...filtered.slice(0, idx), ...filtered.slice(idx + 1)];
+  }, [candidates, existingUserIds, currentUserId]);
 
   const addMutation = useMutation({
     mutationFn: () => addGroupMembers(accountId, groupId, Array.from(selected)),
@@ -413,6 +439,7 @@ function AddGroupMembersDialog({
               {eligible.map((m) => {
                 const checked = selected.has(m.user_id);
                 const label = m.email ?? m.user_id;
+                const isMe = m.user_id === currentUserId;
                 return (
                   <button
                     key={m.user_id}
@@ -430,6 +457,11 @@ function AddGroupMembersDialog({
                       className="h-3.5 w-3.5 rounded border-border accent-primary"
                     />
                     <span className="truncate text-sm">{label}</span>
+                    {isMe && (
+                      <span className="ml-auto rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                        you
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -591,6 +623,7 @@ function GroupProjectGrantsCard({
 }) {
   const queryClient = useQueryClient();
   const queryKey = ['group-project-grants', accountId, groupId];
+  const [attachOpen, setAttachOpen] = useState(false);
 
   const grantsQuery = useQuery({
     queryKey,
@@ -598,6 +631,10 @@ function GroupProjectGrantsCard({
     staleTime: 30_000,
   });
   const grants = grantsQuery.data ?? [];
+  const attachedProjectIds = useMemo(
+    () => new Set(grants.map((g) => g.project_id)),
+    [grants],
+  );
 
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
 
@@ -621,6 +658,12 @@ function GroupProjectGrantsCard({
       title="Project access"
       description={`Projects "${groupName}" is attached to. Every group member inherits the chosen role on that project.`}
       count={grants.length}
+      action={
+        <Button size="sm" className="gap-1.5" onClick={() => setAttachOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Attach to project
+        </Button>
+      }
     >
       {grantsQuery.isLoading && (
         <div className="px-6 py-5">
@@ -648,9 +691,24 @@ function GroupProjectGrantsCard({
         <EmptyState
           icon={FolderOpen}
           title="Not attached to any project"
-          description={`Attach "${groupName}" to a project from that project's Members page → "Group access" card.`}
+          description={`Click "Attach to project" to give "${groupName}" access to one of your projects.`}
         />
       )}
+
+      <AttachToProjectDialog
+        accountId={accountId}
+        groupId={groupId}
+        groupName={groupName}
+        open={attachOpen}
+        onOpenChange={setAttachOpen}
+        attachedProjectIds={attachedProjectIds}
+        onAttached={() => {
+          queryClient.invalidateQueries({ queryKey });
+          queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+          setAttachOpen(false);
+        }}
+      />
+
 
       {!grantsQuery.isLoading && grants.length > 0 && (
         <List>
@@ -695,5 +753,174 @@ function GroupProjectGrantsCard({
         </List>
       )}
     </SectionCard>
+  );
+}
+
+// ─── V2: Attach group → project dialog ───────────────────────────────────
+//
+// Opens from the Project access card. Lists every project in the account
+// the caller can manage (effective_project_role === 'manager'), minus
+// projects this group is already attached to. POSTs to the canonical
+// per-project group-grants endpoint (server-side gate on
+// project.members.manage matches our client-side filter).
+
+function AttachToProjectDialog({
+  accountId,
+  groupId,
+  groupName,
+  open,
+  onOpenChange,
+  attachedProjectIds,
+  onAttached,
+}: {
+  accountId: string;
+  groupId: string;
+  groupName: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  attachedProjectIds: Set<string>;
+  onAttached: () => void;
+}) {
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(
+    undefined,
+  );
+  const [selectedRole, setSelectedRole] = useState<ProjectRole>('editor');
+
+  // Only fetch the project list when the dialog is open. Includes
+  // effective_project_role so we can filter to manageable projects.
+  const projectsQuery = useQuery({
+    queryKey: ['projects-for-account', accountId],
+    queryFn: () => listProjectsForAccount(accountId),
+    enabled: open,
+    staleTime: 30_000,
+  });
+
+  const candidates = useMemo(() => {
+    const all = projectsQuery.data ?? [];
+    return all
+      .filter(
+        (p) =>
+          p.effective_project_role === 'manager' &&
+          !attachedProjectIds.has(p.project_id),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [projectsQuery.data, attachedProjectIds]);
+
+  // Reset picker state every time the dialog (re)opens so a stale
+  // selection from a previous open doesn't pre-fill.
+  function handleOpenChange(v: boolean) {
+    if (v) {
+      setSelectedProjectId(undefined);
+      setSelectedRole('editor');
+    }
+    onOpenChange(v);
+  }
+
+  const attachMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedProjectId) throw new Error('Pick a project first');
+      return attachGroupToProject(selectedProjectId, groupId, selectedRole);
+    },
+    onSuccess: () => {
+      toast.success(`"${groupName}" attached to project`);
+      onAttached();
+    },
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to attach group to project'),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Attach &quot;{groupName}&quot; to a project</DialogTitle>
+          <DialogDescription>
+            Every member of this group will inherit the chosen role on the
+            project.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="attach-project">Project</Label>
+            {projectsQuery.isLoading ? (
+              <Skeleton className="h-9 w-full" />
+            ) : candidates.length === 0 ? (
+              <p className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+                {(projectsQuery.data ?? []).length === 0
+                  ? 'No projects in this account yet.'
+                  : attachedProjectIds.size > 0 &&
+                    attachedProjectIds.size === (projectsQuery.data ?? []).filter(
+                      (p) => p.effective_project_role === 'manager',
+                    ).length
+                  ? 'This group is already attached to every project you can manage.'
+                  : 'You need Manager access on a project to attach a group to it.'}
+              </p>
+            ) : (
+              <Select
+                value={selectedProjectId ?? ''}
+                onValueChange={(v) => setSelectedProjectId(v || undefined)}
+              >
+                <SelectTrigger id="attach-project">
+                  <SelectValue placeholder="Choose a project…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {candidates.map((p) => (
+                    <SelectItem key={p.project_id} value={p.project_id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="attach-role">Role</Label>
+            <Select
+              value={selectedRole}
+              onValueChange={(v) => setSelectedRole(v as ProjectRole)}
+            >
+              <SelectTrigger id="attach-role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manager">
+                  Manager — full control of the project
+                </SelectItem>
+                <SelectItem value="editor">
+                  Editor — read and write, no member or settings changes
+                </SelectItem>
+                <SelectItem value="viewer">Viewer — read-only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => handleOpenChange(false)}
+            disabled={attachMutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => attachMutation.mutate()}
+            disabled={
+              !selectedProjectId ||
+              attachMutation.isPending ||
+              candidates.length === 0
+            }
+            className="gap-1.5"
+          >
+            {attachMutation.isPending && (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+            Attach
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
