@@ -1467,6 +1467,28 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
     requestCtx,
   );
   if (!verdict.allowed) {
+    // Distinguish "no access at all" from "has access but not for this
+    // action" so the UI can show a meaningful message. A Viewer can see
+    // the project but can't create a session — telling them "no access"
+    // is misleading and they spend time wondering why they can see the
+    // page at all. Only do the second probe when the failed action was
+    // NOT already 'read' — otherwise it's the same answer.
+    if (action !== 'read') {
+      const readVerdict = await authorize(
+        userId,
+        row.accountId,
+        'project.read',
+        { type: 'project', id: projectId },
+        actingTokenId,
+        requestCtx,
+      );
+      if (readVerdict.allowed) {
+        const verb = action === 'manage' ? 'manage this project' : 'change this project';
+        throw new HTTPException(403, {
+          message: `Your role on this project doesn't let you ${verb}. Ask a project Manager to grant you a higher role.`,
+        });
+      }
+    }
     throw new HTTPException(403, { message: 'You do not have access to this project' });
   }
 
