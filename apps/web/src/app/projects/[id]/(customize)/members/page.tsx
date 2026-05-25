@@ -596,6 +596,22 @@ function ProjectGroupGrantsCard({
                 subtitle={
                   <InlineMeta>
                     <span>Attached {formatDate(g.created_at)}</span>
+                    {typeof g.member_count === 'number' && (
+                      <span>
+                        {g.member_count}{' '}
+                        {g.member_count === 1 ? 'member' : 'members'}
+                      </span>
+                    )}
+                    {typeof g.override_count === 'number' &&
+                      g.override_count > 0 && (
+                        <span
+                          className="text-amber-700 dark:text-amber-400"
+                          title="Account owners and admins always have Manager access on every project, regardless of this grant's role."
+                        >
+                          {g.override_count} of {g.member_count} get Manager via
+                          account role
+                        </span>
+                      )}
                   </InlineMeta>
                 }
                 trailing={

@@ -5648,14 +5648,60 @@ projectsApp.get('/:projectId/group-grants', async (c) => {
     .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
     .where(eq(projectGroupGrants.projectId, projectId));
 
+  // Per-group member breakdown so the UI can flag attachments where the
+  // grant role won't apply uniformly. When a group includes account
+  // owners/admins, those users have implicit Manager on every project,
+  // so the group's grant role is moot for them. Surfacing
+  // override_count = N lets the project admin see at a glance "this
+  // Viewer attachment doesn't actually viewer-cap 3 of these 5 people".
+  const groupIds = rows.map((r) => r.groupId);
+  type GroupStats = { total: number; overrideCount: number };
+  const statsByGroup = new Map<string, GroupStats>();
+  if (groupIds.length > 0) {
+    const memberRows = await db
+      .select({
+        groupId: accountGroupMembers.groupId,
+        accountRole: accountMembers.accountRole,
+        isSuperAdmin: accountMembers.isSuperAdmin,
+      })
+      .from(accountGroupMembers)
+      .innerJoin(
+        accountMembers,
+        and(
+          eq(accountMembers.userId, accountGroupMembers.userId),
+          eq(accountMembers.accountId, loaded.row.accountId),
+        ),
+      )
+      .where(inArray(accountGroupMembers.groupId, groupIds));
+    for (const m of memberRows) {
+      const stats = statsByGroup.get(m.groupId) ?? { total: 0, overrideCount: 0 };
+      stats.total += 1;
+      if (
+        m.isSuperAdmin ||
+        m.accountRole === 'owner' ||
+        m.accountRole === 'admin'
+      ) {
+        stats.overrideCount += 1;
+      }
+      statsByGroup.set(m.groupId, stats);
+    }
+  }
+
   return c.json({
-    grants: rows.map((r) => ({
-      group_id: r.groupId,
-      group_name: r.groupName,
-      role: r.role,
-      granted_by: r.grantedBy,
-      created_at: r.createdAt.toISOString(),
-    })),
+    grants: rows.map((r) => {
+      const stats = statsByGroup.get(r.groupId) ?? { total: 0, overrideCount: 0 };
+      return {
+        group_id: r.groupId,
+        group_name: r.groupName,
+        role: r.role,
+        granted_by: r.grantedBy,
+        created_at: r.createdAt.toISOString(),
+        member_count: stats.total,
+        // How many of the group's members are account owners/admins —
+        // their implicit Manager access overrides this grant's role.
+        override_count: stats.overrideCount,
+      };
+    }),
   });
 });
 

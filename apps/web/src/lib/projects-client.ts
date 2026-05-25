@@ -531,6 +531,11 @@ export interface ProjectGroupGrant {
   role: ProjectRole;
   granted_by: string | null;
   created_at: string;
+  /** Total members in this group. */
+  member_count?: number;
+  /** Members who are account owners/admins — they get implicit Manager
+   *  on every project, so this grant's role doesn't apply to them. */
+  override_count?: number;
 }
 
 export async function listProjectGroupGrants(projectId: string) {
