@@ -49,6 +49,7 @@ let daytonaDeleteCalls: string[];
 let daytonaDeleteByIdCalls: string[];
 let daytonaSnapshotCreateCalls: any[];
 let hiddenDaytonaSnapshots: Set<string>;
+let omittedFromDaytonaList: Set<string>;
 
 function makeRow(overrides: Partial<Row> = {}): Row {
   const id = overrides.snapshotRowId ?? `row-${rows.length}`;
@@ -196,6 +197,7 @@ mock.module('../shared/daytona', () => ({
     rows
       .filter((row) => row.snapshotId)
       .filter((row) => !hiddenDaytonaSnapshots.has(row.snapshotId!))
+      .filter((row) => !omittedFromDaytonaList.has(row.snapshotId!))
       .map((row) => ({
         id: `daytona-${row.snapshotId}`,
         name: row.snapshotId!,
@@ -231,6 +233,17 @@ mock.module('../config', () => ({
 }));
 
 const builder = await import('../snapshots/builder');
+const { computeSnapshotHash, formatSnapshotName } = await import('../snapshots/hash');
+
+function expectedSnapshotName(): string {
+  const hash = computeSnapshotHash({
+    dockerfile: 'FROM ubuntu:24.04\n',
+    contextTreeOid: 'tree-oid',
+    runtimeFingerprint: 'runtime-current',
+    spec: {},
+  });
+  return formatSnapshotName(PROJECT_ID, hash.contentHash);
+}
 
 beforeEach(() => {
   rows = [];
@@ -238,6 +251,7 @@ beforeEach(() => {
   daytonaDeleteByIdCalls = [];
   daytonaSnapshotCreateCalls = [];
   hiddenDaytonaSnapshots = new Set();
+  omittedFromDaytonaList = new Set();
   filterByCall = [() => true];
   nextSort = null;
   selectCallCount = 0;
@@ -393,6 +407,25 @@ describe('ensureBuildForLatestCommit', () => {
       { branch: BRANCH, accountId: ACCOUNT_ID, source: 'manual' },
     );
     expect(result.status).toBe('already-building');
+  });
+
+  test('recovers an active provider snapshot from a fresh building row', async () => {
+    rows = [
+      makeRow({
+        commitSha: 'head-of-main',
+        status: 'building',
+        snapshotId: expectedSnapshotName(),
+        updatedAt: new Date(),
+      }),
+    ];
+    setFilter((r) => r.commitSha === 'head-of-main' && r.status !== 'failed');
+
+    const result = await builder.ensureBuildForLatestCommit(
+      { projectId: PROJECT_ID, repoUrl: 'r', defaultBranch: BRANCH, manifestPath: 'm' },
+      { branch: BRANCH, accountId: ACCOUNT_ID, source: 'manual' },
+    );
+    expect(result.status).toBe('already-ready');
+    expect(daytonaSnapshotCreateCalls).toHaveLength(0);
   });
 
   test('starts a non-destructive rebuild when the branch tip has an outdated ready row', async () => {
@@ -560,6 +593,25 @@ describe('reconcileDaytonaSnapshots', () => {
 
     expect(result.orphansDeleted).toBe(0);
     expect(result.deadRowsCleared).toBe(0);
+    expect(daytonaDeleteByIdCalls).toHaveLength(0);
+  });
+
+  test('keeps ready rows omitted from the Daytona list when get-by-name is still active', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'ready-row',
+        snapshotId: 'kortix-snap-1111-list-omitted',
+        status: 'ready',
+        metadata: { runtimeFingerprint: 'runtime-current' },
+      }),
+    ];
+    omittedFromDaytonaList = new Set(['kortix-snap-1111-list-omitted']);
+    setFilter(() => true);
+
+    const result = await builder.reconcileDaytonaSnapshots();
+
+    expect(result.deadRowsCleared).toBe(0);
+    expect(result.evicted).toBe(0);
     expect(daytonaDeleteByIdCalls).toHaveLength(0);
   });
 });

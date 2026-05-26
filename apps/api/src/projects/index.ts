@@ -1574,8 +1574,12 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: deriveKortixApiBase(),
-    KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
-    ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
+    ...(input.initialPrompt
+      ? {
+          KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
+          KORTIX_INITIAL_PROMPT: input.initialPrompt,
+        }
+      : {}),
     // Per-session model override (e.g. Slack turns pin a specific model).
     // The sandbox agent reads this and sets it on every opencode prompt call.
     ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),

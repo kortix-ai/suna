@@ -306,6 +306,23 @@ export async function buildSnapshotForCommit(
     }
   }
   if (existing?.status === 'building' || existing?.status === 'queued') {
+    const recovered = await recoverBootableInProgressSnapshotRow(
+      project,
+      commitSha,
+      provider,
+      options.source,
+      existing,
+    );
+    if (recovered) {
+      return {
+        daytonaName: recovered.daytonaName,
+        commitSha,
+        contentHash: recovered.contentHash,
+        runtimeFingerprint: recovered.runtimeFingerprint,
+        built: false,
+      };
+    }
+
     if (!isInProgressSnapshotStale(existing)) {
       // Another build is in flight for this exact commit. Don't race it.
       throw new SnapshotBuildError(
@@ -313,13 +330,13 @@ export async function buildSnapshotForCommit(
       );
     }
 
-    const recovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
-    if (recovered) {
+    const staleRecovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
+    if (staleRecovered) {
       return {
-        daytonaName: recovered.daytonaName,
+        daytonaName: staleRecovered.daytonaName,
         commitSha,
-        contentHash: recovered.contentHash,
-        runtimeFingerprint: recovered.runtimeFingerprint,
+        contentHash: staleRecovered.contentHash,
+        runtimeFingerprint: staleRecovered.runtimeFingerprint,
         built: false,
       };
     }
@@ -613,12 +630,21 @@ export async function ensureBuildForLatestCommit(
     return { status: 'started', commitSha };
   }
   if (existing) {
+    const recovered = await recoverBootableInProgressSnapshotRow(
+      project,
+      commitSha,
+      provider,
+      options.source,
+      existing,
+    );
+    if (recovered) return { status: 'already-ready', commitSha };
+
     if (!isInProgressSnapshotStale(existing)) {
       return { status: 'already-building', commitSha };
     }
 
-    const recovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
-    if (recovered) return { status: 'already-ready', commitSha };
+    const staleRecovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
+    if (staleRecovered) return { status: 'already-ready', commitSha };
     await deleteSnapshotRow(project.projectId, commitSha, provider);
   }
 
@@ -654,38 +680,58 @@ export async function ensureBuildForLatestCommit(
 }
 
 /**
- * Mark snapshot builds stuck in `building`/`queued` past the build deadline as
- * `failed`. Orphans happen when the API restarts mid-build — the detached build
- * promise dies with the process, leaving the row `building` forever. Until it's
- * cleared, every session on that commit waits the full snapshot deadline
- * (~10min) before the per-commit recovery path kicks in, which reads as a long
- * spin then failure. Sweeping on startup (restarts are exactly when orphans are
- * created) clears them so the next session rebuilds cleanly.
+ * Recover or clear snapshot builds that cannot still be owned by this process.
  *
- * The cutoff is on `updated_at`: a live build refreshes it via the snapshot
- * build-log stream, so only genuinely-dead rows are swept.
+ * Snapshot builds run in detached promises. If the API restarts while one is in
+ * progress, the DB row remains `queued`/`building`, but the promise that would
+ * eventually flip it to `ready` is gone. Waiting for the full build timeout here
+ * makes the UI show "Building first sandbox" and makes sessions spin even
+ * though no local worker is alive to finish the row.
+ *
+ * Startup is the one moment we know all previous in-process builders are dead,
+ * so we reconcile every in-progress row immediately:
+ *   - if the named Daytona snapshot is now active, mark the row `ready`;
+ *   - otherwise mark it `failed` so the next session/retry starts a fresh build.
  */
 export async function sweepStaleSnapshotBuilds(): Promise<number> {
-  const cutoff = new Date(Date.now() - BUILD_TIMEOUT_MS);
-  const swept = await db
-    .update(projectRuntimeSnapshots)
-    .set({
-      status: 'failed',
-      error: 'build orphaned (API restart or timeout) — rebuilds on next use',
-      metadata: sql`COALESCE(${projectRuntimeSnapshots.metadata}, '{}'::jsonb) || ${JSON.stringify({ errorCategory: 'timeout' as SnapshotErrorCategory })}::jsonb`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        inArray(projectRuntimeSnapshots.status, ['building', 'queued']),
-        lt(projectRuntimeSnapshots.updatedAt, cutoff),
-      ),
-    )
-    .returning({ id: projectRuntimeSnapshots.snapshotRowId });
-  if (swept.length > 0) {
-    console.warn(`[snapshots] swept ${swept.length} stale build row(s) → failed (orphaned by restart/timeout)`);
+  const rows = await db
+    .select()
+    .from(projectRuntimeSnapshots)
+    .where(inArray(projectRuntimeSnapshots.status, ['building', 'queued']));
+
+  let recovered = 0;
+  let failed = 0;
+  for (const row of rows) {
+    if (row.snapshotId && (await isProviderBootableSnapshot(row, row.provider))) {
+      await db
+        .update(projectRuntimeSnapshots)
+        .set({
+          status: 'ready',
+          error: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(projectRuntimeSnapshots.snapshotRowId, row.snapshotRowId));
+      recovered += 1;
+      continue;
+    }
+
+    await db
+      .update(projectRuntimeSnapshots)
+      .set({
+        status: 'failed',
+        error: 'build orphaned (API restart or timeout) - rebuilds on next use',
+        metadata: sql`COALESCE(${projectRuntimeSnapshots.metadata}, '{}'::jsonb) || ${JSON.stringify({ errorCategory: 'timeout' as SnapshotErrorCategory })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectRuntimeSnapshots.snapshotRowId, row.snapshotRowId));
+    failed += 1;
   }
-  return swept.length;
+
+  const swept = recovered + failed;
+  if (swept > 0) {
+    console.warn(`[snapshots] swept ${swept} in-progress build row(s) on startup`, { recovered, failed });
+  }
+  return swept;
 }
 
 /**
@@ -1012,9 +1058,25 @@ export async function reconcileDaytonaSnapshots(opts: { budget?: number } = {}):
     }
 
     // 2. Dead cache rows — `ready` but the image no longer exists.
-    const deadRowIds = readyRows
-      .filter((r) => r.snapshotId && !liveByName.has(r.snapshotId))
-      .map((r) => r.snapshotRowId);
+    //
+    // Daytona's REST list endpoint is not authoritative for snapshots created
+    // through the SDK in all regions/targets. We have observed `snapshot.get()`
+    // and sandbox create-by-name succeed for a snapshot that was absent from
+    // `/snapshots`, which made this reconciler delete the only ready DB row and
+    // forced the next session back through the slow build/recovery path. Treat
+    // the list as an optimization only: if a ready row is missing from the list,
+    // verify it with the same provider lookup used by session boot before
+    // clearing the row.
+    const readyChecks = await Promise.all(
+      readyRows.map(async (row) => {
+        if (!row.snapshotId) return { row, bootable: false };
+        if (liveByName.has(row.snapshotId)) return { row, bootable: true };
+        return { row, bootable: await isProviderBootableSnapshot(row, row.provider) };
+      }),
+    );
+    const deadRowIds = readyChecks
+      .filter((check) => !check.bootable)
+      .map((check) => check.row.snapshotRowId);
     if (deadRowIds.length > 0) {
       await db
         .delete(projectRuntimeSnapshots)
@@ -1024,9 +1086,9 @@ export async function reconcileDaytonaSnapshots(opts: { budget?: number } = {}):
     // 3. Global budget — evict oldest-updated surviving rows beyond the cap,
     //    keeping each project's most-recent row as a protected floor.
     const deadSet = new Set(deadRowIds);
-    const surviving = readyRows.filter(
-      (r) => r.snapshotId && liveByName.has(r.snapshotId) && !deadSet.has(r.snapshotRowId),
-    );
+    const surviving = readyChecks
+      .filter((check) => check.bootable && !deadSet.has(check.row.snapshotRowId))
+      .map((check) => check.row);
     const budget = opts.budget ?? globalSnapshotBudget();
     let evicted = 0;
     if (surviving.length > budget) {
@@ -1415,6 +1477,31 @@ async function recoverInProgressSnapshotRow(
   } finally {
     await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+async function recoverBootableInProgressSnapshotRow(
+  project: GitBackedProject,
+  commitSha: string,
+  provider: SandboxProviderName,
+  source: SnapshotBuildSource,
+  row: typeof projectRuntimeSnapshots.$inferSelect,
+): Promise<BuildOutcome | null> {
+  if (provider !== 'daytona' || !row.snapshotId) return null;
+
+  const identity = await computeSnapshotIdentity(project, commitSha);
+  if (row.snapshotId.trim() !== identity.snapshotName) return null;
+
+  if (!(await getUsableSnapshot(getDaytona(), identity.snapshotName))) return null;
+
+  const outcome: BuildOutcome = {
+    daytonaName: identity.snapshotName,
+    contentHash: identity.contentHash,
+    shortHash: identity.shortHash,
+    runtimeFingerprint: identity.runtimeFingerprint,
+    built: false,
+  };
+  await updateSnapshotRow(project.projectId, commitSha, provider, source, outcome);
+  return outcome;
 }
 
 /**

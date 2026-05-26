@@ -147,11 +147,27 @@ mock.module('../projects/git', () => ({
   getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
+  commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
 }));
 
 mock.module('../snapshots/builder', () => ({
   ensureBuildForLatestCommit: async () => ({ status: 'started', commitSha: 'a'.repeat(40) }),
   getLatestReadySnapshot: async () => null,
+  getProjectSandboxHealth: async () => ({
+    branch: 'main',
+    provider: 'daytona',
+    readyCount: 0,
+    bootableCount: 0,
+    totalCount: 0,
+    retention: 3,
+    healthy: false,
+    building: false,
+    firstBuild: true,
+    runtimeOutdated: false,
+    latestReadyCommitSha: null,
+    latestStatus: null,
+    failure: null,
+  }),
   listSnapshotsForProject: async () => [],
   buildSnapshotForCommit: async () => ({ daytonaName: '', commitSha: '', contentHash: '', built: false }),
   pruneOldSnapshots: async () => ({ deletedRows: 0, deletedDaytonaSnapshots: 0 }),
@@ -795,6 +811,8 @@ describe('project session API contract', () => {
     expect(env.KORTIX_API_URL).toBeTruthy();
     expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
     expect(env.KORTIX_GITHUB_TOKEN).toBeUndefined();
+    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
+    expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
 
     // 6. User can't shadow a platform var — POST /secrets rejects KORTIX_*.
     // This protects the env-var precedence: user secrets are merged before
@@ -836,6 +854,8 @@ describe('project session API contract', () => {
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
   });
 
   test('accepts a client-created session branch without recreating it server-side', async () => {
