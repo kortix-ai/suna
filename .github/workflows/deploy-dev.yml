@@ -148,7 +148,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with: { node-version: 22 }
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
@@ -185,7 +185,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with: { node-version: 22 }
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile

@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -55,7 +55,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -116,7 +116,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -170,7 +170,7 @@ jobs:
             wget
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
