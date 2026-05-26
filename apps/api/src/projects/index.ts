@@ -16,6 +16,7 @@ import {
   accountGithubInstallationStates,
   accountGroups,
   accountGroupMembers,
+  accountInvitations,
   accountMembers,
   kortixApiKeys,
   projects,
@@ -5480,9 +5481,70 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
 
   const targetUserId = await lookupUserIdByEmail(email);
   if (!targetUserId) {
+    // No Kortix user yet. Upsert an account invitation carrying a
+    // bootstrap_grant so when they accept, they're added to the org
+    // AND granted the project role in one step — no separate "invite
+    // to org, then invite to project" dance. The unique index on
+    // (account_id, email) makes this idempotent; re-inviting the
+    // same email to a second project merges the grants list.
+    const bootstrap = {
+      project_id: projectId,
+      role,
+      ...(expires.value
+        ? { expires_at: expires.value.toISOString() }
+        : {}),
+    };
+    const [existing] = await db
+      .select({
+        inviteId: accountInvitations.inviteId,
+        bootstrapGrants: accountInvitations.bootstrapGrants,
+      })
+      .from(accountInvitations)
+      .where(
+        and(
+          eq(accountInvitations.accountId, loaded.row.accountId),
+          sql`lower(${accountInvitations.email}) = ${email}`,
+          isNull(accountInvitations.acceptedAt),
+        ),
+      )
+      .limit(1);
+    let inviteId: string;
+    if (existing) {
+      // Merge bootstrap grants by project_id (later wins on role).
+      const merged = [...(existing.bootstrapGrants ?? [])];
+      const idx = merged.findIndex((g) => g.project_id === projectId);
+      if (idx >= 0) merged[idx] = bootstrap;
+      else merged.push(bootstrap);
+      await db
+        .update(accountInvitations)
+        .set({ bootstrapGrants: merged })
+        .where(eq(accountInvitations.inviteId, existing.inviteId));
+      inviteId = existing.inviteId;
+    } else {
+      const [created] = await db
+        .insert(accountInvitations)
+        .values({
+          accountId: loaded.row.accountId,
+          email,
+          invitedBy: loaded.userId,
+          initialRole: 'member',
+          bootstrapGrants: [bootstrap],
+        })
+        .returning({ inviteId: accountInvitations.inviteId });
+      inviteId = created.inviteId;
+    }
     return c.json(
-      { error: 'No Kortix account for that email. Invite them to the organization first (Account -> Members).' },
-      404,
+      {
+        status: 'invited',
+        email,
+        invite_id: inviteId,
+        project_role: role,
+        message:
+          'No Kortix account for that email yet — an invitation has been sent. They’ll land on this project as ' +
+          role +
+          ' when they sign up.',
+      },
+      201,
     );
   }
 
