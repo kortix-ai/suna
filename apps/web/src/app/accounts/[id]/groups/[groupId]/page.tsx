@@ -51,6 +51,7 @@ import {
 import {
   countOverridingMembers,
   floatCurrentUserFirst,
+  formatExpiry,
   isOverridingAccountRole,
   sortGroupMembersByOverride,
   type AccountMeta,
@@ -696,6 +697,9 @@ function GroupProjectGrantsCard({
   );
 
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  // Detach is destructive — strips every group member's inherited
+  // access on the project at once. Confirm first.
+  const [detachTarget, setDetachTarget] = useState<GroupProjectGrant | null>(null);
 
   const detachMutation = useMutation({
     // detach the grant via the per-project route — that's the one gated
@@ -712,6 +716,7 @@ function GroupProjectGrantsCard({
   });
 
   return (
+    <>
     <SectionCard
       flush
       title="Project access"
@@ -790,6 +795,18 @@ function GroupProjectGrantsCard({
                 subtitle={
                   <InlineMeta>
                     <span>Attached {new Date(g.created_at).toLocaleDateString()}</span>
+                    {g.expires_at && (
+                      <span
+                        className={
+                          new Date(g.expires_at).getTime() < Date.now()
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : 'text-amber-700 dark:text-amber-400'
+                        }
+                        title={new Date(g.expires_at).toLocaleString()}
+                      >
+                        {formatExpiry(g.expires_at)}
+                      </span>
+                    )}
                   </InlineMeta>
                 }
                 trailing={
@@ -800,7 +817,7 @@ function GroupProjectGrantsCard({
                       type="button"
                       size="sm"
                       variant="ghost"
-                      onClick={() => detachMutation.mutate(g.project_id)}
+                      onClick={() => setDetachTarget(g)}
                     >
                       Detach
                     </Button>
@@ -812,6 +829,37 @@ function GroupProjectGrantsCard({
         </List>
       )}
     </SectionCard>
+
+    <ConfirmDialog
+      open={detachTarget !== null}
+      onOpenChange={(open) => {
+        if (!open) setDetachTarget(null);
+      }}
+      title="Detach from project?"
+      description={
+        detachTarget ? (
+          <span>
+            <strong>{groupName}</strong> will no longer be attached to{' '}
+            <strong>{detachTarget.project_name}</strong>. Every group
+            member will lose their inherited{' '}
+            <strong>{detachTarget.role}</strong> access on that
+            project (unless they also have a direct grant or another
+            group attached). Owners and admins keep their implicit
+            Manager access either way.
+          </span>
+        ) : null
+      }
+      confirmLabel="Detach"
+      confirmVariant="destructive"
+      isPending={detachMutation.isPending}
+      onConfirm={() => {
+        if (!detachTarget) return;
+        const target = detachTarget;
+        setDetachTarget(null);
+        detachMutation.mutate(target.project_id);
+      }}
+    />
+    </>
   );
 }
 
@@ -844,6 +892,10 @@ function AttachToProjectDialog({
     undefined,
   );
   const [selectedRole, setSelectedRole] = useState<ProjectRole>('editor');
+  // Optional auto-revoke timestamp. Empty string = permanent (default).
+  // Stored as the raw <input type="datetime-local"> value; we convert
+  // to ISO on submit so the server can parse it.
+  const [expiresAtLocal, setExpiresAtLocal] = useState<string>('');
 
   // Only fetch the project list when the dialog is open. Includes
   // effective_project_role so we can filter to manageable projects.
@@ -871,6 +923,7 @@ function AttachToProjectDialog({
     if (v) {
       setSelectedProjectId(undefined);
       setSelectedRole('editor');
+      setExpiresAtLocal('');
     }
     onOpenChange(v);
   }
@@ -878,7 +931,19 @@ function AttachToProjectDialog({
   const attachMutation = useMutation({
     mutationFn: () => {
       if (!selectedProjectId) throw new Error('Pick a project first');
-      return attachGroupToProject(selectedProjectId, groupId, selectedRole);
+      // datetime-local gives us a naive local timestamp; convert to
+      // ISO so server gets unambiguous UTC. Empty = permanent (null
+      // would clear an existing expiry, but on attach there's nothing
+      // to clear, so we just omit it).
+      const expiresAt = expiresAtLocal
+        ? new Date(expiresAtLocal).toISOString()
+        : undefined;
+      return attachGroupToProject(
+        selectedProjectId,
+        groupId,
+        selectedRole,
+        expiresAt,
+      );
     },
     onSuccess: () => {
       toast.success(`"${groupName}" attached to project`);
@@ -953,6 +1018,32 @@ function AttachToProjectDialog({
                 <SelectItem value="viewer">Viewer — read-only</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="attach-expires" className="flex items-center gap-2">
+              Expires
+              <span className="text-[10px] font-normal text-muted-foreground">
+                optional · leave blank for permanent
+              </span>
+            </Label>
+            {/* datetime-local renders the OS-native picker. We convert
+                to ISO on submit. Min = now + 1 minute to dodge the
+                "in the past" 400 from the server when an admin picks
+                a date and the click lands a second later. */}
+            <Input
+              id="attach-expires"
+              type="datetime-local"
+              value={expiresAtLocal}
+              onChange={(e) => setExpiresAtLocal(e.target.value)}
+              min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+              className="max-w-xs"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              The grant auto-revokes at this time. Group members lose
+              this project on the next request after expiry; the audit
+              log records the revocation within a minute.
+            </p>
           </div>
         </div>
 

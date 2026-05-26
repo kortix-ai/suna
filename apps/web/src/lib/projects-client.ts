@@ -90,6 +90,9 @@ export interface ProjectAccessMember {
   granted_by: string | null;
   granted_at: string | null;
   updated_at: string | null;
+  /** Auto-revoke timestamp for the DIRECT grant (ISO). null = permanent
+   *  or no direct grant. */
+  expires_at?: string | null;
 }
 
 export interface ProjectAccessResponse {
@@ -510,15 +513,72 @@ export async function revokeProjectAccess(projectId: string, userId: string) {
   );
 }
 
+/** Two-shape response:
+ *  - User had a Kortix account already → ProjectAccessMember row was
+ *    inserted/updated; UI refreshes the access list and shows them.
+ *  - User had no Kortix account → an account invitation was created
+ *    with a bootstrap_grant. UI shows "invitation sent" and skips the
+ *    access-list refresh (the user won't appear until they accept). */
+export type InviteProjectMemberResult =
+  | ProjectAccessMember
+  | {
+      status: 'invited';
+      email: string;
+      invite_id: string;
+      project_role: ProjectRole;
+      message: string;
+    };
+
+export function isInviteSent(
+  r: InviteProjectMemberResult,
+): r is Extract<InviteProjectMemberResult, { status: 'invited' }> {
+  return 'status' in r && r.status === 'invited';
+}
+
 export async function inviteProjectMember(
   projectId: string,
   email: string,
   role: ProjectRole,
 ) {
   return unwrap(
-    await backendApi.post<ProjectAccessMember>(
+    await backendApi.post<InviteProjectMemberResult>(
       `/projects/${projectId}/access/invite`,
       { email, role },
+    ),
+  );
+}
+
+// ── Pending project invites (non-Kortix users who haven't signed up yet) ──
+
+/** Pending account-invitation that bootstraps into THIS project on accept.
+ *  Shape mirrors the backend GET /access/pending-invites response.
+ *
+ *  `expires_at` here is the *grant's* time-bounded clock (auto-revoke once
+ *  they're in). `invite_expires_at` is the *invitation* clock — after that
+ *  the user can't redeem the link and needs a resend. */
+export interface PendingProjectInvite {
+  invite_id: string;
+  email: string;
+  project_role: ProjectRole;
+  expires_at: string | null;
+  invited_by_email: string | null;
+  created_at: string;
+  invite_expires_at: string;
+  invite_expired: boolean;
+}
+
+export async function listPendingProjectInvites(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ pending: PendingProjectInvite[] }>(
+      `/projects/${projectId}/access/pending-invites`,
+    ),
+  );
+}
+
+export async function revokePendingProjectInvite(projectId: string, inviteId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean; invitation_cancelled: boolean }>(
+      `/projects/${projectId}/access/pending-invites/${inviteId}`,
     ),
   );
 }
@@ -531,6 +591,8 @@ export interface ProjectGroupGrant {
   role: ProjectRole;
   granted_by: string | null;
   created_at: string;
+  /** Auto-revoke timestamp (ISO). null = permanent. */
+  expires_at?: string | null;
   /** Total members in this group. */
   member_count?: number;
   /** Members who are account owners/admins — they get implicit Manager
@@ -550,11 +612,15 @@ export async function attachGroupToProject(
   projectId: string,
   groupId: string,
   role: ProjectRole,
+  expiresAt?: string | null,
 ) {
   return unwrap(
     await backendApi.post<{ project_id: string; group_id: string; role: ProjectRole }>(
       `/projects/${projectId}/group-grants`,
-      { group_id: groupId, role },
+      // undefined = field omitted (don't touch); null = clear expiry.
+      expiresAt === undefined
+        ? { group_id: groupId, role }
+        : { group_id: groupId, role, expires_at: expiresAt },
     ),
   );
 }
@@ -563,11 +629,12 @@ export async function updateProjectGroupGrant(
   projectId: string,
   groupId: string,
   role: ProjectRole,
+  expiresAt?: string | null,
 ) {
   return unwrap(
     await backendApi.patch<{ project_id: string; group_id: string; role: ProjectRole }>(
       `/projects/${projectId}/group-grants/${groupId}`,
-      { role },
+      expiresAt === undefined ? { role } : { role, expires_at: expiresAt },
     ),
   );
 }

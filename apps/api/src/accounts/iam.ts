@@ -409,6 +409,7 @@ iamRouter.get('/:accountId/iam/groups/:groupId/project-grants', async (c) => {
       role: projectGroupGrants.role,
       grantedBy: projectGroupGrants.grantedBy,
       createdAt: projectGroupGrants.createdAt,
+      expiresAt: projectGroupGrants.expiresAt,
     })
     .from(projectGroupGrants)
     .innerJoin(projects, eq(projects.projectId, projectGroupGrants.projectId))
@@ -426,6 +427,7 @@ iamRouter.get('/:accountId/iam/groups/:groupId/project-grants', async (c) => {
       role: r.role,
       granted_by: r.grantedBy,
       created_at: r.createdAt.toISOString(),
+      expires_at: r.expiresAt?.toISOString() ?? null,
     })),
   });
 });

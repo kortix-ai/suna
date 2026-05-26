@@ -7,6 +7,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
+  ChevronDown,
   Clock,
   ExternalLink,
   Github,
@@ -14,7 +15,6 @@ import {
   Link as LinkIcon,
   Loader2,
   Mail,
-  HelpCircle,
   MoreHorizontal,
   RefreshCw,
   Search,
@@ -31,12 +31,18 @@ import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -53,11 +59,6 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -79,6 +80,7 @@ import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
+import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { usePermission } from '@/lib/use-permission';
 import {
   type AccountDetail,
@@ -98,6 +100,7 @@ import {
   updateAccountMemberRole,
   updateAccountName,
 } from '@/lib/projects-client';
+import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { cn } from '@/lib/utils';
 
 const ROLE_LABEL: Record<AccountRole, string> = {
@@ -105,6 +108,15 @@ const ROLE_LABEL: Record<AccountRole, string> = {
   admin: 'Admin',
   member: 'Member',
 };
+
+// Build-time feature flag for the enterprise IdP surface (SAML SSO +
+// SCIM provisioning). Defaults OFF — those cards add real clutter for
+// the 95% of accounts that don't have an Okta/Azure AD/Google
+// Workspace IdP wired up. Set NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY=true
+// in the environment to bring them back. Backend endpoints stay live
+// either way so existing configurations keep working.
+const ENABLE_ENTERPRISE_IDENTITY =
+  process.env.NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY === 'true';
 
 function formatDate(input: string | null | undefined) {
   if (!input) return '—';
@@ -336,6 +348,11 @@ export default function AccountSettingsPage() {
                 </SettingsGroup>
 
                 {/* ── Security ──────────────────────────────────── */}
+                {/* MFA is the only security control 95% of accounts ever
+                    touch — keep it primary. Session lifetime + idle
+                    timeout tuning matters for compliance shops but is
+                    noise for everyone else, so it hides under an
+                    "Advanced" disclosure (closed by default). */}
                 <SettingsGroup
                   title="Security"
                   description="Account-wide gates that apply to every member."
@@ -344,26 +361,51 @@ export default function AccountSettingsPage() {
                     accountId={account.account_id}
                     canManage={canWriteAccount}
                   />
-                  <SessionControlsCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
+                  <Collapsible>
+                    <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-2xl border border-dashed border-border/60 bg-card/30 px-4 py-3 text-left text-sm transition hover:border-border hover:bg-card/60">
+                      <div>
+                        <div className="font-medium text-foreground">
+                          Advanced security
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Session lifetimes, idle timeouts, and force-logout.
+                          Defaults are fine for most teams.
+                        </div>
+                      </div>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-6 pt-4">
+                      <SessionControlsCard
+                        accountId={account.account_id}
+                        canManage={canWriteAccount}
+                      />
+                    </CollapsibleContent>
+                  </Collapsible>
                 </SettingsGroup>
 
                 {/* ── Identity & directory ─────────────────────── */}
-                <SettingsGroup
-                  title="Identity & directory"
-                  description="Bring members in from your IdP. Group memberships sync; admin still picks project access."
-                >
-                  <SsoCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
-                  <ScimCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
-                </SettingsGroup>
+                {/* SAML SSO + SCIM are enterprise-only — only render
+                    when explicitly enabled. The flag is a build-time
+                    env var (NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY=true)
+                    so dev + prod can opt in independently. Backend
+                    endpoints stay live regardless so existing
+                    configurations keep working; this just hides the
+                    setup UI from the 95% of accounts that don't use it. */}
+                {ENABLE_ENTERPRISE_IDENTITY && (
+                  <SettingsGroup
+                    title="Identity & directory"
+                    description="Bring members in from your IdP. Group memberships sync; admin still picks project access."
+                  >
+                    <SsoCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                    <ScimCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                  </SettingsGroup>
+                )}
 
                 {/* ── Tokens & automation ──────────────────────── */}
                 <SettingsGroup
@@ -403,92 +445,6 @@ export default function AccountSettingsPage() {
         </div>
       </main>
     </div>
-  );
-}
-
-// ─── Permissions help popover ──────────────────────────────────────────────
-//
-// Cuts support tickets in half. The model is simple but never explained
-// anywhere in-app: account roles, project roles, group inheritance, and
-// the override rule (account admin/owner trumps any group attachment).
-// Lives in a popover so new admins can find it without scrolling and
-// experienced ones can ignore it.
-
-function PermissionsHelpPopover() {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
-          <HelpCircle className="h-3.5 w-3.5" />
-          How permissions work
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-96 space-y-4 text-sm">
-        <section className="space-y-1">
-          <h3 className="font-semibold text-foreground">Account roles</h3>
-          <p className="text-xs text-muted-foreground">
-            What a person can do across the whole account.
-          </p>
-          <ul className="space-y-1 text-xs">
-            <li>
-              <span className="font-medium text-foreground">Owner</span> · full
-              control + can transfer ownership and delete the account.
-            </li>
-            <li>
-              <span className="font-medium text-foreground">Admin</span> ·
-              everything except deleting the account.
-            </li>
-            <li>
-              <span className="font-medium text-foreground">Member</span> · no
-              implicit access — needs direct project grants or group
-              membership.
-            </li>
-          </ul>
-        </section>
-
-        <section className="space-y-1">
-          <h3 className="font-semibold text-foreground">Project roles</h3>
-          <p className="text-xs text-muted-foreground">
-            What a person can do on a specific project.
-          </p>
-          <ul className="space-y-1 text-xs">
-            <li>
-              <span className="font-medium text-foreground">Manager</span> ·
-              read, write, and manage members + settings.
-            </li>
-            <li>
-              <span className="font-medium text-foreground">Editor</span> ·
-              read and write, no member or settings changes.
-            </li>
-            <li>
-              <span className="font-medium text-foreground">Viewer</span> ·
-              read-only.
-            </li>
-          </ul>
-        </section>
-
-        <section className="space-y-1">
-          <h3 className="font-semibold text-foreground">Groups</h3>
-          <p className="text-xs text-muted-foreground">
-            Bundle members and attach the whole group to a project at a
-            role. Every group member inherits that role. A user picks up
-            the highest role across all their groups + any direct grant.
-          </p>
-        </section>
-
-        <section className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5">
-          <h3 className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-            Override rule
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            Owners and admins always have <strong>Manager</strong> on every
-            project, regardless of group attachments. To limit someone to
-            specific projects, change their account role to{' '}
-            <strong>Member</strong> first.
-          </p>
-        </section>
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -884,6 +840,13 @@ function MembersCard({
   // it doesn't survive tab switches — admins almost never want to jump
   // back to the same search after navigating away.
   const [search, setSearch] = useState('');
+  // Bulk-select state. Users can't bulk-modify themselves (would let an
+  // admin lock themselves out by demoting their own row in a sweep).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDialog, setBulkDialog] = useState<
+    'add_to_group' | 'set_role' | 'remove' | null
+  >(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   // canInvite/canRemove/canUpdateRole come in as props (driven by usePermission
   // at the page level). The row-level kebab respects each granularly.
@@ -957,6 +920,82 @@ function MembersCard({
     onError: (err: Error) => toast.error(err.message || 'Failed to leave team'),
   });
 
+  // Bulk surface only shows when the caller can actually do something
+  // useful (add to group OR change role OR remove). canInvite is the
+  // closest proxy for "can manage account membership" without adding
+  // another permission probe.
+  const canBulk = canInvite || canUpdateRole || canRemove;
+  // Eligible for bulk = visible after filter, excluding the current user
+  // and any pending row.
+  const bulkEligible = useMemo(
+    () => sorted.filter((m) => m.user_id !== currentUserId),
+    [sorted, currentUserId],
+  );
+  const selectedCount = selectedIds.size;
+  const allEligibleSelected =
+    bulkEligible.length > 0 &&
+    bulkEligible.every((m) => selectedIds.has(m.user_id));
+  function toggleOne(userId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+  function toggleAllEligible() {
+    if (allEligibleSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(bulkEligible.map((m) => m.user_id)));
+    }
+  }
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  // Bulk handlers — all use the existing per-user endpoints fanned out
+  // with Promise.all so a single failure doesn't block the others.
+  // Errors are aggregated into one toast at the end.
+  async function bulkRun(
+    label: string,
+    runOne: (userId: string) => Promise<unknown>,
+  ): Promise<void> {
+    setBulkBusy(true);
+    const ids = Array.from(selectedIds);
+    const results = await Promise.allSettled(ids.map(runOne));
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    setBulkBusy(false);
+    invalidateMembers();
+    if (failed === 0) {
+      toast.success(`${label}: ${ids.length} member${ids.length === 1 ? '' : 's'}`);
+      clearSelection();
+      setBulkDialog(null);
+    } else {
+      toast.error(
+        `${label}: ${ids.length - failed} succeeded, ${failed} failed`,
+      );
+    }
+  }
+  async function bulkAddToGroup(groupId: string) {
+    // addGroupMembers takes an array natively — single round-trip.
+    setBulkBusy(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const res = await addGroupMembers(account.account_id, groupId, ids);
+      invalidateMembers();
+      toast.success(
+        `Added ${res.added} member${res.added === 1 ? '' : 's'} to group`,
+      );
+      clearSelection();
+      setBulkDialog(null);
+    } catch (err) {
+      toast.error((err as Error).message || 'Failed to add to group');
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   return (
     <SectionCard
       title="Members"
@@ -1004,16 +1043,13 @@ function MembersCard({
         </List>
       )}
 
+      {/* Search lives at the top of the list so it filters EVERYTHING
+          below it — pending invites + members alike. Looking up
+          "@foo.com" shouldn't care whether the person has accepted yet;
+          they're all people you're trying to find. */}
       {!isLoading && !isError && (
-        <PendingInvitesSection
-          accountId={account.account_id}
-          canManage={canInvite}
-        />
-      )}
-
-      {!isLoading && !isError && members.length > 0 && (
-        <div className="border-b border-border/60 px-6 py-3">
-          <div className="relative max-w-sm">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-6 py-3">
+          <div className="relative max-w-sm flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -1022,6 +1058,77 @@ function MembersCard({
               className="h-9 pl-9"
             />
           </div>
+          {canBulk && bulkEligible.length > 0 && (
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={allEligibleSelected}
+                onChange={toggleAllEligible}
+                className="h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
+              />
+              {allEligibleSelected ? 'Deselect all' : 'Select all'}{' '}
+              {bulkEligible.length !== sorted.length && (
+                <span>(visible)</span>
+              )}
+            </label>
+          )}
+        </div>
+      )}
+
+      {!isLoading && !isError && (
+        <PendingInvitesSection
+          accountId={account.account_id}
+          canManage={canInvite}
+          search={search}
+        />
+      )}
+
+      {selectedCount > 0 && canBulk && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-primary/[0.04] px-6 py-2.5 text-sm">
+          <span className="font-medium text-foreground">
+            {selectedCount} selected
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          {canInvite && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setBulkDialog('add_to_group')}
+              disabled={bulkBusy}
+            >
+              Add to group
+            </Button>
+          )}
+          {canUpdateRole && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setBulkDialog('set_role')}
+              disabled={bulkBusy}
+            >
+              Change role
+            </Button>
+          )}
+          {canRemove && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/5"
+              onClick={() => setBulkDialog('remove')}
+              disabled={bulkBusy}
+            >
+              Remove
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={clearSelection}
+            disabled={bulkBusy}
+            className="ml-auto text-muted-foreground"
+          >
+            Clear
+          </Button>
         </div>
       )}
 
@@ -1042,16 +1149,35 @@ function MembersCard({
             // Kebab is always available — "View & Edit permission policies"
             // is open to anyone who can view the member; backend gates writes.
             const showKebab = !pending;
+            // Self rows can't be bulk-acted on — would let an admin
+            // demote / remove themselves in a sweep.
+            const bulkEnabled = canBulk && !isSelf;
+            const isSelected = selectedIds.has(member.user_id);
 
             return (
               <ListRow
                 key={member.user_id}
                 leading={
-                  <UserAvatar
-                    email={member.email ?? member.user_id}
-                    name={member.email ?? undefined}
-                    size="md"
-                  />
+                  <div className="flex items-center gap-2.5">
+                    {bulkEnabled ? (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleOne(member.user_id)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Select ${memberLabel(member)}`}
+                        className="h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
+                      />
+                    ) : (
+                      // Spacer so avatars align across selectable + self rows.
+                      <span className="w-3.5" aria-hidden />
+                    )}
+                    <UserAvatar
+                      email={member.email ?? member.user_id}
+                      name={member.email ?? undefined}
+                      size="md"
+                    />
+                  </div>
                 }
                 title={memberLabel(member)}
                 badges={
@@ -1246,6 +1372,51 @@ function MembersCard({
         confirmLabel="Leave"
         onConfirm={() => leaveMutation.mutate()}
         isPending={leaveMutation.isPending}
+      />
+
+      <BulkAddToGroupDialog
+        open={bulkDialog === 'add_to_group'}
+        onOpenChange={(o) => !o && setBulkDialog(null)}
+        accountId={account.account_id}
+        selectedCount={selectedCount}
+        busy={bulkBusy}
+        onConfirm={bulkAddToGroup}
+      />
+
+      <BulkSetRoleDialog
+        open={bulkDialog === 'set_role'}
+        onOpenChange={(o) => !o && setBulkDialog(null)}
+        selectedCount={selectedCount}
+        busy={bulkBusy}
+        onConfirm={(role) =>
+          bulkRun('Role changed', (uid) =>
+            updateAccountMemberRole(account.account_id, uid, role),
+          )
+        }
+      />
+
+      <ConfirmDialog
+        open={bulkDialog === 'remove'}
+        onOpenChange={(o) => !o && setBulkDialog(null)}
+        title="Remove members"
+        description={
+          <span>
+            Remove{' '}
+            <span className="font-medium text-foreground">
+              {selectedCount} member{selectedCount === 1 ? '' : 's'}
+            </span>{' '}
+            from{' '}
+            <span className="font-medium text-foreground">{account.name}</span>?
+            They lose access immediately.
+          </span>
+        }
+        confirmLabel={`Remove ${selectedCount}`}
+        isPending={bulkBusy}
+        onConfirm={() =>
+          bulkRun('Removed', (uid) =>
+            removeAccountMember(account.account_id, uid),
+          )
+        }
       />
     </SectionCard>
   );
@@ -1457,9 +1628,13 @@ function DangerZoneCard() {
 function PendingInvitesSection({
   accountId,
   canManage,
+  search = '',
 }: {
   accountId: string;
   canManage: boolean;
+  /** Optional email filter — when the parent's search input has a
+   *  value, hide invites whose email doesn't include the query. */
+  search?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -1513,7 +1688,16 @@ function PendingInvitesSection({
       toast.error(err.message || 'Failed to cancel invite'),
   });
 
-  const invites = invitesQuery.data ?? [];
+  const allInvites = invitesQuery.data ?? [];
+  // Filter by search query — case-insensitive substring on email.
+  const query = search.trim().toLowerCase();
+  const invites = query
+    ? allInvites.filter((i) => i.email.toLowerCase().includes(query))
+    : allInvites;
+  // Hide the whole section when there are no invites at all OR when
+  // the search filtered everything out — there's no useful empty state
+  // to show here (the parent's members list handles the "no matches"
+  // copy for the combined search).
   if (!invites.length) return null;
 
   return (
@@ -1609,5 +1793,150 @@ function PendingInvitesSection({
         }}
       />
     </div>
+  );
+}
+
+// ─── Bulk dialogs ─────────────────────────────────────────────────────────
+
+function BulkAddToGroupDialog({
+  open,
+  onOpenChange,
+  accountId,
+  selectedCount,
+  busy,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  accountId: string;
+  selectedCount: number;
+  busy: boolean;
+  onConfirm: (groupId: string) => void;
+}) {
+  const [groupId, setGroupId] = useState<string | undefined>(undefined);
+  const groupsQuery = useQuery({
+    queryKey: ['account-groups', accountId],
+    queryFn: () => listGroups(accountId),
+    enabled: open,
+    staleTime: 30_000,
+  });
+  // Reset selection every reopen so a stale id from last time doesn't
+  // pre-fill an unrelated group.
+  function handleOpenChange(v: boolean) {
+    if (v) setGroupId(undefined);
+    onOpenChange(v);
+  }
+  const groups = groupsQuery.data ?? [];
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            Add {selectedCount} member{selectedCount === 1 ? '' : 's'} to a group
+          </DialogTitle>
+          <DialogDescription>
+            Pick the group these members should join. Members already in the
+            group are skipped — re-adding is a no-op.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5 py-1">
+          <Label htmlFor="bulk-group">Group</Label>
+          {groupsQuery.isLoading ? (
+            <Skeleton className="h-9 w-full" />
+          ) : groups.length === 0 ? (
+            <p className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+              No groups exist on this account yet. Create one from the Groups
+              tab first.
+            </p>
+          ) : (
+            <Select
+              value={groupId ?? ''}
+              onValueChange={(v) => setGroupId(v || undefined)}
+            >
+              <SelectTrigger id="bulk-group">
+                <SelectValue placeholder="Choose a group…" />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((g) => (
+                  <SelectItem key={g.group_id} value={g.group_id}>
+                    {g.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!groupId || busy || groups.length === 0}
+            onClick={() => groupId && onConfirm(groupId)}
+            className="gap-1.5"
+          >
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Add to group
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BulkSetRoleDialog({
+  open,
+  onOpenChange,
+  selectedCount,
+  busy,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  selectedCount: number;
+  busy: boolean;
+  onConfirm: (role: AccountRole) => void;
+}) {
+  const [role, setRole] = useState<AccountRole>('member');
+  function handleOpenChange(v: boolean) {
+    if (v) setRole('member');
+    onOpenChange(v);
+  }
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            Change role for {selectedCount} member{selectedCount === 1 ? '' : 's'}
+          </DialogTitle>
+          <DialogDescription>
+            Owners and admins have implicit Manager on every project. Members
+            get access only via direct grants or group membership.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5 py-1">
+          <Label htmlFor="bulk-role">New role</Label>
+          <Select value={role} onValueChange={(v) => setRole(v as AccountRole)}>
+            <SelectTrigger id="bulk-role">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="owner">Owner — full control + can delete the account</SelectItem>
+              <SelectItem value="admin">Admin — everything except account deletion</SelectItem>
+              <SelectItem value="member">Member — no implicit project access</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={() => onConfirm(role)} disabled={busy} className="gap-1.5">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Apply
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

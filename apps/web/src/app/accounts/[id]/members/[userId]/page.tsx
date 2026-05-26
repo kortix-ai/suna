@@ -4,7 +4,16 @@ import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Check, FolderOpen, Shield, ShieldOff, Users, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  Check,
+  Eye,
+  FolderOpen,
+  Shield,
+  ShieldOff,
+  Users,
+  X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/components/AuthProvider';
@@ -13,6 +22,13 @@ import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -43,6 +59,7 @@ export default function MemberDetailPage() {
   const { user, isLoading: authLoading } = useAuth();
   const [grantConfirmOpen, setGrantConfirmOpen] = useState(false);
   const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false);
+  const [viewAsOpen, setViewAsOpen] = useState(false);
 
   const accountQuery = useQuery({
     queryKey: ['account', accountId],
@@ -171,6 +188,18 @@ export default function MemberDetailPage() {
                   )}
                 </div>
               </div>
+              <div className="flex items-center gap-1.5">
+                {member && memberUserId !== user.id && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setViewAsOpen(true)}
+                    className="gap-1.5"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    View as
+                  </Button>
+                )}
               {canPromoteSuperAdmin && memberUserId !== user.id && member?.is_super_admin && (
                 <Button
                   variant="outline"
@@ -193,6 +222,7 @@ export default function MemberDetailPage() {
                   <Shield className="h-3.5 w-3.5" />
                   {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line196JsxTextGrantSuperAdmin')}</Button>
               )}
+              </div>
             </div>
           </div>
 
@@ -255,6 +285,16 @@ export default function MemberDetailPage() {
             isPending={setSuperAdminMutation.isPending}
             onConfirm={() => setSuperAdminMutation.mutate(false)}
           />
+
+          {account && member && (
+            <ViewAsUserDialog
+              open={viewAsOpen}
+              onOpenChange={setViewAsOpen}
+              accountId={account.account_id}
+              memberUserId={member.user_id}
+              memberLabel={memberLabel}
+            />
+          )}
         </div>
       </main>
     </div>
@@ -549,5 +589,142 @@ function MemberProjectAccessCard({
         </ul>
       )}
     </SectionCard>
+  );
+}
+
+// ─── View-as / permission simulator ───────────────────────────────────────
+//
+// Read-only "what would this user see?" — answers the question without
+// requiring the admin to impersonate. Two sections:
+//
+//   1. Project access — reuses listMemberProjectAccess (already
+//      surfaced on the member card above, repeated here for one-screen
+//      answer + because the dialog should be self-contained).
+//   2. Capabilities — fans out usePermissionsFor against a curated set
+//      of common admin / project actions, renders ✅ allowed / ❌ denied
+//      with the engine's reason text underneath denials.
+//
+// No backend changes — the /effective:batch endpoint already supports
+// arbitrary user_id targets (gated by member.read on the caller).
+
+const SIMULATOR_PROBES: Array<{
+  action: string;
+  label: string;
+  group: 'Account' | 'Projects' | 'Audit';
+}> = [
+  { action: 'account.write',           label: 'Change account settings',  group: 'Account' },
+  { action: 'member.invite',           label: 'Invite members',           group: 'Account' },
+  { action: 'member.remove',           label: 'Remove members',           group: 'Account' },
+  { action: 'group.create',            label: 'Create groups',            group: 'Account' },
+  { action: 'group.delete',            label: 'Delete groups',            group: 'Account' },
+  { action: 'project.create',          label: 'Create projects',          group: 'Projects' },
+  { action: 'project.write',           label: 'Edit projects',            group: 'Projects' },
+  { action: 'project.delete',          label: 'Delete projects',          group: 'Projects' },
+  { action: 'project.members.manage',  label: 'Manage project members',   group: 'Projects' },
+  { action: 'audit.read',              label: 'View the audit log',       group: 'Audit' },
+  { action: 'audit.export',            label: 'Export audit events',      group: 'Audit' },
+];
+
+function ViewAsUserDialog({
+  open,
+  onOpenChange,
+  accountId,
+  memberUserId,
+  memberLabel,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  accountId: string;
+  memberUserId: string;
+  memberLabel: string;
+}) {
+  // Only probe when the dialog is open (saves the round-trip for
+  // admins who never click View as). Probes intentionally exclude
+  // resource-scoped actions like project.write on project X — the
+  // V2 engine answers "can they perform this action on the account"
+  // which is the question this dialog should answer; per-project
+  // breakdown is the job of the MemberProjectAccessCard above.
+  const probes = useMemo(
+    () => SIMULATOR_PROBES.map((p) => ({ action: p.action })),
+    [],
+  );
+  const results = usePermissionsFor(
+    open ? accountId : undefined,
+    open ? memberUserId : undefined,
+    probes,
+  );
+  const grouped = useMemo(() => {
+    const groups: Record<string, Array<{ label: string; allowed: boolean; reason: string | null; isLoading: boolean }>> = {};
+    SIMULATOR_PROBES.forEach((p, i) => {
+      const r = results[i];
+      if (!groups[p.group]) groups[p.group] = [];
+      groups[p.group].push({
+        label: p.label,
+        allowed: !!r?.allowed,
+        reason: r?.reason ?? null,
+        isLoading: !!r?.isLoading,
+      });
+    });
+    return groups;
+  }, [results]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Eye className="h-4 w-4 text-muted-foreground" />
+            Viewing as {memberLabel}
+          </DialogTitle>
+          <DialogDescription>
+            Read-only check of what this member can do across the
+            account. The engine answers in real time — same logic the
+            UI uses to gate buttons for the user themselves.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          {(['Account', 'Projects', 'Audit'] as const).map((sectionName) => (
+            <section key={sectionName} className="space-y-1.5">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+                {sectionName}
+              </h3>
+              <ul className="divide-y divide-border/40 rounded-md border border-border/60">
+                {(grouped[sectionName] ?? []).map((row) => (
+                  <li
+                    key={row.label}
+                    className="flex items-start gap-3 px-3 py-2 text-sm"
+                  >
+                    <span className="mt-0.5 shrink-0">
+                      {row.isLoading ? (
+                        <span className="block h-3.5 w-3.5 animate-pulse rounded-full bg-muted" />
+                      ) : row.allowed ? (
+                        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      ) : (
+                        <X className="h-3.5 w-3.5 text-rose-500" />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-foreground">{row.label}</p>
+                      {!row.allowed && row.reason && !row.isLoading && (
+                        <p className="text-[11px] text-muted-foreground">
+                          {row.reason}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+
+          <p className="text-[11px] text-muted-foreground">
+            Project-scoped access (which projects they can reach + at
+            what role) is shown in the Project access card on this
+            page. This dialog is the account-wide capability view.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

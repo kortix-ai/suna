@@ -69,6 +69,13 @@ const IAM_ACTION_MAP: Record<
   'iam.service_account.disable': { title: 'Disabled service account',   kind: 'update' },
   'iam.service_account.delete':  { title: 'Deleted service account',    kind: 'delete' },
   'iam.audit.export':         { title: 'Exported audit log',            kind: 'export' },
+  'iam.policy_template.apply':{ title: 'Applied policy template',        kind: 'grant'  },
+  // V1 IAM policies were removed in PR5, but historical audit rows
+  // still reference these codes — humanize them so the audit history
+  // stays readable. New activity won't add more.
+  'iam.policy.create':        { title: 'Created IAM policy',             kind: 'create' },
+  'iam.policy.update':        { title: 'Updated IAM policy',             kind: 'update' },
+  'iam.policy.delete':        { title: 'Deleted IAM policy',             kind: 'delete' },
 };
 
 // ─── HTTP path patterns ──────────────────────────────────────────────────
@@ -123,18 +130,61 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       if (m === 'POST' && raw.endsWith(':rotate')) {
         return { title: 'Rotated secret', detail: name ?? undefined, kind: 'update' };
       }
+      // POST /v1/projects/:id/secrets with name in body (not in path).
+      // The name isn't recoverable from the URL so we just label the
+      // action and rely on the before/after diff for the detail.
+      if (m === 'POST' && s.length === 3) {
+        return { title: 'Set project secret', kind: 'update' };
+      }
     }
     return null;
   },
-  // ── Project access (direct members) ──────────────────────────────
+  // ── Project access (direct members + pending invites) ───────────
   (m, s) => {
     if (s[0] === 'projects' && s[2] === 'access') {
+      // Bootstrap-grant pending-invite endpoints. The DELETE is the
+      // Revoke action on the Pending Invitations card.
+      if (s[3] === 'pending-invites') {
+        if (m === 'GET') return { title: 'Listed pending project invites', kind: 'read' };
+        if (m === 'DELETE')
+          return { title: 'Revoked pending project invitation', kind: 'revoke' };
+      }
       if (m === 'POST' && s[3] === 'invite')
         return { title: 'Invited project member', kind: 'create' };
       if (m === 'PUT' && s.length === 4)
         return { title: 'Changed project member role', kind: 'update' };
       if (m === 'DELETE' && s.length === 4)
         return { title: 'Removed project member', kind: 'delete' };
+    }
+    return null;
+  },
+  // ── Project sessions ─────────────────────────────────────────────
+  // POST /v1/projects/:id/sessions[/:sessionId/...] — every interactive
+  // run lands here, so we get a lot of these. Friendly title beats raw
+  // method+path in a long audit list.
+  (m, s) => {
+    if (s[0] === 'projects' && s[2] === 'sessions') {
+      const tail = s.slice(3); // after /sessions
+      if (m === 'POST' && tail.length === 0)
+        return { title: 'Started session', kind: 'create' };
+      if (m === 'POST' && tail[1] === 'exec')
+        return { title: 'Ran session command', kind: 'update' };
+      if (m === 'POST' && tail[1] === 'stop')
+        return { title: 'Stopped session', kind: 'update' };
+      if (m === 'DELETE' && tail.length === 1)
+        return { title: 'Deleted session', kind: 'delete' };
+      if (m === 'PATCH' && tail.length === 1)
+        return { title: 'Updated session', kind: 'update' };
+    }
+    return null;
+  },
+  // ── Project triggers ─────────────────────────────────────────────
+  (m, s) => {
+    if (s[0] === 'projects' && s[2] === 'triggers') {
+      if (m === 'POST' && s.length === 3) return { title: 'Created trigger', kind: 'create' };
+      if (m === 'PATCH' && s.length === 4) return { title: 'Updated trigger', kind: 'update' };
+      if (m === 'DELETE' && s.length === 4) return { title: 'Deleted trigger', kind: 'delete' };
+      if (m === 'POST' && s[4] === 'fire') return { title: 'Fired trigger', kind: 'create' };
     }
     return null;
   },
@@ -156,6 +206,46 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
         return { title: 'Changed member role', kind: 'update' };
       if (m === 'DELETE' && s.length === 4)
         return { title: 'Removed member from account', kind: 'delete' };
+    }
+    return null;
+  },
+  // ── Account lifecycle (name/description edits) ───────────────────
+  // PATCH /v1/accounts/:id — used by the account settings form. Without
+  // this the audit log shows a bare "PATCH /v1/accounts/{id}" that
+  // tells the reader nothing.
+  (m, s) => {
+    if (s[0] === 'accounts' && s.length === 2) {
+      if (m === 'PATCH') return { title: 'Updated account settings', kind: 'update' };
+      if (m === 'DELETE') return { title: 'Deleted account', kind: 'delete' };
+    }
+    return null;
+  },
+  // ── IAM policy templates ─────────────────────────────────────────
+  // Templates are baked-in role bundles ("project-readonly-auditor",
+  // "billing-only", etc) — applying one creates the underlying group
+  // grants in a single shot, so we surface both the verb and which
+  // template was applied.
+  (m, s) => {
+    if (s[0] === 'accounts' && s[2] === 'iam' && s[3] === 'policy-templates') {
+      const slug = s[4] && s[4] !== ':id' ? s[4] : null;
+      if (m === 'POST' && s[5] === 'apply')
+        return { title: 'Applied policy template', detail: slug ?? undefined, kind: 'grant' };
+      if (m === 'GET')
+        return { title: 'Listed policy templates', kind: 'read' };
+    }
+    return null;
+  },
+  // ── V1 IAM policies (legacy, kept for audit history) ─────────────
+  // The V1 policies surface was removed in PR5, but applying a policy
+  // template still writes underlying iam.policy.create rows, and old
+  // audit rows reference the bare /iam/policies endpoints. Map them so
+  // the historical log doesn't look like raw curl commands.
+  (m, s) => {
+    if (s[0] === 'accounts' && s[2] === 'iam' && s[3] === 'policies') {
+      if (m === 'POST' && s.length === 4) return { title: 'Created IAM policy', kind: 'create' };
+      if (m === 'PATCH' && s.length === 5) return { title: 'Updated IAM policy', kind: 'update' };
+      if (m === 'DELETE' && s.length === 5) return { title: 'Deleted IAM policy', kind: 'delete' };
+      if (m === 'GET') return { title: 'Listed IAM policies', kind: 'read' };
     }
     return null;
   },

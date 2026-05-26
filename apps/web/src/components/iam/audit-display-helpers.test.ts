@@ -124,6 +124,109 @@ describe('humanizeAuditAction — HTTP routes', () => {
       humanizeAuditAction(`PATCH /v1/accounts/${UID}/iam/session-policy`).title,
     ).toBe('Updated session policy');
   });
+
+  // ── Patterns added for the screenshots in the audit-log polish pass ──
+
+  test('PATCH /v1/accounts/:id → Updated account settings', () => {
+    expect(humanizeAuditAction(`PATCH /v1/accounts/${UID}`).title).toBe(
+      'Updated account settings',
+    );
+  });
+
+  test('DELETE /v1/accounts/:id → Deleted account', () => {
+    expect(humanizeAuditAction(`DELETE /v1/accounts/${UID}`)).toEqual({
+      title: 'Deleted account',
+      kind: 'delete',
+    });
+  });
+
+  test('POST /v1/accounts/:id/iam/policy-templates/:slug/apply → Applied template + slug detail', () => {
+    const r = humanizeAuditAction(
+      `POST /v1/accounts/${UID}/iam/policy-templates/project-readonly-auditor/apply`,
+    );
+    expect(r.title).toBe('Applied policy template');
+    expect(r.detail).toBe('project-readonly-auditor');
+    expect(r.kind).toBe('grant');
+  });
+
+  test('iam.policy_template.apply → Applied policy template', () => {
+    expect(humanizeAuditAction('iam.policy_template.apply')).toEqual({
+      title: 'Applied policy template',
+      kind: 'grant',
+    });
+  });
+
+  test('DELETE /v1/projects/:id/access/pending-invites/:inviteId → Revoked pending invitation', () => {
+    const r = humanizeAuditAction(
+      `DELETE /v1/projects/${UID}/access/pending-invites/${UID2}`,
+    );
+    expect(r.title).toBe('Revoked pending project invitation');
+    expect(r.kind).toBe('revoke');
+  });
+
+  test('GET /v1/projects/:id/access/pending-invites → Listed pending invites', () => {
+    expect(
+      humanizeAuditAction(`GET /v1/projects/${UID}/access/pending-invites`).title,
+    ).toBe('Listed pending project invites');
+  });
+
+  test('POST /v1/projects/:id/sessions → Started session', () => {
+    expect(humanizeAuditAction(`POST /v1/projects/${UID}/sessions`)).toEqual({
+      title: 'Started session',
+      kind: 'create',
+    });
+  });
+
+  test('POST /v1/projects/:id/sessions/:sid/exec → Ran session command', () => {
+    expect(
+      humanizeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/exec`).title,
+    ).toBe('Ran session command');
+  });
+
+  test('POST /v1/projects/:id/sessions/:sid/stop → Stopped session', () => {
+    expect(
+      humanizeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/stop`).title,
+    ).toBe('Stopped session');
+  });
+
+  test('POST /v1/projects/:id/triggers/:tid/fire → Fired trigger', () => {
+    expect(
+      humanizeAuditAction(`POST /v1/projects/${UID}/triggers/${UID2}/fire`).title,
+    ).toBe('Fired trigger');
+  });
+
+  test('POST /v1/projects/:id/secrets (root, no name) → Set project secret', () => {
+    expect(humanizeAuditAction(`POST /v1/projects/${UID}/secrets`)).toEqual({
+      title: 'Set project secret',
+      kind: 'update',
+    });
+  });
+
+  test('POST /v1/accounts/:id/iam/policies → Created IAM policy', () => {
+    expect(
+      humanizeAuditAction(`POST /v1/accounts/${UID}/iam/policies`),
+    ).toEqual({
+      title: 'Created IAM policy',
+      kind: 'create',
+    });
+  });
+
+  test('DELETE /v1/accounts/:id/iam/policies/:pid → Deleted IAM policy', () => {
+    expect(
+      humanizeAuditAction(`DELETE /v1/accounts/${UID}/iam/policies/${UID2}`).title,
+    ).toBe('Deleted IAM policy');
+  });
+
+  test('iam.policy.create → Created IAM policy (legacy code)', () => {
+    expect(humanizeAuditAction('iam.policy.create')).toEqual({
+      title: 'Created IAM policy',
+      kind: 'create',
+    });
+  });
+
+  test('iam.policy.delete → Deleted IAM policy', () => {
+    expect(humanizeAuditAction('iam.policy.delete').title).toBe('Deleted IAM policy');
+  });
 });
 
 describe('humanizeAuditAction — fallbacks', () => {

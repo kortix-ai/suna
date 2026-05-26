@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { and, eq, isNull } from 'drizzle-orm';
-import { accountInvitations, accountMembers, accounts } from '@kortix/db';
+import { accountInvitations, accountMembers, accounts, projectMembers } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
@@ -164,9 +164,53 @@ accountInvitesRouter.post('/:inviteId/accept', async (c) => {
     });
   }
 
+  // Apply bootstrap grants (project_members rows the inviter wanted
+  // this user to land on). Owners/admins skip these — they already
+  // have implicit Manager on every project, so a direct grant is
+  // redundant noise. Errors are best-effort and logged; the account
+  // membership itself is already committed and shouldn't be rolled
+  // back if a project no longer exists or similar.
+  const bootstraps = invite.bootstrapGrants ?? [];
+  const appliedGrants: Array<{ project_id: string; role: string }> = [];
+  if (bootstraps.length > 0 && invite.initialRole === 'member') {
+    for (const g of bootstraps) {
+      try {
+        await db
+          .insert(projectMembers)
+          .values({
+            accountId: invite.accountId,
+            projectId: g.project_id,
+            userId,
+            projectRole: g.role,
+            grantedBy: invite.invitedBy,
+            expiresAt: g.expires_at ? new Date(g.expires_at) : null,
+          })
+          .onConflictDoUpdate({
+            target: [projectMembers.projectId, projectMembers.userId],
+            set: {
+              projectRole: g.role,
+              grantedBy: invite.invitedBy,
+              updatedAt: new Date(),
+              ...(g.expires_at
+                ? { expiresAt: new Date(g.expires_at) }
+                : {}),
+            },
+          });
+        appliedGrants.push({ project_id: g.project_id, role: g.role });
+      } catch (err) {
+        console.warn(
+          '[accept-invite] failed to apply bootstrap grant',
+          { project_id: g.project_id, role: g.role },
+          err,
+        );
+      }
+    }
+  }
+
   return c.json({
     account_id: invite.accountId,
     account_role: invite.initialRole,
+    bootstrap_grants_applied: appliedGrants,
   });
 });
 

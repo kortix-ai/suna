@@ -163,6 +163,9 @@ export interface GroupProjectGrant {
   role: 'manager' | 'editor' | 'viewer';
   granted_by: string | null;
   created_at: string;
+  /** Auto-revoke timestamp (ISO). null = permanent. Surfaced from the
+   *  backend's project_group_grants.expires_at. */
+  expires_at?: string | null;
 }
 
 export async function listGroupProjectGrants(accountId: string, groupId: string) {

@@ -16,6 +16,7 @@ import {
   accountGithubInstallationStates,
   accountGroups,
   accountGroupMembers,
+  accountInvitations,
   accountMembers,
   kortixApiKeys,
   projects,
@@ -1185,6 +1186,9 @@ async function grantProjectRole(input: {
   userId: string;
   role: ProjectRole;
   grantedBy: string;
+  /** undefined = leave as-is on update / NULL on insert; null = clear
+   *  any existing expiry; Date = set/replace the expiry. */
+  expiresAt?: Date | null | undefined;
 }) {
   const now = new Date();
   await db
@@ -1195,6 +1199,7 @@ async function grantProjectRole(input: {
       userId: input.userId,
       projectRole: input.role,
       grantedBy: input.grantedBy,
+      expiresAt: input.expiresAt ?? null,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -1203,8 +1208,31 @@ async function grantProjectRole(input: {
         projectRole: input.role,
         grantedBy: input.grantedBy,
         updatedAt: now,
+        // Only overwrite expires_at when the caller explicitly supplied
+        // it (undefined preserves the existing value).
+        ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       },
     });
+}
+
+/**
+ * Parse + validate an optional `expires_at` ISO string from a request
+ * body. undefined = caller didn't set; null = clear; Date = set.
+ * Rejects past timestamps to surface mistakes at write time.
+ */
+function parseExpiresAtBody(
+  raw: unknown,
+): { ok: true; value: Date | null | undefined } | { ok: false; error: string } {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null) return { ok: true, value: null };
+  if (typeof raw !== 'string')
+    return { ok: false, error: 'expires_at must be an ISO-8601 string or null' };
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime()))
+    return { ok: false, error: 'expires_at must be a valid ISO-8601 timestamp' };
+  if (d.getTime() < Date.now())
+    return { ok: false, error: 'expires_at must be in the future' };
+  return { ok: true, value: d };
 }
 
 async function ensureOrgMembership(
@@ -5325,6 +5353,7 @@ projectsApp.get('/:projectId/access', async (c) => {
         grantedBy: projectMembers.grantedBy,
         createdAt: projectMembers.createdAt,
         updatedAt: projectMembers.updatedAt,
+        expiresAt: projectMembers.expiresAt,
       })
       .from(projectMembers)
       .where(eq(projectMembers.projectId, loaded.row.projectId)),
@@ -5411,6 +5440,10 @@ projectsApp.get('/:projectId/access', async (c) => {
         granted_by: grant?.grantedBy ?? null,
         granted_at: grant?.createdAt?.toISOString() ?? null,
         updated_at: grant?.updatedAt?.toISOString() ?? null,
+        /** Auto-revoke timestamp for the DIRECT grant. NULL = permanent.
+         *  Group-derived expiries are surfaced per-source separately
+         *  (not yet wired into group_sources — follow-up). */
+        expires_at: grant?.expiresAt?.toISOString() ?? null,
       };
     })
     .sort((a, b) => {
@@ -5443,12 +5476,75 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
   const role = parseProjectRole(body.role);
   if (!email) return c.json({ error: 'email is required' }, 400);
   if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
+  const expires = parseExpiresAtBody(body.expires_at);
+  if (!expires.ok) return c.json({ error: expires.error }, 400);
 
   const targetUserId = await lookupUserIdByEmail(email);
   if (!targetUserId) {
+    // No Kortix user yet. Upsert an account invitation carrying a
+    // bootstrap_grant so when they accept, they're added to the org
+    // AND granted the project role in one step — no separate "invite
+    // to org, then invite to project" dance. The unique index on
+    // (account_id, email) makes this idempotent; re-inviting the
+    // same email to a second project merges the grants list.
+    const bootstrap = {
+      project_id: projectId,
+      role,
+      ...(expires.value
+        ? { expires_at: expires.value.toISOString() }
+        : {}),
+    };
+    const [existing] = await db
+      .select({
+        inviteId: accountInvitations.inviteId,
+        bootstrapGrants: accountInvitations.bootstrapGrants,
+      })
+      .from(accountInvitations)
+      .where(
+        and(
+          eq(accountInvitations.accountId, loaded.row.accountId),
+          sql`lower(${accountInvitations.email}) = ${email}`,
+          isNull(accountInvitations.acceptedAt),
+        ),
+      )
+      .limit(1);
+    let inviteId: string;
+    if (existing) {
+      // Merge bootstrap grants by project_id (later wins on role).
+      const merged = [...(existing.bootstrapGrants ?? [])];
+      const idx = merged.findIndex((g) => g.project_id === projectId);
+      if (idx >= 0) merged[idx] = bootstrap;
+      else merged.push(bootstrap);
+      await db
+        .update(accountInvitations)
+        .set({ bootstrapGrants: merged })
+        .where(eq(accountInvitations.inviteId, existing.inviteId));
+      inviteId = existing.inviteId;
+    } else {
+      const [created] = await db
+        .insert(accountInvitations)
+        .values({
+          accountId: loaded.row.accountId,
+          email,
+          invitedBy: loaded.userId,
+          initialRole: 'member',
+          bootstrapGrants: [bootstrap],
+        })
+        .returning({ inviteId: accountInvitations.inviteId });
+      inviteId = created.inviteId;
+    }
     return c.json(
-      { error: 'No Kortix account for that email. Invite them to the organization first (Account -> Members).' },
-      404,
+      {
+        status: 'invited',
+        email,
+        invite_id: inviteId,
+        project_role: role,
+        message:
+          'No Kortix account for that email yet — an invitation has been sent. They’ll land on this project as ' +
+          role +
+          ' when they sign up.',
+      },
+      201,
     );
   }
 
@@ -5470,6 +5566,7 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
     userId: targetUserId,
     role,
     grantedBy: loaded.userId,
+    expiresAt: expires.value,
   });
 
   return c.json({
@@ -5480,6 +5577,133 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
     effective_project_role: role,
     has_implicit_access: false,
   });
+});
+
+// GET /v1/projects/:projectId/access/pending-invites
+// Lists pending account_invitations whose bootstrap_grants target this
+// project. Surfaces the "I invited someone whose email doesn't have a
+// Kortix account yet" intermediate state — without this the UI looks
+// the same before and after a successful invite, leaving the inviter
+// to wonder if anything happened.
+//
+// Restricted to project managers — viewers don't need to see who's
+// queued up for membership.
+projectsApp.get('/:projectId/access/pending-invites', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+
+  // JSONB containment check (`@>`) finds invitations whose grants array
+  // contains an entry with this project_id. Includes expired invites in
+  // the result with a flag so the UI can show them dimmed + a "Resend"
+  // affordance later if we want it (out of scope for now — just hide).
+  const rows = await db
+    .select({
+      inviteId: accountInvitations.inviteId,
+      email: accountInvitations.email,
+      initialRole: accountInvitations.initialRole,
+      invitedBy: accountInvitations.invitedBy,
+      createdAt: accountInvitations.createdAt,
+      expiresAt: accountInvitations.expiresAt,
+      bootstrapGrants: accountInvitations.bootstrapGrants,
+    })
+    .from(accountInvitations)
+    .where(
+      and(
+        eq(accountInvitations.accountId, loaded.row.accountId),
+        isNull(accountInvitations.acceptedAt),
+        sql`${accountInvitations.bootstrapGrants} @> ${JSON.stringify([{ project_id: projectId }])}::jsonb`,
+      ),
+    );
+
+  // Resolve inviter emails in one shot (one auth.admin call per inviter
+  // since the Supabase helper has no batch API; the set is tiny in
+  // practice — usually 1 or 2 distinct admins).
+  const inviterIds = Array.from(
+    new Set(rows.map((r) => r.invitedBy).filter((v): v is string => !!v)),
+  );
+  const inviterEmails = await lookupEmailsByUserIds(inviterIds);
+
+  const now = Date.now();
+  const items = rows
+    .map((r) => {
+      const grant = (r.bootstrapGrants ?? []).find((g) => g.project_id === projectId);
+      // Defensive — the WHERE already filtered for project_id, but the
+      // type system doesn't know that, and a corrupt row shouldn't 500.
+      if (!grant) return null;
+      return {
+        invite_id: r.inviteId,
+        email: r.email,
+        project_role: grant.role as 'manager' | 'editor' | 'viewer',
+        expires_at: grant.expires_at ?? null,
+        invited_by_email: r.invitedBy ? (inviterEmails.get(r.invitedBy) ?? null) : null,
+        created_at: r.createdAt.toISOString(),
+        invite_expires_at: r.expiresAt.toISOString(),
+        invite_expired: r.expiresAt.getTime() <= now,
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  return c.json({ pending: items });
+});
+
+// DELETE /v1/projects/:projectId/access/pending-invites/:inviteId
+// Removes this project's bootstrap_grant from a pending invitation. If
+// that was the only grant AND the invitation is the auto-created
+// "member" variety (always how project /access/invite creates them), the
+// whole invitation row goes away — the user simply isn't being invited
+// anywhere anymore. If the inviter had set a higher initial_role
+// (admin/owner) or other project grants remain, we keep the invitation
+// and just strip this project from it.
+projectsApp.delete('/:projectId/access/pending-invites/:inviteId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const inviteId = c.req.param('inviteId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+
+  const [invite] = await db
+    .select({
+      inviteId: accountInvitations.inviteId,
+      accountId: accountInvitations.accountId,
+      initialRole: accountInvitations.initialRole,
+      acceptedAt: accountInvitations.acceptedAt,
+      bootstrapGrants: accountInvitations.bootstrapGrants,
+    })
+    .from(accountInvitations)
+    .where(eq(accountInvitations.inviteId, inviteId))
+    .limit(1);
+
+  if (!invite || invite.accountId !== loaded.row.accountId) {
+    return c.json({ error: 'Invitation not found' }, 404);
+  }
+  if (invite.acceptedAt) {
+    return c.json({ error: 'Invitation has already been accepted' }, 409);
+  }
+
+  const remaining = (invite.bootstrapGrants ?? []).filter(
+    (g) => g.project_id !== projectId,
+  );
+
+  // Auto-cancel the whole invitation if (a) nothing else is being
+  // granted AND (b) the original invite was for a plain member (which
+  // is the only role our project invite endpoint creates). Anything
+  // higher-tier must have been set deliberately at the account level
+  // and shouldn't be silently dropped.
+  if (remaining.length === 0 && invite.initialRole === 'member') {
+    await db
+      .delete(accountInvitations)
+      .where(eq(accountInvitations.inviteId, inviteId));
+    return c.json({ ok: true, invitation_cancelled: true });
+  }
+
+  await db
+    .update(accountInvitations)
+    .set({ bootstrapGrants: remaining })
+    .where(eq(accountInvitations.inviteId, inviteId));
+
+  return c.json({ ok: true, invitation_cancelled: false });
 });
 
 projectsApp.put('/:projectId/access/:userId', async (c) => {
@@ -5495,6 +5719,8 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
   const body = await readBody(c);
   const role = parseProjectRole(body.role);
   if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
+  const expires = parseExpiresAtBody(body.expires_at);
+  if (!expires.ok) return c.json({ error: expires.error }, 400);
 
   const targetMembership = await getAccountMembership(targetUserId, loaded.row.accountId);
   if (!targetMembership) {
@@ -5525,6 +5751,7 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
     userId: targetUserId,
     role,
     grantedBy: loaded.userId,
+    expiresAt: expires.value,
   });
 
   return c.json({
@@ -5591,6 +5818,7 @@ projectsApp.get('/:projectId/group-grants', async (c) => {
       role: projectGroupGrants.role,
       grantedBy: projectGroupGrants.grantedBy,
       createdAt: projectGroupGrants.createdAt,
+      expiresAt: projectGroupGrants.expiresAt,
       groupName: accountGroups.name,
     })
     .from(projectGroupGrants)
@@ -5645,6 +5873,8 @@ projectsApp.get('/:projectId/group-grants', async (c) => {
         role: r.role,
         granted_by: r.grantedBy,
         created_at: r.createdAt.toISOString(),
+        /** Auto-revoke timestamp. NULL = permanent attachment. */
+        expires_at: r.expiresAt?.toISOString() ?? null,
         member_count: stats.total,
         // How many of the group's members are account owners/admins —
         // their implicit Manager access overrides this grant's role.
@@ -5675,6 +5905,8 @@ projectsApp.post('/:projectId/group-grants', async (c) => {
   if (!isProjectRole(role)) {
     return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
   }
+  const expires = parseExpiresAtBody(body.expires_at);
+  if (!expires.ok) return c.json({ error: expires.error }, 400);
 
   // Confirm the group exists and belongs to this account — prevents
   // attaching a foreign-account group via a guessed UUID.
@@ -5696,10 +5928,17 @@ projectsApp.post('/:projectId/group-grants', async (c) => {
       accountId: loaded.row.accountId,
       role,
       grantedBy: loaded.userId,
+      expiresAt: expires.value ?? null,
     })
     .onConflictDoUpdate({
       target: [projectGroupGrants.projectId, projectGroupGrants.groupId],
-      set: { role, grantedBy: loaded.userId, updatedAt: now },
+      set: {
+        role,
+        grantedBy: loaded.userId,
+        updatedAt: now,
+        // Only overwrite when caller explicitly set the field.
+        ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
+      },
     });
 
   return c.json({ project_id: projectId, group_id: groupId, role }, 201);
@@ -5724,10 +5963,16 @@ projectsApp.patch('/:projectId/group-grants/:groupId', async (c) => {
   if (!isProjectRole(body.role)) {
     return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
   }
+  const expires = parseExpiresAtBody(body.expires_at);
+  if (!expires.ok) return c.json({ error: expires.error }, 400);
 
   const result = await db
     .update(projectGroupGrants)
-    .set({ role: body.role, updatedAt: new Date() })
+    .set({
+      role: body.role,
+      updatedAt: new Date(),
+      ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
+    })
     .where(
       and(
         eq(projectGroupGrants.projectId, projectId),

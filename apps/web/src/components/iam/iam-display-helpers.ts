@@ -127,6 +127,26 @@ export function isInheritedFromGroupOnly(row: ProjectAccessRowInput): boolean {
 }
 
 /**
+ * "Expires in 3d" / "Expires tomorrow" / "Expired" — the inline label
+ * that shows up next to a time-bounded grant. Past = "Expired" (renders
+ * red in the row); future = "Expires in …" (amber). Used by the project
+ * Members card + the group detail's Project access card.
+ */
+export function formatExpiry(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(ms)) return 'Expires (unknown)';
+  if (ms <= 0) return 'Expired';
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return `Expires in ${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Expires in ${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Expires tomorrow';
+  if (days < 30) return `Expires in ${days}d`;
+  return `Expires ${new Date(iso).toLocaleDateString()}`;
+}
+
+/**
  * Render the "Inherited X via Y" subtitle. Returns null when the row
  * isn't group-inherited (caller falls back to the "No access" / "Granted
  * {date}" / "Implicit account access" copy).

@@ -4,12 +4,13 @@ import { useTranslations } from 'next-intl';
 
 import { FormEvent, use, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Shield, UserPlus, Users } from 'lucide-react';
+import { Clock, Loader2, Mail, Shield, UserPlus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,7 +28,10 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import {
   getProject,
   inviteProjectMember,
+  isInviteSent,
+  listPendingProjectInvites,
   listProjectAccess,
+  revokePendingProjectInvite,
   revokeProjectAccess,
   updateProjectAccess,
   attachGroupToProject,
@@ -43,11 +47,18 @@ import {
   inheritedFromGroupSummary,
   isInheritedFromGroupOnly,
 } from '@/components/iam/iam-display-helpers';
+import { PROJECT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
+import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
+import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 
+// Backwards-compat alias — keep using PROJECT_ROLE_LABEL.<role> in places
+// that only need the bare label (badges, "X gets Manager via account role"
+// strings). Sourced from the same descriptor as the dropdown subtitles so
+// renaming a role is a one-file change.
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
-  manager: 'Manager',
-  editor: 'Editor',
-  viewer: 'Viewer',
+  manager: PROJECT_ROLE_DESCRIPTORS.manager.label,
+  editor: PROJECT_ROLE_DESCRIPTORS.editor.label,
+  viewer: PROJECT_ROLE_DESCRIPTORS.viewer.label,
 };
 
 function userLabel(member: Pick<ProjectAccessMember, 'email' | 'user_id'>) {
@@ -99,12 +110,20 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
-        <header className="space-y-1">
-          <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}</h2>
-          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners')}</p>
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}</h2>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners')}</p>
+          </div>
+          {/* Answers Marko's "what does a Viewer/Editor/Manager actually
+              do?" right at the point of decision — same popover the
+              account settings page uses, driven by the shared descriptor. */}
+          <PermissionsHelpPopover triggerLabel="Role help" align="end" />
         </header>
 
         {canManage && <InviteMemberCard projectId={projectId} />}
+
+        {canManage && <PendingInvitesCard projectId={projectId} />}
 
         <ProjectAccessCard
           projectId={projectId}
@@ -136,12 +155,27 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
 
   const inviteMutation = useMutation({
     mutationFn: () => inviteProjectMember(projectId, email.trim(), role),
-    onSuccess: () => {
-      toast.success('Member invited');
+    onSuccess: (result) => {
+      // Two cases. If the email already had a Kortix account, the
+      // backend granted them the role immediately and returned the
+      // ProjectAccessMember row. If not, the backend created an
+      // org-level invitation carrying the project grant — the user
+      // won't show up in the access list until they accept.
+      if (isInviteSent(result)) {
+        toast.success(
+          `Invitation sent to ${result.email}. They'll land on this project as ${result.project_role} when they sign up.`,
+        );
+        // Make the new pending row visible immediately — without this
+        // the page looked unchanged after invite, which was the exact
+        // confusion that prompted this card to exist.
+        queryClient.invalidateQueries({ queryKey: ['project-pending-invites', projectId] });
+      } else {
+        toast.success('Member added');
+        queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
+        queryClient.invalidateQueries({ queryKey: ['projects'] });
+        queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      }
       setEmail('');
-      queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
     },
     onError: (error: Error) => toast.error(error.message || 'Failed to invite member'),
   });
@@ -155,42 +189,70 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
   return (
     <SectionCard
       title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line140JsxAttrTitleInviteByEmail')}
-      description={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject')}
+      description="Add a Kortix user to this project. If they don't have an account yet, they'll get an invitation email — accepting puts them on this project at the chosen role in one step."
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="flex-1 space-y-1.5">
-          <Label htmlFor="invite-email">Email</Label>
-          <Input
-            id="invite-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line151JsxAttrPlaceholderTeammateExampleCom')}
-            disabled={inviteMutation.isPending}
-            autoComplete="off"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="invite-role">Role</Label>
-          <Select
-            value={role}
-            onValueChange={(next) => setRole(next as ProjectRole)}
-            disabled={inviteMutation.isPending}
+      {/* Layout: labels on top row, controls on the row below. Stacking
+          the labels separately (rather than putting Label+control in
+          each column) means we don't have to chase column-height parity
+          with sm:items-end — every control just sits on the same
+          baseline because they're in a single grid row. */}
+      <form
+        onSubmit={handleSubmit}
+        className="grid grid-cols-1 gap-x-3 gap-y-1.5 sm:grid-cols-[1fr_10rem_auto]"
+      >
+        <Label htmlFor="invite-email" className="sm:col-start-1">Email</Label>
+        <Label htmlFor="invite-role" className="hidden sm:block sm:col-start-2">
+          Role
+        </Label>
+        {/* No label above the button — invisible placeholder keeps the
+            grid row's intrinsic height stable without rendering text. */}
+        <span aria-hidden className="hidden sm:block sm:col-start-3">&nbsp;</span>
+
+        <Input
+          id="invite-email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line151JsxAttrPlaceholderTeammateExampleCom')}
+          disabled={inviteMutation.isPending}
+          autoComplete="off"
+          className="sm:col-start-1"
+          style={{ height: 44 }}
+        />
+
+        <Label htmlFor="invite-role-mobile" className="sm:hidden">Role</Label>
+        <Select
+          value={role}
+          onValueChange={(next) => setRole(next as ProjectRole)}
+          disabled={inviteMutation.isPending}
+        >
+          {/* Inline height guarantees parity with Input regardless of
+              whether the size="lg" variant has been picked up by --hot
+              reload yet (Bun was hitting that issue earlier). */}
+          <SelectTrigger
+            id="invite-role"
+            size="lg"
+            className="w-full sm:col-start-2"
+            style={{ height: 44 }}
           >
-            <SelectTrigger id="invite-role" className="h-9 w-full sm:w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
-              <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
-              <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+            <SelectValue />
+          </SelectTrigger>
+          {/* Two-line options (role + capability blurb) so the picker
+              explains what each role does. Trigger stays one line —
+              see role-select-item.tsx for how the ItemText split works. */}
+          <SelectContent>
+            <ProjectRoleSelectItem role="viewer" />
+            <ProjectRoleSelectItem role="editor" />
+            <ProjectRoleSelectItem role="manager" />
+          </SelectContent>
+        </Select>
+
         <Button
           type="submit"
+          size="lg"
           disabled={!email.trim() || inviteMutation.isPending}
-          className="shrink-0 gap-1.5"
+          className="shrink-0 gap-1.5 sm:col-start-3"
+          style={{ height: 44 }}
         >
           {inviteMutation.isPending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -224,6 +286,11 @@ function ProjectAccessCard({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  // Confirmation modal target. Holds the member chosen for revocation
+  // until the user confirms — picking "No access" from the dropdown is
+  // a destructive action and previously fired without warning, which
+  // made it easy to lock someone out by misclicking.
+  const [revokeTarget, setRevokeTarget] = useState<ProjectAccessMember | null>(null);
 
   const sortedMembers = useMemo(() => {
     const rank = { owner: 0, admin: 1, member: 2 };
@@ -266,13 +333,18 @@ function ProjectAccessCard({
   function setRole(member: ProjectAccessMember, value: string) {
     if (member.has_implicit_access || !canManage) return;
     if (value === 'none') {
-      revokeMutation.mutate(member.user_id);
+      // Stash the target; ConfirmDialog below picks it up. We DON'T
+      // fire the mutation here — the dropdown will visually snap back
+      // to the prior role on next render since the underlying data
+      // hasn't changed, so cancel = no-op without manual state reset.
+      setRevokeTarget(member);
       return;
     }
     updateMutation.mutate({ userId: member.user_id, role: value as ProjectRole });
   }
 
   return (
+    <>
     <SectionCard
       flush
       title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line260JsxAttrTitleProjectAccess')}
@@ -362,14 +434,21 @@ function ProjectAccessCard({
                           onValueChange={(next) => setRole(member, next)}
                           disabled={!canManage}
                         >
-                          <SelectTrigger className="h-8 w-32 text-xs">
+                          {/* w-40 fits "No direct grant" without
+                              truncation — the previous w-32 was clipping
+                              to "No direct gran". */}
+                          <SelectTrigger className="h-8 w-40 text-xs">
                             <SelectValue placeholder="Grant…" />
                           </SelectTrigger>
+                          {/* Same two-line layout as the invite form
+                              picker so admins layering a direct grant
+                              see what each role does without leaving
+                              the row. */}
                           <SelectContent>
                             <SelectItem value="none">No direct grant</SelectItem>
-                            <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
-                            <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
-                            <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                            <ProjectRoleSelectItem role="viewer" />
+                            <ProjectRoleSelectItem role="editor" />
+                            <ProjectRoleSelectItem role="manager" />
                           </SelectContent>
                         </Select>
                       )}
@@ -385,9 +464,9 @@ function ProjectAccessCard({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line328JsxTextNoAccess')}</SelectItem>
-                        <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
-                        <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
-                        <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                        <ProjectRoleSelectItem role="viewer" />
+                        <ProjectRoleSelectItem role="editor" />
+                        <ProjectRoleSelectItem role="manager" />
                       </SelectContent>
                     </Select>
                   )
@@ -398,6 +477,37 @@ function ProjectAccessCard({
         </List>
       )}
     </SectionCard>
+
+    <ConfirmDialog
+      open={revokeTarget !== null}
+      onOpenChange={(open) => {
+        if (!open) setRevokeTarget(null);
+      }}
+      title="Revoke project access?"
+      description={
+        revokeTarget ? (
+          <span>
+            <strong>{userLabel(revokeTarget)}</strong> will lose direct
+            access to this project. If they belong to a group that's
+            attached here, they'll still see the project at the group's
+            role.
+          </span>
+        ) : null
+      }
+      confirmLabel="Revoke access"
+      confirmVariant="destructive"
+      isPending={revokeMutation.isPending}
+      onConfirm={() => {
+        if (!revokeTarget) return;
+        const target = revokeTarget;
+        // Close the dialog optimistically — the mutation's onSuccess
+        // toast is enough feedback, and leaving the modal open while
+        // it fires looks janky.
+        setRevokeTarget(null);
+        revokeMutation.mutate(target.user_id);
+      }}
+    />
+    </>
   );
 }
 
@@ -410,6 +520,157 @@ function AccountRoleBadge({ role }: { role: ProjectAccessMember['account_role'] 
     >
       {role}
     </Badge>
+  );
+}
+
+// ─── Pending invitations (non-Kortix users who haven't signed up yet) ─────
+//
+// Bridges the gap between "I invited foo@example.com" and "foo joined the
+// project". Without this card, the page looks identical before and after
+// a successful invite to a non-Kortix email — the inviter has no way to
+// recall who they queued up, resend the link, or take it back. Mirrors
+// the "Pending invitations" pattern in GitHub / Slack / Linear member
+// settings.
+
+function PendingInvitesCard({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const queryKey = ['project-pending-invites', projectId];
+  const [pendingInviteId, setPendingInviteId] = useState<string | null>(null);
+  // Revoking an invitation is destructive (and may cancel the whole
+  // org-level invite when this was the only bootstrap_grant) — gate
+  // behind a confirmation.
+  const [revokeTarget, setRevokeTarget] = useState<{ inviteId: string; email: string } | null>(null);
+
+  const invitesQuery = useQuery({
+    queryKey,
+    queryFn: () => listPendingProjectInvites(projectId),
+    staleTime: 20_000,
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (inviteId: string) => revokePendingProjectInvite(projectId, inviteId),
+    onMutate: (inviteId) => setPendingInviteId(inviteId),
+    onSettled: () => setPendingInviteId(null),
+    onSuccess: (result) => {
+      toast.success(
+        result.invitation_cancelled
+          ? 'Invitation cancelled.'
+          : 'Project access removed from invitation.',
+      );
+      queryClient.invalidateQueries({ queryKey });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to revoke invitation'),
+  });
+
+  const pending = invitesQuery.data?.pending ?? [];
+
+  // Hide the entire card when empty — no point adding visual noise.
+  // (Different from group grants card which always shows an empty state
+  // because it has a primary action affordance in the header.)
+  if (!invitesQuery.isLoading && pending.length === 0) return null;
+
+  return (
+    <>
+    <SectionCard
+      flush
+      title="Pending invitations"
+      description="People you've invited by email who haven't accepted yet. They'll join the project at the chosen role as soon as they sign up."
+      count={pending.length}
+    >
+      {invitesQuery.isLoading && (
+        <div className="px-6 py-5">
+          <Skeleton className="h-8 w-full" />
+        </div>
+      )}
+
+      {!invitesQuery.isLoading && pending.length > 0 && (
+        <List>
+          {pending.map((invite) => {
+            const busy = pendingInviteId === invite.invite_id;
+            return (
+              <ListRow
+                key={invite.invite_id}
+                leading={
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                    <Mail className="h-4 w-4" />
+                  </span>
+                }
+                title={invite.email}
+                badges={
+                  <Badge variant="outline" size="sm" className="capitalize">
+                    {invite.project_role}
+                  </Badge>
+                }
+                subtitle={
+                  <InlineMeta>
+                    <span>Invited {formatDate(invite.created_at)}</span>
+                    {invite.invited_by_email && (
+                      <span>by {invite.invited_by_email}</span>
+                    )}
+                    {invite.invite_expired ? (
+                      <span className="text-amber-700 dark:text-amber-400">
+                        Invite link expired — ask them to request a fresh
+                        one from the email
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        Link expires {formatDate(invite.invite_expires_at)}
+                      </span>
+                    )}
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setRevokeTarget({ inviteId: invite.invite_id, email: invite.email })}
+                      title="Cancel this invitation"
+                      className="gap-1.5"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Revoke
+                    </Button>
+                  )
+                }
+              />
+            );
+          })}
+        </List>
+      )}
+    </SectionCard>
+
+    <ConfirmDialog
+      open={revokeTarget !== null}
+      onOpenChange={(open) => {
+        if (!open) setRevokeTarget(null);
+      }}
+      title="Revoke invitation?"
+      description={
+        revokeTarget ? (
+          <span>
+            The invitation for <strong>{revokeTarget.email}</strong> will
+            be cancelled. If they were only invited to this project,
+            the whole invitation is removed. To resend later you'd need
+            to invite them again.
+          </span>
+        ) : null
+      }
+      confirmLabel="Revoke invitation"
+      confirmVariant="destructive"
+      isPending={revokeMutation.isPending}
+      onConfirm={() => {
+        if (!revokeTarget) return;
+        const target = revokeTarget;
+        setRevokeTarget(null);
+        revokeMutation.mutate(target.inviteId);
+      }}
+    />
+    </>
   );
 }
 
@@ -450,6 +711,9 @@ function ProjectGroupGrantsCard({
   const [pickerGroupId, setPickerGroupId] = useState<string>('');
   const [pickerRole, setPickerRole] = useState<ProjectRole>('editor');
   const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
+  // Detaching a group revokes inherited access for every group member
+  // in one shot — easily a dozen users at once. Always confirm.
+  const [detachTarget, setDetachTarget] = useState<ProjectGroupGrant | null>(null);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: grantsKey });
@@ -492,6 +756,7 @@ function ProjectGroupGrantsCard({
   });
 
   return (
+    <>
     <SectionCard
       flush
       title="Group access"
@@ -531,10 +796,13 @@ function ProjectGroupGrantsCard({
               <SelectTrigger className="h-8 w-28 text-xs">
                 <SelectValue />
               </SelectTrigger>
+              {/* Full blurbs here — choosing the role for a whole group
+                  attachment is a higher-impact decision than a single
+                  per-user grant, so users benefit from the extra context. */}
               <SelectContent>
-                <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
-                <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
-                <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                <ProjectRoleSelectItem role="viewer" />
+                <ProjectRoleSelectItem role="editor" />
+                <ProjectRoleSelectItem role="manager" />
               </SelectContent>
             </Select>
             <Button
@@ -625,16 +893,16 @@ function ProjectGroupGrantsCard({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
-                          <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
-                          <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                          <ProjectRoleSelectItem role="viewer" />
+                          <ProjectRoleSelectItem role="editor" />
+                          <ProjectRoleSelectItem role="manager" />
                         </SelectContent>
                       </Select>
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
-                        onClick={() => detachMutation.mutate(g.group_id)}
+                        onClick={() => setDetachTarget(g)}
                       >
                         Detach
                       </Button>
@@ -651,5 +919,35 @@ function ProjectGroupGrantsCard({
         </List>
       )}
     </SectionCard>
+
+    <ConfirmDialog
+      open={detachTarget !== null}
+      onOpenChange={(open) => {
+        if (!open) setDetachTarget(null);
+      }}
+      title="Detach group from project?"
+      description={
+        detachTarget ? (
+          <span>
+            <strong>{detachTarget.group_name}</strong> will no longer be
+            attached to this project. Members of this group will lose
+            their inherited <strong>{detachTarget.role}</strong> access
+            (unless they also have a direct grant or belong to another
+            attached group). Owners and admins keep their implicit
+            Manager access either way.
+          </span>
+        ) : null
+      }
+      confirmLabel="Detach group"
+      confirmVariant="destructive"
+      isPending={detachMutation.isPending}
+      onConfirm={() => {
+        if (!detachTarget) return;
+        const target = detachTarget;
+        setDetachTarget(null);
+        detachMutation.mutate(target.group_id);
+      }}
+    />
+    </>
   );
 }
