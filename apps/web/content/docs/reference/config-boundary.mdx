@@ -1,0 +1,45 @@
+---
+title: Kortix vs OpenCode config
+description: The strict ownership boundary between kortix.toml and the .kortix/opencode/ config directory.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A Kortix project's config has two owners, and the boundary is strict.
+
+- **Kortix owns** `kortix.toml` and `.kortix/Dockerfile` — what a project is, its sandbox, secrets, triggers, apps.
+- **OpenCode owns** `.kortix/opencode/` — how the agent behaves. The platform never reads inside it; it only tells OpenCode where it is.
+
+The config dir is declared via `[opencode] config_dir` (default `.kortix/opencode`); the agent daemon launches OpenCode with `OPENCODE_CONFIG_DIR` pointed there.
+
+## Ownership table
+
+| Concern | Lives in | Read by |
+| --- | --- | --- |
+| Project metadata (`name`, `description`) | `kortix.toml` `[project]` | Kortix |
+| Env / secrets spec | `kortix.toml` `[env]` | Kortix |
+| Sandbox base image | `kortix.toml` `[sandbox]` + `.kortix/Dockerfile` | Kortix |
+| Where the OpenCode config dir lives | `kortix.toml` `[opencode] config_dir` | Kortix |
+| Triggers (cron + webhook) | `kortix.toml` `[[triggers]]` | Kortix |
+| Apps (experimental) | `kortix.toml` `[[apps]]` | Kortix |
+| Agent personas | `.kortix/opencode/agents/` | OpenCode |
+| Skills | `.kortix/opencode/skills/` | OpenCode |
+| Slash commands | `.kortix/opencode/` (commands) | OpenCode |
+| Custom tools | `.kortix/opencode/` (tools) | OpenCode |
+| Plugins | `.kortix/opencode/` (plugins) | OpenCode |
+| MCP servers | `.kortix/opencode/opencode.jsonc` | OpenCode |
+| Model / provider config | `.kortix/opencode/opencode.jsonc` | OpenCode |
+
+<Callout type="info" title="Rule of thumb">
+If it describes the project, the sandbox, when work runs, or what gets deployed, it belongs in `kortix.toml`. If it describes how the agent thinks, talks, or acts, it belongs under `.kortix/opencode/`.
+</Callout>
+
+Full `kortix.toml` field reference: [kortix.toml](/docs/reference/manifest). The `.kortix/opencode/` directory follows OpenCode's standard layout; see [opencode.ai/docs](https://opencode.ai/docs/) for each primitive.
+
+## Where the agent runs
+
+The agent runtime is OpenCode, and **Kortix runs it in the cloud sandbox** — the sandbox agent server launches OpenCode with `OPENCODE_CONFIG_DIR` set to your `config_dir`. There is no Kortix command that runs the agent on your machine; the [CLI](/docs/reference/cli) is a cloud control plane, not a local runner.
+
+Because `.kortix/opencode/` uses OpenCode's standard layout, the personas, skills, and tools are portable: install the upstream `opencode` binary and point its config dir at that folder and it reads the same files.
+
+New files under `.kortix/opencode/` reach future sandbox sessions only after a [change request](/docs/reference/change-requests) merges them to `main`.

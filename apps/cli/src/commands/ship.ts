@@ -240,7 +240,7 @@ async function shipExisting(
   }
   const repoUrl = project.repo_url;
   const meta = (project.metadata ?? {}) as Record<string, any>;
-  // Canonical: metadata.git.{provider,auth.method}. Fallback: legacy git_provider.
+  // Canonical: metadata.git.{provider,auth.method}. Fallback: git_provider.
   const git = meta.git as { provider?: string; auth?: { method?: string } } | undefined;
   const managed = git
     ? git.provider === 'freestyle' && (git.auth?.method ?? 'managed') === 'managed'

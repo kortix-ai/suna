@@ -20,11 +20,11 @@ export interface AvatarStackProps {
 }
 
 const OVERFLOW_SIZE_MAP: Record<UserAvatarSize, string> = {
-  xs: 'size-5 text-[9px] -ml-1',
-  sm: 'size-6 text-[10px] -ml-1.5',
-  md: 'size-8 text-[11px] -ml-2',
-  lg: 'size-10 text-[13px] -ml-2',
-  xl: 'size-14 text-[14px] -ml-3',
+  xs: 'size-5 text-xs -ml-1',
+  sm: 'size-6 text-xs -ml-1.5',
+  md: 'size-8 text-xs -ml-2',
+  lg: 'size-10 text-sm -ml-2',
+  xl: 'size-14 text-sm -ml-3',
 };
 
 const STACK_OFFSET_MAP: Record<UserAvatarSize, string> = {

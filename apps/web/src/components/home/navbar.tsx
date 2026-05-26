@@ -15,6 +15,7 @@ import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { AppDownloadQR } from '@/components/common/app-download-qr';
 import { Button } from '@/components/ui/button';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
+import { ProductMegaMenu, PRODUCT_ITEMS } from '@/components/home/product-menu';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -72,7 +73,7 @@ function PowerButton({ href, onClick, label = 'Launch Kortix' }: { href?: string
       <AnimatePresence>
         {hovered && (
           <motion.span
-            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] text-foreground bg-background border border-border rounded-md px-2 py-0.5 pointer-events-none z-50 shadow-sm"
+            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-foreground bg-background border border-border rounded-md px-2 py-0.5 pointer-events-none z-50 shadow-sm"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
@@ -148,6 +149,7 @@ interface NavbarProps {
 }
 
 export function Navbar({ isAbsolute = false }: NavbarProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('hero');
@@ -203,7 +205,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     <header className={cn(
       "w-full px-5 pt-4 transition-colors duration-300",
       isAbsolute ? "" : "sticky top-0 z-50",
-      hasScrolled && !isAbsolute && "bg-background/80 backdrop-blur-xl pb-2"
+      hasScrolled && "bg-background/80 backdrop-blur-xl pb-2"
     )}>
       <div className="flex items-center justify-between h-[52px]">
         {/* Left — Logo (right-click for brand assets) */}
@@ -215,10 +217,8 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           </ContextMenuTrigger>
           <ContextMenuContent className="w-48">
             <ContextMenuSub>
-              <ContextMenuSubTrigger className="gap-2 text-[13px]">
-                <Gem className="size-3.5 shrink-0" />
-                Download symbol
-              </ContextMenuSubTrigger>
+              <ContextMenuSubTrigger className="gap-2 text-sm">
+                <Gem className="size-3.5 shrink-0" />{tHardcodedUi.raw('componentsHomeNavbar.line221JsxTextDownloadSymbol')}</ContextMenuSubTrigger>
               <ContextMenuSubContent className="w-40">
                 {[
                   { label: 'Black · SVG', href: '/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg', file: 'kortix-symbol-black.svg' },
@@ -226,17 +226,15 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   { label: 'White · SVG', href: '/brandkit/Logo/Brandmark/SVG/Brandmark White.svg', file: 'kortix-symbol-white.svg' },
                   { label: 'White · PNG', href: '/brandkit/Logo/Brandmark/PNG/Brandmark White.png', file: 'kortix-symbol-white.png' },
                 ].map((d) => (
-                  <ContextMenuItem key={d.file} onClick={() => { const a = document.createElement('a'); a.href = d.href; a.download = d.file; a.click(); }} className="text-[13px] cursor-pointer">
+                  <ContextMenuItem key={d.file} onClick={() => { const a = document.createElement('a'); a.href = d.href; a.download = d.file; a.click(); }} className="text-sm cursor-pointer">
                     {d.label}
                   </ContextMenuItem>
                 ))}
               </ContextMenuSubContent>
             </ContextMenuSub>
             <ContextMenuSub>
-              <ContextMenuSubTrigger className="gap-2 text-[13px]">
-                <Type className="size-3.5 shrink-0" />
-                Download wordmark
-              </ContextMenuSubTrigger>
+              <ContextMenuSubTrigger className="gap-2 text-sm">
+                <Type className="size-3.5 shrink-0" />{tHardcodedUi.raw('componentsHomeNavbar.line239JsxTextDownloadWordmark')}</ContextMenuSubTrigger>
               <ContextMenuSubContent className="w-40">
                 {[
                   { label: 'Black · SVG', href: '/brandkit/Logo/Wordmark/SVG/Wordmark Black.svg', file: 'kortix-wordmark-black.svg' },
@@ -244,7 +242,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   { label: 'White · SVG', href: '/brandkit/Logo/Wordmark/SVG/Wordmark White.svg', file: 'kortix-wordmark-white.svg' },
                   { label: 'White · PNG', href: '/brandkit/Logo/Wordmark/PNG/Wordmark White.png', file: 'kortix-wordmark-white.png' },
                 ].map((d) => (
-                  <ContextMenuItem key={d.file} onClick={() => { const a = document.createElement('a'); a.href = d.href; a.download = d.file; a.click(); }} className="text-[13px] cursor-pointer">
+                  <ContextMenuItem key={d.file} onClick={() => { const a = document.createElement('a'); a.href = d.href; a.download = d.file; a.click(); }} className="text-sm cursor-pointer">
                     {d.label}
                   </ContextMenuItem>
                 ))}
@@ -252,16 +250,15 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             </ContextMenuSub>
             <ContextMenuItem
               onClick={() => router.push('/design-system')}
-              className="gap-2 text-[13px] cursor-pointer"
+              className="gap-2 text-sm cursor-pointer"
             >
-              <Layers className="size-3.5 shrink-0" />
-              Design system
-            </ContextMenuItem>
+              <Layers className="size-3.5 shrink-0" />{tHardcodedUi.raw('componentsHomeNavbar.line259JsxTextDesignSystem')}</ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
 
         {/* Center — Nav Links (desktop only) */}
         <nav className="hidden md:flex items-center justify-center gap-1 absolute left-1/2 -translate-x-1/2">
+          <ProductMegaMenu />
           {filteredNavLinks.map((item) => (
             <Link
               key={item.id}
@@ -296,7 +293,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           </a>
 
           <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-            <Link href="/enterprise">Request demo</Link>
+            <Link href="/enterprise">{tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}</Link>
           </Button>
           {user ? (
             <Button asChild size="sm">
@@ -306,9 +303,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             <Button
               onClick={() => { trackCtaSignup(); router.push(ctaLink); }}
               size="sm"
-            >
-              Get started
-            </Button>
+            >{tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}</Button>
           )}
 
           {/* Mobile Menu Button */}
@@ -317,7 +312,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             variant="ghost"
             size="icon"
             className="md:hidden"
-            aria-label="Open menu"
+            aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
           >
             <Menu className="size-5" />
           </Button>
@@ -343,7 +338,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 onClick={toggleDrawer}
                 variant="outline"
                 size="icon"
-                aria-label="Close menu"
+                aria-label={tHardcodedUi.raw('componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu')}
               >
                 <X className="size-5" />
               </Button>
@@ -403,6 +398,28 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 </motion.li>
                 */}
               </ul>
+
+              {/* Product group */}
+              <motion.div variants={drawerMenuVariants} className="mt-10">
+                <div className="pb-3 text-xs font-mono uppercase tracking-wider text-muted-foreground">Product</div>
+                <ul className="flex flex-col">
+                  {PRODUCT_ITEMS.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <li key={item.title}>
+                        <Link
+                          href={item.href}
+                          onClick={() => setIsDrawerOpen(false)}
+                          className="flex items-center gap-3 py-2.5 text-xl font-medium text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          <Icon className="size-5 shrink-0" />
+                          {item.title}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </motion.div>
             </motion.nav>
 
             {/* Footer Actions */}

@@ -76,7 +76,9 @@ export interface AppContext {
   keyId?: string;
 }
 
-// Context variables set by auth middleware (platform)
+// Context variables set by auth middleware (platform).
+// Single source of truth for everything apiKeyAuth / supabaseAuth / combinedAuth
+// write onto the Hono context — keep this in sync with middleware/auth.ts.
 export interface AuthVariables {
   userId: string;
   userEmail: string;
@@ -85,14 +87,15 @@ export interface AuthVariables {
   apiKeyType?: 'user' | 'sandbox';
   keyId?: string;
   sandboxId?: string;
+  /** Set for project-scoped CLI PATs — enforced against the URL :projectId. */
+  tokenProjectId?: string;
+  /** PAT token identity for the IAM engine (token-as-principal evaluation). */
+  iamTokenId?: string;
 }
 
-// Hono environment type (cron/billing)
+// Hono environment type — Variables match exactly what the auth middleware sets.
 export type AppEnv = {
-  Variables: {
-    userId: string;
-    userEmail: string;
-  };
+  Variables: AuthVariables;
 };
 
 // ─── Tier System (Billing) ──────────────────────────────────────────────────

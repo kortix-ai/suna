@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState } from 'react';
 import {
   GitBranch,
@@ -51,17 +53,17 @@ function CrListItem({
   return (
     <button
       onClick={onSelect}
-      className="group flex items-start gap-3 w-full px-3 py-2.5 text-left hover:bg-muted/40 transition-colors border-l-2 border-l-transparent"
+      className="group flex items-start gap-3 w-full px-3 py-2.5 text-left cursor-pointer hover:bg-muted/40 transition-colors border-l-2 border-l-transparent"
     >
       <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted/40">
         <CrIcon status={cr.status} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="font-mono text-[10.5px] text-muted-foreground">#{cr.number}</span>
-          <p className="truncate text-[13px] font-medium text-foreground">{cr.title}</p>
+          <span className="font-mono text-xs text-muted-foreground">#{cr.number}</span>
+          <p className="truncate text-sm font-medium text-foreground">{cr.title}</p>
         </div>
-        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <GitBranch className="h-3 w-3" />
           <span className="font-mono truncate max-w-[120px]">{cr.head_ref}</span>
           <span>→</span>
@@ -91,6 +93,7 @@ interface ChangeRequestsPanelProps {
  * dialog with diff + merge/close actions.
  */
 export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const ctx = useProjectContext();
   const activeRef = ctx?.ref ?? '';
   const defaultBranch = ctx?.defaultBranch ?? '';
@@ -128,10 +131,10 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
         {/* Header */}
         <div className="flex items-center gap-2 px-3 h-12 border-b border-border/40 shrink-0">
           <GitPullRequest className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium text-sm">Change requests</span>
+          <span className="font-medium text-sm">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line131JsxTextChangeRequests')}</span>
           {activeRef && (
             <span
-              className="flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground/90 truncate max-w-[120px]"
+              className="flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground/90 truncate max-w-[120px]"
               title={`Version: ${activeRef}`}
             >
               <GitBranch className="h-3 w-3" />
@@ -140,9 +143,9 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
           )}
           <Button
             size="sm"
-            className="h-7 ml-auto gap-1 px-2 text-[11px]"
+            className="h-7 ml-auto gap-1 px-2 text-xs"
             onClick={() => setOpenDialogShown(true)}
-            title="Open a new change request"
+            title={tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line145JsxAttrTitleOpenANewChangeRequest')}
           >
             <Plus className="h-3.5 w-3.5" />
             New
@@ -174,10 +177,10 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
             onValueChange={(v) => setStatus(v as ChangeRequestStatus | 'all')}
           >
             <TabsList className="h-7 w-full grid grid-cols-4 p-0.5">
-              <TabsTrigger value="open" className="text-[11px] h-6">Open</TabsTrigger>
-              <TabsTrigger value="merged" className="text-[11px] h-6">Merged</TabsTrigger>
-              <TabsTrigger value="closed" className="text-[11px] h-6">Closed</TabsTrigger>
-              <TabsTrigger value="all" className="text-[11px] h-6">All</TabsTrigger>
+              <TabsTrigger value="open" className="text-xs h-6">Open</TabsTrigger>
+              <TabsTrigger value="merged" className="text-xs h-6">Merged</TabsTrigger>
+              <TabsTrigger value="closed" className="text-xs h-6">Closed</TabsTrigger>
+              <TabsTrigger value="all" className="text-xs h-6">All</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -188,7 +191,7 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
             {isLoading && (
               <div className="p-3 space-y-2">
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full rounded-md" />
+                  <Skeleton key={i} className="h-12 w-full rounded-lg" />
                 ))}
               </div>
             )}
@@ -196,18 +199,15 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
               <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
                 <GitPullRequest className="h-6 w-6 text-muted-foreground/30" />
                 <p className="text-xs text-muted-foreground">
-                  No {status === 'all' ? '' : status} change requests
-                </p>
+                  No {status === 'all' ? '' : status}{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line199JsxTextChangeRequests')}</p>
                 {status === 'open' && (
                   <Button
                     size="sm"
                     variant="outline"
-                    className="mt-1 h-7 gap-1 text-[11px]"
+                    className="mt-1 h-7 gap-1 text-xs"
                     onClick={() => setOpenDialogShown(true)}
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    Open the first one
-                  </Button>
+                    <Plus className="h-3.5 w-3.5" />{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line209JsxTextOpenTheFirstOne')}</Button>
                 )}
               </div>
             )}

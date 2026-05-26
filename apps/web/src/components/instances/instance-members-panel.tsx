@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast as sonnerToast } from 'sonner';
@@ -32,6 +34,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -45,11 +48,12 @@ import {
   IconMore,
   IconUsers,
 } from '@/components/ui/kortix-icons';
-import { User } from 'lucide-react';
+import { User, AlertCircle } from 'lucide-react';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<SandboxMember | null>(null);
@@ -125,11 +129,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
       <header className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Team</h2>
-          <p className="text-muted-foreground mt-1 text-sm">
-            People with access to this instance. Invite teammates by email —
-            they get instant access if they already use Kortix, otherwise we
-            send them a signup link.
-          </p>
+          <p className="text-muted-foreground mt-1 text-sm">{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line130JsxTextPeopleWithAccessToThisInstanceInviteTeammates')}</p>
         </div>
         {canInvite ? (
           <Button
@@ -137,33 +137,28 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
             onClick={() => setInviteOpen(true)}
             className="shrink-0"
           >
-            <IconInvite className="h-3.5 w-3.5" />
-            Invite teammate
-          </Button>
+            <IconInvite className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line142JsxTextInviteTeammate')}</Button>
         ) : null}
       </header>
 
       {membersQuery.isLoading ? (
         <div className="text-muted-foreground flex items-center gap-2 text-sm">
-          <IconLoader className="h-4 w-4 animate-spin" /> Loading team…
-        </div>
+          <IconLoader className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line149JsxTextLoadingTeam')}</div>
       ) : membersQuery.error ? (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+        <InfoBanner tone="warning" icon={AlertCircle} title={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line152JsxAttrTitleFailedToLoadMembers')}>
           {membersQuery.error instanceof Error
             ? membersQuery.error.message
             : 'Failed to load members.'}
-        </div>
+        </InfoBanner>
       ) : members.length === 0 && pending.length === 0 ? (
         <EmptyState
           icon={IconUsers}
-          title="Just you, for now"
-          description="Invite a teammate to collaborate on this instance. They'll see projects you grant them access to, and their sessions stay private from yours."
+          title={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line160JsxAttrTitleJustYouForNow')}
+          description={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line161JsxAttrDescriptionInviteATeammateToCollaborateOnThisInstance')}
           action={
             canInvite ? (
               <Button onClick={() => setInviteOpen(true)}>
-                <IconInvite className="mr-1.5 h-3.5 w-3.5" />
-                Invite teammate
-              </Button>
+                <IconInvite className="mr-1.5 h-3.5 w-3.5" />{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line166JsxTextInviteTeammate')}</Button>
             ) : undefined
           }
         />
@@ -201,7 +196,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
       <ConfirmDialog
         open={!!removeTarget}
         onOpenChange={(open) => !open && setRemoveTarget(null)}
-        title="Remove from team?"
+        title={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line205JsxAttrTitleRemoveFromTeam')}
         description={
           removeTarget
             ? removeTarget.role === 'admin'
@@ -217,7 +212,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
       <ConfirmDialog
         open={!!revokeTarget}
         onOpenChange={(open) => !open && setRevokeTarget(null)}
-        title="Revoke invite?"
+        title={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line221JsxAttrTitleRevokeInvite')}
         description={
           revokeTarget
             ? `${revokeTarget.email} won't be able to join with the pending invite link.`
@@ -237,7 +232,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-muted-foreground/60 text-[11px] font-semibold uppercase tracking-[0.08em]">
+    <div className="text-muted-foreground/60 text-xs font-semibold uppercase tracking-[0.08em]">
       {children}
     </div>
   );
@@ -318,9 +313,10 @@ function PendingSection({
   canRevoke: boolean;
   onRevoke: (i: SandboxPendingInvite) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <section className="space-y-3">
-      <SectionLabel>Pending · {invites.length}</SectionLabel>
+      <SectionLabel>{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line324JsxTextPending')}{invites.length}</SectionLabel>
       <div className="space-y-1.5">
         {invites.map((invite) => (
           <UserRow
@@ -328,7 +324,7 @@ function PendingSection({
             email={invite.email}
             subtitle={
               <span>
-                Invited {formatRelative(invite.created_at)} · expires{' '}
+                Invited {formatRelative(invite.created_at)}{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line332JsxTextExpires')}{' '}
                 {formatRelative(invite.expires_at)}
               </span>
             }
@@ -339,9 +335,9 @@ function PendingSection({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="text-muted-foreground hover:text-destructive h-7 w-7"
+                    className="text-muted-foreground h-7 w-7"
                     onClick={() => onRevoke(invite)}
-                    aria-label="Revoke invite"
+                    aria-label={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line345JsxAttrAriaLabelRevokeInvite')}
                   >
                     <IconDelete className="h-3.5 w-3.5" />
                   </Button>
@@ -401,6 +397,7 @@ function MemberRowActions({
   onChangeRole: (next: SandboxMemberRole) => void;
   onRemove: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -408,7 +405,7 @@ function MemberRowActions({
           size="icon"
           variant="ghost"
           disabled={pending}
-          aria-label="Member actions"
+          aria-label={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line412JsxAttrAriaLabelMemberActions')}
           className="text-muted-foreground hover:text-foreground h-7 w-7"
         >
           {pending ? (
@@ -436,10 +433,7 @@ function MemberRowActions({
         {removable ? (
           <>
             {roleEditable ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuItem
-              onSelect={onRemove}
-              className="focus:text-destructive focus:bg-destructive/10"
-            >
+            <DropdownMenuItem onSelect={onRemove}>
               <IconDelete className="h-3.5 w-3.5" />
               Remove
             </DropdownMenuItem>
@@ -472,7 +466,7 @@ function RoleMenuItem({
           {title}
         </div>
         {subtitle ? (
-          <div className="text-muted-foreground text-[11px] leading-snug">
+          <div className="text-muted-foreground text-xs leading-snug">
             {subtitle}
           </div>
         ) : null}
@@ -502,6 +496,7 @@ function InviteDialog({
   onSubmit: (input: { email: string; role: 'admin' | 'member' }) => void;
   pending: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'admin' | 'member'>('member');
 
@@ -538,10 +533,10 @@ function InviteDialog({
             )}
           </div>
           <div className="text-center">
-            <DialogTitle className="text-[17px] font-semibold tracking-tight">
+            <DialogTitle className="text-base font-semibold tracking-tight">
               {emailValid ? `Invite ${displayName}` : 'Invite teammate'}
             </DialogTitle>
-            <DialogDescription className="mt-1 text-[13px]">
+            <DialogDescription className="mt-1 text-sm">
               {emailValid
                 ? "They'll get an email with a link to join."
                 : 'Add someone to collaborate on this instance.'}
@@ -561,24 +556,22 @@ function InviteDialog({
             <div className="space-y-1.5">
               <Label
                 htmlFor="invite-email"
-                className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.08em]"
-              >
-                Email address
-              </Label>
+                className="text-muted-foreground text-xs font-semibold uppercase tracking-[0.08em]"
+              >{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line564JsxTextEmailAddress')}</Label>
               <Input
                 id="invite-email"
                 type="email"
-                placeholder="teammate@example.com"
+                placeholder={tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line569JsxAttrPlaceholderTeammateExampleCom')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={pending}
                 autoFocus
-                className="h-11 text-[14px]"
+                className="h-11 text-sm"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.08em]">
+              <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-[0.08em]">
                 Role
               </Label>
               <div className="grid grid-cols-2 gap-2">
@@ -599,9 +592,7 @@ function InviteDialog({
           </div>
 
           <div className="border-border/60 bg-muted/20 flex items-center justify-between gap-2 border-t px-6 py-3.5">
-            <p className="text-muted-foreground/70 text-[11px]">
-              If they don't have Kortix yet, we'll send a signup link.
-            </p>
+            <p className="text-muted-foreground/70 text-xs">{tHardcodedUi.raw('componentsInstancesInstanceMembersPanel.line601JsxTextIfTheyDonTHaveKortixYetWe')}</p>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -658,7 +649,7 @@ function RoleCard({
       )}
     >
       <div className="flex w-full items-center justify-between">
-        <span className="text-foreground text-[13px] font-semibold">
+        <span className="text-foreground text-sm font-semibold">
           {title}
         </span>
         <span
@@ -678,7 +669,7 @@ function RoleCard({
         </span>
       </div>
       {description ? (
-        <p className="text-muted-foreground text-[11px] leading-snug">
+        <p className="text-muted-foreground text-xs leading-snug">
           {description}
         </p>
       ) : null}

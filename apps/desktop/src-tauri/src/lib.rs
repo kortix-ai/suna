@@ -129,7 +129,10 @@ const WINDOW_OPEN_SHIM: &str = r#"
 #[cfg(target_os = "macos")]
 use tauri::{LogicalPosition, TitleBarStyle};
 
-const DEFAULT_URL: &str = "http://localhost:3000/dashboard";
+const DEFAULT_URL: &str = match option_env!("KORTIX_DESKTOP_DEFAULT_URL") {
+    Some(url) => url,
+    None => "http://localhost:3000/dashboard",
+};
 
 fn app_url() -> String {
     std::env::var("KORTIX_DESKTOP_URL").unwrap_or_else(|_| DEFAULT_URL.to_string())

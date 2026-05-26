@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * /projects/[id]/agents — Project agents browser.
  *
@@ -14,14 +16,13 @@
  */
 
 import { use, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
   Copy,
   ExternalLink,
-  FileText,
   Pencil,
+  Plus,
   Search,
   ShieldAlert,
   Star,
@@ -46,6 +47,12 @@ import {
   readProjectFile,
   type ProjectConfigSummary,
 } from '@/lib/projects-client';
+import {
+  useConfigureThread,
+  newConfigPrompt,
+  editConfigPrompt,
+} from '@/components/projects/customize/use-configure-thread';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -61,6 +68,7 @@ export default function ProjectAgentsPage({
 }
 
 export function AgentsView({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -97,28 +105,36 @@ export function AgentsView({ projectId }: { projectId: string }) {
   }, [agents, query]);
 
   const selected = agents.find((a) => a.path === selectedPath) ?? null;
+  const startThread = useConfigureThread(projectId);
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="flex w-[300px] shrink-0 flex-col border-r border-border/60 bg-background">
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-          <Bot className="h-4 w-4 text-muted-foreground" />
-          <h1 className="flex-1 text-sm font-semibold text-foreground">Agents</h1>
-          {agents.length > 0 && (
-            <Badge variant="secondary" size="sm" className="tabular-nums">
-              {agents.length}
-            </Badge>
-          )}
-        </div>
+    <div className="flex h-full min-h-0 flex-col md:flex-row">
+      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[240px] md:border-b-0 md:border-r">
+        <CustomizeSectionHeader
+          icon={Bot}
+          title="Agents"
+          count={agents.length}
+          actions={
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => startThread(newConfigPrompt('agent'))}
+            >
+              <Plus className="h-3 w-3" />
+              New
+            </Button>
+          }
+        />
 
         <div className="border-b border-border/40 px-3 py-2.5">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <Input
-              placeholder="Search agents"
+              placeholder={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line118JsxAttrPlaceholderSearchAgents')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-8 rounded-md border-border/60 bg-background pl-7 text-[12.5px] placeholder:text-muted-foreground/60"
+              className="h-8 pl-8 text-sm placeholder:text-muted-foreground/60"
             />
           </div>
         </div>
@@ -134,7 +150,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
               onRetry={() => detailQuery.refetch()}
             />
           ) : agents.length === 0 ? (
-            <EmptyList />
+            <EmptyList onCreate={() => startThread(newConfigPrompt('agent'))} />
           ) : filtered.length === 0 ? (
             <NoMatches query={query} />
           ) : (
@@ -189,13 +205,13 @@ function AgentRow({
       type="button"
       onClick={onSelect}
       className={cn(
-        'group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors',
+        'group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
         active
           ? 'bg-muted/70 text-foreground'
           : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
       )}
     >
-      <span className="truncate text-[12.5px] font-medium">{agent.name}</span>
+      <span className="truncate text-sm font-medium">{agent.name}</span>
       {isDefault && (
         <Star
           className={cn(
@@ -219,15 +235,14 @@ function AgentDetail({
   agent: Agent;
   isDefault: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const startThread = useConfigureThread(projectId);
   const fileQuery = useQuery({
     queryKey: ['project-file-source', projectId, agent.path],
     queryFn: () => readProjectFile(projectId, agent.path),
     staleTime: 30_000,
   });
 
-  const fileHref = `/projects/${projectId}/files?path=${encodeURIComponent(
-    agent.path,
-  )}`;
   const fileName = agent.path.split('/').pop() ?? agent.path;
   const modeLabel = agent.mode ? formatMode(agent.mode) : null;
 
@@ -251,12 +266,12 @@ function AgentDetail({
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
         <span className="truncate text-sm font-mono text-foreground">{fileName}</span>
         <span className="text-muted-foreground/40">·</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground/70">
           {agent.path}
         </span>
         <DetailToolbarActions
           onCopy={onCopy}
-          fileHref={fileHref}
+          onEdit={() => startThread(editConfigPrompt('agent', agent.name, agent.path))}
           copyDisabled={!fileQuery.data?.content}
         />
       </header>
@@ -264,7 +279,7 @@ function AgentDetail({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-6 py-8">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/60">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
               Agent
               {modeLabel && (
                 <Badge
@@ -290,7 +305,7 @@ function AgentDetail({
               {agent.name}
             </h1>
             {agent.description && (
-              <p className="max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground">
+              <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
                 {agent.description}
               </p>
             )}
@@ -310,9 +325,7 @@ function AgentDetail({
             ) : body.trim() ? (
               <UnifiedMarkdown content={body} />
             ) : (
-              <p className="text-[12.5px] italic text-muted-foreground/60">
-                Agent body is empty. Add prompt content below the frontmatter.
-              </p>
+              <p className="text-sm italic text-muted-foreground/60">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line314JsxTextAgentBodyIsEmptyAddPromptContentBelow')}</p>
             )}
           </div>
         </div>
@@ -323,30 +336,16 @@ function AgentDetail({
 
 function DetailToolbarActions({
   onCopy,
-  fileHref,
+  onEdit,
   copyDisabled,
 }: {
   onCopy: () => void;
-  fileHref: string;
+  onEdit: () => void;
   copyDisabled: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="flex items-center gap-0.5">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-            disabled
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-[10px]">
-          Inline editing coming soon
-        </TooltipContent>
-      </Tooltip>
+    <div className="flex items-center gap-1">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -359,27 +358,17 @@ function DetailToolbarActions({
             <Copy className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-[10px]">
-          Copy source
-        </TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line363JsxTextCopySource')}</TooltipContent>
       </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-          >
-            <Link href={fileHref}>
-              <FileText className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-[10px]">
-          Open in file viewer
-        </TooltipContent>
-      </Tooltip>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 gap-1.5 px-2.5 text-xs"
+        onClick={onEdit}
+      >
+        <Pencil className="h-3.5 w-3.5" />
+        Edit with agent
+      </Button>
     </div>
   );
 }
@@ -424,52 +413,55 @@ function DetailBodySkeleton() {
 }
 
 function DetailEmpty() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
       icon={Bot}
-      title="Select an agent"
-      description="Pick an agent from the list to preview it."
+      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line430JsxAttrTitleSelectAnAgent')}
+      description={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line431JsxAttrDescriptionPickAnAgentFromTheListToPreview')}
     />
   );
 }
 
 function NoMatches({ query }: { query: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-6 text-center">
-      <p className="text-[11.5px] text-muted-foreground">
-        No matches for{' '}
+      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line440JsxTextNoMatchesFor')}{' '}
         <span className="font-mono text-foreground">{query}</span>.
       </p>
     </div>
   );
 }
 
-function EmptyList() {
+function EmptyList({ onCreate }: { onCreate: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
       icon={Bot}
       size="sm"
-      title="No agents yet"
+      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line452JsxAttrTitleNoAgentsYet')}
       description={
-        <>
-          Commit a{' '}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-            .kortix/opencode/agents/&lt;name&gt;.md
-          </code>{' '}
-          and it&apos;ll show up here.
-        </>
+        <>{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line455JsxTextCommitA')}{' '}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line457JsxTextKortixOpencodeAgentsLtNameGtMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line459JsxTextAndItAposLlShowUpHere')}</>
       }
       action={
-        <Button asChild variant="ghost" size="sm" className="gap-1.5">
-          <a
-            href="https://opencode.ai/docs/agents/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <ExternalLink className="h-3 w-3" />
-            OpenCode agents docs
-          </a>
-        </Button>
+        <div className="flex flex-col items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={onCreate}>
+            <Plus className="h-3.5 w-3.5" />
+            Create an agent
+          </Button>
+          <Button asChild variant="ghost" size="sm" className="gap-1.5">
+            <a
+              href="https://opencode.ai/docs/agents/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Docs
+            </a>
+          </Button>
+        </div>
       }
     />
   );
@@ -482,10 +474,11 @@ function DetailError({
   message: string;
   onRetry: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <InfoBanner
       tone="destructive"
-      title="Couldn't load source"
+      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line488JsxAttrTitleCouldnTLoadSource')}
       action={
         <Button variant="outline" size="sm" onClick={onRetry}>
           Retry
@@ -498,10 +491,9 @@ function DetailError({
 }
 
 function ForbiddenNotice() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <InfoBanner icon={ShieldAlert} title="Access required">
-      No permission to read this repo.
-    </InfoBanner>
+    <InfoBanner icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line502JsxAttrTitleAccessRequired')}>{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line503JsxTextNoPermissionToReadThisRepo')}</InfoBanner>
   );
 }
 
@@ -512,10 +504,11 @@ function ErrorNotice({
   message: string;
   onRetry: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-4">
-      <p className="text-[12.5px] font-medium text-destructive">Failed to load</p>
-      <p className="mt-1 text-[11px] text-destructive/80">{message}</p>
+      <p className="text-sm font-medium text-destructive">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line517JsxTextFailedToLoad')}</p>
+      <p className="mt-1 text-xs text-destructive/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry
       </Button>

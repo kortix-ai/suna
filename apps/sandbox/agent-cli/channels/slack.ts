@@ -9,7 +9,59 @@ import {
   validateRequired,
   getEnv,
   kortixProjectId,
+  kortixSessionId,
+  kortixPost,
 } from '../lib';
+
+// Relay a checkpoint or the final answer into this turn's live Slack stream.
+// apps/api owns the streamed message; here we just hand it the content.
+//   detail → subtitle line under the new task's title (in_progress state).
+//   output → result line on the *previous* task as it transitions to complete.
+async function relayTurnStream(
+  kind: 'step' | 'answer',
+  text: string,
+  extras: {
+    detail?: string;
+    output?: string;
+    sources?: Array<{ url: string; text: string }>;
+    blocks?: unknown[];
+  } = {},
+): Promise<boolean> {
+  const projectId = kortixProjectId();
+  const sessionId = kortixSessionId();
+  if (!projectId || !sessionId) return false;
+  try {
+    const r = await kortixPost<{ ok?: boolean }>(`/projects/${projectId}/turn-stream`, {
+      session_id: sessionId,
+      kind,
+      text,
+      ...(extras.detail ? { detail: extras.detail } : {}),
+      ...(extras.output ? { output: extras.output } : {}),
+      ...(extras.sources && extras.sources.length > 0 ? { sources: extras.sources } : {}),
+      ...(extras.blocks && extras.blocks.length > 0 ? { blocks: extras.blocks } : {}),
+    });
+    return r?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+// Parse a repeatable `--source` flag value like `https://example.com|Title`
+// into the structured shape the relay expects. Returns [] when missing.
+function readSourcesFlag(flags: Record<string, string>): Array<{ url: string; text: string }> {
+  const raw = flags.source ?? flags.sources;
+  if (!raw) return [];
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const i = line.indexOf('|');
+      if (i <= 0) return { url: line, text: line };
+      return { url: line.slice(0, i).trim(), text: line.slice(i + 1).trim() };
+    })
+    .filter((s) => /^https?:\/\//.test(s.url));
+}
 
 function slackApiBase(): string {
   return (getEnv('SLACK_API_URL') ?? 'https://slack.com/api').replace(/\/$/, '');
@@ -286,12 +338,46 @@ function readBlocksFlag(flags: Record<string, string>): unknown[] | undefined {
 }
 
 async function main(): Promise<void> {
-  const { command, flags } = parseArgs(process.argv);
+  const { command, args, flags } = parseArgs(process.argv);
   switch (command) {
+    case 'step': {
+      const text = (readTextFlag(flags) ?? args[0] ?? '').trim();
+      if (!text) throw new CliError('checkpoint text required, e.g. slack step "Reading the logs"');
+      // --detail: subtitle line shown under the NEW task while in_progress.
+      //          Supports inline `<https://… |label>` mrkdwn links.
+      // --output: result line attached to the PREVIOUS task as it completes.
+      //          Also supports `<url|label>` mrkdwn.
+      // --source URL|TITLE (repeatable, newline-separated): citations
+      //          rendered under the closing task's card.
+      const detail = flags.detail?.trim() || undefined;
+      const output = flags.output?.trim() || undefined;
+      const sources = readSourcesFlag(flags);
+      const relayed = await relayTurnStream('step', text, { detail, output, sources });
+      out({ ok: true, relayed });
+      break;
+    }
     case 'send': {
-      validateRequired(flags, 'channel');
-      const text = readTextFlag(flags);
+      const text = readTextFlag(flags) ?? args[0];
       const blocks = readBlocksFlag(flags);
+      // No --channel + no --file → this is the turn answer. Finalizes the
+      // live streamed message rather than posting a separate one. --blocks
+      // is allowed here: Slack accepts a closing `blocks` chunk on stopStream
+      // so the answer can be full Block Kit (header/section/actions/etc.).
+      if (!flags.channel && !flags.file) {
+        if (!text && (!blocks || blocks.length === 0)) {
+          throw new CliError('message text required, e.g. slack send "Done — here is the summary"');
+        }
+        const fallbackText = (text ?? 'Done.').slice(0, 11000);
+        const relayed = await relayTurnStream('answer', fallbackText, {
+          blocks: blocks && blocks.length > 0 ? blocks : undefined,
+        });
+        if (relayed) {
+          out({ ok: true, delivered: 'stream', mode: blocks ? 'blocks' : 'text' });
+          break;
+        }
+        throw new CliError('No active Slack turn to answer. To post to a channel, pass --channel.');
+      }
+      validateRequired(flags, 'channel');
       if (!text && !flags.file && !blocks) {
         throw new CliError('--text, --text-file, --blocks, --blocks-file, and/or --file required');
       }
@@ -368,12 +454,26 @@ async function main(): Promise<void> {
     case 'manifest':
       out(manifest({ url: flags.url, projectId: flags['project-id'], name: flags.name }));
       break;
+    case 'ask':
+      // `slack ask` was replaced by opencode's native `question` tool. Calling
+      // opencode's `question` from any agent turn triggered from Slack
+      // surfaces the form in the same thread automatically via the
+      // sandbox-side event subscriber. The CLI keeps this case so older
+      // workflows fail loud instead of pretending to work.
+      throw new CliError(
+        '`slack ask` was removed — use opencode\'s built-in `question` tool. ' +
+        'The Slack form is rendered automatically by the sandbox\'s opencode-events subscriber.',
+      );
     case 'help':
     default:
       console.log(`
 slack — Slack Web API adapter
 
 Auth: SLACK_BOT_TOKEN env (injected from project_secrets at sandbox spawn).
+
+Turn commands (use these when answering a Slack message):
+  step         "<checkpoint>"            # narrate a live plan step as you work
+  send         "<answer>"                # deliver your reply — finalizes the live update
 
 Commands:
   send         (--channel, [--text|--text-file], [--blocks|--blocks-file], [--thread], [--file])

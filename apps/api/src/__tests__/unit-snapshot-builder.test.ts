@@ -23,6 +23,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectRuntimeSnapshots } from '@kortix/db';
 
+process.env.NODE_ENV = 'test';
+
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
 const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
 const BRANCH = 'main';
@@ -45,6 +47,7 @@ interface Row {
 let rows: Row[] = [];
 let daytonaDeleteCalls: string[];
 let daytonaSnapshotCreateCalls: any[];
+let hiddenDaytonaSnapshots: Set<string>;
 
 function makeRow(overrides: Partial<Row> = {}): Row {
   const id = overrides.snapshotRowId ?? `row-${rows.length}`;
@@ -58,7 +61,7 @@ function makeRow(overrides: Partial<Row> = {}): Row {
     snapshotId: overrides.snapshotId ?? `kortix-snap-1111-${id}`,
     status: overrides.status ?? 'ready',
     error: overrides.error ?? null,
-    metadata: overrides.metadata ?? {},
+    metadata: overrides.metadata ?? { runtimeFingerprint: 'runtime-current' },
     createdAt: overrides.createdAt ?? new Date(2026, 0, 1),
     updatedAt: overrides.updatedAt ?? overrides.createdAt ?? new Date(2026, 0, 1),
     ...overrides,
@@ -173,17 +176,36 @@ mock.module('../shared/daytona', () => ({
       },
     },
   }),
+  isDaytonaConfigured: () => true,
+  listDaytonaSnapshots: async () =>
+    rows
+      .filter((row) => row.snapshotId)
+      .filter((row) => !hiddenDaytonaSnapshots.has(row.snapshotId!))
+      .map((row) => ({
+        id: `daytona-${row.snapshotId}`,
+        name: row.snapshotId!,
+        state: 'active',
+        createdAt: row.createdAt.toISOString(),
+      })),
+  deleteDaytonaSnapshotById: async () => true,
 }));
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   resolveCommitSha: async (_project: any, ref: string) => `head-of-${ref}`,
   resolveTreeOid: async () => 'tree-oid',
   readRepoFile: async () => 'FROM ubuntu:24.04\n',
   materializeRepoContext: async () => '/tmp/fake-context',
+  materializeRepoCheckoutTar: async () => ({ archivePath: '/tmp/fake-checkout.tar.gz', bytes: 1 }),
 }));
 
 mock.module('../projects/triggers', () => ({
   readManifest: async () => null,
+}));
+
+mock.module('../snapshots/runtime-fingerprint', () => ({
+  buildRuntimeArtifactFingerprint: async () => 'runtime-current',
 }));
 
 mock.module('../config', () => ({
@@ -196,6 +218,7 @@ beforeEach(() => {
   rows = [];
   daytonaDeleteCalls = [];
   daytonaSnapshotCreateCalls = [];
+  hiddenDaytonaSnapshots = new Set();
   filterByCall = [() => true];
   nextSort = null;
   selectCallCount = 0;
@@ -229,6 +252,98 @@ describe('getLatestReadySnapshot', () => {
     const result = await builder.getLatestReadySnapshot(PROJECT_ID, BRANCH);
     expect(result).toBeNull();
   });
+
+  test('ignores ready rows when Daytona no longer has the snapshot active', async () => {
+    rows = [
+      makeRow({ snapshotRowId: 'stale', status: 'ready', snapshotId: 'kortix-snap-1111-stale' }),
+    ];
+    hiddenDaytonaSnapshots = new Set(['kortix-snap-1111-stale']);
+    setFilter((r) => r.status === 'ready');
+
+    const result = await builder.getLatestReadySnapshot(PROJECT_ID, BRANCH);
+
+    expect(result).toBeNull();
+  });
+
+  test('ignores ready rows from an old runtime fingerprint', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'stale-newer',
+        status: 'ready',
+        metadata: { runtimeFingerprint: 'runtime-old' },
+        createdAt: new Date(2026, 0, 5),
+      }),
+      makeRow({
+        snapshotRowId: 'current-older',
+        status: 'ready',
+        metadata: { runtimeFingerprint: 'runtime-current' },
+        createdAt: new Date(2026, 0, 1),
+      }),
+    ];
+    setFilter((r) => r.status === 'ready');
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const result = await builder.getLatestReadySnapshot(PROJECT_ID, BRANCH);
+    expect(result?.snapshotRowId).toBe('current-older');
+  });
+
+  test('falls back to the newest retained ready row when the runtime is outdated', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'stale-newer',
+        status: 'ready',
+        metadata: { runtimeFingerprint: 'runtime-old' },
+        createdAt: new Date(2026, 0, 5),
+      }),
+      makeRow({
+        snapshotRowId: 'stale-older',
+        status: 'ready',
+        metadata: { runtimeFingerprint: 'runtime-older' },
+        createdAt: new Date(2026, 0, 1),
+      }),
+    ];
+    setFilter((r) => r.status === 'ready');
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const result = await builder.getLatestReadySnapshot(PROJECT_ID, BRANCH);
+    expect(result?.snapshotRowId).toBe('stale-newer');
+  });
+});
+
+describe('getReadySnapshotForCommit', () => {
+  test('returns a current-runtime ready row for the commit regardless of branch', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'same-commit-other-branch',
+        commitSha: 'head-of-feature',
+        branch: 'main',
+        status: 'ready',
+        snapshotId: 'kortix-snap-1111-shared',
+        metadata: { runtimeFingerprint: 'runtime-current' },
+      }),
+    ];
+    setFilter((r) => r.projectId === PROJECT_ID && r.commitSha === 'head-of-feature' && r.provider === 'daytona');
+
+    const result = await builder.getReadySnapshotForCommit(PROJECT_ID, 'head-of-feature');
+    expect(result?.snapshotRowId).toBe('same-commit-other-branch');
+    expect(result?.snapshotId).toBe('kortix-snap-1111-shared');
+  });
+
+  test('returns null for stale-runtime ready rows', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'stale-commit',
+        commitSha: 'head-of-feature',
+        branch: 'main',
+        status: 'ready',
+        metadata: { runtimeFingerprint: 'runtime-old' },
+      }),
+    ];
+    setFilter((r) => r.projectId === PROJECT_ID && r.commitSha === 'head-of-feature' && r.provider === 'daytona');
+
+    const result = await builder.getReadySnapshotForCommit(PROJECT_ID, 'head-of-feature');
+    expect(result).toBeNull();
+  });
 });
 
 describe('ensureBuildForLatestCommit', () => {
@@ -251,7 +366,7 @@ describe('ensureBuildForLatestCommit', () => {
   });
 
   test('returns already-building when a non-failed row already exists', async () => {
-    rows = [makeRow({ commitSha: 'head-of-main', status: 'building', snapshotId: null })];
+    rows = [makeRow({ commitSha: 'head-of-main', status: 'building', snapshotId: null, updatedAt: new Date() })];
     setFilter((r) => r.commitSha === 'head-of-main' && r.status !== 'failed');
 
     const result = await builder.ensureBuildForLatestCommit(
@@ -259,6 +374,25 @@ describe('ensureBuildForLatestCommit', () => {
       { branch: BRANCH, accountId: ACCOUNT_ID, source: 'manual' },
     );
     expect(result.status).toBe('already-building');
+  });
+
+  test('starts a non-destructive rebuild when the branch tip has an outdated ready row', async () => {
+    rows = [
+      makeRow({
+        commitSha: 'head-of-main',
+        status: 'ready',
+        snapshotId: 'kortix-snap-1111-old-runtime',
+        metadata: { runtimeFingerprint: 'runtime-old' },
+      }),
+    ];
+    setFilter((r) => r.commitSha === 'head-of-main' && r.status !== 'failed');
+
+    const result = await builder.ensureBuildForLatestCommit(
+      { projectId: PROJECT_ID, repoUrl: 'r', defaultBranch: BRANCH, manifestPath: 'm' },
+      { branch: BRANCH, accountId: ACCOUNT_ID, source: 'manual' },
+    );
+    expect(result.status).toBe('started');
+    expect(result.commitSha).toBe('head-of-main');
   });
 
   test('returns started when no row exists for the head commit', async () => {
@@ -368,5 +502,82 @@ describe('pruneOldSnapshots', () => {
     // branch row → Daytona delete must NOT be called.
     expect(result.deletedDaytonaSnapshots).toBe(0);
     expect(daytonaDeleteCalls).toHaveLength(0);
+  });
+});
+
+describe('getProjectSandboxHealth', () => {
+  const allForBranch = (r: Row) =>
+    r.projectId === PROJECT_ID && r.branch === BRANCH && r.provider === 'daytona';
+
+  test('first build: only a building row, no ready snapshot ever', async () => {
+    // Fresh updatedAt so the in-flight build isn't treated as a stale orphan.
+    rows = [makeRow({ snapshotRowId: 'b', status: 'building', metadata: {}, updatedAt: new Date() })];
+    setFilter(allForBranch);
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
+    expect(h.firstBuild).toBe(true);
+    expect(h.healthy).toBe(false);
+    expect(h.building).toBe(true);
+    expect(h.readyCount).toBe(0);
+  });
+
+  test('existing ready snapshot rebuilding in place reads as healthy + updating, NOT first build', async () => {
+    // Non-destructive rebuild: row stays `ready` (old runtime) with a
+    // rebuildStartedAt marker. Must not regress to "building first sandbox".
+    rows = [
+      makeRow({
+        snapshotRowId: 'ready-rebuilding',
+        status: 'ready',
+        snapshotId: 'snap-old',
+        metadata: { runtimeFingerprint: 'runtime-old', rebuildStartedAt: Date.now() },
+        createdAt: new Date(2026, 0, 3),
+      }),
+    ];
+    setFilter(allForBranch);
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
+    expect(h.firstBuild).toBe(false);
+    expect(h.healthy).toBe(true);
+    expect(h.readyCount).toBe(1);
+    expect(h.bootableCount).toBe(0); // old runtime → needs a rebuild to boot HEAD
+    expect(h.runtimeOutdated).toBe(true);
+    expect(h.building).toBe(true); // rebuildStartedAt marker surfaces as building
+  });
+
+  test('current-runtime ready snapshot is bootable + healthy', async () => {
+    rows = [
+      makeRow({ snapshotRowId: 'r', status: 'ready', metadata: { runtimeFingerprint: 'runtime-current' } }),
+    ];
+    setFilter(allForBranch);
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
+    expect(h.healthy).toBe(true);
+    expect(h.bootableCount).toBe(1);
+    expect(h.runtimeOutdated).toBe(false);
+    expect(h.firstBuild).toBe(false);
+  });
+
+  test('failed latest build with no ready snapshot surfaces a failure', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'f',
+        status: 'failed',
+        snapshotId: null,
+        error: 'failed to solve: exit code: 1',
+        metadata: { errorCategory: 'dockerfile' },
+        createdAt: new Date(2026, 0, 4),
+      }),
+    ];
+    setFilter(allForBranch);
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
+    expect(h.failure?.category).toBe('dockerfile');
+    expect(h.failure?.fixableByAgent).toBe(true);
+    expect(h.healthy).toBe(false);
+    expect(h.readyCount).toBe(0);
   });
 });

@@ -92,6 +92,68 @@ describe('computeSnapshotHash', () => {
     });
     expect(a.runtimeFingerprint).toBe(currentRuntimeFingerprint());
   });
+
+  test('an empty / absent spec does not change the hash (no mass rebuild)', () => {
+    const base = computeSnapshotHash({
+      dockerfile: SAMPLE_DOCKERFILE,
+      contextTreeOid: SAMPLE_TREE_OID,
+      runtimeFingerprint: PINNED_FINGERPRINT,
+    });
+    const withEmpty = computeSnapshotHash({
+      dockerfile: SAMPLE_DOCKERFILE,
+      contextTreeOid: SAMPLE_TREE_OID,
+      spec: {},
+      runtimeFingerprint: PINNED_FINGERPRINT,
+    });
+    expect(withEmpty.contentHash).toBe(base.contentHash);
+  });
+
+  test('declaring a spec invalidates the hash', () => {
+    const base = computeSnapshotHash({
+      dockerfile: SAMPLE_DOCKERFILE,
+      contextTreeOid: SAMPLE_TREE_OID,
+      runtimeFingerprint: PINNED_FINGERPRINT,
+    });
+    const withSpec = computeSnapshotHash({
+      dockerfile: SAMPLE_DOCKERFILE,
+      contextTreeOid: SAMPLE_TREE_OID,
+      spec: { cpu: 4, memory: 8 },
+      runtimeFingerprint: PINNED_FINGERPRINT,
+    });
+    expect(withSpec.contentHash).not.toBe(base.contentHash);
+  });
+
+  test('changing any spec field invalidates the hash', () => {
+    const a = computeSnapshotHash({
+      dockerfile: SAMPLE_DOCKERFILE,
+      contextTreeOid: SAMPLE_TREE_OID,
+      spec: { cpu: 2, memory: 4, disk: 20 },
+      runtimeFingerprint: PINNED_FINGERPRINT,
+    });
+    const b = computeSnapshotHash({
+      dockerfile: SAMPLE_DOCKERFILE,
+      contextTreeOid: SAMPLE_TREE_OID,
+      spec: { cpu: 2, memory: 4, disk: 40 },
+      runtimeFingerprint: PINNED_FINGERPRINT,
+    });
+    expect(a.contentHash).not.toBe(b.contentHash);
+  });
+
+  test('spec serialization is order-independent (same fields → same hash)', () => {
+    const a = computeSnapshotHash({
+      dockerfile: SAMPLE_DOCKERFILE,
+      contextTreeOid: SAMPLE_TREE_OID,
+      spec: { cpu: 2, memory: 4 },
+      runtimeFingerprint: PINNED_FINGERPRINT,
+    });
+    const b = computeSnapshotHash({
+      dockerfile: SAMPLE_DOCKERFILE,
+      contextTreeOid: SAMPLE_TREE_OID,
+      spec: { memory: 4, cpu: 2 },
+      runtimeFingerprint: PINNED_FINGERPRINT,
+    });
+    expect(a.contentHash).toBe(b.contentHash);
+  });
 });
 
 describe('formatSnapshotName', () => {

@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
-import { useParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
 
@@ -13,9 +15,12 @@ import { ProjectShell } from '@/components/projects/project-shell';
 import { Button } from '@/components/ui/button';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
 import {
+  getProjectSession,
   getProjectSessionSandbox,
   restartProjectSession,
-  syncOpencodeSessionTitles,
+  syncOpencodeSessionData,
+  updateProjectSession,
+  wakeProjectSession,
 } from '@/lib/projects-client';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
 import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
@@ -29,6 +34,7 @@ import {
   useCreateOpenCodeSession,
   useOpenCodeSessions,
 } from '@/hooks/opencode/use-opencode-sessions';
+import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -50,6 +56,7 @@ import {
  * The URL stays at `/projects/<id>/sessions/<sessionId>` the whole time.
  */
 export default function ProjectSessionPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
@@ -61,10 +68,12 @@ export default function ProjectSessionPage() {
     enabled: !!user && !!sessionId && !!projectId,
     staleTime: 0,
     // Poll while the row is missing (returns null) OR while still provisioning.
+    // Tight cadence so the UI flips to the sandbox the instant the backend
+    // marks it active — the provisioning wall is the backend's, not ours.
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (!data) return 3_000;
-      return data.status === 'provisioning' ? 3_000 : false;
+      if (!data) return 300;
+      return data.status === 'provisioning' ? 300 : false;
     },
   });
 
@@ -79,28 +88,22 @@ export default function ProjectSessionPage() {
     if (sandbox.status !== 'active') return;
     if (switchedRef.current === sandbox.sandbox_id) return;
     switchedRef.current = sandbox.sandbox_id;
+    sessionMark(sandbox.session_id, 'sandbox-active');
     (async () => {
       markProvisioningVerified();
-      // Drop OpenCode caches BEFORE switching the active server so stale
-      // sessions/messages/agents from the previous sandbox can't bleed into
-      // the new one's UI. The `['opencode', ...]` namespace covers
-      // `sessions`, `session(id)`, `messages`, `agents`, etc.
-      queryClient.removeQueries({ queryKey: ['opencode'] });
-      // Also nuke the global localStorage caches the OpenCode hooks read as
-      // placeholderData (kortix_cache_sessions etc.) — they're not server-
-      // scoped today and would otherwise flash the prior sandbox's data.
-      if (typeof window !== 'undefined') {
-        try {
-          for (const key of Object.keys(window.localStorage)) {
-            if (key.startsWith('kortix_cache_')) window.localStorage.removeItem(key);
-          }
-        } catch {}
-      }
-      await switchToSessionSandboxAsync(projectId, sandbox.sandbox_id);
+      // No cache teardown here anymore. OpenCode caches (query keys + the
+      // localStorage placeholders) and the message sync store are now scoped
+      // per-sandbox (see opencodeKeys / activeServerKey), so the previous
+      // sandbox's data can't bleed into this one — and keeping it cached is
+      // exactly what makes switching back to an already-open session instant
+      // instead of reloading.
+      // Pass the already-fetched row so the switch skips a duplicate
+      // GET /sessions/:id/sandbox on first open.
+      await switchToSessionSandboxAsync(projectId, sandbox.sandbox_id, sandbox);
       // Hard-clear the cookie so no subsequent navigation can be hijacked.
       setActiveInstanceCookie(null);
     })();
-  }, [sandbox, projectId]);
+  }, [sandbox, projectId, queryClient]);
 
   // Belt-and-suspenders: every render on this route force-clears the cookie.
   useEffect(() => {
@@ -114,6 +117,26 @@ export default function ProjectSessionPage() {
     const active = s.servers.find((entry) => entry.id === s.activeServerId);
     return active?.instanceId;
   });
+
+  useEffect(() => {
+    if (sandbox && activeInstanceId === sandbox.sandbox_id) {
+      sessionMark(sandbox.session_id, 'server-switched');
+    }
+  }, [activeInstanceId, sandbox]);
+
+  // Wake-on-open: the DB row reads `active` even after the provider auto-stops
+  // an idle sandbox, so opening such a session would spin the health poll
+  // against a dead container. Fire a best-effort wake once when the row is
+  // active — a running sandbox is a cheap no-op; a stopped one starts warming
+  // immediately while the health poll picks up readiness.
+  const wokeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sandbox || !projectId) return;
+    if (sandbox.status !== 'active') return;
+    if (wokeRef.current === sandbox.sandbox_id) return;
+    wokeRef.current = sandbox.sandbox_id;
+    void wakeProjectSession(projectId, sandbox.session_id).catch(() => {});
+  }, [sandbox, projectId]);
 
   // From the first paint we mount ProjectShell so the project's sidebar is
   // always visible — no full-page "Preparing workspace" flash. The inner
@@ -146,7 +169,7 @@ export default function ProjectSessionPage() {
       return (
         <InlineSessionError
           title={`${sandboxLabel ?? 'session'} is stopped`}
-          message="The sandbox for this session was stopped. Open a new session to continue."
+          message={tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen')}
         />
       );
     }
@@ -195,10 +218,10 @@ function InlineSessionError({
   return (
     <div className="flex-1 min-h-0 flex items-center justify-center px-6">
       <div className="max-w-md text-center flex flex-col items-center gap-3">
-        <h2 className="text-[14px] font-medium text-foreground/90">{title}</h2>
-        <p className="text-[12px] leading-relaxed text-muted-foreground/70">{message}</p>
+        <h2 className="text-sm font-medium text-foreground/90">{title}</h2>
+        <p className="text-xs leading-relaxed text-muted-foreground/70">{message}</p>
         {detail ? (
-          <p className="max-w-full rounded-2xl border border-border/60 bg-muted/40 px-2 py-1 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          <p className="max-w-full rounded-2xl border border-border/60 bg-muted/40 px-2 py-1 font-mono text-xs leading-relaxed text-muted-foreground">
             {detail}
           </p>
         ) : null}
@@ -221,13 +244,23 @@ function ActiveSessionChat({
   projectId: string;
   sessionId: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const runtimeReady = useSandboxConnectionStore(
     (s) => s.status === 'connected' && s.healthy === true,
   );
+  const runtimeBootError = useSandboxConnectionStore((s) => s.runtimeError);
   const sessionsQuery = useOpenCodeSessions();
   const createMutation = useCreateOpenCodeSession();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const createdRef = useRef(false);
+  const projectSessionQuery = useQuery({
+    queryKey: ['project-session', projectId, sessionId],
+    queryFn: () => getProjectSession(projectId, sessionId),
+    enabled: !!projectId && !!sessionId,
+    staleTime: 10_000,
+  });
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId, sessionId),
     onSuccess: () => {
@@ -251,7 +284,7 @@ function ActiveSessionChat({
     const sessions = sessionsQuery.data ?? [];
     if (sessions.length > 0) return;
     createdRef.current = true;
-    createMutation.mutate();
+    createMutation.mutate({ directory: '/workspace' });
   }, [
     runtimeReady,
     sessionsQuery.isLoading,
@@ -260,26 +293,148 @@ function ActiveSessionChat({
     createMutation,
   ]);
 
+  const opencodeSessions = useMemo(
+    () => sessionsQuery.data ?? [],
+    [sessionsQuery.data],
+  );
+  const rootOpenCodeSessionId = projectSessionQuery.data?.opencode_session_id ?? null;
+  const selectedOpenCodeSessionId = searchParams.get('oc');
+  const selectedSession = selectedOpenCodeSessionId
+    ? opencodeSessions.find((session) => session.id === selectedOpenCodeSessionId)
+    : null;
+  const rootSession = rootOpenCodeSessionId
+    ? opencodeSessions.find((session) => session.id === rootOpenCodeSessionId)
+    : null;
+  const firstRootSession =
+    opencodeSessions.find((session) => !session.parentID) ?? opencodeSessions[0] ?? null;
   const chatSessionId =
-    (sessionsQuery.data ?? [])[0]?.id ?? createMutation.data?.id ?? null;
+    selectedSession?.id ??
+    rootSession?.id ??
+    createMutation.data?.id ??
+    firstRootSession?.id ??
+    null;
 
-  // Mirror the viewed session's title into our cloud DB so the name shows
-  // even when the sandbox isn't running. Fires on mount and whenever opencode
-  // changes the title (e.g. auto-titling after the first prompt). Cache-hit
-  // paths in useOpenCodeSession won't trigger the queryFn, so this effect is
-  // the authoritative trigger for per-session title sync.
+  // ── Readiness benchmarking marks ───────────────────────────────────────
+  useEffect(() => {
+    if (runtimeReady) sessionMark(sessionId, 'runtime-ready');
+  }, [runtimeReady, sessionId]);
+  useEffect(() => {
+    if (sessionsQuery.data) sessionMark(sessionId, 'opencode-listed');
+  }, [sessionsQuery.data, sessionId]);
+  useEffect(() => {
+    if (!chatSessionId) return;
+    sessionMark(sessionId, 'chat-ready');
+    const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>([
+      'project', 'session-sandbox', projectId, sessionId,
+    ]);
+    finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
+  }, [chatSessionId, sessionId, projectId, queryClient]);
+
+  useEffect(() => {
+    if (!chatSessionId) return;
+    if (rootOpenCodeSessionId) return;
+    const session = opencodeSessions.find((candidate) => candidate.id === chatSessionId);
+    if (session?.parentID) return;
+    void updateProjectSession(projectId, sessionId, {
+      opencode_session_id: chatSessionId,
+    }).then((updated) => {
+      queryClient.setQueryData(['project-session', projectId, sessionId], updated);
+      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+    }).catch(() => {});
+  }, [chatSessionId, projectId, sessionId, rootOpenCodeSessionId, opencodeSessions, queryClient]);
+
+  useEffect(() => {
+    if (!selectedOpenCodeSessionId) return;
+    if (selectedSession) return;
+    if (sessionsQuery.isLoading) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('oc');
+    const query = params.toString();
+    router.replace(
+      query
+        ? `/projects/${projectId}/sessions/${sessionId}?${query}`
+        : `/projects/${projectId}/sessions/${sessionId}`,
+      { scroll: false },
+    );
+  }, [
+    selectedOpenCodeSessionId,
+    selectedSession,
+    sessionsQuery.isLoading,
+    searchParams,
+    router,
+    projectId,
+    sessionId,
+  ]);
+
+  // Mirror the sandbox-local OpenCode session tree into our cloud DB. The
+  // project session row stays the branch/sandbox root; this metadata lets the
+  // project sidebar and session list render sub-sessions without guessing.
   // Must run BEFORE any conditional return — otherwise the runtimeError branch
   // below would skip this hook and trigger "rendered fewer hooks than expected".
   const activeSession = (sessionsQuery.data ?? []).find((s) => s.id === chatSessionId);
   const activeTitle = activeSession?.title || null;
   useEffect(() => {
-    if (!chatSessionId) return;
-    void syncOpencodeSessionTitles([
-      { opencode_session_id: chatSessionId, title: activeTitle },
-    ]).catch(() => {});
-  }, [chatSessionId, activeTitle]);
+    if (opencodeSessions.length === 0) return;
+    void syncOpencodeSessionData(
+      opencodeSessions.map((session) => ({
+        opencode_session_id: session.id,
+        title: session.title || null,
+        parent_id: session.parentID ?? null,
+        project_id: session.projectID ?? null,
+        created_at: session.time?.created ?? null,
+        updated_at: session.time?.updated ?? null,
+        archived_at: session.time?.archived ?? null,
+      })),
+    )
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+        queryClient.invalidateQueries({ queryKey: ['project-session', projectId, sessionId] });
+      })
+      .catch(() => {});
+  }, [opencodeSessions, activeTitle, queryClient, projectId, sessionId]);
+
+  // First-message handoff from the project index composer (/projects/[id]). It
+  // stashes the prompt under the PROJECT session id because the opencode
+  // session id doesn't exist yet at navigation time. Once the chat session is
+  // created, move it onto the `opencode_pending_prompt:<chatSessionId>` key that
+  // SessionChat's pending-prompt effect consumes (its 250ms retry loop covers
+  // the brief gap before this runs). Files ride along via usePendingFilesStore.
+  const promptMovedRef = useRef(false);
+  useEffect(() => {
+    if (!chatSessionId || promptMovedRef.current) return;
+    if (typeof window === 'undefined') return;
+    const key = `project_pending_prompt:${sessionId}`;
+    const pending = sessionStorage.getItem(key);
+    if (!pending) return;
+    promptMovedRef.current = true;
+    sessionStorage.setItem(`opencode_pending_prompt:${chatSessionId}`, pending);
+    sessionStorage.removeItem(key);
+  }, [chatSessionId, sessionId]);
 
   const runtimeError = sessionsQuery.error ?? createMutation.error;
+  if (!runtimeReady && runtimeBootError) {
+    return (
+      <InlineSessionError
+        title={tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line380JsxAttrTitleOpencodeRuntimeIsNotReady')}
+        message={tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid')}
+        detail={runtimeBootError}
+        action={
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => restartMutation.mutate()}
+            disabled={restartMutation.isPending}
+          >
+            {restartMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3.5 w-3.5" />
+            )}{tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line395JsxTextRestartSession')}</Button>
+        }
+      />
+    );
+  }
+
   if (runtimeError) {
     const formatted = formatOpenCodeRuntimeError(runtimeError);
     const restartError = restartMutation.error
@@ -301,9 +456,7 @@ function ActiveSessionChat({
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <RotateCcw className="h-3.5 w-3.5" />
-            )}
-            Restart session
-          </Button>
+            )}{tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line424JsxTextRestartSession')}</Button>
         }
       />
     );

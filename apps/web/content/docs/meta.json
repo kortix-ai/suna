@@ -1,11 +1,12 @@
 {
-  "title": "Docs",
+  "title": "Documentation",
   "pages": [
     "index",
-    "manifest",
-    "dockerfile",
-    "triggers",
-    "sessions",
-    "secrets"
+    "---Concepts---",
+    "concepts",
+    "reference",
+    "---Using the web app---",
+    "quickstart",
+    "guides"
   ]
 }

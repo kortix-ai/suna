@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
@@ -29,6 +31,7 @@ interface MobileAppBannerProps {
 }
 
 export function MobileAppBanner({ shareId }: MobileAppBannerProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Mobile app banner disabled — mobile users go through normal auth flow
   return null;
   const [isMobile, setIsMobile] = useState(false);
@@ -81,7 +84,7 @@ export function MobileAppBanner({ shareId }: MobileAppBannerProps) {
       <div className="bg-background/95 backdrop-blur-md border-b border-border/50 px-3 py-2.5 safe-area-top">
         <div className="flex items-center gap-3">
           {/* App icon */}
-          <div className="shrink-0 w-10 h-10 rounded-xl bg-foreground flex items-center justify-center">
+          <div className="shrink-0 w-10 h-10 rounded-2xl bg-foreground flex items-center justify-center">
             <KortixLogo size={20} className="invert dark:invert-0" />
           </div>
 
@@ -90,9 +93,7 @@ export function MobileAppBanner({ shareId }: MobileAppBannerProps) {
             <h3 className="font-semibold text-foreground text-sm leading-tight">
               Kortix
             </h3>
-            <p className="text-xs text-muted-foreground leading-tight">
-              Open this content in app
-            </p>
+            <p className="text-xs text-muted-foreground leading-tight">{tHardcodedUi.raw('appShareShareidComponentsMobileappbanner.line94JsxTextOpenThisContentInApp')}</p>
           </div>
 
           {/* Open button */}

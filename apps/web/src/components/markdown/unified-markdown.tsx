@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Streamdown, defaultRemarkPlugins, defaultRehypePlugins } from 'streamdown';
@@ -153,7 +155,7 @@ function CopyButton({ code }: { code: string }) {
       onClick={handleCopy}
       className={cn(
         "inline-flex items-center gap-1.5 h-6 px-2 rounded-md cursor-pointer",
-        "text-[11px] font-medium tracking-tight",
+        "text-xs font-medium tracking-tight",
         "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50",
         "hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60",
         "transition-colors duration-150",
@@ -497,7 +499,7 @@ export function HighlightedCode({ code, language, children }: { code: string; la
   }, [code, language, theme, hlKey]);
 
   const shikiResetClasses = cn(
-    "text-[13px] font-mono leading-[1.65] whitespace-pre",
+    "text-sm font-mono leading-[1.65] whitespace-pre",
     // Collapse Shiki's wrapper elements so only .line spans render
     "[&_pre]:contents [&_code]:contents",
     // Reset .line spans: prevent global * { border-border } from causing visual artifacts
@@ -531,7 +533,7 @@ export function HighlightedCode({ code, language, children }: { code: string; la
   // No matching highlight yet — show plain text in Pierre's editor fg (the
   // `<pre>` wrapping sets the colour; we deliberately don't override it).
   return (
-    <code className="text-[13px] font-mono leading-[1.65] whitespace-pre">
+    <code className="text-sm font-mono leading-[1.65] whitespace-pre">
       {children}
     </code>
   );
@@ -586,8 +588,8 @@ function CodeBlock({
       className={cn(
         "relative group not-prose my-5",
         "rounded-2xl overflow-hidden",
-        "border border-[#eeeeef] dark:border-[#1f1f21]",
-        "bg-[#ffffff] dark:bg-[#070707]",
+        "border border-border",
+        "bg-card",
         "shadow-[0_1px_0_rgba(0,0,0,0.02)] dark:shadow-none",
         className,
       )}
@@ -596,11 +598,11 @@ function CodeBlock({
         className={cn(
           "flex items-center justify-between",
           "h-9 pl-3.5 pr-1.5",
-          "border-b border-[#eeeeef] dark:border-[#1f1f21]",
-          "bg-[#f8f8f8] dark:bg-[#141415]",
+          "border-b border-border",
+          "bg-muted/30",
         )}
       >
-        <span className="text-[11px] font-mono tracking-tight text-[#84848A] select-none">
+        <span className="text-xs font-mono tracking-tight text-muted-foreground select-none">
           {languageLabel(language)}
         </span>
         {code && !isStreaming && <CopyButton code={code} />}
@@ -608,8 +610,8 @@ function CodeBlock({
       <pre
         className={cn(
           "px-4 py-3.5 overflow-x-auto",
-          "text-[13px] font-mono leading-[1.65]",
-          "text-[#070707] dark:text-[#fbfbfb]",
+          "text-sm font-mono leading-[1.65]",
+          "text-foreground",
           "[&_code]:bg-transparent [&_code]:text-inherit [&_code]:p-0 [&_code]:border-none",
           "[&_span]:border-none [&_span]:outline-none",
         )}
@@ -687,7 +689,7 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   }, [text, openPreview, isAbsolute]);
 
   const baseInline =
-    "px-[0.35rem] py-[0.1rem] rounded-[5px] text-[0.875em] font-mono " +
+    "px-[0.35rem] py-[0.1rem] rounded-[5px] text-sm font-mono " +
     "bg-zinc-100 dark:bg-zinc-800/70 text-foreground/90 " +
     "ring-1 ring-inset ring-zinc-200/70 dark:ring-zinc-700/40";
 
@@ -780,6 +782,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   className,
   isStreaming = false,
 }) => {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Resolve the active sandbox server so we can proxy localhost URLs
   const { proxyUrl } = useSandboxProxy();
 
@@ -1111,9 +1114,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
 
   if (!safeContent) {
     return (
-      <div className={cn('text-muted-foreground text-sm', className)}>
-        No content
-      </div>
+      <div className={cn('text-muted-foreground text-sm', className)}>{tHardcodedUi.raw('componentsMarkdownUnifiedMarkdown.line1115JsxTextNoContent')}</div>
     );
   }
 

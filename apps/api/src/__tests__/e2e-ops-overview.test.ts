@@ -23,7 +23,7 @@ mock.module('../middleware/require-admin', () => ({
 }));
 
 mock.module('../config', () => ({
-  config: { ENV_MODE: 'test' },
+  config: { KORTIX_BILLING_INTERNAL_ENABLED: false },
 }));
 
 mock.module('../tunnel', () => ({
@@ -51,7 +51,6 @@ describe('ops overview dashboard API', () => {
       { rows: [{ key: 'running', count: 4 }, { key: 'failed', count: 1 }] },
       { rows: [{ key: 'active', count: 3 }, { key: 'error', count: 1 }] },
       { rows: [{ key: 'daytona', count: 2 }, { key: 'local_docker', count: 2 }] },
-      { rows: [{ key: 'queued', count: 5 }, { key: 'fired', count: 8 }] },
       { rows: [{ count: 9 }] },
       { rows: [{ key: 'applied', count: 1 }] },
       {
@@ -85,7 +84,7 @@ describe('ops overview dashboard API', () => {
 
     expect(body.api).toEqual({
       status: 'ok',
-      env: 'test',
+      billing_enabled: false,
       tunnel: { enabled: true, connectedAgents: 2 },
     });
     expect(body.totals).toMatchObject({
@@ -95,7 +94,8 @@ describe('ops overview dashboard API', () => {
     });
     expect(body.sessions.by_status).toMatchObject({ running: 4, failed: 1 });
     expect(body.sandboxes.by_provider).toMatchObject({ daytona: 2, local_docker: 2 });
-    expect(body.queues.queued_total).toBe(5);
+    expect(body.queues.queued_total).toBe(0);
+    expect(body.queues.trigger_events_by_status).toEqual({});
     expect(body.audit.events_24h).toBe(9);
     expect(body.audit.recent[0]).toMatchObject({ action: 'POST /v1/projects' });
     expect(body.usage).toMatchObject({

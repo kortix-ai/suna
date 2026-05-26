@@ -14,6 +14,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { runWithContext } from '../lib/request-context';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
@@ -21,11 +22,13 @@ import { runWithContext } from '../lib/request-context';
 const TEST_USER_ID = '00000000-0000-4000-a000-000000000001';
 const TEST_SANDBOX_ID = 'sandbox-abc-123';
 const TEST_SESSION_SANDBOX_ID = '11111111-1111-4111-8111-111111111111';
+const TEST_PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const TEST_SERVICE_KEY = 'test-service-key-123';
 const TEST_PORT = 8080;
 
 let mockDbSandbox: any = {
   sandboxId: TEST_SESSION_SANDBOX_ID,
+  projectId: TEST_PROJECT_ID,
   accountId: 'account-001',
   status: 'active',
   config: { serviceKey: TEST_SERVICE_KEY },
@@ -40,7 +43,8 @@ let mockPreviewLinkError: Error | null = null;
 let mockWakeCalls: string[] = [];
 let mockFetchResponses: Array<{ status: number; body: string; headers?: Record<string, string> }> = [];
 let mockFetchCallCount = 0;
-let mockFetchCalls: Array<{ url: string; method: string; headers: Record<string, string> }> = [];
+let mockFetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body: string | null }> = [];
+let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
@@ -76,7 +80,7 @@ mock.module('../shared/db', () => {
         // { accountRole } from accountUser/account_members depending on the path.
         const fieldKeys = fields ? Object.keys(fields) : [];
         const isSandboxQuery = fieldKeys.some((key) =>
-          ['accountId', 'sandboxId', 'status', 'config', 'provider', 'baseUrl'].includes(key),
+          ['accountId', 'sandboxId', 'projectId', 'status', 'config', 'provider', 'baseUrl'].includes(key),
         );
         const isMembershipQuery = fieldKeys.includes('accountRole');
 
@@ -97,6 +101,13 @@ mock.module('../shared/db', () => {
           }),
         };
       },
+      update: (table: unknown) => ({
+        set: (updates: Record<string, unknown>) => ({
+          where: async () => {
+            mockDbUpdateCalls.push({ table, updates });
+          },
+        }),
+      }),
     },
   };
 });
@@ -137,6 +148,17 @@ mock.module('../config', () => ({
   },
 }));
 
+mock.module('../projects/secrets', () => ({
+  listProjectSecretsSnapshot: async (projectId: string) => ({
+    env: {
+      OPENROUTER_API_KEY: 'sk-live',
+      SENTRY_DSN: 'https://example.test/1',
+    },
+    names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+    revision: `rev-${projectId}`,
+  }),
+}));
+
 // Override global fetch for proxy requests
 const originalFetch = globalThis.fetch;
 function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Response> {
@@ -154,6 +176,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
     url: urlStr,
     method: (init?.method || 'GET').toUpperCase(),
     headers: Object.fromEntries(new Headers(init?.headers as any).entries()),
+    body: typeof init?.body === 'string' ? init.body : null,
   });
 
   if (!responseConfig) {
@@ -211,6 +234,8 @@ function createProxyTestApp() {
 beforeEach(() => {
   mockDbSandbox = {
     sandboxId: TEST_SESSION_SANDBOX_ID,
+    sessionId: '22222222-2222-4222-8222-222222222222',
+    projectId: TEST_PROJECT_ID,
     accountId: 'account-001',
     status: 'active',
     config: { serviceKey: TEST_SERVICE_KEY },
@@ -226,6 +251,7 @@ beforeEach(() => {
   mockFetchResponses = [{ status: 200, body: 'Hello from upstream' }];
   mockFetchCallCount = 0;
   mockFetchCalls = [];
+  mockDbUpdateCalls = [];
 
   // Install mock fetch
   globalThis.fetch = mockFetch as any;
@@ -376,6 +402,61 @@ describe('Preview proxy: forwarding', () => {
       body: JSON.stringify({ name: 'test' }),
     });
     expect(res.status).toBe(201);
+    expect(mockFetchCalls).toHaveLength(1);
+  });
+
+  test('syncs latest project secrets before forwarding prompt_async', async () => {
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async?directory=%2Fworkspace`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockFetchCalls).toHaveLength(2);
+    expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
+    expect(mockFetchCalls[0].method).toBe('POST');
+    expect(mockFetchCalls[0].headers['authorization']).toBe(`Bearer ${TEST_SERVICE_KEY}`);
+    expect(mockFetchCalls[0].headers['content-type']).toBe('application/json');
+    expect(mockFetchCalls[0].headers['x-daytona-preview-token']).toBe('daytona-preview-token-123');
+    expect(JSON.parse(mockFetchCalls[0].body ?? '{}')).toEqual({
+      env: {
+        OPENROUTER_API_KEY: 'sk-live',
+        SENTRY_DSN: 'https://example.test/1',
+      },
+      names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      revision: `rev-${TEST_PROJECT_ID}`,
+    });
+    expect(mockFetchCalls[1].url).toBe(
+      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
+    );
+  });
+
+  test('fails prompt forwarding when project env sync is rejected', async () => {
+    mockFetchResponses = [{ status: 401, body: '{"error":"unauthorized"}' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.message).toContain('project env sync failed: 401');
+    expect(mockFetchCalls).toHaveLength(1);
+    expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
   });
 
   test('strips hop, auth, trace, and forces identity compression for forwarded request', async () => {
@@ -431,6 +512,24 @@ describe('Preview proxy: forwarding', () => {
         scopes: ['*'],
       });
     }
+  });
+
+  test('marks proxied session sandbox and owning session as active usage', async () => {
+    mockFetchResponses = [{ status: 200, body: 'OK' }];
+    const sandboxId = 'touch-sandbox-001';
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${sandboxId}/${TEST_PORT}/kortix/health`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.status).toBe(200);
+    expect(mockDbUpdateCalls.some((call) =>
+      call.table === sessionSandboxes && call.updates.lastUsedAt instanceof Date,
+    )).toBe(true);
+    expect(mockDbUpdateCalls.some((call) =>
+      call.table === projectSessions && call.updates.status === 'running',
+    )).toBe(true);
   });
 
   test('surfaces daemon signed-context rejection as 502', async () => {

@@ -50,6 +50,7 @@ import {
 
   // Settings pages
   KeyRound,
+  Plug,
   Settings as SettingsIcon,
   Key,
   Bot,
@@ -57,7 +58,6 @@ import {
   // Preferences
   Palette,
   Volume2,
-  Bell,
   Keyboard,
 
   // Account
@@ -314,14 +314,17 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-sessions',
-    label: 'Sessions',
+    label: 'Open Session',
     icon: MessagesSquare,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/sessions',
+    // Opens the in-palette "Open Session" sub-picker (see SUBMENU_PAGE_BY_ID);
+    // the href is only a non-palette fallback and points at the project root
+    // (the session-list page was removed in favour of the composer landing).
+    href: '/projects/{projectId}',
     requiresProject: true,
-    keywords: 'sessions runs threads project conversations',
+    keywords: 'sessions runs threads project conversations open',
   },
   {
     id: 'proj-customize',
@@ -333,6 +336,17 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize',
     requiresProject: true,
     keywords: 'customize configure project agents skills commands',
+  },
+  {
+    id: 'proj-files',
+    label: 'Customize · Files',
+    icon: FolderOpen,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/files',
+    requiresProject: true,
+    keywords: 'files repository project customize browser explorer',
   },
   {
     id: 'proj-agents',
@@ -377,6 +391,28 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/secrets',
     requiresProject: true,
     keywords: 'secrets env environment variables project customize',
+  },
+  {
+    id: 'proj-connectors',
+    label: 'Customize · Connectors',
+    icon: Plug,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/connectors',
+    requiresProject: true,
+    keywords: 'connectors integrations pipedream mcp openapi apps executor project customize',
+  },
+  {
+    id: 'proj-members',
+    label: 'Customize · Members',
+    icon: Users,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/members',
+    requiresProject: true,
+    keywords: 'members team access collaborators project customize',
   },
   {
     id: 'proj-schedules',
@@ -752,7 +788,6 @@ export const menuRegistry: MenuItemDef[] = [
     settingsTab: 'appearance',
     keywords: 'appearance theme color mode wallpaper',
   },
-
   {
     id: 'pref-sounds',
     label: 'Sounds',
@@ -763,16 +798,7 @@ export const menuRegistry: MenuItemDef[] = [
     settingsTab: 'sounds',
     keywords: 'sounds audio volume notification sound effects mute',
   },
-  {
-    id: 'pref-notifications',
-    label: 'Notifications',
-    icon: Bell,
-    group: 'preferences',
-    showIn: ['commandPalette'],
-    kind: 'settings',
-    settingsTab: 'notifications',
-    keywords: 'notifications alerts push web browser desktop',
-  },
+
   {
     id: 'pref-shortcuts',
     label: 'Shortcuts',
@@ -964,7 +990,7 @@ export interface SettingsTab {
 
 /** Preference tabs for the settings modal */
 export function getPreferenceTabs(): SettingsTab[] {
-  const preferenceIds: SettingsTabId[] = ['general', 'appearance', 'sounds', 'notifications', 'shortcuts'];
+  const preferenceIds: SettingsTabId[] = ['general', 'appearance', 'sounds', 'shortcuts'];
   return preferenceIds.map((tabId) => {
     const item = menuRegistry.find(
       (i) => i.kind === 'settings' && i.settingsTab === tabId,

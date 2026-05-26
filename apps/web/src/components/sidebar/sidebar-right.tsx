@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import * as React from 'react';
 import { useCallback, useState } from 'react';
 import { PanelRight } from 'lucide-react';
@@ -47,6 +49,7 @@ import { Button } from '../ui/button';
 // ============================================================================
 
 export function SidebarRight() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const {
     state,
     open,
@@ -165,17 +168,15 @@ export function SidebarRight() {
             side="right"
           >
             <SheetHeader className="sr-only">
-              <SheetTitle>Quick Actions</SheetTitle>
-              <SheetDescription>Quick actions and navigation</SheetDescription>
+              <SheetTitle>{tHardcodedUi.raw('componentsSidebarSidebarRight.line168JsxTextQuickActions')}</SheetTitle>
+              <SheetDescription>{tHardcodedUi.raw('componentsSidebarSidebarRight.line169JsxTextQuickActionsAndNavigation')}</SheetDescription>
             </SheetHeader>
             <div className="flex h-full w-full flex-col">
               {/* ====== HEADER ====== */}
               <div className="flex flex-col pt-3 pb-0 overflow-visible">
                 <div className="relative flex h-[32px] items-center px-3 justify-between">
                   <div className="flex items-center justify-between w-full">
-                    <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
-                      Quick Actions
-                    </span>
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider select-none px-1">{tHardcodedUi.raw('componentsSidebarSidebarRight.line177JsxTextQuickActions')}</span>
                   </div>
                 </div>
               </div>
@@ -191,7 +192,7 @@ export function SidebarRight() {
                       <div key={subGroup ?? clusterIdx} className={clusterIdx === 0 ? 'mt-0' : 'mt-2'}>
                         {label && (
                           <div className="px-3 pb-1.5 pt-1">
-                            <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
+                            <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
                               {label}
                             </span>
                           </div>
@@ -227,7 +228,7 @@ export function SidebarRight() {
                       <div key={subGroup ?? clusterIdx} className="mt-3">
                         {label && (
                           <div className="px-3 pb-1.5 pt-1">
-                            <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
+                            <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
                               {label}
                             </span>
                           </div>
@@ -280,10 +281,10 @@ export function SidebarRight() {
       >
         {/* Rail — thin hoverable strip on the left edge to toggle */}
         <button
-          aria-label="Toggle Sidebar"
+          aria-label={tHardcodedUi.raw('componentsSidebarSidebarRight.line283JsxAttrAriaLabelToggleSidebar')}
           tabIndex={-1}
           onClick={toggleSidebar}
-          title="Toggle Sidebar"
+          title={tHardcodedUi.raw('componentsSidebarSidebarRight.line286JsxAttrTitleToggleSidebar')}
           className={cn(
             'hover:after:bg-sidebar-border absolute inset-y-0 left-0 z-20 hidden w-4 -translate-x-1/2 transition-colors duration-300 ease-out after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] sm:flex',
             state === 'expanded' ? 'cursor-w-resize' : 'cursor-e-resize',
@@ -323,9 +324,7 @@ export function SidebarRight() {
             )}
           >
             {state === 'expanded' && (
-              <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
-                Quick Actions
-              </span>
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground uppercase tracking-wider select-none px-1">{tHardcodedUi.raw('componentsSidebarSidebarRight.line327JsxTextQuickActions')}</span>
             )}
             <button
               className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-muted-foreground/70 hover:text-foreground hover:bg-sidebar-accent transition-colors duration-150 flex-shrink-0"
@@ -432,7 +431,7 @@ export function SidebarRight() {
                     <div key={subGroup ?? clusterIdx} className={clusterIdx === 0 ? 'mt-0' : 'mt-2'}>
                       {label && (
                         <div className="px-3 pb-1.5 pt-1">
-                          <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
+                          <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
                             {label}
                           </span>
                         </div>
@@ -469,7 +468,7 @@ export function SidebarRight() {
                     <div key={subGroup ?? clusterIdx} className="mt-3">
                       {label && (
                         <div className="px-3 pb-1.5 pt-1">
-                          <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
+                          <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider select-none">
                             {label}
                           </span>
                         </div>

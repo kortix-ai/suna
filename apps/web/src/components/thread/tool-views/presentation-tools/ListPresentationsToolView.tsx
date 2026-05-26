@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import React from 'react';
 import {
   Card,
@@ -48,6 +49,7 @@ export function ListPresentationsToolView({
   isStreaming = false,
   project,
 }: ToolViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Extract from toolResult.output (from metadata)
   let presentationsData: ListPresentationsData | null = null;
   let error: string | null = null;
@@ -91,10 +93,10 @@ export function ListPresentationsToolView({
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
-          <ToolViewIconTitle 
-            icon={FolderOpen} 
-            title="All Presentations" 
-            subtitle={presentationsData ? `${presentationsData.presentations.length} presentations found` : undefined} 
+          <ToolViewIconTitle
+            icon={FolderOpen}
+            title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationstoolview.line96JsxAttrTitleAllPresentations')}
+            subtitle={presentationsData ? `${presentationsData.presentations.length} presentations found` : undefined}
           />
         </div>
       </CardHeader>
@@ -103,10 +105,10 @@ export function ListPresentationsToolView({
         {isStreaming ? (
           <LoadingState
             icon={FolderOpen}
-            iconColor="text-zinc-500 dark:text-zinc-400"
-            bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
-            title="Loading presentations"
-            filePath="Scanning workspace..."
+            iconColor={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationstoolview.line106JsxAttrIconcolorTextZinc500DarkTextZinc400')}
+            bgColor={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationstoolview.line107JsxAttrBgcolorBgGradientToBFromBlue100To')}
+            title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationstoolview.line108JsxAttrTitleLoadingPresentations')}
+            filePath={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationstoolview.line109JsxAttrFilepathScanningWorkspace')}
             showProgress={true}
           />
         ) : error || !presentationsData ? (
@@ -117,21 +119,15 @@ export function ListPresentationsToolView({
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
               {error || 'Failed to load presentations'}
             </h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md">
-              There was an error loading the presentations. Please try again.
-            </p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationstoolview.line121JsxTextThereWasAnErrorLoadingThePresentationsPlease')}</p>
           </div>
         ) : presentationsData.presentations.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60">
               <Presentation className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
             </div>
-            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-              No presentations found
-            </h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md">
-              You haven't created any presentations yet. Use the create_slide tool to start building your first presentation.
-            </p>
+            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationstoolview.line130JsxTextNoPresentationsFound')}</h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationstoolview.line133JsxTextYouHavenTCreatedAnyPresentationsYetUse')}</p>
           </div>
         ) : (
           <div className="h-full flex flex-col">
@@ -155,18 +151,18 @@ export function ListPresentationsToolView({
                         <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex-shrink-0">
                           <Presentation className="h-6 w-6 text-zinc-600 dark:text-zinc-400" />
                         </div>
-                        
+
                         <div className="flex-1 min-w-0">
                           <h4 className="font-semibold text-lg text-zinc-900 dark:text-zinc-100 mb-1">
                             {presentation.title}
                           </h4>
-                          
+
                           {presentation.description && (
                             <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-3 line-clamp-2">
                               {presentation.description}
                             </p>
                           )}
-                          
+
                           <div className="flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
                             <div className="flex items-center gap-1">
                               <FileText className="h-3 w-3" />
@@ -181,18 +177,17 @@ export function ListPresentationsToolView({
                               Created {formatDate(presentation.created_at)}
                             </div>
                           </div>
-                          
+
                           {presentation.updated_at !== presentation.created_at && (
-                            <div className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                              Last updated: {formatDateTime(presentation.updated_at)}
+                            <div className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationstoolview.line187JsxTextLastUpdated')}{formatDateTime(presentation.updated_at)}
                             </div>
                           )}
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center gap-2 ml-4">
-                        <Badge 
-                          variant="outline" 
+                        <Badge
+                          variant="outline"
                           className="h-6 py-0.5 bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
                         >
                           {presentation.total_slides > 0 ? 'Ready' : 'Empty'}

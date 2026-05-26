@@ -1,8 +1,5 @@
 /**
- * Central styling primitives — color palette + glyph helpers lifted
- * from the legacy Kortix installer (`scripts/get-kortix.sh`, the
- * `~/.kortix/kortix` script). Use these everywhere so the new CLI
- * matches the look the existing CLI already established.
+ * Central styling primitives for the Kortix CLI.
  */
 
 const ENABLED = process.stdout.isTTY === true && !process.env.NO_COLOR;
@@ -39,7 +36,7 @@ export function pad(s: string, width: number): string {
   return s + ' '.repeat(extra);
 }
 
-/** Installer-style status helpers. */
+/** Status helpers. */
 export const status = {
   info: (msg: string) => `  ${C.cyan}▸${C.reset}  ${msg}`,
   ok: (msg: string) => `  ${C.green}✓${C.reset}  ${msg}`,
@@ -47,7 +44,7 @@ export const status = {
   err: (msg: string) => `  ${C.red}✗${C.reset}  ${C.red}${msg}${C.reset}`,
 } as const;
 
-/** Faded horizontal rule, full installer width. */
+/** Faded horizontal rule. */
 export function rule(width = 56): string {
   return `  ${C.faded}${'─'.repeat(width)}${C.reset}`;
 }

@@ -52,7 +52,7 @@ export function DateTimePicker({ date, setDate, label }: DateTimePickerProps) {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label>{label}</Label>
-        <span className="text-[10px] text-muted-foreground">{timezone}</span>
+        <span className="text-xs text-muted-foreground">{timezone}</span>
       </div>
       <Popover>
         <PopoverTrigger asChild>

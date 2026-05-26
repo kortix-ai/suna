@@ -17,5 +17,6 @@ export function getServerPublicEnv(): PublicRuntimeEnv {
     APP_URL: read('APP_URL') || process.env.NEXT_PUBLIC_URL || process.env.PUBLIC_URL,
     SANDBOX_ID: read('SANDBOX_ID') || undefined,
     AUTH_PROVIDERS: read('AUTH_PROVIDERS') || undefined,
+    AUTH_METHODS: read('AUTH_METHODS') || undefined,
   })
 }

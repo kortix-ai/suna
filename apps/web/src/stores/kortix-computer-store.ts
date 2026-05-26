@@ -22,7 +22,12 @@ interface KortixComputerState {
   
   // Tool navigation state (for external tool click triggers)
   pendingToolNavIndex: number | null;
-  
+
+  // Side-panel Actions focus — the tool callID the panel should jump to when
+  // the user clicks a tool call in the chat. By callID (not index) so it stays
+  // correct regardless of ordering.
+  focusedToolCallId: string | null;
+
   // === ACTIONS ===
   
   setSandboxContext: (sandboxId: string | null) => void;
@@ -36,9 +41,14 @@ interface KortixComputerState {
   
   // Navigate to a specific tool call (clicking tool in ThreadContent)
   navigateToToolCall: (toolIndex: number) => void;
-  
+
   // Clear pending tool nav after KortixComputer processes it
   clearPendingToolNav: () => void;
+
+  // Open the side panel (Actions view) focused on a specific tool call.
+  focusToolCall: (callId: string) => void;
+  // Clear the focus request after the panel has jumped to it.
+  clearFocusedToolCall: () => void;
   
   // Panel control
   clearShouldOpenPanel: () => void;
@@ -63,6 +73,7 @@ const initialState = {
   _activeSessionId: null as string | null,
   isExpanded: false,
   pendingToolNavIndex: null as number | null,
+  focusedToolCallId: null as string | null,
 };
 
 export const useKortixComputerStore = create<KortixComputerState>()(
@@ -126,6 +137,26 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       
       clearPendingToolNav: () => {
         set({ pendingToolNavIndex: null });
+      },
+
+      focusToolCall: (callId: string) => {
+        const sessionId = get()._activeSessionId;
+        const update: Partial<KortixComputerState> = {
+          focusedToolCallId: callId,
+          activeView: 'tools',
+          isSidePanelOpen: true,
+        };
+        if (sessionId) {
+          update._panelOpenBySession = {
+            ...get()._panelOpenBySession,
+            [sessionId]: true,
+          };
+        }
+        set(update);
+      },
+
+      clearFocusedToolCall: () => {
+        set({ focusedToolCallId: null });
       },
       
       clearShouldOpenPanel: () => {
@@ -217,6 +248,13 @@ export const useKortixComputerPendingToolNavIndex = () =>
 
 export const useKortixComputerClearPendingToolNav = () =>
   useKortixComputerStore((state) => state.clearPendingToolNav);
+
+// Side-panel Actions focus (clicking a tool call in chat)
+export const useFocusedToolCallId = () =>
+  useKortixComputerStore((state) => state.focusedToolCallId);
+
+export const useClearFocusedToolCall = () =>
+  useKortixComputerStore((state) => state.clearFocusedToolCall);
 
 // Side panel state selectors
 export const useIsSidePanelOpen = () =>

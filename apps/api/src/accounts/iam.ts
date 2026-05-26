@@ -1,18 +1,36 @@
-// IAM REST surface — groups, policies, roles, super-admin promotion, and
-// effective-permissions probe. Mounted under accountsRouter at
-// /v1/accounts/:accountId/iam/*. Auth is inherited from the parent router
-// (supabaseAuth populates userId). Every handler asserts the relevant IAM
-// action via assertAuthorized().
+// IAM V2 REST surface — groups, super-admin promotion, effective-permission
+// probes, account-wide gates (MFA, sessions, PAT policy), and integrations
+// (SCIM, SAML SSO, service accounts).
+//
+// V1 surfaces (policies, custom roles, permission boundary, strict mode,
+// approvals, break-glass, external grants, project groups, drift,
+// analytics, simulator, policy templates) were removed in PR5c when the
+// V2 engine became the only authorization path. The V1 backend modules
+// they relied on were removed in PR5d. The underlying iam_policies /
+// iam_roles / iam_role_permissions / iam_break_glass_grants /
+// iam_approval_requests / project_groups DB tables still exist but are
+// no longer read from or written to — dropping them is a final
+// destructive step gated on operator sign-off.
+//
+// Every handler asserts the relevant IAM action via assertAuthorized()
+// from the engine entry-point in ../iam.
 
 import { Context, Hono } from 'hono';
-import { and, eq } from 'drizzle-orm';
-import { accountMembers } from '@kortix/db';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import {
+  accountGroupMembers,
+  accountMembers,
+  accounts,
+  projectGroupGrants,
+  projectMembers,
+  projects,
+  accountSessionActivity,
+} from '@kortix/db';
 import { db } from '../shared/db';
+import { getSupabase } from '../shared/supabase';
 import type { AppEnv } from '../types';
 import {
   ACCOUNT_ACTIONS,
-  ACTION_CATALOG,
-  VALID_ACTIONS,
   assertAuthorized,
   authorize,
   resourceTypeForAction,
@@ -20,31 +38,36 @@ import {
 } from '../iam';
 import {
   addGroupMembers,
-  countPoliciesUsingRole,
-  createCustomRole,
   createGroup,
-  createPolicy,
-  deleteCustomRole,
   deleteGroup,
-  deletePolicy,
   getGroup,
-  getPolicyById,
-  getRoleById,
-  getRolePermissions,
   listGroupMembers,
   listGroups,
   listGroupsForMember,
-  listPolicies,
-  listRoles,
   removeGroupMember,
-  replaceRolePermissions,
-  updateCustomRole,
   updateGroup,
-  updatePolicy,
-  type IamPolicy,
-  type PolicyFilter,
 } from '../repositories/iam';
 import { recordAuditEvent } from '../shared/audit';
+import {
+  createScimToken,
+  listScimTokens,
+  revokeScimToken,
+} from '../repositories/scim';
+import {
+  createSsoGroupMapping,
+  deleteSsoGroupMapping,
+  deleteSsoProvider,
+  getSsoProvider,
+  listSsoGroupMappings,
+  upsertSsoProvider,
+} from '../repositories/sso';
+import {
+  createServiceAccount,
+  deleteServiceAccount,
+  disableServiceAccount,
+  getServiceAccount,
+  listServiceAccounts,
+} from '../repositories/service-accounts';
 
 export const iamRouter = new Hono<AppEnv>();
 
@@ -70,26 +93,11 @@ async function readBody(c: Context): Promise<Record<string, unknown>> {
   }
 }
 
-// Compact snapshot shape for audit before/after fields. The full policy row
-// has timestamps and created_by which add noise to an audit diff — we keep
-// just the semantically-meaningful tuple.
-function snapshotPolicy(p: IamPolicy) {
-  return {
-    policy_id: p.policyId,
-    principal_type: p.principalType,
-    principal_id: p.principalId,
-    scope_type: p.scopeType,
-    scope_id: p.scopeId,
-    role_id: p.roleId,
-    effect: p.effect,
-  };
-}
-
 /**
  * Audit helper bound to the request context. The global middleware already
- * logs a coarse "POST /v1/accounts/.../iam/policies" row for every state
+ * logs a coarse "POST /v1/accounts/.../iam/groups" row for every state
  * change; these explicit calls add the before/after detail that makes "who
- * granted X to Y on Z date" a single audit_events query.
+ * changed X for Y on Z date" a single audit_events query.
  */
 async function auditIam(
   c: Context,
@@ -155,7 +163,8 @@ iamRouter.get('/:accountId/iam/groups', async (c) => {
       description: g.description,
       source: g.source,
       member_count: g.memberCount,
-      policy_count: g.policyCount,
+      // Number of project_group_grants for this group.
+      project_count: g.projectCount,
       created_at: g.createdAt.toISOString(),
       updated_at: g.updatedAt.toISOString(),
     })),
@@ -375,563 +384,52 @@ iamRouter.delete('/:accountId/iam/groups/:groupId/members/:userId', async (c) =>
   return c.json({ removed: true });
 });
 
-// ─── Policies ──────────────────────────────────────────────────────────────
+// ─── Group → project attachments (IAM V2) ──────────────────────────────────
+//
+// One read endpoint here so the group detail page can list every project
+// the group is attached to (with role). Per-project CRUD lives under
+// /v1/projects/:projectId/group-grants (already shipped) — those routes
+// gate on project.members.manage and are the right place to detach a
+// single grant. This endpoint just answers "which projects?" for the
+// group view, gated by GROUP_READ.
 
-iamRouter.get('/:accountId/iam/policies', async (c) => {
+iamRouter.get('/:accountId/iam/groups/:groupId/project-grants', async (c) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_READ);
+  const groupId = c.req.param('groupId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
 
-  const filter: PolicyFilter = {};
-  const principalType = c.req.query('principalType');
-  if (principalType === 'member' || principalType === 'group' || principalType === 'token') {
-    filter.principalType = principalType;
-  }
-  const principalId = c.req.query('principalId');
-  if (principalId) filter.principalId = principalId;
-  const scopeType = c.req.query('scopeType');
-  if (isResourceType(scopeType)) filter.scopeType = scopeType;
-  const scopeId = c.req.query('scopeId');
-  if (scopeId === 'null') filter.scopeId = null;
-  else if (scopeId) filter.scopeId = scopeId;
+  const group = await getGroup(accountId, groupId);
+  if (!group) return c.json({ error: 'group not found' }, 404);
 
-  const rows = await listPolicies(accountId, filter);
+  const rows = await db
+    .select({
+      projectId: projectGroupGrants.projectId,
+      projectName: projects.name,
+      role: projectGroupGrants.role,
+      grantedBy: projectGroupGrants.grantedBy,
+      createdAt: projectGroupGrants.createdAt,
+      expiresAt: projectGroupGrants.expiresAt,
+    })
+    .from(projectGroupGrants)
+    .innerJoin(projects, eq(projects.projectId, projectGroupGrants.projectId))
+    .where(
+      and(
+        eq(projectGroupGrants.groupId, groupId),
+        eq(projectGroupGrants.accountId, accountId),
+      ),
+    );
+
   return c.json({
-    policies: rows.map((p) => ({
-      policy_id: p.policyId,
-      principal_type: p.principalType,
-      principal_id: p.principalId,
-      scope_type: p.scopeType,
-      scope_id: p.scopeId,
-      role_id: p.roleId,
-      effect: p.effect,
-      created_by: p.createdBy,
-      created_at: p.createdAt.toISOString(),
+    grants: rows.map((r) => ({
+      project_id: r.projectId,
+      project_name: r.projectName,
+      role: r.role,
+      granted_by: r.grantedBy,
+      created_at: r.createdAt.toISOString(),
+      expires_at: r.expiresAt?.toISOString() ?? null,
     })),
   });
-});
-
-iamRouter.post('/:accountId/iam/policies', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
-
-  const body = await readBody(c);
-  const principalType = body.principalType ?? body.principal_type;
-  if (principalType !== 'member' && principalType !== 'group' && principalType !== 'token') {
-    return c.json({ error: 'principalType must be member|group|token' }, 400);
-  }
-  const principalId = (body.principalId ?? body.principal_id) as unknown;
-  if (typeof principalId !== 'string' || !principalId) {
-    return c.json({ error: 'principalId is required' }, 400);
-  }
-  const scopeType = body.scopeType ?? body.scope_type;
-  if (!isResourceType(scopeType)) {
-    return c.json({ error: 'scopeType must be a valid resource type' }, 400);
-  }
-  const rawScopeId = body.scopeId ?? body.scope_id;
-  const scopeId: string | null =
-    typeof rawScopeId === 'string' && rawScopeId.length > 0 ? rawScopeId : null;
-  if (scopeType === 'account' && scopeId !== null) {
-    return c.json({ error: 'scope_type=account requires scope_id to be null' }, 400);
-  }
-  if (scopeType !== 'account' && scopeId === null) {
-    return c.json({ error: 'resource-specific scopes require a scope_id' }, 400);
-  }
-  const roleId = (body.roleId ?? body.role_id) as unknown;
-  if (typeof roleId !== 'string' || !roleId) {
-    return c.json({ error: 'roleId is required' }, 400);
-  }
-  const effectRaw = body.effect ?? 'allow';
-  if (effectRaw !== 'allow' && effectRaw !== 'deny') {
-    return c.json({ error: 'effect must be allow or deny' }, 400);
-  }
-  const effect = effectRaw as 'allow' | 'deny';
-
-  // Role must exist and be available to this account (system or own).
-  const role = await getRoleById(accountId, roleId);
-  if (!role) return c.json({ error: 'unknown role' }, 404);
-
-  // Sanity: role's resource_type should match the scope_type.
-  if (role.resourceType !== scopeType && role.resourceType !== 'account') {
-    return c.json(
-      {
-        error: `role '${role.key}' is for ${role.resourceType} scope; cannot attach at ${scopeType} scope`,
-      },
-      400,
-    );
-  }
-
-  // If principal is a member, they must actually be a member of this account.
-  if (principalType === 'member') {
-    const [m] = await db
-      .select({ userId: accountMembers.userId })
-      .from(accountMembers)
-      .where(
-        and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, principalId)),
-      )
-      .limit(1);
-    if (!m) return c.json({ error: 'principal is not a member of this account' }, 404);
-  } else if (principalType === 'group') {
-    const group = await getGroup(accountId, principalId);
-    if (!group) return c.json({ error: 'group not found' }, 404);
-  }
-
-  const policy = await createPolicy({
-    accountId,
-    principalType,
-    principalId,
-    scopeType,
-    scopeId,
-    roleId,
-    effect,
-    createdBy: userId,
-  });
-
-  await auditIam(c, {
-    accountId,
-    action: 'iam.policy.create',
-    resourceType: 'iam_policy',
-    resourceId: policy.policyId,
-    after: snapshotPolicy(policy),
-  });
-
-  return c.json(
-    {
-      policy_id: policy.policyId,
-      principal_type: policy.principalType,
-      principal_id: policy.principalId,
-      scope_type: policy.scopeType,
-      scope_id: policy.scopeId,
-      role_id: policy.roleId,
-      effect: policy.effect,
-      created_at: policy.createdAt.toISOString(),
-    },
-    201,
-  );
-});
-
-iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const policyId = c.req.param('policyId');
-  // policy.create covers both create + modify; treating them as the same
-  // capability is simpler and matches how Cloudflare scopes it. Add a
-  // dedicated policy.update later if we ever need to split them.
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
-
-  const body = await readBody(c);
-
-  const scopeType = body.scopeType ?? body.scope_type;
-  if (!isResourceType(scopeType)) {
-    return c.json({ error: 'scopeType must be a valid resource type' }, 400);
-  }
-  const rawScopeId = body.scopeId ?? body.scope_id;
-  const scopeId: string | null =
-    typeof rawScopeId === 'string' && rawScopeId.length > 0 ? rawScopeId : null;
-  if (scopeType === 'account' && scopeId !== null) {
-    return c.json({ error: 'scope_type=account requires scope_id to be null' }, 400);
-  }
-  if (scopeType !== 'account' && scopeId === null) {
-    return c.json({ error: 'resource-specific scopes require a scope_id' }, 400);
-  }
-  const roleId = (body.roleId ?? body.role_id) as unknown;
-  if (typeof roleId !== 'string' || !roleId) {
-    return c.json({ error: 'roleId is required' }, 400);
-  }
-  const effectRaw = body.effect ?? 'allow';
-  if (effectRaw !== 'allow' && effectRaw !== 'deny') {
-    return c.json({ error: 'effect must be allow or deny' }, 400);
-  }
-  const effect = effectRaw as 'allow' | 'deny';
-
-  const role = await getRoleById(accountId, roleId);
-  if (!role) return c.json({ error: 'unknown role' }, 404);
-  if (role.resourceType !== scopeType && role.resourceType !== 'account') {
-    return c.json(
-      {
-        error: `role '${role.key}' is for ${role.resourceType} scope; cannot attach at ${scopeType} scope`,
-      },
-      400,
-    );
-  }
-
-  // Capture the pre-state so the audit row carries a true before/after diff.
-  // If the row doesn't exist we let updatePolicy below return null and 404.
-  const beforePolicy = await getPolicyById(accountId, policyId);
-
-  try {
-    const updated = await updatePolicy(accountId, policyId, {
-      scopeType,
-      scopeId,
-      roleId,
-      effect,
-    });
-    if (!updated) return c.json({ error: 'policy not found' }, 404);
-
-    await auditIam(c, {
-      accountId,
-      action: 'iam.policy.update',
-      resourceType: 'iam_policy',
-      resourceId: policyId,
-      before: beforePolicy ? snapshotPolicy(beforePolicy) : null,
-      after: snapshotPolicy(updated),
-    });
-
-    return c.json({
-      policy_id: updated.policyId,
-      principal_type: updated.principalType,
-      principal_id: updated.principalId,
-      scope_type: updated.scopeType,
-      scope_id: updated.scopeId,
-      role_id: updated.roleId,
-      effect: updated.effect,
-      created_at: updated.createdAt.toISOString(),
-    });
-  } catch (err: unknown) {
-    if (isUniqueViolation(err)) {
-      return c.json(
-        { error: 'A policy with these exact properties already exists.' },
-        409,
-      );
-    }
-    throw err;
-  }
-});
-
-iamRouter.delete('/:accountId/iam/policies/:policyId', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const policyId = c.req.param('policyId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_DELETE);
-
-  // Snapshot pre-state — once deletePolicy returns we can't reconstruct it.
-  const beforePolicy = await getPolicyById(accountId, policyId);
-
-  const ok = await deletePolicy(accountId, policyId);
-  if (!ok) return c.json({ error: 'policy not found' }, 404);
-
-  await auditIam(c, {
-    accountId,
-    action: 'iam.policy.delete',
-    resourceType: 'iam_policy',
-    resourceId: policyId,
-    before: beforePolicy ? snapshotPolicy(beforePolicy) : null,
-  });
-
-  return c.json({ deleted: true });
-});
-
-// ─── Roles ─────────────────────────────────────────────────────────────────
-
-iamRouter.get('/:accountId/iam/roles', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
-
-  const roles = await listRoles(accountId);
-  return c.json({
-    roles: roles.map((r) => ({
-      role_id: r.roleId,
-      key: r.key,
-      name: r.name,
-      description: r.description,
-      resource_type: r.resourceType,
-      is_system: r.isSystem,
-      account_id: r.accountId,
-    })),
-  });
-});
-
-iamRouter.get('/:accountId/iam/roles/:roleId/permissions', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const roleId = c.req.param('roleId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
-
-  const role = await getRoleById(accountId, roleId);
-  if (!role) return c.json({ error: 'role not found' }, 404);
-  const actions = await getRolePermissions(roleId);
-  return c.json({
-    role_id: roleId,
-    key: role.key,
-    actions,
-  });
-});
-
-// Catalog of every valid action the system understands, grouped by resource
-// type for the Create/Edit role picker. Public to any reader of roles
-// (everyone with role.read) — there's nothing sensitive about knowing which
-// actions exist; we don't reveal who has them.
-iamRouter.get('/:accountId/iam/actions', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
-  return c.json({
-    actions: ACTION_CATALOG.map((e) => ({
-      action: e.action,
-      label: e.label,
-      resource_type: e.resourceType,
-    })),
-  });
-});
-
-// Usage count — drives the "in use by N policies" warning on the role
-// detail page so admins know before they try to delete a referenced role.
-iamRouter.get('/:accountId/iam/roles/:roleId/usage', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const roleId = c.req.param('roleId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
-
-  const role = await getRoleById(accountId, roleId);
-  if (!role) return c.json({ error: 'role not found' }, 404);
-  const policyCount = await countPoliciesUsingRole(accountId, roleId);
-  return c.json({ role_id: roleId, policy_count: policyCount });
-});
-
-// ─── Custom role mutations ────────────────────────────────────────────────
-// System roles (account_id IS NULL) are immutable — they're seeded from
-// code on every API boot, so mutations through this surface would be lost
-// anyway. We block them with a clear 403 instead of letting the user spend
-// minutes on a form before learning that.
-
-const ROLE_KEY_PATTERN = /^[a-z][a-z0-9_]{1,63}$/;
-
-function validateRoleKey(raw: unknown): { ok: true; key: string } | { ok: false; error: string } {
-  if (typeof raw !== 'string') return { ok: false, error: 'key is required' };
-  const key = raw.trim();
-  if (!ROLE_KEY_PATTERN.test(key)) {
-    return {
-      ok: false,
-      error:
-        'key must start with a letter and contain only lowercase letters, digits, or underscores (max 64 chars)',
-    };
-  }
-  return { ok: true, key };
-}
-
-function validateActionList(raw: unknown): { ok: true; actions: string[] } | { ok: false; error: string } {
-  if (!Array.isArray(raw)) return { ok: false, error: 'actions must be an array' };
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const a of raw) {
-    if (typeof a !== 'string') return { ok: false, error: 'each action must be a string' };
-    if (!VALID_ACTIONS.has(a)) return { ok: false, error: `unknown action: ${a}` };
-    if (seen.has(a)) continue;
-    seen.add(a);
-    out.push(a);
-  }
-  return { ok: true, actions: out };
-}
-
-iamRouter.post('/:accountId/iam/roles', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_CREATE);
-
-  const body = await readBody(c);
-
-  const keyCheck = validateRoleKey(body.key);
-  if (!keyCheck.ok) return c.json({ error: keyCheck.error }, 400);
-
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  if (!name) return c.json({ error: 'name is required' }, 400);
-  if (name.length > 128) return c.json({ error: 'name too long (max 128)' }, 400);
-
-  const description = typeof body.description === 'string' ? body.description : null;
-
-  const resourceTypeRaw = body.resourceType ?? body.resource_type;
-  if (!isResourceType(resourceTypeRaw)) {
-    return c.json({ error: 'resourceType must be a valid resource type' }, 400);
-  }
-
-  const actionCheck = validateActionList(body.actions ?? []);
-  if (!actionCheck.ok) return c.json({ error: actionCheck.error }, 400);
-  if (actionCheck.actions.length === 0) {
-    return c.json({ error: 'at least one action is required' }, 400);
-  }
-
-  try {
-    const role = await createCustomRole({
-      accountId,
-      key: keyCheck.key,
-      name,
-      description,
-      resourceType: resourceTypeRaw,
-      actions: actionCheck.actions,
-    });
-
-    await auditIam(c, {
-      accountId,
-      action: 'iam.role.create',
-      resourceType: 'iam_role',
-      resourceId: role.roleId,
-      after: {
-        key: role.key,
-        name: role.name,
-        resource_type: role.resourceType,
-        actions: actionCheck.actions,
-      },
-    });
-
-    return c.json(
-      {
-        role_id: role.roleId,
-        key: role.key,
-        name: role.name,
-        description: role.description,
-        resource_type: role.resourceType,
-        is_system: role.isSystem,
-      },
-      201,
-    );
-  } catch (err: unknown) {
-    if (isUniqueViolation(err)) {
-      return c.json({ error: 'A role with this key already exists in the account' }, 409);
-    }
-    throw err;
-  }
-});
-
-iamRouter.patch('/:accountId/iam/roles/:roleId', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const roleId = c.req.param('roleId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_UPDATE);
-
-  // System role guard — getRoleById returns it if accountId IS NULL, so
-  // check is_system explicitly and reject before any write attempt.
-  const existing = await getRoleById(accountId, roleId);
-  if (!existing) return c.json({ error: 'role not found' }, 404);
-  if (existing.isSystem) {
-    return c.json({ error: 'System roles cannot be edited' }, 403);
-  }
-
-  const body = await readBody(c);
-  const patch: { name?: string; description?: string | null } = {};
-  if (typeof body.name === 'string') {
-    const name = body.name.trim();
-    if (!name || name.length > 128) return c.json({ error: 'invalid name' }, 400);
-    patch.name = name;
-  }
-  if (body.description !== undefined) {
-    patch.description = typeof body.description === 'string' ? body.description : null;
-  }
-
-  const updated = await updateCustomRole(accountId, roleId, patch);
-  if (!updated) return c.json({ error: 'role not found' }, 404);
-
-  await auditIam(c, {
-    accountId,
-    action: 'iam.role.update',
-    resourceType: 'iam_role',
-    resourceId: roleId,
-    before: { name: existing.name, description: existing.description },
-    after: { name: updated.name, description: updated.description },
-  });
-
-  return c.json({
-    role_id: updated.roleId,
-    key: updated.key,
-    name: updated.name,
-    description: updated.description,
-    resource_type: updated.resourceType,
-    is_system: updated.isSystem,
-  });
-});
-
-iamRouter.put('/:accountId/iam/roles/:roleId/permissions', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const roleId = c.req.param('roleId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_UPDATE);
-
-  const existing = await getRoleById(accountId, roleId);
-  if (!existing) return c.json({ error: 'role not found' }, 404);
-  if (existing.isSystem) {
-    return c.json({ error: 'System role permissions cannot be edited' }, 403);
-  }
-
-  const body = await readBody(c);
-  const actionCheck = validateActionList(body.actions ?? []);
-  if (!actionCheck.ok) return c.json({ error: actionCheck.error }, 400);
-  if (actionCheck.actions.length === 0) {
-    return c.json({ error: 'a role must grant at least one action' }, 400);
-  }
-
-  const before = await getRolePermissions(roleId);
-  const result = await replaceRolePermissions(accountId, roleId, actionCheck.actions);
-  if (!result.updated) return c.json({ error: 'role not found' }, 404);
-
-  await auditIam(c, {
-    accountId,
-    action: 'iam.role.permissions.update',
-    resourceType: 'iam_role',
-    resourceId: roleId,
-    before: { actions: before },
-    after: { actions: actionCheck.actions, added: result.added, removed: result.removed },
-  });
-
-  return c.json({ role_id: roleId, actions: actionCheck.actions });
-});
-
-iamRouter.delete('/:accountId/iam/roles/:roleId', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const roleId = c.req.param('roleId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_DELETE);
-
-  const existing = await getRoleById(accountId, roleId);
-  if (!existing) return c.json({ error: 'role not found' }, 404);
-  if (existing.isSystem) {
-    return c.json({ error: 'System roles cannot be deleted' }, 403);
-  }
-
-  // Friendly pre-flight: count policies referencing the role so we can
-  // return a clear message instead of relying on a DB FK error.
-  const usage = await countPoliciesUsingRole(accountId, roleId);
-  if (usage > 0) {
-    return c.json(
-      {
-        error: `Cannot delete: this role is attached to ${usage} ${usage === 1 ? 'policy' : 'policies'}. Remove those policies first.`,
-        policy_count: usage,
-      },
-      409,
-    );
-  }
-
-  try {
-    const ok = await deleteCustomRole(accountId, roleId);
-    if (!ok) return c.json({ error: 'role not found' }, 404);
-  } catch (err: unknown) {
-    // Race: a policy was created referencing this role between the count
-    // and the delete. ON DELETE RESTRICT (FK code 23503) catches it.
-    const cause = (err as { cause?: { code?: string } })?.cause;
-    if (cause?.code === '23503') {
-      return c.json(
-        {
-          error: 'Cannot delete: a policy was just created referencing this role.',
-        },
-        409,
-      );
-    }
-    throw err;
-  }
-
-  await auditIam(c, {
-    accountId,
-    action: 'iam.role.delete',
-    resourceType: 'iam_role',
-    resourceId: roleId,
-    before: {
-      key: existing.key,
-      name: existing.name,
-      resource_type: existing.resourceType,
-    },
-  });
-
-  return c.json({ deleted: true });
 });
 
 // ─── Super-admin promotion ─────────────────────────────────────────────────
@@ -944,6 +442,11 @@ iamRouter.patch('/:accountId/iam/members/:userId/super-admin', async (c) => {
 
   const body = await readBody(c);
   const isSuperAdmin = body.isSuperAdmin === true || body.is_super_admin === true;
+
+  // The V1 two-person approval gate (requireApproval / NeedsApprovalError)
+  // was removed with the approvals workflow in PR5c. Super-admin grants
+  // now apply immediately, gated only by the caller's own
+  // member.super_admin.grant permission asserted above.
 
   // Snapshot the prior flag so an audit reader can see "Alice already had
   // super-admin → no-op" vs "Alice was promoted on March 5". Cheap query
@@ -1011,6 +514,139 @@ iamRouter.get('/:accountId/iam/members/:userId/groups', async (c) => {
   });
 });
 
+// V2-only: which projects does this member reach, and at what role?
+// Combines three sources, max-role per project:
+//   1. account_members.account_role of 'owner' or 'admin' → implicit
+//      Manager on every active project in the account
+//   2. direct project_members.project_role rows
+//   3. project_group_grants for any group the user belongs to
+// V1 callers can use the route too — the data is real either way — but
+// the V1 UI doesn't surface it (PoliciesTable is the equivalent V1 view).
+iamRouter.get('/:accountId/iam/members/:userId/project-access', async (c) => {
+  const callerId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const targetUserId = c.req.param('userId');
+
+  if (callerId !== targetUserId) {
+    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+  }
+
+  type Role = 'manager' | 'editor' | 'viewer';
+  const rank: Record<Role, number> = { viewer: 1, editor: 2, manager: 3 };
+  const max = (a: Role, b: Role): Role => (rank[a] >= rank[b] ? a : b);
+
+  // Project info we'll need for every row in the response.
+  const allProjects = await db
+    .select({
+      projectId: projects.projectId,
+      name: projects.name,
+      status: projects.status,
+    })
+    .from(projects)
+    .where(eq(projects.accountId, accountId));
+  const projectMeta = new Map(allProjects.map((p) => [p.projectId, p] as const));
+
+  // 1) implicit manager via account_role
+  const [membership] = await db
+    .select({ accountRole: accountMembers.accountRole })
+    .from(accountMembers)
+    .where(
+      and(
+        eq(accountMembers.accountId, accountId),
+        eq(accountMembers.userId, targetUserId),
+      ),
+    )
+    .limit(1);
+  if (!membership) {
+    return c.json({ projects: [] });
+  }
+
+  const byProject = new Map<
+    string,
+    { role: Role; sources: ('implicit' | 'direct' | 'group')[] }
+  >();
+  if (membership.accountRole === 'owner' || membership.accountRole === 'admin') {
+    for (const p of allProjects) {
+      if (p.status !== 'active') continue;
+      byProject.set(p.projectId, { role: 'manager', sources: ['implicit'] });
+    }
+  }
+
+  // 2) direct project_members rows
+  const directRows = await db
+    .select({
+      projectId: projectMembers.projectId,
+      role: projectMembers.projectRole,
+    })
+    .from(projectMembers)
+    .where(
+      and(
+        eq(projectMembers.accountId, accountId),
+        eq(projectMembers.userId, targetUserId),
+      ),
+    );
+  for (const r of directRows) {
+    const role = r.role as Role;
+    const cur = byProject.get(r.projectId);
+    if (cur) {
+      cur.role = max(cur.role, role);
+      if (!cur.sources.includes('direct')) cur.sources.push('direct');
+    } else {
+      byProject.set(r.projectId, { role, sources: ['direct'] });
+    }
+  }
+
+  // 3) group grants for any group this user belongs to
+  const groupMembershipRows = await db
+    .select({ groupId: accountGroupMembers.groupId })
+    .from(accountGroupMembers)
+    .where(eq(accountGroupMembers.userId, targetUserId));
+  const groupIds = groupMembershipRows.map((g) => g.groupId);
+  if (groupIds.length > 0) {
+    const grantRows = await db
+      .select({
+        projectId: projectGroupGrants.projectId,
+        role: projectGroupGrants.role,
+      })
+      .from(projectGroupGrants)
+      .where(
+        and(
+          eq(projectGroupGrants.accountId, accountId),
+          inArray(projectGroupGrants.groupId, groupIds),
+        ),
+      );
+    for (const r of grantRows) {
+      const role = r.role as Role;
+      const cur = byProject.get(r.projectId);
+      if (cur) {
+        cur.role = max(cur.role, role);
+        if (!cur.sources.includes('group')) cur.sources.push('group');
+      } else {
+        byProject.set(r.projectId, { role, sources: ['group'] });
+      }
+    }
+  }
+
+  const out: Array<{
+    project_id: string;
+    project_name: string;
+    role: Role;
+    sources: ('implicit' | 'direct' | 'group')[];
+  }> = [];
+  for (const [projectId, info] of byProject) {
+    const meta = projectMeta.get(projectId);
+    if (!meta || meta.status !== 'active') continue;
+    out.push({
+      project_id: projectId,
+      project_name: meta.name,
+      role: info.role,
+      sources: info.sources,
+    });
+  }
+  out.sort((a, b) => a.project_name.localeCompare(b.project_name));
+  return c.json({ projects: out });
+});
+
 // ─── Effective permissions probe ───────────────────────────────────────────
 // The UI uses this to render "what can this user actually do".
 
@@ -1048,3 +684,1060 @@ iamRouter.get('/:accountId/iam/members/:userId/effective', async (c) => {
     resource_type: resourceTypeForAction(action),
   });
 });
+
+// Batch variant. UIs that render N capability rows (the "what this member
+// can do" panel, multi-button gating on a single screen) should call this
+// instead of N separate /effective?action=... requests. Returns answers in
+// the same order as the input; duplicates are NOT de-duped server-side so
+// the caller can rely on indices matching.
+const BATCH_MAX = 64;
+
+iamRouter.post('/:accountId/iam/members/:userId/effective:batch', async (c) => {
+  const callerId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const targetUserId = c.req.param('userId');
+
+  if (callerId !== targetUserId) {
+    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+  }
+
+  const body = await readBody(c);
+  const rawProbes = body.probes ?? body.queries;
+  if (!Array.isArray(rawProbes)) {
+    return c.json({ error: 'probes must be an array' }, 400);
+  }
+  if (rawProbes.length === 0) {
+    return c.json({ results: [] });
+  }
+  if (rawProbes.length > BATCH_MAX) {
+    return c.json(
+      { error: `batch size must be ≤ ${BATCH_MAX} (got ${rawProbes.length})` },
+      400,
+    );
+  }
+
+  // Validate each probe BEFORE dispatching anything. Mixing valid and
+  // invalid in the same batch is rejected entirely so the caller doesn't
+  // get partial results that look successful at first glance.
+  type ParsedProbe = {
+    action: string;
+    target: Parameters<typeof authorize>[3];
+  };
+  const parsed: ParsedProbe[] = [];
+  for (let i = 0; i < rawProbes.length; i++) {
+    const p = rawProbes[i];
+    if (!p || typeof p !== 'object') {
+      return c.json({ error: `probes[${i}] must be an object` }, 400);
+    }
+    const action = (p as { action?: unknown }).action;
+    if (typeof action !== 'string' || !action) {
+      return c.json({ error: `probes[${i}].action is required` }, 400);
+    }
+    const scope =
+      (p as { resourceType?: unknown; resource_type?: unknown }).resourceType ??
+      (p as { resource_type?: unknown }).resource_type;
+    const id =
+      (p as { resourceId?: unknown; resource_id?: unknown }).resourceId ??
+      (p as { resource_id?: unknown }).resource_id;
+    let target: Parameters<typeof authorize>[3];
+    if (typeof scope === 'string' && isResourceType(scope) && scope !== 'account') {
+      if (typeof id !== 'string' || !id) {
+        return c.json(
+          { error: `probes[${i}].resourceId required when resourceType is set` },
+          400,
+        );
+      }
+      target = { type: scope, id } as Parameters<typeof authorize>[3];
+    } else if (scope !== undefined && scope !== 'account' && typeof scope === 'string') {
+      // Caller passed something for resourceType but it's not a valid enum.
+      return c.json(
+        { error: `probes[${i}].resourceType is not a known resource type` },
+        400,
+      );
+    } else {
+      target = { type: 'account' };
+    }
+    parsed.push({ action, target });
+  }
+
+  // Dedupe in-flight calls but preserve output positions. This makes
+  // duplicate (action,target) entries in the input free after the first.
+  const cache = new Map<string, ReturnType<typeof authorize>>();
+  const keyFor = (p: ParsedProbe) =>
+    p.target?.type === 'account'
+      ? `${p.action}|account|*`
+      : `${p.action}|${p.target?.type}|${
+          p.target && 'id' in p.target ? p.target.id : '*'
+        }`;
+
+  const results = await Promise.all(
+    parsed.map(async (p) => {
+      const key = keyFor(p);
+      let inflight = cache.get(key);
+      if (!inflight) {
+        inflight = authorize(targetUserId, accountId, p.action, p.target);
+        cache.set(key, inflight);
+      }
+      const r = await inflight;
+      return {
+        action: p.action,
+        resource_type: resourceTypeForAction(p.action),
+        resource_id: p.target && 'id' in p.target ? p.target.id : null,
+        allowed: r.allowed,
+        reason: r.reason ?? null,
+      };
+    }),
+  );
+
+  return c.json({ results });
+});
+
+// ─── Account-wide MFA enforcement ─────────────────────────────────────────
+// When enabled, the IAM engine denies every JWT request whose session is
+// not aal2. Super-admins and PATs are exempt. Mirrors the strict-mode
+// surface: GET status, GET preview (who would be locked out), PATCH to
+// flip — with a lockout guard refusing flips that would orphan the
+// account.
+
+iamRouter.get('/:accountId/iam/mfa-required', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  const [row] = await db
+    .select({ mfaRequired: accounts.mfaRequired })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!row) return c.json({ error: 'account not found' }, 404);
+  return c.json({ enabled: row.mfaRequired });
+});
+
+// Preview: members who have no VERIFIED MFA factor enrolled. These users
+// would lose access the moment the flag flips — admins should see the
+// list before clicking. Super-admins are still flagged (so admins can
+// nudge them too) but called out separately so the UI can soften the
+// warning (super-admins won't be locked out).
+iamRouter.get('/:accountId/iam/mfa-required/preview', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  // Pull all members and the count of their verified MFA factors in one
+  // round-trip. LEFT JOIN so members with zero factors still appear.
+  const rows = await db.execute<{
+    user_id: string;
+    account_role: string;
+    is_super_admin: boolean;
+    verified_factors: number;
+  }>(sql`
+    SELECT
+      am.user_id::text AS user_id,
+      am.account_role::text AS account_role,
+      am.is_super_admin,
+      COALESCE((
+        SELECT COUNT(*)::int FROM auth.mfa_factors mf
+        WHERE mf.user_id = am.user_id AND mf.status = 'verified'
+      ), 0) AS verified_factors
+    FROM kortix.account_members am
+    WHERE am.account_id = ${accountId}::uuid
+  `);
+
+  // Drizzle's .execute returns { rows: [...] } for raw SQL on pg.
+  const dataRows = ((rows as unknown) as { rows: typeof rows }).rows ?? rows;
+
+  const losers: Array<{
+    user_id: string;
+    account_role: string;
+    is_super_admin: boolean;
+  }> = [];
+  let withMfa = 0;
+  let total = 0;
+  for (const r of dataRows as Array<{
+    user_id: string;
+    account_role: string;
+    is_super_admin: boolean;
+    verified_factors: number;
+  }>) {
+    total++;
+    if (r.verified_factors > 0) {
+      withMfa++;
+      continue;
+    }
+    // Super-admins are exempt from enforcement but we still surface them
+    // so the admin can prod them to enrol. Marked is_super_admin so the
+    // UI can downgrade the warning style.
+    losers.push({
+      user_id: r.user_id,
+      account_role: r.account_role,
+      is_super_admin: r.is_super_admin,
+    });
+  }
+
+  // Safety: at least one non-super-admin must already have MFA, OR there
+  // must be a super-admin who'd retain access. Otherwise the flip would
+  // orphan the account.
+  const willLockOutAccount = !losers.some((l) => l.is_super_admin)
+    && withMfa === 0;
+
+  return c.json({
+    total_members: total,
+    members_with_mfa: withMfa,
+    losers,
+    will_lock_out_account: willLockOutAccount,
+  });
+});
+
+iamRouter.patch('/:accountId/iam/mfa-required', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  // Gate on account.write — same level as renaming the account or
+  // flipping strict mode. Avoids inventing a new role action.
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  const enabled = body.enabled === true;
+
+  const [before] = await db
+    .select({ mfaRequired: accounts.mfaRequired })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!before) return c.json({ error: 'account not found' }, 404);
+  if (before.mfaRequired === enabled) {
+    return c.json({ enabled, unchanged: true });
+  }
+
+  // Two-person rule: turning MFA OFF is dangerous (instantly relaxes
+  // the account's security posture), so it's gated by approvals when
+  // V1 approval-gate on MFA disable was removed in PR5c with the rest
+  // of the approvals workflow. Disable now applies immediately, gated
+  // only by the caller's own account.write permission asserted above.
+
+  // Lockout guard on enable: there must be either at least one
+  // super-admin (always exempt) OR at least one member with verified
+  // MFA — otherwise the flip would orphan the account.
+  if (enabled) {
+    const [superAdmin] = await db
+      .select({ userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(
+        and(
+          eq(accountMembers.accountId, accountId),
+          eq(accountMembers.isSuperAdmin, true),
+        ),
+      )
+      .limit(1);
+    if (!superAdmin) {
+      const enrolled = await db.execute<{ user_id: string }>(sql`
+        SELECT am.user_id
+        FROM kortix.account_members am
+        WHERE am.account_id = ${accountId}::uuid
+          AND EXISTS (
+            SELECT 1 FROM auth.mfa_factors mf
+            WHERE mf.user_id = am.user_id AND mf.status = 'verified'
+          )
+        LIMIT 1
+      `);
+      const enrolledRows = ((enrolled as unknown) as { rows: typeof enrolled }).rows ?? enrolled;
+      if (!enrolledRows || (enrolledRows as unknown as unknown[]).length === 0) {
+        return c.json(
+          {
+            error:
+              'Cannot enable MFA requirement: no super-admins and nobody has MFA enrolled. ' +
+              'Promote a super-admin or have at least one member enrol MFA first.',
+          },
+          409,
+        );
+      }
+    }
+  }
+
+  await db
+    .update(accounts)
+    .set({ mfaRequired: enabled, updatedAt: new Date() })
+    .where(eq(accounts.accountId, accountId));
+
+  await auditIam(c, {
+    accountId,
+    action: enabled ? 'iam.mfa_required.enable' : 'iam.mfa_required.disable',
+    resourceType: 'account',
+    resourceId: accountId,
+    before: { mfa_required: before.mfaRequired },
+    after: { mfa_required: enabled },
+  });
+
+  return c.json({ enabled });
+});
+
+// ─── SCIM provisioning tokens ─────────────────────────────────────────────
+// Bearer credentials configured in the customer's IdP (Okta, Azure AD, …)
+// to drive /scim/v2/accounts/:accountId/*. Treated as account-admin-level
+// secrets: only `account.write` can mint or revoke. Plaintext is returned
+// exactly once at mint; everything else shows the public prefix only.
+
+iamRouter.get('/:accountId/iam/scim/tokens', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const tokens = await listScimTokens(accountId);
+  return c.json({
+    tokens: tokens.map((t) => ({
+      token_id: t.tokenId,
+      name: t.name,
+      public_prefix: t.publicPrefix,
+      status: t.status,
+      created_at: t.createdAt.toISOString(),
+      last_used_at: t.lastUsedAt?.toISOString() ?? null,
+      expires_at: t.expiresAt?.toISOString() ?? null,
+      revoked_at: t.revokedAt?.toISOString() ?? null,
+    })),
+  });
+});
+
+iamRouter.post('/:accountId/iam/scim/tokens', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) return c.json({ error: 'name is required' }, 400);
+  if (name.length > 128) return c.json({ error: 'name too long (max 128 chars)' }, 400);
+
+  const expiresAtRaw =
+    typeof body.expires_at === 'string'
+      ? body.expires_at
+      : typeof body.expiresAt === 'string'
+        ? body.expiresAt
+        : null;
+  let expiresAt: Date | undefined;
+  if (expiresAtRaw) {
+    const d = new Date(expiresAtRaw);
+    if (Number.isNaN(d.getTime())) {
+      return c.json({ error: 'expires_at must be ISO-8601' }, 400);
+    }
+    if (d.getTime() <= Date.now()) {
+      return c.json({ error: 'expires_at must be in the future' }, 400);
+    }
+    expiresAt = d;
+  }
+
+  const created = await createScimToken({
+    accountId,
+    name,
+    createdBy: userId,
+    expiresAt,
+  });
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.scim.token.create',
+    resourceType: 'scim_token',
+    resourceId: created.tokenId,
+    after: {
+      name: created.name,
+      public_prefix: created.publicPrefix,
+      expires_at: created.expiresAt?.toISOString() ?? null,
+    },
+  });
+
+  // The secret is returned ONCE. Subsequent list calls only see the
+  // public prefix. Audit never logs the secret.
+  return c.json(
+    {
+      token_id: created.tokenId,
+      name: created.name,
+      secret: created.secret,
+      public_prefix: created.publicPrefix,
+      created_at: created.createdAt.toISOString(),
+      expires_at: created.expiresAt?.toISOString() ?? null,
+      scim_base_url: `/scim/v2/accounts/${accountId}`,
+    },
+    201,
+  );
+});
+
+iamRouter.delete('/:accountId/iam/scim/tokens/:tokenId', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const tokenId = c.req.param('tokenId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const ok = await revokeScimToken(accountId, tokenId);
+  if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.scim.token.revoke',
+    resourceType: 'scim_token',
+    resourceId: tokenId,
+  });
+
+  return c.json({ revoked: true });
+});
+
+// ─── SAML SSO config ──────────────────────────────────────────────────────
+// The Supabase auth.sso_providers row is created out-of-band (via Studio
+// or the auth admin API — admins paste the IdP metadata there). We just
+// record which kortix account owns it plus the claim mapping config. JIT
+// provisioning + group sync runs in the auth middleware on every request.
+
+function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProvider>>>) {
+  return {
+    sso_provider_id: p.ssoProviderId,
+    supabase_sso_provider_id: p.supabaseSsoProviderId,
+    name: p.name,
+    primary_domain: p.primaryDomain,
+    group_claim_name: p.groupClaimName,
+    auto_create_members: p.autoCreateMembers,
+    created_at: p.createdAt.toISOString(),
+    updated_at: p.updatedAt.toISOString(),
+  };
+}
+
+iamRouter.get('/:accountId/iam/sso/provider', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  const p = await getSsoProvider(accountId);
+  if (!p) return c.json({ provider: null });
+  return c.json({ provider: ssoProviderResponse(p) });
+});
+
+iamRouter.put('/:accountId/iam/sso/provider', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  const supabaseSsoProviderId = (body.supabase_sso_provider_id ?? body.supabaseSsoProviderId) as unknown;
+  const name = body.name as unknown;
+  const primaryDomain = (body.primary_domain ?? body.primaryDomain) as unknown;
+  const groupClaimName = (body.group_claim_name ?? body.groupClaimName) as unknown;
+  const autoCreateMembers = (body.auto_create_members ?? body.autoCreateMembers) as unknown;
+
+  if (typeof supabaseSsoProviderId !== 'string' || !/^[0-9a-f-]{36}$/i.test(supabaseSsoProviderId)) {
+    return c.json({ error: 'supabase_sso_provider_id must be a UUID' }, 400);
+  }
+  if (typeof name !== 'string' || name.trim().length === 0) {
+    return c.json({ error: 'name is required' }, 400);
+  }
+  if (
+    typeof primaryDomain !== 'string' ||
+    primaryDomain.trim().length === 0 ||
+    !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(primaryDomain.trim())
+  ) {
+    return c.json({ error: 'primary_domain must be a valid domain' }, 400);
+  }
+  if (groupClaimName !== undefined && (typeof groupClaimName !== 'string' || groupClaimName.length > 128)) {
+    return c.json({ error: 'group_claim_name must be a short string' }, 400);
+  }
+
+  const before = await getSsoProvider(accountId);
+  const provider = await upsertSsoProvider({
+    accountId,
+    supabaseSsoProviderId,
+    name: name.trim(),
+    primaryDomain: primaryDomain.trim(),
+    groupClaimName: typeof groupClaimName === 'string' ? groupClaimName : undefined,
+    autoCreateMembers: typeof autoCreateMembers === 'boolean' ? autoCreateMembers : undefined,
+  createdBy: userId,
+  });
+
+  await auditIam(c, {
+    accountId,
+    action: before ? 'iam.sso.provider.update' : 'iam.sso.provider.create',
+    resourceType: 'sso_provider',
+    resourceId: provider.ssoProviderId,
+    before: before
+      ? {
+          supabase_sso_provider_id: before.supabaseSsoProviderId,
+          name: before.name,
+          primary_domain: before.primaryDomain,
+          group_claim_name: before.groupClaimName,
+          auto_create_members: before.autoCreateMembers,
+        }
+      : null,
+    after: {
+      supabase_sso_provider_id: provider.supabaseSsoProviderId,
+      name: provider.name,
+      primary_domain: provider.primaryDomain,
+      group_claim_name: provider.groupClaimName,
+      auto_create_members: provider.autoCreateMembers,
+    },
+  });
+
+  return c.json({ provider: ssoProviderResponse(provider) });
+});
+
+iamRouter.delete('/:accountId/iam/sso/provider', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const before = await getSsoProvider(accountId);
+  const ok = await deleteSsoProvider(accountId);
+  if (!ok) return c.json({ error: 'no SSO provider configured' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.sso.provider.delete',
+    resourceType: 'sso_provider',
+    resourceId: before?.ssoProviderId ?? accountId,
+    before: before
+      ? {
+          supabase_sso_provider_id: before.supabaseSsoProviderId,
+          name: before.name,
+          primary_domain: before.primaryDomain,
+        }
+      : null,
+  });
+
+  return c.json({ deleted: true });
+});
+
+// ─── SAML group mappings ──────────────────────────────────────────────────
+
+iamRouter.get('/:accountId/iam/sso/mappings', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  const rows = await listSsoGroupMappings(accountId);
+  return c.json({
+    mappings: rows.map((m) => ({
+      mapping_id: m.mappingId,
+      claim_value: m.claimValue,
+      group_id: m.groupId,
+      group_name: m.groupName,
+      created_at: m.createdAt.toISOString(),
+    })),
+  });
+});
+
+iamRouter.post('/:accountId/iam/sso/mappings', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  const claimValue = (body.claim_value ?? body.claimValue) as unknown;
+  const groupId = (body.group_id ?? body.groupId) as unknown;
+  if (typeof claimValue !== 'string' || claimValue.trim().length === 0) {
+    return c.json({ error: 'claim_value is required' }, 400);
+  }
+  if (typeof groupId !== 'string' || !/^[0-9a-f-]{36}$/i.test(groupId)) {
+    return c.json({ error: 'group_id must be a UUID' }, 400);
+  }
+  const provider = await getSsoProvider(accountId);
+  if (!provider) {
+    return c.json({ error: 'no SSO provider configured — set one first' }, 409);
+  }
+
+  try {
+    const mapping = await createSsoGroupMapping({
+      accountId,
+      ssoProviderId: provider.ssoProviderId,
+      claimValue: claimValue.trim(),
+      groupId,
+      createdBy: userId,
+    });
+    if (!mapping) return c.json({ error: 'group not found in this account' }, 404);
+
+    await auditIam(c, {
+      accountId,
+      action: 'iam.sso.mapping.create',
+      resourceType: 'sso_mapping',
+      resourceId: mapping.mappingId,
+      after: {
+        claim_value: mapping.claimValue,
+        group_id: mapping.groupId,
+        group_name: mapping.groupName,
+      },
+    });
+
+    return c.json(
+      {
+        mapping_id: mapping.mappingId,
+        claim_value: mapping.claimValue,
+        group_id: mapping.groupId,
+        group_name: mapping.groupName,
+        created_at: mapping.createdAt.toISOString(),
+      },
+      201,
+    );
+  } catch (err: unknown) {
+    if (isUniqueViolation(err)) {
+      return c.json({ error: 'A mapping for that claim value already exists.' }, 409);
+    }
+    throw err;
+  }
+});
+
+iamRouter.delete('/:accountId/iam/sso/mappings/:mappingId', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const mappingId = c.req.param('mappingId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const ok = await deleteSsoGroupMapping(accountId, mappingId);
+  if (!ok) return c.json({ error: 'mapping not found' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.sso.mapping.delete',
+    resourceType: 'sso_mapping',
+    resourceId: mappingId,
+  });
+
+  return c.json({ deleted: true });
+});
+
+// ─── Session policy ───────────────────────────────────────────────────────
+// Per-account ceilings on session age + idle gap. Null on either field
+// means "no limit". 0 < value ≤ 10080 (one week).
+
+const SESSION_LIMIT_MINUTES = 10080; // 7 days
+
+iamRouter.get('/:accountId/iam/session-policy', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  const [row] = await db
+    .select({
+      maxLifetimeMinutes: accounts.sessionMaxLifetimeMinutes,
+      idleTimeoutMinutes: accounts.sessionIdleTimeoutMinutes,
+    })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!row) return c.json({ error: 'account not found' }, 404);
+
+  return c.json({
+    max_lifetime_minutes: row.maxLifetimeMinutes,
+    idle_timeout_minutes: row.idleTimeoutMinutes,
+  });
+});
+
+iamRouter.patch('/:accountId/iam/session-policy', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  // Accept null → clear, undefined → leave untouched, number → set.
+  function parseLimit(key: string, value: unknown): number | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+      throw new HttpError(400, `${key} must be a positive integer or null`);
+    }
+    if (value > SESSION_LIMIT_MINUTES) {
+      throw new HttpError(
+        400,
+        `${key} cannot exceed ${SESSION_LIMIT_MINUTES} minutes (7 days)`,
+      );
+    }
+    return value;
+  }
+
+  let maxLifetimeMinutes: number | null | undefined;
+  let idleTimeoutMinutes: number | null | undefined;
+  try {
+    maxLifetimeMinutes = parseLimit(
+      'max_lifetime_minutes',
+      body.max_lifetime_minutes ?? body.maxLifetimeMinutes,
+    );
+    idleTimeoutMinutes = parseLimit(
+      'idle_timeout_minutes',
+      body.idle_timeout_minutes ?? body.idleTimeoutMinutes,
+    );
+  } catch (err) {
+    if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
+    throw err;
+  }
+
+  const [before] = await db
+    .select({
+      maxLifetimeMinutes: accounts.sessionMaxLifetimeMinutes,
+      idleTimeoutMinutes: accounts.sessionIdleTimeoutMinutes,
+    })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!before) return c.json({ error: 'account not found' }, 404);
+
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (maxLifetimeMinutes !== undefined) updates.sessionMaxLifetimeMinutes = maxLifetimeMinutes;
+  if (idleTimeoutMinutes !== undefined) updates.sessionIdleTimeoutMinutes = idleTimeoutMinutes;
+
+  await db
+    .update(accounts)
+    .set(updates)
+    .where(eq(accounts.accountId, accountId));
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.session_policy.update',
+    resourceType: 'account',
+    resourceId: accountId,
+    before: {
+      max_lifetime_minutes: before.maxLifetimeMinutes,
+      idle_timeout_minutes: before.idleTimeoutMinutes,
+    },
+    after: {
+      max_lifetime_minutes:
+        maxLifetimeMinutes !== undefined ? maxLifetimeMinutes : before.maxLifetimeMinutes,
+      idle_timeout_minutes:
+        idleTimeoutMinutes !== undefined ? idleTimeoutMinutes : before.idleTimeoutMinutes,
+    },
+  });
+
+  return c.json({
+    max_lifetime_minutes:
+      maxLifetimeMinutes !== undefined ? maxLifetimeMinutes : before.maxLifetimeMinutes,
+    idle_timeout_minutes:
+      idleTimeoutMinutes !== undefined ? idleTimeoutMinutes : before.idleTimeoutMinutes,
+  });
+});
+
+// ─── Active sessions + force-logout ───────────────────────────────────────
+
+iamRouter.get('/:accountId/iam/sessions', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+
+  const rows = await db
+    .select({
+      userId: accountSessionActivity.userId,
+      sessionId: accountSessionActivity.sessionId,
+      firstSeenAt: accountSessionActivity.firstSeenAt,
+      lastSeenAt: accountSessionActivity.lastSeenAt,
+      revokedAt: accountSessionActivity.revokedAt,
+      revokedReason: accountSessionActivity.revokedReason,
+      ip: accountSessionActivity.ip,
+      userAgent: accountSessionActivity.userAgent,
+    })
+    .from(accountSessionActivity)
+    .where(eq(accountSessionActivity.accountId, accountId))
+    .orderBy(sql`${accountSessionActivity.lastSeenAt} DESC`)
+    .limit(200);
+
+  return c.json({
+    sessions: rows.map((r) => ({
+      user_id: r.userId,
+      session_id: r.sessionId,
+      first_seen_at: r.firstSeenAt.toISOString(),
+      last_seen_at: r.lastSeenAt.toISOString(),
+      revoked_at: r.revokedAt?.toISOString() ?? null,
+      revoked_reason: r.revokedReason,
+      ip: r.ip,
+      user_agent: r.userAgent,
+    })),
+  });
+});
+
+iamRouter.post('/:accountId/iam/sessions/:sessionId/revoke', async (c) => {
+  const actorUserId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const sessionId = c.req.param('sessionId');
+  // Gate on member.remove — force-logout is roughly "kick this user off
+  // for now"; reuses the same capability admins already grant.
+  await assertAuthorized(actorUserId, accountId, ACCOUNT_ACTIONS.MEMBER_REMOVE);
+
+  // Body optionally carries the target user (for safer audit). Either
+  // way we just stamp revoked_at on the matching activity row.
+  const rows = await db
+    .update(accountSessionActivity)
+    .set({
+      revokedAt: sql`COALESCE(${accountSessionActivity.revokedAt}, now())`,
+      revokedReason: sql`COALESCE(${accountSessionActivity.revokedReason}, 'admin')`,
+      revokedBy: actorUserId,
+    })
+    .where(
+      and(
+        eq(accountSessionActivity.accountId, accountId),
+        eq(accountSessionActivity.sessionId, sessionId),
+      ),
+    )
+    .returning({ userId: accountSessionActivity.userId });
+
+  if (rows.length === 0) {
+    return c.json({ error: 'session not found' }, 404);
+  }
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.session.revoke',
+    resourceType: 'session',
+    resourceId: sessionId,
+    after: { user_id: rows[0].userId, revoked_by: actorUserId },
+  });
+
+  return c.json({ revoked: true });
+});
+
+// Compact local error so the parser helper above can short-circuit.
+class HttpError extends Error {
+  constructor(public status: 400 | 404 | 409 | 422, message: string) {
+    super(message);
+  }
+}
+
+// ─── PAT lifecycle policy ─────────────────────────────────────────────────
+// Per-account ceilings on CLI Personal Access Token lifetime + idle gap,
+// plus a "require expiry on every PAT" toggle. Enforced at mint
+// (createAccountToken) and validate (validateAccountToken) paths.
+// Project-scoped tokens (sandbox-injected) are exempt at both sites.
+
+const PAT_MAX_LIFETIME_DAYS = 365 * 2; // 2 years
+const PAT_MAX_IDLE_DAYS = 365;
+
+iamRouter.get('/:accountId/iam/pat-policy', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  const [row] = await db
+    .select({
+      maxLifetimeDays: accounts.patMaxLifetimeDays,
+      requireExpiry: accounts.patRequireExpiry,
+      idleRevokeDays: accounts.patIdleRevokeDays,
+    })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!row) return c.json({ error: 'account not found' }, 404);
+
+  return c.json({
+    max_lifetime_days: row.maxLifetimeDays,
+    require_expiry: row.requireExpiry,
+    idle_revoke_days: row.idleRevokeDays,
+  });
+});
+
+iamRouter.patch('/:accountId/iam/pat-policy', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+
+  function parseDays(key: string, value: unknown, max: number): number | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+      throw new HttpError(400, `${key} must be a positive integer or null`);
+    }
+    if (value > max) {
+      throw new HttpError(400, `${key} cannot exceed ${max} days`);
+    }
+    return value;
+  }
+
+  let maxLifetimeDays: number | null | undefined;
+  let idleRevokeDays: number | null | undefined;
+  let requireExpiry: boolean | undefined;
+  try {
+    maxLifetimeDays = parseDays(
+      'max_lifetime_days',
+      body.max_lifetime_days ?? body.maxLifetimeDays,
+      PAT_MAX_LIFETIME_DAYS,
+    );
+    idleRevokeDays = parseDays(
+      'idle_revoke_days',
+      body.idle_revoke_days ?? body.idleRevokeDays,
+      PAT_MAX_IDLE_DAYS,
+    );
+    const reqRaw = body.require_expiry ?? body.requireExpiry;
+    if (reqRaw !== undefined) {
+      if (typeof reqRaw !== 'boolean') {
+        return c.json({ error: 'require_expiry must be a boolean' }, 400);
+      }
+      requireExpiry = reqRaw;
+    }
+  } catch (err) {
+    if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
+    throw err;
+  }
+
+  const [before] = await db
+    .select({
+      maxLifetimeDays: accounts.patMaxLifetimeDays,
+      requireExpiry: accounts.patRequireExpiry,
+      idleRevokeDays: accounts.patIdleRevokeDays,
+    })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!before) return c.json({ error: 'account not found' }, 404);
+
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (maxLifetimeDays !== undefined) updates.patMaxLifetimeDays = maxLifetimeDays;
+  if (idleRevokeDays !== undefined) updates.patIdleRevokeDays = idleRevokeDays;
+  if (requireExpiry !== undefined) updates.patRequireExpiry = requireExpiry;
+
+  await db
+    .update(accounts)
+    .set(updates)
+    .where(eq(accounts.accountId, accountId));
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.pat_policy.update',
+    resourceType: 'account',
+    resourceId: accountId,
+    before: {
+      max_lifetime_days: before.maxLifetimeDays,
+      require_expiry: before.requireExpiry,
+      idle_revoke_days: before.idleRevokeDays,
+    },
+    after: {
+      max_lifetime_days:
+        maxLifetimeDays !== undefined ? maxLifetimeDays : before.maxLifetimeDays,
+      require_expiry:
+        requireExpiry !== undefined ? requireExpiry : before.requireExpiry,
+      idle_revoke_days:
+        idleRevokeDays !== undefined ? idleRevokeDays : before.idleRevokeDays,
+    },
+  });
+
+  return c.json({
+    max_lifetime_days:
+      maxLifetimeDays !== undefined ? maxLifetimeDays : before.maxLifetimeDays,
+    require_expiry:
+      requireExpiry !== undefined ? requireExpiry : before.requireExpiry,
+    idle_revoke_days:
+      idleRevokeDays !== undefined ? idleRevokeDays : before.idleRevokeDays,
+  });
+});
+
+// ─── Service accounts (non-human IAM principals) ─────────────────────────
+// First-class machine identities owned by the account itself. Policies
+// attach via principal_type='token' with principal_id=service_account_id
+// — the engine's token-as-principal short-circuit means SA requests are
+// evaluated PURELY against the SA's own policies (no minter inheritance).
+
+iamRouter.get('/:accountId/iam/service-accounts', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_READ);
+  const rows = await listServiceAccounts(accountId);
+  return c.json({
+    service_accounts: rows.map((sa) => ({
+      service_account_id: sa.serviceAccountId,
+      name: sa.name,
+      description: sa.description,
+      public_prefix: sa.publicPrefix,
+      status: sa.status,
+      last_used_at: sa.lastUsedAt?.toISOString() ?? null,
+      expires_at: sa.expiresAt?.toISOString() ?? null,
+      created_at: sa.createdAt.toISOString(),
+      disabled_at: sa.disabledAt?.toISOString() ?? null,
+    })),
+  });
+});
+
+iamRouter.post('/:accountId/iam/service-accounts', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_CREATE);
+
+  const body = await readBody(c);
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) return c.json({ error: 'name is required' }, 400);
+  if (name.length > 128) return c.json({ error: 'name too long (max 128)' }, 400);
+  const description =
+    typeof body.description === 'string' ? body.description.trim() || null : null;
+  const expiresAtRaw = typeof body.expires_at === 'string' ? body.expires_at.trim() : '';
+  const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
+  if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+    return c.json({ error: 'expires_at must be ISO-8601' }, 400);
+  }
+
+  try {
+    const created = await createServiceAccount({
+      accountId,
+      name,
+      description,
+      expiresAt,
+      createdBy: userId,
+    });
+    await auditIam(c, {
+      accountId,
+      action: 'iam.service_account.create',
+      resourceType: 'service_account',
+      resourceId: created.serviceAccountId,
+      after: { name: created.name, description: created.description },
+    });
+    return c.json(
+      {
+        service_account_id: created.serviceAccountId,
+        name: created.name,
+        description: created.description,
+        public_prefix: created.publicPrefix,
+        status: created.status,
+        expires_at: created.expiresAt?.toISOString() ?? null,
+        created_at: created.createdAt.toISOString(),
+        /** Plaintext bearer — shown ONCE. Store it now or rotate. */
+        secret: created.secret,
+      },
+      201,
+    );
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return c.json({ error: 'A service account with that name already exists.' }, 409);
+    }
+    throw err;
+  }
+});
+
+iamRouter.post('/:accountId/iam/service-accounts/:saId/disable', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const saId = c.req.param('saId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_REVOKE);
+
+  const before = await getServiceAccount(accountId, saId);
+  if (!before) return c.json({ error: 'service account not found' }, 404);
+  const ok = await disableServiceAccount({
+    accountId,
+    serviceAccountId: saId,
+    disabledBy: userId,
+  });
+  if (!ok) return c.json({ error: 'service account is already disabled' }, 409);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.service_account.disable',
+    resourceType: 'service_account',
+    resourceId: saId,
+    before: { name: before.name, status: before.status },
+    after: { name: before.name, status: 'disabled' },
+  });
+  return c.json({ disabled: true });
+});
+
+iamRouter.delete('/:accountId/iam/service-accounts/:saId', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const saId = c.req.param('saId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_REVOKE);
+
+  const before = await getServiceAccount(accountId, saId);
+  if (!before) return c.json({ error: 'service account not found' }, 404);
+  await deleteServiceAccount(accountId, saId);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.service_account.delete',
+    resourceType: 'service_account',
+    resourceId: saId,
+    before: { name: before.name },
+  });
+  return c.json({ deleted: true });
+});
+

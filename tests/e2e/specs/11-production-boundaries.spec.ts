@@ -194,6 +194,11 @@ async function installBrowserSession(page: Page, session: AuthSession, returnUrl
   }
 
   await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: /^Sign in$/i }).first().click();
+  const usePassword = page.getByRole('button', { name: /Use password instead/i });
+  if (await usePassword.isVisible().catch(() => false)) {
+    await usePassword.click();
+  }
   await page.locator('input[name="email"]').fill(session.user.email || '');
   await page.locator('input[name="password"]').fill(password);
   await page.locator('form').getByRole('button', { name: /^Sign in$/i }).click();

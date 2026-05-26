@@ -1,8 +1,17 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { FormEvent, use, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Github, Loader2, Settings, Trash2 } from 'lucide-react';
+import {
+  ExternalLink,
+  GitBranch,
+  Github,
+  Loader2,
+  Settings,
+  Trash2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -11,12 +20,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import {
   archiveProject,
   getProject,
   updateProject,
 } from '@/lib/projects-client';
-import { SandboxSnapshotCard } from '@/components/projects/sandbox-snapshot-card';
 
 export default function ProjectSettingsPage({
   params,
@@ -30,16 +39,14 @@ export default function ProjectSettingsPage({
 export function SettingsView({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <Settings className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-sm font-semibold text-foreground">Settings</h1>
-      </div>
+      <CustomizeSectionHeader icon={Settings} title="Settings" />
       <ProjectSettingsBody projectId={projectId} />
     </div>
   );
 }
 
 function ProjectSettingsBody({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [archiveOpen, setArchiveOpen] = useState(false);
 
@@ -59,7 +66,8 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setArchiveOpen(false);
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to archive project'),
+    onError: (error: Error) =>
+      toast.error(error.message || 'Failed to archive project'),
   });
 
   return (
@@ -75,10 +83,14 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
         {projectQuery.isError && (
           <SectionCard
             tone="destructive"
-            title="Failed to load project"
+            title={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line86JsxAttrTitleFailedToLoadProject')}
             description={(projectQuery.error as Error).message}
           >
-            <Button variant="outline" size="sm" onClick={() => projectQuery.refetch()}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => projectQuery.refetch()}
+            >
               Retry
             </Button>
           </SectionCard>
@@ -88,19 +100,16 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
           <>
             <GeneralProjectCard project={project} canManage={!!canManage} />
             <RepositoryCard repoUrl={project.repo_url} />
-            <SandboxSnapshotCard projectId={projectId} canManage={!!canManage} />
             {canManage && (
               <SectionCard
                 tone="destructive"
-                title="Danger zone"
-                description="Irreversible and destructive actions."
+                title={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line110JsxAttrTitleDangerZone')}
+                description={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line111JsxAttrDescriptionIrreversibleAndDestructiveActions')}
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">Archive project</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Hide this project from the active project list.
-                    </p>
+                    <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line116JsxTextArchiveProject')}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line119JsxTextHideThisProjectFromTheActiveProjectList')}</p>
                   </div>
                   <Button
                     variant="outline"
@@ -120,8 +129,12 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
       <ConfirmDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
-        title="Archive project"
-        description={project ? `Archive ${project.name}? Current sessions remain recoverable.` : ''}
+        title={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line140JsxAttrTitleArchiveProject')}
+        description={
+          project
+            ? `Archive ${project.name}? Current sessions remain recoverable.`
+            : ''
+        }
         confirmLabel="Archive"
         onConfirm={() => archiveMutation.mutate()}
         isPending={archiveMutation.isPending}
@@ -131,43 +144,58 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
 }
 
 function RepositoryCard({ repoUrl }: { repoUrl: string | null | undefined }) {
-  // Clone URL → human-friendly browser URL.
-  const webUrl = (() => {
-    if (!repoUrl) return null;
-    return repoUrl
-      .replace(/^git@github\.com:/, 'https://github.com/')
-      .replace(/\.git$/, '');
-  })();
-  const slug = webUrl?.replace('https://github.com/', '');
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const githubUrl = githubRepoWebUrl(repoUrl);
+  const repoLabel =
+    githubUrl?.replace('https://github.com/', '') || repoUrl || '-';
+  const RepoIcon = githubUrl ? Github : GitBranch;
 
   return (
     <SectionCard
       title="Repository"
-      description="The Git repo backing this project — every session pushes a branch here."
+      description={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line163JsxAttrDescriptionTheGitRepoBackingThisProjectEverySession')}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex items-center gap-2.5">
-          <Github className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <RepoIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="truncate text-sm font-mono text-foreground">
-            {slug || repoUrl || '—'}
+            {repoLabel}
           </span>
         </div>
-        {webUrl && (
+        {githubUrl && (
           <Button
             asChild
             variant="outline"
             size="sm"
             className="shrink-0 gap-1.5"
           >
-            <a href={webUrl} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open on GitHub
-            </a>
+            <a href={githubUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-3.5 w-3.5" />{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line181JsxTextOpenOnGithub')}</a>
           </Button>
         )}
       </div>
     </SectionCard>
   );
+}
+
+function githubRepoWebUrl(repoUrl: string | null | undefined): string | null {
+  const normalized = repoUrl
+    ?.trim()
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '');
+  if (!normalized) return null;
+
+  const ssh = normalized.match(/^git@github\.com:([^/]+)\/([^/]+)$/i);
+  if (ssh?.[1] && ssh[2]) {
+    return `https://github.com/${ssh[1]}/${ssh[2]}`;
+  }
+
+  const https = normalized.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/i);
+  if (https?.[1] && https[2]) {
+    return `https://github.com/${https[1]}/${https[2]}`;
+  }
+
+  return null;
 }
 
 function GeneralProjectCard({
@@ -177,6 +205,7 @@ function GeneralProjectCard({
   project: Awaited<ReturnType<typeof getProject>>;
   canManage: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [name, setName] = useState(project.name);
   const [defaultBranch, setDefaultBranch] = useState(project.default_branch);
@@ -200,7 +229,8 @@ function GeneralProjectCard({
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to update project'),
+    onError: (error: Error) =>
+      toast.error(error.message || 'Failed to update project'),
   });
 
   const dirty =
@@ -218,7 +248,7 @@ function GeneralProjectCard({
     <SectionCard title="General">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="project-name">Project name</Label>
+          <Label htmlFor="project-name">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line259JsxTextProjectName')}</Label>
           <Input
             id="project-name"
             value={name}
@@ -229,7 +259,7 @@ function GeneralProjectCard({
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="default-branch">Default branch</Label>
+            <Label htmlFor="default-branch">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line270JsxTextDefaultBranch')}</Label>
             <Input
               id="default-branch"
               value={defaultBranch}
@@ -239,7 +269,7 @@ function GeneralProjectCard({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="manifest-path">Manifest path</Label>
+            <Label htmlFor="manifest-path">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line280JsxTextManifestPath')}</Label>
             <Input
               id="manifest-path"
               value={manifestPath}
@@ -249,11 +279,12 @@ function GeneralProjectCard({
             />
           </div>
         </div>
-        <div className="flex items-center justify-between border-t border-border/60 pt-4">
-          <p className="truncate text-xs text-muted-foreground">
-            {project.repo_url}
-          </p>
-          <Button type="submit" disabled={!dirty || !canManage || mutation.isPending} className="gap-1.5">
+        <div className="flex justify-end border-t border-border/60 pt-4">
+          <Button
+            type="submit"
+            disabled={!dirty || !canManage || mutation.isPending}
+            className="gap-1.5"
+          >
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             Save
           </Button>

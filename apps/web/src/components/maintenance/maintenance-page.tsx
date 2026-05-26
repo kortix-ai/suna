@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
@@ -10,6 +12,7 @@ import { AnimatedBg } from '@/components/ui/animated-bg';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 export function MaintenancePage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
   const { data: healthData, isLoading: isCheckingHealth, refetch } = useApiHealth();
@@ -42,14 +45,10 @@ export function MaintenancePage() {
           <KortixLogo size={32} />
 
           {/* Title - 43px */}
-          <h1 className="text-[43px] font-normal tracking-tight textforeground leading-none">
-            We'll Be Right Back
-          </h1>
+          <h1 className="text-5xl font-normal tracking-tight textforeground leading-none">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line46JsxTextWeLlBeRightBack')}</h1>
 
           {/* Description - 16px */}
-          <p className="text-base text-foreground/60 text-center leading-relaxed">
-            Performing scheduled maintenance to enhance system stability. All services will resume shortly.
-          </p>
+          <p className="text-base text-foreground/60 text-center leading-relaxed">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line51JsxTextPerformingScheduledMaintenanceToEnhanceSystemStabilityAll')}</p>
 
           {/* Status Card - 456px width, 96px height */}
           <Card className="w-full h-24 bg-card border border-border">
@@ -59,9 +58,9 @@ export function MaintenancePage() {
                   <div className="flex flex-col gap-1">
                     <div className='flex items-center gap-2'>
                       <div className="h-2.5 w-2.5 rounded-full border border-red-500 border-t-transparent animate-spin"></div>
-                      <span className="text-base font-medium text-red-400">Services Offline</span>
+                      <span className="text-base font-medium text-red-400">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line62JsxTextServicesOffline')}</span>
                     </div>
-                    <p className="text-base text-gray-400">All Worker executions are currently paused.</p>
+                    <p className="text-base text-gray-400">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line64JsxTextAllWorkerExecutionsAreCurrentlyPaused')}</p>
                   </div>
                 </div>
                 <Button

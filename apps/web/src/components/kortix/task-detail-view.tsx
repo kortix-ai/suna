@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * TaskDetailView — modal dialog.
  *
@@ -77,6 +79,7 @@ export function TaskDetailView({
   projectName: projectNameOverride,
   pollingEnabled = true,
 }: TaskDetailViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: task, isLoading } = useKortixTask(taskId || '', {
     enabled: !!taskId && pollingEnabled,
     pollingEnabled: !!taskId && pollingEnabled,
@@ -153,7 +156,7 @@ export function TaskDetailView({
           className="sm:max-w-[760px] max-h-[88vh] p-0 gap-0 rounded-2xl border-border shadow-2xl overflow-hidden flex flex-col"
         >
           <DialogTitle className="sr-only">{task?.title || 'Task'}</DialogTitle>
-          <DialogDescription className="sr-only">Task detail</DialogDescription>
+          <DialogDescription className="sr-only">{tHardcodedUi.raw('componentsKortixTaskDetailView.line156JsxTextTaskDetail')}</DialogDescription>
 
           {!task && isLoading ? (
             <div className="flex items-center justify-center py-20">
@@ -162,7 +165,7 @@ export function TaskDetailView({
           ) : !task ? (
             <div className="flex items-center justify-center flex-col gap-3 py-16">
               <CircleDashed className="h-6 w-6 text-muted-foreground/10" />
-              <p className="text-sm text-muted-foreground/40">Task not found</p>
+              <p className="text-sm text-muted-foreground/40">{tHardcodedUi.raw('componentsKortixTaskDetailView.line165JsxTextTaskNotFound')}</p>
             </div>
           ) : (
             <>
@@ -176,7 +179,7 @@ export function TaskDetailView({
                   <button
                     onClick={copyId}
                     className="text-muted-foreground/70 hover:text-foreground font-mono text-[12px] inline-flex items-center gap-1 transition-colors cursor-pointer"
-                    title="Copy task ID"
+                    title={tHardcodedUi.raw('componentsKortixTaskDetailView.line179JsxAttrTitleCopyTaskId')}
                   >
                     {shortTaskId(task.id)}
                     {copied ? (
@@ -276,17 +279,17 @@ export function TaskDetailView({
                     value={descVal}
                     onChange={setDescVal}
                     onCommit={commitDesc}
-                    placeholder="What needs to be done? Be specific — what to build, where, what to read first, what success looks like…"
+                    placeholder={tHardcodedUi.raw('componentsKortixTaskDetailView.line279JsxAttrPlaceholderWhatNeedsToBeDoneBeSpecificWhat')}
                   />
                 </FieldBlock>
 
                 {/* Verification condition — always visible to enforce the doctrine */}
-                <FieldBlock label="Verification" subLabel="Deterministic. Runnable. Binary pass/fail.">
+                <FieldBlock label="Verification" subLabel={tHardcodedUi.raw('componentsKortixTaskDetailView.line284JsxAttrSublabelDeterministicRunnableBinaryPassFail')}>
                   <InlineTextEditor
                     value={verVal}
                     onChange={setVerVal}
                     onCommit={commitVer}
-                    placeholder="e.g. `bun test tests/auth.test.ts` exits 0 and the new signup test passes"
+                    placeholder={tHardcodedUi.raw('componentsKortixTaskDetailView.line289JsxAttrPlaceholderEGBunTestTestsAuthTestTs')}
                   />
                 </FieldBlock>
 
@@ -295,7 +298,7 @@ export function TaskDetailView({
                   <AccentCard
                     tone="amber"
                     icon={<AlertOctagon className="h-4 w-4" />}
-                    label="Needs input"
+                    label={tHardcodedUi.raw('componentsKortixTaskDetailView.line298JsxAttrLabelNeedsInput')}
                   >
                     <pre className="text-[13px] text-foreground/85 whitespace-pre-wrap leading-relaxed font-sans">
                       {task.blocking_question}
@@ -315,9 +318,7 @@ export function TaskDetailView({
                     </pre>
                     {task.verification_summary && (
                       <div className="mt-3 pt-3 border-t border-emerald-500/15">
-                        <span className="block text-[10px] uppercase tracking-[0.08em] text-emerald-600/70 dark:text-emerald-400/70 font-semibold mb-1.5">
-                          Verification summary
-                        </span>
+                        <span className="block text-[10px] uppercase tracking-[0.08em] text-emerald-600/70 dark:text-emerald-400/70 font-semibold mb-1.5">{tHardcodedUi.raw('componentsKortixTaskDetailView.line319JsxTextVerificationSummary')}</span>
                         <pre className="text-[12px] text-foreground/70 whitespace-pre-wrap leading-relaxed font-sans">
                           {task.verification_summary}
                         </pre>
@@ -356,16 +357,12 @@ export function TaskDetailView({
                       <div className={cn(
                         'text-[13px] font-medium',
                         isRunning ? 'text-blue-500' : 'text-foreground/75 group-hover:text-foreground',
-                      )}>
-                        Worker session
-                      </div>
+                      )}>{tHardcodedUi.raw('componentsKortixTaskDetailView.line360JsxTextWorkerSession')}</div>
                       <div className="text-[11px] font-mono text-muted-foreground/40 truncate">
                         {task.owner_session_id}
                       </div>
                     </div>
-                    <span className="text-[11px] text-muted-foreground/50 group-hover:text-foreground/70 shrink-0">
-                      Open →
-                    </span>
+                    <span className="text-[11px] text-muted-foreground/50 group-hover:text-foreground/70 shrink-0">{tHardcodedUi.raw('componentsKortixTaskDetailView.line367JsxTextOpen')}</span>
                   </button>
                 )}
 
@@ -412,8 +409,8 @@ export function TaskDetailView({
         <ConfirmDialog
           open={deleteOpen}
           onOpenChange={setDeleteOpen}
-          title="Delete task"
-          description={<>Are you sure you want to delete <span className="font-semibold text-foreground">&quot;{task.title}&quot;</span>?</>}
+          title={tHardcodedUi.raw('componentsKortixTaskDetailView.line415JsxAttrTitleDeleteTask')}
+          description={<>{tHardcodedUi.raw('componentsKortixTaskDetailView.line416JsxTextAreYouSureYouWantToDelete')}<span className="font-semibold text-foreground">{tHardcodedUi.raw('componentsKortixTaskDetailView.line416JsxTextQuot')}{task.title}{tHardcodedUi.raw('componentsKortixTaskDetailView.line416JsxTextQuot724b339d')}</span>?</>}
           confirmLabel="Delete"
           onConfirm={() => deleteTaskMutation.mutate(task.id, { onSuccess: () => { setDeleteOpen(false); onClose(); } })}
           isPending={deleteTaskMutation.isPending}

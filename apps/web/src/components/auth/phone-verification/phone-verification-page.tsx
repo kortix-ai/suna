@@ -297,8 +297,8 @@ export function PhoneVerificationPage({
           )}
 
           {success && (
-            <Alert className="border-green-500/50 bg-emerald-500/10">
-              <AlertDescription className="text-green-700 dark:text-green-400">
+            <Alert className="border-emerald-500/25 bg-emerald-500/[0.06]">
+              <AlertDescription className="text-emerald-600 dark:text-emerald-400">
                 {success}
               </AlertDescription>
             </Alert>

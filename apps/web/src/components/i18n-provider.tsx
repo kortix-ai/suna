@@ -3,9 +3,14 @@
 import { NextIntlClientProvider } from 'next-intl';
 import { ReactNode, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { locales, defaultLocale, type Locale } from '@/i18n/config';
+import {
+  getBrowserLocale,
+  hasExplicitBrowserLocalePreference,
+  LOCALE_CHANGE_EVENT,
+  persistBrowserLocale,
+} from '@/i18n/locale';
 import { detectBestLocale } from '@/lib/utils/geo-detection';
 import { useAuth } from '@/components/AuthProvider';
-import type { User } from '@supabase/supabase-js';
 
 // Preload default translations synchronously for immediate render
 // This prevents the loading spinner from blocking FCP
@@ -24,47 +29,6 @@ async function getTranslations(locale: Locale) {
     return defaultTranslations;
   }
 }
-
-/**
- * Gets the stored locale with priority:
- * 1. User profile preference (from user_metadata) - ALWAYS highest priority
- * 2. Cookie (explicit user preference)
- * 3. localStorage (explicit user preference)
- * 4. Geo-detection (timezone/browser) - default when nothing is set
- * 5. Default locale
- */
-function getStoredLocale(user: User | null): Locale {
-  if (typeof window === 'undefined') return defaultLocale;
-  
-  // Priority 1: Check user profile preference (if authenticated)
-  // This ALWAYS takes precedence - user explicitly set it in settings
-  if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
-    return user.user_metadata.locale as Locale;
-  }
-  
-  // Priority 2: Check cookie (explicit user preference)
-  const cookies = document.cookie.split(';');
-  const localeCookie = cookies.find(c => c.trim().startsWith('locale='));
-  if (localeCookie) {
-    const value = localeCookie.split('=')[1].trim();
-    if (locales.includes(value as Locale)) {
-      return value as Locale;
-    }
-  }
-  
-  // Priority 3: Check localStorage (explicit user preference)
-  const stored = localStorage.getItem('locale');
-  if (stored && locales.includes(stored as Locale)) {
-    return stored as Locale;
-  }
-  
-  // Priority 4: Geo-detection (default when nothing is explicitly set)
-  const geoDetected = detectBestLocale();
-  return geoDetected;
-}
-
-// Custom event name for locale changes (must match use-language.ts)
-const LOCALE_CHANGE_EVENT = 'locale-change';
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -130,27 +94,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     let mounted = true;
     
     function initializeLocale() {
-      const currentLocale = getStoredLocale(user);
+      const currentLocale = getBrowserLocale(user, detectBestLocale);
       
       if (!mounted) return;
-      
-      // Check if user has explicitly set a preference (metadata, cookie, or localStorage)
-      const hasUserMetadataLocale = user?.user_metadata?.locale;
-      const cookies = document.cookie.split(';');
-      const hasLocaleCookie = cookies.some(c => c.trim().startsWith('locale='));
-      const hasLocalStorage = localStorage.getItem('locale');
-      
-      const hasExplicitPreference = hasUserMetadataLocale || hasLocaleCookie || !!hasLocalStorage;
       
       // Only auto-save geo-detected locale if:
       // 1. User has NO explicit preference (no metadata, cookie, or localStorage)
       // 2. Geo-detected locale is different from default
       // 3. User is NOT authenticated OR authenticated but has no locale in metadata
-      if (!hasExplicitPreference && currentLocale !== defaultLocale) {
-        // Save geo-detected locale to cookie and localStorage for persistence
-        const cookieValue = `locale=${currentLocale}; path=/; max-age=31536000; SameSite=Lax`;
-        document.cookie = cookieValue;
-        localStorage.setItem('locale', currentLocale);
+      if (!hasExplicitBrowserLocalePreference(user) && currentLocale !== defaultLocale) {
+        persistBrowserLocale(currentLocale);
       }
       
       if (mounted) {
@@ -213,4 +166,3 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     </NextIntlClientProvider>
   );
 }
-

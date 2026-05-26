@@ -47,8 +47,8 @@ beforeAll(() => {
 
   writeFileSync(resolve(TEST_DIR, 'docker-compose.local.yml'), 'services:\n  test:\n    image: hello-world\n');
   writeFileSync(resolve(TEST_DIR, 'scripts', 'setup-env.sh'), '#!/usr/bin/env bash\nexit 0\n');
-  writeFileSync(resolve(TEST_DIR, '.env.example'), 'ENV_MODE=local\nANTHROPIC_API_KEY=\n');
-  writeFileSync(resolve(TEST_DIR, 'deploy', 'docker', 'sandbox', '.env.example'), 'ANTHROPIC_API_KEY=\nENV_MODE=local\n');
+  writeFileSync(resolve(TEST_DIR, '.env.example'), 'KORTIX_BILLING_INTERNAL_ENABLED=false\nANTHROPIC_API_KEY=\n');
+  writeFileSync(resolve(TEST_DIR, 'deploy', 'docker', 'sandbox', '.env.example'), 'ANTHROPIC_API_KEY=\nKORTIX_BILLING_INTERNAL_ENABLED=false\n');
 
   // Point CWD at the test dir so getProjectRoot() finds it
   process.chdir(TEST_DIR);
@@ -69,11 +69,11 @@ describe('/v1/setup', () => {
       expect(res.status).toBe(200);
     });
 
-    it('returns envMode', async () => {
+    it('returns billingEnabled', async () => {
       const app = createSetupTestApp();
       const res = await app.request('/v1/setup/status');
       const data = await res.json();
-      expect(data.envMode).toBeDefined();
+      expect(data.billingEnabled).toBeDefined();
     });
 
     it('returns dockerRunning boolean', async () => {

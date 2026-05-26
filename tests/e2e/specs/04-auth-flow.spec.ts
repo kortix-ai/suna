@@ -43,15 +43,23 @@ test.describe('04 — Authentication flow', () => {
       await page.waitForTimeout(1_500);
     }
 
-    // May already be authenticated from a prior session, or show login form
+    // May already be authenticated from a prior session, or show auth form.
+    const signUpHeading = page.getByRole('heading', { name: 'Create your account' });
     const signInHeading = page.getByRole('heading', { name: 'Sign in to Kortix' });
     const wizardHeading = page.getByRole('heading', { name: /Connect a provider/i });
 
-    // Wait for either the login form or the wizard
-    await expect(signInHeading.or(wizardHeading)).toBeVisible({ timeout: 15_000 });
+    // Wait for either the auth form or the wizard
+    await expect(signUpHeading.or(signInHeading).or(wizardHeading)).toBeVisible({ timeout: 15_000 });
 
     // If login form is showing, fill and submit
+    if (await signUpHeading.isVisible().catch(() => false)) {
+      await page.getByRole('button', { name: /^Sign in$/i }).first().click();
+    }
     if (await signInHeading.isVisible().catch(() => false)) {
+      const usePassword = page.getByRole('button', { name: /Use password instead/i });
+      if (await usePassword.isVisible().catch(() => false)) {
+        await usePassword.click();
+      }
       await page.locator('input[name="email"]').fill(ownerEmail);
       await page.locator('input[name="password"]').fill(ownerPassword);
       await page.locator('form').getByRole('button', { name: /^Sign in$/i }).click();

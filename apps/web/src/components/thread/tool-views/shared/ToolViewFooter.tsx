@@ -40,11 +40,11 @@ export function ToolViewFooter({
       "px-3 h-9 bg-background border-t border-border/50 flex justify-between items-center gap-4",
       className
     )}>
-      <div className="h-full flex items-center gap-2 text-[11.5px] text-muted-foreground/80">
+      <div className="h-full flex items-center gap-2 text-xs text-muted-foreground/80">
         {children}
       </div>
       {displayTimestamp && (
-        <div className="text-[11px] text-muted-foreground/60 flex items-center gap-1.5">
+        <div className="text-xs text-muted-foreground/60 flex items-center gap-1.5">
           <Clock className="h-3 w-3" />
           {displayTimestamp}
         </div>

@@ -57,8 +57,11 @@ redirect_uri = "http://127.0.0.1:54321/auth/v1/callback"
 enabled = false
 
 # ─── Storage ──────────────────────────────────────────────────────────────────
+# Enabled for the public "avatars" bucket (profile pictures). See
+# migrations/00000000000060_avatars_storage_bucket.sql.
 [storage]
-enabled = false
+enabled = true
+file_size_limit = "50MiB"
 
 # ─── Edge Functions ───────────────────────────────────────────────────────────
 [edge_runtime]

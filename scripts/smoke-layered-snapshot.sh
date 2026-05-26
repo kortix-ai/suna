@@ -50,12 +50,12 @@ cp -R "$REPO_ROOT/apps/sandbox/agent-cli" "$CONTEXT_DIR/kortix-agent-cli"
 
 # 4. Build it.
 echo "→ docker build…"
-docker build -f "$CONTEXT_DIR/Dockerfile" -t kortix/sandbox-layered-smoke:test "$CONTEXT_DIR"
+docker build -f "$CONTEXT_DIR/Dockerfile" -t kortix/kortix-sandbox-layered-smoke:test "$CONTEXT_DIR"
 
 # 5. Verify the CLIs are on PATH and run.
 echo "─────────────────────────────────────────"
 echo "→ Verifying inside the built image:"
-docker run --rm --entrypoint /bin/bash kortix/sandbox-layered-smoke:test -c '
+docker run --rm --entrypoint /bin/bash kortix/kortix-sandbox-layered-smoke:test -c '
   echo "[bun]     $(which bun) — $(bun --version)"
   echo "[opencode] $(which opencode) — $(opencode --version)"
   echo "[slack]    $(which slack)"
@@ -66,4 +66,4 @@ docker run --rm --entrypoint /bin/bash kortix/sandbox-layered-smoke:test -c '
   kchannel list
 '
 echo "─────────────────────────────────────────"
-echo "✓ Smoke test complete. Image: kortix/sandbox-layered-smoke:test"
+echo "✓ Smoke test complete. Image: kortix/kortix-sandbox-layered-smoke:test"

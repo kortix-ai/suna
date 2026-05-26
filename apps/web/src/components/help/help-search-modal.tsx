@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Coins, HelpCircle } from 'lucide-react';
@@ -41,6 +43,7 @@ const helpPages: HelpPage[] = [
 ];
 
 export function HelpSearchModal({ open, onOpenChange }: HelpSearchModalProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const [search, setSearch] = useState('');
     const router = useRouter();
     const isMobile = useIsMobile();
@@ -81,16 +84,14 @@ export function HelpSearchModal({ open, onOpenChange }: HelpSearchModalProps) {
                 <Command className="bg-background border-0" shouldFilter={false}>
                     <div className="px-4 py-3 border-b">
                         <CommandInput
-                            placeholder="Search help center..."
+                            placeholder={tHardcodedUi.raw('componentsHelpHelpSearchModal.line84JsxAttrPlaceholderSearchHelpCenter')}
                             value={search}
                             onValueChange={setSearch}
                             className="px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                         />
                     </div>
                     <CommandList className="max-h-[400px] p-3">
-                        <CommandEmpty className="py-6 text-center text-sm text-muted-foreground">
-                            No help articles found
-                        </CommandEmpty>
+                        <CommandEmpty className="py-6 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsHelpHelpSearchModal.line92JsxTextNoHelpArticlesFound')}</CommandEmpty>
                         {Object.entries(groupedPages).map(([category, pages]) => (
                             <CommandGroup key={category} heading={category} className="mb-4">
                                 <div className="space-y-1.5 mt-2">
@@ -105,8 +106,8 @@ export function HelpSearchModal({ open, onOpenChange }: HelpSearchModalProps) {
                                             >
                                                 <SpotlightCard className="w-full cursor-pointer">
                                                     <div className="flex items-start gap-3 px-3 py-2.5">
-                                                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/5 border border-primary/10 shrink-0 mt-0.5">
-                                                            <Icon className="h-4 w-4 text-primary" />
+                                                        <div className="flex items-center justify-center w-9 h-9 rounded-2xl bg-muted border border-border shrink-0 mt-0.5">
+                                                            <Icon className="h-4 w-4 text-muted-foreground" />
                                                         </div>
                                                         <div className="flex-1 min-w-0">
                                                             <div className="text-sm font-medium truncate">{page.title}</div>

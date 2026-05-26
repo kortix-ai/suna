@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { DiffView } from '@/components/diff/diff-view';
 import { QuestionPrompt } from '@/components/session/question-prompt';
 import { SubSessionModal } from '@/components/session/sub-session-modal';
@@ -38,6 +39,7 @@ import {
   Minimize2,
   MonitorPlay,
   Music,
+  PanelRight,
   Plug,
   Presentation,
   RefreshCw,
@@ -68,7 +70,7 @@ import {
   HighlightedCode,
   UnifiedMarkdown,
 } from '@/components/markdown/unified-markdown';
-import { useOcFileOpen } from '@/components/thread/tool-views/opencode/useOcFileOpen';
+import { useOcFileOpen } from '@/components/session/use-oc-file-open';
 import {
   Collapsible,
   CollapsibleContent,
@@ -92,6 +94,7 @@ import {
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
+import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import {
@@ -102,8 +105,16 @@ import {
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useServerStore } from '@/stores/server-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
-import { enrichPreviewMetadata } from '@/lib/utils/session-context';
+import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import {
+  enrichPreviewMetadata,
+  getActiveSessionContext,
+} from '@/lib/utils/session-context';
+import {
+  sessionPreviewTabId,
+  useSessionBrowserStore,
+} from '@/stores/session-browser-store';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { PreWithPaths } from '@/components/common/clickable-path';
 import {
   parseDiagnosticsFromToolOutput,
@@ -112,6 +123,13 @@ import {
 import { parseMemorySearchOutput } from '@/lib/utils/memory-search-output';
 import { parseMemoryEntryOutput } from '@/lib/utils/memory-entry-output';
 import { Badge } from '@/components/ui/badge';
+import {
+  STATUS_TEXT,
+  STATUS_BG,
+  STATUS_BORDER,
+  StatusDot,
+  DiffStat,
+} from '@/components/ui/status';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
 
 import {
@@ -213,7 +231,13 @@ function ensureWorkspacePath(filePath: string): string {
   return '/workspace/' + filePath.replace(/^\/+/, '');
 }
 
-function InlineServicePreview({ url, label }: { url: string; label?: string }) {
+/**
+ * Shared state + actions for an embedded service/website preview. Powers both
+ * the standalone {@link InlineServicePreview} (with its own toolbar) and the
+ * consolidated header in {@link ShowTool} (where the actions live in the card
+ * header instead, so nothing is duplicated).
+ */
+function useServicePreview(url: string, label?: string, sessionId?: string) {
   const {
     enabled: navigationEnabled,
     openTab,
@@ -226,22 +250,6 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-
-  // ── Scaled 1920×1080 viewport ──
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const [viewportScale, setViewportScale] = useState(0);
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const update = () => {
-      const w = el.clientWidth;
-      if (w > 0) setViewportScale(w / 1920);
-    };
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    update();
-    return () => ro.disconnect();
-  }, []);
 
   const handleRefresh = useCallback(() => {
     setIsLoading(true);
@@ -258,21 +266,147 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
   const displayLabel = label || (proxy ? `localhost:${proxy.port}` : url);
 
   const navigateToPreviewTab = useCallback(() => {
-    if (!proxy) return;
+    if (!navigationEnabled || !proxy) return;
+    const parsed = parseLocalhostUrl(url);
+    const sid = sessionId || getActiveSessionContext()?.sourceSessionId || null;
+
+    // Inside a session → open the right-side panel's internal browser, matching
+    // a localhost link click in chat (see LocalhostLinkInterceptor.openInPanel).
+    if (sid && parsed) {
+      useTabStore.getState().openTab({
+        id: sessionPreviewTabId(sid),
+        title: label || `localhost:${proxy.port}`,
+        type: 'preview',
+        href:
+          typeof window !== 'undefined'
+            ? window.location.pathname
+            : `/p/${proxy.port}`,
+        metadata: enrichPreviewMetadata({
+          url: proxy.proxyUrl,
+          port: proxy.port,
+          originalUrl: url,
+          path: parsed.path,
+        }),
+      });
+      useSessionBrowserStore.getState().setView(sid, 'browser');
+      useKortixComputerStore.getState().setIsSidePanelOpen(true);
+      return;
+    }
+
+    // Outside a session (no side panel host) → fall back to a standalone tab.
     openTab({
       id: `preview:${proxy.port}`,
-      title: `localhost:${proxy.port}`,
+      title: label || `localhost:${proxy.port}`,
       type: 'preview',
       href: `/p/${proxy.port}`,
-      metadata: {
+      metadata: enrichPreviewMetadata({
         url: proxy.proxyUrl,
         port: proxy.port,
         originalUrl: url,
-      },
+      }),
     });
-  }, [openTab, proxy, url]);
+  }, [navigationEnabled, openTab, proxy, url, label, sessionId]);
 
-  const scaledHeight = viewportScale > 0 ? Math.round(1080 * viewportScale) : 0;
+  const openInBrowser = useCallback(() => {
+    openExternal(previewUrl ?? undefined);
+  }, [openExternal, previewUrl]);
+
+  const onLoad = useCallback(() => setIsLoading(false), []);
+  const onError = useCallback(() => {
+    setIsLoading(false);
+    setHasError(true);
+  }, []);
+
+  return {
+    navigationEnabled,
+    proxy,
+    previewUrl,
+    isLoading,
+    hasError,
+    refreshKey,
+    handleRefresh,
+    displayLabel,
+    navigateToPreviewTab,
+    openInBrowser,
+    onLoad,
+    onError,
+  };
+}
+
+type ServicePreviewState = ReturnType<typeof useServicePreview>;
+
+/** 16:9 iframe viewport — the chrome-less body of a service preview. */
+function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const {
+    previewUrl,
+    displayLabel,
+    isLoading,
+    hasError,
+    refreshKey,
+    handleRefresh,
+    onLoad,
+    onError,
+  } = preview;
+
+  // Render the iframe at its container's real size (16:9) with NO CSS transform.
+  // Cross-origin iframes (OOPIFs) under `transform: scale()` hit a Chromium
+  // compositing bug where they paint blank until a repaint is forced (e.g. a
+  // remount via Refresh) — which is why the preview used to show white on load.
+  // The standalone Browser tab works because it renders a plain full-size iframe;
+  // we mirror that here.
+  return (
+    <div className="relative aspect-video w-full overflow-hidden bg-white">
+      {(isLoading || !previewUrl) && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-10">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <span className="text-xs">{tHardcodedUi.raw('componentsSessionToolRenderers.line380JsxTextLoadingPreview')}</span>
+          </div>
+        </div>
+      )}
+      {hasError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
+          <div className="text-center text-muted-foreground">
+            <p className="text-xs">{tHardcodedUi.raw('componentsSessionToolRenderers.line387JsxTextFailedToLoad')}</p>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              className="text-xs text-primary hover:underline mt-1"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+      {previewUrl && (
+        <iframe
+          key={refreshKey}
+          src={previewUrl}
+          title={displayLabel}
+          className="absolute inset-0 w-full h-full border-0 bg-white"
+          sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
+          onLoad={onLoad}
+          onError={onError}
+        />
+      )}
+    </div>
+  );
+}
+
+function InlineServicePreview({ url, label }: { url: string; label?: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const preview = useServicePreview(url, label);
+  const {
+    navigationEnabled,
+    proxy,
+    previewUrl,
+    isLoading,
+    handleRefresh,
+    displayLabel,
+    navigateToPreviewTab,
+    openInBrowser,
+  } = preview;
 
   return (
     <div className="overflow-hidden">
@@ -280,7 +414,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
       <div className="flex items-center gap-1.5 h-8 px-2.5 bg-muted/40 border-b border-border/30 shrink-0">
         <div className="flex-1 flex items-center gap-1.5 min-w-0">
           <Globe className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-          <span className="text-[11px] text-muted-foreground font-mono truncate">
+          <span className="text-xs text-muted-foreground font-mono truncate">
             {displayLabel}
           </span>
         </div>
@@ -303,7 +437,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
             <button
               type="button"
               disabled={!navigationEnabled || !previewUrl}
-              onClick={() => openExternal(previewUrl ?? undefined)}
+              onClick={openInBrowser}
               className={cn(
                 'p-1 rounded text-muted-foreground/50 transition-colors',
                 navigationEnabled && previewUrl
@@ -314,7 +448,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
               <ExternalLink className="h-3 w-3" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">Open in browser</TooltipContent>
+          <TooltipContent side="top">{tHardcodedUi.raw('componentsSessionToolRenderers.line475JsxTextOpenInBrowser')}</TooltipContent>
         </Tooltip>
         {proxy && (
           <Tooltip>
@@ -330,63 +464,12 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
                 Preview
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="top">Open as tab</TooltipContent>
+            <TooltipContent side="top">{tHardcodedUi.raw('componentsSessionToolRenderers.line491JsxTextOpenAsTab')}</TooltipContent>
           </Tooltip>
         )}
       </div>
 
-      {/* Scaled 1920×1080 viewport — iframe renders at full desktop res, CSS-scaled to fit */}
-      <div
-        ref={viewportRef}
-        className="relative overflow-hidden bg-white"
-        style={{ height: scaledHeight > 0 ? `${scaledHeight}px` : '400px' }}
-      >
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-10">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              <span className="text-xs">Loading preview...</span>
-            </div>
-          </div>
-        )}
-        {hasError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
-            <div className="text-center text-muted-foreground">
-              <p className="text-xs">Failed to load</p>
-              <button
-                type="button"
-                onClick={handleRefresh}
-                className="text-xs text-primary hover:underline mt-1"
-              >
-                Retry
-              </button>
-            </div>
-          </div>
-        )}
-        {viewportScale > 0 && (
-          <iframe
-            key={refreshKey}
-            src={previewUrl ?? undefined}
-            title={displayLabel}
-            className="border-0 bg-white"
-            style={{
-              width: '1920px',
-              height: '1080px',
-              transform: `scale(${viewportScale})`,
-              transformOrigin: '0 0',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-            }}
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads allow-modals"
-            onLoad={() => setIsLoading(false)}
-            onError={() => {
-              setIsLoading(false);
-              setHasError(true);
-            }}
-          />
-        )}
-      </div>
+      <ServicePreviewViewport preview={preview} />
     </div>
   );
 }
@@ -623,7 +706,7 @@ function getAgentCardLabel(input: Record<string, unknown>): string {
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case 'completed':
-      return <Check className="size-3 text-emerald-500 flex-shrink-0" />;
+      return <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />;
     case 'error':
       return (
         <CircleAlert className="size-3 text-muted-foreground flex-shrink-0" />
@@ -660,7 +743,7 @@ function ToolEmptyState({ message }: { message: string }) {
   return (
     <div className="flex items-center justify-center gap-1.5 px-3 py-3 text-muted-foreground/40">
       <Search className="size-3" />
-      <span className="text-[11px]">{message}</span>
+      <span className="text-xs">{message}</span>
     </div>
   );
 }
@@ -736,45 +819,56 @@ function JsonFailureOutputCard({
   failure: ParsedJsonFailure;
   toolName?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="text-xs overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-rose-500/20">
         <CircleAlert className="size-3.5 text-rose-500/80 flex-shrink-0" />
         <span className="font-medium text-rose-600 dark:text-rose-400">
-          Integration request failed
-        </span>
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line851JsxTextIntegrationRequestFailed')}</span>
         {typeof failure.status === 'number' && (
-          <span className="ml-auto text-[10px] text-rose-600 dark:text-rose-400 font-mono">
+          <span className="ml-auto text-xs text-rose-600 dark:text-rose-400 font-mono">
             HTTP {failure.status}
           </span>
         )}
       </div>
       <div className="px-3 py-2.5 space-y-2">
-        <p className="text-[11px] leading-relaxed text-foreground/85 break-words">
+        <p className="text-xs leading-relaxed text-foreground/85 break-words">
           {failure.errorSummary}
         </p>
         {failure.nestedMessage && (
           <div className="px-2 py-1.5 text-xs">
-            <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-1">
+            <div className="text-xs text-muted-foreground/60 uppercase tracking-wider mb-1">
               Details
             </div>
-            <p className="text-[11px] text-foreground/80 break-words">
+            <p className="text-xs text-foreground/80 break-words">
               {failure.nestedMessage}
             </p>
           </div>
         )}
         {failure.hint && (
-          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5">
-            <div className="text-[10px] text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-1">
+          <div
+            className={cn(
+              'rounded-2xl border px-2 py-1.5',
+              STATUS_BORDER.success,
+              STATUS_BG.success,
+            )}
+          >
+            <div
+              className={cn(
+                'text-xs uppercase tracking-wider mb-1',
+                STATUS_TEXT.success,
+              )}
+            >
               Hint
             </div>
-            <p className="text-[11px] text-foreground/80 break-words">
+            <p className="text-xs text-foreground/80 break-words">
               {failure.hint}
             </p>
           </div>
         )}
         {toolName && (
-          <div className="text-[10px] text-muted-foreground/60 font-mono">
+          <div className="text-xs text-muted-foreground/60 font-mono">
             Tool: {toolName}
           </div>
         )}
@@ -911,6 +1005,23 @@ const StalePendingContext = createContext(false);
 /** Context to pass computed duration (ms) from ToolPartRenderer into BasicTool */
 const ToolDurationContext = createContext<number | undefined>(undefined);
 
+/** Presentation surface for tool renderers. */
+export type ToolSurface = 'inline' | 'panel';
+/**
+ * `inline` = the compact, collapsible row shown in the chat column.
+ * `panel`  = the large, always-open detail view shown in the side panel.
+ * One renderer, two presentations — driven by this context.
+ */
+export const ToolSurfaceContext = createContext<ToolSurface>('inline');
+/**
+ * Provided by the chat so that clicking an inline tool row opens the side
+ * panel focused on that tool (instead of expanding inline). Receives the
+ * tool's callID. When absent (e.g. the panel itself), rows behave normally.
+ */
+export const ToolActivateContext = createContext<((callID: string) => void) | null>(null);
+/** Per-part zero-arg activate, bound to the part's callID by ToolPartRenderer. */
+const BoundActivateContext = createContext<(() => void) | null>(null);
+
 export function BasicTool({
   icon,
   trigger,
@@ -927,6 +1038,8 @@ export function BasicTool({
   const running = useContext(ToolRunningContext);
   const contextDuration = useContext(ToolDurationContext);
   const durationMs = durationMsProp ?? contextDuration;
+  const surface = useContext(ToolSurfaceContext);
+  const activate = useContext(BoundActivateContext);
   const [open, setOpen] = useState(defaultOpen);
 
   useEffect(() => {
@@ -946,118 +1059,73 @@ export function BasicTool({
     ? !trigger.title && !trigger.subtitle
     : false;
 
-  // One canonical header row, shared by both the collapsible variant and
-  // the onClick "button" variant (TaskTool / SessionSpawnTool). Keeping
-  // this a single block guarantees the two surfaces stay pixel-identical.
-  const header = (
-    <div
-      data-component="tool-trigger"
-      onClick={
-        onClick
-          ? (e) => {
-              e.stopPropagation();
-              onClick();
-            }
-          : undefined
-      }
-      onKeyDown={
-        onClick
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onClick();
-              }
-            }
-          : undefined
-      }
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      className={cn(
-        'flex items-center gap-1.5 py-0.5',
-        'text-xs text-muted-foreground/70 transition-colors select-none max-w-full group',
-        '[&>span:first-child>svg]:size-3.5 [&>span:first-child>svg]:text-muted-foreground/50',
-        (children || onClick) && !locked && 'cursor-pointer',
-      )}
-    >
-      {/* Icon */}
-      <span className="flex-shrink-0">{icon}</span>
-
-      {/* Trigger content */}
-      <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
-        {isTriggerTitle(trigger) ? (
-          <>
-            <span className="text-xs whitespace-nowrap flex-shrink-0">
-              {trigger.title}
-            </span>
-            {/* Subtitle + args share an overflow-hidden track so long file
-                paths, queries, or arg lists never push past the row. */}
-            {(trigger.subtitle ||
-              (trigger.args && trigger.args.length > 0)) && (
-              <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
-                {trigger.subtitle &&
-                  (running ? (
-                    <TextShimmer
-                      duration={1}
-                      spread={2}
-                      className="text-xs truncate font-mono min-w-0"
-                    >
-                      {trigger.subtitle}
-                    </TextShimmer>
-                  ) : (
-                    <span
-                      className={cn(
-                        'text-muted-foreground text-xs truncate font-mono min-w-0',
-                        onSubtitleClick &&
-                          'cursor-pointer hover:text-foreground underline-offset-2 hover:underline',
-                      )}
-                      title={trigger.subtitle}
-                      onClick={
-                        onSubtitleClick
-                          ? (e) => {
-                              e.stopPropagation();
-                              onSubtitleClick();
-                            }
-                          : undefined
+  // Shared inner content of the header row: icon, title/subtitle/args, and the
+  // right-edge cluster (duration, badge, spinner, accessory). The trailing
+  // affordance (chevron / panel-open / none) and the wrapper differ per surface.
+  const triggerContent = isTriggerTitle(trigger) ? (
+    <>
+      <span className="text-xs whitespace-nowrap flex-shrink-0">
+        {trigger.title}
+      </span>
+      {(trigger.subtitle || (trigger.args && trigger.args.length > 0)) && (
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+          {trigger.subtitle &&
+            (running ? (
+              <TextShimmer
+                duration={1}
+                spread={2}
+                className="text-xs truncate font-mono min-w-0"
+              >
+                {trigger.subtitle}
+              </TextShimmer>
+            ) : (
+              <span
+                className={cn(
+                  'text-muted-foreground text-xs truncate font-mono min-w-0',
+                  onSubtitleClick &&
+                    'cursor-pointer hover:text-foreground underline-offset-2 hover:underline',
+                )}
+                title={trigger.subtitle}
+                onClick={
+                  onSubtitleClick
+                    ? (e) => {
+                        e.stopPropagation();
+                        onSubtitleClick();
                       }
-                    >
-                      {trigger.subtitle}
-                    </span>
-                  ))}
-                {!running &&
-                  trigger.args &&
-                  trigger.args.length > 0 &&
-                  trigger.args.map((arg, i) => (
-                    <span
-                      key={i}
-                      title={arg}
-                      className="text-xs text-muted-foreground/60 font-mono truncate min-w-0"
-                    >
-                      {arg}
-                    </span>
-                  ))}
-              </div>
-            )}
-          </>
-        ) : (
-          trigger
-        )}
-        {/* Skeleton placeholders when running but trigger has no content yet */}
-        {running && triggerIsEmpty && (
-          <>
-            <span className="h-3 w-16 rounded bg-muted-foreground/10 animate-pulse flex-shrink-0" />
-            <span className="h-3 w-28 rounded bg-muted-foreground/10 animate-pulse min-w-0" />
-          </>
-        )}
-      </div>
+                    : undefined
+                }
+              >
+                {trigger.subtitle}
+              </span>
+            ))}
+          {!running &&
+            trigger.args &&
+            trigger.args.length > 0 &&
+            trigger.args.map((arg, i) => (
+              <span
+                key={i}
+                title={arg}
+                className="text-xs text-muted-foreground/60 font-mono truncate min-w-0"
+              >
+                {arg}
+              </span>
+            ))}
+        </div>
+      )}
+    </>
+  ) : (
+    trigger
+  );
 
-      {/* Right-edge cluster: duration → badge → spinner → chevron/accessory */}
+  const rightCluster = (
+    <>
       {!running && durationMs !== undefined && durationMs >= 1000 && (
-        <span className="text-[10px] font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
+        <span className="text-xs font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
           {Math.round(durationMs / 1000)}s
         </span>
       )}
       {badge && (
-        <span className="text-[10px] text-muted-foreground/60 font-mono whitespace-nowrap flex-shrink-0">
+        <span className="text-xs text-muted-foreground/60 font-mono whitespace-nowrap flex-shrink-0">
           {badge}
         </span>
       )}
@@ -1069,30 +1137,157 @@ export function BasicTool({
           {rightAccessory}
         </span>
       )}
-      {!onClick && (
-        <ChevronRight
-          className={cn(
-            'size-3 transition-transform flex-shrink-0',
-            'text-muted-foreground/30',
-            children && !locked ? 'opacity-0 group-hover:opacity-100' : 'opacity-0',
-            open && children && 'rotate-90 !opacity-100',
-          )}
-        />
-      )}
-    </div>
+    </>
   );
 
-  // onClick variant: no collapsible at all, just the clickable header.
-  if (onClick) return header;
+  const rowClass = cn(
+    'flex items-center gap-1.5 py-0.5',
+    'text-xs text-muted-foreground/70 transition-colors select-none max-w-full group',
+    '[&>span:first-child>svg]:size-3.5 [&>span:first-child>svg]:text-muted-foreground/50',
+  );
 
+  const headerInner = (
+    <>
+      <span className="flex-shrink-0">{icon}</span>
+      <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+        {triggerContent}
+        {running && triggerIsEmpty && (
+          <>
+            <span className="h-3 w-16 rounded bg-muted-foreground/10 animate-pulse flex-shrink-0" />
+            <span className="h-3 w-28 rounded bg-muted-foreground/10 animate-pulse min-w-0" />
+          </>
+        )}
+      </div>
+      {rightCluster}
+    </>
+  );
+
+  // ── PANEL: large, always-open detail view ────────────────────────────────
+  if (surface === 'panel') {
+    return (
+      <div className="flex flex-col">
+        <div className="sticky top-0 z-10 flex items-center gap-2.5 border-b border-border/60 bg-card px-4 py-3 [&>span:first-child>svg]:size-4 [&>span:first-child>svg]:text-muted-foreground">
+          <span className="flex size-7 flex-shrink-0 items-center justify-center rounded-lg bg-muted/70">
+            {icon}
+          </span>
+          <div className="min-w-0 flex-1">
+            {isTriggerTitle(trigger) ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">
+                    {trigger.title}
+                  </span>
+                  {badge && (
+                    <span className="text-xs uppercase tracking-wide text-muted-foreground/60">
+                      {badge}
+                    </span>
+                  )}
+                  {running && (
+                    <Loader2 className="size-3.5 animate-spin text-muted-foreground/50" />
+                  )}
+                </div>
+                {(trigger.subtitle || (trigger.args && trigger.args.length > 0)) && (
+                  <div
+                    className={cn(
+                      'truncate font-mono text-xs text-muted-foreground/80',
+                      onSubtitleClick &&
+                        'cursor-pointer hover:text-foreground underline-offset-2 hover:underline',
+                    )}
+                    title={trigger.subtitle}
+                    onClick={onSubtitleClick}
+                  >
+                    {trigger.subtitle}
+                    {trigger.args && trigger.args.length > 0
+                      ? `${trigger.subtitle ? '  ·  ' : ''}${trigger.args.join('  ·  ')}`
+                      : ''}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center gap-2">{trigger}</div>
+            )}
+          </div>
+          {!running && durationMs !== undefined && durationMs >= 1000 && (
+            <span className="flex-shrink-0 font-mono text-xs tabular-nums text-muted-foreground/40">
+              {Math.round(durationMs / 1000)}s
+            </span>
+          )}
+        </div>
+        {children && <div className="px-1 py-1 text-sm">{children}</div>}
+      </div>
+    );
+  }
+
+  // ── INLINE: special tools with their own onClick (Task / SessionSpawn) ────
+  if (onClick) {
+    return (
+      <div
+        data-component="tool-trigger"
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+        className={cn(rowClass, !locked && 'cursor-pointer')}
+      >
+        {headerInner}
+      </div>
+    );
+  }
+
+  // ── INLINE in chat: click opens the side panel focused on this tool ───────
+  // (Skipped when a permission/question is pending — those must answer inline.)
+  if (activate && !locked && !forceOpen) {
+    return (
+      <div
+        data-component="tool-trigger"
+        role="button"
+        tabIndex={0}
+        onClick={() => activate()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            activate();
+          }
+        }}
+        className={cn(rowClass, 'cursor-pointer')}
+      >
+        {headerInner}
+        <PanelRight className="size-3 flex-shrink-0 text-muted-foreground/30 opacity-0 transition-opacity group-hover:opacity-80" />
+      </div>
+    );
+  }
+
+  // ── INLINE default: collapsible row (harness / non-session contexts) ──────
   return (
     <Collapsible open={open} onOpenChange={handleOpenChange}>
-      <CollapsibleTrigger asChild>{header}</CollapsibleTrigger>
+      <CollapsibleTrigger asChild>
+        <div
+          data-component="tool-trigger"
+          className={cn(rowClass, children && !locked && 'cursor-pointer')}
+        >
+          {headerInner}
+          <ChevronRight
+            className={cn(
+              'size-3 transition-all flex-shrink-0 text-muted-foreground/30',
+              children && !locked
+                ? 'opacity-40 group-hover:opacity-80'
+                : 'opacity-0',
+              open && children && 'rotate-90 !opacity-100',
+            )}
+          />
+        </div>
+      </CollapsibleTrigger>
 
       {children && open && (
-        <div className="mt-1 mb-1 text-xs overflow-hidden">
-          {children}
-        </div>
+        <div className="mt-1 mb-1 text-xs overflow-hidden">{children}</div>
       )}
     </Collapsible>
   );
@@ -1119,6 +1314,33 @@ function InlineDiffView({
       layout="unified"
       hideFileHeader
     />
+  );
+}
+
+// ============================================================================
+// ToolCode — flush, headerless highlighted code body
+// ============================================================================
+// The canonical way to show full file contents inside a tool body (write,
+// morph_edit, show). Deliberately flush: no inner card, no language pill, no
+// copy bar — that nested chrome made `write` look heavier than `edit`/`read`.
+// Sits directly under the tool header row like every other tool body, with
+// the same scroll cap. Syntax highlighting + streaming come from
+// HighlightedCode (prefix-matches as the code grows).
+function ToolCode({
+  code,
+  language,
+}: {
+  code: string;
+  language: string;
+}) {
+  return (
+    <div data-scrollable className="max-h-96 overflow-auto">
+      <pre className="px-3 py-2 overflow-x-auto text-xs font-mono leading-[1.65] text-foreground/90 [&_code]:bg-transparent [&_code]:p-0 [&_code]:border-none [&_span]:border-none [&_span]:outline-none">
+        <HighlightedCode code={code} language={language}>
+          {code}
+        </HighlightedCode>
+      </pre>
+    </div>
   );
 }
 
@@ -1229,13 +1451,13 @@ function DiagnosticsDisplay({
             key={i}
             disabled={!navigationEnabled || !filePath}
             className={cn(
-              'flex items-start gap-1.5 text-[10px] transition-colors text-left w-full group',
+              'flex items-start gap-1.5 text-xs transition-colors text-left w-full group',
               navigationEnabled && filePath
                 ? 'cursor-pointer'
                 : 'cursor-default opacity-70',
-              isError && 'text-red-500 hover:text-red-400',
-              isWarning && 'text-yellow-500 hover:text-yellow-400',
-              !isError && !isWarning && 'text-blue-400 hover:text-blue-300',
+              isError && STATUS_TEXT.destructive,
+              isWarning && STATUS_TEXT.warning,
+              !isError && !isWarning && STATUS_TEXT.info,
             )}
             onClick={() => handleClick(d)}
           >
@@ -1269,10 +1491,11 @@ function DiffChanges({
   if (additions === 0 && deletions === 0) return null;
 
   return (
-    <span className="flex items-center gap-1.5 text-[10px] ml-auto whitespace-nowrap">
-      {additions > 0 && <span className="text-emerald-500">+{additions}</span>}
-      {deletions > 0 && <span className="text-red-500">-{deletions}</span>}
-    </span>
+    <DiffStat
+      additions={additions}
+      deletions={deletions}
+      className="text-xs ml-auto whitespace-nowrap"
+    />
   );
 }
 
@@ -1284,6 +1507,7 @@ function DiffChanges({
  * Render parsed structured output sections with semantic styling.
  */
 function StructuredOutput({ sections }: { sections: OutputSection[] }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [showTrace, setShowTrace] = useState(false);
 
   return (
@@ -1294,10 +1518,21 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <div
                 key={i}
-                className="flex items-start gap-2 px-2.5 py-1.5 rounded-2xl bg-yellow-500/5 border border-yellow-500/15"
+                className={cn(
+                  'flex items-start gap-2 px-2.5 py-1.5 rounded-2xl border',
+                  STATUS_BORDER.warning,
+                  STATUS_BG.warning,
+                )}
               >
-                <AlertTriangle className="size-3 flex-shrink-0 mt-0.5 text-yellow-500" />
-                <p className="text-[11px] leading-relaxed text-yellow-700 dark:text-yellow-400 font-mono break-words">
+                <AlertTriangle
+                  className={cn('size-3 flex-shrink-0 mt-0.5', STATUS_TEXT.warning)}
+                />
+                <p
+                  className={cn(
+                    'text-xs leading-relaxed font-mono break-words',
+                    STATUS_TEXT.warning,
+                  )}
+                >
                   {section.text}
                 </p>
               </div>
@@ -1312,11 +1547,11 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                 <Ban className="size-3 flex-shrink-0 mt-0.5 text-muted-foreground/70" />
                 <div className="min-w-0 flex-1">
                   {section.errorType && (
-                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       {section.errorType}
                     </span>
                   )}
-                  <p className="text-[11px] leading-relaxed text-muted-foreground font-mono break-words">
+                  <p className="text-xs leading-relaxed text-muted-foreground font-mono break-words">
                     {section.summary}
                   </p>
                 </div>
@@ -1336,14 +1571,14 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                       showTrace && 'rotate-90',
                     )}
                   />
-                  <span className="text-[10px] font-medium">Stack trace</span>
-                  <span className="text-[10px] text-muted-foreground/40 font-mono ml-1">
+                  <span className="text-xs font-medium">{tHardcodedUi.raw('componentsSessionToolRenderers.line1597JsxTextStackTrace')}</span>
+                  <span className="text-xs text-muted-foreground/40 font-mono ml-1">
                     {section.lines.length} lines
                   </span>
                 </button>
                 {showTrace && (
                   <div className="mt-1 overflow-hidden">
-                    <pre className="p-2.5 font-mono text-[10px] leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all max-h-64 overflow-auto">
+                    <pre className="p-2.5 font-mono text-xs leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all max-h-64 overflow-auto">
                       {section.lines.map((line, li) => {
                         // Highlight File "..." lines within the trace
                         if (/^\s+File "/.test(line)) {
@@ -1371,10 +1606,16 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <div
                 key={i}
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/15"
+                className={cn(
+                  'flex items-center gap-2 px-2.5 py-1.5 rounded-2xl border',
+                  STATUS_BORDER.success,
+                  STATUS_BG.success,
+                )}
               >
-                <CheckCircle className="size-3 flex-shrink-0 text-emerald-500" />
-                <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono">
+                <CheckCircle
+                  className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)}
+                />
+                <span className={cn('text-xs font-mono', STATUS_TEXT.success)}>
                   {section.text}
                 </span>
               </div>
@@ -1384,7 +1625,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <div
                 key={i}
-                className="flex items-center gap-2 px-2.5 py-1 text-[11px] text-muted-foreground font-mono"
+                className="flex items-center gap-2 px-2.5 py-1 text-xs text-muted-foreground font-mono"
               >
                 <span className="size-1 rounded-full bg-muted-foreground/30 flex-shrink-0" />
                 <span className="break-words">{section.text}</span>
@@ -1395,7 +1636,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <pre
                 key={i}
-                className="px-2.5 py-1 font-mono text-[11px] leading-relaxed text-foreground/70 whitespace-pre-wrap break-words"
+                className="px-2.5 py-1 font-mono text-xs leading-relaxed text-foreground/70 whitespace-pre-wrap break-words"
               >
                 {section.text}
               </pre>
@@ -1414,6 +1655,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
 // ============================================================================
 
 function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -1437,17 +1679,17 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       <div className="p-2.5 space-y-2.5">
         {(source || memoryId) && (
           <div className="py-1.5">
-            <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-sky-700/80 dark:text-sky-300/80 mb-1.5">
+            <div className="text-xs font-medium uppercase tracking-[0.18em] text-sky-700/80 dark:text-sky-300/80 mb-1.5">
               Request
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {source && (
-                <span className="text-[11px] font-medium text-muted-foreground">
+                <span className="text-xs font-medium text-muted-foreground">
                   Source: {source}
                 </span>
               )}
               {memoryId && (
-                <span className="text-[11px] font-semibold font-mono text-foreground/70">
+                <span className="text-xs font-semibold font-mono text-foreground/70">
                   <Hash className="size-3.5" />
                   {memoryId}
                 </span>
@@ -1461,28 +1703,28 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             <div className="rounded-2xl border border-border/60 bg-gradient-to-b from-background via-background to-amber-50/20 dark:to-amber-950/10 overflow-hidden shadow-sm">
               <div className="px-3 py-2.5 border-b border-border/50 bg-gradient-to-r from-amber-50/70 to-background dark:from-amber-950/20">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     <Fingerprint className="size-3" />
-                    Observation #{report.id}
+                    {tHardcodedUi.raw('componentsSessionToolRenderers.line1730JsxTextObservation')}{report.id}
                   </span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
                     {report.type}
                   </span>
                   {report.created && (
-                    <span className="ml-auto text-[10px] text-muted-foreground">
+                    <span className="ml-auto text-xs text-muted-foreground">
                       <CalendarClock className="size-3" />
                       {report.created}
                     </span>
                   )}
                 </div>
-                <h3 className="mt-2 text-[15px] leading-snug font-semibold text-foreground">
+                <h3 className="mt-2 text-sm leading-snug font-semibold text-foreground">
                   {report.title}
                 </h3>
               </div>
               <div className="p-3 space-y-2.5">
                 {report.narrative && (
                   <div className="py-1.5">
-                    <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+                    <div className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                       <FileText className="size-3" />
                       Narrative
                     </div>
@@ -1494,11 +1736,11 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                 {report.facts.length > 0 && (
                   <div className="py-1.5">
                     <div className="flex items-center gap-2 mb-1.5">
-                      <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                      <div className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                         <ListTree className="size-3" />
                         Facts
                       </div>
-                      <span className="text-[10px] font-medium text-muted-foreground">
+                      <span className="text-xs font-medium text-muted-foreground">
                         {report.facts.length}
                       </span>
                     </div>
@@ -1508,7 +1750,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                           key={`${report.id}-${index}`}
                           className="flex items-start gap-1.5 text-xs leading-relaxed text-foreground/90"
                         >
-                          <span className="mt-[6px] size-1.5 rounded-full bg-emerald-500/90 flex-shrink-0" />
+                          <StatusDot tone="success" className="mt-[6px]" />
                           <span>{fact}</span>
                         </li>
                       ))}
@@ -1517,14 +1759,14 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                 )}
                 {report.concepts.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 py-1.5">
-                    <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground mr-0.5">
+                    <span className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.16em] text-muted-foreground mr-0.5">
                       <Tags className="size-3" />
                       Concepts
                     </span>
                     {report.concepts.map((concept) => (
                       <span
                         key={concept}
-                        className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                        className={cn('text-xs font-medium', STATUS_TEXT.success)}
                       >
                         {concept}
                       </span>
@@ -1538,31 +1780,30 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   <div className="py-1.5 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {report.tool && (
-                        <span className="text-[10px] font-medium text-muted-foreground">
+                        <span className="text-xs font-medium text-muted-foreground">
                           Tool: {report.tool}
                         </span>
                       )}
                       {report.prompt && (
-                        <span className="text-[10px] font-medium text-muted-foreground">
-                          Prompt #{report.prompt}
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {tHardcodedUi.raw('componentsSessionToolRenderers.line1811JsxTextPrompt')}{report.prompt}
                         </span>
                       )}
                       {report.session && (
-                        <span className="text-[10px] font-mono font-medium text-muted-foreground">
+                        <span className="text-xs font-mono font-medium text-muted-foreground">
                           {report.session}
                         </span>
                       )}
                     </div>
                     {report.filesRead.length > 0 && (
                       <div className="space-y-1">
-                        <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                          Files read
-                        </div>
+                        <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          {tHardcodedUi.raw('componentsSessionToolRenderers.line1823JsxTextFilesRead')}</div>
                         <div className="flex flex-wrap gap-1.5">
                           {report.filesRead.map((file) => (
                             <span
                               key={file}
-                              className="inline-flex items-center h-6 px-2 rounded-md text-[10px] font-mono bg-background border border-border/70 text-foreground/75 break-all"
+                              className="inline-flex items-center h-6 px-2 rounded-md text-xs font-mono bg-background border border-border/70 text-foreground/75 break-all"
                             >
                               {file}
                             </span>
@@ -1578,15 +1819,15 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             <div className="rounded-2xl border border-border/60 bg-gradient-to-b from-background via-background to-amber-50/20 dark:to-amber-950/10 overflow-hidden shadow-sm">
               <div className="px-3 py-2.5 border-b border-border/50 bg-gradient-to-r from-amber-50/70 to-background dark:from-amber-950/20">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     <Fingerprint className="size-3" />
-                    LTM #{report.id}
+                    {tHardcodedUi.raw('componentsSessionToolRenderers.line1847JsxTextLTM')}{report.id}
                   </span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
                     {report.type}
                   </span>
                   {report.created && (
-                    <span className="ml-auto text-[10px] text-muted-foreground">
+                    <span className="ml-auto text-xs text-muted-foreground">
                       <CalendarClock className="size-3" />
                       {report.created}
                     </span>
@@ -1596,7 +1837,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
               <div className="p-3 space-y-2.5">
                 {report.caption && (
                   <div className="py-1.5">
-                    <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+                    <div className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                       <FileText className="size-3" />
                       Caption
                     </div>
@@ -1607,7 +1848,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                 )}
                 {report.content && (
                   <div className="py-1.5">
-                    <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+                    <div className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                       <ListTree className="size-3" />
                       Content
                     </div>
@@ -1618,14 +1859,14 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                 )}
                 {report.tags.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 py-1.5">
-                    <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground mr-0.5">
+                    <span className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.16em] text-muted-foreground mr-0.5">
                       <Tags className="size-3" />
                       Tags
                     </span>
                     {report.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                        className={cn('text-xs font-medium', STATUS_TEXT.success)}
                       >
                         {tag}
                       </span>
@@ -1636,12 +1877,12 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   <div className="py-1.5 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {report.session && (
-                        <span className="text-[10px] font-mono font-medium text-muted-foreground">
+                        <span className="text-xs font-mono font-medium text-muted-foreground">
                           {report.session}
                         </span>
                       )}
                       {report.updated && (
-                        <span className="text-[10px] font-medium text-muted-foreground">
+                        <span className="text-xs font-medium text-muted-foreground">
                           Updated: {report.updated}
                         </span>
                       )}
@@ -1672,6 +1913,7 @@ ToolRegistry.register('oc-get_mem', GetMemTool);
 ToolRegistry.register('oc-get-mem', GetMemTool);
 
 function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -1703,17 +1945,17 @@ function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       <div className="p-2.5 space-y-2.5">
         {(query || source) && (
           <div className="py-1.5">
-            <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-sky-700/80 dark:text-sky-300/80 mb-1.5">
+            <div className="text-xs font-medium uppercase tracking-[0.18em] text-sky-700/80 dark:text-sky-300/80 mb-1.5">
               Request
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {source && (
-                <span className="text-[11px] font-medium text-muted-foreground">
+                <span className="text-xs font-medium text-muted-foreground">
                   Source: {source}
                 </span>
               )}
               {query && (
-                <span className="text-[11px] font-mono text-foreground/70">
+                <span className="text-xs font-mono text-foreground/70">
                   {query}
                 </span>
               )}
@@ -1736,16 +1978,15 @@ function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   className="px-2 py-1.5 text-xs"
                 >
                   <div className="flex items-center gap-1.5 mb-1.5">
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       {sourceLabel} / {hit.type}
                     </span>
-                    <span className="text-[10px] text-muted-foreground/60 font-mono">
+                    <span className="text-xs text-muted-foreground/60 font-mono">
                       #{hit.id}
                     </span>
                     {hit.confidence != null && (
-                      <span className="ml-auto text-[10px] text-muted-foreground/60">
-                        {Math.round(hit.confidence * 100)}% conf
-                      </span>
+                      <span className="ml-auto text-xs text-muted-foreground/60">
+                        {Math.round(hit.confidence * 100)}{tHardcodedUi.raw('componentsSessionToolRenderers.line2011JsxTextConf')}</span>
                     )}
                   </div>
                   <p className="text-xs leading-relaxed text-foreground/90">
@@ -1756,7 +1997,7 @@ function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                       {hit.files.map((file) => (
                         <span
                           key={file}
-                          className="inline-flex items-center h-5 px-1.5 rounded text-[10px] font-mono bg-muted/50 text-muted-foreground"
+                          className="inline-flex items-center h-5 px-1.5 rounded text-xs font-mono bg-muted/50 text-muted-foreground"
                         >
                           {file}
                         </span>
@@ -1939,7 +2180,7 @@ function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[] }) {
 
   return (
     <div className="flex flex-col gap-1 p-1.5">
-      <div className="px-1.5 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+      <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
         {sessions.length} session{sessions.length !== 1 ? 's' : ''}
       </div>
       {sessions.map((s) => (
@@ -1969,22 +2210,18 @@ function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[] }) {
                 {s.title}
               </span>
               {s.summary && s.summary.files > 0 && (
-                <span className="flex items-center gap-1 text-[10px] flex-shrink-0">
-                  {s.summary.additions > 0 && (
-                    <span className="text-emerald-500">
-                      +{s.summary.additions}
-                    </span>
-                  )}
-                  {s.summary.deletions > 0 && (
-                    <span className="text-red-500">-{s.summary.deletions}</span>
-                  )}
+                <span className="flex items-center gap-1.5 text-xs flex-shrink-0">
+                  <DiffStat
+                    additions={s.summary.additions}
+                    deletions={s.summary.deletions}
+                  />
                   <span className="text-muted-foreground">
                     {s.summary.files} file{s.summary.files !== 1 ? 's' : ''}
                   </span>
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="font-mono truncate">{s.slug || s.id}</span>
               <span className="flex-shrink-0">
                 <SessionTimeLabel timestamp={s.time.updated} />
@@ -2045,9 +2282,10 @@ function InlineSessionMessagesList({
 }: {
   messages: ParsedSessionMessage[];
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex flex-col gap-1 p-1.5">
-      <div className="px-1.5 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+      <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
         {messages.length} message{messages.length !== 1 ? 's' : ''}
       </div>
       {messages.map((msg) => (
@@ -2066,29 +2304,28 @@ function InlineSessionMessagesList({
           >
             <span
               className={cn(
-                'text-[10px] font-semibold uppercase tracking-wide',
-                msg.role === 'user' ? 'text-blue-500' : 'text-emerald-500',
+                'text-xs font-semibold uppercase tracking-wide',
+                msg.role === 'user' ? STATUS_TEXT.info : STATUS_TEXT.success,
               )}
             >
               {msg.role}
             </span>
-            <span className="text-[10px] text-muted-foreground/50 ml-auto">
+            <span className="text-xs text-muted-foreground/50 ml-auto">
               #{msg.index}
             </span>
             {msg.cost > 0 && (
-              <span className="text-[10px] text-muted-foreground/50">
+              <span className="text-xs text-muted-foreground/50">
                 ${(msg.cost * 1.2).toFixed(4)}
               </span>
             )}
           </div>
           <div className="px-2.5 py-1.5">
-            <div className="text-[11px] leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
+            <div className="text-xs leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
               {msg.content.slice(0, 800)}
               {msg.content.length > 800 && (
                 <span className="text-muted-foreground/50">
                   {' '}
-                  ... (truncated)
-                </span>
+                  {tHardcodedUi.raw('componentsSessionToolRenderers.line2350JsxTextTruncated')}</span>
               )}
             </div>
             {msg.tools && (
@@ -2102,9 +2339,9 @@ function InlineSessionMessagesList({
                     <span
                       key={i}
                       className={cn(
-                        'text-[0.5625rem] px-1 py-0.5 rounded border',
+                        'text-xs px-1 py-0.5 rounded border',
                         toolStatus === 'completed'
-                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                          ? cn(STATUS_BG.success, STATUS_BORDER.success, STATUS_TEXT.success)
                           : 'bg-muted/50 border-border/50 text-muted-foreground',
                       )}
                     >
@@ -2122,6 +2359,7 @@ function InlineSessionMessagesList({
 }
 
 function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const metadata = partMetadata(part);
@@ -2200,9 +2438,9 @@ function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     >
       <div data-scrollable className="max-h-96 overflow-auto px-3 py-2">
         {isWaiting || isStalePending ? (
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground/60">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
             <Loader2 className="size-3 animate-spin" />
-            <span>Preparing command...</span>
+            <span>{tHardcodedUi.raw('componentsSessionToolRenderers.line2465JsxTextPreparingCommand')}</span>
           </div>
         ) : (
           <div className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">
@@ -2276,33 +2514,28 @@ function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         )}
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
           {processStatus && (
-            <span
-              className={cn(
-                'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
-                processStatus === 'running'
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-muted/60 text-muted-foreground',
-              )}
+            <Badge
+              variant={processStatus === 'running' ? 'success' : 'muted'}
+              size="sm"
+              className="gap-1"
             >
-              {processStatus === 'running' && (
-                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              )}
+              {processStatus === 'running' && <StatusDot tone="success" pulse />}
               {processStatus}
-            </span>
+            </Badge>
           )}
           {ptyId && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono">
+            <span className="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono">
               {ptyId}
             </span>
           )}
           {pid && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono">
+            <span className="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono">
               PID {pid}
             </span>
           )}
           {workdir && (
             <span
-              className="text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono truncate max-w-[200px]"
+              className="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono truncate max-w-[200px]"
               title={workdir}
             >
               {workdir}
@@ -2317,6 +2550,7 @@ ToolRegistry.register('pty_spawn', PtySpawnTool);
 
 // --- Pty Read ---
 function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
 
@@ -2366,27 +2600,23 @@ function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Terminal Output
-          </span>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line2624JsxTextTerminalOutput')}</span>
           {ptyId && (
-            <span className="text-muted-foreground text-[10px] truncate font-mono">
+            <span className="text-muted-foreground text-xs truncate font-mono">
               {ptyId}
             </span>
           )}
           {parsed.ptyStatus && (
-            <span
-              className={cn(
-                'inline-flex items-center gap-1 ml-auto text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0',
-                parsed.ptyStatus === 'running'
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-muted/60 text-muted-foreground',
-              )}
+            <Badge
+              variant={parsed.ptyStatus === 'running' ? 'success' : 'muted'}
+              size="sm"
+              className="gap-1 ml-auto flex-shrink-0"
             >
               {parsed.ptyStatus === 'running' && (
-                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <StatusDot tone="success" pulse />
               )}
               {parsed.ptyStatus}
-            </span>
+            </Badge>
           )}
         </div>
       }
@@ -2398,10 +2628,10 @@ function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         <div data-scrollable className="max-h-96 overflow-auto">
           <PreWithPaths
             text={parsed.content}
-            className="p-2.5 font-mono text-[11px] leading-relaxed text-foreground/80 whitespace-pre-wrap"
+            className="p-2.5 font-mono text-xs leading-relaxed text-foreground/80 whitespace-pre-wrap"
           />
           {parsed.bufferInfo && (
-            <div className="px-2.5 pb-2 text-[10px] text-muted-foreground/50 italic">
+            <div className="px-2.5 pb-2 text-xs text-muted-foreground/50 italic">
               {parsed.bufferInfo}
             </div>
           )}
@@ -2414,6 +2644,7 @@ ToolRegistry.register('pty_read', PtyReadTool);
 
 // --- Pty Write ---
 function PtyWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const ptyInput = (input.input as string) || (input.text as string) || '';
@@ -2430,7 +2661,7 @@ function PtyWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       {ptyInput && (
         <div className="px-3 py-2.5">
           <pre className="font-mono text-xs leading-relaxed text-foreground/90 whitespace-pre-wrap break-all">
-            <span className="text-muted-foreground/60 select-none">&gt; </span>
+            <span className="text-muted-foreground/60 select-none">{tHardcodedUi.raw('componentsSessionToolRenderers.line2685JsxTextText')}</span>
             {ptyInput}
           </pre>
         </div>
@@ -2469,7 +2700,7 @@ function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       locked={locked}
     >
       {cleanOutput && (
-        <div className="p-2.5 text-[11px] text-muted-foreground">
+        <div className="p-2.5 text-xs text-muted-foreground">
           {cleanOutput}
         </div>
       )}
@@ -2513,8 +2744,6 @@ function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     (streamingInput.instructions as string) ||
     '';
   const hasDiff = before !== '' || after !== '';
-  const isStreaming = partStatus(part) === 'pending';
-  const running = useContext(ToolRunningContext);
   const { openPreview } = useFilePreviewStore();
 
   return (
@@ -2539,21 +2768,16 @@ function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </div>
       ) : codeEdit ? (
-        <div
-          data-scrollable
-          className={cn('max-h-96 overflow-auto', MD_FLUSH_CLASSES)}
-        >
-          <div className="p-2">
-            {morphInstructions && (
-              <div className="mb-2 text-[11px] text-muted-foreground italic">
-                {morphInstructions}
-              </div>
-            )}
-            <UnifiedMarkdown
-              content={`\`\`\`${filename.split('.').pop() || ''}\n${codeEdit}\n\`\`\``}
-              isStreaming={isStreaming && running}
-            />
-          </div>
+        <div data-scrollable className="max-h-96 overflow-auto">
+          {morphInstructions && (
+            <div className="px-3 pt-2 text-xs text-muted-foreground italic">
+              {morphInstructions}
+            </div>
+          )}
+          <ToolCode
+            code={codeEdit}
+            language={filename.split('.').pop() || ''}
+          />
         </div>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />
@@ -2565,6 +2789,7 @@ ToolRegistry.register('morph_edit', EditTool);
 
 // --- Write ---
 function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const metadata = partMetadata(part);
@@ -2585,7 +2810,6 @@ function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   // loading (ToolRunningContext is false) and no filename was received.
   const isStalePending =
     !running && !filename && (status === 'pending' || status === 'running');
-  const isStreaming = status === 'pending' && running;
 
   const { openPreview } = useFilePreviewStore();
 
@@ -2603,21 +2827,10 @@ function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       locked={locked}
     >
       {content ? (
-        <div
-          data-scrollable
-          className={cn('max-h-96 overflow-auto', MD_FLUSH_CLASSES)}
-        >
-          <div className="p-2">
-            <UnifiedMarkdown
-              content={`\`\`\`${ext}\n${content}\n\`\`\``}
-              isStreaming={isStreaming}
-            />
-          </div>
-        </div>
+        <ToolCode code={content} language={ext} />
       ) : isStalePending ? (
-        <div className="px-3 py-2 text-muted-foreground/60 text-[11px] italic">
-          Waiting for file content...
-        </div>
+        <div className="px-3 py-2 text-muted-foreground/60 text-xs italic">
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent')}</div>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />
     </BasicTool>
@@ -2645,11 +2858,14 @@ interface PatchFileLite {
   movePath?: string;
 }
 
-const PATCH_TYPE_STYLE: Record<string, { label: string; cls: string }> = {
-  add: { label: 'Add', cls: 'text-emerald-600 bg-emerald-500/10 dark:text-emerald-400' },
-  update: { label: 'Edit', cls: 'text-amber-600 bg-amber-500/10 dark:text-amber-400' },
-  delete: { label: 'Delete', cls: 'text-red-600 bg-red-500/10 dark:text-red-400' },
-  move: { label: 'Move', cls: 'text-blue-600 bg-blue-500/10 dark:text-blue-400' },
+const PATCH_TYPE_STYLE: Record<
+  string,
+  { label: string; tone: 'success' | 'warning' | 'destructive' | 'info' }
+> = {
+  add: { label: 'Add', tone: 'success' },
+  update: { label: 'Edit', tone: 'warning' },
+  delete: { label: 'Delete', tone: 'destructive' },
+  move: { label: 'Move', tone: 'info' },
 };
 
 function RawPatchDiffView({ patch }: { patch: string; filename: string }) {
@@ -2658,6 +2874,7 @@ function RawPatchDiffView({ patch }: { patch: string; filename: string }) {
 }
 
 function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const metadata = partMetadata(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
@@ -2750,14 +2967,13 @@ function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   ) : (
                     <span className="w-3" />
                   )}
-                  <span
-                    className={cn(
-                      'text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded flex-shrink-0',
-                      typeMeta.cls,
-                    )}
+                  <Badge
+                    variant={typeMeta.tone}
+                    size="sm"
+                    className="font-semibold uppercase flex-shrink-0"
                   >
                     {typeMeta.label}
-                  </span>
+                  </Badge>
                   <span
                     className="text-xs font-mono text-foreground hover:text-primary truncate flex-shrink-0 cursor-pointer"
                     title={relPath}
@@ -2770,22 +2986,17 @@ function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   </span>
                   {dir && (
                     <span
-                      className="text-[10px] text-muted-foreground/50 font-mono truncate min-w-0"
+                      className="text-xs text-muted-foreground/50 font-mono truncate min-w-0"
                       title={dir}
                     >
                       {dir}
                     </span>
                   )}
-                  <span className="ml-auto flex items-center gap-1.5 text-[10px] font-mono flex-shrink-0">
-                    {(file.additions ?? 0) > 0 && (
-                      <span className="text-emerald-500">
-                        +{file.additions}
-                      </span>
-                    )}
-                    {(file.deletions ?? 0) > 0 && (
-                      <span className="text-red-500">−{file.deletions}</span>
-                    )}
-                  </span>
+                  <DiffStat
+                    additions={file.additions}
+                    deletions={file.deletions}
+                    className="ml-auto text-xs flex-shrink-0"
+                  />
                 </button>
 
                 {isOpen && hasDiff && (
@@ -2809,9 +3020,8 @@ function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           })}
         </div>
       ) : isStreaming ? (
-        <div className="px-3 py-2 text-muted-foreground/60 text-[11px] italic">
-          Applying patch…
-        </div>
+        <div className="px-3 py-2 text-muted-foreground/60 text-xs italic">
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line3044JsxTextApplyingPatch')}</div>
       ) : null}
     </BasicTool>
   );
@@ -2820,16 +3030,53 @@ ToolRegistry.register('apply_patch', ApplyPatchTool);
 ToolRegistry.register('apply-patch', ApplyPatchTool);
 
 // --- Read ---
+/** Read tool output: a file with `N: ` line-numbered content, or a directory. */
+interface ParsedReadOutput {
+  path?: string;
+  type?: 'file' | 'directory';
+  content?: string;
+  entries?: string[];
+}
+
+function parseReadOutput(output: string): ParsedReadOutput | null {
+  if (!output) return null;
+  const pathMatch = output.match(/<path>([\s\S]*?)<\/path>/);
+  const path = pathMatch ? pathMatch[1].trim() : undefined;
+
+  const contentMatch = output.match(/<content>\n?([\s\S]*?)\n?<\/content>/);
+  if (contentMatch) {
+    // Strip the "   12: " line-number gutter the read tool prepends.
+    const content = contentMatch[1]
+      .split('\n')
+      .map((l) => l.replace(/^\s*\d+:\s?/, ''))
+      .join('\n');
+    return { path, type: 'file', content };
+  }
+
+  const entriesMatch = output.match(/<entries>\n?([\s\S]*?)\n?<\/entries>/);
+  if (entriesMatch) {
+    const entries = entriesMatch[1]
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !/^\(\d+\s+entr/i.test(l));
+    return { path, type: 'directory', entries };
+  }
+
+  return null;
+}
+
 function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const metadata = partMetadata(part);
+  const output = partOutput(part);
   const status = partStatus(part);
   const filePath =
     (input.filePath as string) ||
     (streamingInput.filePath as string) ||
     undefined;
   const filename = getFilename(filePath) || '';
+  const ext = filename.split('.').pop() || '';
   const { openPreview } = useFilePreviewStore();
   const { toDisplayPath } = useOcFileOpen();
 
@@ -2844,6 +3091,14 @@ function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     return val.filter((p): p is string => typeof p === 'string');
   }, [status, metadata.loaded]);
 
+  // Parse the file content / directory listing so the panel can preview it.
+  // (Inline in chat, BasicTool renders only the compact row — these children
+  // surface when expanded or when focused in the side panel.)
+  const parsed = useMemo(
+    () => (status === 'completed' ? parseReadOutput(output) : null),
+    [status, output],
+  );
+
   return (
     <>
       <BasicTool
@@ -2853,7 +3108,35 @@ function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         forceOpen={forceOpen}
         locked={locked}
         onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
-      />
+      >
+        {parsed?.type === 'file' && parsed.content ? (
+          <ToolCode code={parsed.content} language={ext} />
+        ) : parsed?.type === 'directory' &&
+          parsed.entries &&
+          parsed.entries.length > 0 ? (
+          <div
+            data-scrollable
+            className="max-h-96 space-y-0.5 overflow-auto px-3 py-2"
+          >
+            {parsed.entries.map((entry, i) => {
+              const isDir = entry.endsWith('/');
+              return (
+                <div
+                  key={i}
+                  className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground/80"
+                >
+                  {isDir ? (
+                    <Folder className="size-3 flex-shrink-0 text-muted-foreground/40" />
+                  ) : (
+                    <FileIcon className="size-3 flex-shrink-0 text-muted-foreground/40" />
+                  )}
+                  <span className="truncate">{entry}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </BasicTool>
       {loaded.length > 0 && (
         <div className="mt-1 space-y-0.5 pl-2">
           {loaded.map((filepath, i) => (
@@ -2865,8 +3148,8 @@ function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
               onKeyDown={(e) => e.key === 'Enter' && openPreview(filepath)}
               className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors group"
             >
-              <span className="text-emerald-500">+</span>
-              <span className="truncate font-mono text-[10px] group-hover:underline underline-offset-2">
+              <span className={STATUS_TEXT.success}>+</span>
+              <span className="truncate font-mono text-xs group-hover:underline underline-offset-2">
                 {toDisplayPath(filepath)}
               </span>
             </div>
@@ -3002,13 +3285,13 @@ function ToolListRow({
       <span className="flex-shrink-0 text-muted-foreground/50 group-hover:text-foreground/60 transition-colors [&>svg]:size-3">
         {icon}
       </span>
-      <span className="text-[11px] min-w-0 flex items-baseline gap-1.5 overflow-hidden flex-1">
+      <span className="text-xs min-w-0 flex items-baseline gap-1.5 overflow-hidden flex-1">
         <span
           className={cn(
             'text-foreground font-medium font-mono whitespace-nowrap flex-shrink-0',
             onNameClick &&
               !disabled &&
-              'cursor-pointer hover:text-blue-500 transition-colors',
+              'cursor-pointer hover:text-primary transition-colors',
           )}
           onClick={
             onNameClick && !disabled
@@ -3022,13 +3305,13 @@ function ToolListRow({
           {name}
         </span>
         {dir && (
-          <span className="text-muted-foreground/40 truncate text-[10px]">
+          <span className="text-muted-foreground/40 truncate text-xs">
             {dir}
           </span>
         )}
       </span>
       {trailing !== undefined && trailing !== null && (
-        <span className="text-[10px] text-muted-foreground/50 flex-shrink-0">
+        <span className="text-xs text-muted-foreground/50 flex-shrink-0">
           {trailing}
         </span>
       )}
@@ -3116,10 +3399,10 @@ function InlineGrepResults({
                     key={j}
                     className="flex items-start gap-0 border-b last:border-b-0 border-border/10"
                   >
-                    <span className="text-[10px] font-mono text-muted-foreground/50 w-10 text-right pr-2 py-1 flex-shrink-0 select-none">
+                    <span className="text-xs font-mono text-muted-foreground/50 w-10 text-right pr-2 py-1 flex-shrink-0 select-none">
                       {match.line}
                     </span>
-                    <span className="text-[10px] font-mono text-foreground/70 py-1 pr-2 break-all leading-relaxed">
+                    <span className="text-xs font-mono text-foreground/70 py-1 pr-2 break-all leading-relaxed">
                       {match.content}
                     </span>
                   </div>
@@ -3135,6 +3418,7 @@ function InlineGrepResults({
 
 // --- Glob ---
 function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const output = partOutput(part);
@@ -3186,7 +3470,7 @@ function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </div>
       ) : isNoResults ? (
-        <ToolEmptyState message="No matching files found" />
+        <ToolEmptyState message={tHardcodedUi.raw('componentsSessionToolRenderers.line3420JsxAttrMessageNoMatchingFilesFound')} />
       ) : output ? (
         <ToolOutputFallback output={output} toolName="glob" />
       ) : null}
@@ -3197,6 +3481,7 @@ ToolRegistry.register('glob', GlobTool);
 
 // --- Grep ---
 function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const output = partOutput(part);
@@ -3251,7 +3536,7 @@ function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </div>
       ) : isNoResults ? (
-        <ToolEmptyState message="No matching results found" />
+        <ToolEmptyState message={tHardcodedUi.raw('componentsSessionToolRenderers.line3485JsxAttrMessageNoMatchingResultsFound')} />
       ) : output ? (
         <ToolOutputFallback output={output} toolName="grep" />
       ) : null}
@@ -3262,6 +3547,7 @@ ToolRegistry.register('grep', GrepTool);
 
 // --- List ---
 function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -3300,7 +3586,7 @@ function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           />
         </div>
       ) : isNoResults ? (
-        <ToolEmptyState message="Directory is empty" />
+        <ToolEmptyState message={tHardcodedUi.raw('componentsSessionToolRenderers.line3534JsxAttrMessageDirectoryIsEmpty')} />
       ) : output ? (
         <ToolOutputFallback output={output} toolName="list" />
       ) : null}
@@ -3310,31 +3596,149 @@ function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 ToolRegistry.register('list', ListTool);
 
 // --- WebFetch ---
+/** Heuristic: does this output look like a full HTML document? */
+function looksLikeHtml(s: string): boolean {
+  if (!s) return false;
+  const head = s.slice(0, 600).toLowerCase();
+  if (head.includes('<!doctype html') || head.includes('<html')) return true;
+  return /<\/(body|head|div|p|span|table)>/i.test(s.slice(0, 3000));
+}
+
+/** Strip an HTML document down to its <title> + readable text. */
+function extractReadableHtml(html: string): { title?: string; text: string } {
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch ? decodeEntities(titleMatch[1].trim()) : undefined;
+  const text = decodeEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<head[\s\S]*?<\/head>/gi, ' ')
+      .replace(/<!--[\s\S]*?-->/g, ' ')
+      .replace(/<\/(p|div|section|article|li|h[1-6]|br|tr|ul|ol)\s*>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+  );
+  return { title, text };
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
 function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
+  const status = partStatus(part);
   const url = (input.url as string) || '';
-  const args: string[] = [];
-  if (input.format) args.push('format=' + String(input.format));
+  const format = (input.format as string) || '';
+  const domain = url ? wsDomain(url) : '';
+  const favicon = url ? wsFavicon(url) : null;
+  const safeUrl = safeHttpUrl(url);
+  const [rawOpen, setRawOpen] = useState(false);
+
+  // HTML output is otherwise an unreadable raw dump — extract a clean preview.
+  const isHtml = format === 'html' || (!format && looksLikeHtml(output));
+  const readable = useMemo(
+    () => (isHtml && output ? extractReadableHtml(output) : null),
+    [isHtml, output],
+  );
 
   return (
     <BasicTool
       icon={<Globe />}
       trigger={{
         title: 'Web Fetch',
-        subtitle: url,
-        args,
+        subtitle: domain || url,
+        args: format ? [format] : undefined,
       }}
-      rightAccessory={url ? <ExternalLink /> : undefined}
+      rightAccessory={safeUrl ? <ExternalLink /> : undefined}
+      onSubtitleClick={safeUrl ? () => openSafeExternalUrl(url) : undefined}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
     >
-      {output && <ToolOutputFallback output={output} toolName="web_fetch" />}
+      {!output ? null : readable ? (
+        <div data-scrollable className="max-h-[28rem] overflow-auto">
+          {/* Page header — favicon, title, domain, open-in-tab */}
+          <a
+            href={safeUrl ?? undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group flex items-center gap-2 border-b border-border/40 px-3 py-2 hover:bg-muted/30"
+          >
+            <span className="flex size-5 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-muted/60">
+              {favicon ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={favicon}
+                  alt=""
+                  className="size-4 rounded"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <Globe className="size-3 text-muted-foreground/50" />
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-medium text-foreground group-hover:text-primary">
+                {readable.title || domain}
+              </span>
+              <span className="block truncate font-mono text-[10px] text-muted-foreground/50">
+                {domain}
+              </span>
+            </span>
+            <ExternalLink className="size-3 flex-shrink-0 text-muted-foreground/30 group-hover:text-muted-foreground/60" />
+          </a>
+          {/* Readable extracted text */}
+          <p className="whitespace-pre-wrap break-words px-3 py-2 text-xs leading-relaxed text-foreground/80">
+            {readable.text.slice(0, 4000) || 'No readable text content.'}
+          </p>
+          {/* Raw HTML, on demand */}
+          <Collapsible open={rawOpen} onOpenChange={setRawOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center gap-1.5 border-t border-border/40 px-3 py-2 text-xs text-muted-foreground/60 transition-colors hover:text-foreground"
+              >
+                <ChevronRight
+                  className={cn(
+                    'size-3 transition-transform',
+                    rawOpen && 'rotate-90',
+                  )}
+                />
+                View raw HTML
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 pb-2 font-mono text-[11px] leading-relaxed text-muted-foreground/70">
+                {output.slice(0, 8000)}
+              </pre>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      ) : (
+        <ToolOutputFallback
+          output={output}
+          isStreaming={status === 'running'}
+          toolName="web_fetch"
+        />
+      )}
     </BasicTool>
   );
 }
 ToolRegistry.register('webfetch', WebFetchTool);
+ToolRegistry.register('web_fetch', WebFetchTool);
 
 // --- WebSearch ---
 
@@ -3538,6 +3942,7 @@ function wsFavicon(url: string): string | null {
 }
 
 function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -3572,13 +3977,12 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Web Search
-          </span>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line3806JsxTextWebSearch')}</span>
           <span className="text-muted-foreground text-xs truncate font-mono">
             {query}
           </span>
           {triggerBadge && (
-            <span className="text-[10px] text-primary/70 font-medium whitespace-nowrap ml-auto flex-shrink-0">
+            <span className="text-xs text-primary/70 font-medium whitespace-nowrap ml-auto flex-shrink-0">
               {triggerBadge}
             </span>
           )}
@@ -3607,11 +4011,11 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                     onClick={() => setExpandedQuery(isExpanded ? null : qi)}
                   >
                     <Search className="size-3 text-muted-foreground/50 flex-shrink-0" />
-                    <span className="text-[11px] font-medium text-foreground truncate flex-1">
+                    <span className="text-xs font-medium text-foreground truncate flex-1">
                       {qr.query}
                     </span>
                     {qr.sources.length > 0 && (
-                      <span className="text-[0.5625rem] text-muted-foreground/60 flex-shrink-0">
+                      <span className="text-xs text-muted-foreground/60 flex-shrink-0">
                         {qr.sources.length}
                       </span>
                     )}
@@ -3630,7 +4034,7 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                     {/* AI Answer */}
                     {qr.answer && (
                       <div className="mb-2.5 mt-1">
-                        <p className="text-[11px] leading-relaxed text-foreground/80">
+                        <p className="text-xs leading-relaxed text-foreground/80">
                           {qr.answer}
                         </p>
                       </div>
@@ -3640,7 +4044,7 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                     {qr.sources.length > 0 && (
                       <div className="space-y-1">
                         {qr.answer && (
-                          <div className="text-[0.5625rem] font-semibold uppercase tracking-wider text-muted-foreground/40 mb-1.5">
+                          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/40 mb-1.5">
                             Sources
                           </div>
                         )}
@@ -3676,21 +4080,21 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-[11px] font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1">
+                                <div className="text-xs font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1">
                                   {src.title}
                                 </div>
                                 <div className="flex items-center gap-1.5 mt-0.5">
-                                  <span className="text-[10px] text-muted-foreground/50 font-mono truncate">
+                                  <span className="text-xs text-muted-foreground/50 font-mono truncate">
                                     {domain}
                                   </span>
                                   {src.author && (
-                                    <span className="text-[10px] text-muted-foreground/40 truncate">
+                                    <span className="text-xs text-muted-foreground/40 truncate">
                                       {src.author}
                                     </span>
                                   )}
                                 </div>
                                 {src.snippet && (
-                                  <p className="text-[10px] text-muted-foreground/60 leading-relaxed line-clamp-2 mt-1">
+                                  <p className="text-xs text-muted-foreground/60 leading-relaxed line-clamp-2 mt-1">
                                     {src.snippet.slice(0, 200)}
                                   </p>
                                 )}
@@ -3818,7 +4222,7 @@ function ScrapeWebpageTool({
             {domain || firstUrl}
           </span>
           {triggerBadge && (
-            <span className="text-[10px] text-primary/70 font-medium whitespace-nowrap ml-auto flex-shrink-0">
+            <span className="text-xs text-primary/70 font-medium whitespace-nowrap ml-auto flex-shrink-0">
               {triggerBadge}
             </span>
           )}
@@ -3874,30 +4278,30 @@ function ScrapeWebpageTool({
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[11px] font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1">
+                    <div className="text-xs font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1">
                       {result.title || resultDomain || result.url}
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[10px] text-muted-foreground/50 font-mono truncate">
+                      <span className="text-xs text-muted-foreground/50 font-mono truncate">
                         {resultDomain}
                       </span>
                     </div>
                     {result.success && snippet && (
-                      <p className="text-[10px] text-muted-foreground/60 leading-relaxed line-clamp-2 mt-1 break-words">
+                      <p className="text-xs text-muted-foreground/60 leading-relaxed line-clamp-2 mt-1 break-words">
                         {snippet}
                       </p>
                     )}
                     {!result.success && result.error && (
-                      <p className="text-[10px] text-muted-foreground/70 leading-relaxed line-clamp-2 mt-1 break-words">
+                      <p className="text-xs text-muted-foreground/70 leading-relaxed line-clamp-2 mt-1 break-words">
                         {result.error.slice(0, 150)}
                       </p>
                     )}
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0 mt-1">
                     {result.success ? (
-                      <CheckCircle className="size-3 text-emerald-500/70" />
+                      <CheckCircle className={cn('size-3', STATUS_TEXT.success)} />
                     ) : (
-                      <AlertTriangle className="size-3 text-amber-500/70" />
+                      <AlertTriangle className={cn('size-3', STATUS_TEXT.warning)} />
                     )}
                     <ExternalLink className="size-3 text-muted-foreground/20 group-hover:text-muted-foreground/50 transition-colors" />
                   </div>
@@ -3920,6 +4324,7 @@ ToolRegistry.register('scrape-webpage', ScrapeWebpageTool);
 
 // --- ImageSearch ---
 function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -4006,13 +4411,12 @@ function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Image Search
-          </span>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line4240JsxTextImageSearch')}</span>
           <span className="text-muted-foreground text-xs truncate font-mono">
             {displayQuery}
           </span>
           {imageResults.length > 0 && (
-            <span className="text-[10px] text-muted-foreground/60 font-mono whitespace-nowrap ml-auto flex-shrink-0">
+            <span className="text-xs text-muted-foreground/60 font-mono whitespace-nowrap ml-auto flex-shrink-0">
               {isBatch ? `${batchCount}q, ` : ''}
               {imageResults.length} images
             </span>
@@ -4052,7 +4456,7 @@ function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                     }}
                   />
                   <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/50 to-transparent flex items-end p-1">
-                    <span className="text-[0.5625rem] text-white truncate">
+                    <span className="text-xs text-white truncate">
                       {title}
                     </span>
                   </div>
@@ -4075,6 +4479,7 @@ ToolRegistry.register('image-search', ImageSearchTool);
 
 // --- ImageGen ---
 function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -4179,18 +4584,17 @@ function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
               className="max-h-64 object-contain"
             />
           ) : isImageLoading ? (
-            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-              Loading image preview...
-            </div>
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              {tHardcodedUi.raw('componentsSessionToolRenderers.line4414JsxTextLoadingImagePreview')}</div>
           ) : (
-            <div className="px-2 py-1.5 text-[11px] text-muted-foreground font-mono break-all">
+            <div className="px-2 py-1.5 text-xs text-muted-foreground font-mono break-all">
               {imagePath}
             </div>
           )}
         </div>
       ) : output ? (
         <div data-scrollable className="p-2 max-h-72 overflow-auto">
-          <pre className="whitespace-pre-wrap text-[11px] text-muted-foreground font-mono">
+          <pre className="whitespace-pre-wrap text-xs text-muted-foreground font-mono">
             {output}
           </pre>
         </div>
@@ -4217,7 +4621,7 @@ function VideoGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     >
       {output && (
         <div data-scrollable className="p-2 max-h-72 overflow-auto">
-          <pre className="whitespace-pre-wrap text-[11px] text-muted-foreground font-mono">
+          <pre className="whitespace-pre-wrap text-xs text-muted-foreground font-mono">
             {output}
           </pre>
         </div>
@@ -4266,6 +4670,7 @@ function PresentationGenTool({
   forceOpen,
   locked,
 }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -4340,7 +4745,7 @@ function PresentationGenTool({
           {parsed?.success &&
             action === 'create_slide' &&
             parsed.total_slides && (
-              <span className="text-[10px] text-muted-foreground/60 font-mono whitespace-nowrap ml-auto flex-shrink-0">
+              <span className="text-xs text-muted-foreground/60 font-mono whitespace-nowrap ml-auto flex-shrink-0">
                 {parsed.total_slides}{' '}
                 {parsed.total_slides === 1 ? 'slide' : 'slides'}
               </span>
@@ -4376,13 +4781,13 @@ function PresentationGenTool({
           {/* Slide creation summary */}
           {action === 'create_slide' && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className="size-3 text-emerald-500 flex-shrink-0" />
+              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
-                Created slide {parsed.slide_number}
+                {tHardcodedUi.raw('componentsSessionToolRenderers.line4612JsxTextCreatedSlide')}{parsed.slide_number}
                 {parsed.slide_title ? `: ${parsed.slide_title}` : ''}
               </span>
               {parsed.total_slides && (
-                <span className="text-muted-foreground/50 ml-auto text-[10px]">
+                <span className="text-muted-foreground/50 ml-auto text-xs">
                   ({parsed.total_slides} total)
                 </span>
               )}
@@ -4392,7 +4797,7 @@ function PresentationGenTool({
           {/* Validate slide */}
           {action === 'validate_slide' && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className="size-3 text-emerald-500 flex-shrink-0" />
+              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
                 Slide {parsed.slide_number || slideNumber || '?'} validated
               </span>
@@ -4417,7 +4822,7 @@ function PresentationGenTool({
           {/* Export success */}
           {(action === 'export_pdf' || action === 'export_pptx') && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className="size-3 text-emerald-500 flex-shrink-0" />
+              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
                 Exported {parsed.presentation_name || presentationName} to{' '}
                 {action === 'export_pdf' ? 'PDF' : 'PPTX'}
@@ -4435,7 +4840,7 @@ function PresentationGenTool({
             'export_pptx',
           ].includes(action as string) && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className="size-3 text-emerald-500 flex-shrink-0" />
+              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
                 {parsed.message || `${actionLabel} completed`}
               </span>
@@ -4444,7 +4849,7 @@ function PresentationGenTool({
 
           {/* File paths */}
           {parsed.slide_file && action !== 'preview' && action !== 'serve' && (
-            <div className="text-[10px] text-muted-foreground/50 font-mono truncate">
+            <div className="text-xs text-muted-foreground/50 font-mono truncate">
               {parsed.slide_file}
             </div>
           )}
@@ -4454,7 +4859,7 @@ function PresentationGenTool({
       {/* Fallback for unrecognized output */}
       {!parsed && output && (
         <div data-scrollable className="p-2 max-h-72 overflow-auto">
-          <pre className="font-mono text-[11px] whitespace-pre-wrap text-muted-foreground/60">
+          <pre className="font-mono text-xs whitespace-pre-wrap text-muted-foreground/60">
             {output}
           </pre>
         </div>
@@ -4478,11 +4883,11 @@ import { SHOW_HTML_EXT_RE } from '@/components/file-renderers/show-content-rende
 import { SANDBOX_PORTS } from '@/lib/platform-client';
 
 const SHOW_BORDER_STYLES: Record<string, string> = {
-  default: 'border-border/50',
-  success: 'border-emerald-500/20',
-  warning: 'border-amber-500/20',
-  info: 'border-blue-500/20',
-  danger: 'border-red-500/20',
+  default: STATUS_BORDER.neutral,
+  success: STATUS_BORDER.success,
+  warning: STATUS_BORDER.warning,
+  info: STATUS_BORDER.info,
+  danger: STATUS_BORDER.destructive,
 };
 
 function showTypeIcon(type: string, className = 'size-4') {
@@ -4600,7 +5005,20 @@ function useShowOpenInTab(props: {
   ]);
 }
 
-function ShowTool({ part }: ToolProps) {
+/** Build the static-file-server localhost URL for an HTML file path (for iframe preview). */
+function buildHtmlStaticUrl(filePath: string): string {
+  const port = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
+  const normalized = ensureWorkspacePath(filePath);
+  const encoded = normalized
+    .split('/')
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join('/');
+  return `http://localhost:${port}/open?path=/${encoded}`;
+}
+
+function ShowTool({ part, sessionId }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const running = useContext(ToolRunningContext);
   const { enabled: navigationEnabled } = useToolNavigation();
@@ -4663,6 +5081,25 @@ function ShowTool({ part }: ToolProps) {
         ? 'Open Link'
         : 'Open File';
 
+  // ── Website / service preview ──
+  // Single-item localhost URLs and HTML file paths render as an embedded iframe.
+  // Render it directly here so the actions (refresh / open in browser / preview)
+  // live in the card header — no duplicated inner browser toolbar.
+  const activeContent = isCarousel ? currentItem?.content || '' : content;
+  const resolvedPreviewUrl = isCarousel
+    ? ''
+    : activeHasLocalhostUrl
+      ? activeUrl
+      : activeIsHtmlFilePath && !activeContent && activePath
+        ? buildHtmlStaticUrl(activePath)
+        : '';
+  const isWebsitePreview = !!resolvedPreviewUrl;
+  const preview = useServicePreview(
+    resolvedPreviewUrl,
+    title || description || undefined,
+    sessionId,
+  );
+
   // Loading state
   if (running && !type && !items) {
     return (
@@ -4670,8 +5107,7 @@ function ShowTool({ part }: ToolProps) {
         <div className="flex items-center gap-3 px-5 py-4">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
           <TextShimmer duration={1} spread={2} className="text-sm">
-            Preparing output...
-          </TextShimmer>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line4935JsxTextPreparingOutput')}</TextShimmer>
         </div>
       </div>
     );
@@ -4686,7 +5122,11 @@ function ShowTool({ part }: ToolProps) {
           ? showDomain(url) || 'Link'
           : 'Output');
 
-  const headerIcon = isCarousel ? currentItem?.type || 'image' : type;
+  const headerIcon = isCarousel
+    ? currentItem?.type || 'image'
+    : isWebsitePreview
+      ? 'url'
+      : type;
 
   return (
     <div
@@ -4708,11 +5148,65 @@ function ShowTool({ part }: ToolProps) {
           )}
         </div>
         {isCarousel && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/40 text-muted-foreground/60 font-medium flex-shrink-0">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-muted/40 text-muted-foreground/60 font-medium flex-shrink-0">
             {items!.length} items
           </span>
         )}
-        {canOpenInTab && (
+        {isWebsitePreview ? (
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={preview.handleRefresh}
+                  className="p-1.5 rounded-lg text-muted-foreground/60 hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <RefreshCw
+                    className={cn(
+                      'size-3.5',
+                      preview.isLoading && 'animate-spin',
+                    )}
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Refresh</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  disabled={!navigationEnabled || !preview.previewUrl}
+                  onClick={preview.openInBrowser}
+                  className={cn(
+                    'p-1.5 rounded-lg text-muted-foreground/60 transition-colors',
+                    navigationEnabled && preview.previewUrl
+                      ? 'hover:bg-muted hover:text-foreground'
+                      : 'opacity-50 cursor-not-allowed',
+                  )}
+                >
+                  <ExternalLink className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{tHardcodedUi.raw('componentsSessionToolRenderers.line5016JsxTextOpenInBrowser')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  onClick={preview.navigateToPreviewTab}
+                  variant="subtle"
+                  size="xs"
+                  disabled={!navigationEnabled || !preview.proxy}
+                  className="ml-0.5"
+                >
+                  <MonitorPlay className="size-3.5" />
+                  Preview
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{tHardcodedUi.raw('componentsSessionToolRenderers.line5032JsxTextOpenAsTab')}</TooltipContent>
+            </Tooltip>
+          </div>
+        ) : canOpenInTab ? (
           <button
             type="button"
             disabled={!navigationEnabled}
@@ -4731,16 +5225,18 @@ function ShowTool({ part }: ToolProps) {
             )}
             {openInTabLabel}
           </button>
-        )}
+        ) : null}
       </div>
 
-      {/* ── Content — carousel or single ── */}
+      {/* ── Content — carousel, website preview, or single ── */}
       {isCarousel ? (
         <ShowCarousel
           items={items!}
           LocalhostPreview={InlineServicePreview}
           onIndexChange={setCarouselIndex}
         />
+      ) : isWebsitePreview ? (
+        <ServicePreviewViewport preview={preview} />
       ) : (
         <>
           <ShowContentRenderer
@@ -4780,22 +5276,22 @@ function DCPPruneTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Scissors className="size-3.5 flex-shrink-0 text-amber-500" />}
+      icon={<Scissors className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.warning)} />}
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
             Prune
           </span>
-          <span className="text-[10px] text-amber-500 font-medium whitespace-nowrap">
+          <span className={cn('text-xs font-medium whitespace-nowrap', STATUS_TEXT.warning)}>
             DCP
           </span>
           {reason && (
-            <span className="text-[10px] text-muted-foreground/70 truncate">
+            <span className="text-xs text-muted-foreground/70 truncate">
               {reason}
             </span>
           )}
           {ids && ids.length > 0 && (
-            <span className="text-[10px] text-muted-foreground/60 ml-auto">
+            <span className="text-xs text-muted-foreground/60 ml-auto">
               {ids.length} tools
             </span>
           )}
@@ -4807,7 +5303,7 @@ function DCPPruneTool({ part }: ToolProps) {
     >
       {output ? (
         <div data-scrollable className="p-2 max-h-48 overflow-auto">
-          <pre className="font-mono text-[11px] whitespace-pre-wrap text-muted-foreground/60">
+          <pre className="font-mono text-xs whitespace-pre-wrap text-muted-foreground/60">
             {output}
           </pre>
         </div>
@@ -4825,17 +5321,17 @@ function DCPDistillTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Scissors className="size-3.5 flex-shrink-0 text-blue-500" />}
+      icon={<Scissors className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.info)} />}
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
             Distill
           </span>
-          <span className="text-[10px] text-blue-500 font-medium whitespace-nowrap">
+          <span className={cn('text-xs font-medium whitespace-nowrap', STATUS_TEXT.info)}>
             DCP
           </span>
           {ids && ids.length > 0 && (
-            <span className="text-[10px] text-muted-foreground/60 ml-auto">
+            <span className="text-xs text-muted-foreground/60 ml-auto">
               {ids.length} tools
             </span>
           )}
@@ -4847,7 +5343,7 @@ function DCPDistillTool({ part }: ToolProps) {
     >
       {output ? (
         <div data-scrollable className="p-2 max-h-48 overflow-auto">
-          <pre className="font-mono text-[11px] whitespace-pre-wrap text-muted-foreground/60">
+          <pre className="font-mono text-xs whitespace-pre-wrap text-muted-foreground/60">
             {output}
           </pre>
         </div>
@@ -4871,11 +5367,11 @@ function DCPCompressTool({ part }: ToolProps) {
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
             Compress
           </span>
-          <span className="text-[10px] text-purple-500 font-medium whitespace-nowrap">
+          <span className="text-xs text-purple-500 font-medium whitespace-nowrap">
             DCP
           </span>
           {topic && (
-            <span className="text-[10px] text-muted-foreground/70 truncate max-w-[200px]">
+            <span className="text-xs text-muted-foreground/70 truncate max-w-[200px]">
               {topic}
             </span>
           )}
@@ -4887,7 +5383,7 @@ function DCPCompressTool({ part }: ToolProps) {
     >
       {output ? (
         <div data-scrollable className="p-2 max-h-48 overflow-auto">
-          <pre className="font-mono text-[11px] whitespace-pre-wrap text-muted-foreground/60">
+          <pre className="font-mono text-xs whitespace-pre-wrap text-muted-foreground/60">
             {output}
           </pre>
         </div>
@@ -4898,6 +5394,7 @@ function DCPCompressTool({ part }: ToolProps) {
 ToolRegistry.register('compress', DCPCompressTool);
 
 function ContextInfoTool({ part }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // context_info is a synthetic tool injected by DCP — render minimally or hide
   const output = partOutput(part);
   if (!output) return null;
@@ -4910,9 +5407,8 @@ function ContextInfoTool({ part }: ToolProps) {
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-muted-foreground/70 whitespace-nowrap">
-            Context Info
-          </span>
-          <span className="text-[10px] text-muted-foreground/50 font-medium whitespace-nowrap">
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line5235JsxTextContextInfo')}</span>
+          <span className="text-xs text-muted-foreground/50 font-medium whitespace-nowrap">
             DCP
           </span>
         </div>
@@ -4922,7 +5418,7 @@ function ContextInfoTool({ part }: ToolProps) {
         data-scrollable
         className="p-2 max-h-32 overflow-auto scrollbar-hide"
       >
-        <pre className="font-mono text-[10px] whitespace-pre-wrap text-muted-foreground/60">
+        <pre className="font-mono text-xs whitespace-pre-wrap text-muted-foreground/60">
           {output}
         </pre>
       </div>
@@ -4937,6 +5433,7 @@ function RemovedIntegrationTool({
   forceOpen,
   locked,
 }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const output = partOutput(part);
 
   return (
@@ -4945,9 +5442,8 @@ function RemovedIntegrationTool({
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Legacy Integration Tool
-          </span>
-          <span className="text-[10px] text-muted-foreground/60 font-medium whitespace-nowrap ml-auto">
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line5270JsxTextLegacyIntegrationTool')}</span>
+          <span className="text-xs text-muted-foreground/60 font-medium whitespace-nowrap ml-auto">
             removed
           </span>
         </div>
@@ -4957,9 +5453,8 @@ function RemovedIntegrationTool({
       locked={locked}
     >
       <div className="px-3 py-2.5 space-y-2">
-        <p className="text-[11px] text-muted-foreground leading-relaxed">
-          This legacy integration tool surface has been removed while connectors are rebuilt.
-        </p>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line5283JsxTextThisLegacyIntegrationToolSurfaceHasBeenRemoved')}</p>
         {output ? (
           <ToolOutputFallback
             output={output}
@@ -4984,6 +5479,35 @@ function RemovedIntegrationTool({
 // ============================================================================
 // TaskTool — Sub-agent delegation
 // ============================================================================
+
+/**
+ * Inline transcript of a sub-agent's child-session tool calls. Shown in the
+ * side panel (large surface) so a sub-agent reveals what it actually did, not
+ * just a header. Forces inline (compact) rendering for the child rows.
+ */
+function SubAgentActivity({
+  childSessionId,
+  parts,
+}: {
+  childSessionId?: string;
+  parts: ToolPart[];
+}) {
+  if (parts.length === 0) return null;
+  return (
+    <ToolSurfaceContext.Provider value="inline">
+      <div className="space-y-1">
+        {parts.map((tp) => (
+          <ToolPartRenderer
+            key={tp.callID}
+            part={tp}
+            sessionId={childSessionId}
+            disableNavigation
+          />
+        ))}
+      </div>
+    </ToolSurfaceContext.Provider>
+  );
+}
 
 function TaskTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
@@ -5042,7 +5566,14 @@ function TaskTool({ part, forceOpen }: ToolProps) {
             : undefined
         }
         rightAccessory={childSessionId ? <ExternalLink /> : undefined}
-      />
+      >
+        {childToolParts.length > 0 ? (
+          <SubAgentActivity
+            childSessionId={childSessionId}
+            parts={childToolParts}
+          />
+        ) : undefined}
+      </BasicTool>
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -5120,7 +5651,14 @@ function SessionSpawnTool({ part, forceOpen }: ToolProps) {
             : undefined
         }
         rightAccessory={childSessionId ? <ExternalLink /> : undefined}
-      />
+      >
+        {childToolParts.length > 0 ? (
+          <SubAgentActivity
+            childSessionId={childSessionId}
+            parts={childToolParts}
+          />
+        ) : undefined}
+      </BasicTool>
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -5219,19 +5757,19 @@ function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
               key={i}
               className="flex items-start gap-0 border-b last:border-b-0 border-border/10"
             >
-              <span className="text-[10px] font-mono w-6 text-center py-1 flex-shrink-0 select-none">
+              <span className="text-xs font-mono w-6 text-center py-1 flex-shrink-0 select-none">
                 {entry.status === 'completed' ? (
-                  <Check className="size-2.5 text-emerald-500 inline" />
+                  <Check className={cn('size-2.5 inline', STATUS_TEXT.success)} />
                 ) : entry.status === 'pending' ? (
                   <Clock className="size-2.5 text-muted-foreground/50 inline" />
                 ) : (
-                  <CircleAlert className="size-2.5 text-red-400 inline" />
+                  <CircleAlert className={cn('size-2.5 inline', STATUS_TEXT.destructive)} />
                 )}
               </span>
-              <span className="text-[10px] font-mono text-foreground/80 font-medium w-24 py-1 flex-shrink-0 truncate">
+              <span className="text-xs font-mono text-foreground/80 font-medium w-24 py-1 flex-shrink-0 truncate">
                 {entry.tool}
               </span>
-              <span className="text-[10px] font-mono text-muted-foreground/60 py-1 pr-2 truncate">
+              <span className="text-xs font-mono text-muted-foreground/60 py-1 pr-2 truncate">
                 {entry.summary}
               </span>
             </div>
@@ -5239,7 +5777,7 @@ function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         </div>
       ) : output ? (
         <div data-scrollable className="max-h-72 overflow-auto px-3 py-2">
-          <div className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap">
+          <div className="text-xs font-mono text-muted-foreground whitespace-pre-wrap">
             <UnifiedMarkdown content={output} isStreaming={false} />
           </div>
         </div>
@@ -5257,6 +5795,7 @@ ToolRegistry.register('oc-session-read', SessionReadTool);
 // ============================================================================
 
 function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	const input = partInput(part);
 	const output = partOutput(part);
 	const status = partStatus(part);
@@ -5340,9 +5879,9 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 			{parsed ? (
 				<div className="divide-y divide-border/20">
 					{/* Metadata */}
-					<div className="px-3 py-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground/60">
+					<div className="px-3 py-2.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground/60">
 						{parsed.id && (
-							<span className="font-mono text-[10px]">{parsed.id}</span>
+							<span className="font-mono text-xs">{parsed.id}</span>
 						)}
 						{parsed.created && (
 							<span className="flex items-center gap-1">
@@ -5363,7 +5902,7 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 							</span>
 						)}
 						{parsed.parent && (
-							<span className="flex items-center gap-1 font-mono text-[10px]">
+							<span className="flex items-center gap-1 font-mono text-xs">
 								Parent: {parsed.parent}
 							</span>
 						)}
@@ -5382,10 +5921,10 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 									<ChevronRight className="size-2.5 text-muted-foreground/40" />
 								)}
 								<ListTodo className="size-3 text-muted-foreground/60" />
-								<span className="text-[11px] font-medium">
+								<span className="text-xs font-medium">
 									Todos
 								</span>
-								<span className="text-[9px] text-muted-foreground/50 ml-auto">
+								<span className="text-xs text-muted-foreground/50 ml-auto">
 									{parsed.todos.length}
 								</span>
 							</button>
@@ -5399,25 +5938,25 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 										return (
 											<div
 												key={i}
-												className="flex items-start gap-2 text-[11px]"
+												className="flex items-start gap-2 text-xs"
 											>
 												<div
 													className={cn(
 														"w-3 h-3 rounded border flex-shrink-0 mt-[2px] flex items-center justify-center",
 														isComplete &&
-															"bg-emerald-100 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-600",
+															cn(STATUS_BG.success, STATUS_BORDER.success),
 														isProgress &&
-															"border-blue-400 dark:border-blue-500",
+															STATUS_BORDER.info,
 														!isComplete &&
 															!isProgress &&
 															"border-border",
 													)}
 												>
 													{isComplete && (
-														<Check className="size-2 text-emerald-600 dark:text-emerald-400" />
+														<Check className={cn('size-2', STATUS_TEXT.success)} />
 													)}
 													{isProgress && (
-														<div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+														<StatusDot tone="info" />
 													)}
 												</div>
 												<span
@@ -5452,11 +5991,11 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 									<ChevronRight className="size-2.5 text-muted-foreground/40" />
 								)}
 								<MessageCircle className="size-3 text-muted-foreground/60" />
-								<span className="text-[11px] font-medium">
+								<span className="text-xs font-medium">
 									Conversation
 								</span>
-								<span className="text-[9px] text-muted-foreground/50 ml-auto">
-									{parsed.msgCount} msgs · {parsed.toolCount}{" "}
+								<span className="text-xs text-muted-foreground/50 ml-auto">
+									{parsed.msgCount} {tHardcodedUi.raw('componentsSessionToolRenderers.line5824JsxTextMsgs')}{parsed.toolCount}{" "}
 									tools
 								</span>
 							</button>
@@ -5478,7 +6017,7 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
 					{/* Compression */}
 					{parsed.compression && (
-						<div className="px-3 py-2 flex items-center gap-2 text-[10px] text-muted-foreground/40">
+						<div className="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground/40">
 							<Minimize2 className="size-2.5" />
 							<span>{parsed.compression}</span>
 						</div>
@@ -5487,9 +6026,8 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 					{/* Empty session */}
 					{!parsed.hasConversation && parsed.todos.length === 0 && (
 						<div className="px-3 py-3 text-center">
-							<p className="text-[11px] text-muted-foreground/40 italic">
-								No messages in this session
-							</p>
+							<p className="text-xs text-muted-foreground/40 italic">
+								{tHardcodedUi.raw('componentsSessionToolRenderers.line5856JsxTextNoMessagesInThisSession')}</p>
 						</div>
 					)}
 				</div>
@@ -5578,19 +6116,19 @@ function SessionSearchTool({
               className="px-3 py-2 hover:bg-muted/20 transition-colors"
             >
               <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-[11px] font-medium text-foreground truncate flex-1">
+                <span className="text-xs font-medium text-foreground truncate flex-1">
                   {h.title || '(untitled)'}
                 </span>
-                <span className="text-[0.5625rem] font-mono text-muted-foreground/40 bg-muted/40 px-1 rounded flex-shrink-0">
+                <span className="text-xs font-mono text-muted-foreground/40 bg-muted/40 px-1 rounded flex-shrink-0">
                   {h.score}
                 </span>
               </div>
               {h.snippet && (
-                <p className="text-[10px] text-muted-foreground/60 line-clamp-1">
+                <p className="text-xs text-muted-foreground/60 line-clamp-1">
                   {h.snippet}
                 </p>
               )}
-              <div className="flex items-center gap-2 text-[0.5625rem] text-muted-foreground/40 mt-0.5">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground/40 mt-0.5">
                 <span className="font-mono">{h.id.slice(-12)}</span>
                 <span>{h.updated}</span>
               </div>
@@ -5635,10 +6173,10 @@ function SessionMessageTool({ part }: ToolProps) {
     >
       {message && (
         <div className="px-3 py-2">
-          <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">
+          <div className="text-xs text-muted-foreground/50 uppercase tracking-wider mb-1">
             Message
           </div>
-          <div className="text-[11px] text-foreground/70 whitespace-pre-wrap bg-muted/20 rounded p-2 border border-border/20">
+          <div className="text-xs text-foreground/70 whitespace-pre-wrap bg-muted/20 rounded p-2 border border-border/20">
             {message.slice(0, 500)}
           </div>
         </div>
@@ -5686,7 +6224,7 @@ function SessionLineageTool({
     >
       {output ? (
         <div data-scrollable className="max-h-56 overflow-auto px-3 py-2">
-          <div className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap">
+          <div className="text-xs font-mono text-muted-foreground whitespace-pre-wrap">
             <UnifiedMarkdown content={output} isStreaming={false} />
           </div>
         </div>
@@ -5714,7 +6252,7 @@ function SessionStatsTool({ part }: ToolProps) {
     >
       {output && (
         <div data-scrollable className="max-h-72 overflow-auto px-3 py-2">
-          <div className="text-[11px] font-mono text-foreground whitespace-pre-wrap">
+          <div className="text-xs font-mono text-foreground whitespace-pre-wrap">
             <UnifiedMarkdown content={output} isStreaming={false} />
           </div>
         </div>
@@ -5737,6 +6275,7 @@ function SessionListBackgroundTool({
   forceOpen,
   locked,
 }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -5786,23 +6325,23 @@ function SessionListBackgroundTool({
         >
           {workers.map((w) => (
             <div key={w.id} className="flex items-center gap-2 px-3 py-1.5">
-              <span
-                className={cn(
-                  'size-1.5 rounded-full flex-shrink-0',
+              <StatusDot
+                tone={
                   w.status === 'running'
-                    ? 'bg-blue-400'
+                    ? 'info'
                     : w.status === 'complete'
-                      ? 'bg-emerald-400'
-                      : 'bg-muted-foreground/30',
-                )}
+                      ? 'success'
+                      : 'neutral'
+                }
+                className="flex-shrink-0"
               />
-              <span className="text-[10px] font-mono text-foreground/70 truncate">
+              <span className="text-xs font-mono text-foreground/70 truncate">
                 {w.id.slice(-12)}
               </span>
-              <span className="text-[10px] text-muted-foreground/50 truncate flex-1">
+              <span className="text-xs text-muted-foreground/50 truncate flex-1">
                 {w.project}
               </span>
-              <span className="text-[0.5625rem] text-muted-foreground/40">
+              <span className="text-xs text-muted-foreground/40">
                 {w.status}
               </span>
             </div>
@@ -5810,12 +6349,12 @@ function SessionListBackgroundTool({
         </div>
       ) : output ? (
         <div data-scrollable className="max-h-56 overflow-auto px-3 py-2">
-          <div className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap">
+          <div className="text-xs font-mono text-muted-foreground whitespace-pre-wrap">
             <UnifiedMarkdown content={output} isStreaming={false} />
           </div>
         </div>
       ) : noWorkers ? (
-        <ToolEmptyState message="No background sessions" />
+        <ToolEmptyState message={tHardcodedUi.raw('componentsSessionToolRenderers.line6183JsxAttrMessageNoBackgroundSessions')} />
       ) : null}
     </BasicTool>
   );
@@ -5838,12 +6377,13 @@ ToolRegistry.register('oc-session-list-spawned', SessionListBackgroundTool);
 // ============================================================================
 
 function ProjectDeleteTool({ part }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const project = (input.project as string) || '';
   return (
     <div className="flex items-center gap-2 px-2.5 py-1 text-xs text-muted-foreground/40">
       <Trash2 className="size-3 flex-shrink-0" />
-      <span>Workspace delete disabled{project ? ` (${project})` : ''}</span>
+      <span>{tHardcodedUi.raw('componentsSessionToolRenderers.line6211JsxTextWorkspaceDeleteDisabled')}{project ? ` (${project})` : ''}</span>
     </div>
   );
 }
@@ -5906,6 +6446,8 @@ function extractWorkerPreview(cleaned: string): string | null {
 }
 
 function AgentSpawnTool({ part, forceOpen }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const surface = useContext(ToolSurfaceContext);
   const input = partInput(part);
   const status = partStatus(part);
   const output = partOutput(part);
@@ -5972,35 +6514,35 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
           <div className="flex items-center gap-2.5">
             <Cpu className="size-4 text-muted-foreground flex-shrink-0" />
 
-            <span className="text-[13px] font-medium text-foreground truncate flex-1">
+            <span className="text-sm font-medium text-foreground truncate flex-1">
               {description}
             </span>
 
             {taskIdFromOutput && (
-              <span className="text-[10px] text-muted-foreground/50 font-mono flex-shrink-0">
+              <span className="text-xs text-muted-foreground/50 font-mono flex-shrink-0">
                 {taskIdFromOutput.slice(-8)}
               </span>
             )}
 
             {isRunning && (
-              <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-medium flex-shrink-0 flex items-center gap-1">
+              <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-medium flex-shrink-0 flex items-center gap-1">
                 <Loader2 className="size-2.5 animate-spin" />
                 Running
               </span>
             )}
             {isCompleted && childToolParts.length > 0 && (
-              <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">
+              <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">
                 {childToolParts.length} steps
               </span>
             )}
             {isCompleted && childToolParts.length === 0 && !cleanedOutput && (
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded font-medium flex-shrink-0 flex items-center gap-1">
+              <Badge variant="success" size="sm" className="gap-1 flex-shrink-0">
                 <Check className="size-2.5" />
                 Done
-              </span>
+              </Badge>
             )}
             {isError && (
-              <span className="text-[10px] text-destructive bg-destructive/10 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+              <span className="text-xs text-destructive bg-destructive/10 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
                 Failed
               </span>
             )}
@@ -6013,7 +6555,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
           {/* Row 1b: verification condition */}
           {verification && (
             <div className="mt-1 pl-[26px]">
-              <span className="text-[11px] text-muted-foreground/40 leading-relaxed">
+              <span className="text-xs text-muted-foreground/40 leading-relaxed">
                 ✓ {verification}
               </span>
             </div>
@@ -6026,14 +6568,13 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
                 <TextShimmer
                   duration={1.5}
                   spread={2}
-                  className="text-[11px] truncate font-mono text-muted-foreground"
+                  className="text-xs truncate font-mono text-muted-foreground"
                 >
                   {lastActivity}
                 </TextShimmer>
               ) : (
-                <span className="text-[11px] text-muted-foreground">
-                  Starting…
-                </span>
+                <span className="text-xs text-muted-foreground">
+                  {tHardcodedUi.raw('componentsSessionToolRenderers.line6401JsxTextStarting')}</span>
               )}
             </div>
           )}
@@ -6046,7 +6587,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
                 return (
                   <div
                     key={i}
-                    className="flex items-center gap-1.5 text-[11px] text-muted-foreground truncate"
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground truncate"
                   >
                     <Check className="size-2.5 text-muted-foreground/50 flex-shrink-0" />
                     {info.title}
@@ -6055,7 +6596,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
                 );
               })}
               {childToolParts.length > 3 && (
-                <div className="text-[11px] text-muted-foreground/50 pl-4">
+                <div className="text-xs text-muted-foreground/50 pl-4">
                   +{childToolParts.length - 3} more
                 </div>
               )}
@@ -6065,7 +6606,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
           {/* Fallback: completed with no steps or output */}
           {isCompleted && childToolParts.length === 0 && !cleanedOutput && (
             <div className="mt-1.5 pl-[26px]">
-              <span className="text-[11px] text-muted-foreground/50 flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground/50 flex items-center gap-1.5">
                 <Check className="size-2.5" />
                 Completed
               </span>
@@ -6079,7 +6620,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
             {isShortOutput(cleanedOutput) ? (
               /* Short result: show inline, no collapse */
               <div className="px-3 py-2.5">
-                <div className="text-xs text-foreground/80 leading-relaxed border-l-2 border-border/40 pl-3 prose-sm [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:text-foreground [&_h2]:text-[13px] [&_h2]:font-semibold [&_h2]:text-foreground [&_h3]:text-xs [&_h3]:font-medium [&_h3]:text-foreground [&_p]:text-muted-foreground [&_li]:text-muted-foreground [&_table]:text-[11px] [&_code]:text-[11px] [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:rounded [&_hr]:border-border/30 [&_hr]:my-3">
+                <div className="text-xs text-foreground/80 leading-relaxed border-l-2 border-border/40 pl-3 prose-sm [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:text-foreground [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:text-foreground [&_h3]:text-xs [&_h3]:font-medium [&_h3]:text-foreground [&_p]:text-muted-foreground [&_li]:text-muted-foreground [&_table]:text-xs [&_code]:text-xs [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:rounded [&_hr]:border-border/30 [&_hr]:my-3">
                   <UnifiedMarkdown
                     content={cleanedOutput}
                     isStreaming={false}
@@ -6103,11 +6644,11 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
                       outputExpanded && 'rotate-90',
                     )}
                   />
-                  <span className="text-[11px] text-muted-foreground font-medium flex-shrink-0">
+                  <span className="text-xs text-muted-foreground font-medium flex-shrink-0">
                     Result
                   </span>
                   {!outputExpanded && workerPreview && (
-                    <span className="text-[11px] text-muted-foreground/40 truncate">
+                    <span className="text-xs text-muted-foreground/40 truncate">
                       {workerPreview}
                     </span>
                   )}
@@ -6117,7 +6658,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
                     data-scrollable
                     className="px-3 pb-3 max-h-80 overflow-y-auto"
                   >
-                    <div className="text-xs text-foreground/80 leading-relaxed border-l-2 border-border/40 pl-3 prose-sm [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:text-foreground [&_h2]:text-[13px] [&_h2]:font-semibold [&_h2]:text-foreground [&_h3]:text-xs [&_h3]:font-medium [&_h3]:text-foreground [&_p]:text-muted-foreground [&_li]:text-muted-foreground [&_table]:text-[11px] [&_code]:text-[11px] [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:rounded [&_hr]:border-border/30 [&_hr]:my-3">
+                    <div className="text-xs text-foreground/80 leading-relaxed border-l-2 border-border/40 pl-3 prose-sm [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:text-foreground [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:text-foreground [&_h3]:text-xs [&_h3]:font-medium [&_h3]:text-foreground [&_p]:text-muted-foreground [&_li]:text-muted-foreground [&_table]:text-xs [&_code]:text-xs [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:rounded [&_hr]:border-border/30 [&_hr]:my-3">
                       <UnifiedMarkdown
                         content={cleanedOutput}
                         isStreaming={false}
@@ -6127,6 +6668,16 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
                 )}
               </>
             )}
+          </div>
+        )}
+
+        {/* Panel surface: full child activity inline (not just a summary). */}
+        {surface === 'panel' && childToolParts.length > 0 && (
+          <div className="border-t border-border/30 p-3">
+            <SubAgentActivity
+              childSessionId={childSessionId}
+              parts={childToolParts}
+            />
           </div>
         )}
       </div>
@@ -6161,6 +6712,7 @@ ToolRegistry.register('task-start', AgentSpawnTool);
 // ============================================================================
 
 function AgentMessageTool({ part }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const status = partStatus(part);
   const output = partOutput(part);
@@ -6194,23 +6746,23 @@ function AgentMessageTool({ part }: ToolProps) {
           {/* Row 1: icon + task ID + status */}
           <div className="flex items-center gap-2.5">
             <MessageCircle className="size-4 text-muted-foreground flex-shrink-0" />
-            <span className="text-[13px] font-medium text-foreground truncate flex-1">
-              Message → {taskId ? taskId.slice(-12) : 'worker'}
+            <span className="text-sm font-medium text-foreground truncate flex-1">
+              {tHardcodedUi.raw('componentsSessionToolRenderers.line6574JsxTextMessage')}{taskId ? taskId.slice(-12) : 'worker'}
             </span>
             {isRunning && (
-              <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-medium flex-shrink-0 flex items-center gap-1">
+              <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-medium flex-shrink-0 flex items-center gap-1">
                 <Loader2 className="size-2.5 animate-spin" />
                 Sending
               </span>
             )}
             {!isRunning && !isError && (
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded font-medium flex-shrink-0 flex items-center gap-1">
+              <Badge variant="success" size="sm" className="gap-1 flex-shrink-0">
                 <Check className="size-2.5" />
                 Sent
-              </span>
+              </Badge>
             )}
             {isError && (
-              <span className="text-[10px] text-destructive bg-destructive/10 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+              <span className="text-xs text-destructive bg-destructive/10 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
                 Failed
               </span>
             )}
@@ -6225,7 +6777,7 @@ function AgentMessageTool({ part }: ToolProps) {
           {/* Row 2: message preview */}
           {rawMessage && (
             <div className="mt-1.5 pl-[26px]">
-              <span className="text-[11px] text-muted-foreground/70 leading-relaxed">
+              <span className="text-xs text-muted-foreground/70 leading-relaxed">
                 {expanded ? rawMessage : preview}
               </span>
             </div>
@@ -6249,6 +6801,7 @@ ToolRegistry.register('agent-message', AgentMessageTool);
 
 // agent_task_update — routes to the right renderer based on action
 function AgentTaskUpdateTool({ part, forceOpen }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const action = (input.action as string) || '';
   switch (action) {
@@ -6262,9 +6815,9 @@ function AgentTaskUpdateTool({ part, forceOpen }: ToolProps) {
       const taskId = (input.id as string) || '';
       return (
         <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/70">
-          <Check className="size-3 text-emerald-500 flex-shrink-0" />
+          <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
           <span className="text-foreground/80 truncate flex-1">
-            Task approved{taskId ? ` · ${taskId.slice(-12)}` : ''}
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line6643JsxTextTaskApproved')}{taskId ? ` · ${taskId.slice(-12)}` : ''}
           </span>
         </div>
       );
@@ -6291,6 +6844,7 @@ ToolRegistry.register('task_cancel', AgentStopTool);
 ToolRegistry.register('task-cancel', AgentStopTool);
 
 function AgentStopTool({ part }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const agentId = (input.agent_id as string) || '';
   return (
@@ -6298,15 +6852,14 @@ function AgentStopTool({ part }: ToolProps) {
       <div className="p-3">
         <div className="flex items-center gap-2.5">
           <StopCircle className="size-4 text-muted-foreground flex-shrink-0" />
-          <span className="text-[13px] font-medium text-foreground truncate flex-1">
-            Agent stopped
-          </span>
+          <span className="text-sm font-medium text-foreground truncate flex-1">
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line6678JsxTextAgentStopped')}</span>
           {agentId && (
-            <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">
+            <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">
               {agentId.slice(-12)}
             </span>
           )}
-          <span className="text-[10px] text-muted-foreground/60 bg-muted/60 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+          <span className="text-xs text-muted-foreground/60 bg-muted/60 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
             Stopped
           </span>
         </div>
@@ -6350,17 +6903,17 @@ function AgentStatusTool({ part }: ToolProps) {
         <div className="p-3">
           <div className="flex items-center gap-2.5">
             <Layers className="size-4 text-muted-foreground flex-shrink-0" />
-            <span className="text-[13px] font-medium text-foreground truncate flex-1">
+            <span className="text-sm font-medium text-foreground truncate flex-1">
               Tasks
             </span>
             {isRunning && (
-              <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-medium flex-shrink-0 flex items-center gap-1">
+              <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-medium flex-shrink-0 flex items-center gap-1">
                 <Loader2 className="size-2.5 animate-spin" />
                 Loading
               </span>
             )}
             {!isRunning && taskRows.length > 0 && (
-              <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">
+              <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">
                 {taskRows.length} task{taskRows.length !== 1 ? 's' : ''}
               </span>
             )}
@@ -6398,20 +6951,20 @@ function AgentStatusTool({ part }: ToolProps) {
                   {isActive ? (
                     <Loader2 className="size-3 animate-spin text-muted-foreground flex-shrink-0" />
                   ) : row.status === 'completed' ? (
-                    <Check className="size-3 text-emerald-500 flex-shrink-0" />
+                    <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
                   ) : row.status === 'input_needed' ? (
-                    <Clock className="size-3 text-amber-500 flex-shrink-0" />
+                    <Clock className={cn('size-3 flex-shrink-0', STATUS_TEXT.warning)} />
                   ) : row.status === 'cancelled' ? (
                     <X className="size-3 text-muted-foreground/40 flex-shrink-0" />
                   ) : (
                     <Circle className="size-3 text-muted-foreground/40 flex-shrink-0" />
                   )}
 
-                  <span className="text-[12px] text-foreground/80 truncate flex-1">
+                  <span className="text-xs text-foreground/80 truncate flex-1">
                     {row.title}
                   </span>
 
-                  <span className="text-[10px] text-muted-foreground/50 font-mono flex-shrink-0">
+                  <span className="text-xs text-muted-foreground/50 font-mono flex-shrink-0">
                     {row.id.slice(-8)}
                   </span>
 
@@ -6427,7 +6980,7 @@ function AgentStatusTool({ part }: ToolProps) {
         {/* Fallback: no parsed rows, show raw output */}
         {!isRunning && taskRows.length === 0 && cleanedOutput && (
           <div className="border-t border-border/30 px-3 py-2.5">
-            <div className="text-[11px] text-muted-foreground whitespace-pre-wrap">
+            <div className="text-xs text-muted-foreground whitespace-pre-wrap">
               {cleanedOutput}
             </div>
           </div>
@@ -6463,7 +7016,7 @@ function TaskCreateTool({ part }: ToolProps) {
       <Circle className="size-3 text-muted-foreground/40 flex-shrink-0" />
       <span className="text-foreground/80 truncate flex-1">{title}</span>
       {priority === 'high' && (
-        <span className="text-[0.5625rem] font-medium text-foreground/50 bg-muted/60 px-1.5 py-px rounded">
+        <span className="text-xs font-medium text-foreground/50 bg-muted/60 px-1.5 py-px rounded">
           high
         </span>
       )}
@@ -6483,7 +7036,7 @@ function TaskListTool({ part }: ToolProps) {
     >
       {output && (
         <div data-scrollable className="max-h-48 overflow-auto px-3 py-2">
-          <div className="text-[11px] text-muted-foreground whitespace-pre-wrap">
+          <div className="text-xs text-muted-foreground whitespace-pre-wrap">
             <UnifiedMarkdown content={output} isStreaming={false} />
           </div>
         </div>
@@ -6521,10 +7074,11 @@ ToolRegistry.register('task_done', TaskDoneTool);
 ToolRegistry.register('task-done', TaskDoneTool);
 
 function TaskDeleteTool({ part }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex items-center gap-2 px-2.5 py-1 text-xs text-muted-foreground/40">
       <Trash2 className="size-3 flex-shrink-0" />
-      <span>Task removed</span>
+      <span>{tHardcodedUi.raw('componentsSessionToolRenderers.line6903JsxTextTaskRemoved')}</span>
     </div>
   );
 }
@@ -6625,7 +7179,38 @@ function SkillTool({ part, forceOpen }: ToolProps) {
             : undefined
         }
         rightAccessory={<ExternalLink />}
-      />
+      >
+        {/* Body — shown in the side panel (the compact chat row opens the
+            modal instead). Renders the skill instructions + bundled files. */}
+        {isCompleted && (markdownContent || skillFiles.length > 0) ? (
+          <div
+            data-scrollable
+            className={cn('max-h-96 overflow-auto p-3', MD_FLUSH_CLASSES)}
+          >
+            {markdownContent && (
+              <UnifiedMarkdown content={markdownContent} isStreaming={false} />
+            )}
+            {skillFiles.length > 0 && (
+              <div className="mt-3 border-t border-border/40 pt-2">
+                <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground/50">
+                  Files
+                </div>
+                <div className="space-y-0.5">
+                  {skillFiles.map((f, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70"
+                    >
+                      <FileText className="size-3 flex-shrink-0 text-muted-foreground/40" />
+                      <span className="truncate">{f}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </BasicTool>
 
       {/* Modal with full skill content */}
       {modalOpen && (
@@ -6652,7 +7237,7 @@ function SkillTool({ part, forceOpen }: ToolProps) {
                 )}
               </div>
               {isCompleted && skillFiles.length > 0 && (
-                <span className="text-[10px] text-muted-foreground/60 font-mono">
+                <span className="text-xs text-muted-foreground/60 font-mono">
                   {skillFiles.length} file{skillFiles.length !== 1 ? 's' : ''}
                 </span>
               )}
@@ -6721,7 +7306,7 @@ function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
             >
               <Folder className="size-3.5 flex-shrink-0 text-muted-foreground/50" />
               <span className="truncate">{project.name}</span>
-              <span className="text-muted-foreground/40 font-mono truncate text-[10px]">
+              <span className="text-muted-foreground/40 font-mono truncate text-xs">
                 {project.path}
               </span>
             </div>
@@ -6898,7 +7483,7 @@ function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
               </div>
               <Badge
                 variant="outline"
-                className="h-5 py-0 text-[10px] flex-shrink-0 capitalize"
+                className="h-5 py-0 text-xs flex-shrink-0 capitalize"
               >
                 {conn.source}
               </Badge>
@@ -6955,7 +7540,7 @@ function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
                 {data.env && (
                   <div className="text-xs">
                     <span className="text-muted-foreground/60">Env: </span>
-                    <code className="bg-muted px-1 rounded text-[10px]">
+                    <code className="bg-muted px-1 rounded text-xs">
                       {data.env}
                     </code>
                   </div>
@@ -6985,6 +7570,7 @@ ToolRegistry.register('oc-connector_get', ConnectorGetTool);
 ToolRegistry.register('oc-connector-get', ConnectorGetTool);
 
 function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
   const data = useMemo(() => parseConnectorSetupOutput(output || ''), [output]);
@@ -7019,8 +7605,7 @@ function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) {
           </div>
         ) : (
           <div className="p-3 text-xs text-muted-foreground">
-            Setting up connectors...
-          </div>
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line7398JsxTextSettingUpConnectors')}</div>
         )}
       </div>
     </BasicTool>
@@ -7177,23 +7762,24 @@ function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
                   <span className="font-medium text-foreground truncate">
                     {t.name}
                   </span>
-                  <span className="text-muted-foreground font-mono text-[10px] truncate ml-auto">
+                  <span className="text-muted-foreground font-mono text-xs truncate ml-auto">
                     {t.sourceType === 'webhook'
                       ? t.sourceDetail
                       : t.sourceDetail}
                   </span>
-                  <span
-                    className={cn(
-                      'text-[10px] font-medium flex-shrink-0',
+                  <Badge
+                    variant={
                       t.status === 'active'
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        ? 'success'
                         : t.status === 'paused'
-                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                          : 'bg-muted text-muted-foreground',
-                    )}
+                          ? 'warning'
+                          : 'muted'
+                    }
+                    size="sm"
+                    className="flex-shrink-0"
                   >
                     {t.status}
-                  </span>
+                  </Badge>
                 </div>
               ) : (
                 <div
@@ -7222,10 +7808,10 @@ function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
         {/* Show prompt preview for create action */}
         {action === 'create' && typeof input.prompt === 'string' && (
           <div className="mt-2 border-t border-border/30 pt-2">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium mb-1">
+            <div className="text-xs uppercase tracking-wider text-muted-foreground/60 font-medium mb-1">
               Prompt
             </div>
-            <div className="text-[11px] text-muted-foreground font-mono whitespace-pre-wrap max-h-24 overflow-y-auto leading-relaxed">
+            <div className="text-xs text-muted-foreground font-mono whitespace-pre-wrap max-h-24 overflow-y-auto leading-relaxed">
               {input.prompt.slice(0, 400)}
               {input.prompt.length > 400 ? '...' : ''}
             </div>
@@ -7269,6 +7855,336 @@ ToolRegistry.register('trigger_resume', TriggersTool);
 ToolRegistry.register('trigger-resume', TriggersTool);
 ToolRegistry.register('oc-trigger_resume', TriggersTool);
 ToolRegistry.register('oc-trigger-resume', TriggersTool);
+
+// ============================================================================
+// TodoWrite — the agent's plan / checklist
+// ============================================================================
+//
+// `todowrite` is how the agent maintains its running plan. Each call replaces
+// the full list, so a given part is the snapshot of the plan at that moment.
+// We render it as a real checklist (status icon + content) with a progress
+// bar and a done/total badge — far better than the raw JSON GenericTool dump.
+
+interface TodoItem {
+  content: string;
+  status: 'completed' | 'in_progress' | 'pending' | 'cancelled';
+  priority?: string;
+}
+
+function parseTodos(value: unknown): TodoItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw) => {
+    if (!raw || typeof raw !== 'object') return [];
+    const content = (raw as any).content;
+    if (typeof content !== 'string' || !content.trim()) return [];
+    const s = (raw as any).status;
+    const status: TodoItem['status'] =
+      s === 'completed' || s === 'in_progress' || s === 'cancelled'
+        ? s
+        : 'pending';
+    return [{ content, status, priority: (raw as any).priority }];
+  });
+}
+
+function TodoStatusIcon({ status }: { status: TodoItem['status'] }) {
+  switch (status) {
+    case 'completed':
+      return (
+        <CheckCircle className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.success)} />
+      );
+    case 'in_progress':
+      return (
+        <Loader2 className="size-3.5 flex-shrink-0 animate-spin text-primary" />
+      );
+    case 'cancelled':
+      return <Ban className="size-3.5 flex-shrink-0 text-muted-foreground/40" />;
+    default:
+      return <Circle className="size-3.5 flex-shrink-0 text-muted-foreground/30" />;
+  }
+}
+
+function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(part);
+  const streamingInput = partStreamingInput(part);
+  const metadata = partMetadata(part);
+
+  const todos = useMemo(() => {
+    const fromInput = parseTodos(input.todos);
+    if (fromInput.length) return fromInput;
+    const fromMeta = parseTodos(metadata.todos);
+    if (fromMeta.length) return fromMeta;
+    return parseTodos(streamingInput.todos);
+  }, [input.todos, metadata.todos, streamingInput.todos]);
+
+  const total = todos.length;
+  const done = todos.filter((t) => t.status === 'completed').length;
+  const active = todos.find((t) => t.status === 'in_progress');
+  const pct = total ? Math.round((done / total) * 100) : 0;
+
+  // Subtitle: the item being worked on, else a progress summary.
+  const subtitle = active
+    ? active.content
+    : total
+      ? `${done} of ${total} done`
+      : undefined;
+
+  return (
+    <BasicTool
+      icon={<ListTodo className="size-3.5 flex-shrink-0" />}
+      trigger={{ title: 'Todos', subtitle }}
+      badge={total ? `${done}/${total}` : undefined}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      {total > 0 ? (
+        <div data-scrollable className="max-h-96 overflow-auto px-3 py-2">
+          <div className="mb-2.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-foreground/60 transition-all duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <ul className="space-y-1.5">
+            {todos.map((todo, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs leading-snug">
+                <span className="mt-px">
+                  <TodoStatusIcon status={todo.status} />
+                </span>
+                <span
+                  className={cn(
+                    'min-w-0 flex-1',
+                    todo.status === 'completed' &&
+                      'text-muted-foreground/50 line-through',
+                    todo.status === 'in_progress' && 'font-medium text-foreground',
+                    todo.status === 'pending' && 'text-foreground/70',
+                    todo.status === 'cancelled' &&
+                      'text-muted-foreground/40 line-through',
+                  )}
+                >
+                  {todo.content}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <ToolEmptyState message="No tasks yet" />
+      )}
+    </BasicTool>
+  );
+}
+ToolRegistry.register('todowrite', TodoWriteTool);
+ToolRegistry.register('todo_write', TodoWriteTool);
+ToolRegistry.register('todo-write', TodoWriteTool);
+
+// ============================================================================
+// Question (answered) — the agent asked the user; show Q + chosen answer(s)
+// ============================================================================
+//
+// The LIVE interactive question is handled separately by QuestionPrompt (fed
+// the `question` prop in ToolPartRenderer). This renderer is for the resolved
+// historical tool part: it surfaces every question, its options, and which
+// option(s) the user picked — including free-text answers not in the list.
+
+interface ParsedQuestion {
+  question: string;
+  header?: string;
+  options: { label: string; description?: string }[];
+}
+
+/** Best-effort: pull "Question"="Answer" pairs out of the tool output string. */
+function parseQuestionAnswersFromOutput(
+  output: string,
+  count: number,
+): string[][] | null {
+  if (!output) return null;
+  const pairRegex = /"([^"]*)"="([^"]*)"/g;
+  const found: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = pairRegex.exec(output)) !== null) found.push(m[2]);
+  if (found.length === 0) return null;
+  return Array.from({ length: Math.max(count, found.length) }, (_, i) =>
+    found[i] ? [found[i]] : [],
+  );
+}
+
+function QuestionTool({
+  part,
+  defaultOpen,
+  forceOpen,
+  locked,
+  hasActiveQuestion,
+}: ToolProps) {
+  const input = partInput(part);
+  const metadata = partMetadata(part);
+  const output = partOutput(part);
+
+  const questions = useMemo<ParsedQuestion[]>(() => {
+    const raw = Array.isArray(input.questions) ? input.questions : [];
+    return raw.flatMap((q: any) => {
+      if (!q || typeof q !== 'object') return [];
+      return [
+        {
+          question: typeof q.question === 'string' ? q.question : '',
+          header: typeof q.header === 'string' ? q.header : undefined,
+          options: Array.isArray(q.options)
+            ? q.options.flatMap((o: any) =>
+                o && typeof o.label === 'string'
+                  ? [
+                      {
+                        label: o.label,
+                        description:
+                          typeof o.description === 'string'
+                            ? o.description
+                            : undefined,
+                      },
+                    ]
+                  : [],
+              )
+            : [],
+        },
+      ];
+    });
+  }, [input.questions]);
+
+  const answers = useMemo<string[][]>(() => {
+    if (Array.isArray(metadata.answers) && metadata.answers.length > 0) {
+      return metadata.answers as string[][];
+    }
+    return parseQuestionAnswersFromOutput(output, questions.length) ?? [];
+  }, [metadata.answers, output, questions.length]);
+
+  const total = questions.length;
+  const answeredCount = answers.filter((a) => a && a.length > 0).length;
+  const single = total === 1;
+
+  // While the question is still live, the interactive QuestionPrompt renders
+  // right below this part — so keep this to a quiet header to avoid duplication.
+  if (hasActiveQuestion) {
+    return (
+      <BasicTool
+        icon={<MessageCircle className="size-3.5 flex-shrink-0" />}
+        trigger={{
+          title: single ? 'Question' : 'Questions',
+          subtitle: 'Waiting for your answer',
+        }}
+        forceOpen={forceOpen}
+        locked={locked}
+      />
+    );
+  }
+
+  const subtitle =
+    single && answers[0]?.length
+      ? answers[0].join(', ')
+      : total
+        ? `${answeredCount} of ${total} answered`
+        : undefined;
+
+  return (
+    <BasicTool
+      icon={<MessageCircle className="size-3.5 flex-shrink-0" />}
+      trigger={{ title: single ? 'Question' : 'Questions', subtitle }}
+      badge={!single && total ? `${answeredCount}/${total}` : undefined}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      {total > 0 ? (
+        <div
+          data-scrollable
+          className="max-h-[28rem] space-y-3 overflow-auto px-3 py-2"
+        >
+          {questions.map((q, i) => {
+            const ans = answers[i] ?? [];
+            const customAnswers = ans.filter(
+              (a) => !q.options.some((o) => o.label === a),
+            );
+            return (
+              <div key={i} className="space-y-1.5">
+                <div className="text-xs font-medium text-foreground/90 [&_code]:text-xs [&_p]:my-0 [&_p]:leading-relaxed">
+                  <UnifiedMarkdown
+                    content={q.question || q.header || `Question ${i + 1}`}
+                  />
+                </div>
+                {q.options.length > 0 ? (
+                  <div className="space-y-1">
+                    {q.options.map((opt, j) => {
+                      const picked = ans.includes(opt.label);
+                      return (
+                        <div
+                          key={j}
+                          className={cn(
+                            'flex items-start gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors',
+                            picked
+                              ? 'border-primary/30 bg-primary/5'
+                              : 'border-transparent opacity-50',
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'mt-px flex-shrink-0',
+                              picked
+                                ? STATUS_TEXT.success
+                                : 'text-muted-foreground/30',
+                            )}
+                          >
+                            {picked ? (
+                              <Check className="size-3.5" />
+                            ) : (
+                              <Circle className="size-3.5" />
+                            )}
+                          </span>
+                          <span className="min-w-0">
+                            <span
+                              className={cn(
+                                'font-medium',
+                                picked ? 'text-foreground' : 'text-foreground/70',
+                              )}
+                            >
+                              {opt.label}
+                            </span>
+                            {opt.description && (
+                              <span className="ml-1 text-muted-foreground">
+                                {opt.description}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {customAnswers.map((a, k) => (
+                      <div
+                        key={`custom-${k}`}
+                        className="flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/5 px-2 py-1.5 text-xs"
+                      >
+                        <span className={cn('mt-px flex-shrink-0', STATUS_TEXT.success)}>
+                          <Check className="size-3.5" />
+                        </span>
+                        <span className="min-w-0 font-medium text-foreground">
+                          {a}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 px-2 py-1.5 text-sm font-medium text-foreground">
+                    {ans.length > 0 ? ans.join(', ') : '—'}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <ToolEmptyState message="No questions" />
+      )}
+    </BasicTool>
+  );
+}
+ToolRegistry.register('question', QuestionTool);
+ToolRegistry.register('ask', QuestionTool);
 
 // ============================================================================
 // ToolError
@@ -7399,6 +8315,7 @@ export function ToolError({
   error: string;
   toolName?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [showTrace, setShowTrace] = useState(false);
 
   // Normalize and try structured rendering
@@ -7436,7 +8353,7 @@ export function ToolError({
             {displayType}
           </span>
           {toolName && (
-            <span className="text-muted-foreground/50 font-mono text-[10px] ml-auto">
+            <span className="text-muted-foreground/50 font-mono text-xs ml-auto">
               {toolName}
             </span>
           )}
@@ -7451,11 +8368,11 @@ export function ToolError({
                 <CircleAlert className="size-3 flex-shrink-0 text-muted-foreground/60 mt-0.5" />
                 <div className="min-w-0 flex-1">
                   {issue.path.length > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground/70 font-mono mr-1.5">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground/70 font-mono mr-1.5">
                       {issue.path.join('.')}
                     </span>
                   )}
-                  <span className="text-foreground/80 text-[11px]">
+                  <span className="text-foreground/80 text-xs">
                     {issue.message}
                   </span>
                 </div>
@@ -7464,14 +8381,13 @@ export function ToolError({
               {/* Valid values */}
               {issue.values && issue.values.length > 0 && (
                 <div className="ml-5">
-                  <div className="text-[10px] text-muted-foreground/50 mb-1">
-                    Expected one of:
-                  </div>
+                  <div className="text-xs text-muted-foreground/50 mb-1">
+                    {tHardcodedUi.raw('componentsSessionToolRenderers.line7845JsxTextExpectedOneOf')}</div>
                   <div className="flex flex-wrap gap-1">
                     {issue.values.map((val, vi) => (
                       <span
                         key={vi}
-                        className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted/40 text-muted-foreground/70 font-mono"
+                        className="text-xs px-1.5 py-0.5 rounded-md bg-muted/40 text-muted-foreground/70 font-mono"
                       >
                         {val}
                       </span>
@@ -7488,7 +8404,7 @@ export function ToolError({
 
   return (
     <div className="text-xs overflow-hidden">
-      <p className="text-muted-foreground/80 leading-relaxed break-words whitespace-pre-wrap font-mono text-[11px] px-2 py-1.5">
+      <p className="text-muted-foreground/80 leading-relaxed break-words whitespace-pre-wrap font-mono text-xs px-2 py-1.5">
         {summary}
       </p>
       {traceback && (
@@ -7503,11 +8419,11 @@ export function ToolError({
                 showTrace && 'rotate-90',
               )}
             />
-            <span className="text-[10px] font-medium">Stack trace</span>
+            <span className="text-xs font-medium">{tHardcodedUi.raw('componentsSessionToolRenderers.line7883JsxTextStackTrace')}</span>
           </button>
           {showTrace && (
             <div className="px-2 pb-2 max-h-48 overflow-auto">
-              <pre className="font-mono text-[10px] leading-relaxed text-muted-foreground/50 whitespace-pre-wrap break-all">
+              <pre className="font-mono text-xs leading-relaxed text-muted-foreground/50 whitespace-pre-wrap break-all">
                 {traceback}
               </pre>
             </div>
@@ -7603,6 +8519,7 @@ function PermissionPromptInline({
   permission,
   onReply,
 }: PermissionPromptInlineProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [visible, setVisible] = useState(false);
   const [replying, setReplying] = useState(false);
 
@@ -7626,7 +8543,7 @@ function PermissionPromptInline({
   if (!visible) return null;
 
   return (
-    <div className="flex items-center gap-2 px-2.5 py-2 text-amber-600 dark:text-amber-400">
+    <div className={cn('flex items-center gap-2 px-2.5 py-2', STATUS_TEXT.warning)}>
       <span className="text-xs text-foreground flex-1">
         Permission: <span className="font-medium">{label}</span>
       </span>
@@ -7646,16 +8563,14 @@ function PermissionPromptInline({
           variant="outline"
           size="xs"
         >
-          Allow always
-        </Button>
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line8026JsxTextAllowAlways')}</Button>
         <Button
           disabled={replying}
           onClick={() => handleReply('once')}
           variant="default"
           size="xs"
         >
-          Allow once
-        </Button>
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line8034JsxTextAllowOnce')}</Button>
       </div>
     </div>
   );
@@ -7697,6 +8612,14 @@ export function ToolPartRenderer({
     return undefined;
   }, [part.state]);
 
+  // Bind the chat's activate handler to this part's callID so a row click can
+  // open the side panel focused on this exact tool.
+  const onActivate = useContext(ToolActivateContext);
+  const boundActivate = useMemo(
+    () => (onActivate ? () => onActivate(part.callID) : null),
+    [onActivate, part.callID],
+  );
+
   // Skip todoread
   if (part.tool === 'todoread') return null;
 
@@ -7714,19 +8637,23 @@ export function ToolPartRenderer({
     })();
 
     return (
-      <BasicTool
-        icon={<CircleAlert />}
-        trigger={{
-          title: display,
-          subtitle: 'failed',
-          args: server ? [server] : undefined,
-        }}
-        badge="error"
-      >
-        <div className="p-0">
-          <ToolError error={errorStr} toolName={part.tool} />
-        </div>
-      </BasicTool>
+      <BoundActivateContext.Provider value={boundActivate}>
+        <ToolDurationContext.Provider value={toolDurationMs}>
+          <BasicTool
+            icon={<CircleAlert />}
+            trigger={{
+              title: display,
+              subtitle: 'failed',
+              args: server ? [server] : undefined,
+            }}
+            badge="error"
+          >
+            <div className="p-0">
+              <ToolError error={errorStr} toolName={part.tool} />
+            </div>
+          </BasicTool>
+        </ToolDurationContext.Provider>
+      </BoundActivateContext.Provider>
     );
   }
 
@@ -7766,6 +8693,7 @@ export function ToolPartRenderer({
       <ToolRunningContext.Provider value={isRunning}>
         <ToolDurationContext.Provider value={toolDurationMs}>
         <StalePendingContext.Provider value={isStalePending}>
+        <BoundActivateContext.Provider value={boundActivate}>
           <div className="relative">
             {toolElement}
 
@@ -7790,6 +8718,7 @@ export function ToolPartRenderer({
               </div>
             )}
           </div>
+        </BoundActivateContext.Provider>
         </StalePendingContext.Provider>
         </ToolDurationContext.Provider>
       </ToolRunningContext.Provider>

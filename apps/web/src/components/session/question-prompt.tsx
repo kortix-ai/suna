@@ -35,7 +35,7 @@ function QuestionMarkdown({ content, className }: { content: string; className?:
 				ol: ({ children }) => <ol className="my-0.5 pl-4 list-decimal">{children}</ol>,
 				li: ({ children }) => <li className="my-0">{children}</li>,
 				code: ({ children }) => (
-					<code className="text-[11px] px-1 py-0.5 rounded bg-muted font-mono">{children}</code>
+					<code className="text-xs px-1 py-0.5 rounded bg-muted font-mono">{children}</code>
 				),
 				a: ({ href, children }) => (
 					<a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/80">
@@ -281,7 +281,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 							reject();
 						}
 					}}
-					className="inline-flex items-center justify-center size-5 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
+					className="inline-flex items-center justify-center size-5 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
 				>
 					<X className="size-3" />
 				</span>

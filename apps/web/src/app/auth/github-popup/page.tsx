@@ -1,9 +1,12 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { Button } from '@/components/ui/button';
 
 interface AuthMessage {
   type: 'github-auth-success' | 'github-auth-error';
@@ -12,6 +15,7 @@ interface AuthMessage {
 }
 
 export default function GitHubOAuthPopup() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [status, setStatus] = useState<'loading' | 'processing' | 'error'>(
     'loading',
   );
@@ -174,9 +178,9 @@ export default function GitHubOAuthPopup() {
   const getStatusColor = () => {
     switch (status) {
       case 'error':
-        return 'text-red-500';
+        return 'text-destructive';
       case 'processing':
-        return 'text-emerald-500';
+        return 'text-emerald-600 dark:text-emerald-400';
       default:
         return 'text-muted-foreground';
     }
@@ -190,17 +194,14 @@ export default function GitHubOAuthPopup() {
         )}
 
         <div className="space-y-2">
-          <h1 className="text-lg font-medium">GitHub Sign-In</h1>
+          <h1 className="text-lg font-medium">{tHardcodedUi.raw('appAuthGithubPopupPage.line194JsxTextGithubSignIn')}</h1>
           <p className={cn('text-sm', getStatusColor())}>{getStatusMessage()}</p>
         </div>
 
         {status === 'error' && (
-          <button
-            onClick={() => window.close()}
-            className="mt-4 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-          >
+          <Button onClick={() => window.close()} className="mt-4">
             Close
-          </button>
+          </Button>
         )}
       </div>
     </main>

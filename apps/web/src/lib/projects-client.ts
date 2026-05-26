@@ -34,6 +34,10 @@ export interface AccountDetail {
   account_id: string;
   name: string;
   personal_account: boolean;
+  /** When true the account is on the simplified IAM V2 model (3 account
+   *  roles + 3 project roles, no DB-driven policies). Drives whether the
+   *  frontend shows the V1 Policies/Roles tabs or the V2 simple UI. */
+  iam_v2_enabled?: boolean;
   member_count: number;
   project_count: number;
   role: AccountRole;
@@ -53,7 +57,19 @@ export interface AccountMember {
   is_super_admin?: boolean;
   explicit_project_count?: number;
   groups?: AccountMemberGroup[];
+  /** Number of active CLI Personal Access Tokens this user owns in
+   *  this account. Lets the UI flag members with API automation. */
+  active_pat_count?: number;
+  /** True when the user has at least one verified MFA factor in
+   *  Supabase Auth. */
+  has_verified_mfa?: boolean;
   joined_at: string;
+}
+
+export interface ProjectGroupAccessSource {
+  group_id: string;
+  group_name: string;
+  role: ProjectRole;
 }
 
 export interface ProjectAccessMember {
@@ -63,10 +79,20 @@ export interface ProjectAccessMember {
   project_role: ProjectRole | null;
   effective_project_role: ProjectRole | null;
   has_implicit_access: boolean;
+  /** Which path produced effective_project_role. 'implicit' = account
+   *  owner/admin; 'direct' = explicit project_members row; 'group' =
+   *  inherited via a project_group_grants attachment. null = no access. */
+  effective_source?: 'implicit' | 'direct' | 'group' | null;
+  /** Every group attachment that includes this user, sorted by role
+   *  desc. Used to label "via X group" on the row. */
+  group_sources?: ProjectGroupAccessSource[];
   joined_at: string;
   granted_by: string | null;
   granted_at: string | null;
   updated_at: string | null;
+  /** Auto-revoke timestamp for the DIRECT grant (ISO). null = permanent
+   *  or no direct grant. */
+  expires_at?: string | null;
 }
 
 export interface ProjectAccessResponse {
@@ -157,7 +183,12 @@ export interface ProjectConfigSummary {
   manifest_raw: string | null;
   open_code_raw: string | null;
   open_code_default_agent: string | null;
-  agents: Array<{ name: string; path: string; description: string | null; mode: string | null }>;
+  agents: Array<{
+    name: string;
+    path: string;
+    description: string | null;
+    mode: string | null;
+  }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
   env: { required: string[]; optional: string[] };
@@ -165,6 +196,7 @@ export interface ProjectConfigSummary {
 
 export interface ProjectDetail {
   project: KortixProject;
+  git_connection?: ProjectGitConnection | null;
   config: ProjectConfigSummary;
   file_count: number;
   files: ProjectFileEntry[];
@@ -181,8 +213,10 @@ export interface ProjectInput {
 export interface CreateProjectRepoInput {
   account_id?: string;
   name: string;
+  installation_id?: string;
   private?: boolean;
   description?: string;
+  starter_template?: 'general-knowledge-worker' | 'minimal';
 }
 
 export interface ProvisionProjectInput {
@@ -190,13 +224,72 @@ export interface ProvisionProjectInput {
   name: string;
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
+  starter_template?: 'general-knowledge-worker' | 'minimal';
+}
+
+export interface ProjectGitConnection {
+  connection_id: string;
+  account_id: string;
+  project_id: string;
+  provider: string;
+  repo_url: string;
+  repo_owner: string | null;
+  repo_name: string | null;
+  external_repo_id: string | null;
+  default_branch: string;
+  auth_method: string;
+  installation_id: string | null;
+  visibility: string | null;
+  status: string;
+  last_validated_at: string | null;
+  last_error_code: string | null;
+  last_error_message: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GitHubRepository {
+  id: string;
+  name: string;
+  full_name: string;
+  private: boolean;
+  html_url: string;
+  clone_url: string;
+  ssh_url: string;
+  default_branch: string;
+  description: string | null;
+}
+
+export interface GitHubRepositoriesResponse {
+  account_id: string;
+  installation_id: string;
+  owner_login: string;
+  repositories: GitHubRepository[];
+}
+
+export interface LinkRepositoryInput {
+  account_id?: string;
+  repo_url?: string;
+  repo_full_name?: string;
+  installation_id?: string;
+  name?: string;
+  default_branch?: string;
+  manifest_path?: string;
+}
+
+export interface LinkRepositoryResponse {
+  project: KortixProject;
+  git_connection: ProjectGitConnection | null;
 }
 
 export interface GitHubInstallationStatus {
   account_id: string;
+  installation_row_id: string | null;
   installed: boolean;
   configured: boolean;
   requires_installation: boolean;
+  kortix_default_available: boolean;
   pat_fallback_available: boolean;
   install_url: string | null;
   installation_id: string | null;
@@ -204,25 +297,45 @@ export interface GitHubInstallationStatus {
   owner_type: string | null;
   repository_selection: string | null;
   permissions: Record<string, unknown>;
+  installation_url: string | null;
   updated_at: string | null;
 }
 
-/** Who can use a project secret.
- *  - 'everyone' → anyone with access to the project
- *  - 'private'  → only the owner (creator)
- *  - 'select'   → specific project members (grant_user_ids) */
-export type ProjectSecretVisibility = 'everyone' | 'private' | 'select';
+export interface GitHubInstallationsResponse extends GitHubInstallationStatus {
+  installations: GitHubInstallationStatus[];
+}
 
+/**
+ * The per-user view of one secret KEY: the shared/project row merged with the
+ * requesting member's own override, plus which one wins for them at runtime.
+ */
 export interface ProjectSecret {
-  secret_id: string;
-  project_id: string;
   name: string;
-  visibility: ProjectSecretVisibility;
-  owner_user_id: string | null;
-  grant_user_ids: string[];
+  project_id: string;
+  /** Shared row id; null when only a personal override (or nothing) exists. */
+  secret_id: string | null;
   created_by: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
+  system?: boolean;
+  readonly?: boolean;
+  purpose?: string | null;
+  can_rotate?: boolean;
+  managed_by?: string | null;
+  /** A shared/project value is set. */
+  configured: boolean;
+  /** Persisted share scope — 'project' (everyone) or 'restricted' (allow-list). */
+  share_scope?: 'project' | 'restricted';
+  /** Who can use the shared value. Same shape as connector sharing. */
+  sharing?: ConnectorSharing | null;
+  /** The shared value reaches me (project-wide, or I'm in the allow-list). */
+  usable_by_me: boolean;
+  /** My own per-key override (value never returned), and whether it's active. */
+  mine: { active: boolean; updated_at: string } | null;
+  /** What actually runs in my sessions for this key. */
+  effective_source: 'mine' | 'shared' | 'none';
+  /** I'm allowed to edit the shared row (project manager). */
+  can_manage_shared: boolean;
 }
 
 function unwrap<T>(response: { data?: T; success: boolean; error?: Error }) {
@@ -254,11 +367,15 @@ export async function getAccount(accountId: string) {
 }
 
 export async function updateAccountName(accountId: string, name: string) {
-  return unwrap(await backendApi.patch<AccountDetail>(`/accounts/${accountId}`, { name }));
+  return unwrap(
+    await backendApi.patch<AccountDetail>(`/accounts/${accountId}`, { name }),
+  );
 }
 
 export async function listAccountMembers(accountId: string) {
-  return unwrap(await backendApi.get<AccountMember[]>(`/accounts/${accountId}/members`));
+  return unwrap(
+    await backendApi.get<AccountMember[]>(`/accounts/${accountId}/members`),
+  );
 }
 
 export async function inviteAccountMember(
@@ -266,10 +383,14 @@ export async function inviteAccountMember(
   input: { email: string; role?: AccountRole },
 ) {
   return unwrap(
-    await backendApi.post<InviteMemberResult>(`/accounts/${accountId}/members`, input, {
-      // 409 (already member) is an expected business error; page surfaces it inline.
-      showErrors: false,
-    }),
+    await backendApi.post<InviteMemberResult>(
+      `/accounts/${accountId}/members`,
+      input,
+      {
+        // 409 (already member) is an expected business error; page surfaces it inline.
+        showErrors: false,
+      },
+    ),
   );
 }
 
@@ -298,10 +419,13 @@ export async function resendAccountInvite(accountId: string, inviteId: string) {
 
 export async function describeAccountInvite(inviteId: string) {
   return unwrap(
-    await backendApi.get<AccountInviteDescribe>(`/account-invites/${inviteId}`, {
-      // The redirect/landing page handles "not for you" / expired states inline.
-      showErrors: false,
-    }),
+    await backendApi.get<AccountInviteDescribe>(
+      `/account-invites/${inviteId}`,
+      {
+        // The redirect/landing page handles "not for you" / expired states inline.
+        showErrors: false,
+      },
+    ),
   );
 }
 
@@ -325,7 +449,9 @@ export async function declineAccountInvite(inviteId: string) {
 
 export async function removeAccountMember(accountId: string, userId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/accounts/${accountId}/members/${userId}`),
+    await backendApi.delete<{ ok: boolean }>(
+      `/accounts/${accountId}/members/${userId}`,
+    ),
   );
 }
 
@@ -335,12 +461,17 @@ export async function updateAccountMemberRole(
   role: AccountRole,
 ) {
   return unwrap(
-    await backendApi.patch<AccountMember>(`/accounts/${accountId}/members/${userId}`, { role }),
+    await backendApi.patch<AccountMember>(
+      `/accounts/${accountId}/members/${userId}`,
+      { role },
+    ),
   );
 }
 
 export async function leaveAccount(accountId: string) {
-  return unwrap(await backendApi.post<{ ok: boolean }>(`/accounts/${accountId}/leave`, {}));
+  return unwrap(
+    await backendApi.post<{ ok: boolean }>(`/accounts/${accountId}/leave`, {}),
+  );
 }
 
 export async function getProject(projectId: string) {
@@ -348,11 +479,17 @@ export async function getProject(projectId: string) {
 }
 
 export async function getProjectDetail(projectId: string) {
-  return unwrap(await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`));
+  return unwrap(
+    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`),
+  );
 }
 
 export async function listProjectAccess(projectId: string) {
-  return unwrap(await backendApi.get<ProjectAccessResponse>(`/projects/${projectId}/access`));
+  return unwrap(
+    await backendApi.get<ProjectAccessResponse>(
+      `/projects/${projectId}/access`,
+    ),
+  );
 }
 
 export async function updateProjectAccess(
@@ -370,8 +507,32 @@ export async function updateProjectAccess(
 
 export async function revokeProjectAccess(projectId: string, userId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/access/${userId}`),
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/access/${userId}`,
+    ),
   );
+}
+
+/** Two-shape response:
+ *  - User had a Kortix account already → ProjectAccessMember row was
+ *    inserted/updated; UI refreshes the access list and shows them.
+ *  - User had no Kortix account → an account invitation was created
+ *    with a bootstrap_grant. UI shows "invitation sent" and skips the
+ *    access-list refresh (the user won't appear until they accept). */
+export type InviteProjectMemberResult =
+  | ProjectAccessMember
+  | {
+      status: 'invited';
+      email: string;
+      invite_id: string;
+      project_role: ProjectRole;
+      message: string;
+    };
+
+export function isInviteSent(
+  r: InviteProjectMemberResult,
+): r is Extract<InviteProjectMemberResult, { status: 'invited' }> {
+  return 'status' in r && r.status === 'invited';
 }
 
 export async function inviteProjectMember(
@@ -380,15 +541,116 @@ export async function inviteProjectMember(
   role: ProjectRole,
 ) {
   return unwrap(
-    await backendApi.post<ProjectAccessMember>(
+    await backendApi.post<InviteProjectMemberResult>(
       `/projects/${projectId}/access/invite`,
       { email, role },
     ),
   );
 }
 
+// ── Pending project invites (non-Kortix users who haven't signed up yet) ──
+
+/** Pending account-invitation that bootstraps into THIS project on accept.
+ *  Shape mirrors the backend GET /access/pending-invites response.
+ *
+ *  `expires_at` here is the *grant's* time-bounded clock (auto-revoke once
+ *  they're in). `invite_expires_at` is the *invitation* clock — after that
+ *  the user can't redeem the link and needs a resend. */
+export interface PendingProjectInvite {
+  invite_id: string;
+  email: string;
+  project_role: ProjectRole;
+  expires_at: string | null;
+  invited_by_email: string | null;
+  created_at: string;
+  invite_expires_at: string;
+  invite_expired: boolean;
+}
+
+export async function listPendingProjectInvites(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ pending: PendingProjectInvite[] }>(
+      `/projects/${projectId}/access/pending-invites`,
+    ),
+  );
+}
+
+export async function revokePendingProjectInvite(projectId: string, inviteId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean; invitation_cancelled: boolean }>(
+      `/projects/${projectId}/access/pending-invites/${inviteId}`,
+    ),
+  );
+}
+
+// ── IAM V2: project ⇄ group attachments ────────────────────────────────────
+
+export interface ProjectGroupGrant {
+  group_id: string;
+  group_name: string;
+  role: ProjectRole;
+  granted_by: string | null;
+  created_at: string;
+  /** Auto-revoke timestamp (ISO). null = permanent. */
+  expires_at?: string | null;
+  /** Total members in this group. */
+  member_count?: number;
+  /** Members who are account owners/admins — they get implicit Manager
+   *  on every project, so this grant's role doesn't apply to them. */
+  override_count?: number;
+}
+
+export async function listProjectGroupGrants(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ grants: ProjectGroupGrant[] }>(
+      `/projects/${projectId}/group-grants`,
+    ),
+  );
+}
+
+export async function attachGroupToProject(
+  projectId: string,
+  groupId: string,
+  role: ProjectRole,
+  expiresAt?: string | null,
+) {
+  return unwrap(
+    await backendApi.post<{ project_id: string; group_id: string; role: ProjectRole }>(
+      `/projects/${projectId}/group-grants`,
+      // undefined = field omitted (don't touch); null = clear expiry.
+      expiresAt === undefined
+        ? { group_id: groupId, role }
+        : { group_id: groupId, role, expires_at: expiresAt },
+    ),
+  );
+}
+
+export async function updateProjectGroupGrant(
+  projectId: string,
+  groupId: string,
+  role: ProjectRole,
+  expiresAt?: string | null,
+) {
+  return unwrap(
+    await backendApi.patch<{ project_id: string; group_id: string; role: ProjectRole }>(
+      `/projects/${projectId}/group-grants/${groupId}`,
+      expiresAt === undefined ? { role } : { role, expires_at: expiresAt },
+    ),
+  );
+}
+
+export async function detachGroupFromProject(projectId: string, groupId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/group-grants/${groupId}`,
+    ),
+  );
+}
+
 export interface ProjectSecretsResponse {
   items: ProjectSecret[];
+  /** Whether the requesting member can edit shared rows (vs only their own overrides). */
+  can_manage?: boolean;
   /** Env keys declared as required in the project's kortix.toml manifest. */
   required: string[];
   /** Env keys declared as optional in the project's kortix.toml manifest. */
@@ -407,7 +669,9 @@ export interface ProjectSecretsResponse {
 
 export async function listProjectSecrets(projectId: string) {
   return unwrap(
-    await backendApi.get<ProjectSecretsResponse>(`/projects/${projectId}/secrets`),
+    await backendApi.get<ProjectSecretsResponse>(
+      `/projects/${projectId}/secrets`,
+    ),
   );
 }
 
@@ -415,13 +679,55 @@ export async function upsertProjectSecret(
   projectId: string,
   input: {
     name: string;
-    value: string;
-    visibility?: ProjectSecretVisibility;
-    grant_user_ids?: string[];
+    /** Omit to change sharing only on an existing secret (value left untouched). */
+    value?: string;
+    sharing?: ConnectorSharing;
   },
 ) {
   return unwrap(
-    await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input),
+    await backendApi.post<ProjectSecret>(
+      `/projects/${projectId}/secrets`,
+      input,
+    ),
+  );
+}
+
+export async function startProjectChatGptHeadlessAuth(projectId: string) {
+  return unwrap(
+    await backendApi.post<{
+      authId: string;
+      url: string;
+      instructions: string;
+      code: string | null;
+    }>(
+      `/projects/${projectId}/providers/openai/chatgpt/headless/start`,
+      {},
+    ),
+  );
+}
+
+export async function completeProjectChatGptHeadlessAuth(
+  projectId: string,
+  input: { authId: string; sharing?: ConnectorSharing },
+) {
+  return unwrap(
+    await backendApi.post<ProjectSecret>(
+      `/projects/${projectId}/providers/openai/chatgpt/headless/complete`,
+      { auth_id: input.authId, sharing: input.sharing },
+    ),
+  );
+}
+
+export async function upsertProjectGitCredential(
+  projectId: string,
+  input: { token: string },
+) {
+  return unwrap(
+    await backendApi.put<{
+      configured: boolean;
+      provider: string;
+      git_connection: ProjectGitConnection;
+    }>(`/projects/${projectId}/git-credential`, input),
   );
 }
 
@@ -433,10 +739,196 @@ export async function deleteProjectSecret(projectId: string, name: string) {
   );
 }
 
+/**
+ * Set/update the caller's OWN per-key override ("use mine") and/or flip whether
+ * it's active. Any project member may call this; it never touches the shared
+ * value or anyone else's override.
+ */
+export async function setPersonalProjectSecret(
+  projectId: string,
+  name: string,
+  input: { value?: string; active?: boolean },
+) {
+  return unwrap(
+    await backendApi.put<ProjectSecret>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
+      input,
+    ),
+  );
+}
+
+/** Remove the caller's own override for a key (falls back to the shared value). */
+export async function deletePersonalProjectSecret(projectId: string, name: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
+    ),
+  );
+}
+
+// ─── Executor connectors ──────────────────────────────────────────────────
+
+export interface ConnectorAction {
+  path: string;
+  name: string;
+  description: string;
+  risk: 'read' | 'write' | 'destructive';
+  inputSchema: Record<string, unknown> | null;
+}
+
+export type ConnectorSharing =
+  | { mode: 'project' }
+  | { mode: 'private'; ownerId: string }
+  | { mode: 'members'; memberIds?: string[]; groupIds?: string[] };
+
+export interface AdminConnector {
+  slug: string;
+  name: string;
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+  status: 'active' | 'disabled' | 'needs_auth' | 'error';
+  /** Credential storage model — one shared project credential vs each member's own. */
+  credentialMode: 'shared' | 'per_user';
+  actions: ConnectorAction[];
+  authSecret: string | null;
+  sharing: ConnectorSharing | null;
+  secretSet: boolean;
+}
+
+export interface ConnectorsResponse {
+  connectors: AdminConnector[];
+}
+
+export interface ConnectorSyncResult {
+  synced: number;
+  errors: Array<{ slug: string; error: string }>;
+}
+
+export async function listConnectors(projectId: string) {
+  return unwrap(
+    await backendApi.get<ConnectorsResponse>(`/executor/projects/${projectId}/connectors`),
+  );
+}
+
+export async function syncConnectors(projectId: string) {
+  return unwrap(
+    await backendApi.post<ConnectorSyncResult>(`/executor/projects/${projectId}/connectors/sync`, {}),
+  );
+}
+
+export async function setConnectorSharing(
+  projectId: string,
+  slug: string,
+  intent: ConnectorSharing,
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sharing`,
+      intent,
+    ),
+  );
+}
+
+export async function pipedreamConnect(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.post<{ token?: string; app?: string; connectUrl?: string }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
+      {},
+    ),
+  );
+}
+
+export interface ConnectorDraftInput {
+  slug: string;
+  name?: string;
+  provider: AdminConnector['provider'];
+  app?: string;
+  account?: string;
+  url?: string;
+  transport?: 'http' | 'sse';
+  endpoint?: string;
+  baseUrl?: string;
+  spec?: string;
+  /** Credential storage mode. */
+  credential?: 'shared' | 'per_user';
+  /** Access — who can use it (applied after create). */
+  sharing?: ConnectorSharing;
+  auth?: {
+    type?: 'none' | 'bearer' | 'basic' | 'custom';
+    in?: 'header' | 'query';
+    name?: string;
+    prefix?: string;
+  };
+}
+
+export async function createConnector(projectId: string, draft: ConnectorDraftInput) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors`,
+      draft,
+    ),
+  );
+}
+
+export async function deleteConnector(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}`,
+    ),
+  );
+}
+
+export interface PipedreamApp {
+  slug: string;
+  name: string;
+  description: string | null;
+  imgSrc: string | null;
+  categories: string[];
+}
+
+export async function listPipedreamApps(projectId: string, q?: string, cursor?: string) {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (cursor) params.set('cursor', cursor);
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<{ apps: PipedreamApp[]; nextCursor?: string; hasMore: boolean }>(
+      `/executor/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+export async function setConnectorCredential(projectId: string, slug: string, value: string) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
+      { value },
+    ),
+  );
+}
+
+export async function pipedreamFinalize(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.post<{ connected: boolean; accountId?: string }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
+      {},
+    ),
+  );
+}
+
 // ─── Sandbox snapshots ────────────────────────────────────────────────────
 
 /** Build status of a project's Daytona snapshot row. */
 export type ProjectSnapshotStatus = 'queued' | 'building' | 'ready' | 'failed';
+
+/** Classified reason a snapshot build failed (see apps/api/.../error-classify.ts). */
+export type SnapshotErrorCategory =
+  | 'dockerfile'
+  | 'tunnel'
+  | 'provider'
+  | 'timeout'
+  | 'runtime'
+  | 'git'
+  | 'unknown';
 
 export interface ProjectSnapshot {
   snapshot_row_id: string;
@@ -447,9 +939,43 @@ export interface ProjectSnapshot {
   snapshot_id: string | null;
   status: ProjectSnapshotStatus;
   error: string | null;
+  /** Classified category when `error` is set; null otherwise. */
+  error_category: SnapshotErrorCategory | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+/** Project-level sandbox health summary for the sidebar alert + panel banner. */
+export interface ProjectSandboxHealth {
+  branch: string;
+  provider: string;
+  /** Retained ready snapshots (any runtime) — kept as fallbacks. */
+  ready_count: number;
+  /** Ready snapshots matching the current runtime — bootable for HEAD without a rebuild. */
+  bootable_count: number;
+  /** Total snapshot rows (any status); 0 means the project never built. */
+  total_count: number;
+  /** Configured retention target. */
+  retention: number;
+  /** ≥1 retained ready snapshot exists → a session can boot (possibly an older runtime). */
+  healthy: boolean;
+  /** A build is in flight, or a ready snapshot is rebuilding in place. */
+  building: boolean;
+  /** True only the very first time a project builds (no ready snapshot ever). */
+  first_build: boolean;
+  /** Retained ready snapshots exist but none match the current runtime — refresh pending. */
+  runtime_outdated: boolean;
+  latest_ready_commit_sha: string | null;
+  latest_status: ProjectSnapshotStatus | null;
+  /** Present when the most recent build for the branch failed. */
+  failure: {
+    commit_sha: string;
+    error: string;
+    category: SnapshotErrorCategory;
+    fixable_by_agent: boolean;
+    failed_at: string;
+  } | null;
 }
 
 export interface ProjectSnapshotsResponse {
@@ -459,6 +985,8 @@ export interface ProjectSnapshotsResponse {
   head_commit_sha: string | null;
   /** Error string when head_commit_sha is null (e.g. GitHub App not installed). */
   head_resolve_error: string | null;
+  /** Project-level health summary (null only if the API couldn't compute it). */
+  health: ProjectSandboxHealth | null;
 }
 
 export interface RebuildSnapshotResponse {
@@ -469,7 +997,18 @@ export interface RebuildSnapshotResponse {
 
 export async function listProjectSnapshots(projectId: string) {
   return unwrap(
-    await backendApi.get<ProjectSnapshotsResponse>(`/projects/${projectId}/snapshots`),
+    await backendApi.get<ProjectSnapshotsResponse>(
+      `/projects/${projectId}/snapshots`,
+    ),
+  );
+}
+
+/** Lightweight, DB-only sandbox health — cheap enough to poll from the sidebar. */
+export async function getProjectSandboxHealth(projectId: string) {
+  return unwrap(
+    await backendApi.get<ProjectSandboxHealth>(
+      `/projects/${projectId}/sandbox-health`,
+    ),
   );
 }
 
@@ -477,6 +1016,21 @@ export async function rebuildProjectSnapshot(projectId: string) {
   return unwrap(
     await backendApi.post<RebuildSnapshotResponse>(
       `/projects/${projectId}/snapshots/rebuild`,
+      {},
+    ),
+  );
+}
+
+/**
+ * Spin up a session pre-seeded with the latest snapshot build failure so an
+ * agent can diagnose + fix it and open a change request. Returns the new
+ * session id (navigate to it). Throws if there's no failed build, or no ready
+ * snapshot to run the fix in (cold first-build failure).
+ */
+export async function fixSandboxWithAgent(projectId: string) {
+  return unwrap(
+    await backendApi.post<{ session_id: string }>(
+      `/projects/${projectId}/snapshots/fix-with-agent`,
       {},
     ),
   );
@@ -490,7 +1044,11 @@ export async function listProjectFiles(
   if (options?.ref) params.set('ref', options.ref);
   if (options?.path) params.set('path', options.path);
   const query = params.toString() ? `?${params.toString()}` : '';
-  return unwrap(await backendApi.get<ProjectFileEntry[]>(`/projects/${projectId}/files${query}`));
+  return unwrap(
+    await backendApi.get<ProjectFileEntry[]>(
+      `/projects/${projectId}/files${query}`,
+    ),
+  );
 }
 
 export interface ProjectFileSearchMatch {
@@ -532,9 +1090,11 @@ export async function readProjectFile(
 ) {
   const params = new URLSearchParams({ path });
   if (ref) params.set('ref', ref);
-  return unwrap(await backendApi.get<{ path: string; ref: string; content: string }>(
-    `/projects/${projectId}/files/content?${params.toString()}`,
-  ));
+  return unwrap(
+    await backendApi.get<{ path: string; ref: string; content: string }>(
+      `/projects/${projectId}/files/content?${params.toString()}`,
+    ),
+  );
 }
 
 /**
@@ -612,7 +1172,13 @@ export interface ProjectCommitsResponse {
 export interface ProjectCommitFile {
   path: string;
   old_path: string | null;
-  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange';
+  status:
+    | 'added'
+    | 'modified'
+    | 'deleted'
+    | 'renamed'
+    | 'copied'
+    | 'typechange';
   additions: number;
   deletions: number;
 }
@@ -636,9 +1202,11 @@ export interface ProjectFileHistoryResponse {
 }
 
 export async function listProjectBranches(projectId: string) {
-  return unwrap(await backendApi.get<ProjectBranchesResponse>(
-    `/projects/${projectId}/branches`,
-  ));
+  return unwrap(
+    await backendApi.get<ProjectBranchesResponse>(
+      `/projects/${projectId}/branches`,
+    ),
+  );
 }
 
 export async function listProjectCommits(
@@ -651,15 +1219,19 @@ export async function listProjectCommits(
   if (options?.limit != null) params.set('limit', String(options.limit));
   if (options?.skip != null) params.set('skip', String(options.skip));
   const query = params.toString() ? `?${params.toString()}` : '';
-  return unwrap(await backendApi.get<ProjectCommitsResponse>(
-    `/projects/${projectId}/commits${query}`,
-  ));
+  return unwrap(
+    await backendApi.get<ProjectCommitsResponse>(
+      `/projects/${projectId}/commits${query}`,
+    ),
+  );
 }
 
 export async function getProjectCommit(projectId: string, sha: string) {
-  return unwrap(await backendApi.get<ProjectCommitDetail>(
-    `/projects/${projectId}/commits/${encodeURIComponent(sha)}`,
-  ));
+  return unwrap(
+    await backendApi.get<ProjectCommitDetail>(
+      `/projects/${projectId}/commits/${encodeURIComponent(sha)}`,
+    ),
+  );
 }
 
 export async function getProjectCommitDiff(
@@ -670,9 +1242,11 @@ export async function getProjectCommitDiff(
   const params = new URLSearchParams();
   if (options?.path) params.set('path', options.path);
   const query = params.toString() ? `?${params.toString()}` : '';
-  return unwrap(await backendApi.get<ProjectCommitDiffResponse>(
-    `/projects/${projectId}/commits/${encodeURIComponent(sha)}/diff${query}`,
-  ));
+  return unwrap(
+    await backendApi.get<ProjectCommitDiffResponse>(
+      `/projects/${projectId}/commits/${encodeURIComponent(sha)}/diff${query}`,
+    ),
+  );
 }
 
 export async function getProjectFileHistory(
@@ -684,9 +1258,11 @@ export async function getProjectFileHistory(
   if (options?.ref) params.set('ref', options.ref);
   if (options?.limit != null) params.set('limit', String(options.limit));
   if (options?.skip != null) params.set('skip', String(options.skip));
-  return unwrap(await backendApi.get<ProjectFileHistoryResponse>(
-    `/projects/${projectId}/files/history?${params.toString()}`,
-  ));
+  return unwrap(
+    await backendApi.get<ProjectFileHistoryResponse>(
+      `/projects/${projectId}/files/history?${params.toString()}`,
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -770,9 +1346,11 @@ export async function getVersionDiff(
   input: { from: string; into: string },
 ) {
   const params = new URLSearchParams({ from: input.from, into: input.into });
-  return unwrap(await backendApi.get<VersionDiffPreview>(
-    `/projects/${projectId}/version-diff?${params.toString()}`,
-  ));
+  return unwrap(
+    await backendApi.get<VersionDiffPreview>(
+      `/projects/${projectId}/version-diff?${params.toString()}`,
+    ),
+  );
 }
 
 export interface ChangeRequestMergeResponse {
@@ -790,27 +1368,38 @@ export async function listChangeRequests(
   status?: ChangeRequestStatus | 'all',
 ) {
   const query = status ? `?status=${status}` : '';
-  return unwrap(await backendApi.get<{ change_requests: ChangeRequest[] }>(
-    `/projects/${projectId}/change-requests${query}`,
-  ));
+  return unwrap(
+    await backendApi.get<{ change_requests: ChangeRequest[] }>(
+      `/projects/${projectId}/change-requests${query}`,
+    ),
+  );
 }
 
 export async function getChangeRequest(projectId: string, crId: string) {
-  return unwrap(await backendApi.get<ChangeRequestDetailResponse>(
-    `/projects/${projectId}/change-requests/${crId}`,
-  ));
+  return unwrap(
+    await backendApi.get<ChangeRequestDetailResponse>(
+      `/projects/${projectId}/change-requests/${crId}`,
+    ),
+  );
 }
 
 export async function getChangeRequestDiff(projectId: string, crId: string) {
-  return unwrap(await backendApi.get<ChangeRequestDiffResponse>(
-    `/projects/${projectId}/change-requests/${crId}/diff`,
-  ));
+  return unwrap(
+    await backendApi.get<ChangeRequestDiffResponse>(
+      `/projects/${projectId}/change-requests/${crId}/diff`,
+    ),
+  );
 }
 
-export async function getChangeRequestMergePreview(projectId: string, crId: string) {
-  return unwrap(await backendApi.get<ChangeRequestMergePreview>(
-    `/projects/${projectId}/change-requests/${crId}/merge-preview`,
-  ));
+export async function getChangeRequestMergePreview(
+  projectId: string,
+  crId: string,
+) {
+  return unwrap(
+    await backendApi.get<ChangeRequestMergePreview>(
+      `/projects/${projectId}/change-requests/${crId}/merge-preview`,
+    ),
+  );
 }
 
 export async function openChangeRequest(
@@ -823,10 +1412,12 @@ export async function openChangeRequest(
     session_id?: string;
   },
 ) {
-  return unwrap(await backendApi.post<ChangeRequest>(
-    `/projects/${projectId}/change-requests`,
-    input,
-  ));
+  return unwrap(
+    await backendApi.post<ChangeRequest>(
+      `/projects/${projectId}/change-requests`,
+      input,
+    ),
+  );
 }
 
 export async function mergeChangeRequest(
@@ -834,24 +1425,30 @@ export async function mergeChangeRequest(
   crId: string,
   input?: { message?: string },
 ) {
-  return unwrap(await backendApi.post<ChangeRequestMergeResponse>(
-    `/projects/${projectId}/change-requests/${crId}/merge`,
-    input ?? {},
-  ));
+  return unwrap(
+    await backendApi.post<ChangeRequestMergeResponse>(
+      `/projects/${projectId}/change-requests/${crId}/merge`,
+      input ?? {},
+    ),
+  );
 }
 
 export async function closeChangeRequest(projectId: string, crId: string) {
-  return unwrap(await backendApi.post<ChangeRequest>(
-    `/projects/${projectId}/change-requests/${crId}/close`,
-    {},
-  ));
+  return unwrap(
+    await backendApi.post<ChangeRequest>(
+      `/projects/${projectId}/change-requests/${crId}/close`,
+      {},
+    ),
+  );
 }
 
 export async function reopenChangeRequest(projectId: string, crId: string) {
-  return unwrap(await backendApi.post<ChangeRequest>(
-    `/projects/${projectId}/change-requests/${crId}/reopen`,
-    {},
-  ));
+  return unwrap(
+    await backendApi.post<ChangeRequest>(
+      `/projects/${projectId}/change-requests/${crId}/reopen`,
+      {},
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -881,19 +1478,56 @@ export interface ProjectSession {
   opencode_session_id: string | null;
   /**
    * Session title, mirrored from opencode's session.title via
-   * /v1/projects/sync-opencode-titles. Backed by metadata.name in the DB.
+   * /v1/projects/sync-opencode-sessions. Backed by metadata.name in the DB.
    */
   name: string | null;
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
   metadata: Record<string, unknown>;
+  opencode_sessions: ProjectOpenCodeSession[];
+  // Ownership + org-visibility (Phase 2 session sharing).
+  created_by?: string | null;
+  owner_email?: string | null;
+  visibility?: 'private' | 'project' | 'restricted';
+  sharing?: ConnectorSharing | null;
+  is_owner?: boolean;
+  can_manage_sharing?: boolean;
   created_at: string;
   updated_at: string;
 }
 
+export interface ProjectOpenCodeSession {
+  id: string;
+  title: string | null;
+  parent_id: string | null;
+  project_id: string | null;
+  created_at: number | null;
+  updated_at: number | null;
+  archived_at: number | null;
+}
+
 export async function listProjectSessions(projectId: string) {
-  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions`));
+  return unwrap(
+    await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions`),
+  );
+}
+
+/**
+ * Set who can see/open a session (private | project | members). Owner or
+ * project manager only. Reuses the connector/secret sharing intent shape.
+ */
+export async function setProjectSessionSharing(
+  projectId: string,
+  sessionId: string,
+  intent: ConnectorSharing,
+) {
+  return unwrap(
+    await backendApi.put<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}/sharing`,
+      intent,
+    ),
+  );
 }
 
 export async function createProjectSession(
@@ -901,17 +1535,57 @@ export async function createProjectSession(
   input?: { base_ref?: string; agent_name?: string },
 ) {
   return unwrap(
-    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions`, input ?? {}),
+    await backendApi.post<ProjectSession>(
+      `/projects/${projectId}/sessions`,
+      input ?? {},
+    ),
   );
 }
 
-export async function deleteProjectSession(projectId: string, sessionId: string) {
+export async function getProjectSession(
+  projectId: string,
+  sessionId: string,
+) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}`),
+    await backendApi.get<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+    ),
   );
 }
 
-export async function restartProjectSession(projectId: string, sessionId: string) {
+export async function updateProjectSession(
+  projectId: string,
+  sessionId: string,
+  input: {
+    name?: string;
+    opencode_session_id?: string;
+    opencodeSessionId?: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  return unwrap(
+    await backendApi.patch<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+      input,
+    ),
+  );
+}
+
+export async function deleteProjectSession(
+  projectId: string,
+  sessionId: string,
+) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+    ),
+  );
+}
+
+export async function restartProjectSession(
+  projectId: string,
+  sessionId: string,
+) {
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,
@@ -920,15 +1594,39 @@ export async function restartProjectSession(projectId: string, sessionId: string
   );
 }
 
-export interface SyncOpencodeTitleEntry {
-  opencode_session_id: string;
-  title: string | null;
+/**
+ * Wake a sandbox the provider auto-stopped while idle. Cheap status no-op when
+ * it's running; starts it in the background when stopped. Fire on session open
+ * so an idled sandbox warms immediately instead of spinning the health poll.
+ */
+export async function wakeProjectSession(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.post<{ status: 'running' | 'waking' | 'unknown' }>(
+      `/projects/${projectId}/sessions/${sessionId}/wake`,
+      {},
+    ),
+  );
 }
 
-export async function syncOpencodeSessionTitles(entries: SyncOpencodeTitleEntry[]) {
+export interface SyncOpencodeSessionEntry {
+  opencode_session_id: string;
+  title: string | null;
+  parent_id?: string | null;
+  project_id?: string | null;
+  created_at?: number | null;
+  updated_at?: number | null;
+  archived_at?: number | null;
+}
+
+export async function syncOpencodeSessionData(
+  entries: SyncOpencodeSessionEntry[],
+) {
   if (entries.length === 0) return { updated: 0 };
   return unwrap(
-    await backendApi.post<{ updated: number }>(`/projects/sync-opencode-titles`, { entries }),
+    await backendApi.post<{ updated: number }>(
+      `/projects/sync-opencode-sessions`,
+      { entries },
+    ),
   );
 }
 
@@ -1009,7 +1707,9 @@ export interface UpdateProjectTriggerInput {
 
 export async function listProjectTriggers(projectId: string) {
   return unwrap(
-    await backendApi.get<ProjectTriggerListing>(`/projects/${projectId}/triggers`),
+    await backendApi.get<ProjectTriggerListing>(
+      `/projects/${projectId}/triggers`,
+    ),
   );
 }
 
@@ -1109,7 +1809,9 @@ export async function createProject(input: ProjectInput) {
 }
 
 export async function createProjectRepo(input: CreateProjectRepoInput) {
-  return unwrap(await backendApi.post<KortixProject>('/projects/create-repo', input));
+  return unwrap(
+    await backendApi.post<KortixProject>('/projects/create-repo', input),
+  );
 }
 
 /**
@@ -1126,10 +1828,45 @@ export async function provisionProject(input: ProvisionProjectInput) {
   );
 }
 
+export async function linkRepository(input: LinkRepositoryInput) {
+  return unwrap(
+    await backendApi.post<LinkRepositoryResponse>(
+      '/projects/link-repository',
+      input,
+      {
+        showErrors: false,
+      },
+    ),
+  );
+}
+
 export async function getGitHubInstallation(accountId: string) {
   return unwrap(
-    await backendApi.get<GitHubInstallationStatus>(
+    await backendApi.get<GitHubInstallationsResponse>(
       `/projects/github/installation?account_id=${encodeURIComponent(accountId)}`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listGitHubInstallations(accountId: string) {
+  return unwrap(
+    await backendApi.get<GitHubInstallationsResponse>(
+      `/projects/github/installations?account_id=${encodeURIComponent(accountId)}`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listGitHubRepositories(
+  accountId: string,
+  installationId?: string | null,
+) {
+  const params = new URLSearchParams({ account_id: accountId });
+  if (installationId) params.set('installation_id', installationId);
+  return unwrap(
+    await backendApi.get<GitHubRepositoriesResponse>(
+      `/projects/github/repositories?${params.toString()}`,
       { showErrors: false },
     ),
   );
@@ -1148,18 +1885,30 @@ export async function saveGitHubInstallation(input: {
   );
 }
 
-export async function deleteGitHubInstallation(accountId: string) {
+export async function deleteGitHubInstallation(
+  accountId: string,
+  installationId?: string | null,
+) {
+  const params = new URLSearchParams({ account_id: accountId });
+  if (installationId) params.set('installation_id', installationId);
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/github/installation?account_id=${encodeURIComponent(accountId)}`,
+      `/projects/github/installation?${params.toString()}`,
     ),
   );
 }
 
-export async function updateProject(projectId: string, input: Partial<ProjectInput>) {
-  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));
+export async function updateProject(
+  projectId: string,
+  input: Partial<ProjectInput>,
+) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(`/projects/${projectId}`, input),
+  );
 }
 
 export async function archiveProject(projectId: string) {
-  return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`));
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`),
+  );
 }

@@ -88,7 +88,7 @@ export function WebSearchLoadingState({
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
-          className="text-[13px] font-medium text-foreground tracking-tight mb-5"
+          className="text-sm font-medium text-foreground tracking-tight mb-5"
         >
           {title}
         </motion.h3>
@@ -112,7 +112,7 @@ export function WebSearchLoadingState({
                   )}
                 >
                   <IconComponent className="w-3.5 h-3.5 text-muted-foreground/70 flex-shrink-0" />
-                  <span className="flex-1 text-[12.5px] text-foreground/85 truncate tracking-tight">
+                  <span className="flex-1 text-sm text-foreground/85 truncate tracking-tight">
                     {query}
                   </span>
                   <KortixLoader customSize={14} />

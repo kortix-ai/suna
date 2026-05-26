@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -77,6 +78,10 @@ function sign(rawBody: string, secret: string) {
   return `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
 }
 
+mockIamEngineAllowAll();
+
+mockIamMembershipSyncNoop();
+
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -87,6 +92,8 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;
   },
@@ -155,6 +162,18 @@ mock.module('../projects/github', () => ({
     repository_selection: 'all',
     permissions: {},
   }),
+  getRepo: async () => ({
+    id: 1,
+    name: 'contract-project',
+    full_name: 'kortix-org/contract-project',
+    private: true,
+    html_url: 'https://github.com/kortix-org/contract-project',
+    clone_url: 'https://github.com/kortix-org/contract-project.git',
+    ssh_url: 'git@github.com:kortix-org/contract-project.git',
+    default_branch: 'main',
+    description: null,
+  }),
+  listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
 }));
@@ -192,6 +211,7 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
   listProjectSecrets: async () => ({}),
+  listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
   getProjectSecretValue: async (_projectId: string, name: string) =>
     secretValues.get(name) ?? null,
 }));
@@ -249,6 +269,8 @@ mock.module('../shared/db', () => ({
               agentName: values.agentName ?? 'default',
               status: values.status ?? 'provisioning',
               error: null,
+              createdBy: values.createdBy ?? null,
+              visibility: values.visibility ?? 'private',
               metadata: values.metadata ?? {},
               createdAt: values.createdAt ?? now,
               updatedAt: values.updatedAt ?? now,

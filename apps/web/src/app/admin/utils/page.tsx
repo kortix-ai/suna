@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useEffect } from "react";
 import { Settings, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +19,7 @@ import {
 import type { MaintenanceLevel } from "@/lib/maintenance-store";
 
 export default function AdminUtilsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: config, isLoading } = useMaintenanceAdmin();
   const updateConfig = useUpdateMaintenanceConfig();
 
@@ -118,16 +121,12 @@ export default function AdminUtilsPage() {
       <div className="flex-none">
         <div className="max-w-4xl mx-auto px-6 py-6">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10">
+            <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-primary/10">
               <Settings className="w-5 h-5 text-primary" />
             </div>
             <div className="flex-1">
-              <h1 className="text-2xl font-semibold tracking-tight">
-                Maintenance Notifications
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Control system-wide maintenance banners and access restrictions
-              </p>
+              <h1 className="text-2xl font-semibold tracking-tight">{tHardcodedUi.raw('appAdminUtilsPage.line126JsxTextMaintenanceNotifications')}</h1>
+              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAdminUtilsPage.line129JsxTextControlSystemWideMaintenanceBannersAndAccessRestrictions')}</p>
             </div>
             {currentLevel !== "none" && currentLevelDef && (
               <Badge
@@ -148,8 +147,7 @@ export default function AdminUtilsPage() {
               <div className="flex items-center gap-2 text-sm font-medium mb-2">
                 {currentLevelDef && (
                   <currentLevelDef.icon className={`w-4 h-4 ${currentLevelDef.color}`} />
-                )}
-                Currently active: {currentLevelDef?.label}
+                )}{tHardcodedUi.raw('appAdminUtilsPage.line152JsxTextCurrentlyActive')}{currentLevelDef?.label}
               </div>
               {config.title && (
                 <p className="text-sm font-medium">{config.title}</p>
@@ -162,7 +160,7 @@ export default function AdminUtilsPage() {
               {config.affectedServices && config.affectedServices.length > 0 && (
                 <div className="flex gap-1.5 mt-2">
                   {config.affectedServices.map((s) => (
-                    <Badge key={s} variant="secondary" className="text-[10px]">
+                    <Badge key={s} variant="secondary" className="text-xs">
                       {s}
                     </Badge>
                   ))}
@@ -173,9 +171,7 @@ export default function AdminUtilsPage() {
 
           {/* Level selection grid */}
           <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground mb-3">
-              Select a notification level to configure
-            </p>
+            <p className="text-sm font-medium text-muted-foreground mb-3">{tHardcodedUi.raw('appAdminUtilsPage.line177JsxTextSelectANotificationLevelToConfigure')}</p>
             {MAINTENANCE_LEVELS.map((level) => (
               <MaintenanceLevelCard
                 key={level.value}
@@ -188,8 +184,7 @@ export default function AdminUtilsPage() {
 
           {config?.updatedAt && (
             <p className="text-xs text-muted-foreground mt-6 flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              Last updated: {new Date(config.updatedAt).toLocaleString()}
+              <Clock className="w-3 h-3" />{tHardcodedUi.raw('appAdminUtilsPage.line192JsxTextLastUpdated')}{new Date(config.updatedAt).toLocaleString()}
             </p>
           )}
         </div>

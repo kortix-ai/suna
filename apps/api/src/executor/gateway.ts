@@ -1,0 +1,214 @@
+/**
+ * Executor gateway — the chokepoint every tool call goes through. Resolves the
+ * connector + action, checks the acting user can use it (project-secret
+ * sharing), resolves the credential SERVER-SIDE, runs the call, and audits it.
+ * The sandbox never holds an app secret.
+ *
+ * Written against an injectable `GatewayDeps` so the full decision+execution
+ * path is unit-tested with fakes (incl. a mocked third party). The HTTP router
+ * (router.ts) wires real DB/secret deps. Policy enforcement is OFF by default
+ * (allow-all core); flip `enforcePolicies` when the policy layer ships last.
+ *
+ * See docs/specs/executor.md §7.
+ */
+import { resolvePolicyAction, type Policy } from './policy';
+import { isSecretUsableBy, type SecretGrant, type ShareScope, type ShareSubject } from './share';
+import { executeCall, paramHintsFromSchema, type ExecResult, type ExecutorAuth, type FetchImpl } from './execute';
+import type { ActionBinding, Risk } from './types';
+
+export interface GatewayConnector {
+  connectorId: string;
+  slug: string;
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+  /** server / base_url / endpoint / url, per provider (null for some). */
+  baseUrl: string | null;
+  auth: ExecutorAuth;
+  /** Whether this connector needs a credential at all (false = public/no-auth). */
+  hasAuth: boolean;
+  /** Who can use it. */
+  shareScope: ShareScope;
+  grants: SecretGrant[];
+  /** shared = one project credential; per_user = each member's own. */
+  credentialMode: 'shared' | 'per_user';
+  enabled: boolean;
+}
+
+export interface GatewayAction {
+  /** Full namespaced path (`slug.rel`). */
+  path: string;
+  /** Connector-relative path (what policies match). */
+  relPath: string;
+  inputSchema: Record<string, unknown> | null;
+  risk: Risk;
+  binding: ActionBinding;
+}
+
+export interface ExecutionRecord {
+  accountId: string;
+  projectId: string;
+  connectorId: string | null;
+  actionPath: string;
+  actingUserId: string;
+  sessionId: string | null;
+  status: 'ok' | 'error' | 'denied' | 'pending_approval';
+  risk: Risk | null;
+  resultSummary: Record<string, unknown> | null;
+}
+
+export interface GatewayDeps {
+  loadConnectorBySlug(projectId: string, slug: string): Promise<GatewayConnector | null>;
+  loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
+  /** Resolve the credential value/binding. `userId=null` = shared; set = that member's own. */
+  resolveCredential(connectorId: string, userId: string | null): Promise<string | null>;
+  loadPolicies(connectorId: string): Promise<Policy[]>;
+  recordExecution(rec: ExecutionRecord): Promise<void>;
+  fetchImpl: FetchImpl;
+  /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
+  executePipedream?(input: {
+    projectId: string;
+    connectorSlug: string;
+    app: string;
+    actionKey: string;
+    args: Record<string, unknown>;
+    accountId: string;
+    /** Effective user for the Pipedream external_user_id (null = shared). */
+    userId: string | null;
+  }): Promise<ExecResult>;
+  /** OFF by default — the core engine is allow-all; policies are wired last. */
+  enforcePolicies?: boolean;
+}
+
+export interface CallInput {
+  projectId: string;
+  accountId: string;
+  subject: ShareSubject;
+  sessionId?: string | null;
+  connectorSlug: string;
+  /** Connector-relative action path (e.g. `charges.create`). */
+  actionPath: string;
+  args?: Record<string, unknown>;
+}
+
+export type CallResult =
+  | { status: 'ok'; data: unknown; risk: Risk }
+  | { status: 'denied'; reason: string }
+  | { status: 'pending_approval'; reason: string }
+  | { status: 'error'; reason: string };
+
+/** Is this connector usable by the subject? Access (connector sharing) + credential (by mode). */
+async function connectorUsable(
+  deps: GatewayDeps,
+  connector: GatewayConnector,
+  subject: ShareSubject,
+): Promise<{ ok: true; secret: string | null } | { ok: false; reason: string }> {
+  // 1. Access — who can use this connector.
+  if (!isSecretUsableBy(connector.shareScope, connector.grants, subject)) {
+    return { ok: false, reason: 'not_shared' };
+  }
+  // 2. Credential — none needed (public), shared, or this member's own (per_user).
+  if (!connector.hasAuth) return { ok: true, secret: null };
+  const userId = connector.credentialMode === 'per_user' ? subject.userId : null;
+  const secret = await deps.resolveCredential(connector.connectorId, userId);
+  if (secret == null) return { ok: false, reason: 'needs_auth' };
+  return { ok: true, secret };
+}
+
+/** Run one executor call through the full gateway path. */
+export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<CallResult> {
+  const fullPath = `${input.connectorSlug}.${input.actionPath}`;
+
+  const connector = await deps.loadConnectorBySlug(input.projectId, input.connectorSlug);
+  if (!connector || !connector.enabled) {
+    await audit(deps, input, null, 'denied', null, { reason: 'connector_not_found' });
+    return { status: 'denied', reason: 'connector_not_found' };
+  }
+
+  const action = await deps.loadAction(connector.connectorId, input.actionPath);
+  if (!action) {
+    await audit(deps, input, connector.connectorId, 'denied', null, { reason: 'action_not_found' });
+    return { status: 'denied', reason: 'action_not_found' };
+  }
+
+  const usable = await connectorUsable(deps, connector, input.subject);
+  if (!usable.ok) {
+    await audit(deps, input, connector.connectorId, 'denied', action.risk, { reason: usable.reason });
+    return { status: 'denied', reason: usable.reason };
+  }
+
+  // Policy layer (OFF in the core engine; wired last).
+  if (deps.enforcePolicies) {
+    const policies = await deps.loadPolicies(connector.connectorId);
+    const decision = resolvePolicyAction(input.actionPath, policies);
+    if (decision === 'block') {
+      await audit(deps, input, connector.connectorId, 'denied', action.risk, { reason: 'policy_block' });
+      return { status: 'denied', reason: 'policy_block' };
+    }
+    if (decision === 'require_approval') {
+      await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, { reason: 'policy_require_approval' });
+      return { status: 'pending_approval', reason: 'policy_require_approval' };
+    }
+  }
+
+  try {
+    let result: ExecResult;
+    if (connector.provider === 'pipedream') {
+      const b = action.binding;
+      if (b.kind !== 'pipedream' || !deps.executePipedream || !usable.secret) {
+        throw new Error('pipedream connector not runnable (missing binding, runner, or connected account)');
+      }
+      result = await deps.executePipedream({
+        projectId: input.projectId,
+        connectorSlug: input.connectorSlug,
+        app: b.app,
+        actionKey: b.actionKey,
+        args: input.args ?? {},
+        accountId: usable.secret, // the resolved binding = Pipedream account id
+        userId: connector.credentialMode === 'per_user' ? input.subject.userId : null,
+      });
+    } else {
+      result = await executeCall({
+        binding: action.binding,
+        baseUrl: connector.baseUrl,
+        auth: connector.auth,
+        secret: usable.secret,
+        args: input.args ?? {},
+        paramHints: paramHintsFromSchema(action.inputSchema),
+        fetchImpl: deps.fetchImpl,
+      });
+    }
+    await audit(deps, input, connector.connectorId, result.ok ? 'ok' : 'error', action.risk, {
+      http_status: result.status,
+    });
+    return result.ok
+      ? { status: 'ok', data: result.data, risk: action.risk }
+      : { status: 'error', reason: `upstream_${result.status}` };
+  } catch (e) {
+    await audit(deps, input, connector.connectorId, 'error', action.risk, { reason: (e as Error).message });
+    return { status: 'error', reason: (e as Error).message };
+  }
+}
+
+async function audit(
+  deps: GatewayDeps,
+  input: CallInput,
+  connectorId: string | null,
+  status: ExecutionRecord['status'],
+  risk: Risk | null,
+  summary: Record<string, unknown> | null,
+): Promise<void> {
+  try {
+    await deps.recordExecution({
+      accountId: input.accountId,
+      projectId: input.projectId,
+      connectorId,
+      actionPath: `${input.connectorSlug}.${input.actionPath}`,
+      actingUserId: input.subject.userId,
+      sessionId: input.sessionId ?? null,
+      status,
+      risk,
+      resultSummary: summary,
+    });
+  } catch {
+    /* auditing must never break the call path */
+  }
+}

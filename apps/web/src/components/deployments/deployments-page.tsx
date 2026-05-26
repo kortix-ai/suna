@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   useDeployments,
@@ -12,6 +14,7 @@ import {
 } from '@/hooks/deployments/use-deployments';
 import { useSecrets } from '@/hooks/secrets/use-secrets';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -53,28 +56,12 @@ const filterTabs: Array<{ label: string; value: DeploymentStatus | undefined }> 
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
-const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
-  <div className="bg-muted/20 rounded-3xl border flex flex-col items-center justify-center py-16 px-4">
-    <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4">
-      <Rocket className="h-6 w-6 text-muted-foreground" />
-    </div>
-    <h3 className="text-base font-semibold text-foreground mb-2">Deploy your first app</h3>
-    <p className="text-sm text-muted-foreground text-center max-w-sm mb-6">
-      Deploy applications to production with a single click. Supports Git repos, inline code, file uploads, and tarballs.
-    </p>
-    <Button onClick={onCreateClick} size="sm">
-      <Plus className="h-4 w-4 mr-2" />
-      New Deployment
-    </Button>
-  </div>
-);
-
 const LoadingSkeleton = () => (
   <div className="space-y-4">
     {[1, 2, 3].map((i) => (
       <div key={i} className="rounded-2xl border dark:bg-card px-5 py-4">
         <div className="flex items-center gap-4">
-          <Skeleton className="h-12 w-12 rounded-xl" />
+          <Skeleton className="h-12 w-12 rounded-2xl" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-4 w-48" />
             <Skeleton className="h-3 w-64" />
@@ -89,6 +76,7 @@ const LoadingSkeleton = () => (
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export function DeploymentsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [statusFilter, setStatusFilter] = useState<DeploymentStatus | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -190,9 +178,7 @@ export function DeploymentsPage() {
         <div className="max-w-4xl mx-auto w-full py-8 px-4">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Failed to load deployments. Please try refreshing the page.
-            </AlertDescription>
+            <AlertDescription>{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line179JsxTextFailedToLoadDeploymentsPleaseTryRefreshingThe')}</AlertDescription>
           </Alert>
         </div>
       </div>
@@ -236,7 +222,7 @@ export function DeploymentsPage() {
             <PageSearchBar
               value={searchQuery}
               onChange={setSearchQuery}
-              placeholder="Search deployments..."
+              placeholder={tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line224JsxAttrPlaceholderSearchDeployments')}
               className="sm:max-w-64"
             />
 
@@ -248,7 +234,7 @@ export function DeploymentsPage() {
               onClick={handleNewDeployment}
             >
               <Plus className="h-4 w-4" />
-              <span className="hidden xs:inline">New Deployment</span>
+              <span className="hidden xs:inline">{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line236JsxTextNewDeployment')}</span>
               <span className="xs:hidden">New</span>
             </Button>
           </div>
@@ -260,15 +246,25 @@ export function DeploymentsPage() {
             <LoadingSkeleton />
           ) : groupedDeployments.length === 0 ? (
             deployments.length === 0 && !statusFilter ? (
-              <EmptyState onCreateClick={handleNewDeployment} />
+              <EmptyState
+                icon={Rocket}
+                title={tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line250JsxAttrTitleDeployYourFirstApp')}
+                description={tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line251JsxAttrDescriptionDeployApplicationsToProductionWithASingleClick')}
+                action={
+                  <Button onClick={handleNewDeployment} size="sm">
+                    <Plus className="h-4 w-4 mr-2" />{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line255JsxTextNewDeployment')}</Button>
+                }
+              />
             ) : (
-              <div className="bg-muted/20 rounded-3xl border flex flex-col items-center justify-center py-12 px-4">
-                <p className="text-sm text-muted-foreground">
-                  {searchQuery
+              <EmptyState
+                icon={Search}
+                title={searchQuery ? 'No matches' : 'No deployments found'}
+                description={
+                  searchQuery
                     ? `No deployments match "${searchQuery}"`
-                    : `No ${statusFilter || ''} deployments found`}
-                </p>
-              </div>
+                    : `No ${statusFilter || ''} deployments found`
+                }
+              />
             )
           ) : (
             <div className="space-y-4">
@@ -323,14 +319,9 @@ export function DeploymentsPage() {
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete deployment</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete{' '}
-              <span className="font-semibold">
-                &quot;{deleteTarget?.domains?.[0] || deleteTarget?.deploymentId.slice(0, 8)}&quot;
-              </span>
-              ? This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line323JsxTextDeleteDeployment')}</AlertDialogTitle>
+            <AlertDialogDescription>{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line325JsxTextAreYouSureYouWantToDelete')}{' '}
+              <span className="font-semibold">{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line327JsxTextQuot')}{deleteTarget?.domains?.[0] || deleteTarget?.deploymentId.slice(0, 8)}{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line327JsxTextQuotddb5f48f')}</span>{tHardcodedUi.raw('componentsDeploymentsDeploymentsPage.line329JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>

@@ -45,6 +45,8 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { accountsRouter } from './accounts';
+import { authRouter } from './auth';
+import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
 import { auditStateChangingRequest } from './shared/audit';
 import { opsApp } from './ops';
@@ -212,7 +214,7 @@ app.get('/health', (c) => {
     service: 'kortix-api',
     version: API_VERSION,
     timestamp: new Date().toISOString(),
-    env: config.ENV_MODE,
+    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),
   });
 });
@@ -224,7 +226,7 @@ app.get('/v1/health', (c) => {
     service: 'kortix-api',
     version: API_VERSION,
     timestamp: new Date().toISOString(),
-    env: config.ENV_MODE,
+    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),
   });
 });
@@ -249,6 +251,13 @@ app.post('/v1/prewarm', (c) => {
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
+// /v1/auth/* — auth-side server endpoints (logout for now). Audit
+// events for login/logout/failed-login live in the auth middleware
+// + this router so SOC2 reviews see the full auth lifecycle.
+app.route('/v1/auth', authRouter);
+// SCIM 2.0 — separate auth (per-account bearer tokens, not Supabase JWT).
+// Mounted outside /v1 so IdPs configure the documented protocol URL.
+app.route('/scim/v2', scimRouter);
 
 // /v1/account-invites/* — accept/decline/describe pending team invitations.
 app.route('/v1/account-invites', accountInvitesRouter);
@@ -274,6 +283,16 @@ app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billin
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+
+// Executor — unified connector layer. Gateway routes (/connectors, /call) use
+// KORTIX_EXECUTOR_TOKEN (validated inside the router); admin routes
+// (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
+{
+  const { executorApp } = await import('./executor');
+  app.use('/v1/executor/projects/*', combinedAuth);
+  app.route('/v1/executor', executorApp); // /v1/executor/connectors, /call, /projects/:id/connectors[/sync|/:slug/sharing]
+}
+
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
 const { slackWebhookApp, telegramWebhookApp, slackOauthApp } = await import('./channels');
@@ -289,8 +308,9 @@ if (config.KORTIX_DEPLOYMENTS_ENABLED) {
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
 
-// Setup — local/self-hosted only. Disabled in cloud mode (not needed, exposes admin surface).
-if (config.isLocal()) {
+// Setup — local/self-hosted only. Hidden when billing is enabled so the admin
+// surface isn't exposed on managed/cloud deployments.
+if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
   app.route('/v1/setup', setupApp);        // /v1/setup/install-status (public), rest (auth inside router)
 }
 // /v1/admin/* — legacy admin dashboard surface removed. Web admin pages will 404.
@@ -427,7 +447,6 @@ console.log(`
 ║                  Kortix API Starting                      ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Port: ${config.PORT.toString().padEnd(49)}║
-║  Mode: ${config.ENV_MODE.padEnd(49)}║
 ║  Env:  ${config.INTERNAL_KORTIX_ENV.padEnd(49)}║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Services:                                                ║
@@ -465,38 +484,31 @@ export function isSchemaReady() { return schemaReady; }
 ensureSchema()
   .then(async () => {
     schemaReady = true;
-    // Reconcile system IAM roles. Idempotent and fast (~15 roles).
-    // If the IAM tables haven't been migrated yet (e.g. dev with
-    // KORTIX_SKIP_ENSURE_SCHEMA=1 on a fresh branch), log a one-liner
-    // pointing at the fix instead of a noisy stack trace.
-    try {
-      const { seedSystemRoles, backfillMembershipPolicies } = await import('./iam');
-      await seedSystemRoles();
-      console.log('[startup] IAM system roles seeded');
-      // Materialise legacy account_role + project_members into explicit IAM
-      // policies so the engine needs no legacy bridges. Idempotent.
-      await backfillMembershipPolicies();
-      console.log('[startup] IAM membership policies backfilled');
-      // Migrate legacy project_secrets into the unified vault. Idempotent.
-      const { migrateProjectSecretsToVault } = await import('./vault');
-      await migrateProjectSecretsToVault();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (/iam_roles.*does not exist|relation .* does not exist/i.test(msg)) {
-        console.warn(
-          '[startup] IAM tables not present yet — skipping role seed. ' +
-          'Run the IAM migration (supabase/migrations/00000000000054_iam_*.sql) ' +
-          'or unset KORTIX_SKIP_ENSURE_SCHEMA for one restart.',
-        );
-      } else {
-        console.error('[startup] IAM role seed failed:', err);
-      }
-    }
+    // V2 IAM hard-codes role permissions in iam/role-perms.ts, so the
+    // boot-time system-role seed + membership-policy backfill from V1
+    // are no longer needed. Permissions resolve directly from
+    // account_members.account_role and project_members.project_role.
     startAccessControlCache();
     startDrainer();
     startTunnelService();
     startProjectMaintenance();
     startProjectTriggerScheduler();
+    // IAM V2 time-bounded grants: tick every 60s, emit one audit event
+    // per row that just transitioned to expired. Engine already filters
+    // expired rows out of authorize() so correctness doesn't depend on
+    // this — it's purely for the audit trail.
+    {
+      const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
+      startGrantExpirySweeper();
+    }
+    // Clear snapshot builds orphaned by a previous restart so sessions don't
+    // spin on a dead `building` row for the full build deadline.
+    try {
+      const { sweepStaleSnapshotBuilds } = await import('./snapshots/builder');
+      await sweepStaleSnapshotBuilds();
+    } catch (err) {
+      console.warn('[startup] stale-snapshot sweep failed:', err);
+    }
   })
   .catch(async (err) => {
     console.error('[startup] ensureSchema failed, starting services anyway:', err);

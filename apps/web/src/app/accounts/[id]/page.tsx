@@ -1,19 +1,26 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
+  ChevronDown,
   Clock,
+  ExternalLink,
+  Github,
   KeyRound,
   Link as LinkIcon,
   Loader2,
   Mail,
   MoreHorizontal,
   RefreshCw,
+  Search,
   Shield,
   Trash2,
+  Unplug,
   UserPlus,
   X,
 } from 'lucide-react';
@@ -24,11 +31,18 @@ import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { EmptyState } from '@/components/ui/empty-state';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -41,7 +55,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { InlineMeta } from '@/components/ui/inline-meta';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
+import { List, ListRow } from '@/components/ui/list';
 import {
   Select,
   SelectContent,
@@ -50,10 +67,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { SectionCard } from '@/components/ui/section-card';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
-import { RolesTab } from '@/components/iam/roles-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
+import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
+import { SsoCard } from '@/components/iam/sso-card';
+import { SessionControlsCard } from '@/components/iam/session-controls-card';
+import { PatPolicyCard } from '@/components/iam/pat-policy-card';
+import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
+import { ScimCard } from '@/components/iam/scim-card';
+import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
+import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { usePermission } from '@/lib/use-permission';
 import {
   type AccountDetail,
@@ -61,16 +88,19 @@ import {
   type AccountMember,
   type AccountRole,
   cancelAccountInvite,
+  deleteGitHubInstallation,
   getAccount,
   inviteAccountMember,
   leaveAccount,
   listAccountInvites,
+  listGitHubInstallations,
   listAccountMembers,
   removeAccountMember,
   resendAccountInvite,
   updateAccountMemberRole,
   updateAccountName,
 } from '@/lib/projects-client';
+import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { cn } from '@/lib/utils';
 
 const ROLE_LABEL: Record<AccountRole, string> = {
@@ -79,15 +109,24 @@ const ROLE_LABEL: Record<AccountRole, string> = {
   member: 'Member',
 };
 
+// Build-time feature flag for the enterprise IdP surface (SAML SSO +
+// SCIM provisioning). Defaults OFF — those cards add real clutter for
+// the 95% of accounts that don't have an Okta/Azure AD/Google
+// Workspace IdP wired up. Set NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY=true
+// in the environment to bring them back. Backend endpoints stay live
+// either way so existing configurations keep working.
+const ENABLE_ENTERPRISE_IDENTITY =
+  process.env.NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY === 'true';
+
 function formatDate(input: string | null | undefined) {
   if (!input) return '—';
   const d = new Date(input);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function getInitial(text: string) {
-  return (text.trim().charAt(0) || '?').toUpperCase();
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
@@ -102,13 +141,26 @@ async function copyInviteLink(url: string) {
   } catch {
     // Older browsers / blocked clipboard — show the link in a toast so the
     // admin can copy it by hand.
-    toast.message('Copy this invite link', { description: url, duration: 15_000 });
+    toast.message('Copy this invite link', {
+      description: url,
+      duration: 15_000,
+    });
+  }
+}
+
+function rememberGitHubSetupReturn(path: string) {
+  try {
+    window.localStorage.setItem('kortix:github_setup_return', path);
+  } catch {
+    // Non-critical: the setup page falls back to the project import flow.
   }
 }
 
 export default function AccountSettingsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const accountId = params?.id;
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
@@ -131,25 +183,33 @@ export default function AccountSettingsPage() {
     staleTime: 20_000,
   });
 
-  if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
-  }
-
-  const account = accountQuery.data;
-  const members = membersQuery.data ?? [];
-  const isTeam = account ? !account.personal_account : false;
-
-  // Granular capabilities sourced from the IAM engine instead of raw
-  // account_role. A member granted "Administrator" via an explicit policy
-  // gets the same affordances an owner does, and vice-versa.
+  // Granular capabilities sourced from the IAM engine. MUST be called
+  // before any conditional return — moving these below the auth-loading
+  // guard would change the hook count between renders.
+  // usePermission internally short-circuits when accountId is falsy, so
+  // it's safe to call before the account query resolves.
   const canWriteAccount = usePermission(accountId, 'account.write').allowed;
   const canDeleteAccount = usePermission(accountId, 'account.delete').allowed;
   const canInviteMember = usePermission(accountId, 'member.invite').allowed;
   const canRemoveMember = usePermission(accountId, 'member.remove').allowed;
   const canUpdateMember = usePermission(accountId, 'member.update').allowed;
   const canCreateGroup = usePermission(accountId, 'group.create').allowed;
-  const canCreateRole = usePermission(accountId, 'role.create').allowed;
   const canReadAudit = usePermission(accountId, 'audit.read').allowed;
+
+  if (authLoading || !user) {
+    return (
+      <ConnectingScreen
+        forceConnecting
+        overrideStage="auth"
+        hideWorkspacePicker
+      />
+    );
+  }
+
+  const account = accountQuery.data;
+  const members = membersQuery.data ?? [];
+  const initialTab = searchParams.get('tab') === 'git' ? 'git' : 'members';
+  const isTeam = account ? !account.personal_account : false;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -162,9 +222,7 @@ export default function AccountSettingsPage() {
               onClick={() => router.push('/projects')}
               className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to projects
-            </button>
+              <ArrowLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line197JsxTextBackToProjects')}</button>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <button
                 type="button"
@@ -182,52 +240,62 @@ export default function AccountSettingsPage() {
                 </span>
               )}
             </div>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                {accountQuery.isLoading ? <Skeleton className="h-7 w-48" /> : account?.name}
-              </h1>
-              {account && (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {account.personal_account
-                    ? 'Your personal account. Invite collaborators to share projects.'
-                    : 'Manage account settings, members, and access.'}
-                </p>
-              )}
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                  {accountQuery.isLoading ? (
+                    <Skeleton className="h-7 w-48" />
+                  ) : (
+                    account?.name
+                  )}
+                </h1>
+                {account && (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Manage account settings, members, and access.
+                  </p>
+                )}
+              </div>
+              {account && <PermissionsHelpPopover />}
             </div>
           </div>
 
           {accountQuery.isError && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
-              <p className="text-sm font-medium text-destructive">Failed to load account</p>
-              <p className="mt-1 text-xs text-destructive/80">
-                {(accountQuery.error as Error).message}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3"
-                onClick={() => accountQuery.refetch()}
-              >
-                Retry
-              </Button>
-            </div>
+            <InfoBanner
+              tone="destructive"
+              title={tHardcodedUi.raw('appAccountsIdPage.line237JsxAttrTitleFailedToLoadAccount')}
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => accountQuery.refetch()}
+                >
+                  Retry
+                </Button>
+              }
+            >
+              {(accountQuery.error as Error).message}
+            </InfoBanner>
           )}
 
           {accountQuery.isLoading && (
             <>
-              <Skeleton className="h-48 w-full rounded-xl" />
-              <Skeleton className="h-64 w-full rounded-xl" />
+              <Skeleton className="h-48 w-full rounded-2xl" />
+              <Skeleton className="h-64 w-full rounded-2xl" />
             </>
           )}
 
           {account && (
-            <Tabs defaultValue="members" className="space-y-6">
+            <Tabs defaultValue={initialTab} className="space-y-6">
               <TabsList>
-                <TabsTrigger value="members">All members</TabsTrigger>
+                <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
-                <TabsTrigger value="roles">Roles</TabsTrigger>
+                {/* Git (account-level GitHub install) + Settings are
+                    admin surfaces — gate on account.write so plain
+                    Members don't see tabs they can't act on. Audit is
+                    gated on its own audit.read permission. */}
+                {canWriteAccount && <TabsTrigger value="git">Git</TabsTrigger>}
                 {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
-                <TabsTrigger value="settings">Settings</TabsTrigger>
+                {canWriteAccount && <TabsTrigger value="settings">Settings</TabsTrigger>}
               </TabsList>
 
               <TabsContent value="members" className="space-y-6">
@@ -247,11 +315,10 @@ export default function AccountSettingsPage() {
               </TabsContent>
 
               <TabsContent value="groups" className="space-y-6">
-                <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
-              </TabsContent>
-
-              <TabsContent value="roles" className="space-y-6">
-                <RolesTab accountId={account.account_id} canCreate={canCreateRole} />
+                <GroupsTab
+                  accountId={account.account_id}
+                  canCreate={canCreateGroup}
+                />
               </TabsContent>
 
               {canReadAudit && (
@@ -260,14 +327,119 @@ export default function AccountSettingsPage() {
                 </TabsContent>
               )}
 
-              <TabsContent value="settings" className="space-y-6">
-                <GeneralCard
-                  account={account}
-                  queryClient={queryClient}
-                  canWrite={canWriteAccount}
-                />
-                {isTeam && canDeleteAccount && <DangerZoneCard />}
+              {canWriteAccount && (
+                <TabsContent value="git" className="space-y-6">
+                  <GitHubConnectionCard
+                    account={account}
+                    canManage={canWriteAccount}
+                  />
+                </TabsContent>
+              )}
+
+              {canWriteAccount && (
+              <TabsContent value="settings" className="space-y-8">
+                {/* ── General ────────────────────────────────────── */}
+                <SettingsGroup title="General">
+                  <GeneralCard
+                    account={account}
+                    queryClient={queryClient}
+                    canWrite={canWriteAccount}
+                  />
+                </SettingsGroup>
+
+                {/* ── Security ──────────────────────────────────── */}
+                {/* MFA is the only security control 95% of accounts ever
+                    touch — keep it primary. Session lifetime + idle
+                    timeout tuning matters for compliance shops but is
+                    noise for everyone else, so it hides under an
+                    "Advanced" disclosure (closed by default). */}
+                <SettingsGroup
+                  title="Security"
+                  description="Account-wide gates that apply to every member."
+                >
+                  <MfaRequiredCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                  <Collapsible>
+                    <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-2xl border border-dashed border-border/60 bg-card/30 px-4 py-3 text-left text-sm transition hover:border-border hover:bg-card/60">
+                      <div>
+                        <div className="font-medium text-foreground">
+                          Advanced security
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Session lifetimes, idle timeouts, and force-logout.
+                          Defaults are fine for most teams.
+                        </div>
+                      </div>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-6 pt-4">
+                      <SessionControlsCard
+                        accountId={account.account_id}
+                        canManage={canWriteAccount}
+                      />
+                    </CollapsibleContent>
+                  </Collapsible>
+                </SettingsGroup>
+
+                {/* ── Identity & directory ─────────────────────── */}
+                {/* SAML SSO + SCIM are enterprise-only — only render
+                    when explicitly enabled. The flag is a build-time
+                    env var (NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY=true)
+                    so dev + prod can opt in independently. Backend
+                    endpoints stay live regardless so existing
+                    configurations keep working; this just hides the
+                    setup UI from the 95% of accounts that don't use it. */}
+                {ENABLE_ENTERPRISE_IDENTITY && (
+                  <SettingsGroup
+                    title="Identity & directory"
+                    description="Bring members in from your IdP. Group memberships sync; admin still picks project access."
+                  >
+                    <SsoCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                    <ScimCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                  </SettingsGroup>
+                )}
+
+                {/* ── Tokens & automation ──────────────────────── */}
+                <SettingsGroup
+                  title="Tokens & automation"
+                  description="Programmatic access for CI/CD and headless agents."
+                >
+                  <PatPolicyCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                  <ServiceAccountsCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                </SettingsGroup>
+
+                {/* ── Observability ─────────────────────────────── */}
+                <SettingsGroup
+                  title="Observability"
+                  description="Forward audit events to your own pipeline."
+                >
+                  <AuditWebhooksCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                </SettingsGroup>
+
+                {isTeam && canDeleteAccount && (
+                  <SettingsGroup title="Danger zone">
+                    <DangerZoneCard />
+                  </SettingsGroup>
+                )}
               </TabsContent>
+              )}
             </Tabs>
           )}
         </div>
@@ -278,6 +450,276 @@ export default function AccountSettingsPage() {
 
 // ============================== GENERAL ==============================
 
+function GitHubConnectionCard({
+  account,
+  canManage,
+}: {
+  account: AccountDetail;
+  canManage: boolean;
+}) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const queryClient = useQueryClient();
+  const [disconnectTarget, setDisconnectTarget] = useState<{
+    installationId: string;
+    ownerLogin: string | null;
+  } | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  const installationsQuery = useQuery({
+    queryKey: ['github-installations', account.account_id],
+    queryFn: () => listGitHubInstallations(account.account_id),
+    staleTime: 0,
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: (installationId: string) =>
+      deleteGitHubInstallation(account.account_id, installationId),
+    onSuccess: () => {
+      toast.success('GitHub disconnected');
+      setDisconnectTarget(null);
+      queryClient.invalidateQueries({
+        queryKey: ['github-installations', account.account_id],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['github-repositories', account.account_id],
+      });
+    },
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to disconnect GitHub'),
+  });
+
+  async function handleConnect() {
+    if (!canManage) return;
+    setIsConnecting(true);
+    try {
+      const result = await installationsQuery.refetch();
+      if (result.error) throw result.error;
+      const installUrl = result.data?.install_url;
+      if (!installUrl) {
+        toast.error(
+          result.data?.configured === false
+            ? 'GitHub App is not configured'
+            : 'GitHub install URL unavailable',
+        );
+        return;
+      }
+      rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
+      window.location.assign(installUrl);
+    } catch (err) {
+      toast.error((err as Error).message || 'Failed to start GitHub setup');
+    } finally {
+      setIsConnecting(false);
+    }
+  }
+
+  const installations = installationsQuery.data?.installations ?? [];
+
+  return (
+    <>
+      <SectionCard
+        title={tHardcodedUi.raw('appAccountsIdPage.line397JsxAttrTitleGitConnections')}
+        count={installations.length}
+        description={tHardcodedUi.raw('appAccountsIdPage.line399JsxAttrDescriptionConnectOneOrMoreGithubUsersOrOrganizations')}
+        action={
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1.5"
+            disabled={!canManage || isConnecting}
+            onClick={handleConnect}
+            title={
+              canManage
+                ? undefined
+                : 'You do not have permission to connect GitHub.'
+            }
+          >
+            {isConnecting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Github className="h-4 w-4" />
+            )}
+            {isConnecting ? 'Connecting' : 'Connect GitHub'}
+          </Button>
+        }
+        flush
+      >
+        {installationsQuery.isLoading ? (
+          <List>
+            <li className="flex items-center gap-3 px-6 py-3">
+              <Skeleton className="size-8 rounded-lg" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Skeleton className="h-3.5 w-32" />
+                <Skeleton className="h-3 w-56" />
+              </div>
+            </li>
+          </List>
+        ) : installationsQuery.isError ? (
+          <div className="px-6 py-5">
+            <InfoBanner
+              tone="warning"
+              icon={Github}
+              title={tHardcodedUi.raw('appAccountsIdPage.line438JsxAttrTitleGithubStatusUnavailable')}
+            >
+              {(installationsQuery.error as Error).message}
+            </InfoBanner>
+          </div>
+        ) : installations.length === 0 ? (
+          <EmptyState
+            icon={Github}
+            title={tHardcodedUi.raw('appAccountsIdPage.line446JsxAttrTitleNoGithubConnections')}
+            description={tHardcodedUi.raw('appAccountsIdPage.line447JsxAttrDescriptionConnectTheKortixGithubAppToImportRepositories')}
+            action={
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1.5"
+                disabled={!canManage || isConnecting}
+                onClick={handleConnect}
+              >
+                {isConnecting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Github className="h-4 w-4" />
+                )}{tHardcodedUi.raw('appAccountsIdPage.line461JsxTextConnectGithub')}</Button>
+            }
+          />
+        ) : (
+          <List>
+            {installations.map((installation) => {
+              const contentsPermission = permissionLabel(
+                installation.permissions?.contents,
+              );
+              const repoSelection =
+                installation.repository_selection === 'selected'
+                  ? 'Selected repositories'
+                  : installation.repository_selection === 'all'
+                    ? 'All repositories'
+                    : null;
+              const installationId = installation.installation_id ?? '';
+              return (
+                <ListRow
+                  key={installationId || installation.owner_login || 'github'}
+                  leading={<EntityAvatar icon={Github} />}
+                  title={installation.owner_login ?? 'GitHub App'}
+                  badges={
+                    <Badge variant="success" size="sm">
+                      Connected
+                    </Badge>
+                  }
+                  subtitle={
+                    <InlineMeta>
+                      {installation.owner_type ? (
+                        <span>{installation.owner_type}</span>
+                      ) : null}
+                      {repoSelection ? <span>{repoSelection}</span> : null}
+                      {contentsPermission ? (
+                        <span>{contentsPermission}</span>
+                      ) : null}
+                    </InlineMeta>
+                  }
+                  trailing={
+                    <>
+                      {installation.installation_url ? (
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                        >
+                          <a
+                            href={installation.installation_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            Configure
+                          </a>
+                        </Button>
+                      ) : null}
+                      {canManage && installationId ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() =>
+                            setDisconnectTarget({
+                              installationId,
+                              ownerLogin: installation.owner_login,
+                            })
+                          }
+                        >
+                          <Unplug className="h-3.5 w-3.5" />
+                          Disconnect
+                        </Button>
+                      ) : null}
+                    </>
+                  }
+                />
+              );
+            })}
+          </List>
+        )}
+      </SectionCard>
+
+      <InfoBanner
+        tone="neutral"
+        icon={Shield}
+        title={tHardcodedUi.raw('appAccountsIdPage.line547JsxAttrTitleGitCredentialsArePlatformCredentials')}
+      >{tHardcodedUi.raw('appAccountsIdPage.line549JsxTextKortixStoresTheGithubAppInstallationOnThe')}</InfoBanner>
+
+      <ConfirmDialog
+        open={Boolean(disconnectTarget)}
+        onOpenChange={(open) => !open && setDisconnectTarget(null)}
+        title={tHardcodedUi.raw('appAccountsIdPage.line558JsxAttrTitleDisconnectGithub')}
+        description={`New imports from ${disconnectTarget?.ownerLogin ?? 'this GitHub account'} will stop working until it is connected again. Existing projects keep their repository link.`}
+        confirmLabel="Disconnect"
+        onConfirm={() => {
+          if (disconnectTarget) {
+            disconnectMutation.mutate(disconnectTarget.installationId);
+          }
+        }}
+        isPending={disconnectMutation.isPending}
+      />
+    </>
+  );
+}
+
+function permissionLabel(value: unknown): string | null {
+  if (typeof value !== 'string' || !value) return null;
+  return `Contents ${value}`;
+}
+
+/**
+ * Visual grouping for the Settings tab. With ~10 cards the tab used to
+ * be a wall of similar-looking panels; a small uppercase header per
+ * theme gives the eye a scan path without competing with the cards
+ * themselves.
+ */
+function SettingsGroup({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="space-y-0.5 px-1">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+          {title}
+        </h3>
+        {description && (
+          <p className="text-[11px] text-muted-foreground/80">{description}</p>
+        )}
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
+
 function GeneralCard({
   account,
   queryClient,
@@ -287,6 +729,7 @@ function GeneralCard({
   queryClient: ReturnType<typeof useQueryClient>;
   canWrite: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState(account.name);
 
   useEffect(() => {
@@ -300,7 +743,8 @@ function GeneralCard({
       queryClient.setQueryData(['account', account.account_id], updated);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update account'),
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to update account'),
   });
 
   const trimmed = name.trim();
@@ -313,17 +757,14 @@ function GeneralCard({
   }
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">General</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Basic information about this account.
-        </p>
-      </header>
-
+    <SectionCard
+      title="General"
+      description={tHardcodedUi.raw('appAccountsIdPage.line615JsxAttrDescriptionBasicInformationAboutThisAccount')}
+      flush
+    >
       <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="account-name">Account name</Label>
+          <Label htmlFor="account-name">{tHardcodedUi.raw('appAccountsIdPage.line620JsxTextAccountName')}</Label>
           <Input
             id="account-name"
             value={name}
@@ -331,12 +772,14 @@ function GeneralCard({
             disabled={!canWrite || renameMutation.isPending}
             maxLength={120}
             className="max-w-md"
-            title={canWrite ? undefined : 'You do not have permission to rename this account.'}
+            title={
+              canWrite
+                ? undefined
+                : 'You do not have permission to rename this account.'
+            }
           />
           {!canWrite && (
-            <p className="text-xs text-muted-foreground">
-              You do not have permission to rename this account.
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line636JsxTextYouDoNotHavePermissionToRenameThis')}</p>
           )}
         </div>
 
@@ -344,13 +787,19 @@ function GeneralCard({
           <p className="text-xs text-muted-foreground">
             Created {formatDate(account.created_at)}
           </p>
-          <Button type="submit" disabled={!canSubmit || renameMutation.isPending} className="gap-1.5">
-            {renameMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          <Button
+            type="submit"
+            disabled={!canSubmit || renameMutation.isPending}
+            className="gap-1.5"
+          >
+            {renameMutation.isPending && (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
             Save
           </Button>
         </div>
       </form>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -381,32 +830,60 @@ function MembersCard({
   canRemove: boolean;
   canUpdateRole: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  // Free-text search over email + user_id. Lives in component state so
+  // it doesn't survive tab switches — admins almost never want to jump
+  // back to the same search after navigating away.
+  const [search, setSearch] = useState('');
+  // Bulk-select state. Users can't bulk-modify themselves (would let an
+  // admin lock themselves out by demoting their own row in a sweep).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDialog, setBulkDialog] = useState<
+    'add_to_group' | 'set_role' | 'remove' | null
+  >(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   // canInvite/canRemove/canUpdateRole come in as props (driven by usePermission
   // at the page level). The row-level kebab respects each granularly.
 
   const sorted = useMemo(() => {
     const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
-    return [...members].sort((a, b) => {
+    const q = search.trim().toLowerCase();
+    const filtered = q
+      ? members.filter((m) => {
+          // Match against email (most common) and user_id (for the rare
+          // case where an admin only knows the auth uuid).
+          const email = (m.email ?? '').toLowerCase();
+          return email.includes(q) || m.user_id.toLowerCase().includes(q);
+        })
+      : members;
+    return [...filtered].sort((a, b) => {
       const r = rank[a.account_role] - rank[b.account_role];
       if (r !== 0) return r;
       return memberLabel(a).localeCompare(memberLabel(b));
     });
-  }, [members]);
+  }, [members, search]);
 
   const invalidateMembers = () => {
-    queryClient.invalidateQueries({ queryKey: ['account-members', account.account_id] });
-    queryClient.invalidateQueries({ queryKey: ['account-invites', account.account_id] });
-    queryClient.invalidateQueries({ queryKey: ['account', account.account_id] });
+    queryClient.invalidateQueries({
+      queryKey: ['account-members', account.account_id],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ['account-invites', account.account_id],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ['account', account.account_id],
+    });
   };
 
   const removeMutation = useMutation({
-    mutationFn: (userId: string) => removeAccountMember(account.account_id, userId),
+    mutationFn: (userId: string) =>
+      removeAccountMember(account.account_id, userId),
     onMutate: (userId) => setPendingUserId(userId),
     onSettled: () => setPendingUserId(null),
     onSuccess: () => {
@@ -414,7 +891,8 @@ function MembersCard({
       invalidateMembers();
       setRemoveTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to remove member'),
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to remove member'),
   });
 
   const roleMutation = useMutation({
@@ -426,7 +904,8 @@ function MembersCard({
       toast.success('Role updated');
       invalidateMembers();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update role'),
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to update role'),
   });
 
   const leaveMutation = useMutation({
@@ -441,55 +920,226 @@ function MembersCard({
     onError: (err: Error) => toast.error(err.message || 'Failed to leave team'),
   });
 
-  return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">
-            Members{' '}
-            <span className="font-normal text-muted-foreground">({account.member_count})</span>
-          </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            People with access to this account.
-          </p>
-        </div>
-        {canInvite && (
-          <Button onClick={() => setInviteOpen(true)} size="sm" className="gap-1.5">
-            <UserPlus className="h-4 w-4" />
-            Invite member
-          </Button>
-        )}
-      </header>
+  // Bulk surface only shows when the caller can actually do something
+  // useful (add to group OR change role OR remove). canInvite is the
+  // closest proxy for "can manage account membership" without adding
+  // another permission probe.
+  const canBulk = canInvite || canUpdateRole || canRemove;
+  // Eligible for bulk = visible after filter, excluding the current user
+  // and any pending row.
+  const bulkEligible = useMemo(
+    () => sorted.filter((m) => m.user_id !== currentUserId),
+    [sorted, currentUserId],
+  );
+  const selectedCount = selectedIds.size;
+  const allEligibleSelected =
+    bulkEligible.length > 0 &&
+    bulkEligible.every((m) => selectedIds.has(m.user_id));
+  function toggleOne(userId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+  function toggleAllEligible() {
+    if (allEligibleSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(bulkEligible.map((m) => m.user_id)));
+    }
+  }
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
 
+  // Bulk handlers — all use the existing per-user endpoints fanned out
+  // with Promise.all so a single failure doesn't block the others.
+  // Errors are aggregated into one toast at the end.
+  async function bulkRun(
+    label: string,
+    runOne: (userId: string) => Promise<unknown>,
+  ): Promise<void> {
+    setBulkBusy(true);
+    const ids = Array.from(selectedIds);
+    const results = await Promise.allSettled(ids.map(runOne));
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    setBulkBusy(false);
+    invalidateMembers();
+    if (failed === 0) {
+      toast.success(`${label}: ${ids.length} member${ids.length === 1 ? '' : 's'}`);
+      clearSelection();
+      setBulkDialog(null);
+    } else {
+      toast.error(
+        `${label}: ${ids.length - failed} succeeded, ${failed} failed`,
+      );
+    }
+  }
+  async function bulkAddToGroup(groupId: string) {
+    // addGroupMembers takes an array natively — single round-trip.
+    setBulkBusy(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const res = await addGroupMembers(account.account_id, groupId, ids);
+      invalidateMembers();
+      toast.success(
+        `Added ${res.added} member${res.added === 1 ? '' : 's'} to group`,
+      );
+      clearSelection();
+      setBulkDialog(null);
+    } catch (err) {
+      toast.error((err as Error).message || 'Failed to add to group');
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  return (
+    <SectionCard
+      title="Members"
+      count={account.member_count}
+      description={tHardcodedUi.raw('appAccountsIdPage.line761JsxAttrDescriptionPeopleWithAccessToThisAccount')}
+      action={
+        canInvite && (
+          <Button
+            onClick={() => setInviteOpen(true)}
+            size="sm"
+            className="gap-1.5"
+          >
+            <UserPlus className="h-4 w-4" />{tHardcodedUi.raw('appAccountsIdPage.line770JsxTextInviteMember')}</Button>
+        )
+      }
+      flush
+    >
       {isError && (
         <div className="px-6 py-5">
-          <p className="text-sm text-destructive">{error?.message || 'Failed to load members'}</p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
-            Retry
-          </Button>
+          <InfoBanner
+            tone="destructive"
+            title={tHardcodedUi.raw('appAccountsIdPage.line780JsxAttrTitleFailedToLoadMembers')}
+            action={
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                Retry
+              </Button>
+            }
+          >
+            {error?.message}
+          </InfoBanner>
         </div>
       )}
 
       {isLoading && (
-        <div className="divide-y divide-border/60">
+        <List>
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 px-6 py-3">
-              <Skeleton className="h-9 w-9 rounded-full" />
+            <li key={i} className="flex items-center gap-3 px-6 py-3">
+              <Skeleton className="size-8 rounded-full" />
               <div className="flex-1 space-y-1.5">
                 <Skeleton className="h-3.5 w-48" />
                 <Skeleton className="h-3 w-24" />
               </div>
-            </div>
+            </li>
           ))}
+        </List>
+      )}
+
+      {/* Search lives at the top of the list so it filters EVERYTHING
+          below it — pending invites + members alike. Looking up
+          "@foo.com" shouldn't care whether the person has accepted yet;
+          they're all people you're trying to find. */}
+      {!isLoading && !isError && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-6 py-3">
+          <div className="relative max-w-sm flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by email…"
+              className="h-9 pl-9"
+            />
+          </div>
+          {canBulk && bulkEligible.length > 0 && (
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={allEligibleSelected}
+                onChange={toggleAllEligible}
+                className="h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
+              />
+              {allEligibleSelected ? 'Deselect all' : 'Select all'}{' '}
+              {bulkEligible.length !== sorted.length && (
+                <span>(visible)</span>
+              )}
+            </label>
+          )}
         </div>
       )}
 
       {!isLoading && !isError && (
-        <PendingInvitesSection accountId={account.account_id} canManage={canInvite} />
+        <PendingInvitesSection
+          accountId={account.account_id}
+          canManage={canInvite}
+          search={search}
+        />
       )}
 
-      {!isLoading && !isError && (
-        <ul className="divide-y divide-border/60">
+      {selectedCount > 0 && canBulk && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-primary/[0.04] px-6 py-2.5 text-sm">
+          <span className="font-medium text-foreground">
+            {selectedCount} selected
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          {canInvite && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setBulkDialog('add_to_group')}
+              disabled={bulkBusy}
+            >
+              Add to group
+            </Button>
+          )}
+          {canUpdateRole && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setBulkDialog('set_role')}
+              disabled={bulkBusy}
+            >
+              Change role
+            </Button>
+          )}
+          {canRemove && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/5"
+              onClick={() => setBulkDialog('remove')}
+              disabled={bulkBusy}
+            >
+              Remove
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={clearSelection}
+            disabled={bulkBusy}
+            className="ml-auto text-muted-foreground"
+          >
+            Clear
+          </Button>
+        </div>
+      )}
+
+      {!isLoading && !isError && members.length > 0 && sorted.length === 0 && (
+        <div className="px-6 py-8 text-center text-sm text-muted-foreground">
+          No members match &quot;{search.trim()}&quot;.
+        </div>
+      )}
+
+      {!isLoading && !isError && sorted.length > 0 && (
+        <List>
           {sorted.map((member) => {
             const isSelf = member.user_id === currentUserId;
             const isLastOwner =
@@ -499,131 +1149,187 @@ function MembersCard({
             // Kebab is always available — "View & Edit permission policies"
             // is open to anyone who can view the member; backend gates writes.
             const showKebab = !pending;
+            // Self rows can't be bulk-acted on — would let an admin
+            // demote / remove themselves in a sweep.
+            const bulkEnabled = canBulk && !isSelf;
+            const isSelected = selectedIds.has(member.user_id);
 
             return (
-              <li
+              <ListRow
                 key={member.user_id}
-                className="flex items-center gap-3 px-6 py-3"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-sm font-semibold text-foreground">
-                  {getInitial(memberLabel(member))}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-foreground">
-                      {memberLabel(member)}
-                    </span>
-                    {isSelf && (
-                      <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
-                        You
-                      </Badge>
+                leading={
+                  <div className="flex items-center gap-2.5">
+                    {bulkEnabled ? (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleOne(member.user_id)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Select ${memberLabel(member)}`}
+                        className="h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
+                      />
+                    ) : (
+                      // Spacer so avatars align across selectable + self rows.
+                      <span className="w-3.5" aria-hidden />
                     )}
+                    <UserAvatar
+                      email={member.email ?? member.user_id}
+                      name={member.email ?? undefined}
+                      size="md"
+                    />
                   </div>
-                  <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                }
+                title={memberLabel(member)}
+                badges={
+                  isSelf && (
+                    <Badge variant="secondary" size="sm">
+                      You
+                    </Badge>
+                  )
+                }
+                subtitle={
+                  <InlineMeta>
                     <span>Joined {formatDate(member.joined_at)}</span>
-                    {member.account_role === 'member' && typeof member.explicit_project_count === 'number' && (
-                      <>
-                        <span className="text-muted-foreground/40">/</span>
-                        <span>{member.explicit_project_count} project{member.explicit_project_count === 1 ? '' : 's'}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <RoleBadge role={member.account_role} />
-
-                <div className="ml-1 w-7 shrink-0">
-                  {pending ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  ) : showKebab ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          aria-label={`Actions for ${memberLabel(member)}`}
+                    {member.account_role === 'member' &&
+                    typeof member.explicit_project_count === 'number' ? (
+                      <span>
+                        {member.explicit_project_count} project
+                        {member.explicit_project_count === 1 ? '' : 's'}
+                      </span>
+                    ) : null}
+                  </InlineMeta>
+                }
+                trailing={
+                  <>
+                    <div className="hidden items-center gap-1.5 sm:flex">
+                      {member.is_super_admin && (
+                        <Badge
+                          variant="outline"
+                          className="h-5 rounded-md border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-normal text-amber-700 dark:text-amber-300"
+                          title={tHardcodedUi.raw('appAccountsIdPage.line924JsxAttrTitleSuperAdminBypassesEveryIAMCheck')}
                         >
-                          <MoreHorizontal className="h-3.5 w-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-56">
-                        <DropdownMenuItem
-                          onSelect={() =>
-                            router.push(
-                              `/accounts/${account.account_id}/members/${member.user_id}`,
-                            )
-                          }
-                          className="gap-2"
+                          super
+                        </Badge>
+                      )}
+                      {member.groups && member.groups.length > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="h-5 rounded-md px-1.5 text-[10px] font-normal"
+                          title={member.groups.map((g) => g.name).join(', ')}
                         >
-                          <KeyRound className="h-3.5 w-3.5" />
-                          View &amp; Edit permission policies
-                        </DropdownMenuItem>
-                        {canUpdateRole && !isSelf && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                              Change role
-                            </DropdownMenuLabel>
-                            {(['owner', 'admin', 'member'] as AccountRole[]).map((role) => (
-                              <DropdownMenuItem
-                                key={role}
-                                disabled={role === member.account_role}
-                                onSelect={() =>
-                                  roleMutation.mutate({ userId: member.user_id, role })
-                                }
-                                className="gap-2"
-                              >
-                                <Shield className="h-3.5 w-3.5" />
-                                {ROLE_LABEL[role]}
-                                {role === member.account_role && (
-                                  <span className="ml-auto text-[10px] text-muted-foreground">
-                                    Current
-                                  </span>
-                                )}
-                              </DropdownMenuItem>
-                            ))}
-                          </>
+                          {member.groups.length} group{member.groups.length === 1 ? '' : 's'}
+                        </Badge>
+                      )}
+                      {typeof member.active_pat_count === 'number' &&
+                        member.active_pat_count > 0 && (
+                          <Badge
+                            variant="outline"
+                            className="h-5 rounded-md px-1.5 text-[10px] font-normal"
+                            title={`${member.active_pat_count} active PAT${member.active_pat_count === 1 ? '' : 's'}`}
+                          >
+                            {member.active_pat_count} PAT{member.active_pat_count === 1 ? '' : 's'}
+                          </Badge>
                         )}
-                        {canRemove && !isSelf && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onSelect={() => setRemoveTarget(member)}
-                              disabled={isLastOwner}
-                              className="gap-2 text-destructive focus:text-destructive"
+                      {member.has_verified_mfa && (
+                        <Badge
+                          variant="outline"
+                          className="h-5 rounded-md border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
+                          title={tHardcodedUi.raw('appAccountsIdPage.line952JsxAttrTitleMFAEnrolled')}
+                        >
+                          2FA
+                        </Badge>
+                      )}
+                    </div>
+                    <RoleBadge role={member.account_role} />
+                    <div className="ml-1 w-7 shrink-0">
+                      {pending ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      ) : showKebab ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              aria-label={`Actions for ${memberLabel(member)}`}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              Remove from team
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                        {isSelf && !account.personal_account && (
-                          <>
-                            <DropdownMenuSeparator />
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
                             <DropdownMenuItem
-                              onSelect={() => setLeaveConfirmOpen(true)}
-                              disabled={isLastOwner}
-                              className="gap-2 text-destructive focus:text-destructive"
+                              onSelect={() =>
+                                router.push(
+                                  `/accounts/${account.account_id}/members/${member.user_id}`,
+                                )
+                              }
+                              className="gap-2"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              Leave team
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : null}
-                </div>
-              </li>
+                              <KeyRound className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line883JsxTextViewAmpEditPermissionPolicies')}</DropdownMenuItem>
+                            {canUpdateRole && !isSelf && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuLabel className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line889JsxTextChangeRole')}</DropdownMenuLabel>
+                                {(
+                                  ['owner', 'admin', 'member'] as AccountRole[]
+                                ).map((role) => (
+                                  <DropdownMenuItem
+                                    key={role}
+                                    disabled={role === member.account_role}
+                                    onSelect={() =>
+                                      roleMutation.mutate({
+                                        userId: member.user_id,
+                                        role,
+                                      })
+                                    }
+                                    className="gap-2"
+                                  >
+                                    <Shield className="h-3.5 w-3.5" />
+                                    {ROLE_LABEL[role]}
+                                    {role === member.account_role && (
+                                      <span className="ml-auto text-xs text-muted-foreground">
+                                        Current
+                                      </span>
+                                    )}
+                                  </DropdownMenuItem>
+                                ))}
+                              </>
+                            )}
+                            {canRemove && !isSelf && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onSelect={() => setRemoveTarget(member)}
+                                  disabled={isLastOwner}
+                                  className="gap-2"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line925JsxTextRemoveFromTeam')}</DropdownMenuItem>
+                              </>
+                            )}
+                            {isSelf && !account.personal_account && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onSelect={() => setLeaveConfirmOpen(true)}
+                                  disabled={isLastOwner}
+                                  className="gap-2"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line938JsxTextLeaveTeam')}</DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
+                    </div>
+                  </>
+                }
+              />
             );
           })}
           {sorted.length === 0 && (
-            <li className="px-6 py-8 text-center text-sm text-muted-foreground">
-              No members yet.
-            </li>
+            <li className="px-6 py-8 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line953JsxTextNoMembersYet')}</li>
           )}
-        </ul>
+        </List>
       )}
 
       <InviteMemberModal
@@ -638,45 +1344,90 @@ function MembersCard({
         onOpenChange={(o) => {
           if (!o) setRemoveTarget(null);
         }}
-        title="Remove member"
+        title={tHardcodedUi.raw('appAccountsIdPage.line971JsxAttrTitleRemoveMember')}
         description={
           <span>
-            Remove <span className="font-medium text-foreground">{removeTarget ? memberLabel(removeTarget) : ''}</span> from{' '}
-            <span className="font-medium text-foreground">{account.name}</span>? They will lose
-            access immediately.
-          </span>
+            Remove{' '}
+            <span className="font-medium text-foreground">
+              {removeTarget ? memberLabel(removeTarget) : ''}
+            </span>{' '}
+            from{' '}
+            <span className="font-medium text-foreground">{account.name}</span>{tHardcodedUi.raw('appAccountsIdPage.line979JsxTextTheyWillLoseAccessImmediately')}</span>
         }
         confirmLabel="Remove"
-        onConfirm={() => removeTarget && removeMutation.mutate(removeTarget.user_id)}
+        onConfirm={() =>
+          removeTarget && removeMutation.mutate(removeTarget.user_id)
+        }
         isPending={removeMutation.isPending}
       />
 
       <ConfirmDialog
         open={leaveConfirmOpen}
         onOpenChange={setLeaveConfirmOpen}
-        title="Leave team"
+        title={tHardcodedUi.raw('appAccountsIdPage.line993JsxAttrTitleLeaveTeam')}
         description={
-          <span>
-            You&apos;ll lose access to <span className="font-medium text-foreground">{account.name}</span>{' '}
-            and its projects.
-          </span>
+          <span>{tHardcodedUi.raw('appAccountsIdPage.line996JsxTextYouAposLlLoseAccessTo')}{' '}
+            <span className="font-medium text-foreground">{account.name}</span>{' '}{tHardcodedUi.raw('appAccountsIdPage.line998JsxTextAndItsProjects')}</span>
         }
         confirmLabel="Leave"
         onConfirm={() => leaveMutation.mutate()}
         isPending={leaveMutation.isPending}
       />
-    </section>
+
+      <BulkAddToGroupDialog
+        open={bulkDialog === 'add_to_group'}
+        onOpenChange={(o) => !o && setBulkDialog(null)}
+        accountId={account.account_id}
+        selectedCount={selectedCount}
+        busy={bulkBusy}
+        onConfirm={bulkAddToGroup}
+      />
+
+      <BulkSetRoleDialog
+        open={bulkDialog === 'set_role'}
+        onOpenChange={(o) => !o && setBulkDialog(null)}
+        selectedCount={selectedCount}
+        busy={bulkBusy}
+        onConfirm={(role) =>
+          bulkRun('Role changed', (uid) =>
+            updateAccountMemberRole(account.account_id, uid, role),
+          )
+        }
+      />
+
+      <ConfirmDialog
+        open={bulkDialog === 'remove'}
+        onOpenChange={(o) => !o && setBulkDialog(null)}
+        title="Remove members"
+        description={
+          <span>
+            Remove{' '}
+            <span className="font-medium text-foreground">
+              {selectedCount} member{selectedCount === 1 ? '' : 's'}
+            </span>{' '}
+            from{' '}
+            <span className="font-medium text-foreground">{account.name}</span>?
+            They lose access immediately.
+          </span>
+        }
+        confirmLabel={`Remove ${selectedCount}`}
+        isPending={bulkBusy}
+        onConfirm={() =>
+          bulkRun('Removed', (uid) =>
+            removeAccountMember(account.account_id, uid),
+          )
+        }
+      />
+    </SectionCard>
   );
 }
 
 function RoleBadge({ role }: { role: AccountRole }) {
   return (
     <Badge
-      variant="outline"
-      className={cn(
-        'h-5 rounded-md px-1.5 text-[10px] font-medium',
-        role === 'owner' && 'border-foreground/30 text-foreground',
-      )}
+      variant={role === 'owner' ? 'outline' : 'secondary'}
+      size="sm"
+      className={cn(role === 'owner' && 'border-foreground/40 text-foreground')}
     >
       {ROLE_LABEL[role]}
     </Badge>
@@ -696,26 +1447,33 @@ function InviteMemberModal({
   accountId: string;
   onInvited: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<AccountRole>('member');
   const [inlineError, setInlineError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => inviteAccountMember(accountId, { email: email.trim(), role }),
+    mutationFn: () =>
+      inviteAccountMember(accountId, { email: email.trim(), role }),
     onSuccess: (res) => {
       if (res.status === 'pending') {
         if (res.email_sent) {
-          toast.success(`Invite sent to ${res.email} — they'll see it when they sign up`);
+          toast.success(
+            `Invite sent to ${res.email} — they'll see it when they sign up`,
+          );
         } else {
           // Email delivery was skipped (e.g. Mailtrap not configured locally).
           // Surface the link so the admin can share it manually.
-          toast.warning(`Invite created — email skipped. Share the link manually.`, {
-            action: {
-              label: 'Copy link',
-              onClick: () => copyInviteLink(res.invite_url),
+          toast.warning(
+            `Invite created — email skipped. Share the link manually.`,
+            {
+              action: {
+                label: 'Copy link',
+                onClick: () => copyInviteLink(res.invite_url),
+              },
+              duration: 10_000,
             },
-            duration: 10_000,
-          });
+          );
         }
       } else {
         toast.success(`Added ${res.email}`);
@@ -764,12 +1522,11 @@ function InviteMemberModal({
     >
       <DialogContent className="sm:max-w-md p-0 overflow-hidden gap-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-border/60">
-          <DialogTitle className="text-lg font-semibold tracking-tight">Invite member</DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            Invite by email. If they don&apos;t have a Kortix account yet, they&apos;ll get access when they sign up.
-          </DialogDescription>
+          <DialogTitle className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('appAccountsIdPage.line1109JsxTextInviteMember')}</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1112JsxTextInviteByEmailIfTheyDonAposT')}</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+        <form onSubmit={handleSubmit}>
+          <div className="px-6 py-5 space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="invite-email">Email</Label>
             <div className="relative">
@@ -782,7 +1539,7 @@ function InviteMemberModal({
                   setEmail(e.target.value);
                   if (inlineError) setInlineError(null);
                 }}
-                placeholder="teammate@company.com"
+                placeholder={tHardcodedUi.raw('appAccountsIdPage.line1130JsxAttrPlaceholderTeammateCompanyCom')}
                 autoFocus
                 className="pl-9"
                 disabled={mutation.isPending}
@@ -801,19 +1558,18 @@ function InviteMemberModal({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="member">Member — can use assigned projects</SelectItem>
-                <SelectItem value="admin">Admin — can invite members</SelectItem>
+                <SelectItem value="member">{tHardcodedUi.raw('appAccountsIdPage.line1150JsxTextMemberCanUseAssignedProjects')}</SelectItem>
+                <SelectItem value="admin">{tHardcodedUi.raw('appAccountsIdPage.line1153JsxTextAdminCanInviteMembers')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {inlineError && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-              {inlineError}
-            </div>
+            <InfoBanner tone="destructive">{inlineError}</InfoBanner>
           )}
+          </div>
 
-          <div className="-mx-6 mt-4 flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+          <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
             <Button
               type="button"
               variant="ghost"
@@ -822,7 +1578,11 @@ function InviteMemberModal({
             >
               Cancel
             </Button>
-            <Button type="submit" className="gap-1.5" disabled={mutation.isPending}>
+            <Button
+              type="submit"
+              className="gap-1.5"
+              disabled={mutation.isPending}
+            >
               {mutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -840,26 +1600,26 @@ function InviteMemberModal({
 // ============================== DANGER ZONE ==============================
 
 function DangerZoneCard() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <section className="rounded-xl border border-destructive/30 bg-destructive/5">
-      <header className="border-b border-destructive/20 px-6 py-4">
-        <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
-        <p className="mt-0.5 text-xs text-destructive/80">
-          Irreversible actions for this team.
-        </p>
-      </header>
-      <div className="flex items-center justify-between gap-4 px-6 py-4">
+    <SectionCard
+      tone="destructive"
+      title={tHardcodedUi.raw('appAccountsIdPage.line1198JsxAttrTitleDangerZone')}
+      description={tHardcodedUi.raw('appAccountsIdPage.line1199JsxAttrDescriptionIrreversibleActionsForThisTeam')}
+    >
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-foreground">Delete account</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Permanently delete this account and all associated projects.
-          </p>
+          <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1203JsxTextDeleteAccount')}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1205JsxTextPermanentlyDeleteThisAccountAndAllAssociatedProjects')}</p>
         </div>
-        <Button variant="outline" disabled title="Coming soon" className="shrink-0">
-          Coming soon
-        </Button>
+        <Button
+          variant="outline"
+          disabled
+          title={tHardcodedUi.raw('appAccountsIdPage.line1211JsxAttrTitleComingSoon')}
+          className="shrink-0"
+        >{tHardcodedUi.raw('appAccountsIdPage.line1214JsxTextComingSoon')}</Button>
       </div>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -868,13 +1628,20 @@ function DangerZoneCard() {
 function PendingInvitesSection({
   accountId,
   canManage,
+  search = '',
 }: {
   accountId: string;
   canManage: boolean;
+  /** Optional email filter — when the parent's search input has a
+   *  value, hide invites whose email doesn't include the query. */
+  search?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [cancelTarget, setCancelTarget] = useState<AccountInvitation | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<AccountInvitation | null>(
+    null,
+  );
 
   const invitesQuery = useQuery({
     queryKey: ['account-invites', accountId],
@@ -905,7 +1672,8 @@ function PendingInvitesSection({
       }
       invalidate();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to resend invite'),
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to resend invite'),
   });
 
   const cancelMutation = useMutation({
@@ -916,95 +1684,107 @@ function PendingInvitesSection({
       toast.success('Invite cancelled');
       invalidate();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to cancel invite'),
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to cancel invite'),
   });
 
-  const invites = invitesQuery.data ?? [];
+  const allInvites = invitesQuery.data ?? [];
+  // Filter by search query — case-insensitive substring on email.
+  const query = search.trim().toLowerCase();
+  const invites = query
+    ? allInvites.filter((i) => i.email.toLowerCase().includes(query))
+    : allInvites;
+  // Hide the whole section when there are no invites at all OR when
+  // the search filtered everything out — there's no useful empty state
+  // to show here (the parent's members list handles the "no matches"
+  // copy for the combined search).
   if (!invites.length) return null;
 
   return (
     <div className="border-b border-border/60 bg-muted/20">
-      <div className="px-6 pt-3 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        Pending invites · {invites.length}
+      <div className="px-6 pt-3 pb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1287JsxTextPendingInvites')}{invites.length}
       </div>
-      <ul className="divide-y divide-border/60">
+      <List>
         {invites.map((invite) => {
           const busy = pendingId === invite.invite_id;
           return (
-            <li key={invite.invite_id} className="flex items-center gap-3 px-6 py-2.5">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-border bg-background text-muted-foreground">
-                <Mail className="h-3.5 w-3.5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm text-foreground">{invite.email}</span>
-                  <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
-                    Pending
-                  </Badge>
-                </div>
-                <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  <span>Expires {formatDate(invite.expires_at)}</span>
-                </div>
-              </div>
-              <RoleBadge role={invite.initial_role} />
-              <div className="ml-1 w-7 shrink-0">
-                {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                ) : canManage ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                        aria-label={`Actions for ${invite.email}`}
-                      >
-                        <MoreHorizontal className="h-3.5 w-3.5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
-                      <DropdownMenuItem
-                        onSelect={() => resendMutation.mutate(invite.invite_id)}
-                        className="gap-2"
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        Resend invite
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => copyInviteLink(invite.invite_url)}
-                        className="gap-2"
-                      >
-                        <LinkIcon className="h-3.5 w-3.5" />
-                        Copy invitation link
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onSelect={() => setCancelTarget(invite)}
-                        className="gap-2 text-destructive focus:text-destructive"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        Cancel invite
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : null}
-              </div>
-            </li>
+            <ListRow
+              key={invite.invite_id}
+              leading={<UserAvatar email={invite.email} size="md" />}
+              title={invite.email}
+              badges={
+                <Badge variant="secondary" size="sm">
+                  Pending
+                </Badge>
+              }
+              subtitle={
+                <InlineMeta>
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Expires {formatDate(invite.expires_at)}
+                  </span>
+                </InlineMeta>
+              }
+              trailing={
+                <>
+                  <RoleBadge role={invite.initial_role} />
+                  <div className="ml-1 w-7 shrink-0">
+                    {busy ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : canManage ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            aria-label={`Actions for ${invite.email}`}
+                          >
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52">
+                          <DropdownMenuItem
+                            onSelect={() =>
+                              resendMutation.mutate(invite.invite_id)
+                            }
+                            className="gap-2"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line1336JsxTextResendInvite')}</DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => copyInviteLink(invite.invite_url)}
+                            className="gap-2"
+                          >
+                            <LinkIcon className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line1343JsxTextCopyInvitationLink')}</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onSelect={() => setCancelTarget(invite)}
+                            className="gap-2"
+                          >
+                            <X className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line1351JsxTextCancelInvite')}</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
+                  </div>
+                </>
+              }
+            />
           );
         })}
-      </ul>
+      </List>
 
       <ConfirmDialog
         open={!!cancelTarget}
-        onOpenChange={(o) => { if (!o) setCancelTarget(null); }}
-        title="Cancel invite"
+        onOpenChange={(o) => {
+          if (!o) setCancelTarget(null);
+        }}
+        title={tHardcodedUi.raw('appAccountsIdPage.line1369JsxAttrTitleCancelInvite')}
         description={
           cancelTarget
             ? `Revoke the pending invite for ${cancelTarget.email}? They'll need a new invite to join.`
             : ''
         }
-        confirmLabel="Cancel invite"
+        confirmLabel={tHardcodedUi.raw('appAccountsIdPage.line1375JsxAttrConfirmlabelCancelInvite')}
         isPending={cancelMutation.isPending}
         onConfirm={() => {
           if (!cancelTarget) return;
@@ -1013,5 +1793,150 @@ function PendingInvitesSection({
         }}
       />
     </div>
+  );
+}
+
+// ─── Bulk dialogs ─────────────────────────────────────────────────────────
+
+function BulkAddToGroupDialog({
+  open,
+  onOpenChange,
+  accountId,
+  selectedCount,
+  busy,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  accountId: string;
+  selectedCount: number;
+  busy: boolean;
+  onConfirm: (groupId: string) => void;
+}) {
+  const [groupId, setGroupId] = useState<string | undefined>(undefined);
+  const groupsQuery = useQuery({
+    queryKey: ['account-groups', accountId],
+    queryFn: () => listGroups(accountId),
+    enabled: open,
+    staleTime: 30_000,
+  });
+  // Reset selection every reopen so a stale id from last time doesn't
+  // pre-fill an unrelated group.
+  function handleOpenChange(v: boolean) {
+    if (v) setGroupId(undefined);
+    onOpenChange(v);
+  }
+  const groups = groupsQuery.data ?? [];
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            Add {selectedCount} member{selectedCount === 1 ? '' : 's'} to a group
+          </DialogTitle>
+          <DialogDescription>
+            Pick the group these members should join. Members already in the
+            group are skipped — re-adding is a no-op.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5 py-1">
+          <Label htmlFor="bulk-group">Group</Label>
+          {groupsQuery.isLoading ? (
+            <Skeleton className="h-9 w-full" />
+          ) : groups.length === 0 ? (
+            <p className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+              No groups exist on this account yet. Create one from the Groups
+              tab first.
+            </p>
+          ) : (
+            <Select
+              value={groupId ?? ''}
+              onValueChange={(v) => setGroupId(v || undefined)}
+            >
+              <SelectTrigger id="bulk-group">
+                <SelectValue placeholder="Choose a group…" />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((g) => (
+                  <SelectItem key={g.group_id} value={g.group_id}>
+                    {g.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!groupId || busy || groups.length === 0}
+            onClick={() => groupId && onConfirm(groupId)}
+            className="gap-1.5"
+          >
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Add to group
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BulkSetRoleDialog({
+  open,
+  onOpenChange,
+  selectedCount,
+  busy,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  selectedCount: number;
+  busy: boolean;
+  onConfirm: (role: AccountRole) => void;
+}) {
+  const [role, setRole] = useState<AccountRole>('member');
+  function handleOpenChange(v: boolean) {
+    if (v) setRole('member');
+    onOpenChange(v);
+  }
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            Change role for {selectedCount} member{selectedCount === 1 ? '' : 's'}
+          </DialogTitle>
+          <DialogDescription>
+            Owners and admins have implicit Manager on every project. Members
+            get access only via direct grants or group membership.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5 py-1">
+          <Label htmlFor="bulk-role">New role</Label>
+          <Select value={role} onValueChange={(v) => setRole(v as AccountRole)}>
+            <SelectTrigger id="bulk-role">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="owner">Owner — full control + can delete the account</SelectItem>
+              <SelectItem value="admin">Admin — everything except account deletion</SelectItem>
+              <SelectItem value="member">Member — no implicit project access</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={() => onConfirm(role)} disabled={busy} className="gap-1.5">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Apply
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

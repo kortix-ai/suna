@@ -1,5 +1,7 @@
 'use client';
 
+import { useLocale, useTranslations } from 'next-intl';
+
 import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -9,9 +11,9 @@ import { Clock, Loader2 } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { cn } from '@/lib/utils';
 import {
   acceptAccountInvite,
   declineAccountInvite,
@@ -26,6 +28,8 @@ async function getUnifiedInvite(inviteId: string): Promise<UnifiedInvite> {
 }
 
 export default function InvitePage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const locale = useLocale();
   const { inviteId } = useParams<{ inviteId: string }>();
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
@@ -84,9 +88,7 @@ export default function InvitePage() {
     return (
       <BrandSurface>
         <div className="flex items-center gap-2.5 text-foreground/40 text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading invite…
-        </div>
+          <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('appInvitesInviteidPage.line88JsxTextLoadingInvite')}</div>
       </BrandSurface>
     );
   }
@@ -95,15 +97,11 @@ export default function InvitePage() {
     return (
       <BrandSurface>
         <InviteCard kicker="Invite">
-          <StateHeading>Invite not found</StateHeading>
+          <StateHeading>{tHardcodedUi.raw('appInvitesInviteidPage.line98JsxTextInviteNotFound')}</StateHeading>
           <StateBody>
-            {inviteQuery.error instanceof Error
-              ? inviteQuery.error.message
-              : 'This invite link is invalid or has been revoked.'}
+            {tHardcodedUi.raw('appInvitesInviteidPage.inviteInvalidOrRevoked')}
           </StateBody>
-          <GhostAction onClick={() => router.replace('/projects')}>
-            Back to projects
-          </GhostAction>
+          <GhostAction onClick={() => router.replace('/projects')}>{tHardcodedUi.raw('appInvitesInviteidPage.line105JsxTextBackToProjects')}</GhostAction>
         </InviteCard>
       </BrandSurface>
     );
@@ -119,18 +117,12 @@ export default function InvitePage() {
   if (!invite.email_matches_caller) {
     return (
       <BrandSurface>
-        <InviteCard kicker="Wrong account">
-          <StateHeading>Switch accounts</StateHeading>
-          <StateBody>
-            This invite is addressed to a different account. You're signed in
-            as <span className="text-foreground/80 font-medium">{user.email}</span>.
+        <InviteCard kicker={tHardcodedUi.raw('appInvitesInviteidPage.line122JsxAttrKickerWrongAccount')}>
+          <StateHeading>{tHardcodedUi.raw('appInvitesInviteidPage.line123JsxTextSwitchAccounts')}</StateHeading>
+          <StateBody>{tHardcodedUi.raw('appInvitesInviteidPage.line125JsxTextThisInviteIsAddressedToADifferentAccount')}{' '}<span className="text-foreground/80 font-medium">{user.email}</span>.
           </StateBody>
-          <p className="text-[12px] text-foreground/30 mt-4">
-            Sign out and sign back in with the address that received the invite.
-          </p>
-          <GhostAction onClick={() => router.replace('/projects')}>
-            Back to projects
-          </GhostAction>
+          <p className="text-xs text-foreground/30 mt-4">{tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}</p>
+          <GhostAction onClick={() => router.replace('/projects')}>{tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}</GhostAction>
         </InviteCard>
       </BrandSurface>
     );
@@ -139,14 +131,12 @@ export default function InvitePage() {
   if (invite.expired) {
     return (
       <BrandSurface>
-        <InviteCard kicker="Invite">
-          <StateHeading>Invite expired</StateHeading>
+        <InviteCard kicker={tHardcodedUi.raw('appInvitesInviteidPage.inviteKicker')}>
+          <StateHeading>{tHardcodedUi.raw('appInvitesInviteidPage.line143JsxTextInviteExpired')}</StateHeading>
           <StateBody>
-            Expired <span className="text-foreground/60">{formatWhen(invite.expires_at)}</span>. Ask the person who invited you to send a new one.
-          </StateBody>
-          <GhostAction onClick={() => router.replace('/projects')}>
-            Back to projects
-          </GhostAction>
+            {tHardcodedUi.raw('appInvitesInviteidPage.expiredPrefix')}{' '}
+            <span className="text-foreground/60">{formatWhen(invite.expires_at, locale)}</span>{tHardcodedUi.raw('appInvitesInviteidPage.line145JsxTextAskThePersonWhoInvitedYouToSend')}</StateBody>
+          <GhostAction onClick={() => router.replace('/projects')}>{tHardcodedUi.raw('appInvitesInviteidPage.line148JsxTextBackToProjects')}</GhostAction>
         </InviteCard>
       </BrandSurface>
     );
@@ -161,91 +151,81 @@ export default function InvitePage() {
     null;
   const targetName = item.invite.account_name || 'Account';
   const inviterEmail = invite.inviter_email;
-  const targetLabel = 'Team account';
+  const targetLabel = tHardcodedUi.raw('appInvitesInviteidPage.teamAccountLabel');
   const roleLabel = item.invite.initial_role === 'admin'
-    ? 'an admin'
-    : 'a member';
+    ? tHardcodedUi.raw('appInvitesInviteidPage.roleAdmin')
+    : tHardcodedUi.raw('appInvitesInviteidPage.roleMember');
 
   return (
     <BrandSurface>
-      <InviteCard kicker="Invitation">
+      <InviteCard kicker={tHardcodedUi.raw('appInvitesInviteidPage.invitationKicker')}>
         {inviterEmail ? (
           <div className="flex items-center gap-3">
             <UserAvatar email={inviterEmail} size="lg" />
             <div className="min-w-0">
-              <div className="text-foreground/85 truncate text-[14px] font-medium">
+              <div className="text-foreground/85 truncate text-sm font-medium">
                 {inviterEmail}
               </div>
-              <div className="text-foreground/40 mt-0.5 text-[12px]">
-                invited you to join a team
-              </div>
+              <div className="text-foreground/40 mt-0.5 text-xs">{tHardcodedUi.raw('appInvitesInviteidPage.line180JsxTextInvitedYouToJoinATeam')}</div>
             </div>
           </div>
         ) : (
-          <div className="text-foreground/50 text-[14px] leading-relaxed">
-            You have been invited to join a team.
-          </div>
+          <div className="text-foreground/50 text-sm leading-relaxed">{tHardcodedUi.raw('appInvitesInviteidPage.line186JsxTextYouHaveBeenInvitedToJoinATeam')}</div>
         )}
 
         <div className="mt-5 flex items-center gap-3 rounded-2xl border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-3.5">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05] text-foreground/60">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-foreground/[0.05] text-foreground/60">
             <KortixLogo size={16} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-foreground/85 truncate text-[14px] font-medium">
+            <div className="text-foreground/85 truncate text-sm font-medium">
               {targetName}
             </div>
-            <div className="text-foreground/40 mt-0.5 flex items-center gap-1 text-[11px]">
+            <div className="text-foreground/40 mt-0.5 flex items-center gap-1 text-xs">
               <Clock className="size-3" />
-              {targetLabel} · expires {formatWhen(invite.expires_at)}
+              {targetLabel}{tHardcodedUi.raw('appInvitesInviteidPage.line200JsxTextExpires')}{formatWhen(invite.expires_at, locale)}
             </div>
           </div>
         </div>
 
-        <p className="text-foreground/35 mt-4 text-[11px] leading-relaxed">
-          {`You'll join this account as ${roleLabel} and see projects the owner gives you access to.`}
+        <p className="text-foreground/35 mt-4 text-xs leading-relaxed">
+          {tHardcodedUi('appInvitesInviteidPage.joinAccountDescription', { roleLabel })}
         </p>
 
         {errorMessage ? (
-          <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/[0.08] px-3.5 py-2.5 text-[12px] text-red-300">
+          <InfoBanner tone="destructive" className="mt-4">
             {errorMessage}
-          </div>
+          </InfoBanner>
         ) : null}
 
         <div className="mt-6 flex gap-2">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="lg"
             onClick={() => declineMutation.mutate()}
             disabled={anyPending}
-            className={cn(
-              'flex-1 h-10 rounded-xl text-[13px] font-medium transition-colors',
-              'bg-foreground/[0.04] hover:bg-foreground/[0.08] border border-foreground/[0.08]',
-              'text-foreground/60 hover:text-foreground/80',
-              'disabled:opacity-40 disabled:pointer-events-none',
-            )}
+            className="flex-1 text-sm"
           >
             {declinePending ? (
               <Loader2 className="h-4 w-4 animate-spin mx-auto" />
             ) : (
-              'Decline'
+              tHardcodedUi.raw('appInvitesInviteidPage.decline')
             )}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            size="lg"
             onClick={() => acceptMutation.mutate()}
             disabled={anyPending}
-            className={cn(
-              'flex-1 h-10 rounded-xl text-[13px] font-medium transition-colors',
-              'bg-foreground text-background hover:bg-foreground/90',
-              'disabled:opacity-40 disabled:pointer-events-none',
-            )}
+            className="flex-1 text-sm"
           >
             {acceptPending ? (
               <Loader2 className="h-4 w-4 animate-spin mx-auto" />
             ) : (
-              'Accept'
+              tHardcodedUi.raw('appInvitesInviteidPage.accept')
             )}
-          </button>
+          </Button>
         </div>
       </InviteCard>
     </BrandSurface>
@@ -282,8 +262,8 @@ function InviteCard({
     >
       <div className="flex flex-col items-center gap-5">
         <KortixLogo size={26} />
-        <div className="w-full bg-background/80 dark:bg-background/75 backdrop-blur-2xl border border-foreground/[0.06] rounded-[20px] px-7 py-7">
-          <p className="text-[11px] text-foreground/30 tracking-[0.2em] uppercase mb-5">
+        <div className="w-full bg-background/80 dark:bg-background/75 backdrop-blur-2xl border border-foreground/[0.06] rounded-2xl px-7 py-7">
+          <p className="text-xs text-foreground/30 tracking-[0.2em] uppercase mb-5">
             {kicker}
           </p>
           {children}
@@ -295,7 +275,7 @@ function InviteCard({
 
 function StateHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h1 className="text-[28px] font-extralight tracking-tight text-foreground/85 leading-none">
+    <h1 className="text-3xl font-extralight tracking-tight text-foreground/85 leading-none">
       {children}
     </h1>
   );
@@ -303,7 +283,7 @@ function StateHeading({ children }: { children: React.ReactNode }) {
 
 function StateBody({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mt-3 text-[14px] text-foreground/50 leading-relaxed">{children}</p>
+    <p className="mt-3 text-sm text-foreground/50 leading-relaxed">{children}</p>
   );
 }
 
@@ -317,7 +297,7 @@ function GhostAction({
   return (
     <Button
       variant="ghost"
-      className="mt-6 h-10 px-4 rounded-xl text-[13px] text-foreground/60 hover:text-foreground/90 hover:bg-foreground/[0.05]"
+      className="mt-6 h-10 px-4 text-sm text-foreground/60 hover:text-foreground/90 hover:bg-foreground/[0.05]"
       onClick={onClick}
     >
       {children}
@@ -325,15 +305,14 @@ function GhostAction({
   );
 }
 
-function formatWhen(iso: string): string {
+function formatWhen(iso: string, locale: string): string {
   const d = new Date(iso);
   const now = new Date();
   const msPerDay = 24 * 60 * 60 * 1000;
   const diffDays = Math.round((d.getTime() - now.getTime()) / msPerDay);
-  if (diffDays < -1) return `on ${d.toLocaleDateString()}`;
-  if (diffDays === -1) return 'yesterday';
-  if (diffDays === 0) return 'today';
-  if (diffDays === 1) return 'tomorrow';
-  if (diffDays < 14) return `in ${diffDays} days`;
-  return d.toLocaleDateString();
+  if (diffDays < -1) return d.toLocaleDateString(locale);
+  if (diffDays < 14) {
+    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(diffDays, 'day');
+  }
+  return d.toLocaleDateString(locale);
 }

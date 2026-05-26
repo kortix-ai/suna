@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { useState, useEffect, useCallback } from 'react';
 import { ArrowRight } from 'lucide-react';
@@ -12,6 +14,7 @@ const CAL_LINK = 'markokraemer/partnerships';
 const CAL_NAMESPACE = 'partnerships';
 
 export default function PartnershipsPageClient() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [calOpen, setCalOpen] = useState(false);
   const [showFloatingCta, setShowFloatingCta] = useState(false);
 
@@ -42,59 +45,43 @@ export default function PartnershipsPageClient() {
         </Reveal>
 
         <Reveal delay={0.08}>
-          <p className="text-base text-muted-foreground leading-relaxed max-w-xl">
-            We work with a handful of selected companies to build autonomous operations — the same way we build them for ourselves. Kortix leadership and engineers, embedded with your team.
-          </p>
+          <p className="text-base text-muted-foreground leading-relaxed max-w-xl">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line46JsxTextWeWorkWithAHandfulOfSelectedCompanies')}</p>
         </Reveal>
 
         <Reveal delay={0.16}>
-          <p className="text-base text-muted-foreground leading-relaxed max-w-xl mt-4">
-            We learn from every engagement. That knowledge feeds back into everything we build. You get your operations actually automated — by the team that does this every day for their own companies. Our full methodology, knowledge, and processes — shared openly.
-          </p>
+          <p className="text-base text-muted-foreground leading-relaxed max-w-xl mt-4">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line52JsxTextWeLearnFromEveryEngagementThatKnowledgeFeeds')}</p>
         </Reveal>
 
         {/* Price */}
         <Reveal delay={0.2}>
           <div className="mt-14 p-6 rounded-2xl border border-border bg-muted/5">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
-              Monthly Retainer
-            </p>
+            <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line60JsxTextMonthlyRetainer')}</p>
             <p className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground">
               $20,000<span className="text-base font-normal text-muted-foreground">/month</span>
             </p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Kortix leadership and engineers embedded with your team. Cancel anytime.
-            </p>
+            <p className="text-sm text-muted-foreground mt-2">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line66JsxTextKortixLeadershipAndEngineersEmbeddedWithYourTeam')}</p>
           </div>
         </Reveal>
 
         {/* How it works */}
         <Reveal>
           <div className="mt-14">
-            <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
-              How It Works
-            </h2>
+            <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line75JsxTextHowItWorks')}</h2>
             <div className="space-y-6">
               <div>
-                <p className="text-xs text-muted-foreground mb-1">Phase 1</p>
+                <p className="text-xs text-muted-foreground mb-1">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line79JsxTextPhase1')}</p>
                 <p className="text-base font-medium text-foreground">Understand</p>
-                <p className="text-base text-muted-foreground leading-relaxed mt-1.5">
-                  We go deep. We talk to you, your team, your operators. We map every process — inputs, outputs, the black boxes where humans are doing repetitive work day-to-day. What{"'"}s actually happening, not what the org chart says.
-                </p>
+                <p className="text-base text-muted-foreground leading-relaxed mt-1.5">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line82JsxTextWeGoDeepWeTalkToYouYour')}{"'"}{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line82JsxTextSActuallyHappeningNotWhatTheOrgChart')}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground mb-1">Phase 2</p>
-                <p className="text-base font-medium text-foreground">Build & Deploy</p>
-                <p className="text-base text-muted-foreground leading-relaxed mt-1.5">
-                  We build autonomous operations on Kortix — agents, automations, autonomous teams — wired into your tools and data. Fully deployed, in production. This requires low politics, low bureaucracy, and real access. Credentials, systems, green lights. We need ownership to move. This is a partnership, not a consulting engagement.
-                </p>
+                <p className="text-xs text-muted-foreground mb-1">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line86JsxTextPhase2')}</p>
+                <p className="text-base font-medium text-foreground">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line87JsxTextBuildDeploy')}</p>
+                <p className="text-base text-muted-foreground leading-relaxed mt-1.5">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line89JsxTextWeBuildAutonomousOperationsOnKortixAgentsAutomations')}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Ongoing</p>
-                <p className="text-base font-medium text-foreground">Operate & Expand</p>
-                <p className="text-base text-muted-foreground leading-relaxed mt-1.5">
-                  We stay. Optimizing what{"'"}s running, expanding into new workflows, increasing autonomy — progressively replacing manual process with systems that run themselves.
-                </p>
+                <p className="text-base font-medium text-foreground">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line94JsxTextOperateExpand')}</p>
+                <p className="text-base text-muted-foreground leading-relaxed mt-1.5">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line96JsxTextWeStayOptimizingWhat')}{"'"}{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line96JsxTextSRunningExpandingIntoNewWorkflowsIncreasingAutonomy')}</p>
               </div>
             </div>
           </div>
@@ -103,33 +90,26 @@ export default function PartnershipsPageClient() {
         {/* CTA */}
         <Reveal>
           <div className="mt-14 pt-8 border-t border-border">
-            <p className="text-base text-muted-foreground leading-relaxed">
-              Also open to joint ventures and deeper structures beyond a retainer.
-            </p>
+            <p className="text-base text-muted-foreground leading-relaxed">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line107JsxTextAlsoOpenToJointVenturesAndDeeperStructures')}</p>
 
             <Button
               size="lg"
               className="h-11 px-6 mt-5 text-sm rounded-full"
               onClick={openCal}
-            >
-              Schedule a call<ArrowRight className="ml-1.5 size-3.5" />
+            >{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line115JsxTextScheduleACall')}<ArrowRight className="ml-1.5 size-3.5" />
             </Button>
 
             <div className="flex flex-col gap-1.5 mt-5">
               <a
                 href="mailto:marko@kortix.com"
                 className="text-base text-foreground hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors w-fit"
-              >
-                marko@kortix.com
-              </a>
+              >{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line123JsxTextMarkoKortixCom')}</a>
               <a
                 href="https://x.com/markokraemer"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-base text-foreground hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors w-fit"
-              >
-                @markokraemer
-              </a>
+              >{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line131JsxTextMarkokraemer')}</a>
               <a
                 href="https://www.linkedin.com/in/markokraemer/"
                 target="_blank"
@@ -165,9 +145,7 @@ export default function PartnershipsPageClient() {
       {/* ═══ Cal.com Modal ═══ */}
       <Dialog open={calOpen} onOpenChange={setCalOpen}>
         <DialogContent className="p-0 gap-0 border-none max-w-[min(700px,95vw)] rounded-2xl overflow-hidden">
-          <DialogTitle className="sr-only">
-            Schedule a Partnerships Call
-          </DialogTitle>
+          <DialogTitle className="sr-only">{tHardcodedUi.raw('appHomePartnershipsPartnershipsClient.line169JsxTextScheduleAPartnershipsCall')}</DialogTitle>
           <div className="bg-white dark:bg-[#171717] h-[600px] sm:h-[700px] overflow-auto">
             <Cal
               namespace={CAL_NAMESPACE}

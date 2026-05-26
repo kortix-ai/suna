@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { Search, ArrowRight, Play, Check, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -7,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Reveal } from '@/components/home/reveal';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { YOUTUBE_IFRAME_ALLOW } from '@/lib/security/iframe-sandbox';
 
 const DEMO_URL = '/enterprise';
 const START_URL = '/auth';
@@ -194,7 +197,7 @@ function buildBreakdown(agent: Agent, industry: string) {
 }
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
-  return <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">{children}</span>;
+  return <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{children}</span>;
 }
 
 /* ─── Agent video-preview card ─── */
@@ -205,7 +208,7 @@ function AgentCard({ agent, industry, onOpen }: { agent: Agent; industry: string
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={posterFor(industry + agent.name)} alt={agent.name} className="absolute inset-0 w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-[1.04]" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
-        <div className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-sm text-[10px] font-mono uppercase tracking-wider text-white/90">
+        <div className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-sm text-xs font-mono uppercase tracking-wider text-white/90">
           <Play className="size-2.5 fill-current" /> Preview
         </div>
         <div className="absolute inset-0 flex items-center justify-center">
@@ -216,13 +219,14 @@ function AgentCard({ agent, industry, onOpen }: { agent: Agent; industry: string
       </div>
       <div className="p-4">
         <h3 className="text-sm font-semibold text-foreground">{agent.name}</h3>
-        <p className="mt-1 text-[13px] text-muted-foreground leading-relaxed">{agent.description}</p>
+        <p className="mt-1 text-sm text-muted-foreground leading-relaxed">{agent.description}</p>
       </div>
     </button>
   );
 }
 
 export default function UseCasesPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [selected, setSelected] = useState<Selected | null>(null);
@@ -288,13 +292,9 @@ export default function UseCasesPage() {
         <section className="max-w-6xl mx-auto px-6 py-14 sm:py-20">
           <Reveal>
             <div className="max-w-3xl">
-              <Eyebrow>Agent library</Eyebrow>
-              <h1 className="mt-3 text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-foreground leading-tight">
-                An agent for every job on your plate.
-              </h1>
-              <p className="mt-4 text-base sm:text-lg text-muted-foreground leading-relaxed max-w-2xl">
-                Each one comes ready for your industry, plugs into the tools you already run, and is doing real work within days — no multi-quarter rollout.
-              </p>
+              <Eyebrow>{tHardcodedUi.raw('appHomeUseCasesPage.line291JsxTextAgentLibrary')}</Eyebrow>
+              <h1 className="mt-3 text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeUseCasesPage.line293JsxTextAnAgentForEveryJobOnYourPlate')}</h1>
+              <p className="mt-4 text-base sm:text-lg text-muted-foreground leading-relaxed max-w-2xl">{tHardcodedUi.raw('appHomeUseCasesPage.line296JsxTextEachOneComesReadyForYourIndustryPlugs')}</p>
             </div>
           </Reveal>
         </section>
@@ -308,7 +308,7 @@ export default function UseCasesPage() {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder='Search agents — try "contract review"'
+                placeholder={tHardcodedUi.raw('appHomeUseCasesPage.line311JsxAttrPlaceholderSearchAgentsTryContractReview')}
                 className="w-full h-12 pl-11 pr-4 rounded-full border border-border bg-card/40 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-foreground/30 transition-colors"
               />
             </div>
@@ -323,7 +323,7 @@ export default function UseCasesPage() {
                     key={filter}
                     onClick={() => setActiveFilter(filter)}
                     className={cn(
-                      'px-4 h-9 rounded-full text-[13px] font-medium transition-colors cursor-pointer',
+                      'px-4 h-9 rounded-full text-sm font-medium transition-colors cursor-pointer',
                       active ? 'bg-foreground text-background' : 'border border-border text-muted-foreground hover:text-foreground',
                     )}
                   >
@@ -335,7 +335,7 @@ export default function UseCasesPage() {
           </Reveal>
 
           <Reveal delay={0.1}>
-            <p className="mt-6 text-[13px] text-muted-foreground">
+            <p className="mt-6 text-sm text-muted-foreground">
               {isDefault ? `${TOTAL_AGENTS} agents across ${INDUSTRIES.length} industries` : `${matchedAgents} ${matchedAgents === 1 ? 'agent' : 'agents'}`}
             </p>
           </Reveal>
@@ -343,7 +343,7 @@ export default function UseCasesPage() {
           <div className="mt-10 space-y-14">
             {filtered.length === 0 ? (
               <Reveal>
-                <p className="text-sm text-muted-foreground">No agents match your search. Try a different term or filter.</p>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appHomeUseCasesPage.line346JsxTextNoAgentsMatchYourSearchTryADifferent')}</p>
               </Reveal>
             ) : (
               filtered.map((industry) => (
@@ -351,7 +351,7 @@ export default function UseCasesPage() {
                   <div>
                     <div className="flex items-baseline gap-3 flex-wrap">
                       <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-foreground">{industry.name}</h2>
-                      <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                      <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
                         {industry.agents.length} {industry.agents.length === 1 ? 'agent' : 'agents'}
                       </span>
                     </div>
@@ -372,9 +372,9 @@ export default function UseCasesPage() {
         <section className="max-w-6xl mx-auto px-6 py-14 sm:py-20 border-t border-border/50">
           <Reveal>
             <div className="max-w-2xl">
-              <Eyebrow>Live in days</Eyebrow>
-              <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">From first call to first result in a week.</h2>
-              <p className="mt-4 text-base text-muted-foreground leading-relaxed max-w-xl">Spin up a workspace, connect your tools, and hand an agent a real task. That&apos;s the whole rollout.</p>
+              <Eyebrow>{tHardcodedUi.raw('appHomeUseCasesPage.line375JsxTextLiveInDays')}</Eyebrow>
+              <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeUseCasesPage.line376JsxTextFromFirstCallToFirstResultInA')}</h2>
+              <p className="mt-4 text-base text-muted-foreground leading-relaxed max-w-xl">{tHardcodedUi.raw('appHomeUseCasesPage.line377JsxTextSpinUpAWorkspaceConnectYourToolsAnd')}</p>
             </div>
           </Reveal>
         </section>
@@ -382,16 +382,16 @@ export default function UseCasesPage() {
         {/* ═══════════════ FINAL CTA ═══════════════ */}
         <section className="max-w-5xl mx-auto px-6 py-20 sm:py-28 text-center border-t border-border/50">
           <Reveal>
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">Put one to work this week.</h2>
-            <p className="mt-4 text-base text-muted-foreground leading-relaxed max-w-xl mx-auto">Start free, or have us tailor an agent to your workflow in a live demo.</p>
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeUseCasesPage.line385JsxTextPutOneToWorkThisWeek')}</h2>
+            <p className="mt-4 text-base text-muted-foreground leading-relaxed max-w-xl mx-auto">{tHardcodedUi.raw('appHomeUseCasesPage.line386JsxTextStartFreeOrHaveUsTailorAnAgent')}</p>
           </Reveal>
           <Reveal delay={0.1}>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Button asChild size="lg" className="h-12 px-8 text-sm rounded-full">
-                <Link href={DEMO_URL}>Request demo<ArrowRight className="ml-1.5 size-3.5" /></Link>
+                <Link href={DEMO_URL}>{tHardcodedUi.raw('appHomeUseCasesPage.line391JsxTextRequestDemo')}<ArrowRight className="ml-1.5 size-3.5" /></Link>
               </Button>
               <Button asChild size="lg" variant="outline" className="h-12 px-7 text-sm rounded-full">
-                <Link href={START_URL}>Get started</Link>
+                <Link href={START_URL}>{tHardcodedUi.raw('appHomeUseCasesPage.line394JsxTextGetStarted')}</Link>
               </Button>
             </div>
           </Reveal>
@@ -408,7 +408,7 @@ export default function UseCasesPage() {
                 <iframe
                   src={`https://www.youtube.com/embed/${DEMO_VIDEO_ID}?autoplay=1&rel=0`}
                   title={`${selected.name} demo`}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allow={YOUTUBE_IFRAME_ALLOW}
                   allowFullScreen
                   className="absolute inset-0 w-full h-full"
                 />
@@ -430,44 +430,44 @@ export default function UseCasesPage() {
             <div className="p-6 sm:p-8">
               {/* Prev / next browsing */}
               <div className="flex items-center justify-between mb-5">
-                <span className="text-[12px] text-muted-foreground tabular-nums">
+                <span className="text-xs text-muted-foreground tabular-nums">
                   {(currentIndex >= 0 ? currentIndex + 1 : 1)} / {flatAgents.length}
                 </span>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => go(-1)} aria-label="Previous use-case" className="flex items-center justify-center size-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors cursor-pointer">
+                  <button onClick={() => go(-1)} aria-label={tHardcodedUi.raw('appHomeUseCasesPage.line437JsxAttrAriaLabelPreviousUseCase')} className="flex items-center justify-center size-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors cursor-pointer">
                     <ChevronLeft className="size-4" />
                   </button>
-                  <button onClick={() => go(1)} aria-label="Next use-case" className="flex items-center justify-center size-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors cursor-pointer">
+                  <button onClick={() => go(1)} aria-label={tHardcodedUi.raw('appHomeUseCasesPage.line440JsxAttrAriaLabelNextUseCase')} className="flex items-center justify-center size-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors cursor-pointer">
                     <ChevronRight className="size-4" />
                   </button>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">{selected.industry}</span>
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{selected.industry}</span>
                 <span className="size-1 rounded-full bg-muted-foreground/40" />
-                <span className="inline-flex items-center gap-1 text-[11px] font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-500"><Sparkles className="size-3" />Pre-built agent</span>
+                <span className="inline-flex items-center gap-1 text-xs font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-500"><Sparkles className="size-3" />{tHardcodedUi.raw('appHomeUseCasesPage.line449JsxTextPreBuiltAgent')}</span>
               </div>
               <DialogTitle className="mt-2 text-2xl sm:text-3xl font-medium tracking-tight text-foreground">{selected.name}</DialogTitle>
               <p className="mt-1 text-sm text-muted-foreground">{selected.description}</p>
 
               <div className="mt-3 flex flex-wrap gap-2">
                 {breakdown.highlights.map((h) => (
-                  <span key={h} className="px-2.5 py-1 rounded-full border border-border bg-card/60 text-[12px] text-foreground">{h}</span>
+                  <span key={h} className="px-2.5 py-1 rounded-full border border-border bg-card/60 text-xs text-foreground">{h}</span>
                 ))}
               </div>
 
-              <p className="mt-6 text-[15px] text-muted-foreground leading-relaxed">{breakdown.overview}</p>
+              <p className="mt-6 text-sm text-muted-foreground leading-relaxed">{breakdown.overview}</p>
 
               {/* How it works */}
               <div className="mt-8">
-                <h4 className="text-sm font-semibold text-foreground mb-4">How it works</h4>
+                <h4 className="text-sm font-semibold text-foreground mb-4">{tHardcodedUi.raw('appHomeUseCasesPage.line464JsxTextHowItWorks')}</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {breakdown.steps.map((s, i) => (
                     <div key={s.t} className="rounded-2xl border border-border bg-card/40 p-4">
-                      <div className="text-[11px] font-mono text-muted-foreground">/0{i + 1}</div>
+                      <div className="text-xs font-mono text-muted-foreground">/0{i + 1}</div>
                       <div className="mt-1.5 text-sm font-semibold text-foreground">{s.t}</div>
-                      <p className="mt-1 text-[13px] text-muted-foreground leading-relaxed">{s.d}</p>
+                      <p className="mt-1 text-sm text-muted-foreground leading-relaxed">{s.d}</p>
                     </div>
                   ))}
                 </div>
@@ -476,18 +476,18 @@ export default function UseCasesPage() {
               {/* Inputs / Outputs */}
               <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
-                  <h4 className="text-sm font-semibold text-foreground mb-3">What it needs</h4>
+                  <h4 className="text-sm font-semibold text-foreground mb-3">{tHardcodedUi.raw('appHomeUseCasesPage.line479JsxTextWhatItNeeds')}</h4>
                   <ul className="space-y-2">
                     {breakdown.inputs.map((x) => (
-                      <li key={x} className="flex items-start gap-2.5 text-[13px] text-muted-foreground"><Check className="size-4 mt-0.5 text-foreground/60 shrink-0" />{x}</li>
+                      <li key={x} className="flex items-start gap-2.5 text-sm text-muted-foreground"><Check className="size-4 mt-0.5 text-foreground/60 shrink-0" />{x}</li>
                     ))}
                   </ul>
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-foreground mb-3">What you get back</h4>
+                  <h4 className="text-sm font-semibold text-foreground mb-3">{tHardcodedUi.raw('appHomeUseCasesPage.line487JsxTextWhatYouGetBack')}</h4>
                   <ul className="space-y-2">
                     {breakdown.outputs.map((x) => (
-                      <li key={x} className="flex items-start gap-2.5 text-[13px] text-muted-foreground"><Check className="size-4 mt-0.5 text-emerald-500 shrink-0" />{x}</li>
+                      <li key={x} className="flex items-start gap-2.5 text-sm text-muted-foreground"><Check className="size-4 mt-0.5 text-emerald-500 shrink-0" />{x}</li>
                     ))}
                   </ul>
                 </div>
@@ -495,34 +495,34 @@ export default function UseCasesPage() {
 
               {/* Sample prompt */}
               <div className="mt-8">
-                <h4 className="text-sm font-semibold text-foreground mb-3">Kick it off</h4>
-                <div className="rounded-2xl border border-border bg-foreground/[0.03] p-4 font-mono text-[13px] text-foreground leading-relaxed">
-                  <span className="text-muted-foreground select-none">&gt; </span>{breakdown.prompt}
+                <h4 className="text-sm font-semibold text-foreground mb-3">{tHardcodedUi.raw('appHomeUseCasesPage.line498JsxTextKickItOff')}</h4>
+                <div className="rounded-2xl border border-border bg-foreground/[0.03] p-4 font-mono text-sm text-foreground leading-relaxed">
+                  <span className="text-muted-foreground select-none">{tHardcodedUi.raw('appHomeUseCasesPage.line500JsxTextGt')}</span>{breakdown.prompt}
                 </div>
               </div>
 
               {/* Integrations */}
               <div className="mt-8">
-                <h4 className="text-sm font-semibold text-foreground mb-3">Connects to</h4>
+                <h4 className="text-sm font-semibold text-foreground mb-3">{tHardcodedUi.raw('appHomeUseCasesPage.line506JsxTextConnectsTo')}</h4>
                 <div className="flex flex-wrap items-center gap-2">
                   {breakdown.integrations.map((d) => (
                     <span key={d} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card/60">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={favicon(d)} alt={d} width={16} height={16} className="size-4 rounded-sm" />
-                      <span className="text-[13px] text-foreground">{d.replace(/\.(com|so|google\.com|app)$/, '').replace('drive.', 'Drive')}</span>
+                      <span className="text-sm text-foreground">{d.replace(/\.(com|so|google\.com|app)$/, '').replace('drive.', 'Drive')}</span>
                     </span>
                   ))}
-                  <span className="text-[12px] text-muted-foreground">+ 3,000 more</span>
+                  <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('appHomeUseCasesPage.line515JsxTextText3000More')}</span>
                 </div>
               </div>
 
               {/* CTA */}
               <div className="mt-9 flex flex-col sm:flex-row gap-3 pt-6 border-t border-border/50">
                 <Button asChild size="lg" className="h-12 px-7 text-sm rounded-full">
-                  <Link href={DEMO_URL}>Request a demo of this agent<ArrowRight className="ml-1.5 size-3.5" /></Link>
+                  <Link href={DEMO_URL}>{tHardcodedUi.raw('appHomeUseCasesPage.line522JsxTextRequestADemoOfThisAgent')}<ArrowRight className="ml-1.5 size-3.5" /></Link>
                 </Button>
                 <Button asChild size="lg" variant="outline" className="h-12 px-7 text-sm rounded-full">
-                  <Link href={START_URL}>Get started free</Link>
+                  <Link href={START_URL}>{tHardcodedUi.raw('appHomeUseCasesPage.line525JsxTextGetStartedFree')}</Link>
                 </Button>
               </div>
             </div>

@@ -1,6 +1,7 @@
 import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
 import { PlatinumProvider } from './platinum';
+import { LocalDockerProvider } from './local-docker';
 
 /**
  * Sandbox provider lineup. Extensible registry — adding a new runtime is
@@ -8,12 +9,13 @@ import { PlatinumProvider } from './platinum';
  * `ProviderName` union. Call sites depend on the `SandboxProvider`
  * interface, not the concrete class, so they stay untouched.
  *
- *   - daytona  — managed cloud (Daytona).
- *   - platinum — Cloud Hypervisor microVMs (api.platinum.dev). No
- *                per-project snapshot system yet — every sandbox boots
- *                from a shared template (default: `pt-base`).
+ *   - daytona      — managed cloud (Daytona).
+ *   - platinum     — Cloud Hypervisor microVMs (api.platinum.dev). No
+ *                    per-project snapshot system yet — every sandbox boots
+ *                    from a shared template (default: `pt-base`).
+ *   - local_docker — self-hosted/local Docker runtime.
  */
-export type ProviderName = 'daytona' | 'platinum';
+export type ProviderName = 'daytona' | 'platinum' | 'local_docker';
 export type { SandboxProviderName } from '../../config';
 
 export interface CreateSandboxOpts {
@@ -27,8 +29,7 @@ export interface CreateSandboxOpts {
    * Override the provider's default snapshot/image with one built
    * specifically for this project. The snapshot builder
    * (apps/api/src/snapshots/builder.ts) populates this when a session
-   * boots; falls back to the provider-wide default when absent (e.g.
-   * for legacy sessions that pre-date per-project builds).
+   * boots; falls back to the provider-wide default when absent.
    */
   snapshot?: string;
   /**
@@ -121,6 +122,12 @@ export function getProvider(name: ProviderName): SandboxProvider {
       }
       provider = new PlatinumProvider();
       break;
+    case 'local_docker':
+      if (!config.DOCKER_HOST) {
+        throw new Error('Local Docker provider requires DOCKER_HOST to be set.');
+      }
+      provider = new LocalDockerProvider();
+      break;
     default: {
       const exhaustive: never = name;
       throw new Error(`Unknown sandbox provider: ${exhaustive}`);
@@ -136,5 +143,9 @@ export function getDefaultProviderName(): ProviderName {
 }
 
 export function getAvailableProviders(): ProviderName[] {
-  return ['daytona', 'platinum'];
+  // Delegate to the per-provider credential probe — the same gate
+  // getProvider() throws against. Keeps the list honest: a provider that
+  // can't actually be instantiated never advertises itself.
+  return (['daytona', 'platinum', 'local_docker'] as ProviderName[])
+    .filter((p) => config.isProviderEnabled(p));
 }

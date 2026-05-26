@@ -263,7 +263,7 @@ setupApp.get('/status', async (c) => {
   } catch {}
 
   return c.json({
-    envMode: config.ENV_MODE,
+    billingEnabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     dockerRunning,
     envExists,
     // The old sandbox-secrets file is gone.

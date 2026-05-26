@@ -222,6 +222,24 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
   return invite;
 }
 
+mock.module('../iam/engine', () => {
+  // Mirror the legacy account-role gate against the test's mocked member rows so
+  // owner/admin pass writes, plain members get reads only, non-members are denied.
+  const decide = (userId: string, action: string): boolean => {
+    const m = memberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
+    if (!m) return false;
+    if (m.accountRole === 'owner' || m.accountRole === 'admin') return true;
+    return action.endsWith('.read');
+  };
+  return {
+    authorize: async (userId: string, _a: unknown, action: string) => ({ allowed: decide(userId, action) }),
+    assertAuthorized: async (userId: string, _a: unknown, action: string) => {
+      if (!decide(userId, action)) throw new HTTPException(403, { message: `forbidden: ${action} (denied)` });
+    },
+    listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
+  };
+});
+
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     if (!currentUserId) return c.json({ error: 'Unauthorized' }, 401);
@@ -460,7 +478,8 @@ describe('accounts API contract', () => {
       body: JSON.stringify({ name: 'Member Rename' }),
     });
     expect(denied.status).toBe(403);
-    expect(await denied.json()).toEqual({ error: 'Owner role required' });
+    // IAM engine denial shape (replaced the legacy manual "Owner role required" check).
+    expect(await denied.json()).toMatchObject({ error: true, status: 403 });
   });
 
   test('distinguishes unknown account from existing non-member account', async () => {

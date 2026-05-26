@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -26,6 +28,7 @@ import {
 } from 'lucide-react';
 
 export function LLMAnalysisPanel() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [focusArea, setFocusArea] = useState<string>('all');
   const [days, setDays] = useState(30);
   const [analysis, setAnalysis] = useState<LLMAnalysisResponse | null>(null);
@@ -68,7 +71,7 @@ export function LLMAnalysisPanel() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-secondary" />
-            <CardTitle className="text-base font-medium">AI Analysis</CardTitle>
+            <CardTitle className="text-base font-medium">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line71JsxTextAiAnalysis')}</CardTitle>
           </div>
           <div className="flex items-center gap-2">
             <Select value={focusArea} onValueChange={setFocusArea}>
@@ -76,10 +79,10 @@ export function LLMAnalysisPanel() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Feedback</SelectItem>
-                <SelectItem value="negative">Negative Only</SelectItem>
-                <SelectItem value="positive">Positive Only</SelectItem>
-                <SelectItem value="critical">Critical (≤2★)</SelectItem>
+                <SelectItem value="all">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line79JsxTextAllFeedback')}</SelectItem>
+                <SelectItem value="negative">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line80JsxTextNegativeOnly')}</SelectItem>
+                <SelectItem value="positive">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line81JsxTextPositiveOnly')}</SelectItem>
+                <SelectItem value="critical">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line82JsxTextCritical2')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={days.toString()} onValueChange={(v) => setDays(parseInt(v))}>
@@ -87,9 +90,9 @@ export function LLMAnalysisPanel() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="7">7 days</SelectItem>
-                <SelectItem value="30">30 days</SelectItem>
-                <SelectItem value="90">90 days</SelectItem>
+                <SelectItem value="7">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line90JsxTextText7Days')}</SelectItem>
+                <SelectItem value="30">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line91JsxTextText30Days')}</SelectItem>
+                <SelectItem value="90">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line92JsxTextText90Days')}</SelectItem>
               </SelectContent>
             </Select>
             <Button 
@@ -111,9 +114,7 @@ export function LLMAnalysisPanel() {
             </Button>
           </div>
         </div>
-        <CardDescription>
-          Get AI-powered insights and actionable recommendations from user feedback
-        </CardDescription>
+        <CardDescription>{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line115JsxTextGetAiPoweredInsightsAndActionableRecommendationsFrom')}</CardDescription>
       </CardHeader>
       <CardContent>
         {analysisMutation.isPending ? (
@@ -128,19 +129,18 @@ export function LLMAnalysisPanel() {
               {/* Summary Card */}
               <div className="rounded-2xl border bg-secondary/5 p-5">
                 <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-secondary/10">
+                  <div className="p-2 rounded-2xl bg-secondary/10">
                     <Target className="h-5 w-5 text-secondary" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-semibold mb-2">Executive Summary</h4>
+                    <h4 className="font-semibold mb-2">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line135JsxTextExecutiveSummary')}</h4>
                     <p className="text-sm text-muted-foreground leading-relaxed">
                       {analysis.analysis}
                     </p>
                     <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <MessageSquareQuote className="h-3.5 w-3.5" />
-                        {analysis.feedback_analyzed_count} reviews analyzed
-                      </span>
+                        {analysis.feedback_analyzed_count}{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line142JsxTextReviewsAnalyzed')}</span>
                     </div>
                   </div>
                 </div>
@@ -149,9 +149,7 @@ export function LLMAnalysisPanel() {
               {/* Key Themes */}
               {analysis.key_themes.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
-                    Key Themes
-                  </h4>
+                  <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line153JsxTextKeyThemes')}</h4>
                   <div className="flex flex-wrap gap-2">
                     {analysis.key_themes.map((theme, i) => (
                       <span 
@@ -172,7 +170,7 @@ export function LLMAnalysisPanel() {
                   <div className="rounded-2xl border bg-secondary/5 p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <CheckCircle2 className="h-5 w-5 text-secondary" />
-                      <h4 className="font-semibold">What's Working</h4>
+                      <h4 className="font-semibold">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line175JsxTextWhatSWorking')}</h4>
                     </div>
                     <ul className="space-y-2">
                       {analysis.positive_highlights.map((highlight, i) => (
@@ -190,7 +188,7 @@ export function LLMAnalysisPanel() {
                   <div className="rounded-2xl border bg-destructive/5 p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <AlertTriangle className="h-5 w-5 text-destructive" />
-                      <h4 className="font-semibold">Needs Attention</h4>
+                      <h4 className="font-semibold">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line193JsxTextNeedsAttention')}</h4>
                     </div>
                     <div className="space-y-2">
                       {analysis.improvement_areas.slice(0, 4).map((area, i) => (
@@ -210,9 +208,7 @@ export function LLMAnalysisPanel() {
               {/* Detailed Improvement Areas */}
               {analysis.improvement_areas.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
-                    Improvement Details
-                  </h4>
+                  <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line214JsxTextImprovementDetails')}</h4>
                   <div className="space-y-3">
                     {analysis.improvement_areas.map((area, i) => (
                       <div 
@@ -225,7 +221,7 @@ export function LLMAnalysisPanel() {
                               <span className="font-medium">{area.area}</span>
                               <Badge 
                                 variant="outline" 
-                                className={cn('text-[10px] uppercase', 
+                                className={cn('text-xs uppercase',
                                   area.severity === 'high' 
                                     ? 'border-destructive/50 text-destructive' 
                                     : 'border-secondary/50 text-secondary'
@@ -256,9 +252,7 @@ export function LLMAnalysisPanel() {
               {/* Actionable Recommendations */}
               {analysis.actionable_recommendations.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
-                    Recommended Actions
-                  </h4>
+                  <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line260JsxTextRecommendedActions')}</h4>
                   <div className="space-y-3">
                     {analysis.actionable_recommendations.map((rec, i) => (
                       <div 
@@ -266,9 +260,9 @@ export function LLMAnalysisPanel() {
                         className="group rounded-2xl border bg-card p-4 hover:border-secondary/50 transition-colors"
                       >
                         <div className="flex items-start gap-4">
-                          <div className={cn('p-2 rounded-lg shrink-0', 
-                            rec.priority === 'high' 
-                              ? 'bg-destructive/10 text-destructive' 
+                          <div className={cn('p-2 rounded-2xl shrink-0',
+                            rec.priority === 'high'
+                              ? 'bg-destructive/10 text-destructive'
                               : 'bg-secondary/10 text-secondary'
                           )}>
                             {rec.priority === 'high' ? (
@@ -306,12 +300,8 @@ export function LLMAnalysisPanel() {
             <div className="p-4 rounded-full bg-secondary/10 mb-4">
               <Sparkles className="h-8 w-8 text-secondary/50" />
             </div>
-            <p className="text-sm font-medium mb-1">
-              Ready to analyze feedback
-            </p>
-            <p className="text-xs text-muted-foreground max-w-xs">
-              Click "Analyze" to generate AI-powered insights using GPT-5 Nano
-            </p>
+            <p className="text-sm font-medium mb-1">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line310JsxTextReadyToAnalyzeFeedback')}</p>
+            <p className="text-xs text-muted-foreground max-w-xs">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line313JsxTextClickAnalyzeToGenerateAiPoweredInsightsUsing')}</p>
           </div>
         )}
       </CardContent>

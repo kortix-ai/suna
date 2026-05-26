@@ -8,13 +8,14 @@ import { getSupabase } from '../shared/supabase';
 import { lookupUserIdByEmail } from '../shared/users';
 import { resolveAccountId } from '../shared/resolve-account';
 import {
+  PatPolicyError,
   createAccountToken,
   listAccountTokens,
   revokeAccountToken,
 } from '../repositories/account-tokens';
 import { sendAccountInviteEmail } from './email';
 import { config } from '../config';
-import { authorize, ACCOUNT_ACTIONS, assertAuthorized, syncMemberAccountPolicy, removeMemberPolicies, removeProjectPoliciesForMember } from '../iam';
+import { authorize, ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 
 // Public, share-anywhere invite URL. Matches the link generated inside the
 // email template (apps/api/src/accounts/email.ts), so an invite copied here
@@ -23,12 +24,35 @@ function buildInviteUrl(inviteId: string): string {
   const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
   return `${base}/invites/${inviteId}`;
 }
+
+function defaultAccountName(email: string | null | undefined): string {
+  const normalized = email?.trim();
+  return normalized ? `${normalized}'s Account` : 'Account';
+}
+
+function accountDisplayName(
+  name: string | null | undefined,
+  email: string | null | undefined,
+  personalAccount: boolean,
+): string {
+  const normalized = name?.trim();
+  if (personalAccount && (!normalized || normalized === 'Personal' || normalized === 'User')) {
+    return defaultAccountName(email);
+  }
+  return normalized || defaultAccountName(email);
+}
+
 import { iamRouter } from './iam';
 import { auditRouter } from './audit';
+import { accountSessionGate } from '../iam/session-gate';
 
 export const accountsRouter = new Hono<AppEnv>();
 
 accountsRouter.use('/*', supabaseAuth);
+// Enforce per-account session policies (max lifetime / idle timeout /
+// force-logout) on every authenticated, account-scoped request. No-op
+// on routes without an :accountId param.
+accountsRouter.use('/*', accountSessionGate());
 
 // Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is
@@ -105,7 +129,7 @@ accountsRouter.get('/me', async (c) => {
     accounts: memberships.map((m) => ({
       account_id: m.accountId,
       slug: m.accountId.slice(0, 8),
-      name: m.name || userEmail || 'User',
+      name: accountDisplayName(m.name, userEmail, m.personalAccount),
       personal_account: m.personalAccount,
       role: m.accountRole,
     })),
@@ -168,7 +192,15 @@ accountsRouter.post('/tokens', async (c) => {
     return c.json({ error: 'expires_at must be ISO-8601' }, 400);
   }
 
-  const created = await createAccountToken({ accountId, userId, name, expiresAt });
+  let created;
+  try {
+    created = await createAccountToken({ accountId, userId, name, expiresAt });
+  } catch (err) {
+    if (err instanceof PatPolicyError) {
+      return c.json({ error: err.message, code: err.code }, 400);
+    }
+    throw err;
+  }
   return c.json(
     {
       token_id: created.tokenId,
@@ -312,12 +344,6 @@ async function autoClaimPendingInvites(userId: string, email: string): Promise<v
           .onConflictDoNothing({
             target: [accountMembers.userId, accountMembers.accountId],
           });
-        await syncMemberAccountPolicy({
-          accountId: invite.accountId,
-          userId,
-          accountRole: invite.initialRole,
-          createdBy: userId,
-        });
         await db
           .update(accountInvitations)
           .set({ acceptedAt: new Date() })
@@ -356,7 +382,7 @@ accountsRouter.get('/', async (c) => {
       return c.json(
         memberships.map((m) => ({
           account_id: m.accountId,
-          name: m.name || userEmail || 'User',
+          name: accountDisplayName(m.name, userEmail, m.personalAccount),
           slug: m.accountId.slice(0, 8),
           personal_account: m.personalAccount,
           created_at: m.createdAt?.toISOString() ?? new Date().toISOString(),
@@ -383,7 +409,7 @@ accountsRouter.get('/', async (c) => {
       return c.json(
         legacyMemberships.map((m) => ({
           account_id: m.accountId,
-          name: userEmail || 'User',
+          name: defaultAccountName(userEmail),
           slug: m.accountId.slice(0, 8),
           personal_account: true,
           created_at: new Date().toISOString(),
@@ -398,7 +424,7 @@ accountsRouter.get('/', async (c) => {
   }
 
   try {
-    const personalName = userEmail || 'Personal';
+    const personalName = defaultAccountName(userEmail);
     const [created] = await db
       .insert(accounts)
       .values({ name: personalName, personalAccount: true })
@@ -425,7 +451,7 @@ accountsRouter.get('/', async (c) => {
     return c.json([
       {
         account_id: userId,
-        name: userEmail || 'User',
+        name: defaultAccountName(userEmail),
         slug: userId.slice(0, 8),
         personal_account: true,
         created_at: new Date().toISOString(),
@@ -585,6 +611,46 @@ accountsRouter.get('/:accountId/members', async (c) => {
     /* groups table unavailable — return members without group chips */
   }
 
+  // Active-PAT counts per member, in one aggregate so the member list
+  // can flag who's automating against the account. Best-effort —
+  // failures degrade to "0".
+  const patCountByUser = new Map<string, number>();
+  try {
+    const patRows = await db.execute<{ user_id: string; n: number }>(sql`
+      SELECT user_id::text, COUNT(*)::int AS n
+      FROM kortix.account_tokens
+      WHERE account_id = ${accountId}::uuid AND status = 'active'
+      GROUP BY user_id
+    `);
+    const patData = ((patRows as unknown) as { rows: typeof patRows }).rows ?? patRows;
+    for (const row of patData as Array<{ user_id: string; n: number }>) {
+      patCountByUser.set(row.user_id, row.n);
+    }
+  } catch {
+    /* swallow — display "0 PATs" on failure */
+  }
+
+  // Verified-MFA flag per member from Supabase Auth. Same forgiving
+  // fallback as above so the list never 500s if auth.mfa_factors is
+  // unavailable in a given environment.
+  const mfaByUser = new Map<string, boolean>();
+  try {
+    const mfaRows = await db.execute<{ user_id: string }>(sql`
+      SELECT DISTINCT user_id::text
+      FROM auth.mfa_factors
+      WHERE status = 'verified'
+        AND user_id IN (
+          SELECT user_id FROM kortix.account_members WHERE account_id = ${accountId}::uuid
+        )
+    `);
+    const mfaData = ((mfaRows as unknown) as { rows: typeof mfaRows }).rows ?? mfaRows;
+    for (const row of mfaData as Array<{ user_id: string }>) {
+      mfaByUser.set(row.user_id, true);
+    }
+  } catch {
+    /* auth.mfa_factors unavailable in this env */
+  }
+
   return c.json(
     rows.map((r) => ({
       user_id: r.userId,
@@ -593,6 +659,8 @@ accountsRouter.get('/:accountId/members', async (c) => {
       is_super_admin: r.isSuperAdmin,
       explicit_project_count: projectGrantCountByUser.get(r.userId) ?? 0,
       groups: groupsByUser.get(r.userId) ?? [],
+      active_pat_count: patCountByUser.get(r.userId) ?? 0,
+      has_verified_mfa: mfaByUser.get(r.userId) ?? false,
       joined_at: r.joinedAt.toISOString(),
     })),
   );
@@ -636,13 +704,6 @@ accountsRouter.post('/:accountId/members', async (c) => {
       userId: targetUserId,
       accountId,
       accountRole: role,
-    });
-
-    await syncMemberAccountPolicy({
-      accountId,
-      userId: targetUserId,
-      accountRole: role,
-      createdBy: userId,
     });
 
     return c.json(
@@ -848,8 +909,6 @@ accountsRouter.delete('/:accountId/members/:userId', async (c) => {
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)));
 
-  await removeMemberPolicies(accountId, targetUserId);
-
   return c.json({ ok: true });
 });
 
@@ -904,18 +963,12 @@ accountsRouter.patch('/:accountId/members/:userId', async (c) => {
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)));
 
   if (newRole === 'owner' || newRole === 'admin') {
+    // Owners/admins get implicit Manager on every project; their direct
+    // project_members rows would shadow nothing useful, so clean them up.
     await db
       .delete(projectMembers)
       .where(and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, targetUserId)));
-    await removeProjectPoliciesForMember(accountId, targetUserId);
   }
-
-  await syncMemberAccountPolicy({
-    accountId,
-    userId: targetUserId,
-    accountRole: newRole,
-    createdBy: callerUserId,
-  });
 
   return c.json({
     user_id: targetUserId,
@@ -956,8 +1009,6 @@ accountsRouter.post('/:accountId/leave', async (c) => {
   await db
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
-
-  await removeMemberPolicies(accountId, userId);
 
   return c.json({ ok: true });
 });

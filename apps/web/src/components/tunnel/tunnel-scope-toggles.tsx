@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useMemo } from 'react';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -32,6 +34,7 @@ function groupBy<T>(arr: T[], fn: (item: T) => string): Record<string, T[]> {
 }
 
 export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: permissions, isLoading } = useTunnelPermissions(tunnelId);
   const grantMutation = useGrantTunnelPermission();
   const revokeMutation = useRevokeTunnelPermission();
@@ -70,13 +73,13 @@ export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
   };
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading permissions...</div>;
+    return <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelScopeToggles.line73JsxTextLoadingPermissions')}</div>;
   }
 
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2 text-sm">
-        <span className="text-muted-foreground">New grants expire in:</span>
+        <span className="text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelScopeToggles.line79JsxTextNewGrantsExpireIn')}</span>
         <Select value={expiryValue} onValueChange={setExpiryValue}>
           <SelectTrigger className="w-[120px] h-8 text-xs cursor-pointer hover:bg-muted/50 transition-colors">
             <SelectValue />

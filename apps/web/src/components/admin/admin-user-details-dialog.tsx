@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import {
@@ -8,8 +10,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Tabs,
@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -65,6 +66,7 @@ export function AdminUserDetailsDialog({
   onClose,
   onRefresh,
 }: AdminUserDetailsDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [adjustAmount, setAdjustAmount] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
   const [refundAmount, setRefundAmount] = useState('');
@@ -193,7 +195,7 @@ export function AdminUserDetailsDialog({
   const getTransactionColor = (type: string) => {
     switch (type) {
       case 'usage':
-        return 'text-red-600';
+        return 'text-destructive';
       case 'admin_grant':
         return 'text-green-600';
       case 'tier_grant':
@@ -211,18 +213,15 @@ export function AdminUserDetailsDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            User Details - {user.email}
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="flex-shrink-0 border-b border-border/60 px-6 pt-6 pb-4">
+          <DialogTitle className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+            <User className="h-5 w-5" />{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line217JsxTextUserDetails')}{user.email}
           </DialogTitle>
-          <DialogDescription>
-            Manage user account, billing, and perform admin actions
-          </DialogDescription>
+          <DialogDescription className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line220JsxTextManageUserAccountBillingAndPerformAdminActions')}</DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto px-6 py-5">
           {isLoading ? (
             <div className="space-y-4 p-1">
               <Skeleton className="h-32 w-full" />
@@ -235,7 +234,7 @@ export function AdminUserDetailsDialog({
                 <TabsTrigger value="threads">Threads</TabsTrigger>
                 <TabsTrigger value="transactions">Transactions</TabsTrigger>
                 <TabsTrigger value="activity">Activity</TabsTrigger>
-                <TabsTrigger value="actions">Admin Actions</TabsTrigger>
+                <TabsTrigger value="actions">{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line237JsxTextAdminActions')}</TabsTrigger>
               </TabsList>
 
               <TabsContent value="overview" className="space-y-4">
@@ -243,9 +242,7 @@ export function AdminUserDetailsDialog({
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
-                        <User className="h-4 w-4" />
-                        Account Info
-                      </CardTitle>
+                        <User className="h-4 w-4" />{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line246JsxTextAccountInfo')}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div>
@@ -253,7 +250,7 @@ export function AdminUserDetailsDialog({
                         <p className="font-mono text-sm">{user.email}</p>
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-muted-foreground">User ID</p>
+                        <p className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line255JsxTextUserId')}</p>
                         <p className="font-mono text-xs">{user.id}</p>
                       </div>
                       <div>
@@ -272,13 +269,11 @@ export function AdminUserDetailsDialog({
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
-                        <CreditCard className="h-4 w-4" />
-                        Credit Summary
-                      </CardTitle>
+                        <CreditCard className="h-4 w-4" />{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line275JsxTextCreditSummary')}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div>
-                        <p className="text-sm font-medium text-muted-foreground">Current Balance</p>
+                        <p className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line280JsxTextCurrentBalance')}</p>
                         <p className="text-2xl font-medium text-green-600">
                           {formatCredits(dollarsToCredits(user.credit_balance))}
                         </p>
@@ -311,9 +306,7 @@ export function AdminUserDetailsDialog({
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <MessageSquare className="h-4 w-4" />
-                      User Threads
-                    </CardTitle>
+                      <MessageSquare className="h-4 w-4" />{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line314JsxTextUserThreads')}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {threadsLoading ? (
@@ -334,7 +327,7 @@ export function AdminUserDetailsDialog({
                                 {thread.project_name ? (
                                   <p className="text-sm font-medium truncate">{thread.project_name}</p>
                                 ) : (
-                                  <p className="text-sm font-medium text-muted-foreground">Direct Thread</p>
+                                  <p className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line336JsxTextDirectThread')}</p>
                                 )}
                                 {thread.is_public && (
                                   <Badge variant="outline" className="text-xs">Public</Badge>
@@ -391,7 +384,7 @@ export function AdminUserDetailsDialog({
                         )}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No threads found</p>
+                      <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line393JsxTextNoThreadsFound')}</p>
                     )}
                   </CardContent>
                 </Card>
@@ -460,7 +453,7 @@ export function AdminUserDetailsDialog({
                         )}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No transactions found</p>
+                      <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line462JsxTextNoTransactionsFound')}</p>
                     )}
                   </CardContent>
                 </Card>
@@ -499,10 +492,10 @@ export function AdminUserDetailsDialog({
                                 </Badge>
                               </div>
                               <p className="text-xs text-muted-foreground mt-1">
-                                {formatDate(activity.created_at)} • Thread: {activity.thread_name || activity.thread_id.slice(-8)}
+                                {formatDate(activity.created_at)}{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line501JsxTextThread')}{activity.thread_name || activity.thread_id.slice(-8)}
                               </p>
                               {activity.error && (
-                                <p className="text-xs text-red-600 mt-1 truncate">
+                                <p className="text-xs text-destructive mt-1 truncate">
                                   Error: {activity.error}
                                 </p>
                               )}
@@ -541,7 +534,7 @@ export function AdminUserDetailsDialog({
                         )}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No activity found</p>
+                      <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line543JsxTextNoActivityFound')}</p>
                     )}
                   </CardContent>
                 </Card>
@@ -551,21 +544,12 @@ export function AdminUserDetailsDialog({
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
-                        <CreditCard className="h-4 w-4" />
-                        Process Refund
-                      </CardTitle>
+                        <CreditCard className="h-4 w-4" />{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line554JsxTextProcessRefund')}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="p-3 border border-red-200 dark:border-red-950 bg-red-50 dark:bg-red-950/20 rounded-2xl">
-                        <div className="flex items-start gap-2">
-                          <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
-                          <p className="text-sm text-red-700">
-                            Refunds assigns credits back to the user's account.
-                          </p>
-                        </div>
-                      </div>
+                      <InfoBanner tone="neutral" icon={AlertCircle}>{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line559JsxTextRefundsAssignsCreditsBackToTheUserS')}</InfoBanner>
                       <div>
-                        <Label htmlFor="refund-amount">Refund Amount (USD)</Label>
+                        <Label htmlFor="refund-amount">{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line562JsxTextRefundAmountUsd')}</Label>
                         <Input
                           id="refund-amount"
                           type="number"
@@ -576,10 +560,10 @@ export function AdminUserDetailsDialog({
                         />
                       </div>
                       <div>
-                        <Label htmlFor="refund-reason mb-2">Refund Reason</Label>
+                        <Label htmlFor="refund-reason mb-2">{tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line573JsxTextRefundReason')}</Label>
                         <Textarea
                           id="refund-reason"
-                          placeholder="Service outage compensation"
+                          placeholder={tHardcodedUi.raw('componentsAdminAdminUserDetailsDialog.line576JsxAttrPlaceholderServiceOutageCompensation')}
                           value={refundReason}
                           onChange={(e) => setRefundReason(e.target.value)}
                           rows={3}
@@ -632,11 +616,11 @@ export function AdminUserDetailsDialog({
           )}
         </div>
 
-        <DialogFooter className="flex-shrink-0">
-          <Button variant="outline" onClick={onClose}>
+        <div className="flex-shrink-0 flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+          <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

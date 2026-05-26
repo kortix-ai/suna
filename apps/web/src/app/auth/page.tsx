@@ -1,12 +1,15 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Unified auth — wallpaper + lock-screen UX, password-based register + login.
  *
  * Identical in local and cloud. The only mode-dependent piece is whether
  * Supabase requires email confirmation (Supabase config, not ENV_MODE).
- * Social providers (Google, etc.) render only when listed in
- * `NEXT_PUBLIC_AUTH_PROVIDERS` — never as a hardcoded surface.
+ * Email auth methods and social providers render only when listed in
+ * `NEXT_PUBLIC_AUTH_METHODS` / `NEXT_PUBLIC_AUTH_PROVIDERS` — never as a
+ * hardcoded surface.
  */
 
 import Link from 'next/link';
@@ -15,7 +18,12 @@ import { FormEvent, Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, ChevronRight } from 'lucide-react';
 
-import { signInWithPassword, signUpWithPassword } from './actions';
+import {
+  signIn as signInWithMagicLink,
+  signInWithPassword,
+  signUp as signUpWithMagicLink,
+  signUpWithPassword,
+} from './actions';
 import { useAuth } from '@/components/AuthProvider';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -32,6 +40,7 @@ import { getEnv } from '@/lib/env-config';
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
 
 type Mode = 'signin' | 'signup';
+type AuthMethod = 'magic' | 'password';
 
 /* ─── Live clock ────────────────────────────────────────────────────────── */
 
@@ -51,13 +60,13 @@ function LiveClock() {
   return (
     <div className="flex flex-col items-center select-none pointer-events-none">
       <p
-        className="text-foreground/35 text-[13px] font-light tracking-widest"
+        className="text-foreground/35 text-sm font-light tracking-widest"
         suppressHydrationWarning
       >
         {day} {month} {date}
       </p>
       <p
-        className="text-foreground/80 text-[80px] sm:text-[104px] font-extralight leading-none -tracking-[0.02em] tabular-nums"
+        className="text-foreground/80 text-7xl sm:text-8xl font-extralight leading-none -tracking-[0.02em] tabular-nums"
         suppressHydrationWarning
       >
         {h}:{m}
@@ -69,8 +78,20 @@ function LiveClock() {
 /* ─── Form inside the frosted-glass card ───────────────────────────────── */
 
 function AuthCardForm({ returnUrl }: { returnUrl: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>('signin');
+  const [mode, setMode] = useState<Mode>('signup');
+  const enabledMethods = useMemo(() => {
+    const raw = getEnv().AUTH_METHODS || 'magic,password';
+    const parsed = raw
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter((s): s is AuthMethod => s === 'magic' || s === 'password');
+    return parsed.length ? parsed : ['magic', 'password'];
+  }, []);
+  const magicLinkEnabled = enabledMethods.includes('magic');
+  const passwordEnabled = enabledMethods.includes('password');
+  const [method, setMethod] = useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
   const [pending, setPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -94,22 +115,34 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
     const formData = new FormData(form);
     formData.set('returnUrl', returnUrl);
     formData.set('origin', window.location.origin);
+    if (method === 'magic' && mode === 'signup') {
+      formData.set('acceptedTerms', 'true');
+    }
 
     try {
       const result =
-        mode === 'signup'
-          ? await signUpWithPassword(null, formData)
-          : await signInWithPassword(null, formData);
+        method === 'magic'
+          ? mode === 'signup'
+            ? await signUpWithMagicLink(null, formData)
+            : await signInWithMagicLink(null, formData)
+          : mode === 'signup'
+            ? await signUpWithPassword(null, formData)
+            : await signInWithPassword(null, formData);
 
       if (
         result &&
         typeof result === 'object' &&
         'message' in result &&
-        !('success' in result)
+        (!('success' in result) || !(result as any).success)
       ) {
         const msg = result.message as string;
         setErrorMessage(msg);
         toast.error(msg);
+        return;
+      }
+
+      if (result && method === 'magic' && (result as any).success) {
+        setInfo((result as any).message || 'Check your email for a magic link');
         return;
       }
 
@@ -158,14 +191,12 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             setInfo(null);
           }}
           className={cn(
-            'px-5 py-1.5 rounded-full text-[13px] font-medium transition-colors',
+            'px-5 py-1.5 rounded-full text-sm font-medium transition-colors',
             mode === 'signin'
               ? 'bg-background/80 text-foreground shadow-sm'
               : 'text-foreground/50 hover:text-foreground/80',
           )}
-        >
-          Sign in
-        </button>
+        >{tHardcodedUi.raw('appAuthPage.line167JsxTextSignIn')}</button>
         <button
           type="button"
           onClick={() => {
@@ -174,7 +205,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             setInfo(null);
           }}
           className={cn(
-            'px-5 py-1.5 rounded-full text-[13px] font-medium transition-colors',
+            'px-5 py-1.5 rounded-full text-sm font-medium transition-colors',
             mode === 'signup'
               ? 'bg-background/80 text-foreground shadow-sm'
               : 'text-foreground/50 hover:text-foreground/80',
@@ -185,25 +216,29 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
       </div>
 
       <div className="flex flex-col items-center mb-5">
-        <h1 className="text-[17px] font-medium text-foreground/90 tracking-tight">
+        <h1 className="text-base font-medium text-foreground/90 tracking-tight">
           {mode === 'signup' ? 'Create your account' : 'Sign in to Kortix'}
         </h1>
-        <p className="text-[13px] text-foreground/40 mt-0.5">
-          {mode === 'signup' ? 'Email and password is all you need' : 'Your AI Computer'}
+        <p className="text-sm text-foreground/40 mt-0.5">
+          {method === 'magic'
+            ? 'We will email you a secure sign-in link'
+            : mode === 'signup'
+              ? 'Email and password is all you need'
+              : 'Your AI Computer'}
         </p>
       </div>
 
       {errorMessage && (
         <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-[13px]">{errorMessage}</span>
+          <span className="text-sm">{errorMessage}</span>
         </div>
       )}
 
       {info && (
         <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-foreground/[0.05] border border-foreground/[0.08] text-foreground/80">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-[13px]">{info}</span>
+          <span className="text-sm">{info}</span>
         </div>
       )}
 
@@ -212,53 +247,78 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           id="email"
           name="email"
           type="email"
-          placeholder="Email address"
+          placeholder={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
           required
           autoComplete="email"
-          className="h-11 text-[15px] bg-foreground/[0.04] border-foreground/[0.08] rounded-xl shadow-none"
+          className="text-sm"
         />
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          placeholder="Password"
-          required
-          autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-          className="h-11 text-[15px] bg-foreground/[0.04] border-foreground/[0.08] rounded-xl shadow-none"
-        />
-        {mode === 'signup' && (
-          <Input
-            id="confirmPassword"
-            name="confirmPassword"
-            type="password"
-            placeholder="Confirm password"
-            required
-            autoComplete="new-password"
-            className="h-11 text-[15px] bg-foreground/[0.04] border-foreground/[0.08] rounded-xl shadow-none"
-          />
+        {method === 'password' && (
+          <>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="Password"
+              required
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              className="text-sm"
+            />
+            {mode === 'signup' && (
+              <Input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                placeholder={tHardcodedUi.raw('appAuthPage.line234JsxAttrPlaceholderConfirmPassword')}
+                required
+                autoComplete="new-password"
+                className="text-sm"
+              />
+            )}
+          </>
         )}
 
         <Button
           type="submit"
+          size="lg"
           disabled={pending}
-          className="w-full h-11 text-[13px] rounded-xl shadow-none"
+          className="w-full text-sm"
         >
           {pending
-            ? mode === 'signup'
-              ? 'Creating account…'
-              : 'Signing in…'
-            : mode === 'signup'
-              ? 'Create account'
-              : 'Sign in'}
+            ? method === 'magic'
+              ? 'Sending link…'
+              : mode === 'signup'
+                ? 'Creating account…'
+                : 'Signing in…'
+            : method === 'magic'
+              ? 'Email me a sign-in link'
+              : mode === 'signup'
+                ? 'Create account'
+                : 'Sign in'}
         </Button>
       </form>
+
+      {magicLinkEnabled && passwordEnabled && (
+        <div className="mt-4 text-center">
+          <button
+            type="button"
+            onClick={() => {
+              setMethod(method === 'magic' ? 'password' : 'magic');
+              setErrorMessage(null);
+              setInfo(null);
+            }}
+            className="text-xs text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
+          >
+            {method === 'magic' ? 'Use password instead' : 'Use email link instead'}
+          </button>
+        </div>
+      )}
 
       {/* Social providers — only when configured */}
       {googleEnabled && (
         <>
           <div className="my-5 flex items-center gap-3">
             <div className="flex-1 h-px bg-foreground/[0.08]" />
-            <span className="text-[11px] uppercase tracking-wider text-foreground/40">or</span>
+            <span className="text-xs uppercase tracking-wider text-foreground/40">or</span>
             <div className="flex-1 h-px bg-foreground/[0.08]" />
           </div>
           <Suspense fallback={null}>
@@ -267,14 +327,12 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         </>
       )}
 
-      {mode === 'signin' && (
+      {mode === 'signin' && passwordEnabled && (
         <div className="mt-5 text-center">
           <Link
-            href="/auth/reset-password"
-            className="text-[12px] text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
-          >
-            Forgot your password?
-          </Link>
+            href="/auth/forgot-password"
+            className="text-xs text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
+          >{tHardcodedUi.raw('appAuthPage.line277JsxTextForgotYourPassword')}</Link>
         </div>
       )}
     </div>
@@ -284,6 +342,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
 /* ─── Lock-screen → frosted-glass form ─────────────────────────────────── */
 
 function AuthContent() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading } = useAuth();
@@ -313,7 +372,7 @@ function AuthContent() {
   }, [phase]);
 
   if (isLoading || user) {
-    return <ConnectingScreen forceConnecting minimal title="Signing in" />;
+    return <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appAuthPage.line317JsxAttrTitleSigningIn')} />;
   }
 
   return (
@@ -350,9 +409,7 @@ function AuthContent() {
             >
               <div className="flex flex-col items-center gap-1.5">
                 <p className="text-foreground/50 text-sm font-medium tracking-wide">Kortix</p>
-                <p className="text-foreground/25 text-xs tracking-widest uppercase">
-                  Click or press Enter to sign in
-                </p>
+                <p className="text-foreground/25 text-xs tracking-widest uppercase">{tHardcodedUi.raw('appAuthPage.line355JsxTextClickOrPressEnterToSignIn')}</p>
               </div>
               <motion.div
                 animate={{ y: [0, 5, 0] }}
@@ -403,8 +460,9 @@ function AuthContent() {
 }
 
 export default function AuthPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Signing in" />}>
+    <Suspense fallback={<ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appAuthPage.line408JsxAttrTitleSigningIn')} />}>
       <>
         <AuthBrowserNoiseGuard />
         <AuthContent />

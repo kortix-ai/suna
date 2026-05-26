@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState } from 'react';
 import {
   Card,
@@ -48,6 +50,7 @@ interface Props {
 }
 
 export default function CreditTransactions({ accountId }: Props) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [offset, setOffset] = useState(0);
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
   const limit = 50;
@@ -111,8 +114,8 @@ export default function CreditTransactions({ accountId }: Props) {
       <div className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Credit Transactions</CardTitle>
-            <CardDescription>Loading your transaction history...</CardDescription>
+            <CardTitle>{tHardcodedUi.raw('componentsBillingCreditTransactions.line114JsxTextCreditTransactions')}</CardTitle>
+            <CardDescription>{tHardcodedUi.raw('componentsBillingCreditTransactions.line115JsxTextLoadingYourTransactionHistory')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -130,7 +133,7 @@ export default function CreditTransactions({ accountId }: Props) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Credit Transactions</CardTitle>
+          <CardTitle>{tHardcodedUi.raw('componentsBillingCreditTransactions.line133JsxTextCreditTransactions')}</CardTitle>
         </CardHeader>
         <CardContent>
           <Alert variant="destructive">
@@ -156,16 +159,16 @@ export default function CreditTransactions({ accountId }: Props) {
           onValueChange={(v) => { setTypeFilter(v === 'all' ? undefined : v); setOffset(0); }}
         >
           <SelectTrigger className="w-[160px] h-9">
-            <SelectValue placeholder="All types" />
+            <SelectValue placeholder={tHardcodedUi.raw('componentsBillingCreditTransactions.line159JsxAttrPlaceholderAllTypes')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            <SelectItem value="tier_grant">Tier Grant</SelectItem>
+            <SelectItem value="all">{tHardcodedUi.raw('componentsBillingCreditTransactions.line162JsxTextAllTypes')}</SelectItem>
+            <SelectItem value="tier_grant">{tHardcodedUi.raw('componentsBillingCreditTransactions.line163JsxTextTierGrant')}</SelectItem>
             <SelectItem value="purchase">Purchase</SelectItem>
-            <SelectItem value="auto_topup">Auto Top-up</SelectItem>
-            <SelectItem value="machine_bonus">Machine Bonus</SelectItem>
-            <SelectItem value="daily_refresh">Daily Refresh</SelectItem>
-            <SelectItem value="admin_grant">Admin Grant</SelectItem>
+            <SelectItem value="auto_topup">{tHardcodedUi.raw('componentsBillingCreditTransactions.line165JsxTextAutoTopUp')}</SelectItem>
+            <SelectItem value="machine_bonus">{tHardcodedUi.raw('componentsBillingCreditTransactions.line166JsxTextMachineBonus')}</SelectItem>
+            <SelectItem value="daily_refresh">{tHardcodedUi.raw('componentsBillingCreditTransactions.line167JsxTextDailyRefresh')}</SelectItem>
+            <SelectItem value="admin_grant">{tHardcodedUi.raw('componentsBillingCreditTransactions.line168JsxTextAdminGrant')}</SelectItem>
             <SelectItem value="usage">Usage</SelectItem>
             <SelectItem value="refund">Refund</SelectItem>
             <SelectItem value="expired">Expired</SelectItem>
@@ -195,9 +198,9 @@ export default function CreditTransactions({ accountId }: Props) {
                       <TableHead className="w-[180px]">Date</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Description</TableHead>
-                      <TableHead className="text-center">Credit Type</TableHead>
+                      <TableHead className="text-center">{tHardcodedUi.raw('componentsBillingCreditTransactions.line198JsxTextCreditType')}</TableHead>
                       <TableHead className="text-right">Credits</TableHead>
-                      <TableHead className="text-right">Credits After</TableHead>
+                      <TableHead className="text-right">{tHardcodedUi.raw('componentsBillingCreditTransactions.line200JsxTextCreditsAfter')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

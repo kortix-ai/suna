@@ -7,6 +7,7 @@
  * `[[apps]]` config shape is exercised (the user explicitly asked).
  */
 import { beforeEach, describe, expect, test, mock } from 'bun:test';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -105,6 +106,10 @@ process.env.KORTIX_APPS_EXPERIMENTAL = 'true';
 
 // ─── Mock modules ───────────────────────────────────────────────────────────
 
+mockIamEngineAllowAll();
+
+mockIamMembershipSyncNoop();
+
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -121,6 +126,8 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => {},
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],
@@ -172,6 +179,18 @@ mock.module('../projects/github', () => ({
   deleteFile: async () => {},
   getFileSha: async (opts: { path: string }) => (repoFiles.has(opts.path) ? `sha-${opts.path}` : null),
   getGitHubAppInstallation: async () => ({ account: { login: 'x', type: 'Organization' }, repository_selection: 'all', permissions: {} }),
+  getRepo: async () => ({
+    id: 1,
+    name: 'apps-project',
+    full_name: 'kortix-org/apps-project',
+    private: true,
+    html_url: 'https://github.com/kortix-org/apps-project',
+    clone_url: 'https://github.com/kortix-org/apps-project.git',
+    ssh_url: 'git@github.com:kortix-org/apps-project.git',
+    default_branch: 'main',
+    description: null,
+  }),
+  listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
 }));
@@ -203,6 +222,7 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
   listProjectSecrets: async () => ({}),
+  listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
   getProjectSecretValue: async () => null,
 }));
 

@@ -1,9 +1,12 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { GitBranch, GitPullRequest, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -62,7 +65,7 @@ function displayBranchName(name: string): string {
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2.5">
-      <Label className="w-12 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <Label className="w-12 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </Label>
       {children}
@@ -90,13 +93,13 @@ function BranchRow({ branch }: { branch: ProjectBranch }) {
           {displayBranchName(branch.name)}
         </span>
         {branch.is_default && (
-          <span className="rounded bg-muted px-1 py-0 text-[9px] text-muted-foreground shrink-0">
+          <Badge variant="secondary" size="sm" className="shrink-0">
             default
-          </span>
+          </Badge>
         )}
       </div>
       {branch.subject && (
-        <span className="ml-[18px] text-[10.5px] text-muted-foreground/80 truncate">
+        <span className="ml-[18px] text-xs text-muted-foreground/80 truncate">
           {branch.subject}
         </span>
       )}
@@ -116,6 +119,7 @@ export function OpenChangeRequestDialog({
   initialHeadRef,
   onCreated,
 }: OpenChangeRequestDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Callers clear `session` at the same moment they close the dialog; keep the
   // last one so the read-only summary doesn't flip to the picker mid-close.
   const lastSessionRef = useRef<ProjectSession | null>(session);
@@ -221,31 +225,20 @@ export function OpenChangeRequestDialog({
       <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-5 pt-5 pb-3 space-y-1">
           <DialogTitle className="text-base font-medium flex items-center gap-2">
-            <GitPullRequest className="h-4 w-4 text-muted-foreground" />
-            Open change request
-          </DialogTitle>
-          <DialogDescription className="text-[12px]">
+            <GitPullRequest className="h-4 w-4 text-muted-foreground" />{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line226JsxTextOpenChangeRequest')}</DialogTitle>
+          <DialogDescription className="text-xs">
             {sessionMode ? (
-              <>
-                Propose merging this session&apos;s work into{' '}
-                <span className="font-mono text-foreground">{defaultBranch}</span>. The
-                session needs to have committed and pushed for there to be a diff.
-              </>
+              <>{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line231JsxTextProposeMergingThisSessionAposSWorkInto')}{' '}
+                <span className="font-mono text-foreground">{defaultBranch}</span>{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line232JsxTextTheSessionNeedsToHaveCommittedAndPushed')}</>
             ) : (
-              <>
-                Propose merging one version into another. The merge runs through
-                Kortix against your project&apos;s git host.
-              </>
+              <>{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line237JsxTextProposeMergingOneVersionIntoAnotherTheMerge')}</>
             )}
           </DialogDescription>
         </DialogHeader>
 
         {hasOnlyDefaultBranch ? (
           <div className="px-5 pb-5 space-y-3">
-            <InfoBanner tone="warning" title="No non-default versions yet.">
-              Start a session — each session lives on its own branch — and you&apos;ll
-              be able to open a change request from it.
-            </InfoBanner>
+            <InfoBanner tone="warning" title={tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line246JsxAttrTitleNoNonDefaultVersionsYet')}>{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line247JsxTextStartASessionEachSessionLivesOnIts')}</InfoBanner>
             <div className="flex justify-end">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Close
@@ -301,7 +294,7 @@ export function OpenChangeRequestDialog({
                           {selectedHeadBranch ? (
                             <BranchRow branch={selectedHeadBranch} />
                           ) : (
-                            <SelectValue placeholder="Pick a version" />
+                            <SelectValue placeholder={tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line305JsxAttrPlaceholderPickAVersion')} />
                           )}
                         </SelectTrigger>
                         <SelectContent className="w-[420px] max-h-[260px]">
@@ -349,10 +342,7 @@ export function OpenChangeRequestDialog({
                 />
               )}
               {!sessionMode && headRef && baseRef && headRef === baseRef && (
-                <InfoBanner tone="warning">
-                  Pick two different versions — you can&apos;t merge a version into
-                  itself.
-                </InfoBanner>
+                <InfoBanner tone="warning">{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line354JsxTextPickTwoDifferentVersionsYouCanAposT')}</InfoBanner>
               )}
 
               {/* Description */}
@@ -365,7 +355,7 @@ export function OpenChangeRequestDialog({
                   id="cr-description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Context for reviewers — what changed and why."
+                  placeholder={tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line369JsxAttrPlaceholderContextForReviewersWhatChangedAndWhy')}
                   rows={3}
                   className="resize-none"
                 />
@@ -381,9 +371,7 @@ export function OpenChangeRequestDialog({
                 Cancel
               </Button>
               <Button disabled={!canSubmit || openMutation.isPending} onClick={handleSubmit}>
-                {openMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                Open change request
-              </Button>
+                {openMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line386JsxTextOpenChangeRequest')}</Button>
             </DialogFooter>
           </>
         )}

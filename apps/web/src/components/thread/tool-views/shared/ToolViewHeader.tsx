@@ -40,11 +40,11 @@ export function ToolViewHeader({
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <Icon className="w-3.5 h-3.5 text-muted-foreground/80 flex-shrink-0" />
           <div className="min-w-0 flex-1 flex items-baseline gap-2">
-            <CardTitle className="text-[12.5px] font-medium text-foreground tracking-tight truncate">
+            <CardTitle className="text-sm font-medium text-foreground tracking-tight truncate">
               {title}
             </CardTitle>
             {subtitle && (
-              <p className="text-[11.5px] text-muted-foreground/70 truncate">
+              <p className="text-xs text-muted-foreground/70 truncate">
                 {subtitle}
               </p>
             )}

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -67,6 +69,7 @@ function ListRow({
   isDownloadingItem,
   isCut,
 }: ListRowProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -207,11 +210,11 @@ function ListRow({
                 }}
                 onBlur={confirmRename}
                 onClick={(e) => e.stopPropagation()}
-                className="flex-1 text-[13px] bg-transparent border-b border-primary/50 py-0 outline-none min-w-0"
+                className="flex-1 text-sm bg-transparent border-b border-primary/50 py-0 outline-none min-w-0"
               />
             ) : (
               <span className={cn(
-                'text-[13px] truncate font-medium',
+                'text-sm truncate font-medium',
                 node.ignored && 'opacity-50',
                 node.name.startsWith('.') && 'text-muted-foreground',
               )}>
@@ -221,12 +224,12 @@ function ListRow({
           </div>
 
           {/* Type column */}
-          <span className="text-[11px] text-muted-foreground/80 truncate font-mono uppercase tracking-wider">
+          <span className="text-xs text-muted-foreground/80 truncate font-mono uppercase tracking-wider">
             {isDir ? 'folder' : ext}
           </span>
 
           {/* Size column */}
-          <span className="text-[11px] text-muted-foreground/60 tabular-nums">
+          <span className="text-xs text-muted-foreground/60 tabular-nums">
             —
           </span>
 
@@ -251,9 +254,7 @@ function ListRow({
         </ContextMenuItem>
         {!isDir && onOpenInTab && (
           <ContextMenuItem onClick={() => onOpenInTab(node)}>
-            <ExternalLink className="mr-2 h-4 w-4" />
-            Open in tab
-          </ContextMenuItem>
+            <ExternalLink className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line255JsxTextOpenInTab')}</ContextMenuItem>
         )}
         {onDownload && (
           <ContextMenuItem onClick={() => onDownload(node)} disabled={isDownloadingItem}>
@@ -263,9 +264,7 @@ function ListRow({
         )}
         {!isDir && onHistory && (
           <ContextMenuItem onClick={() => onHistory(node)}>
-            <History className="mr-2 h-4 w-4" />
-            Checkpoint history
-          </ContextMenuItem>
+            <History className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line267JsxTextCheckpointHistory')}</ContextMenuItem>
         )}
         <ContextMenuSeparator />
         {onCopy && (
@@ -281,9 +280,7 @@ function ListRow({
           </ContextMenuItem>
         )}
         <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.path)}>
-          <Copy className="mr-2 h-4 w-4" />
-          Copy path
-        </ContextMenuItem>
+          <Copy className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line285JsxTextCopyPath')}</ContextMenuItem>
         <ContextMenuSeparator />
         {onRename && (
           <ContextMenuItem onClick={() => setTimeout(startRenaming, 100)}>
@@ -356,6 +353,7 @@ export function DriveListView({
   isDirDownloading,
   readOnly = false,
 }: DriveListViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // In read-only mode, suppress mutation handlers so the row context menu
   // omits Delete/Rename/Cut/Copy entries entirely. History stays enabled —
   // it's a read action (checkpoint history of a file).
@@ -393,10 +391,8 @@ export function DriveListView({
         <div className="h-14 w-14 rounded-2xl bg-muted/40 flex items-center justify-center mb-4">
           <FolderOpen className="h-7 w-7 text-muted-foreground/40" />
         </div>
-        <p className="text-sm font-medium text-foreground">This folder is empty</p>
-        <p className="text-xs text-muted-foreground mt-1.5 max-w-xs">
-          No files or subfolders at this path in the current version.
-        </p>
+        <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line396JsxTextThisFolderIsEmpty')}</p>
+        <p className="text-xs text-muted-foreground mt-1.5 max-w-xs">{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line398JsxTextNoFilesOrSubfoldersAtThisPathIn')}</p>
       </div>
     );
   }
@@ -409,7 +405,7 @@ export function DriveListView({
           onClick={() => handleHeaderClick('name')}
           variant="ghost"
           size="xs"
-          className="text-[10px] text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold justify-start hover:text-foreground"
+          className="text-xs text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold justify-start hover:text-foreground"
         >
           Name
           <SortIcon field="name" />
@@ -418,7 +414,7 @@ export function DriveListView({
           onClick={() => handleHeaderClick('type')}
           variant="ghost"
           size="xs"
-          className="text-[10px] text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold hover:text-foreground"
+          className="text-xs text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold hover:text-foreground"
         >
           Type
           <SortIcon field="type" />
@@ -427,7 +423,7 @@ export function DriveListView({
           onClick={() => handleHeaderClick('size')}
           variant="ghost"
           size="xs"
-          className="text-[10px] text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold hover:text-foreground"
+          className="text-xs text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold hover:text-foreground"
         >
           Size
           <SortIcon field="size" />
@@ -448,19 +444,19 @@ export function DriveListView({
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <FolderCog className="h-4 w-4 text-primary/70 shrink-0" />
-            <span className="text-[13px] font-medium text-foreground truncate">
+            <span className="text-sm font-medium text-foreground truncate">
               {node.name}
             </span>
             {ELEVATED_DIR_META[node.name] && (
-              <span className="text-[11px] text-muted-foreground/50 truncate hidden sm:inline">
+              <span className="text-xs text-muted-foreground/50 truncate hidden sm:inline">
                 {ELEVATED_DIR_META[node.name]}
               </span>
             )}
           </div>
-          <span className="text-[10px] text-primary/70 font-mono uppercase tracking-wider">
+          <span className="text-xs text-primary/70 font-mono uppercase tracking-wider">
             system
           </span>
-          <span className="text-[11px] text-muted-foreground/40">—</span>
+          <span className="text-xs text-muted-foreground/40">—</span>
           <span />
         </div>
       ))}

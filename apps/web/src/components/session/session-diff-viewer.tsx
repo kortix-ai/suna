@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useMemo } from 'react';
 import {
   FileCode2,
@@ -15,6 +17,7 @@ import {
   Minimize2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { STATUS_TEXT, DiffStat, StatusBadge } from '@/components/ui/status';
 import { useOpenCodeSessionDiff, useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { createTwoFilesPatch } from 'diff';
@@ -30,9 +33,9 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
 
   const statusIcon = useMemo(() => {
     switch (diff.status) {
-      case 'added': return <FilePlus2 className="size-3.5 text-emerald-500" />;
-      case 'deleted': return <FileX2 className="size-3.5 text-red-500" />;
-      default: return <FileEdit className="size-3.5 text-blue-500" />;
+      case 'added': return <FilePlus2 className={cn('size-3.5', STATUS_TEXT.success)} />;
+      case 'deleted': return <FileX2 className={cn('size-3.5', STATUS_TEXT.destructive)} />;
+      default: return <FileEdit className={cn('size-3.5', STATUS_TEXT.info)} />;
     }
   }, [diff.status]);
 
@@ -44,11 +47,11 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
     }
   }, [diff.status]);
 
-  const statusColor = useMemo(() => {
+  const statusVariant = useMemo((): 'success' | 'destructive' | 'info' => {
     switch (diff.status) {
-      case 'added': return 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10';
-      case 'deleted': return 'text-red-600 dark:text-red-400 bg-red-500/10';
-      default: return 'text-blue-600 dark:text-blue-400 bg-blue-500/10';
+      case 'added': return 'success';
+      case 'deleted': return 'destructive';
+      default: return 'info';
     }
   }, [diff.status]);
 
@@ -89,22 +92,21 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
         <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
           <span className="text-xs font-medium text-foreground truncate">{filename}</span>
           {directory && (
-            <span className="text-[10px] text-muted-foreground/50 truncate hidden sm:inline">
+            <span className="text-xs text-muted-foreground/50 truncate hidden sm:inline">
               {directory}
             </span>
           )}
         </div>
 
         {/* Status badge */}
-        <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', statusColor)}>
-          {statusLabel}
-        </span>
+        <StatusBadge tone={statusVariant}>{statusLabel}</StatusBadge>
 
         {/* Addition/deletion counts */}
-        <span className="flex items-center gap-1.5 text-[10px] whitespace-nowrap flex-shrink-0">
-          {diff.additions > 0 && <span className="text-emerald-500">+{diff.additions}</span>}
-          {diff.deletions > 0 && <span className="text-red-500">-{diff.deletions}</span>}
-        </span>
+        <DiffStat
+          additions={diff.additions}
+          deletions={diff.deletions}
+          className="text-xs whitespace-nowrap flex-shrink-0"
+        />
       </button>
 
       {/* Expanded diff content */}
@@ -137,6 +139,7 @@ function DiffSummaryBar({
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const totals = useMemo(() => {
     let additions = 0, deletions = 0, added = 0, deleted = 0, modified = 0;
     for (const d of diffs) {
@@ -154,25 +157,24 @@ function DiffSummaryBar({
       <span className="text-xs text-muted-foreground">
         {diffs.length} {diffs.length === 1 ? 'file' : 'files'} changed
       </span>
-      <div className="flex items-center gap-2 ml-auto text-[10px]">
+      <div className="flex items-center gap-2 ml-auto text-xs">
         {totals.added > 0 && (
-          <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+          <span className={cn('flex items-center gap-1', STATUS_TEXT.success)}>
             <FilePlus2 className="size-3" /> {totals.added}
           </span>
         )}
         {totals.modified > 0 && (
-          <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+          <span className={cn('flex items-center gap-1', STATUS_TEXT.info)}>
             <FileEdit className="size-3" /> {totals.modified}
           </span>
         )}
         {totals.deleted > 0 && (
-          <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
+          <span className={cn('flex items-center gap-1', STATUS_TEXT.destructive)}>
             <FileX2 className="size-3" /> {totals.deleted}
           </span>
         )}
         <span className="text-muted-foreground/50 mx-1">|</span>
-        {totals.additions > 0 && <span className="text-emerald-500">+{totals.additions}</span>}
-        {totals.deletions > 0 && <span className="text-red-500 ml-1">-{totals.deletions}</span>}
+        <DiffStat additions={totals.additions} deletions={totals.deletions} />
 
         {/* View mode toggle */}
         <span className="text-muted-foreground/50 mx-1">|</span>
@@ -184,7 +186,7 @@ function DiffSummaryBar({
               ? 'text-foreground bg-muted/60'
               : 'text-muted-foreground/50 hover:text-muted-foreground',
           )}
-          title="Unified view"
+          title={tHardcodedUi.raw('componentsSessionSessionDiffViewer.line186JsxAttrTitleUnifiedView')}
         >
           <Rows2 className="size-3.5" />
         </button>
@@ -196,7 +198,7 @@ function DiffSummaryBar({
               ? 'text-foreground bg-muted/60'
               : 'text-muted-foreground/50 hover:text-muted-foreground',
           )}
-          title="Side-by-side view"
+          title={tHardcodedUi.raw('componentsSessionSessionDiffViewer.line198JsxAttrTitleSideBySideView')}
         >
           <Columns2 className="size-3.5" />
         </button>
@@ -312,6 +314,7 @@ interface SessionDiffViewerProps {
 }
 
 export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen }: SessionDiffViewerProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: apiDiffs, isLoading, error } = useOpenCodeSessionDiff(sessionId);
   const { data: messages } = useOpenCodeMessages(sessionId);
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
@@ -353,7 +356,7 @@ export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen 
           <span className="text-xs font-medium text-muted-foreground">Changes</span>
         </div>
         <div className="flex-1 flex items-center justify-center text-center px-6">
-          <p className="text-xs text-muted-foreground">Failed to load changes</p>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line355JsxTextFailedToLoadChanges')}</p>
         </div>
       </div>
     );
@@ -368,10 +371,8 @@ export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen 
         </div>
         <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 min-h-[200px]">
           <FileCode2 className="size-10 text-muted-foreground/20 mb-4" />
-          <p className="text-base text-muted-foreground">No changes yet</p>
-          <p className="text-sm text-muted-foreground/50 mt-1.5">
-            File changes will appear here as the session progresses
-          </p>
+          <p className="text-base text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line370JsxTextNoChangesYet')}</p>
+          <p className="text-sm text-muted-foreground/50 mt-1.5">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line372JsxTextFileChangesWillAppearHereAsTheSession')}</p>
         </div>
       </div>
     );

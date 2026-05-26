@@ -308,6 +308,9 @@ oauthApp.get('/authorize', async (c) => {
 
 oauthApp.get('/authorize/consent/:requestId', supabaseAuth, async (c) => {
   const requestId = c.req.param('requestId');
+  if (!requestId) {
+    return c.json({ error: 'invalid_request', error_description: 'Missing request id' }, 400);
+  }
   const request = getAuthorizationRequest(requestId);
   if (!request) {
     return c.json({ error: 'invalid_request', error_description: 'Authorization request expired or not found' }, 400);

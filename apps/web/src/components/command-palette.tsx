@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, usePathname, useParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,11 +17,12 @@ import {
 } from '@/lib/projects-client';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useCustomizeStore } from '@/stores/customize-store';
+import { parseCustomizeSection } from '@/lib/customize-sections';
 import {
   Loader2,
   MessageCircle,
   Search,
-  ArrowRightLeft,
   PanelLeftClose,
   PanelLeftIcon,
   ArrowUp,
@@ -57,7 +59,6 @@ import {
 } from '@/components/ui/command';
 import { SidebarContext } from '@/components/ui/sidebar';
 import {
-  useOpenCodeSessions,
   useOpenCodeAgents,
   useOpenCodeProviders,
 } from '@/hooks/opencode/use-opencode-sessions';
@@ -164,6 +165,7 @@ function FileSearchPage({
   query: string;
   onSelect: (filePath: string, lineNumber?: number) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isContent = query.trimStart().startsWith('>');
   const effectiveQuery = (isContent ? query.replace(/^\s*>\s*/, '') : query).trim();
   const enabled = effectiveQuery.length >= 2;
@@ -182,12 +184,10 @@ function FileSearchPage({
           <Search className="h-4 w-4 text-muted-foreground/40" />
         </div>
         <div className="space-y-1 text-center">
-          <p className="text-sm text-muted-foreground/60">Search files in this project&apos;s repo</p>
-          <p className="text-[11px] text-muted-foreground/30">
-            Prefix with{' '}
-            <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">&gt;</kbd> to search
-            file contents
-          </p>
+          <p className="text-sm text-muted-foreground/60">{tHardcodedUi.raw('componentsCommandPalette.line183JsxTextSearchFilesInThisProjectSRepo')}</p>
+          <p className="text-xs text-muted-foreground/30">
+            {tHardcodedUi.raw('componentsCommandPalette.line185JsxTextPrefixWith')}{' '}
+            <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('componentsCommandPalette.line186JsxTextText')}</kbd> {tHardcodedUi.raw('componentsCommandPalette.line186JsxTextToSearchFileContents')}</p>
         </div>
       </div>
     );
@@ -212,8 +212,7 @@ function FileSearchPage({
           <Search className="h-4 w-4 text-muted-foreground/30" />
         </div>
         <span className="text-sm text-muted-foreground/60">
-          No {isContent ? 'content matches' : 'files'} for &ldquo;{effectiveQuery}&rdquo;
-        </span>
+          No {isContent ? 'content matches' : 'files'} {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextFor')}{effectiveQuery}{tHardcodedUi.raw('componentsCommandPalette.line213JsxTextText')}</span>
       </div>
     );
   }
@@ -231,7 +230,7 @@ function FileSearchPage({
           <CommandGroup
             key={filePath}
             heading={
-              <span className="inline-flex items-center gap-1.5 font-mono text-[10px]">
+              <span className="inline-flex items-center gap-1.5 font-mono text-xs">
                 <FileText className="h-3 w-3 shrink-0" />
                 {filePath}
               </span>
@@ -245,7 +244,7 @@ function FileSearchPage({
                 onSelect={() => onSelect(filePath, match.line_number)}
               >
                 <Hash className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
-                <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground/50">
+                <span className="w-8 shrink-0 text-right text-xs tabular-nums text-muted-foreground/50">
                   {match.line_number}
                 </span>
                 <span className="flex-1 truncate font-mono text-sm text-muted-foreground/80">
@@ -272,7 +271,7 @@ function FileSearchPage({
             <FileText className="h-4 w-4 shrink-0 text-muted-foreground/70" />
             <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
               <span className="truncate text-sm font-medium">{name}</span>
-              <span className="min-w-0 flex-shrink truncate font-mono text-[10px] text-muted-foreground/35">
+              <span className="min-w-0 flex-shrink truncate font-mono text-xs text-muted-foreground/35">
                 {item.path}
               </span>
             </div>
@@ -296,6 +295,7 @@ function MessagesPage({
   query: string;
   onSelect: (messageId: string) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: messages, isLoading } = useOpenCodeMessages(sessionId);
 
   const turns = useMemo(
@@ -327,7 +327,7 @@ function MessagesPage({
     return (
       <div className="flex items-center justify-center gap-2 py-10">
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/50" />
-        <span className="text-sm text-muted-foreground/50">Loading messages...</span>
+        <span className="text-sm text-muted-foreground/50">{tHardcodedUi.raw('componentsCommandPalette.line328JsxTextLoadingMessages')}</span>
       </div>
     );
   }
@@ -354,7 +354,7 @@ function MessagesPage({
           onSelect={() => onSelect(item.id)}
         >
           <MessageCircle className="h-3.5 w-3.5 text-muted-foreground/40 flex-shrink-0" />
-          <span className="text-[11px] text-muted-foreground/50 tabular-nums w-6 text-right flex-shrink-0">
+          <span className="text-xs text-muted-foreground/50 tabular-nums w-6 text-right flex-shrink-0">
             #{index + 1}
           </span>
           <span className="truncate text-sm flex-1">
@@ -371,6 +371,7 @@ function MessagesPage({
 // ============================================================================
 
 export function CommandPalette() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState<PalettePage>('root');
@@ -398,7 +399,6 @@ export function CommandPalette() {
   // Read the sidebar context directly so the palette can mount anywhere
   // (AppHeader pages have no SidebarProvider). Sidebar actions no-op there.
   const sidebarCtx = useContext(SidebarContext);
-  const toggleSidebar = sidebarCtx?.toggleSidebar ?? (() => {});
   const sidebarOpen = sidebarCtx?.open ?? false;
   const { proxyUrl: buildProxyUrl, subdomainOpts } = useSandboxProxy();
   const createSession = useCreateOpenCodeSession();
@@ -407,7 +407,6 @@ export function CommandPalette() {
   const billingEnabled = isBillingEnabled();
 
   // ── Data hooks ──
-  const { data: sessions } = useOpenCodeSessions();
   const { data: agents } = useOpenCodeAgents();
   const { data: providers } = useOpenCodeProviders();
 
@@ -419,10 +418,15 @@ export function CommandPalette() {
     enabled: open,
     staleTime: 60_000,
   });
+  const activeAccount =
+    accountsList?.find((account) => account.account_id === selectedAccountId) ??
+    accountsList?.[0] ??
+    null;
+  const activeAccountId = activeAccount?.account_id ?? null;
   const { data: projectsList } = useQuery({
-    queryKey: ['projects', selectedAccountId],
-    queryFn: () => listProjectsForAccount(selectedAccountId || undefined),
-    enabled: open && !!selectedAccountId,
+    queryKey: ['projects', activeAccountId],
+    queryFn: () => listProjectsForAccount(activeAccountId || undefined),
+    enabled: open && !!activeAccountId,
     staleTime: 30_000,
   });
   const { data: projectSessionsList } = useQuery({
@@ -537,29 +541,8 @@ export function CommandPalette() {
     return words.every((w) => haystack.includes(w));
   }, []);
 
-  // ── Filter: sessions ──
-  const filteredSessions = useMemo(() => {
-    if (!sessions || !query.trim()) return [];
-    const q = query.trim();
-    return sessions
-      .filter((s) => {
-        if (s.parentID || s.time.archived) return false;
-        const searchable = [s.title, s.slug, s.id].filter(Boolean).join(' ');
-        return fuzzyMatch(searchable, q);
-      })
-      .slice(0, 20);
-  }, [sessions, query, fuzzyMatch]);
-
-  // Recent sessions for idle state
-  const recentSessions = useMemo(() => {
-    if (!sessions) return [];
-    return sessions.filter((s) => !s.parentID && !s.time.archived).slice(0, 5);
-  }, [sessions]);
-
   const hasQuery = query.trim().length > 0;
   const queryLongEnough = query.trim().length >= 2;
-
-  const hasSessionResults = filteredSessions.length > 0;
   // ── Palette items ──
   const allPaletteItems = useMemo(() => {
     return getItemsForSurface('commandPalette')
@@ -691,12 +674,6 @@ export function CommandPalette() {
 
   const hasNavResults = filteredNavItems.length > 0;
   const hasSessionActionResults = sessionActionItems.length > 0;
-  const hasAnyResults = hasNavResults || hasSessionResults || hasSessionActionResults;
-
-  const showNoResults =
-    hasQuery &&
-    queryLongEnough &&
-    !hasAnyResults;
 
   // ── Handlers ──
 
@@ -736,7 +713,7 @@ export function CommandPalette() {
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 
   const handleSelectProject = useCallback((p: KortixProject) => {
-    router.push(`/projects/${p.project_id}/sessions`);
+    router.push(`/projects/${p.project_id}`);
     close();
   }, [router, close]);
 
@@ -754,25 +731,43 @@ export function CommandPalette() {
   }, [projectId, openProjectTab, router, close]);
 
   const sessionName = (s: ProjectSession) =>
+    s.name ||
     (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
     s.branch_name ||
     s.session_id.slice(0, 8);
 
+  // Projects sorted by most-recently-opened — reused for both the "Switch
+  // Project" sub-picker and the global idle "Recent Projects" list.
+  const sortedProjects = useMemo(
+    () =>
+      [...(projectsList ?? [])].sort((a, b) =>
+        (b.last_opened_at || b.updated_at).localeCompare(a.last_opened_at || a.updated_at),
+      ),
+    [projectsList],
+  );
+
   const filteredProjectsList = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const sorted = [...(projectsList ?? [])].sort((a, b) =>
-      (b.last_opened_at || b.updated_at).localeCompare(a.last_opened_at || a.updated_at),
-    );
-    return (q ? sorted.filter((p) => p.name.toLowerCase().includes(q)) : sorted).slice(0, 50);
-  }, [projectsList, query]);
+    return (q ? sortedProjects.filter((p) => p.name.toLowerCase().includes(q)) : sortedProjects).slice(0, 50);
+  }, [sortedProjects, query]);
+
+  // Idle "Recent" lists. In a project we surface the project's own recent
+  // sessions (current source: ['project-sessions', projectId]); in the global
+  // shell there is no cross-project session feed, so we surface recent
+  // projects instead.
+  const recentProjectSessions = useMemo(() => {
+    return [...(projectSessionsList ?? [])]
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      .slice(0, 5);
+  }, [projectSessionsList]);
+
+  const recentProjects = useMemo(() => sortedProjects.slice(0, 5), [sortedProjects]);
 
   const filteredAccountsList = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const sorted = [...(accountsList ?? [])].sort((a, b) => {
-      if (a.personal_account && !b.personal_account) return -1;
-      if (!a.personal_account && b.personal_account) return 1;
-      return (a.name || '').localeCompare(b.name || '');
-    });
+    const sorted = [...(accountsList ?? [])].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || ''),
+    );
     return q ? sorted.filter((a) => (a.name || '').toLowerCase().includes(q)) : sorted;
   }, [accountsList, query]);
 
@@ -783,6 +778,26 @@ export function CommandPalette() {
     );
     return (q ? sorted.filter((s) => sessionName(s).toLowerCase().includes(q)) : sorted).slice(0, 50);
   }, [projectSessionsList, query]);
+
+  // ── Root-search result lists (current sources only) ──
+  // In a project, free-text search hits the project's own sessions; in the
+  // global shell it hits projects (there is no legacy global session feed).
+  const rootSessionResults = useMemo(() => {
+    if (!hasQuery || !projectId) return [];
+    return filteredProjectSessionsList.slice(0, 8);
+  }, [hasQuery, projectId, filteredProjectSessionsList]);
+
+  const rootProjectResults = useMemo(() => {
+    if (!hasQuery || projectId) return [];
+    return filteredProjectsList.slice(0, 8);
+  }, [hasQuery, projectId, filteredProjectsList]);
+
+  const hasSessionResults = rootSessionResults.length > 0;
+  const hasProjectResults = rootProjectResults.length > 0;
+  const hasAnyResults =
+    hasNavResults || hasSessionResults || hasProjectResults || hasSessionActionResults;
+
+  const showNoResults = hasQuery && queryLongEnough && !hasAnyResults;
 
   const handleNavigate = useCallback(
     (path: string, label?: string) => {
@@ -800,29 +815,16 @@ export function CommandPalette() {
     [router, close],
   );
 
-  const handleSelectSession = useCallback(
-    (sessionId: string, title?: string) => {
-      openTabAndNavigate({
-        id: sessionId,
-        title: title || 'Session',
-        type: 'session',
-        href: `/sessions/${sessionId}`,
-      });
-      close();
-    },
-    [close],
-  );
-
   const handleSelectFile = useCallback(
-    (filePath: string, lineNumber?: number) => {
+    (_filePath: string, _lineNumber?: number) => {
       if (!projectId) return close();
-      // Open the project Files view focused on the selected file (+ line).
-      const params = new URLSearchParams({ section: 'files', path: filePath });
-      if (lineNumber) params.set('line', String(lineNumber));
-      router.push(`/projects/${projectId}/customize?${params.toString()}`);
+      // Files live in the Customize overlay's Files section. Open it in place
+      // (the explorer reads its own selection state; per-file/line deep focus
+      // is a follow-up now that this no longer rides a URL).
+      useCustomizeStore.getState().openCustomize('files');
       close();
     },
-    [projectId, router, close],
+    [projectId, close],
   );
 
   const jumpToMessage = useMessageJumpStore((s) => s.jumpToMessage);
@@ -926,9 +928,9 @@ export function CommandPalette() {
   }, [detectedUrl, buildProxyUrl, subdomainOpts, close]);
 
   const handleToggleSidebar = useCallback(() => {
-    toggleSidebar();
+    sidebarCtx?.toggleSidebar();
     close();
-  }, [toggleSidebar, close]);
+  }, [sidebarCtx, close]);
 
   const handleOpenSettings = useCallback((tab: SettingsTabId) => {
     close();
@@ -1024,6 +1026,16 @@ export function CommandPalette() {
     switch (item.kind) {
       case 'navigate': {
         const href = item.href || '';
+        // Customize is a full-screen overlay, not a route — open it in place so
+        // the active session/page stays mounted behind it (no tab, no nav).
+        const custMatch = href.match(/\/customize(?:\/([^/?#]+))?/);
+        if (custMatch) {
+          useCustomizeStore
+            .getState()
+            .openCustomize(parseCustomizeSection(custMatch[1]) ?? undefined);
+          close();
+          break;
+        }
         // New project/account routes use the Next router directly — the project
         // tab bar auto-syncs from the URL. The legacy tabbed shell is bypassed.
         if (href.startsWith('/projects') || href.startsWith('/accounts')) {
@@ -1087,8 +1099,13 @@ export function CommandPalette() {
     if (page === 'sessions') return filteredProjectSessionsList.length;
     if (page === 'messages') return 0; // count is shown inline by MessagesPage
     if (!hasQuery) return 0;
-    return filteredNavItems.length + filteredSessions.length + sessionActionItems.length;
-  }, [page, hasQuery, filteredNavItems, filteredSessions, sessionActionItems, filteredAgents, visibleModels, filteredProjectsList, filteredAccountsList, filteredProjectSessionsList]);
+    return (
+      filteredNavItems.length +
+      rootSessionResults.length +
+      rootProjectResults.length +
+      sessionActionItems.length
+    );
+  }, [page, hasQuery, filteredNavItems, rootSessionResults, rootProjectResults, sessionActionItems, filteredAgents, visibleModels, filteredProjectsList, filteredAccountsList, filteredProjectSessionsList]);
 
   // ── Placeholder text ──
   const placeholder = useMemo(() => {
@@ -1123,13 +1140,13 @@ export function CommandPalette() {
             <button
               type="button"
               onClick={goBack}
-              className="group flex items-center gap-1 rounded-md px-1.5 py-0.5 -ml-1.5 text-[11px] text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+              className="group flex items-center gap-1 rounded-md px-1.5 py-0.5 -ml-1.5 text-xs text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
             >
               <ArrowLeft className="h-3 w-3 transition-transform group-hover:-translate-x-0.5" />
               <span>Back</span>
             </button>
-            <span className="text-[11px] text-muted-foreground/25">/</span>
-            <span className="text-[11px] font-medium text-foreground/85 tracking-[-0.005em]">{pageTitle}</span>
+            <span className="text-xs text-muted-foreground/25">/</span>
+            <span className="text-xs font-medium text-foreground/85 tracking-[-0.005em]">{pageTitle}</span>
           </div>
         )}
 
@@ -1205,9 +1222,9 @@ export function CommandPalette() {
                           onSelect={() => goToPage('agents')}
                         >
                           <Bot className="h-4 w-4" />
-                          <span className="flex-1">Change Agent</span>
+                          <span className="flex-1">{tHardcodedUi.raw('componentsCommandPalette.line1209JsxTextChangeAgent')}</span>
                           {currentAgent && (
-                            <span className="text-[10px] text-muted-foreground/40">{currentAgent.name}</span>
+                            <span className="text-xs text-muted-foreground/40">{currentAgent.name}</span>
                           )}
                           <ChevronRight className="h-3 w-3 text-muted-foreground/30" />
                         </CommandItem>
@@ -1216,9 +1233,9 @@ export function CommandPalette() {
                           onSelect={() => goToPage('models')}
                         >
                           <Cpu className="h-4 w-4" />
-                          <span className="flex-1">Change Model</span>
+                          <span className="flex-1">{tHardcodedUi.raw('componentsCommandPalette.line1220JsxTextChangeModel')}</span>
                           {currentModelKey && (
-                            <span className="text-[10px] text-muted-foreground/40 truncate max-w-[160px]">
+                            <span className="text-xs text-muted-foreground/40 truncate max-w-[160px]">
                               {allModels.find(
                                 (m) => m.providerID === currentModelKey.providerID && m.modelID === currentModelKey.modelID,
                               )?.modelName || currentModelKey.modelID}
@@ -1231,7 +1248,7 @@ export function CommandPalette() {
                           onSelect={() => goToPage('messages')}
                         >
                           <MessageCircle className="h-4 w-4" />
-                          <span className="flex-1">Jump to Message</span>
+                          <span className="flex-1">{tHardcodedUi.raw('componentsCommandPalette.line1235JsxTextJumpToMessage')}</span>
                           <ChevronRight className="h-3 w-3 text-muted-foreground/30" />
                         </CommandItem>
                       </>
@@ -1244,8 +1261,8 @@ export function CommandPalette() {
                         onSelect={() => goToPage('files')}
                       >
                         <Search className="h-4 w-4" />
-                        <span className="flex-1">Search Files</span>
-                        <span className="px-1.5 py-0.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-[10px] font-mono text-muted-foreground/55 leading-none">
+                        <span className="flex-1">{tHardcodedUi.raw('componentsCommandPalette.line1248JsxTextSearchFiles')}</span>
+                        <span className="px-1.5 py-0.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-xs font-mono text-muted-foreground/55 leading-none">
                           repo
                         </span>
                         <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
@@ -1253,27 +1270,46 @@ export function CommandPalette() {
                     )}
                   </CommandGroup>
 
-                  {/* Recent Sessions */}
-                  {recentSessions.length > 0 && (
-                    <CommandGroup heading="Recent Sessions" forceMount>
-                      {recentSessions.map((session) => (
+                  {/* Recent — project sessions when scoped to a project, else
+                      recent projects (no legacy global session feed). */}
+                  {projectId && recentProjectSessions.length > 0 && (
+                    <CommandGroup heading={tHardcodedUi.raw('componentsCommandPalette.line1260JsxAttrHeadingRecentSessions')} forceMount>
+                      {recentProjectSessions.map((session) => (
                         <CommandItem
-                          key={session.id}
-                          value={sanitizeCmdkValue(`recent ${session.title || ''} ${session.slug || ''} ${session.id}`)}
-                          onSelect={() =>
-                            handleSelectSession(
-                              session.id,
-                              session.title || session.slug || 'Untitled',
-                            )
-                          }
+                          key={session.session_id}
+                          value={sanitizeCmdkValue(`recent ${sessionName(session)} ${session.session_id}`)}
+                          onSelect={() => handleSelectProjectSession(session)}
                         >
                           <MessageCircle className="h-4 w-4 flex-shrink-0" />
-                          <span className="truncate flex-1">
-                            {session.title || session.slug || 'Untitled'}
+                          <span className="truncate flex-1">{sessionName(session)}</span>
+                          {session.session_id === params?.sessionId && (
+                            <span className="text-xs text-primary/60 font-medium">Current</span>
+                          )}
+                          <span className="text-xs text-muted-foreground/30 tabular-nums flex-shrink-0">
+                            {formatRelativeTime(new Date(session.updated_at).getTime())}
                           </span>
-                          <span className="text-[10px] text-muted-foreground/30 tabular-nums flex-shrink-0">
-                            {formatRelativeTime(session.time.updated)}
-                          </span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  )}
+
+                  {!projectId && recentProjects.length > 0 && (
+                    <CommandGroup heading={tHardcodedUi.raw('componentsCommandPalette.line1281JsxAttrHeadingRecentProjects')} forceMount>
+                      {recentProjects.map((project) => (
+                        <CommandItem
+                          key={project.project_id}
+                          value={sanitizeCmdkValue(`recent project ${project.name} ${project.project_id}`)}
+                          onSelect={() => handleSelectProject(project)}
+                        >
+                          <FolderGit2 className="h-4 w-4 flex-shrink-0" />
+                          <span className="truncate flex-1">{project.name}</span>
+                          {(project.last_opened_at || project.updated_at) && (
+                            <span className="text-xs text-muted-foreground/30 tabular-nums flex-shrink-0">
+                              {formatRelativeTime(
+                                new Date(project.last_opened_at || project.updated_at).getTime(),
+                              )}
+                            </span>
+                          )}
                         </CommandItem>
                       ))}
                     </CommandGroup>
@@ -1337,7 +1373,7 @@ export function CommandPalette() {
                               </CommandShortcut>
                             )}
                             {isActiveTheme && (
-                              <span className="text-[10px] text-primary/60 font-medium">Active</span>
+                              <span className="text-xs text-primary/60 font-medium">Active</span>
                             )}
                             {submenuPage && (
                               <ChevronRight className="h-3 w-3 text-muted-foreground/30" />
@@ -1348,60 +1384,55 @@ export function CommandPalette() {
                     </CommandGroup>
                   )}
 
-                  {/* Sessions */}
+                  {/* Sessions — project-scoped, current source only */}
                   {hasSessionResults && (
                     <CommandGroup heading="Sessions" forceMount>
-                      {filteredSessions.map((session) => {
-                        const hasTitle = !!(session.title || session.slug);
-                        return (
-                          <CommandItem
-                            key={session.id}
-                            value={`session-${session.id}`}
-                            onSelect={() =>
-                              handleSelectSession(
-                                session.id,
-                                session.title || session.slug || session.id,
-                              )
-                            }
-                          >
-                            <MessageCircle className="h-4 w-4 flex-shrink-0" />
-                            <div className="flex flex-col overflow-hidden flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                {hasTitle ? (
-                                  <>
-                                    <span className="truncate text-sm font-medium">
-                                      {session.title || session.slug}
-                                    </span>
-                                    <span className="text-[10px] text-muted-foreground/40 font-mono flex-shrink-0">
-                                      {session.id}
-                                    </span>
-                                  </>
-                                ) : (
-                                  <span className="truncate text-sm font-mono text-muted-foreground/70">
-                                    {session.id}
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[11px] text-muted-foreground/50 truncate">
-                                {formatRelativeTime(session.time.updated)}
-                                {session.summary && session.summary.files > 0 && (
-                                  <span className="ml-1">
-                                    · {session.summary.files} file
-                                    {session.summary.files !== 1 ? 's' : ''}
-                                  </span>
-                                )}
-                              </span>
-                            </div>
-                            <ArrowRightLeft className="h-3 w-3 text-muted-foreground/30 flex-shrink-0" />
-                          </CommandItem>
-                        );
-                      })}
+                      {rootSessionResults.map((session) => (
+                        <CommandItem
+                          key={session.session_id}
+                          value={sanitizeCmdkValue(`session ${sessionName(session)} ${session.session_id}`)}
+                          onSelect={() => handleSelectProjectSession(session)}
+                        >
+                          <MessageCircle className="h-4 w-4 flex-shrink-0" />
+                          <span className="truncate text-sm flex-1">{sessionName(session)}</span>
+                          {session.session_id === params?.sessionId && (
+                            <Check className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                          )}
+                          <span className="text-xs text-muted-foreground/40 tabular-nums flex-shrink-0">
+                            {formatRelativeTime(new Date(session.updated_at).getTime())}
+                          </span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  )}
+
+                  {/* Projects — surfaced in the global shell where there is no
+                      active project to scope sessions to. */}
+                  {hasProjectResults && (
+                    <CommandGroup heading="Projects" forceMount>
+                      {rootProjectResults.map((project) => (
+                        <CommandItem
+                          key={project.project_id}
+                          value={sanitizeCmdkValue(`project ${project.name} ${project.project_id}`)}
+                          onSelect={() => handleSelectProject(project)}
+                        >
+                          <FolderGit2 className="h-4 w-4 flex-shrink-0" />
+                          <span className="truncate text-sm flex-1">{project.name}</span>
+                          {(project.last_opened_at || project.updated_at) && (
+                            <span className="text-xs text-muted-foreground/40 tabular-nums flex-shrink-0">
+                              {formatRelativeTime(
+                                new Date(project.last_opened_at || project.updated_at).getTime(),
+                              )}
+                            </span>
+                          )}
+                        </CommandItem>
+                      ))}
                     </CommandGroup>
                   )}
 
                   {/* Open URL — shown when query looks like a URL or port */}
                   {detectedUrl && (
-                    <CommandGroup heading="Open URL" forceMount>
+                    <CommandGroup heading={tHardcodedUi.raw('componentsCommandPalette.line1419JsxAttrHeadingOpenURL')} forceMount>
                       <CommandItem
                         value={sanitizeCmdkValue(`open url browser preview ${query.trim()} localhost port`)}
                         onSelect={handleOpenUrl}
@@ -1412,23 +1443,22 @@ export function CommandPalette() {
                             ? `Open localhost:${detectedUrl.port}${detectedUrl.path !== '/' ? detectedUrl.path : ''}`
                             : `Open ${new URL(detectedUrl.url).hostname}`}
                         </span>
-                        <span className="text-[10px] text-muted-foreground/40">browser</span>
+                        <span className="text-xs text-muted-foreground/40">browser</span>
                       </CommandItem>
                     </CommandGroup>
                   )}
 
                   {/* Search files action — searches the project's git repo */}
                   {queryLongEnough && !detectedUrl && projectId && (
-                    <CommandGroup heading="File Search" forceMount>
+                    <CommandGroup heading={tHardcodedUi.raw('componentsCommandPalette.line1437JsxAttrHeadingFileSearch')} forceMount>
                       <CommandItem
                         value={sanitizeCmdkValue(`search files ${query.trim()} repo grep find open`)}
                         onSelect={() => goToPage('files', true)}
                       >
                         <Search className="h-4 w-4" />
                         <span className="flex-1">
-                          Search files for &ldquo;{query.trim()}&rdquo;
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-[10px] font-mono text-muted-foreground/55 leading-none">
+                          {tHardcodedUi.raw('componentsCommandPalette.line1444JsxTextSearchFilesFor')}{query.trim()}{tHardcodedUi.raw('componentsCommandPalette.line1444JsxTextText')}</span>
+                        <span className="px-1.5 py-0.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-xs font-mono text-muted-foreground/55 leading-none">
                           repo
                         </span>
                         <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
@@ -1444,11 +1474,9 @@ export function CommandPalette() {
                       </div>
                       <div className="text-center">
                         <span className="text-sm text-muted-foreground/60">
-                          No results for &ldquo;{query.trim()}&rdquo;
-                        </span>
-                        <p className="text-[11px] text-muted-foreground/30 mt-1">
-                          Try &ldquo;Search files&rdquo; or a different term
-                        </p>
+                          {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextNoResultsFor')}{query.trim()}{tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextText')}</span>
+                        <p className="text-xs text-muted-foreground/30 mt-1">
+                          {tHardcodedUi.raw('componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm')}</p>
                       </div>
                     </div>
                   )}
@@ -1476,7 +1504,7 @@ export function CommandPalette() {
                         <div className="flex flex-col overflow-hidden flex-1 min-w-0">
                           <span className="truncate text-sm font-medium">{agent.name}</span>
                           {agent.description && (
-                            <span className="text-[11px] text-muted-foreground/50 truncate">
+                            <span className="text-xs text-muted-foreground/50 truncate">
                               {agent.description}
                             </span>
                           )}
@@ -1504,7 +1532,7 @@ export function CommandPalette() {
                         <div className="flex flex-col overflow-hidden flex-1 min-w-0">
                           <span className="truncate text-sm">{agent.name}</span>
                           {agent.description && (
-                            <span className="text-[11px] text-muted-foreground/50 truncate">
+                            <span className="text-xs text-muted-foreground/50 truncate">
                               {agent.description}
                             </span>
                           )}
@@ -1557,18 +1585,18 @@ export function CommandPalette() {
                       >
                         <div className="flex flex-col overflow-hidden flex-1 min-w-0">
                           <span className="truncate text-sm">{model.modelName}</span>
-                          <span className="text-[10px] text-muted-foreground/40 font-mono truncate">
+                          <span className="text-xs text-muted-foreground/40 font-mono truncate">
                             {model.modelID}
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           {model.capabilities?.reasoning && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium leading-none bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                            <span className="px-1.5 py-0.5 rounded text-xs font-medium leading-none bg-blue-500/10 text-blue-600 dark:text-blue-400">
                               reasoning
                             </span>
                           )}
                           {model.capabilities?.vision && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium leading-none bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                            <span className="px-1.5 py-0.5 rounded text-xs font-medium leading-none bg-purple-500/10 text-purple-600 dark:text-purple-400">
                               vision
                             </span>
                           )}
@@ -1637,7 +1665,7 @@ export function CommandPalette() {
             filteredAccountsList.length > 0 ? (
               <CommandGroup heading={`Accounts (${filteredAccountsList.length})`} forceMount>
                 {filteredAccountsList.map((account) => {
-                  const label = account.name || (account.personal_account ? 'Personal' : 'Account');
+                  const label = account.name || 'Account';
                   return (
                     <CommandItem
                       key={account.account_id}
@@ -1646,10 +1674,7 @@ export function CommandPalette() {
                     >
                       <Users className="h-4 w-4 shrink-0 text-muted-foreground/70" />
                       <span className="flex-1 truncate">{label}</span>
-                      {account.personal_account && (
-                        <span className="text-[10px] text-muted-foreground/40">Personal</span>
-                      )}
-                      {account.account_id === selectedAccountId && (
+                      {account.account_id === activeAccountId && (
                         <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
                       )}
                     </CommandItem>
@@ -1680,7 +1705,7 @@ export function CommandPalette() {
                   >
                     <MessageCircle className="h-4 w-4 shrink-0 text-muted-foreground/70" />
                     <span className="flex-1 truncate">{sessionName(session)}</span>
-                    <span className="text-[10px] text-muted-foreground/30 tabular-nums shrink-0">
+                    <span className="text-xs text-muted-foreground/30 tabular-nums shrink-0">
                       {formatRelativeTime(new Date(session.updated_at).getTime())}
                     </span>
                     {session.session_id === params?.sessionId && (
@@ -1726,8 +1751,8 @@ export function CommandPalette() {
           )}
           {page === 'files' && (
             <div className="flex items-center gap-1">
-              <CommandKbd>&gt;</CommandKbd>
-              <span>content search</span>
+              <CommandKbd>{tHardcodedUi.raw('componentsCommandPalette.line1744JsxTextText')}</CommandKbd>
+              <span>{tHardcodedUi.raw('componentsCommandPalette.line1745JsxTextContentSearch')}</span>
             </div>
           )}
           <div className="flex items-center gap-1">

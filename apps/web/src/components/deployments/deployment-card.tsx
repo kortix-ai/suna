@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React from 'react';
 import {
   ExternalLink,
@@ -19,6 +21,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import {
   Tooltip,
@@ -110,6 +113,7 @@ export function DeploymentCard({
   isDeletePending,
   compact = false,
 }: DeploymentCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const status = statusConfig[deployment.status] || statusConfig.pending;
   const SourceIcon = sourceIcons[deployment.sourceType] || FileCode2;
   const domain = deployment.domains?.[0] || null;
@@ -119,7 +123,7 @@ export function DeploymentCard({
   // ─── Compact version row (used inside domain groups) ────────────────────
   if (compact) {
     return (
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl hover:bg-muted/30 transition-colors group/version">
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg hover:bg-muted/30 transition-colors group/version">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <Badge variant="secondary" className="text-xs shrink-0 tabular-nums">
             v{deployment.version}
@@ -163,16 +167,17 @@ export function DeploymentCard({
           {deployment.liveUrl && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <a
-                  href={deployment.liveUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-1.5 rounded-lg cursor-pointer text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+                <Button asChild variant="ghost" size="icon-sm">
+                  <a
+                    href={deployment.liveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">Open live URL</TooltipContent>
+              <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line177JsxTextOpenLiveUrl')}</TooltipContent>
             </Tooltip>
           )}
           <Tooltip>
@@ -185,7 +190,7 @@ export function DeploymentCard({
                 <ScrollText className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">View logs</TooltipContent>
+            <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line190JsxTextViewLogs')}</TooltipContent>
           </Tooltip>
            {canRedeploy && (
             <Tooltip>
@@ -210,7 +215,6 @@ export function DeploymentCard({
                   disabled={isStopPending}
                   variant="ghost"
                   size="icon-sm"
-                  className="hover:text-orange-500 hover:bg-orange-500/10"
                 >
                   <Square className="h-3.5 w-3.5" />
                 </Button>
@@ -225,7 +229,6 @@ export function DeploymentCard({
                 disabled={isDeletePending}
                 variant="ghost"
                 size="icon-sm"
-                className="hover:text-red-500 hover:bg-red-500/10"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -244,7 +247,7 @@ export function DeploymentCard({
         {/* Top row: icon + info + status */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-4 flex-1 min-w-0">
-            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-card border border-border/50 shrink-0">
+            <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-card border border-border/50 shrink-0">
               <Globe className="h-5 w-5 text-foreground" />
             </div>
             <div className="flex-1 min-w-0">
@@ -290,16 +293,17 @@ export function DeploymentCard({
             {deployment.liveUrl && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <a
-                    href={deployment.liveUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 rounded-lg cursor-pointer text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
+                  <Button asChild variant="ghost" size="icon">
+                    <a
+                      href={deployment.liveUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">Open live URL</TooltipContent>
+                <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line303JsxTextOpenLiveUrl')}</TooltipContent>
               </Tooltip>
             )}
             <Tooltip>
@@ -312,7 +316,7 @@ export function DeploymentCard({
                   <ScrollText className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">View logs</TooltipContent>
+              <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line316JsxTextViewLogs')}</TooltipContent>
             </Tooltip>
             {canRedeploy && (
               <Tooltip>
@@ -325,7 +329,7 @@ export function DeploymentCard({
                     <Pencil className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">Edit &amp; Redeploy</TooltipContent>
+                <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line329JsxTextEditAmpRedeploy')}</TooltipContent>
               </Tooltip>
             )}
             {canRedeploy && (
@@ -351,7 +355,6 @@ export function DeploymentCard({
                     disabled={isStopPending}
                     variant="ghost"
                     size="icon"
-                    className="hover:text-orange-500 hover:bg-orange-500/10"
                   >
                     <Square className="h-4 w-4" />
                   </Button>
@@ -366,7 +369,6 @@ export function DeploymentCard({
                   disabled={isDeletePending}
                   variant="ghost"
                   size="icon"
-                  className="hover:text-red-500 hover:bg-red-500/10"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -394,30 +396,32 @@ export function DeploymentCard({
         {/* Error message + actions */}
         {deployment.status === 'failed' && deployment.error && (
           <div className="mt-3 pl-16 space-y-2.5">
-            <div className="flex items-center gap-2 text-sm text-red-500 dark:text-red-400 bg-red-500/5 rounded-2xl px-3 py-2">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span className="flex-1 line-clamp-2">{deployment.error}</span>
-              {isFreestyleKeyError(deployment.error) && onConfigureApiKey && (
-                <Button
-                  onClick={onConfigureApiKey}
-                  size="xs"
-                  variant="muted"
-                  className="shrink-0 hover:text-red-500 hover:bg-red-500/10"
-                >
-                  <Settings className="h-3 w-3" />
-                  Configure
-                </Button>
-              )}
-            </div>
+            <InfoBanner
+              tone="destructive"
+              icon={AlertCircle}
+              action={
+                isFreestyleKeyError(deployment.error) && onConfigureApiKey ? (
+                  <Button
+                    onClick={onConfigureApiKey}
+                    size="xs"
+                    variant="muted"
+                    className="shrink-0"
+                  >
+                    <Settings className="h-3 w-3" />
+                    Configure
+                  </Button>
+                ) : undefined
+              }
+            >
+              <span className="line-clamp-2">{deployment.error}</span>
+            </InfoBanner>
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon-sm"
                 onClick={() => onEditRedeploy(deployment)}
               >
-                <Pencil className="h-3.5 w-3.5" />
-                Edit &amp; Redeploy
-              </Button>
+                <Pencil className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsDeploymentsDeploymentCard.line422JsxTextEditAmpRedeploy')}</Button>
               <Button
                 variant="ghost"
                 size="icon-sm"

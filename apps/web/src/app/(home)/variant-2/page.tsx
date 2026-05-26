@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -24,6 +26,7 @@ const INSTALL_CMD = 'curl -fsSL https://kortix.com/install | bash';
 // ─── Reusable Components ────────────────────────────────
 
 export default function Variant2Home() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const { user, isLoading } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -99,9 +102,7 @@ export default function Variant2Home() {
               transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
               className="text-center max-w-4xl mx-auto relative z-30 mt-12"
             >
-              <h1 className="text-5xl sm:text-7xl md:text-8xl font-medium tracking-tighter leading-[0.9] pb-4 bg-gradient-to-b from-foreground to-foreground/30 text-transparent bg-clip-text">
-                The AI Computer.
-              </h1>
+              <h1 className="text-5xl sm:text-7xl md:text-8xl font-medium tracking-tighter leading-[0.9] pb-4 bg-gradient-to-b from-foreground to-foreground/30 text-transparent bg-clip-text">{tHardcodedUi.raw('appHomeVariant2Page.line103JsxTextTheAiComputer')}</h1>
             </motion.div>
 
             {/* Bottom Content: CTA */}
@@ -115,14 +116,11 @@ export default function Variant2Home() {
                 size="lg"
                 className="h-14 px-10 text-base rounded-full transition-colors"
                 onClick={handleLaunch}
-              >
-                Launch Kortix<ArrowRight className="ml-2 size-4" />
+              >{tHardcodedUi.raw('appHomeVariant2Page.line119JsxTextLaunchKortix')}<ArrowRight className="ml-2 size-4" />
               </Button>
 
               <div className="flex flex-col items-center gap-3 w-full">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-medium">
-                  -- or self-host
-                </span>
+                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-medium">{tHardcodedUi.raw('appHomeVariant2Page.line124JsxTextOrSelfHost')}</span>
                 <button
                   onClick={handleCopy}
                   className="group flex items-center justify-between w-full max-w-sm h-10 px-4 rounded-lg bg-foreground/[0.03] border border-foreground/[0.08] hover:bg-foreground/[0.06] hover:border-foreground/[0.12] transition-colors cursor-pointer backdrop-blur-md"
@@ -146,7 +144,7 @@ export default function Variant2Home() {
               animate={{ opacity: 1 }}
               transition={{ delay: 1, duration: 1 }}
             >
-              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Scroll to explore</span>
+              <span className="text-xs uppercase tracking-widest text-muted-foreground">{tHardcodedUi.raw('appHomeVariant2Page.line149JsxTextScrollToExplore')}</span>
               <div className="w-px h-8 bg-gradient-to-b from-muted-foreground/30 to-transparent" />
             </motion.div>
           </motion.section>
@@ -158,14 +156,10 @@ export default function Variant2Home() {
           {/* ── Intro ── */}
           <div className="max-w-3xl mx-auto px-6 pt-24 sm:pt-32 pb-10 sm:pb-14">
             <Reveal>
-              <p className="text-2xl sm:text-3xl md:text-4xl font-medium text-foreground leading-snug tracking-tight">
-                One machine. All your tools. Agents that run themselves.
-              </p>
+              <p className="text-2xl sm:text-3xl md:text-4xl font-medium text-foreground leading-snug tracking-tight">{tHardcodedUi.raw('appHomeVariant2Page.line162JsxTextOneMachineAllYourToolsAgentsThatRun')}</p>
             </Reveal>
             <Reveal delay={0.1}>
-              <p className="mt-4 text-base sm:text-lg text-muted-foreground leading-relaxed max-w-2xl">
-                A Kortix is a cloud computer where AI agents do the actual work of running a company. You connect your tools, define your agents, set their schedules and triggers — and the machine operates whether you&apos;re there or not. Persistent memory that compounds. A workforce that never stops.
-              </p>
+              <p className="mt-4 text-base sm:text-lg text-muted-foreground leading-relaxed max-w-2xl">{tHardcodedUi.raw('appHomeVariant2Page.line167JsxTextAKortixIsACloudComputerWhereAi')}</p>
             </Reveal>
           </div>
 
@@ -173,14 +167,11 @@ export default function Variant2Home() {
           <div className="border-t border-border/30 py-10 sm:py-14 overflow-hidden">
             <div className="max-w-3xl mx-auto px-6 mb-8">
               <Reveal>
-                <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground">
-                  Real outputs. <span className="text-muted-foreground">Not suggestions.</span>
+                <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground">{tHardcodedUi.raw('appHomeVariant2Page.line177JsxTextRealOutputs')}<span className="text-muted-foreground">{tHardcodedUi.raw('appHomeVariant2Page.line177JsxTextNotSuggestions')}</span>
                 </h2>
               </Reveal>
               <Reveal delay={0.1}>
-                <p className="mt-2 text-base text-muted-foreground leading-relaxed max-w-xl">
-                  Give an agent a goal. It plans, executes, self-verifies, and delivers a finished result.
-                </p>
+                <p className="mt-2 text-base text-muted-foreground leading-relaxed max-w-xl">{tHardcodedUi.raw('appHomeVariant2Page.line182JsxTextGiveAnAgentAGoalItPlansExecutes')}</p>
               </Reveal>
             </div>
             <div className="flex gap-5 px-6 overflow-x-auto pb-4" style={{ scrollbarWidth: 'none' }}>
@@ -198,7 +189,7 @@ export default function Variant2Home() {
                         <div className="size-1.5 rounded-full bg-muted-foreground/15" />
                         <div className="size-1.5 rounded-full bg-muted-foreground/15" />
                       </div>
-                      <span className="text-[0.5625rem] font-mono text-muted-foreground ml-1">output</span>
+                      <span className="text-xs font-mono text-muted-foreground ml-1">output</span>
                     </div>
                     <div className="relative overflow-hidden" style={{ aspectRatio: `${width}/${height}` }}>
                       <Image src={src} alt={label} width={width} height={height} className="w-full h-full object-cover" />
@@ -206,7 +197,7 @@ export default function Variant2Home() {
                   </div>
                   <div className="mt-2.5 px-0.5">
                     <div className="text-sm font-medium text-foreground tracking-tight">{label}</div>
-                    <div className="mt-1 text-[10px] text-muted-foreground font-mono">{prompt}</div>
+                    <div className="mt-1 text-xs text-muted-foreground font-mono">{prompt}</div>
                   </div>
                 </Reveal>
               ))}
@@ -219,14 +210,10 @@ export default function Variant2Home() {
             <div className="max-w-7xl mx-auto px-6 py-10 sm:py-14 grid lg:grid-cols-2 gap-16 lg:gap-24 items-center">
               <div>
                 <Reveal>
-                  <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground mb-2">
-                    The system
-                  </h2>
+                  <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground mb-2">{tHardcodedUi.raw('appHomeVariant2Page.line223JsxTextTheSystem')}</h2>
                 </Reveal>
                 <Reveal delay={0.1}>
-                  <p className="text-base text-muted-foreground leading-relaxed mb-8">
-                    Kortix runs on <a href="https://opencode.ai" target="_blank" rel="noopener noreferrer" className="hover:text-foreground/80 transition-colors">OpenCode</a>, an open foundation for building knowledge work agents, with the Kortix cognitive architecture layered on top. Everything is just files.
-                  </p>
+                  <p className="text-base text-muted-foreground leading-relaxed mb-8">{tHardcodedUi.raw('appHomeVariant2Page.line228JsxTextKortixRunsOn')}<a href="https://opencode.ai" target="_blank" rel="noopener noreferrer" className="hover:text-foreground/80 transition-colors">OpenCode</a>{tHardcodedUi.raw('appHomeVariant2Page.line228JsxTextAnOpenFoundationForBuildingKnowledgeWorkAgents')}</p>
                 </Reveal>
                 <Reveal delay={0.2}>
                   <div className="flex flex-col gap-4">
@@ -250,24 +237,22 @@ export default function Variant2Home() {
               </div>
 
               <Reveal delay={0.15}>
-                <div className="rounded-2xl overflow-hidden border border-border/40 bg-card/20 font-mono text-[11px]">
+                <div className="rounded-2xl overflow-hidden border border-border/40 bg-card/20 font-mono text-xs">
                   <div className="bg-muted/10 border-b border-border/30 px-4 py-3 flex items-center gap-2.5">
                     <div className="flex gap-1.5">
                       <div className="size-2.5 rounded-full bg-muted-foreground/15" />
                       <div className="size-2.5 rounded-full bg-muted-foreground/15" />
                       <div className="size-2.5 rounded-full bg-muted-foreground/15" />
                     </div>
-                    <span className="text-[10px] font-mono text-muted-foreground ml-1">kortix — session</span>
+                    <span className="text-xs font-mono text-muted-foreground ml-1">{tHardcodedUi.raw('appHomeVariant2Page.line260JsxTextKortixSession')}</span>
                   </div>
                   <div className="p-5 space-y-5">
                     <div className="space-y-1">
-                      <div className="text-muted-foreground text-[0.5625rem] uppercase tracking-widest">You</div>
-                      <div className="text-foreground leading-relaxed">
-                        Research our top 3 competitors, summarise their pricing, and send a Slack report to #strategy.
-                      </div>
+                      <div className="text-muted-foreground text-xs uppercase tracking-widest">You</div>
+                      <div className="text-foreground leading-relaxed">{tHardcodedUi.raw('appHomeVariant2Page.line266JsxTextResearchOurTop3CompetitorsSummariseTheirPricing')}</div>
                     </div>
                     <div className="space-y-2 pl-3 border-l border-border/25">
-                      <div className="text-muted-foreground text-[0.5625rem] uppercase tracking-widest mb-3">Kortix</div>
+                      <div className="text-muted-foreground text-xs uppercase tracking-widest mb-3">Kortix</div>
                       {[
                         { done: true, text: 'Browsing competitor sites via Chromium...' },
                         { done: true, text: 'Extracting pricing pages (3 sites)...' },
@@ -283,9 +268,7 @@ export default function Variant2Home() {
                         </div>
                       ))}
                     </div>
-                    <div className="pt-1 border-t border-border/20 text-foreground leading-relaxed">
-                      Done. Report delivered. Saved to workspace for future reference.
-                    </div>
+                    <div className="pt-1 border-t border-border/20 text-foreground leading-relaxed">{tHardcodedUi.raw('appHomeVariant2Page.line287JsxTextDoneReportDeliveredSavedToWorkspaceForFuture')}</div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-foreground">$</span>
                       <span className="w-1.5 h-3.5 bg-muted-foreground/25 animate-pulse inline-block" />
@@ -307,14 +290,14 @@ export default function Variant2Home() {
                       <div className="size-2.5 rounded-full bg-muted-foreground/15" />
                       <div className="size-2.5 rounded-full bg-muted-foreground/15" />
                     </div>
-                    <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">root@kortix ~ kortix status</span>
+                    <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest">{tHardcodedUi.raw('appHomeVariant2Page.line310JsxTextRootKortixKortixStatus')}</span>
                     <div className="size-2.5 opacity-0" />
                   </div>
-                  <div className="p-5 space-y-1 text-[11px]">
-                    <div className="grid grid-cols-12 gap-2 text-[0.5625rem] text-muted-foreground uppercase tracking-widest pb-2 border-b border-border/20 mb-3">
+                  <div className="p-5 space-y-1 text-xs">
+                    <div className="grid grid-cols-12 gap-2 text-xs text-muted-foreground uppercase tracking-widest pb-2 border-b border-border/20 mb-3">
                       <div className="col-span-5">Agent</div>
                       <div className="col-span-3">Uptime</div>
-                      <div className="col-span-4">Last action</div>
+                      <div className="col-span-4">{tHardcodedUi.raw('appHomeVariant2Page.line317JsxTextLastAction')}</div>
                     </div>
                     {[
                       { name: 'support-agent', uptime: '14d 02:11', last: 'Replied to 3 tickets', running: true },
@@ -342,14 +325,10 @@ export default function Variant2Home() {
 
               <div>
                 <Reveal>
-                  <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground mb-2">
-                    Deploy and check in
-                  </h2>
+                  <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground mb-2">{tHardcodedUi.raw('appHomeVariant2Page.line346JsxTextDeployAndCheckIn')}</h2>
                 </Reveal>
                 <Reveal delay={0.1}>
-                  <p className="text-base text-muted-foreground leading-relaxed mb-8">
-                    Your agents run 24/7. Triggers fire them on schedule. Goal loops keep them going until the job is verified done. You check in from anywhere — whenever you want.
-                  </p>
+                  <p className="text-base text-muted-foreground leading-relaxed mb-8">{tHardcodedUi.raw('appHomeVariant2Page.line351JsxTextYourAgentsRun247TriggersFireThem')}</p>
                 </Reveal>
                 <Reveal delay={0.2}>
                   <div className="flex flex-col gap-4">
@@ -377,21 +356,17 @@ export default function Variant2Home() {
           <div className="border-t border-border/30">
             <div className="max-w-3xl mx-auto px-6 py-10 sm:py-14">
               <Reveal>
-                <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground mb-2">
-                  Everything is files
-                </h2>
+                <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground mb-2">{tHardcodedUi.raw('appHomeVariant2Page.line381JsxTextEverythingIsFiles')}</h2>
               </Reveal>
               <Reveal delay={0.1}>
-                <p className="text-base text-muted-foreground leading-relaxed mb-10 max-w-2xl">
-                  Agents, skills, memory, credentials, browser profiles — all on the filesystem you own. Human-readable, git-trackable, SSH-accessible.
-                </p>
+                <p className="text-base text-muted-foreground leading-relaxed mb-10 max-w-2xl">{tHardcodedUi.raw('appHomeVariant2Page.line386JsxTextAgentsSkillsMemoryCredentialsBrowserProfilesAllOn')}</p>
               </Reveal>
 
               <div className="grid sm:grid-cols-2 gap-8">
                 <Reveal delay={0.15}>
                   <div className="rounded-2xl border border-border/40 bg-card/20 overflow-hidden">
                     <div className="px-5 py-4 border-b border-border/25">
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">Connected</div>
+                      <div className="text-xs uppercase tracking-widest text-muted-foreground font-medium">Connected</div>
                     </div>
                     <div className="p-4 flex flex-col gap-2">
                       {[
@@ -404,20 +379,18 @@ export default function Variant2Home() {
                       ].map(({ name, tag }) => (
                         <div key={name} className="flex items-center justify-between py-1.5">
                           <span className="text-sm text-foreground font-medium">{name}</span>
-                          <span className="text-[0.5625rem] font-mono uppercase tracking-widest text-muted-foreground bg-muted/20 px-2 py-0.5 rounded-md">{tag}</span>
+                          <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground bg-muted/20 px-2 py-0.5 rounded-md">{tag}</span>
                         </div>
                       ))}
-                      <div className="pt-2 text-[10px] text-muted-foreground text-center border-t border-border/20">
-                        3,000+ via OAuth · MCP · REST · CLI · env vars
-                      </div>
+                      <div className="pt-2 text-xs text-muted-foreground text-center border-t border-border/20">{tHardcodedUi.raw('appHomeVariant2Page.line411JsxTextText3000ViaOauthMcpRestCliEnv')}</div>
                     </div>
                   </div>
                 </Reveal>
 
                 <Reveal delay={0.25}>
-                  <div className="rounded-2xl border border-border/40 bg-card/20 overflow-hidden font-mono text-[11px]">
+                  <div className="rounded-2xl border border-border/40 bg-card/20 overflow-hidden font-mono text-xs">
                     <div className="px-5 py-4 border-b border-border/25">
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">~/workspace</div>
+                      <div className="text-xs uppercase tracking-widest text-muted-foreground font-medium">{tHardcodedUi.raw('appHomeVariant2Page.line420JsxTextWorkspace')}</div>
                     </div>
                     <div className="p-4 flex flex-col gap-0.5">
                       {[
@@ -434,13 +407,11 @@ export default function Variant2Home() {
                           className="flex items-center gap-2 py-1 px-1 rounded hover:bg-muted/15 transition-colors"
                           style={{ paddingLeft: `${d * 1.25 + 0.25}rem` }}
                         >
-                          <span className="text-muted-foreground text-[10px]">{f ? '·' : '▸'}</span>
+                          <span className="text-muted-foreground text-xs">{f ? '·' : '▸'}</span>
                           <span className="text-foreground">{n}</span>
                         </div>
                       ))}
-                      <div className="mt-2 pt-2 border-t border-border/20 text-muted-foreground pl-1">
-                        SSH · git-trackable · grep-searchable
-                      </div>
+                      <div className="mt-2 pt-2 border-t border-border/20 text-muted-foreground pl-1">{tHardcodedUi.raw('appHomeVariant2Page.line442JsxTextSshGitTrackableGrepSearchable')}</div>
                     </div>
                   </div>
                 </Reveal>
@@ -456,8 +427,7 @@ export default function Variant2Home() {
                   size="lg"
                   className="h-11 px-7 text-sm rounded-full"
                   onClick={handleLaunch}
-                >
-                  Get Started<ArrowRight className="ml-1.5 size-3.5" />
+                >{tHardcodedUi.raw('appHomeVariant2Page.line460JsxTextGetStarted')}<ArrowRight className="ml-1.5 size-3.5" />
                 </Button>
                 <GithubButton size="lg" className="h-11" />
               </div>
@@ -465,8 +435,8 @@ export default function Variant2Home() {
                 onClick={handleCopy}
                 className="group inline-flex items-center gap-2.5 h-9 px-4 rounded-lg bg-foreground/[0.03] border border-foreground/[0.08] hover:bg-foreground/[0.06] hover:border-foreground/[0.12] transition-colors cursor-pointer"
               >
-                <span className="font-mono text-[11px] text-muted-foreground select-none">$</span>
-                <code className="text-[11px] font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
+                <span className="font-mono text-xs text-muted-foreground select-none">$</span>
+                <code className="text-xs font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
                 <div className="pl-2.5 border-l border-foreground/[0.08]">
                   {copied
                     ? <Check className="size-3 text-emerald-500" />

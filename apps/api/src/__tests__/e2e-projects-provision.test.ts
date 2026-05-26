@@ -5,6 +5,7 @@
  * stubbed Freestyle git API (repo + identity + permission + token).
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectMembers, projects } from '@kortix/db';
@@ -93,23 +94,15 @@ mock.module('../middleware/auth', () => ({
 // this file's lightweight db mock doesn't model. Mock only the engine so the
 // real ../iam barrel still re-exports actions, assertAuthorized, etc. We're
 // verifying provision/delete behavior, not the access-control engine itself.
-mock.module('../iam/engine', () => ({
-  authorize: async () => ({ allowed: true }),
-  assertAuthorized: async () => {},
-  listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
-}));
+mockIamEngineAllowAll();
 
 // grantProjectRole syncs IAM policy rows; no-op those (they hit tables the
 // lightweight db mock doesn't model).
-mock.module('../iam/membership-sync', () => ({
-  syncMemberAccountPolicy: async () => {},
-  removeMemberPolicies: async () => {},
-  removeProjectPoliciesForMember: async () => {},
-  syncProjectMemberPolicy: async () => {},
-  removeProjectMemberPolicy: async () => {},
-}));
+mockIamMembershipSyncNoop();
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],

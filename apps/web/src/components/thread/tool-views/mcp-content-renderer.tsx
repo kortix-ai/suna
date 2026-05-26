@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import React from 'react';
 import { ContentFormat, FormatDetectionResult } from './mcp-format-detector';
 import { UnifiedMarkdown } from '@/components/markdown';
@@ -36,6 +37,7 @@ interface SearchResult {
 
 // Renderer for search results
 function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Normalize search results from various formats
   const normalizeResults = (data: any): SearchResult[] => {
     let items: any[] = [];
@@ -63,12 +65,10 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
         <div className="flex items-center gap-2">
           <Search className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium text-foreground">
-            {results.length} search results
-          </span>
+            {results.length}{tHardcodedUi.raw('componentsThreadToolViewsMcpContentRenderer.line66JsxTextSearchResults')}</span>
         </div>
         {meta?.costDollars?.total && (
-          <div className="text-xs text-muted-foreground">
-            Cost: ${meta.costDollars.total}
+          <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsThreadToolViewsMcpContentRenderer.line71JsxTextCost')}{meta.costDollars.total}
           </div>
         )}
       </div>
@@ -151,7 +151,7 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>Copy URL</p>
+                          <p>{tHardcodedUi.raw('componentsThreadToolViewsMcpContentRenderer.line154JsxTextCopyUrl')}</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -174,6 +174,7 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
 
 // Renderer for table data
 function TableRenderer({ data }: { data: any }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const renderAsTable = (items: any[]) => {
     if (!items.length) return null;
 
@@ -183,8 +184,7 @@ function TableRenderer({ data }: { data: any }) {
       <div className="p-3">
         <div className="flex items-center gap-2 mb-3">
           <Table className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium text-foreground">
-            Table Data ({items.length} rows)
+          <span className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsThreadToolViewsMcpContentRenderer.line187JsxTextTableData')}{items.length} rows)
           </span>
         </div>
         <ScrollArea className="max-h-96">
@@ -224,13 +224,12 @@ function TableRenderer({ data }: { data: any }) {
 
 // Renderer for JSON data
 function JsonRenderer({ data }: { data: any }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="p-3">
       <div className="flex items-center gap-2 mb-3">
         <Database className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium text-foreground">
-          Structured Data
-        </span>
+        <span className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsThreadToolViewsMcpContentRenderer.line232JsxTextStructuredData')}</span>
       </div>
       <ScrollArea className="max-h-96">
         <pre className="whitespace-pre-wrap font-mono text-xs text-foreground">
@@ -243,7 +242,8 @@ function JsonRenderer({ data }: { data: any }) {
 
 // Renderer for key-value pairs
 function KeyValueRenderer({ content }: { content: string }) {
-  if (!content || typeof content !== 'string') return <div>No content available</div>;
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  if (!content || typeof content !== 'string') return <div>{tHardcodedUi.raw('componentsThreadToolViewsMcpContentRenderer.line246JsxTextNoContentAvailable')}</div>;
   
   const lines = content.split('\n').filter(line => line.includes(':'));
   const pairs = lines.map(line => {
@@ -277,14 +277,14 @@ function KeyValueRenderer({ content }: { content: string }) {
 
 // Renderer for URL lists
 function UrlListRenderer({ content }: { content: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const urls = content.match(/https?:\/\/\S+/g) || [];
 
   return (
     <div className="p-3">
       <div className="flex items-center gap-2 mb-3">
         <Link2 className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium text-foreground">
-          URLs ({urls.length})
+        <span className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsThreadToolViewsMcpContentRenderer.line287JsxTextUrls')}{urls.length})
         </span>
       </div>
       <div className="space-y-2">
@@ -308,11 +308,12 @@ function UrlListRenderer({ content }: { content: string }) {
 
 // Renderer for errors
 function ErrorRenderer({ content }: { content: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="p-3">
       <div className="flex items-center gap-2 mb-2 text-muted-foreground">
         <AlertTriangle className="h-3.5 w-3.5" />
-        <span className="text-xs font-medium">Error Details</span>
+        <span className="text-xs font-medium">{tHardcodedUi.raw('componentsThreadToolViewsMcpContentRenderer.line315JsxTextErrorDetails')}</span>
       </div>
       <div className="p-3 bg-muted/30 rounded border border-border/40">
         <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
@@ -338,6 +339,7 @@ function TextRenderer({ content }: { content: string }) {
 
 // Main renderer component
 export function MCPContentRenderer({ detectionResult, rawContent }: MCPContentRendererProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { format, confidence, metadata, parsedData } = detectionResult;
 
   // Convert content to string if needed
@@ -359,9 +361,7 @@ export function MCPContentRenderer({ detectionResult, rawContent }: MCPContentRe
         <div className="p-3">
           <div className="flex items-center gap-2 mb-3">
             <BookOpen className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium text-foreground">
-              Markdown Content
-            </span>
+            <span className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsThreadToolViewsMcpContentRenderer.line363JsxTextMarkdownContent')}</span>
           </div>
           <UnifiedMarkdown content={contentStr} />
         </div>
@@ -384,9 +384,7 @@ export function MCPContentRenderer({ detectionResult, rawContent }: MCPContentRe
         <div className="p-3">
           <div className="flex items-center gap-2 mb-3">
             <FileCode className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium text-foreground">
-              Code Output
-            </span>
+            <span className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsThreadToolViewsMcpContentRenderer.line388JsxTextCodeOutput')}</span>
           </div>
           <ScrollArea className="max-h-96">
             <pre className="whitespace-pre-wrap font-mono text-xs text-foreground bg-muted p-3 rounded">

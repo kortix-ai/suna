@@ -20,8 +20,8 @@ interface ProjectContextOpts {
  *   2. .kortix/link.json's `host` field (per-repo binding)
  *   3. globally active host (~/.config/kortix/config.json)
  *
- * Backward-compat: callers that pass a string get the legacy
- * `(projectArg)` shape; callers that need --host pass an object.
+ * Backward-compatible call shape: callers that pass a string get the
+ * `(projectArg)` behavior; callers that need --host pass an object.
  */
 export function resolveProjectContext(
   optsOrProjectArg?: ProjectContextOpts | string,

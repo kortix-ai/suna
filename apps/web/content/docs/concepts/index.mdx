@@ -1,0 +1,60 @@
+---
+title: How Kortix works
+description: The architecture — repo-as-project, the control plane, ephemeral sandboxes on branches, and change requests.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A **project** is one git repository with a [`kortix.toml`](/docs/reference/manifest)
+at its root. A **session** runs the agent in an isolated sandbox VM with the repo
+cloned onto a branch named after the session. The sandbox is disposable; the
+branch persists. Work reaches the default branch only via a merged
+**[change request](/docs/concepts/change-requests)**.
+
+## The pieces
+
+- **[Projects](/docs/concepts/projects)** — a git repo (Kortix-managed or
+  imported GitHub) plus its manifest.
+- **[Sessions](/docs/concepts/sessions)** — isolated Daytona sandbox VMs, each on
+  its own branch. Many run at once without interfering.
+- **[Agents](/docs/concepts/agents)** — OpenCode, configured from
+  `.kortix/opencode/`.
+- **[Change requests](/docs/concepts/change-requests)** — the git merge layer
+  that lands a branch on the default branch.
+- **[Secrets](/docs/concepts/secrets)** — per-project encrypted values, given to
+  sessions as environment variables.
+- **[Triggers](/docs/concepts/triggers)** — spawn a session on a schedule or from
+  a webhook.
+- **[Connections](/docs/concepts/connections)** — let the agent call external
+  tools, brokered server-side.
+- **[Channels](/docs/concepts/channels)** — drive a project from Slack.
+- **[Accounts](/docs/concepts/accounts)** — who owns projects and who can access
+  them.
+
+## When a session starts
+
+1. The control plane (the Kortix API) inserts the session (`provisioning`) and
+   cuts a branch from the default branch, named after the session id.
+2. It resolves a content-addressed **snapshot** — your `.kortix/Dockerfile` plus
+   the Kortix runtime layer, built on Daytona. Unchanged projects reuse the
+   cached image.
+3. Daytona boots the VM. The `kortix-agent` daemon clones the repo to
+   `/workspace`, fetches git credentials just-in-time, and launches OpenCode.
+   Status → `running`.
+4. The agent works with [secrets](/docs/concepts/secrets) as env vars,
+   committing and pushing to the session branch.
+5. It opens a change request; you review and merge — the only path to the
+   default branch.
+
+<Callout type="info" title="Disposable by design">
+The sandbox is thrown away on stop or idle hibernation. Only committed-and-pushed
+branch work survives, and only a merged change request makes it permanent.
+</Callout>
+
+## Two config surfaces
+
+`kortix.toml` + `.kortix/Dockerfile` are Kortix-owned; `.kortix/opencode/` is
+agent behavior, read only by OpenCode. See
+[Kortix vs OpenCode config](/docs/reference/config-boundary). Drive any of it
+from a terminal with the [CLI](/docs/reference/cli) — it controls the cloud, it
+doesn't run the agent locally.

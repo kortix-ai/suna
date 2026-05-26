@@ -1,15 +1,29 @@
 {
-  "_comment": "Static manifest for the universal Kortix Slack App (OAuth mode). Paste at https://api.slack.com/apps → 'Create New App' → 'From a manifest'. Swap every occurrence of https://frugal-ranunculaceous-patrica.ngrok-free.dev for your production public URL (e.g. https://api.kortix.com) before going live.",
   "display_information": {
-    "name": "Kortix",
-    "description": "Run Kortix project sessions from Slack — @-mention the bot in any invited channel and the agent replies in-thread.",
+    "name": "KortixDevTest",
+    "description": "A coding teammate that lives in your Slack",
+    "long_description": "Kortix is a coding teammate for your Slack workspace.\n\nInvite the bot to a channel, @-mention it with a task, and it'll get on it: reading your codebase, running the work in an isolated sandbox, and replying in the thread as it goes. Follow-ups stay in the same conversation — Kortix remembers the context.\n\n*What it can do*\n• Read your repo, search docs, summarize threads\n• Open PRs, edit files, run scripts and tests in a real sandbox\n• Pull data, generate reports, share CSVs and files back into the thread\n• Pick up where it left off — every thread keeps its full context\n\n*A few things teammates ask it*\n• `@Kortix scan this codebase and write me a one-pager`\n• `@Kortix open a PR that switches our logger to pino`\n• `@Kortix what changed on main this week?`\n• `@Kortix pull yesterday's sign-ups, group them by source, drop the CSV here`\n\nConnect a Kortix project once, then talk to Kortix like you'd talk to anyone else on the team. No slash commands. No copy-paste. Just @-mention and reply.\n\n*AI Disclaimer*\nKortix uses AI to generate responses and perform tasks. While we strive for accuracy, AI-generated content may occasionally contain errors. Review important outputs before acting on them.\n\nManaged by Kortix · https://kortix.com",
     "background_color": "#0a0a0a"
   },
   "features": {
+    "app_home": {
+      "home_tab_enabled": true,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
     "bot_user": {
-      "display_name": "Kortix",
+      "display_name": "KortixDevTest",
       "always_online": true
-    }
+    },
+    "slash_commands": [
+      {
+        "command": "/kortix",
+        "url": "https://frugal-ranunculaceous-patrica.ngrok-free.dev/v1/webhooks/slack/commands",
+        "description": "Manage your Kortix project from Slack",
+        "usage_hint": "[projects | switch | unbind | sessions | whoami | help]",
+        "should_escape": false
+      }
+    ]
   },
   "oauth_config": {
     "redirect_urls": [
@@ -34,15 +48,24 @@
         "mpim:read",
         "reactions:read",
         "reactions:write",
-        "users:read"
+        "users:read",
+        "team:read",
+        "links:read",
+        "links:write",
+        "commands"
       ]
     }
   },
   "settings": {
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://frugal-ranunculaceous-patrica.ngrok-free.dev/v1/webhooks/slack/interactivity"
+    },
     "event_subscriptions": {
       "request_url": "https://frugal-ranunculaceous-patrica.ngrok-free.dev/v1/webhooks/slack",
       "bot_events": [
         "app_mention",
+        "app_home_opened",
         "message.im",
         "message.channels",
         "message.groups",
@@ -50,7 +73,8 @@
         "reaction_added",
         "reaction_removed",
         "member_joined_channel",
-        "file_shared"
+        "file_shared",
+        "link_shared"
       ]
     },
     "org_deploy_enabled": false,

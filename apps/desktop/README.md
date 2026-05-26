@@ -31,11 +31,14 @@ The shell loads `http://localhost:3000` and sets the user-agent to
 `KortixDesktop/0.1.0`. The web app picks that up and renders the desktop
 titlebar.
 
-## Pointing at production
+## Pointing at dev / production
 
-Edit `src-tauri/tauri.conf.json` → `app.windows[0].url` for prod builds, or
-override at runtime via the `KORTIX_DESKTOP_URL` env var (read in
-`src-tauri/src/lib.rs`).
+Release builds set `KORTIX_DESKTOP_DEFAULT_URL` at compile time:
+
+- dev builds: `https://dev.kortix.com/dashboard`
+- production builds: `https://kortix.com/dashboard`
+
+For local debugging, override at runtime with `KORTIX_DESKTOP_URL`.
 
 ## Build
 
@@ -45,6 +48,37 @@ pnpm --filter @kortix/desktop build
 
 Outputs a `.dmg` (macOS), `.msi` (Windows), or `.AppImage` (Linux) in
 `src-tauri/target/release/bundle/`.
+
+## CI signing secrets
+
+Desktop release workflows fail fast when signing secrets are missing.
+
+macOS requires:
+
+- `APPLE_CERTIFICATE` — base64-encoded Developer ID Application `.p12`
+- `APPLE_CERTIFICATE_PASSWORD`
+- notarization via either App Store Connect API credentials:
+  - `APPLE_API_ISSUER`
+  - `APPLE_API_KEY`
+  - `APPLE_API_KEY_P8`
+- or Apple ID credentials:
+  - `APPLE_ID`
+  - `APPLE_PASSWORD` or `APPLE_APP_SPECIFIC_PASSWORD`
+  - `APPLE_TEAM_ID`
+
+Optional macOS:
+
+- `APPLE_SIGNING_IDENTITY`
+
+Windows requires:
+
+- `WINDOWS_CERTIFICATE` — base64-encoded code-signing `.pfx`
+- `WINDOWS_CERTIFICATE_PASSWORD`
+- `WINDOWS_CERTIFICATE_THUMBPRINT`
+
+Optional Windows:
+
+- `WINDOWS_TIMESTAMP_URL` — defaults to `http://timestamp.digicert.com`
 
 ## Icons
 

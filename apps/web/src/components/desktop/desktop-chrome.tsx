@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useState } from 'react';
 import {
   desktopPlatform,
@@ -70,8 +72,9 @@ export function DesktopChrome() {
 }
 
 function WindowControls() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="kx-desktop-controls" aria-label="Window controls">
+    <div className="kx-desktop-controls" aria-label={tHardcodedUi.raw('componentsDesktopDesktopChrome.line74JsxAttrAriaLabelWindowControls')}>
       <button
         type="button"
         className="kx-desktop-ctrl"

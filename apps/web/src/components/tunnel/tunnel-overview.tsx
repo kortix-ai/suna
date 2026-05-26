@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Cable, Plus, Monitor, Trash2, Search, X, Terminal, Copy, Check } from 'lucide-react';
@@ -47,6 +49,7 @@ function ConnectionItem({
   onDelete: () => void;
   index: number;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isOnline = connection.isLive;
   const machineInfo = connection.machineInfo as Record<string, string> | undefined;
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -123,11 +126,8 @@ function ConnectionItem({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete connection?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete <span className="font-medium text-foreground">{connection.name}</span> and
-              remove all its permissions and audit logs. This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line126JsxTextDeleteConnection')}</AlertDialogTitle>
+            <AlertDialogDescription>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line128JsxTextThisWillPermanentlyDelete')}<span className="font-medium text-foreground">{connection.name}</span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line128JsxTextAndRemoveAllItsPermissionsAndAuditLogs')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -147,6 +147,7 @@ function ConnectionItem({
 // ─── Empty state ─────────────────────────────────────────────────────────────
 
 function ConnectButton() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const apiUrl = `${getEnv().BACKEND_URL}/tunnel`;
@@ -166,7 +167,7 @@ function ConnectButton() {
         onClick={() => setOpen(true)}
       >
         <Plus className="h-4 w-4" />
-        <span className="hidden xs:inline">Add Connection</span>
+        <span className="hidden xs:inline">{tHardcodedUi.raw('componentsTunnelTunnelOverview.line169JsxTextAddConnection')}</span>
         <span className="xs:hidden">Add</span>
       </Button>
 
@@ -178,10 +179,8 @@ function ConnectButton() {
                 <Terminal className="h-4.5 w-4.5 text-foreground" />
               </div>
               <div>
-                <DialogTitle>Connect a machine</DialogTitle>
-                <DialogDescription>
-                  Run this command on the machine you want to connect.
-                </DialogDescription>
+                <DialogTitle>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line181JsxTextConnectAMachine')}</DialogTitle>
+                <DialogDescription>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line183JsxTextRunThisCommandOnTheMachineYouWant')}</DialogDescription>
               </div>
             </div>
           </DialogHeader>
@@ -200,11 +199,11 @@ function ConnectButton() {
               )}
             </button>
             <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground/60">
-              <span>1. Run the command</span>
+              <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line203JsxTextText1RunTheCommand')}</span>
               <span className="text-foreground/10">|</span>
-              <span>2. Approve in browser</span>
+              <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line205JsxTextText2ApproveInBrowser')}</span>
               <span className="text-foreground/10">|</span>
-              <span>3. Connected</span>
+              <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line207JsxTextText3Connected')}</span>
             </div>
           </div>
         </DialogContent>
@@ -214,6 +213,7 @@ function ConnectButton() {
 }
 
 function ConnectGuide() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   const apiUrl = `${getEnv().BACKEND_URL}/tunnel`;
   const command = `npx @kortix/agent-tunnel connect --api-url ${apiUrl}`;
@@ -231,10 +231,8 @@ function ConnectGuide() {
         <div className="w-16 h-16 bg-muted border rounded-2xl flex items-center justify-center mb-4">
           <Cable className="h-7 w-7 text-muted-foreground" />
         </div>
-        <h3 className="text-lg font-semibold text-foreground mb-2">Connect your machine</h3>
-        <p className="text-sm text-muted-foreground text-center leading-relaxed mb-6">
-          Run this command on any machine to connect it to Kortix. You&apos;ll approve the connection in your browser.
-        </p>
+        <h3 className="text-lg font-semibold text-foreground mb-2">{tHardcodedUi.raw('componentsTunnelTunnelOverview.line234JsxTextConnectYourMachine')}</h3>
+        <p className="text-sm text-muted-foreground text-center leading-relaxed mb-6">{tHardcodedUi.raw('componentsTunnelTunnelOverview.line236JsxTextRunThisCommandOnAnyMachineToConnect')}</p>
 
         <button
           onClick={handleCopy}
@@ -252,11 +250,11 @@ function ConnectGuide() {
         </button>
 
         <div className="flex items-center gap-6 mt-6 text-xs text-muted-foreground/60">
-          <span>1. Run the command</span>
+          <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line255JsxTextText1RunTheCommand')}</span>
           <span className="text-foreground/10">|</span>
-          <span>2. Approve in browser</span>
+          <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line257JsxTextText2ApproveInBrowser')}</span>
           <span className="text-foreground/10">|</span>
-          <span>3. Connected</span>
+          <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line259JsxTextText3Connected')}</span>
         </div>
       </div>
     </div>
@@ -291,6 +289,7 @@ function LoadingSkeleton() {
 // ─── Main overview ───────────────────────────────────────────────────────────
 
 export function TunnelOverview() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: connections = [], isLoading } = useTunnelConnections();
   const deleteMutation = useDeleteTunnelConnection();
   useTunnelRealtimeSync();
@@ -345,7 +344,7 @@ export function TunnelOverview() {
           <PageSearchBar
             value={searchQuery}
             onChange={setSearchQuery}
-            placeholder="Search connections..."
+            placeholder={tHardcodedUi.raw('componentsTunnelTunnelOverview.line348JsxAttrPlaceholderSearchConnections')}
             className="max-w-md"
           />
           <ConnectButton />
@@ -358,9 +357,7 @@ export function TunnelOverview() {
           ) : !hasConnections ? (
             <ConnectGuide />
           ) : filtered.length === 0 && searchQuery ? (
-            <div className="text-center py-12 text-muted-foreground text-sm">
-              No connections matching &ldquo;{searchQuery}&rdquo;
-            </div>
+            <div className="text-center py-12 text-muted-foreground text-sm">{tHardcodedUi.raw('componentsTunnelTunnelOverview.line362JsxTextNoConnectionsMatchingLdquo')}{searchQuery}{tHardcodedUi.raw('componentsTunnelTunnelOverview.line362JsxTextRdquo')}</div>
           ) : (
             <>
               <div className="flex items-center gap-2 mb-4">

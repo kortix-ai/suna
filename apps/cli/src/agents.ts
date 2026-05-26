@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
-import { dirname, relative, resolve } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 export type CodingAgent = 'opencode' | 'claude' | 'codex' | 'cursor';
 
@@ -30,9 +30,9 @@ export interface InstallAgentsResult {
 /**
  * Wire each chosen coding agent up to the canonical Kortix skill at
  * `.kortix/opencode/skills/kortix-system/SKILL.md`. On-demand-skill
- * agents (opencode, claude) get a symlink at their native discovery
- * path. Always-loaded agents (codex AGENTS.md, cursor rules) get a
- * tiny stub that points them at the canonical skill.
+ * agents (opencode, claude) get a tiny wrapper at their native discovery
+ * path. Always-loaded agents (codex AGENTS.md, cursor rules) get a tiny
+ * stub that points them at the canonical skill.
  */
 export function installAgentSkills(input: InstallAgentsInput): InstallAgentsResult {
   const written: string[] = [];
@@ -51,21 +51,18 @@ function installOne(repoRoot: string, agent: CodingAgent, overwrite: boolean): I
   const written: string[] = [];
   const skipped: string[] = [];
 
-  const canonicalAbs = resolve(repoRoot, CANONICAL_SKILL);
-
   if (agent === 'opencode' || agent === 'claude') {
-    const linkPath =
+    const wrapperPath =
       agent === 'opencode'
         ? '.opencode/skills/kortix/SKILL.md'
         : '.claude/skills/kortix/SKILL.md';
-    const linkAbs = resolve(repoRoot, linkPath);
-    if (handleExisting(linkAbs, overwrite)) {
-      mkdirSync(dirname(linkAbs), { recursive: true });
-      const linkTarget = relative(dirname(linkAbs), canonicalAbs);
-      symlinkSync(linkTarget, linkAbs);
-      written.push(`${linkPath} -> ${CANONICAL_SKILL}`);
+    const wrapperAbs = resolve(repoRoot, wrapperPath);
+    if (handleExisting(wrapperAbs, overwrite)) {
+      mkdirSync(dirname(wrapperAbs), { recursive: true });
+      writeFileSync(wrapperAbs, skillWrapper(agent), 'utf8');
+      written.push(wrapperPath);
     } else {
-      skipped.push(linkPath);
+      skipped.push(wrapperPath);
     }
   } else if (agent === 'codex') {
     const stubPath = 'AGENTS.md';
@@ -91,27 +88,32 @@ function installOne(repoRoot: string, agent: CodingAgent, overwrite: boolean): I
   return { agent, written, skipped };
 }
 
-/** Return true if it's OK to (over)write at `abs`. Idempotent symlinks
- * pointing at the right target are treated as "already correct" and
- * left alone (still counted as skipped so the user sees nothing got
- * clobbered). */
+/** Return true if it's OK to (over)write at `abs`. */
 function handleExisting(abs: string, overwrite: boolean): boolean {
   let st;
   try {
-    st = statSync(abs, { throwIfNoEntry: false } as any) as ReturnType<typeof statSync> | undefined;
+    st = lstatSync(abs, { throwIfNoEntry: false } as any) as ReturnType<typeof lstatSync> | undefined;
   } catch {
     st = undefined;
   }
   if (!st && !existsSync(abs)) return true;
   if (overwrite) {
-    try {
-      require('node:fs').rmSync(abs, { force: true, recursive: false });
-    } catch {
-      /* fall through; symlinkSync will throw if still present */
-    }
+    rmSync(abs, { force: true, recursive: false });
     return true;
   }
   return false;
+}
+
+function skillWrapper(agent: CodingAgent): string {
+  return `---
+name: kortix
+description: Load the canonical Kortix project skill before configuring Kortix.
+---
+
+This ${agent} project skill is a discovery wrapper. Before editing \`kortix.toml\`,
+\`.kortix/**\`, or any Kortix agent/runtime configuration, read
+\`${CANONICAL_SKILL}\`. It is the canonical reference for this repository.
+`;
 }
 
 function codexStub(): string {

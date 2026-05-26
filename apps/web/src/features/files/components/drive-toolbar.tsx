@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   LayoutGrid,
@@ -55,6 +57,7 @@ export function DriveToolbar({
   onDownloadDir,
   isDownloading,
 }: DriveToolbarProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
   const viewMode = useFilesStore((s) => s.viewMode);
@@ -153,14 +156,14 @@ export function DriveToolbar({
               if (e.key === 'Escape') setIsEditing(false);
             }}
             onBlur={() => setIsEditing(false)}
-            className="flex-1 min-w-0 h-8 px-3 text-sm bg-muted/40 border border-border/60 rounded-lg outline-none focus:ring-1 focus:ring-primary font-mono"
+            className="flex-1 min-w-0 h-8 px-3 text-sm bg-card border rounded-2xl outline-none focus:ring-2 focus:ring-primary/50 font-mono"
             placeholder={homePath}
           />
         ) : (
           <nav
             className="flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto"
             onDoubleClick={handleDoubleClick}
-            title="Double-click to edit path"
+            title={tHardcodedUi.raw('featuresFilesComponentsDriveToolbar.line163JsxAttrTitleDoubleClickToEditPath')}
           >
             {/* Home / root */}
             <Button
@@ -232,11 +235,11 @@ export function DriveToolbar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuLabel className="text-xs text-muted-foreground">Sort by</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsDriveToolbar.line235JsxTextSortBy')}</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={sortBy} onValueChange={(v) => setSortBy(v as SortField)}>
               <DropdownMenuRadioItem value="name">Name</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="modified">Last modified</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="size">File size</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="modified">{tHardcodedUi.raw('featuresFilesComponentsDriveToolbar.line238JsxTextLastModified')}</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="size">{tHardcodedUi.raw('featuresFilesComponentsDriveToolbar.line239JsxTextFileSize')}</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="type">Type</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
@@ -267,7 +270,7 @@ export function DriveToolbar({
           size="icon"
           className="h-8 w-8 text-muted-foreground hover:text-foreground"
           onClick={toggleSearch}
-          title="Search files (Ctrl+P)"
+          title={tHardcodedUi.raw('featuresFilesComponentsDriveToolbar.line270JsxAttrTitleSearchFilesCtrlP')}
         >
           <Search className="h-4 w-4" />
         </Button>
@@ -290,7 +293,7 @@ export function DriveToolbar({
           className="h-8 w-8 text-muted-foreground hover:text-foreground"
           onClick={onDownloadDir}
           disabled={isDownloading}
-          title="Download directory as zip"
+          title={tHardcodedUi.raw('featuresFilesComponentsDriveToolbar.line293JsxAttrTitleDownloadDirectoryAsZip')}
         >
           {isDownloading ? (
             <RefreshCw className="h-4 w-4 animate-spin" />
@@ -306,25 +309,19 @@ export function DriveToolbar({
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              title="New file or folder"
+              title={tHardcodedUi.raw('featuresFilesComponentsDriveToolbar.line309JsxAttrTitleNewFileOrFolder')}
             >
               <Plus className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={onNewFolder}>
-              <FolderPlus className="mr-2 h-4 w-4" />
-              New folder
-            </DropdownMenuItem>
+              <FolderPlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsDriveToolbar.line317JsxTextNewFolder')}</DropdownMenuItem>
             <DropdownMenuItem onClick={onNewFile}>
-              <FilePlus className="mr-2 h-4 w-4" />
-              New file
-            </DropdownMenuItem>
+              <FilePlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsDriveToolbar.line321JsxTextNewFile')}</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onUpload}>
-              <Upload className="mr-2 h-4 w-4" />
-              File upload
-            </DropdownMenuItem>
+              <Upload className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsDriveToolbar.line326JsxTextFileUpload')}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

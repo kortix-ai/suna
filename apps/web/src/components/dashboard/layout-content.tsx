@@ -1,7 +1,9 @@
 "use client";
 
+import { useTranslations } from 'next-intl';
+
 import { usePathname, useRouter } from "next/navigation";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
@@ -31,7 +33,7 @@ import { useSandboxConnectionStore } from "@/stores/sandbox-connection-store";
 import { useOnboardingModeStore } from "@/stores/onboarding-mode-store";
 import { useUserPreferencesStore } from "@/stores/user-preferences-store";
 import { getActiveOpenCodeUrl, useServerStore, switchToInstance, switchToInstanceAsync } from "@/stores/server-store";
-import { useTabStore, isTabRecentlyClosed } from "@/stores/tab-store";
+import { useTabStore, isTabRecentlyClosed, type TabType } from "@/stores/tab-store";
 import { AnnouncementDialog } from "../announcements/announcement-dialog";
 import { NovuInboxProvider } from "../notifications/novu-inbox-provider";
 import { FilePreviewDialog } from "../common/file-preview-dialog";
@@ -224,31 +226,179 @@ async function readEnv(key: string): Promise<string | null> {
 }
 
 // ============================================================================
-// Pre-mounted session tabs: keeps all open sessions alive in the DOM so
-// switching between tabs is instant (no re-mount, no loading spinner).
+// Pre-mounted tabs: every open tab is kept alive in the DOM so switching
+// between them is instant — no re-mount, no re-fetch, no loading spinner, and
+// (critically) NO re-render of the inactive tabs.
+//
+// The 0-latency contract has three parts:
+//   1. SessionTabsContainer subscribes ONLY to `tabOrder` — whose reference
+//      changes only when a tab is opened, closed or reordered, NOT on switch,
+//      title edit, dirty toggle or metadata update. So a tab switch never
+//      re-renders the container, which keeps every content element reference
+//      stable across switches. (Each tab's `type` is immutable for its id, so
+//      it's read non-reactively via getState().)
+//   2. Each pane (<TabPane>) subscribes to its OWN boolean "am I active?". A
+//      switch flips that boolean for exactly two panes, so only those two
+//      toggle their `hidden` class. The heavy content passed as `children`
+//      keeps a stable reference and is never reconciled.
+//   3. The content wrappers are memoized and derive everything from their id,
+//      so even a structural re-render (tab opened/closed) only mounts the new
+//      tab — existing panes bail out of re-rendering.
+//
+// See also: SessionChat / SessionLayout subscribe to the boolean
+// `activeTabId === sessionId` for the same reason.
 // ============================================================================
-function SessionTabsContainer({ children }: { children: React.ReactNode }) {
-	const tabs = useTabStore((s) => s.tabs) || {};
-	const tabOrder = useTabStore((s) => s.tabOrder) || [];
-	const activeTabId = useTabStore((s) => s.activeTabId);
-	const obActive = useOnboardingModeStore((s) => s.active);
-	const obSessionId = useOnboardingModeStore((s) => s.sessionId);
 
-	// Collect tab IDs by type
-	const sessionTabIds = tabOrder.filter((id) => tabs[id]?.type === "session");
-	const fileTabIds = tabOrder.filter((id) => tabs[id]?.type === "file");
-	const previewTabIds = tabOrder.filter((id) => tabs[id]?.type === "preview");
-	const terminalTabIds = tabOrder.filter((id) => tabs[id]?.type === "terminal");
-	const servicesTabIds = tabOrder.filter((id) => tabs[id]?.type === "services");
-	const browserTabIds = tabOrder.filter((id) => tabs[id]?.type === "browser");
-	const desktopTabIds = tabOrder.filter((id) => tabs[id]?.type === "desktop");
-	const pageTabIds = tabOrder.filter((id) => {
-		const t = tabs[id]?.type;
-		return t === "settings" || t === "page" || t === "project" || t === "dashboard";
-	});
-	const activeTab = activeTabId ? tabs[activeTabId] : null;
-	// All tab types are now pre-mounted — route-based children are never shown
-	const showingMountedTab = !!activeTab;
+/** Generic pre-mounted pane. Subscribes to its own active state only, so a
+ *  switch re-renders just the two panes whose visibility flips. */
+const TabPane = memo(function TabPane({
+	id,
+	className,
+	children,
+}: {
+	id: string;
+	className?: string;
+	children: React.ReactNode;
+}) {
+	const isActive = useTabStore((s) => s.activeTabId === id);
+	return (
+		<div
+			className={cn(
+				"absolute inset-0 flex flex-col",
+				className,
+				!isActive && "hidden",
+			)}
+		>
+			{children}
+		</div>
+	);
+});
+
+const SessionPaneContent = memo(function SessionPaneContent({ id }: { id: string }) {
+	// Read the onboarding header flag here (not in the container) so onboarding
+	// changes only re-render this one session, never the whole tab list.
+	const hideHeader = useOnboardingModeStore((s) => s.active && s.sessionId === id);
+	return (
+		<Suspense fallback={null}>
+			<SessionLayout sessionId={id}>
+				<SessionChat sessionId={id} hideHeader={hideHeader} />
+			</SessionLayout>
+		</Suspense>
+	);
+});
+
+const FilePaneContent = memo(function FilePaneContent({ id }: { id: string }) {
+	const filePath = id.startsWith("file:") ? id.slice(5) : id;
+	return (
+		<Suspense fallback={null}>
+			<FileTabContent tabId={id} filePath={filePath} />
+		</Suspense>
+	);
+});
+
+const PreviewPaneContent = memo(function PreviewPaneContent({ id }: { id: string }) {
+	return (
+		<Suspense fallback={null}>
+			<PreviewTabContent tabId={id} />
+		</Suspense>
+	);
+});
+
+const TerminalPaneContent = memo(function TerminalPaneContent({ id }: { id: string }) {
+	const ptyId = id.startsWith("terminal:") ? id.slice(9) : id;
+	// xterm needs to know when it's hidden (to defer resize/focus). Subscribe to
+	// the boolean so only the two terminals whose visibility flips re-render.
+	const hidden = useTabStore((s) => s.activeTabId !== id);
+	return (
+		<Suspense fallback={null}>
+			<TerminalTabContent ptyId={ptyId} tabId={id} hidden={hidden} />
+		</Suspense>
+	);
+});
+
+const ServicesPaneContent = memo(function ServicesPaneContent() {
+	return (
+		<Suspense fallback={null}>
+			<RunningServicesPanel />
+		</Suspense>
+	);
+});
+
+const BrowserPaneContent = memo(function BrowserPaneContent() {
+	return (
+		<Suspense fallback={null}>
+			<BrowserTabContent />
+		</Suspense>
+	);
+});
+
+const DesktopPaneContent = memo(function DesktopPaneContent() {
+	return (
+		<Suspense fallback={null}>
+			<DesktopTabContent />
+		</Suspense>
+	);
+});
+
+const PagePaneContent = memo(function PagePaneContent({ id }: { id: string }) {
+	// Read href from the store so the container needn't subscribe to the tabs
+	// object. href changes are rare and only re-render this single page.
+	const href = useTabStore((s) => s.tabs[id]?.href ?? "");
+	return (
+		<Suspense fallback={null}>
+			<PageTabContent href={href} />
+		</Suspense>
+	);
+});
+
+/** Tab types that render a scrollable page and need `overflow-y-auto`. */
+const PAGE_PANE_TYPES: ReadonlySet<TabType> = new Set([
+	"settings",
+	"page",
+	"project",
+	"dashboard",
+]);
+
+function renderPaneContent(id: string, type: TabType) {
+	switch (type) {
+		case "session":
+			return <SessionPaneContent id={id} />;
+		case "file":
+			return <FilePaneContent id={id} />;
+		case "preview":
+			return <PreviewPaneContent id={id} />;
+		case "terminal":
+			return <TerminalPaneContent id={id} />;
+		case "services":
+			return <ServicesPaneContent />;
+		case "browser":
+			return <BrowserPaneContent />;
+		case "desktop":
+			return <DesktopPaneContent />;
+		default:
+			return <PagePaneContent id={id} />;
+	}
+}
+
+function SessionTabsContainer({ children }: { children: React.ReactNode }) {
+	// Subscribe ONLY to tabOrder (see contract above). Its reference is stable
+	// across switches / title edits / dirty toggles, so this container does not
+	// re-render on a tab switch. Each tab's type is immutable for its id, so we
+	// read it non-reactively.
+	const tabOrder = useTabStore((s) => s.tabOrder);
+	const mounted = useMemo(() => {
+		const tabs = useTabStore.getState().tabs;
+		const out: { id: string; type: TabType }[] = [];
+		for (const id of tabOrder) {
+			const t = tabs[id];
+			if (t) out.push({ id, type: t.type });
+		}
+		return out;
+	}, [tabOrder]);
+
+	// Boolean: is anything active? (Effectively always true — the dashboard tab
+	// is pinned.) Subscribing to the boolean keeps this stable across switches.
+	const hasActiveTab = useTabStore((s) => !!s.activeTabId);
 
 	return (
 		<div
@@ -256,150 +406,21 @@ function SessionTabsContainer({ children }: { children: React.ReactNode }) {
 				"bg-background flex-1 min-h-0 flex flex-col overflow-hidden relative",
 			)}
 		>
-			{/* Pre-mounted session tabs — always rendered, shown/hidden via CSS */}
-			{sessionTabIds.map((id) => (
-				<div
+			{mounted.map(({ id, type }) => (
+				<TabPane
 					key={id}
-					className={cn(
-						"absolute inset-0 flex flex-col",
-						id !== activeTabId && "hidden",
-					)}
+					id={id}
+					className={PAGE_PANE_TYPES.has(type) ? "overflow-y-auto" : undefined}
 				>
-					<Suspense fallback={null}>
-						<SessionLayout sessionId={id}>
-							<SessionChat sessionId={id} hideHeader={obActive && id === obSessionId} />
-						</SessionLayout>
-					</Suspense>
-				</div>
+					{renderPaneContent(id, type)}
+				</TabPane>
 			))}
-
-			{/* File tabs — rendered when active */}
-			{fileTabIds.map((id) => {
-				const tab = tabs[id];
-				if (!tab) return null;
-				// Extract file path from tab id (strip "file:" prefix)
-				const filePath = id.startsWith("file:") ? id.slice(5) : id;
-				return (
-					<div
-						key={id}
-						className={cn(
-							"absolute inset-0 flex flex-col",
-							id !== activeTabId && "hidden",
-						)}
-					>
-						<Suspense fallback={null}>
-							<FileTabContent tabId={id} filePath={filePath} />
-						</Suspense>
-					</div>
-				);
-			})}
-
-			{/* Preview tabs — iframe previews of sandbox services */}
-			{previewTabIds.map((id) => (
-				<div
-					key={id}
-					className={cn(
-						"absolute inset-0 flex flex-col",
-						id !== activeTabId && "hidden",
-					)}
-				>
-					<Suspense fallback={null}>
-						<PreviewTabContent tabId={id} />
-					</Suspense>
-				</div>
-			))}
-
-			{/* Terminal tabs — 1 tab = 1 PTY */}
-			{terminalTabIds.map((id) => {
-				const ptyId = id.startsWith("terminal:") ? id.slice(9) : id;
-				return (
-					<div
-						key={id}
-						className={cn(
-							"absolute inset-0 flex flex-col",
-							id !== activeTabId && "hidden",
-						)}
-					>
-						<Suspense fallback={null}>
-							<TerminalTabContent
-								ptyId={ptyId}
-								tabId={id}
-								hidden={id !== activeTabId}
-							/>
-						</Suspense>
-					</div>
-				);
-			})}
-
-			{/* Services tabs — Running Services panel */}
-			{servicesTabIds.map((id) => (
-				<div
-					key={id}
-					className={cn(
-						"absolute inset-0 flex flex-col",
-						id !== activeTabId && "hidden",
-					)}
-				>
-					<Suspense fallback={null}>
-						<RunningServicesPanel />
-					</Suspense>
-				</div>
-			))}
-
-	{/* Browser tabs — agent-browser CDP viewport (port 9224, Chrome-only) */}
-	{browserTabIds.map((id) => (
-		<div
-			key={id}
-			className={cn(
-				"absolute inset-0 flex flex-col",
-				id !== activeTabId && "hidden",
-			)}
-		>
-			<Suspense fallback={null}>
-				<BrowserTabContent />
-			</Suspense>
-		</div>
-	))}
-
-	{/* Desktop tabs — full Selkies desktop stream (port 6080) */}
-	{desktopTabIds.map((id) => (
-		<div
-			key={id}
-			className={cn(
-				"absolute inset-0 flex flex-col",
-				id !== activeTabId && "hidden",
-			)}
-		>
-			<Suspense fallback={null}>
-				<DesktopTabContent />
-			</Suspense>
-		</div>
-	))}
-
-	{/* Page/settings/dashboard tabs — pre-mounted, shown/hidden via CSS */}
-		{pageTabIds.map((id) => {
-				const tab = tabs[id];
-				if (!tab) return null;
-				return (
-					<div
-						key={id}
-						className={cn(
-							"absolute inset-0 flex flex-col overflow-y-auto",
-							id !== activeTabId && "hidden",
-						)}
-					>
-						<Suspense fallback={null}>
-							<PageTabContent href={tab.href} />
-						</Suspense>
-					</div>
-				);
-			})}
 
 			{/* Route-based children (fallback — hidden since all types are pre-mounted) */}
 			<div
 				className={cn(
 					"flex-1 min-h-0 flex flex-col overflow-y-auto",
-					showingMountedTab && "hidden",
+					hasActiveTab && "hidden",
 				)}
 			>
 				{children}
@@ -410,6 +431,7 @@ function SessionTabsContainer({ children }: { children: React.ReactNode }) {
 
 /* ─── Floating skip button shown during the onboarding chat session ───── */
 function OnboardingSkipButton({ onConfirm }: { onConfirm: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	return (
 		<AlertDialog>
 			<AlertDialogTrigger asChild>
@@ -417,26 +439,20 @@ function OnboardingSkipButton({ onConfirm }: { onConfirm: () => void }) {
 					variant="outline"
 					size="sm"
 					className="absolute top-3 right-3 z-20"
-				>
-					Skip onboarding
-					<ChevronRight className="h-3.5 w-3.5" />
+				>{tHardcodedUi.raw('componentsDashboardLayoutContent.line421JsxTextSkipOnboarding')}<ChevronRight className="h-3.5 w-3.5" />
 				</Button>
 			</AlertDialogTrigger>
 			<AlertDialogContent className="max-w-sm rounded-2xl">
 				<AlertDialogHeader>
-					<AlertDialogTitle className="text-base font-medium text-foreground/90">Skip onboarding?</AlertDialogTitle>
-					<AlertDialogDescription className="text-[13px] text-muted-foreground/60 leading-relaxed">
-						You can set up your profile anytime. Your agent will work fine — it just won&apos;t know your preferences yet.
-					</AlertDialogDescription>
+					<AlertDialogTitle className="text-base font-medium text-foreground/90">{tHardcodedUi.raw('componentsDashboardLayoutContent.line427JsxTextSkipOnboarding')}</AlertDialogTitle>
+					<AlertDialogDescription className="text-sm text-muted-foreground/60 leading-relaxed">{tHardcodedUi.raw('componentsDashboardLayoutContent.line429JsxTextYouCanSetUpYourProfileAnytimeYour')}</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter className="gap-2 sm:gap-2">
-					<AlertDialogCancel className="rounded-xl text-[13px]">Continue</AlertDialogCancel>
+					<AlertDialogCancel className="rounded-full text-sm">Continue</AlertDialogCancel>
 					<AlertDialogAction
 						onClick={onConfirm}
-						className="rounded-xl text-[13px] bg-foreground text-background hover:bg-foreground/90"
-					>
-						Skip onboarding
-					</AlertDialogAction>
+						className="rounded-full text-sm bg-foreground text-background hover:bg-foreground/90"
+					>{tHardcodedUi.raw('componentsDashboardLayoutContent.line438JsxTextSkipOnboarding')}</AlertDialogAction>
 				</AlertDialogFooter>
 			</AlertDialogContent>
 		</AlertDialog>
@@ -458,6 +474,7 @@ export default function DashboardLayoutContent({
 	children,
 	initialSidebarOpen,
 }: DashboardLayoutContentProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	const { user, isLoading } = useAuth();
 	const router = useRouter();
 	const pathname = usePathname();
@@ -1088,8 +1105,15 @@ export default function DashboardLayoutContent({
 
 					<div
 						className={cn(
-							"flex-1 min-h-0 flex flex-col overflow-hidden relative",
-							"md:border md:border-b-0 md:border-border/50 md:rounded-t-xl",
+							// White panel fill so every state (error, loading, active
+							// chat) reads as the content card — not the gray sidebar
+							// showing through.
+							"flex-1 min-h-0 flex flex-col overflow-hidden relative bg-background",
+							// Floats off the top (strip above) and the right (sidebar-
+							// colored gap), but stays anchored to the bottom edge — no
+							// bottom border, bottom corners square. Left stays flush with
+							// the sidebar rail.
+							"md:border md:border-b-0 md:border-border/50 md:rounded-t-xl md:mr-3",
 						)}
 					>
 						<SessionTabsContainer>{children}</SessionTabsContainer>
@@ -1104,7 +1128,7 @@ export default function DashboardLayoutContent({
 							<div className="absolute inset-0 z-10 flex items-center justify-center bg-background">
 								<div className="flex flex-col items-center gap-3">
 									<KortixLoader size="medium" />
-									<p className="text-xs text-muted-foreground">Setting up your workspace…</p>
+									<p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsDashboardLayoutContent.line1114JsxTextSettingUpYourWorkspace')}</p>
 								</div>
 							</div>
 						)}

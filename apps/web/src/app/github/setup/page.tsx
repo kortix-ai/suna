@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, CheckCircle2, Github, Loader2 } from 'lucide-react';
@@ -9,14 +11,20 @@ import { Button } from '@/components/ui/button';
 import { saveGitHubInstallation } from '@/lib/projects-client';
 
 export default function GitHubSetupPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Connecting GitHub" />}>
+    <Suspense
+      fallback={
+        <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appGithubSetupPage.line15JsxAttrTitleConnectingGithub')} />
+      }
+    >
       <GitHubSetup />
     </Suspense>
   );
 }
 
 function GitHubSetup() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading } = useAuth();
@@ -30,7 +38,9 @@ function GitHubSetup() {
   useEffect(() => {
     if (!isLoading && !user) {
       const currentUrl = new URL(window.location.href);
-      router.replace(`/auth?returnUrl=${encodeURIComponent(currentUrl.pathname + currentUrl.search)}`);
+      router.replace(
+        `/auth?returnUrl=${encodeURIComponent(currentUrl.pathname + currentUrl.search)}`,
+      );
     }
   }, [user, isLoading, router]);
 
@@ -58,8 +68,15 @@ function GitHubSetup() {
       .then((status) => {
         if (cancelled) return;
         setState('done');
-        setMessage(status.owner_login ? `Connected ${status.owner_login}` : 'GitHub connected');
-        window.setTimeout(() => router.replace('/projects?new=1'), 900);
+        setMessage(
+          status.owner_login
+            ? `Connected ${status.owner_login}`
+            : 'GitHub connected',
+        );
+        window.setTimeout(
+          () => router.replace(consumeGitHubSetupReturn() ?? '/projects?new=1'),
+          900,
+        );
       })
       .catch((error: Error) => {
         if (cancelled) return;
@@ -73,10 +90,17 @@ function GitHubSetup() {
   }, [installState, installationId, isLoading, router, setupAction, user]);
 
   if (isLoading || !user) {
-    return <ConnectingScreen forceConnecting minimal title="Connecting GitHub" />;
+    return (
+      <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appGithubSetupPage.line90JsxAttrTitleConnectingGithub')} />
+    );
   }
 
-  const Icon = state === 'saving' ? Loader2 : state === 'done' ? CheckCircle2 : AlertCircle;
+  const Icon =
+    state === 'saving'
+      ? Loader2
+      : state === 'done'
+        ? CheckCircle2
+        : AlertCircle;
 
   return (
     <div className="fixed inset-0 bg-background flex items-center justify-center px-4">
@@ -91,16 +115,28 @@ function GitHubSetup() {
           )}
         </div>
         <div className="space-y-2">
-          <h1 className="text-xl font-semibold tracking-tight">GitHub setup</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{tHardcodedUi.raw('appGithubSetupPage.line114JsxTextGithubSetup')}</h1>
           <p className="text-sm text-muted-foreground">{message}</p>
         </div>
         {state === 'error' ? (
-          <Button onClick={() => router.replace('/projects')} className="gap-1.5">
-            <Github className="h-4 w-4" />
-            Back to projects
-          </Button>
+          <Button
+            onClick={() => router.replace('/projects')}
+            className="gap-1.5"
+          >
+            <Github className="h-4 w-4" />{tHardcodedUi.raw('appGithubSetupPage.line123JsxTextBackToProjects')}</Button>
         ) : null}
       </div>
     </div>
   );
+}
+
+function consumeGitHubSetupReturn(): string | null {
+  try {
+    const value = window.localStorage.getItem('kortix:github_setup_return');
+    window.localStorage.removeItem('kortix:github_setup_return');
+    if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
+    return value;
+  } catch {
+    return null;
+  }
 }

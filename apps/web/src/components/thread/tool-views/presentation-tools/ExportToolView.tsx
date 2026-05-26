@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useMemo } from 'react';
 import { Presentation, FileText, Download } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
@@ -28,6 +30,7 @@ export function ExportToolView({
   isStreaming = false,
   project,
 }: ExportToolViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { session } = useAuth();
   const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
     featureName: 'exports',
@@ -141,14 +144,14 @@ export function ExportToolView({
       <Card className="gap-0 flex border-0 shadow-none p-0 rounded-none flex-col h-full overflow-hidden bg-card">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 border-b p-2 px-4 flex-shrink-0">
           <div className="flex flex-row items-center justify-between">
-            <ToolViewIconTitle icon={Download} title="Export Presentation" />
+            <ToolViewIconTitle icon={Download} title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsExporttoolview.line144JsxAttrTitleExportPresentation')} />
           </div>
         </CardHeader>
         <CardContent className="p-0 flex-1">
           <LoadingState
             icon={Download}
             iconColor="text-zinc-500"
-            bgColor="bg-zinc-50 dark:bg-zinc-900"
+            bgColor={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsExporttoolview.line151JsxAttrBgcolorBgZinc50DarkBgZinc900')}
             title="Exporting"
             filePath={presentationName || 'presentation'}
           />
@@ -188,9 +191,7 @@ export function ExportToolView({
             )}
             {downloadingFormat === 'pdf' ? (
               <KortixLoader customSize={16} variant="black" className="mr-2 hidden dark:flex" />
-            ) : null}
-            Download PDF
-          </Button>
+            ) : null}{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsExporttoolview.line192JsxTextDownloadPdf')}</Button>
 
           {/* PPTX Button */}
           <Button
@@ -205,16 +206,12 @@ export function ExportToolView({
             )}
             {downloadingFormat === 'pptx' ? (
               <KortixLoader customSize={16} variant="black" className="mr-2 hidden dark:flex" />
-            ) : null}
-            Download PPTX
-          </Button>
+            ) : null}{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsExporttoolview.line209JsxTextDownloadPptx')}</Button>
         </div>
 
         {/* Show message if no exports available */}
         {!hasPdf && !hasPptx && (
-          <p className="text-sm text-muted-foreground text-center mt-3">
-            No export files available yet
-          </p>
+          <p className="text-sm text-muted-foreground text-center mt-3">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsExporttoolview.line216JsxTextNoExportFilesAvailableYet')}</p>
         )}
       </CardContent>
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Activity, AlertTriangle, Clock, Database, Gauge, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,6 +23,7 @@ import {
 } from '../_components/section-header';
 
 export default function AdminOpsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data, isLoading, refetch, isFetching } = useOpsOverview();
 
   if (isLoading || !data) {
@@ -53,9 +56,9 @@ export default function AdminOpsPage() {
 
       <StatRow>
         <StatPill label="API" value={data.api.status.toUpperCase()} hint={data.api.env} tone="success" />
-        <StatPill label="Queued work" value={data.queues.queued_total} tone={data.queues.queued_total > 0 ? 'warning' : 'success'} />
-        <StatPill label="Errored sandboxes" value={data.sandboxes.errored} tone={data.sandboxes.errored > 0 ? 'danger' : 'success'} />
-        <StatPill label="LLM calls 24h" value={data.usage.calls_24h} hint={`$${data.usage.cost_usd_24h.toFixed(4)}`} />
+        <StatPill label={tHardcodedUi.raw('appAdminOpsPage.line56JsxAttrLabelQueuedWork')} value={data.queues.queued_total} tone={data.queues.queued_total > 0 ? 'warning' : 'success'} />
+        <StatPill label={tHardcodedUi.raw('appAdminOpsPage.line57JsxAttrLabelErroredSandboxes')} value={data.sandboxes.errored} tone={data.sandboxes.errored > 0 ? 'danger' : 'success'} />
+        <StatPill label={tHardcodedUi.raw('appAdminOpsPage.line58JsxAttrLabelLlmCalls24h')} value={data.usage.calls_24h} hint={`$${data.usage.cost_usd_24h.toFixed(4)}`} />
       </StatRow>
 
       <div className="grid gap-4 lg:grid-cols-4">
@@ -75,15 +78,15 @@ export default function AdminOpsPage() {
           </div>
         </SignalPanel>
         <SignalPanel icon={Activity} title="Observability">
-          <BooleanStatus label="Managed logs" enabled={data.observability.managed_logs_configured} hint={data.observability.managed_log_host ?? undefined} />
-          <BooleanStatus label="Error tracking" enabled={data.observability.error_tracking_configured} />
-          <BooleanStatus label="Trace headers" enabled={data.observability.trace_headers_enabled} />
-          <BooleanStatus label="OTLP exporter" enabled={data.observability.otlp_exporter_configured} warningWhenDisabled />
+          <BooleanStatus label={tHardcodedUi.raw('appAdminOpsPage.line78JsxAttrLabelManagedLogs')} enabled={data.observability.managed_logs_configured} hint={data.observability.managed_log_host ?? undefined} />
+          <BooleanStatus label={tHardcodedUi.raw('appAdminOpsPage.line79JsxAttrLabelErrorTracking')} enabled={data.observability.error_tracking_configured} />
+          <BooleanStatus label={tHardcodedUi.raw('appAdminOpsPage.line80JsxAttrLabelTraceHeaders')} enabled={data.observability.trace_headers_enabled} />
+          <BooleanStatus label={tHardcodedUi.raw('appAdminOpsPage.line81JsxAttrLabelOtlpExporter')} enabled={data.observability.otlp_exporter_configured} warningWhenDisabled />
         </SignalPanel>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <SignalPanel icon={Clock} title="Usage by provider">
+        <SignalPanel icon={Clock} title={tHardcodedUi.raw('appAdminOpsPage.line86JsxAttrTitleUsageByProvider')}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -96,7 +99,7 @@ export default function AdminOpsPage() {
             <TableBody>
               {data.usage.last_24h_by_provider.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-muted-foreground">No usage in the last 24h.</TableCell>
+                  <TableCell colSpan={4} className="text-muted-foreground">{tHardcodedUi.raw('appAdminOpsPage.line99JsxTextNoUsageInTheLast24h')}</TableCell>
                 </TableRow>
               ) : data.usage.last_24h_by_provider.map((row) => (
                 <TableRow key={row.provider}>
@@ -113,7 +116,7 @@ export default function AdminOpsPage() {
         <SignalPanel icon={Database} title="Migration">
           <StatusList values={data.migrations.by_status} />
           <div className="mt-4 flex items-center justify-between rounded-2xl border border-border/60 px-3 py-2">
-            <span className="text-sm text-muted-foreground">Legacy sandboxes</span>
+            <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAdminOpsPage.line116JsxTextLegacySandboxes')}</span>
             <Badge variant={data.migrations.active_legacy_sandboxes > 0 ? 'warning' : 'success'}>
               {data.migrations.active_legacy_sandboxes}
             </Badge>
@@ -121,7 +124,7 @@ export default function AdminOpsPage() {
         </SignalPanel>
       </div>
 
-      <SignalPanel icon={Activity} title="Recent audit events">
+      <SignalPanel icon={Activity} title={tHardcodedUi.raw('appAdminOpsPage.line124JsxAttrTitleRecentAuditEvents')}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -134,7 +137,7 @@ export default function AdminOpsPage() {
           <TableBody>
             {data.audit.recent.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-muted-foreground">No recent audit events.</TableCell>
+                <TableCell colSpan={4} className="text-muted-foreground">{tHardcodedUi.raw('appAdminOpsPage.line137JsxTextNoRecentAuditEvents')}</TableCell>
               </TableRow>
             ) : data.audit.recent.map((event) => (
               <TableRow key={event.event_id}>
@@ -172,12 +175,13 @@ function SignalPanel({
 }
 
 function StatusList({ values, label }: { values: Record<string, number>; label?: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const entries = Object.entries(values);
   return (
     <div className="space-y-2">
       {label && <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>}
       {entries.length === 0 ? (
-        <div className="text-sm text-muted-foreground">No data.</div>
+        <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAdminOpsPage.line180JsxTextNoData')}</div>
       ) : entries.map(([key, value]) => (
         <div key={key} className="flex items-center justify-between gap-3">
           <span className="truncate text-sm capitalize">{key.replace(/_/g, ' ')}</span>

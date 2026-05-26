@@ -435,6 +435,32 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
 
 export async function signOut() {
   const supabase = await createClient();
+
+  // Tell our backend first so it can audit the logout + mark the
+  // session revoked in account_session_activity. The Supabase token
+  // is still valid here; the call falls through cleanly if BACKEND_URL
+  // isn't configured. We DON'T fail the signOut on backend errors —
+  // the user should always be able to sign out client-side.
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
+      await fetch(`${backendUrl}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: '{}',
+        // Short timeout — logout should never hang on a slow backend.
+        signal: AbortSignal.timeout(3_000),
+      });
+    }
+  } catch {
+    /* swallow — backend logout is best-effort for audit; client
+       signOut() below is the authoritative session end */
+  }
+
   const { error } = await supabase.auth.signOut();
 
   if (error) {

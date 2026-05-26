@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { CodeEditor } from '@/components/file-editors';
 import { cn } from '@/lib/utils';
@@ -36,6 +38,7 @@ export function HtmlRenderer({
   className,
   project,
 }: HtmlRendererProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { subdomainOpts } = useSandboxProxy();
   // Always default to 'preview' mode
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
@@ -140,14 +143,12 @@ export function HtmlRenderer({
             {htmlPreviewUrl ? (
               <IframePreview
                 url={htmlPreviewUrl}
-                title="HTML Preview"
+                title={tHardcodedUi.raw('componentsFileRenderersHtmlRenderer.line143JsxAttrTitleHtmlPreview')}
                 className="w-full h-full"
                 sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                Unable to load HTML preview
-              </div>
+              <div className="w-full h-full flex items-center justify-center text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersHtmlRenderer.line149JsxTextUnableToLoadHtmlPreview')}</div>
             )}
           </div>
         ) : (

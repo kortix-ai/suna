@@ -1,3 +1,4 @@
+import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { ThemeProvider } from '@/components/home/theme-provider';
 import { siteMetadata } from '@/lib/site-metadata';
 import type { Metadata, Viewport } from 'next';
@@ -103,6 +104,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const tHardcodedUi = { raw: getHardcodedUiServerText };
   // Opt into dynamic rendering so process.env is evaluated at request time,
   // not baked at build time. Critical for Docker images with runtime env vars.
   await connection();
@@ -193,25 +195,25 @@ export default async function RootLayout({
         />
 
         {/* Static SEO meta tags - rendered in initial HTML */}
-        <title>Kortix – The Autonomous Company Operating System</title>
-        <meta name="description" content="A cloud computer where AI agents run your company. Connect 3,000+ tools, configure autonomous agents, set triggers — and the machine operates 24/7 with persistent memory." />
-        <meta name="keywords" content="Kortix, autonomous company operating system, AI agents, self-driving company, cloud computer, AI automation, agent orchestration, goal loops, AI triggers, persistent memory, autonomous workforce, AI operations" />
-        <meta property="og:title" content="Kortix – The Autonomous Company Operating System" />
-        <meta property="og:description" content="A cloud computer where AI agents run your company. Connect 3,000+ tools, configure autonomous agents, set triggers — and the machine operates 24/7 with persistent memory." />
+        <title>{tHardcodedUi.raw('appLayout.line196JsxTextKortixTheAutonomousCompanyOperatingSystem')}</title>
+        <meta name="description" content={tHardcodedUi.raw('appLayout.line197JsxAttrContentACloudComputerWhereAiAgentsRunYour')} />
+        <meta name="keywords" content={tHardcodedUi.raw('appLayout.line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf')} />
+        <meta property="og:title" content={tHardcodedUi.raw('appLayout.line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem')} />
+        <meta property="og:description" content={tHardcodedUi.raw('appLayout.line200JsxAttrContentACloudComputerWhereAiAgentsRunYour')} />
         <meta property="og:image" content="https://kortix.com/banner.png" />
         <meta property="og:url" content="https://kortix.com" />
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="Kortix" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Kortix – The Autonomous Company Operating System" />
-        <meta name="twitter:description" content="A cloud computer where AI agents run your company. Connect 3,000+ tools, configure autonomous agents, set triggers — and the machine operates 24/7 with persistent memory." />
+        <meta name="twitter:title" content={tHardcodedUi.raw('appLayout.line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem')} />
+        <meta name="twitter:description" content={tHardcodedUi.raw('appLayout.line207JsxAttrContentACloudComputerWhereAiAgentsRunYour')} />
         <meta name="twitter:image" content="https://kortix.com/banner.png" />
-        <meta name="twitter:site" content="@kortix" />
+        <meta name="twitter:site" content={tHardcodedUi.raw('appLayout.line209JsxAttrContentKortix')} />
         <link rel="canonical" href="https://kortix.com" />
 
         {/* iOS Smart App Banner - shows native install banner in Safari */}
         {!featureFlags.disableMobileAdvertising ? (
-          <meta name="apple-itunes-app" content="app-id=6754448524, app-argument=kortix://" />
+          <meta name="apple-itunes-app" content={tHardcodedUi.raw('appLayout.line214JsxAttrContentAppId6754448524AppArgumentKortix')} />
         ) : null}
 
 
@@ -263,7 +265,14 @@ export default async function RootLayout({
         />
       </head>
 
-      <body translate="no" className="notranslate antialiased font-sans bg-background">
+      {/* suppressHydrationWarning silences Grammarly et al. injecting
+          `data-gr-*` attributes onto <body> before React hydrates. The
+          warning is purely cosmetic but pollutes the dev overlay. */}
+      <body
+        translate="no"
+        className="notranslate antialiased font-sans bg-background"
+        suppressHydrationWarning
+      >
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

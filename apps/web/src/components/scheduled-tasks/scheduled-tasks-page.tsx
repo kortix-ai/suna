@@ -1,8 +1,11 @@
 "use client";
 
+import { useTranslations } from 'next-intl';
+
 import React, { useMemo, useState } from 'react';
 import { useTriggers, useDeleteTrigger, type Trigger } from '@/hooks/scheduled-tasks';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -120,6 +123,7 @@ const TaskListItem = ({
   onDelete: (e: React.MouseEvent) => void;
   isDeleting: boolean;
 }) => {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const actionType = trigger.action_type ?? 'prompt';
   const actionIcon = actionType === 'command' ? <Terminal className="h-3 w-3" /> : actionType === 'http' ? <Globe className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />;
 
@@ -127,12 +131,12 @@ const TaskListItem = ({
     <SpotlightCard
       className={cn(
         "transition-colors cursor-pointer group",
-        isSelected ? "bg-muted" : "bg-card"
+        isSelected ? "bg-primary/[0.06]" : "bg-card"
       )}
     >
       <div onClick={onClick} className="flex items-center justify-between p-5">
         <div className="flex items-center gap-4 flex-1 min-w-0">
-            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-card border border-border/50 shrink-0">
+            <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-card border border-border/50 shrink-0">
               {trigger.type === 'cron' ? <Timer className="h-5 w-5 text-foreground" /> : <Webhook className="h-5 w-5 text-foreground" />}
             </div>
           <div className="flex-1 min-w-0">
@@ -172,11 +176,10 @@ const TaskListItem = ({
             variant="ghost"
             size="icon-sm"
             className={cn(
-              "opacity-0 group-hover:opacity-100 focus:opacity-100",
-              "text-muted-foreground hover:text-red-500 hover:bg-red-500/10",
-              isDeleting && "opacity-100 text-red-500"
+              "opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted-foreground",
+              isDeleting && "opacity-100"
             )}
-            title="Delete trigger"
+            title={tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line179JsxAttrTitleDeleteTrigger')}
           >
             <Trash2 className="h-4 w-4" />
           </Button>
@@ -186,28 +189,12 @@ const TaskListItem = ({
   );
 };
 
-const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
-  <div className="bg-muted/20 rounded-3xl border flex flex-col items-center justify-center py-16 px-4">
-    <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4">
-      <Calendar className="h-6 w-6 text-muted-foreground" />
-    </div>
-    <h3 className="text-base font-semibold text-foreground mb-2">Create a trigger</h3>
-    <p className="text-sm text-muted-foreground text-center max-w-sm mb-6">
-      Automate with triggers. Schedule cron jobs, set up webhooks, run commands, or call HTTP endpoints — all from one place.
-    </p>
-    <Button onClick={onCreateClick} size="sm">
-      <Plus className="h-4 w-4 mr-2" />
-      Add Trigger
-    </Button>
-  </div>
-);
-
 const LoadingSkeleton = () => (
   <div className="space-y-4">
     {[1, 2, 3].map((i) => (
       <div key={i} className="rounded-2xl border dark:bg-card px-4 py-3">
         <div className="flex items-center gap-3">
-          <Skeleton className="h-12 w-12 rounded-xl" />
+          <Skeleton className="h-12 w-12 rounded-2xl" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-4 w-32" />
             <Skeleton className="h-3 w-48" />
@@ -222,6 +209,7 @@ const LoadingSkeleton = () => (
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export function ScheduledTasksPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: triggers = [], isLoading, error } = useTriggers();
   const [selectedTrigger, setSelectedTrigger] = useState<Trigger | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -307,9 +295,7 @@ export function ScheduledTasksPage() {
         <div className="max-w-4xl mx-auto w-full py-8 px-4">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-               Failed to load triggers. Please try refreshing the page.
-            </AlertDescription>
+            <AlertDescription>{tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line295JsxTextFailedToLoadTriggersPleaseTryRefreshingThe')}</AlertDescription>
           </Alert>
         </div>
       </div>
@@ -342,7 +328,7 @@ export function ScheduledTasksPage() {
         {/* Backdrop overlay */}
         {selectedTrigger && (
           <div
-            className="block 2xl:hidden fixed inset-0 bg-black/70 z-30"
+            className="block 2xl:hidden fixed inset-0 bg-background/80 z-30"
             onClick={handleClosePanel}
           />
         )}
@@ -356,7 +342,7 @@ export function ScheduledTasksPage() {
                 <PageSearchBar
                   value={searchQuery}
                   onChange={setSearchQuery}
-                  placeholder="Search triggers..."
+                  placeholder={tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line343JsxAttrPlaceholderSearchTriggers')}
                   className="max-w-md"
                 />
                 <FilterBar className="hidden sm:inline-flex">
@@ -379,7 +365,7 @@ export function ScheduledTasksPage() {
                 onClick={() => setShowCreateDialog(true)}
               >
                 <Plus className="h-4 w-4" />
-                <span className="hidden xs:inline">Add Trigger</span>
+                <span className="hidden xs:inline">{tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line366JsxTextAddTrigger')}</span>
                 <span className="xs:hidden">Add</span>
               </Button>
             </div>
@@ -391,7 +377,15 @@ export function ScheduledTasksPage() {
               {isLoading ? (
                 <LoadingSkeleton />
               ) : filteredTriggers.length === 0 ? (
-                <EmptyState onCreateClick={() => setShowCreateDialog(true)} />
+                <EmptyState
+                  icon={Calendar}
+                  title={tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line380JsxAttrTitleCreateATrigger')}
+                  description={tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line381JsxAttrDescriptionAutomateWithTriggersScheduleCronJobsSetUp')}
+                  action={
+                    <Button onClick={() => setShowCreateDialog(true)} size="sm">
+                      <Plus className="h-4 w-4 mr-2" />{tHardcodedUi.raw('componentsScheduledTasksScheduledTasksPage.line385JsxTextAddTrigger')}</Button>
+                  }
+                />
               ) : (
                 <div className="space-y-4">
                   {filteredTriggers.map((trigger) => (

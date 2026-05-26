@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from 'next-intl';
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -8,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { InfoBanner } from '@/components/ui/info-banner';
 import {
   Select,
   SelectContent,
@@ -126,6 +129,7 @@ interface TaskDetailPanelProps {
 }
 
 export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const { sandbox } = useSandbox();
   const webhookBaseUrl = useMemo(() => {
@@ -215,7 +219,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
 
   const handleDelete = async () => {
     if (!trigger.triggerId) return;
-    if (!confirm('Are you sure you want to delete this task? This cannot be undone.')) {
+    if (!confirm(tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line219CallConfirmAreYouSureYouWantToDeleteThis'))) {
       return;
     }
     try {
@@ -232,7 +236,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted">
+          <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-muted">
             {trigger.type === 'cron' ? <Timer className="h-5 w-5" /> : <Webhook className="h-5 w-5" />}
           </div>
           <div>
@@ -281,7 +285,6 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
                 id="edit-name"
                 value={name}
                 onChange={(e) => { setName(e.target.value); markDirty(); }}
-                className="rounded-xl"
               />
             </div>
 
@@ -313,18 +316,18 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
             ) : (
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <Label>Webhook Path</Label>
+                  <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line316JsxTextWebhookPath')}</Label>
                   <Input type="text" value={webhookPath} onChange={(e) => { setWebhookPath(e.target.value); markDirty(); }} placeholder="/hooks/my-endpoint" />
                 </div>
 
                 {/* Full external URL + curl example */}
                 <div className="rounded-2xl bg-muted/50 border p-3 space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground">External URL</div>
+                  <div className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line322JsxTextExternalUrl')}</div>
                   <code className="text-xs font-mono text-foreground break-all block select-all">
                     {webhookBaseUrl}{trigger.webhook?.path || webhookPath || '/hooks/...'}
                   </code>
-                  <div className="text-xs font-medium text-muted-foreground pt-1">Example curl</div>
-                  <code className="text-[11px] font-mono text-foreground/70 break-all block select-all whitespace-pre-wrap">
+                  <div className="text-xs font-medium text-muted-foreground pt-1">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line326JsxTextExampleCurl')}</div>
+                  <code className="text-xs font-mono text-foreground/70 break-all block select-all whitespace-pre-wrap">
 {`curl -X POST "${webhookBaseUrl}${trigger.webhook?.path || webhookPath}"${trigger.webhook?.secretProtected ? ` \\\n  -H "X-Kortix-Trigger-Secret: <secret>"` : ''} \\
   -H "Content-Type: application/json" \\
   -d '{"key": "value"}'`}
@@ -333,7 +336,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
 
                 <div className="space-y-2">
                   <Label>Secret</Label>
-                  <div className="h-9 px-3 flex items-center rounded-xl border border-input bg-muted/50 text-sm text-muted-foreground">
+                  <div className="h-9 px-3 flex items-center rounded-2xl border bg-muted/50 text-sm text-muted-foreground">
                     {trigger.webhook?.secretProtected ? 'Protected' : 'None'}
                   </div>
                 </div>
@@ -348,9 +351,8 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
                 id="edit-prompt"
                 value={prompt}
                 onChange={(e) => { setPrompt(e.target.value); markDirty(); }}
-                placeholder="The instruction sent to your agent..."
+                placeholder={tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line351JsxAttrPlaceholderTheInstructionSentToYourAgent')}
                 rows={4}
-                className="rounded-xl"
               />
             </div>
             )}
@@ -358,7 +360,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
             {/* Session Mode */}
             {(trigger.action_type === 'prompt' || !trigger.action_type) && (
             <div className="space-y-2">
-              <Label>Session Mode</Label>
+              <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line360JsxTextSessionMode')}</Label>
               <Select
                 value={sessionMode}
                 onValueChange={(v) => { setSessionMode(v as SessionMode); markDirty(); }}
@@ -367,8 +369,8 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="new" className="cursor-pointer">New Session</SelectItem>
-                  <SelectItem value="reuse" className="cursor-pointer">Reuse Session</SelectItem>
+                  <SelectItem value="new" className="cursor-pointer">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line369JsxTextNewSession')}</SelectItem>
+                  <SelectItem value="reuse" className="cursor-pointer">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line370JsxTextReuseSession')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -395,13 +397,13 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
                 <span className="font-medium capitalize">{trigger.type} → {trigger.action_type ?? 'prompt'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Next run</span>
+                <span className="text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line397JsxTextNextRun')}</span>
                  <span className="font-medium">
                    {trigger.type === 'cron' ? (trigger.isActive ? formatDateTime(trigger.nextRunAt) : 'Paused') : 'On demand'}
                  </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Last run</span>
+                <span className="text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line403JsxTextLastRun')}</span>
                 <span className="font-medium">{formatDateTime(trigger.lastRunAt)}</span>
               </div>
               {(trigger.action_type === 'prompt' || !trigger.action_type) && (
@@ -454,20 +456,16 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
               >
                 {trigger.isActive ? (
                   <>
-                    <PowerOff className="h-4 w-4 mr-2" />
-                    Pause Trigger
-                  </>
+                    <PowerOff className="h-4 w-4 mr-2" />{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line457JsxTextPauseTrigger')}</>
                 ) : (
                   <>
-                    <Power className="h-4 w-4 mr-2" />
-                    Resume Trigger
-                  </>
+                    <Power className="h-4 w-4 mr-2" />{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line462JsxTextResumeTrigger')}</>
                 )}
               </Button>
               )}
               {trigger.triggerId && (
               <Button
-                variant="destructive"
+                variant="outline"
                 onClick={handleDelete}
                 disabled={deleteMutation.isPending}
                 className="w-full cursor-pointer "
@@ -484,10 +482,8 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
             {executions.length === 0 ? (
               <div className="text-center py-8">
                 <Clock className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">No executions yet</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Executions will appear here once the trigger runs
-                </p>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line486JsxTextNoExecutionsYet')}</p>
+                <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line488JsxTextExecutionsWillAppearHereOnceTheTriggerRuns')}</p>
               </div>
             ) : (
                 executions.map((exec) => (
@@ -510,6 +506,7 @@ function ExecutionItem({
   execution: Execution;
   onOpenSession: (sessionId: string) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
   const canOpenSession = !!execution.sessionId;
 
@@ -544,13 +541,11 @@ function ExecutionItem({
         </div>
       </div>
       {execution.sessionId && (
-        <div className="mt-2 text-xs text-muted-foreground">
-          Open session `{execution.sessionId}`
+        <div className="mt-2 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line547JsxTextOpenSession')}{execution.sessionId}`
         </div>
       )}
       {execution.exitCode !== undefined && execution.exitCode !== null && (
-        <div className="mt-1 text-xs text-muted-foreground">
-          Exit code: <span className={execution.exitCode === 0 ? 'text-emerald-500' : 'text-amber-500'}>{execution.exitCode}</span>
+        <div className="mt-1 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line552JsxTextExitCode')}<span className={execution.exitCode === 0 ? 'text-emerald-500' : 'text-amber-500'}>{execution.exitCode}</span>
         </div>
       )}
       {execution.httpStatus !== undefined && execution.httpStatus !== null && (
@@ -559,9 +554,9 @@ function ExecutionItem({
         </div>
       )}
       {expanded && execution.errorMessage && (
-        <div className="mt-2 p-2 rounded bg-red-50 dark:bg-red-950/30 text-xs text-red-700 dark:text-red-300 whitespace-pre-wrap">
-          {execution.errorMessage}
-        </div>
+        <InfoBanner tone="destructive" icon={AlertTriangle} className="mt-2">
+          <span className="whitespace-pre-wrap">{execution.errorMessage}</span>
+        </InfoBanner>
       )}
     </div>
   );

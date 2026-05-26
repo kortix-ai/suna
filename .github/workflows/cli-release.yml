@@ -16,6 +16,9 @@ on:
 permissions:
   contents: write
 
+env:
+  CLI_API_BASE: https://api.kortix.com
+
 jobs:
   build:
     name: Build ${{ matrix.target_pretty }}
@@ -53,10 +56,13 @@ jobs:
 
       - name: Build CLI binary
         run: |
+          CLI_VERSION="${GITHUB_REF_NAME#cli-v}"
           bun build \
             --compile \
             --minify \
             --target=${{ matrix.target }} \
+            --define="process.env.KORTIX_CLI_VERSION=\"${CLI_VERSION}\"" \
+            --define="process.env.KORTIX_DEFAULT_API_BASE=\"${{ env.CLI_API_BASE }}\"" \
             --outfile=${{ matrix.asset }} \
             apps/cli/src/index.ts
           ls -lh ${{ matrix.asset }}

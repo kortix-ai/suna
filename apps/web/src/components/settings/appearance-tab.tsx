@@ -1,7 +1,8 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import * as React from 'react';
-import { Check, Monitor, Sun, Moon, Palette, ImageIcon, LayoutPanelTop } from 'lucide-react';
+import { Check, Monitor, Sun, Moon, Palette, ImageIcon, PanelTop } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
@@ -24,11 +25,11 @@ function WallpaperCard({
     <button
       type="button"
       onClick={onSelect}
-      className="group relative cursor-pointer rounded-lg text-left"
+      className="group relative cursor-pointer rounded-2xl text-left"
     >
       <div
         className={cn(
-          'relative w-full aspect-video bg-background overflow-hidden rounded-md isolate border transition-colors duration-200',
+          'relative w-full aspect-video bg-background overflow-hidden rounded-2xl isolate border transition-colors duration-200',
           isActive ? 'border-primary' : 'border-border group-hover:border-border/80'
         )}
       >
@@ -42,8 +43,8 @@ function WallpaperCard({
         {/* Hover overlay */}
         <div
           className={cn(
-            'absolute inset-0 transition-opacity duration-200 pointer-events-none',
-            isActive ? 'bg-black/10' : 'bg-black/0 group-hover:bg-black/10'
+            'absolute inset-0 transition-colors duration-200 pointer-events-none',
+            isActive ? 'bg-transparent' : 'bg-transparent group-hover:bg-foreground/[0.06]'
           )}
         />
         {/* Check badge */}
@@ -54,10 +55,10 @@ function WallpaperCard({
         )}
       </div>
       <div className="px-1.5 py-1">
-        <span className="text-[11px] font-medium text-foreground flex items-center gap-1">
+        <span className="text-xs font-medium text-foreground flex items-center gap-1">
           {wallpaper.name}
           {wallpaper.id === DEFAULT_WALLPAPER_ID && (
-            <span className="text-[0.5625rem] font-medium px-1 py-px rounded-full bg-muted text-muted-foreground">
+            <span className="text-xs font-medium px-1 py-px rounded-full bg-muted text-muted-foreground">
               Default
             </span>
           )}
@@ -79,6 +80,7 @@ const BASE_MODES = [
 const DARK_ONLY_WALLPAPER_IDS = new Set(['matrix', 'ascii-tunnel']);
 
 export function AppearanceTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { theme: baseMode, setTheme: setBaseMode, resolvedTheme } = useTheme();
   const wallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID
@@ -117,15 +119,13 @@ export function AppearanceTab() {
           <h3 className="text-lg font-semibold">Appearance</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Choose a color mode and wallpaper.
-        </p>
+          {tHardcodedUi.raw('componentsSettingsAppearanceTab.line120JsxTextChooseAColorModeWallpaperAndLayoutOptions')}</p>
       </div>
 
       <div className="space-y-5 sm:space-y-6">
         <div>
           <label className="text-xs font-medium text-muted-foreground mb-2 block">
-            Color Mode
-          </label>
+            {tHardcodedUi.raw('componentsSettingsAppearanceTab.line127JsxTextColorMode')}</label>
           <FilterBar>
             {BASE_MODES.map((mode) => {
               const Icon = mode.icon;
@@ -169,27 +169,24 @@ export function AppearanceTab() {
 
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <LayoutPanelTop className="size-4 text-muted-foreground" />
+            <PanelTop className="size-4 text-muted-foreground" />
             <label className="text-xs font-medium text-muted-foreground">
-              Interface
+              Layout
             </label>
           </div>
-          <label
-            htmlFor="disable-tab-selector"
-            className="flex items-center justify-between gap-4 rounded-2xl border border-border/50 px-3 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors"
-          >
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-foreground">Show tabs</div>
-              <div className="text-xs text-muted-foreground">
-                When off, the tab bar is hidden and content extends to the top.
+          <div className="rounded-2xl border divide-y">
+            <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">{tHardcodedUi.raw('componentsSettingsAppearanceTab.line180JsxTextSessionTabs')}</div>
+                <div className="text-xs text-muted-foreground">
+                  {tHardcodedUi.raw('componentsSettingsAppearanceTab.line182JsxTextShowATabBarAtTheTopOf')}</div>
               </div>
+              <Switch
+                checked={!disableTabSelector}
+                onCheckedChange={(v) => setDisableTabSelector(!v)}
+              />
             </div>
-            <Switch
-              id="disable-tab-selector"
-              checked={!disableTabSelector}
-              onCheckedChange={(checked) => setDisableTabSelector(!checked)}
-            />
-          </label>
+          </div>
         </div>
 
       </div>

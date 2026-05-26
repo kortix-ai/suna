@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownToLine, GitCommit, Loader2, Tag } from 'lucide-react';
@@ -102,6 +104,7 @@ function VersionEntryCard({
   isInstalling?: boolean;
   showInstall?: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const versionType = parseVersionType(entry.version);
   const [expanded, setExpanded] = useState(false);
   const isDev = versionType === 'dev';
@@ -138,7 +141,7 @@ function VersionEntryCard({
             <span className={cn('font-mono font-semibold text-foreground', isMajor ? 'text-xl' : isDev ? 'text-sm' : 'text-lg')}>{displayVersion}</span>
           </div>
           <ChannelBadge channel={entry.channel} />
-          {isMajor && <Badge variant="highlight" size="sm">Major Release</Badge>}
+          {isMajor && <Badge variant="highlight" size="sm">{tHardcodedUi.raw('componentsChangelogVersionHistoryPanel.line141JsxTextMajorRelease')}</Badge>}
           {isCurrent && <Badge variant="success" size="sm">Current</Badge>}
           {isLatestInChannel && !isCurrent && <Badge variant="new" size="sm">Latest</Badge>}
         </div>
@@ -228,6 +231,7 @@ export function VersionHistoryPanel({
   headerDescription?: React.ReactNode;
   compact?: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const currentChannel = currentVersion?.startsWith('dev-') ? 'dev' : 'stable';
   const [showDev, setShowDev] = useState(initialShowDev || currentChannel === 'dev');
   const [filter, setFilter] = useState<FilterOption>(showDev ? 'all' : 'stable');
@@ -269,7 +273,7 @@ export function VersionHistoryPanel({
                     Running <span className="font-mono font-medium text-foreground">{currentVersion.startsWith('dev-') ? currentVersion : `v${currentVersion}`}</span>
                     {currentChannel === 'dev' && <Badge variant="warning" size="sm" className="ml-1.5">dev</Badge>}
                     {latestVersion && latestVersion !== currentVersion && (
-                      <> {' '}&middot; Latest: <span className="font-mono font-medium text-primary">{latestVersion.startsWith('dev-') ? latestVersion : `v${latestVersion}`}</span></>
+                      <> {' '}{tHardcodedUi.raw('componentsChangelogVersionHistoryPanel.line272JsxTextMiddotLatest')}<span className="font-mono font-medium text-primary">{latestVersion.startsWith('dev-') ? latestVersion : `v${latestVersion}`}</span></>
                     )}
                   </>
                 ) : 'Version history for Kortix Computer'
@@ -278,8 +282,7 @@ export function VersionHistoryPanel({
             {updateAvailable && !isUpdating && onUpdateLatest && (
               <div className="mt-4">
                 <Button onClick={onUpdateLatest}>
-                  <ArrowDownToLine className="h-4 w-4" />
-                  Update to {latestVersion?.startsWith('dev-') ? latestVersion : `v${latestVersion}`}
+                  <ArrowDownToLine className="h-4 w-4" />{tHardcodedUi.raw('componentsChangelogVersionHistoryPanel.line282JsxTextUpdateTo')}{latestVersion?.startsWith('dev-') ? latestVersion : `v${latestVersion}`}
                 </Button>
               </div>
             )}
@@ -298,7 +301,7 @@ export function VersionHistoryPanel({
       )}
 
       {isLoading && <div className="flex items-center justify-center py-20"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>}
-      {error && <div className="text-sm text-muted-foreground text-center py-20">Could not load version history. The platform API may be unavailable.</div>}
+      {error && <div className="text-sm text-muted-foreground text-center py-20">{tHardcodedUi.raw('componentsChangelogVersionHistoryPanel.line301JsxTextCouldNotLoadVersionHistoryThePlatformApi')}</div>}
 
       {filteredVersions.length > 0 && (
         <div className="space-y-3">
@@ -326,7 +329,7 @@ export function VersionHistoryPanel({
         </div>
       )}
 
-      {data && filteredVersions.length === 0 && <div className="text-sm text-muted-foreground text-center py-20">No {filter === 'all' ? '' : filter} versions found.</div>}
+      {data && filteredVersions.length === 0 && <div className="text-sm text-muted-foreground text-center py-20">No {filter === 'all' ? '' : filter}{tHardcodedUi.raw('componentsChangelogVersionHistoryPanel.line329JsxTextVersionsFound')}</div>}
     </div>
   );
 }

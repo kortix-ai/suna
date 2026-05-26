@@ -1,0 +1,40 @@
+---
+title: Automating work
+description: How to run a session on a schedule or from an event using triggers.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+[Triggers](/docs/concepts/triggers) start a [session](/docs/concepts/sessions) on its own, with no one watching. A triggered session works like any other: the agent does the work, proposes a [change request](/docs/concepts/change-requests), and waits for review.
+
+## Two ways to trigger a session
+
+- **On a schedule** — run at fixed times. Good for a Monday-morning summary or end-of-day report.
+- **From an event** — run when something happens elsewhere, delivered as a signed webhook.
+
+## A scheduled example
+
+Triggers live in your project's manifest (`kortix.toml`) as `[[triggers]]` entries. This one runs every weekday morning and writes a digest:
+
+```toml
+[[triggers]]
+slug     = "daily-digest"
+name     = "Daily digest"
+type     = "cron"
+enabled  = true
+cron     = "0 0 9 * * 1-5"
+timezone = "America/Los_Angeles"
+prompt   = """
+Summarize yesterday's activity and save it as a daily note.
+"""
+```
+
+When the schedule fires, Kortix starts a fresh session and gives the agent the `prompt` as its first message.
+
+## Changes take effect after they're merged
+
+A trigger lives in the manifest, so adding or editing one is a change to your project. It goes live only once it's [merged](/docs/quickstart) onto your main line: edit the manifest, review and merge, then the trigger runs.
+
+<Callout title="Under the hood">
+`cron` is a 6-field expression (`second minute hour day month weekday`); `timezone` is an IANA name. Webhook triggers fire on signed `POST` requests and must reference a signing secret by name (`secret_env`) — there's no unauthenticated webhook surface. Each fire spawns a new session on its own branch. See the [triggers reference](/docs/reference/triggers).
+</Callout>

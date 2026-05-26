@@ -79,7 +79,7 @@ fi
 # ── 4. Verify sandbox image exists ──────────────────────────────────────────
 echo "[4/5] Checking sandbox image..."
 cd "$ROOT_DIR"
-SANDBOX_IMAGE="${SANDBOX_IMAGE:-kortix/sandbox:dev}"
+SANDBOX_IMAGE="${SANDBOX_IMAGE:-kortix/kortix-sandbox:dev}"
 
 if docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1; then
   echo "  $SANDBOX_IMAGE exists locally"

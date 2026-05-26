@@ -15,9 +15,9 @@ import { dirname, resolve } from 'node:path';
 // File layout: ~/.config/kortix/config.json (mode 0600)
 //
 //   {
-//     "active": "default",
+//     "active": "cloud",
 //     "hosts": {
-//       "default": {
+//       "cloud": {
 //         "url": "https://api.kortix.com",
 //         "token": "kortix_pat_...",
 //         "user_id": "...",
@@ -25,20 +25,22 @@ import { dirname, resolve } from 'node:path';
 //         "account_id": "...",
 //         "logged_in_at": "2026-05-19T..."
 //       },
-//       "local": { ... }
+//       "local": { "url": "http://localhost:13738", "token": "", ... }
 //     }
 //   }
 //
 // One host is "active" at a time — every command operates against it
 // unless overridden by `--host <name>` for a single invocation.
 //
-// Migration: an older ~/.config/kortix/auth.json (single-host schema)
-// is read on first load and transparently moved into a `default` host.
-// Once migrated, the old file is removed.
+// Single-host auth files are read on first load and moved into a `cloud`
+// host so users can switch cleanly between Kortix Cloud and self-hosted APIs.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const DEFAULT_API_BASE = 'https://api.kortix.com';
-export const DEFAULT_HOST_NAME = 'default';
+export const DEFAULT_API_BASE = process.env.KORTIX_DEFAULT_API_BASE ?? 'https://api.kortix.com';
+export const DEFAULT_LOCAL_API_BASE = 'http://localhost:13738';
+export const CLOUD_HOST_NAME = 'cloud';
+export const LOCAL_HOST_NAME = 'local';
+export const DEFAULT_HOST_NAME = CLOUD_HOST_NAME;
 
 export interface Host {
   url: string;
@@ -61,8 +63,8 @@ function defaultConfigPath(): string {
 }
 
 export function configFilePath(): string {
-  // Honor KORTIX_CONFIG_FILE (new) and KORTIX_AUTH_FILE (legacy, used by
-  // the existing e2e test harness) as overrides.
+  // Honor both config path env vars. KORTIX_AUTH_FILE is still used by the
+  // existing e2e test harness.
   return (
     process.env.KORTIX_CONFIG_FILE ??
     process.env.KORTIX_AUTH_FILE ??
@@ -70,16 +72,14 @@ export function configFilePath(): string {
   );
 }
 
-function legacyAuthFilePath(): string {
+function singleHostAuthFilePath(): string {
   return resolve(homedir(), '.config', 'kortix', 'auth.json');
 }
 
-/** Only pull from the legacy ~/.config/kortix/auth.json when the
- *  caller is using the *default* config file location. Custom paths
- *  (KORTIX_CONFIG_FILE / KORTIX_AUTH_FILE pointed at /tmp/foo) get a
- *  fresh empty config — they're almost always tests or scratch envs
- *  that don't want side effects on the user's real auth state. */
-function shouldMigrateLegacy(currentPath: string): boolean {
+/** Only pull from the single-host auth file when the caller is using the
+ *  default config file location. Custom paths get a fresh empty config:
+ *  they are usually tests or scratch envs that must not mutate real auth. */
+function shouldImportSingleHostAuth(currentPath: string): boolean {
   return currentPath === defaultConfigPath();
 }
 
@@ -95,8 +95,8 @@ export function loadConfig(): Config {
       if (parsed && typeof parsed === 'object' && parsed.hosts) {
         return normalizeConfig(parsed);
       }
-      // Old auth.json schema at the override path — migrate in place.
-      const migrated = migrateLegacy(parsed);
+      // Single-host auth schema at the override path: import in place.
+      const migrated = importSingleHostAuth(parsed);
       if (migrated) {
         saveConfig(migrated);
         return migrated;
@@ -106,19 +106,17 @@ export function loadConfig(): Config {
     }
   }
 
-  // Migrate from the legacy ~/.config/kortix/auth.json — but ONLY when
-  // the caller is using the default config-file path. Tests and scratch
-  // environments that point KORTIX_CONFIG_FILE elsewhere expect a fresh
-  // empty config, not the user's real auth file being slurped in.
-  if (shouldMigrateLegacy(path)) {
-    const legacy = legacyAuthFilePath();
-    if (existsSync(legacy)) {
+  // Import from ~/.config/kortix/auth.json only when the caller is using the
+  // default config path. Test/scratch envs pointed elsewhere should stay empty.
+  if (shouldImportSingleHostAuth(path)) {
+    const singleHostAuth = singleHostAuthFilePath();
+    if (existsSync(singleHostAuth)) {
       try {
-        const parsed = JSON.parse(readFileSync(legacy, 'utf8')) as Record<string, unknown>;
-        const migrated = migrateLegacy(parsed);
+        const parsed = JSON.parse(readFileSync(singleHostAuth, 'utf8')) as Record<string, unknown>;
+        const migrated = importSingleHostAuth(parsed);
         if (migrated) {
           saveConfig(migrated);
-          rmSync(legacy, { force: true });
+          rmSync(singleHostAuth, { force: true });
           return migrated;
         }
       } catch {
@@ -127,7 +125,7 @@ export function loadConfig(): Config {
     }
   }
 
-  return { active: DEFAULT_HOST_NAME, hosts: {} };
+  return normalizeConfig({ active: DEFAULT_HOST_NAME, hosts: {} });
 }
 
 export function saveConfig(config: Config): void {
@@ -183,6 +181,12 @@ export function listHosts(): { name: string; host: Host; active: boolean }[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export function activeHostEntry(): { name: string; host: Host } {
+  const config = loadConfig();
+  const name = config.hosts[config.active] ? config.active : DEFAULT_HOST_NAME;
+  return { name, host: config.hosts[name] ?? defaultHost(DEFAULT_API_BASE) };
+}
+
 export function activeHostName(): string | null {
   const config = loadConfig();
   return config.hosts[config.active] ? config.active : null;
@@ -203,20 +207,20 @@ export function upsertHost(name: string, host: Host, makeActive = false): void {
 export function removeHost(name: string): { removed: boolean; switchedTo?: string } {
   const config = loadConfig();
   if (!config.hosts[name]) return { removed: false };
-  delete config.hosts[name];
+  if (name === CLOUD_HOST_NAME) {
+    config.hosts[name] = defaultHost(DEFAULT_API_BASE);
+  } else if (name === LOCAL_HOST_NAME) {
+    config.hosts[name] = defaultHost(DEFAULT_LOCAL_API_BASE);
+  } else {
+    delete config.hosts[name];
+  }
   let switchedTo: string | undefined;
   if (config.active === name) {
     const remaining = Object.keys(config.hosts).sort();
     config.active = remaining[0] ?? DEFAULT_HOST_NAME;
     if (remaining.length > 0) switchedTo = config.active;
   }
-  // If there are no hosts left, remove the file entirely — leaving an
-  // empty `{active, hosts: {}}` shell behind is just clutter.
-  if (Object.keys(config.hosts).length === 0) {
-    deleteConfig();
-  } else {
-    saveConfig(config);
-  }
+  saveConfig(config);
   return { removed: true, switchedTo };
 }
 
@@ -258,20 +262,45 @@ function normalizeConfig(parsed: Partial<Config>): Config {
       logged_in_at: h.logged_in_at ?? new Date().toISOString(),
     };
   }
+  const legacyDefault = cleaned.default;
+  if (legacyDefault && !cleaned[CLOUD_HOST_NAME] && legacyDefault.url === DEFAULT_API_BASE) {
+    cleaned[CLOUD_HOST_NAME] = legacyDefault;
+    delete cleaned.default;
+  }
+  if (!cleaned[CLOUD_HOST_NAME]) {
+    cleaned[CLOUD_HOST_NAME] = defaultHost(DEFAULT_API_BASE);
+  }
+  if (!cleaned[LOCAL_HOST_NAME]) {
+    cleaned[LOCAL_HOST_NAME] = defaultHost(DEFAULT_LOCAL_API_BASE);
+  }
   let active = parsed.active && cleaned[parsed.active] ? parsed.active : DEFAULT_HOST_NAME;
+  if (parsed.active === 'default' && !cleaned.default && cleaned[CLOUD_HOST_NAME]) {
+    active = CLOUD_HOST_NAME;
+  }
   if (!cleaned[active]) {
     const names = Object.keys(cleaned);
-    if (names.length > 0) active = names[0]!;
+    active = names.includes(DEFAULT_HOST_NAME) ? DEFAULT_HOST_NAME : names[0]!;
   }
   return { active, hosts: cleaned };
 }
 
-function migrateLegacy(parsed: Record<string, unknown> | Partial<Config> | null): Config | null {
+function defaultHost(url: string): Host {
+  return {
+    url,
+    token: '',
+    user_id: '',
+    user_email: '',
+    account_id: '',
+    logged_in_at: '',
+  };
+}
+
+function importSingleHostAuth(parsed: Record<string, unknown> | Partial<Config> | null): Config | null {
   if (!parsed || typeof parsed !== 'object') return null;
   const p = parsed as Record<string, unknown>;
   const token = typeof p.token === 'string' ? p.token : undefined;
   if (!token) return null;
-  // Old shape used `api_base` instead of `url`.
+  // Single-host auth uses `api_base`; multi-host config uses `url`.
   const url = typeof p.api_base === 'string' ? p.api_base : DEFAULT_API_BASE;
   const host: Host = {
     url,
@@ -282,5 +311,11 @@ function migrateLegacy(parsed: Record<string, unknown> | Partial<Config> | null)
     logged_in_at:
       typeof p.logged_in_at === 'string' ? p.logged_in_at : new Date().toISOString(),
   };
-  return { active: DEFAULT_HOST_NAME, hosts: { [DEFAULT_HOST_NAME]: host } };
+  return {
+    active: CLOUD_HOST_NAME,
+    hosts: {
+      [CLOUD_HOST_NAME]: host,
+      [LOCAL_HOST_NAME]: defaultHost(DEFAULT_LOCAL_API_BASE),
+    },
+  };
 }

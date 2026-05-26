@@ -20,6 +20,14 @@ import { getActiveOpenCodeUrl, registerClientResetter } from "@/stores/server-st
 let cachedClient: OpencodeClient | null = null;
 let cachedUrl: string | null = null;
 
+/**
+ * Per-URL client cache. Unlike `getClient()` (which tracks only the single
+ * active server), this keeps one client alive PER sandbox URL so we can talk to
+ * several session sandboxes in parallel — every open session stays connected to
+ * its own runtime at the same time. Keyed by absolute base URL.
+ */
+const clientsByUrl = new Map<string, OpencodeClient>();
+
 function shouldUsePlatformAuth(baseUrl: string): boolean {
 	try {
 		const target = new URL(baseUrl);
@@ -59,6 +67,36 @@ export function getClient(): OpencodeClient {
 	});
 	cachedUrl = url;
 	return cachedClient;
+}
+
+/**
+ * Get (or create) a client bound to a SPECIFIC sandbox URL, independent of the
+ * globally active server. Use this to run multiple session sandboxes in
+ * parallel (e.g. one live SSE stream per open session). Clients are cached per
+ * URL so repeat calls are cheap and share one connection.
+ */
+export function getClientForUrl(url: string): OpencodeClient {
+	if (!url) {
+		throw new Error('[opencode-sdk] getClientForUrl called without a url');
+	}
+	const existing = clientsByUrl.get(url);
+	if (existing) return existing;
+
+	const fetchImpl = shouldUsePlatformAuth(url)
+		? (authenticatedFetch as typeof fetch)
+		: (((input, init) => fetch(input, init)) as typeof fetch);
+
+	const client = createOpencodeClient({ baseUrl: url, fetch: fetchImpl });
+	clientsByUrl.set(url, client);
+	return client;
+}
+
+/**
+ * Drop a per-URL client (e.g. when a session sandbox is closed). No-op if the
+ * URL was never cached.
+ */
+export function dropClientForUrl(url: string): void {
+	clientsByUrl.delete(url);
 }
 
 /**

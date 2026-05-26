@@ -1,0 +1,83 @@
+---
+title: Using the command line
+description: How to drive Kortix from a terminal with the kortix CLI.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The `kortix` CLI does everything the dashboard does, from a terminal. It's optional — if you're not technical, use the dashboard instead.
+
+## Install and log in
+
+<Steps>
+
+<Step>
+### Install the CLI
+
+```sh
+curl -fsSL https://kortix.com/install | bash
+```
+</Step>
+
+<Step>
+### Log in
+
+```sh
+kortix login
+```
+
+This opens your browser to authorize. Your token is then saved locally.
+</Step>
+
+</Steps>
+
+## The mental model
+
+The CLI controls the same things as the dashboard: projects, [sessions](/docs/concepts/sessions), [secrets](/docs/guides/managing-secrets), [triggers](/docs/guides/automating-work), and [change requests](/docs/quickstart). It's the control plane, not a replacement for `git`.
+
+## The most useful commands
+
+Start a session, optionally with a first prompt:
+
+```sh
+kortix sessions new --prompt "Audit the auth module and propose a fix"
+kortix sessions ls
+```
+
+Manage secrets:
+
+```sh
+kortix secrets set OPENAI_API_KEY=sk-...
+kortix secrets ls
+```
+
+Push a local `.env`'s values up as secrets, or pull a names-only skeleton down:
+
+```sh
+kortix env push --from .env
+kortix env pull
+```
+
+Work with triggers:
+
+```sh
+kortix triggers ls
+kortix triggers fire daily-digest
+```
+
+Review and merge change requests:
+
+```sh
+kortix cr ls
+kortix cr show 3
+kortix cr merge 3
+```
+
+## Inside a session sandbox
+
+Inside a session's environment the CLI is already authenticated for that project — no login needed. A project-scoped token is injected automatically, so commands like `kortix secrets ls` or `kortix cr open` work right away. This is how an agent opens its own change request.
+
+<Callout title="Under the hood">
+On your laptop the CLI uses a user-scoped token (saved at `~/.config/kortix/config.json`) that can see every project on accounts you belong to. Inside a sandbox, `KORTIX_TOKEN` is pre-injected and scoped to that one project. The CLI resolves "which project" from a flag, an env var, or a linked directory, in that order.
+</Callout>

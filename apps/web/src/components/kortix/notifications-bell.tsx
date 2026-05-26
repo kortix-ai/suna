@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Project-level notifications bell.
  *
@@ -54,6 +56,7 @@ export function NotificationsBell({
   onMarkAllRead,
   onOpenTicket,
 }: NotificationsBellProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
 
   const ticketById = useMemo(() => {
@@ -126,21 +129,17 @@ export function NotificationsBell({
             className="ml-auto h-6 px-2 text-[11px] text-muted-foreground/60 hover:text-foreground gap-1 disabled:opacity-40"
             onClick={markAllRead}
             disabled={unread.length === 0}
-            title="Mark all as read"
+            title={tHardcodedUi.raw('componentsKortixNotificationsBell.line129JsxAttrTitleMarkAllAsRead')}
           >
-            <CheckCheck className="h-3 w-3" />
-            Mark all read
-          </Button>
+            <CheckCheck className="h-3 w-3" />{tHardcodedUi.raw('componentsKortixNotificationsBell.line132JsxTextMarkAllRead')}</Button>
         </div>
 
         <div className="max-h-[420px] overflow-y-auto">
           {recent.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center">
               <Inbox className="h-5 w-5 text-muted-foreground/30 mb-2" />
-              <p className="text-[12.5px] text-foreground/70 font-medium">All caught up</p>
-              <p className="text-[11.5px] text-muted-foreground/50 mt-0.5">
-                Mentions and assignments will show up here.
-              </p>
+              <p className="text-[12.5px] text-foreground/70 font-medium">{tHardcodedUi.raw('componentsKortixNotificationsBell.line140JsxTextAllCaughtUp')}</p>
+              <p className="text-[11.5px] text-muted-foreground/50 mt-0.5">{tHardcodedUi.raw('componentsKortixNotificationsBell.line142JsxTextMentionsAndAssignmentsWillShowUpHere')}</p>
             </div>
           ) : (
             <ul className="divide-y divide-border/30">
@@ -173,6 +172,7 @@ function NotificationRow({
   isUnread: boolean;
   onClick: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
   const ev = n.event;
   const actorAgent = ev.actor_type === 'agent' ? agentById.get(ev.actor_id ?? '') : null;
@@ -204,11 +204,11 @@ function NotificationRow({
   if (n.kind === 'mention') {
     KindIcon = AtSign;
     kindColor = 'text-primary/80';
-    summary = <>mentioned you</>;
+    summary = <>{tHardcodedUi.raw('componentsKortixNotificationsBell.line207JsxTextMentionedYou')}</>;
   } else {
     KindIcon = UserPlus;
     kindColor = 'text-emerald-500/80';
-    summary = <>assigned you</>;
+    summary = <>{tHardcodedUi.raw('componentsKortixNotificationsBell.line211JsxTextAssignedYou')}</>;
   }
 
   return (

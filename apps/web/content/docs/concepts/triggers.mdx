@@ -1,0 +1,22 @@
+---
+title: Triggers
+description: Spawn a session automatically — on a schedule or from a webhook.
+---
+
+A **trigger** spawns a [session](/docs/concepts/sessions) on its own — this is
+how you automate recurring or event-driven work. Triggers are `[[triggers]]`
+entries in `kortix.toml`; each fire starts a fresh session that runs a templated
+prompt as its first message.
+
+- **`cron`** — runs on a schedule (6-field cron expression + IANA timezone).
+- **`webhook`** — runs on a **signed** `POST` to the project's webhook URL. No
+  unauthenticated surface: a webhook trigger must name a signing secret.
+
+A fired session is an ordinary session — isolated sandbox, its own branch, work
+reviewed as a [change request](/docs/concepts/change-requests). The manifest
+holds the config; runtime state (e.g. `last_fired_at`) lives in the database, so
+a fire doesn't write a commit.
+
+The scheduler reads triggers from the default branch, so a new or edited trigger
+goes live only after its change request merges. Fields, signature format, and
+template variables: [Triggers](/docs/reference/triggers).

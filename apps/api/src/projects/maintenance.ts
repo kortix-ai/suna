@@ -4,6 +4,7 @@ import { db } from '../shared/db';
 import { getProvider, type ProviderName } from '../platform/providers';
 import { invalidateProviderCache } from '../sandbox-proxy';
 import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
+import { reconcileDaytonaSnapshots } from '../snapshots/builder';
 
 const DEFAULT_IDLE_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
@@ -53,6 +54,27 @@ export function hasOpenPullRequestMarker(metadata: Record<string, unknown> | nul
 
 export function postgresTimestampParam(date: Date): string {
   return date.toISOString();
+}
+
+/**
+ * Daytona auto-stops idle sandboxes on its own (autoStopInterval), so by the
+ * time this hourly idle GC runs the sandbox is frequently already stopped,
+ * archived, or deleted. Those are the desired end state — not failures — so we
+ * reconcile our row quietly instead of logging a stack trace per sandbox.
+ */
+function isAlreadyNotRunning(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes('not started') ||
+    msg.includes('not running') ||
+    msg.includes('already stopped') ||
+    msg.includes('not found')
+  );
+}
+
+function isLifecycleTransitionInProgress(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return msg.includes('state change in progress') || msg.includes('transition in progress');
 }
 
 export async function hibernateIdleSessionSandboxes(now = new Date()): Promise<{
@@ -113,8 +135,28 @@ export async function hibernateIdleSessionSandboxes(now = new Date()): Promise<{
 
       stopped += 1;
     } catch (err) {
+      // Already stopped/archived/gone on Daytona's side — that's success.
+      // Reconcile our row to match and move on without the noisy stack trace.
+      if (isAlreadyNotRunning(err)) {
+        const reconciledAt = new Date();
+        await db
+          .update(sessionSandboxes)
+          .set({ status: 'stopped', updatedAt: reconciledAt })
+          .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+        await db
+          .update(projectSessions)
+          .set({ status: 'stopped', updatedAt: reconciledAt })
+          .where(eq(projectSessions.sessionId, row.sessionId));
+        invalidateProviderCache(row.externalId);
+        stopped += 1;
+        continue;
+      }
+      if (isLifecycleTransitionInProgress(err)) {
+        skipped += 1;
+        continue;
+      }
       errors += 1;
-      console.error(`[project-maintenance] Failed to hibernate sandbox ${row.sandboxId}:`, err);
+      console.error(`[project-maintenance] Failed to hibernate sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`);
     }
   }
 
@@ -201,12 +243,20 @@ export async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, branches] = await Promise.all([
+    const [idle, branches, snapshots] = await Promise.all([
       hibernateIdleSessionSandboxes(),
       sweepExpiredSessionBranches(),
+      // Org-wide snapshot GC: reclaim orphaned/over-budget Daytona snapshots so
+      // the global quota never strangles new builds. Best-effort.
+      reconcileDaytonaSnapshots().catch((err) => {
+        console.warn('[project-maintenance] snapshot reconcile failed:', err instanceof Error ? err.message : err);
+        return null;
+      }),
     ]);
-    if (idle.stopped || idle.errors || branches.deleted || branches.errors) {
-      console.log('[project-maintenance] completed', { idle, branches });
+    const snapChanged =
+      snapshots && (snapshots.orphansDeleted || snapshots.deadRowsCleared || snapshots.evicted || snapshots.failedCleared);
+    if (idle.stopped || idle.errors || branches.deleted || branches.errors || snapChanged) {
+      console.log('[project-maintenance] completed', { idle, branches, snapshots });
     }
   } finally {
     maintenanceRunning = false;

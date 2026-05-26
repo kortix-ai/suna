@@ -1,10 +1,12 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import * as React from 'react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import {
   ChevronLeft,
   ChevronDown,
@@ -12,6 +14,7 @@ import {
   Loader2,
   SlidersHorizontal,
   ListTree,
+  X,
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -21,13 +24,22 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
+import { listProjectSessions, type ProjectOpenCodeSession, type ProjectSession } from '@/lib/projects-client';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { useCustomizeStore } from '@/stores/customize-store';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { UserMenu } from '@/components/layout/user-menu';
 import { ProjectSwitcher } from '@/components/layout/project-switcher';
 import { ProjectSessionList } from '@/components/projects/project-session-list';
+import {
+  ProjectSetupNavItem,
+  ProjectSetupRailItem,
+} from '@/components/projects/project-setup';
+import {
+  ProjectSandboxAlertNavItem,
+  ProjectSandboxAlertRailItem,
+} from '@/components/projects/sandbox-health-alert';
 import {
   Sidebar,
   SidebarContent,
@@ -52,6 +64,7 @@ import { useAdminRole } from '@/hooks/admin';
 import { useAuth } from '@/components/AuthProvider';
 import { createProjectSession } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
+import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 
 const isMac =
   typeof navigator !== 'undefined' &&
@@ -61,7 +74,7 @@ const modSymbol = isMac ? '⌘' : 'Ctrl';
 /** Hover-only keyboard hint chip used on the primary nav row. */
 function KbdHint({ mod, letter }: { mod: string; letter: string }) {
   const chip =
-    'inline-flex items-center justify-center h-4 min-w-4 px-1 rounded bg-foreground/[0.05] border border-border/40 text-[9.5px] font-medium text-muted-foreground/70 leading-none font-sans select-none';
+    'inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/40 bg-foreground/[0.05] px-1 text-xs font-medium leading-none text-muted-foreground/70 select-none';
   return (
     <span className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/menu-button:opacity-100 group-data-[collapsible=icon]:hidden">
       <kbd className={chip}>{mod}</kbd>
@@ -208,15 +221,42 @@ function shortFlyoutRelative(text: string): string {
     .replace(/\syears?/, 'y');
 }
 
+function rootOpenCodeSession(session: ProjectSession): ProjectOpenCodeSession | null {
+  const opencodeSessions = session.opencode_sessions ?? [];
+  const rootId = session.opencode_session_id;
+  if (rootId) return opencodeSessions.find((item) => item.id === rootId) ?? null;
+  return opencodeSessions.find((item) => !item.parent_id) ?? null;
+}
+
+function directSubsessions(session: ProjectSession): ProjectOpenCodeSession[] {
+  const root = rootOpenCodeSession(session);
+  if (!root) return [];
+  return (session.opencode_sessions ?? [])
+    .filter((item) => item.parent_id === root.id && !item.archived_at)
+    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
+}
+
 function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const openTab = useProjectSessionTabsStore((s) => s.openTab);
+  const activeOpenCodeSessionId = searchParams.get('oc');
 
   const { data, isLoading } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
-    refetchInterval: 5000,
+    staleTime: 10_000,
+    refetchInterval: (query) => {
+      const sessions = query.state.data as ProjectSession[] | undefined;
+      return (sessions ?? []).some((session) =>
+        ['queued', 'branching', 'provisioning'].includes(session.status),
+      )
+        ? 5_000
+        : false;
+    },
+    refetchOnWindowFocus: false,
   });
 
   const sessions = useMemo<ProjectSession[]>(() => {
@@ -229,13 +269,15 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
   return (
     <div className="overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       {isLoading ? (
-        <div className="px-3 py-6 text-center text-xs text-muted-foreground">Loading…</div>
+        <div className="px-3 py-6 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectSidebar.line259JsxTextLoading')}</div>
       ) : sessions.length === 0 ? (
-        <div className="px-3 py-8 text-center text-xs text-muted-foreground">No sessions yet</div>
+        <div className="px-3 py-8 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectSidebar.line261JsxTextNoSessionsYet')}</div>
       ) : (
         sessions.map((session) => {
           const href = `/projects/${projectId}/sessions/${session.session_id}`;
           const active = pathname?.startsWith(href) ?? false;
+          const root = rootOpenCodeSession(session);
+          const children = directSubsessions(session);
           const metadataName =
             typeof session.metadata?.session_name === 'string'
               ? (session.metadata.session_name as string)
@@ -243,7 +285,7 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
           const fallback = session.branch_name
             ? session.branch_name.slice(0, 14)
             : session.session_id.slice(0, 8);
-          const label = metadataName?.trim() || fallback;
+          const label = root?.title?.trim() || session.name?.trim() || metadataName?.trim() || fallback;
           const relative = (() => {
             try {
               return shortFlyoutRelative(
@@ -254,26 +296,66 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
             }
           })();
           return (
-            <button
-              key={session.session_id}
-              onClick={() => {
-                openTab(projectId, session.session_id);
-                router.push(href);
-              }}
-              className={cn(
-                'flex items-center gap-2 w-full px-3 py-1.5 text-[12px] cursor-pointer transition-colors duration-100',
-                active
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+            <div key={session.session_id}>
+              <button
+                onClick={() => {
+                  openTab(projectId, session.session_id);
+                  router.push(href);
+                }}
+                className={cn(
+                  'flex items-center gap-2 w-full px-3 py-1.5 text-sm cursor-pointer transition-colors duration-100',
+                  active && !activeOpenCodeSessionId
+                    ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                )}
+              >
+                <span className="flex-1 truncate text-left">{label}</span>
+                {children.length > 0 && (
+                  <span className="rounded-full bg-sidebar-accent/60 px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+                    {children.length}
+                  </span>
+                )}
+                {relative && (
+                  <span className="flex-shrink-0 text-xs tabular-nums text-muted-foreground/60">
+                    {relative}
+                  </span>
+                )}
+              </button>
+              {children.length > 0 && active && (
+                <div className="ml-4 border-l border-border/30 pl-1">
+                  {children.map((child) => {
+                    const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
+                    const childActive = active && activeOpenCodeSessionId === child.id;
+                    const childRelative = child.updated_at
+                      ? shortFlyoutRelative(formatDistanceToNowStrict(new Date(child.updated_at), { addSuffix: false }))
+                      : '';
+                    return (
+                      <button
+                        key={child.id}
+                        onClick={() => {
+                          openTab(projectId, session.session_id);
+                          router.push(childHref);
+                        }}
+                        className={cn(
+                          'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-sm transition-colors duration-100',
+                          childActive
+                            ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                        )}
+                      >
+                        <span className="h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />
+                        <span className="flex-1 truncate text-left">{child.title || 'Sub-session'}</span>
+                        {childRelative && (
+                          <span className="flex-shrink-0 text-xs tabular-nums text-muted-foreground/60">
+                            {childRelative}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            >
-              <span className="flex-1 truncate text-left">{label}</span>
-              {relative && (
-                <span className="flex-shrink-0 text-[9.5px] tabular-nums text-muted-foreground/60">
-                  {relative}
-                </span>
-              )}
-            </button>
+            </div>
           );
         })
       )}
@@ -282,8 +364,8 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
 }
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
-  const pathname = usePathname();
   const { state, setOpen, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
   const effectiveState = isMobile ? 'expanded' : state;
@@ -318,6 +400,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const createSession = useMutation({
     mutationFn: () => createProjectSession(projectId),
     onSuccess: (session) => {
+      beginSessionTiming(session.session_id);
+      sessionMark(session.session_id, 'session-created');
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
       router.push(`/projects/${projectId}/sessions/${session.session_id}`);
       if (isMobile) setOpenMobile(false);
@@ -329,6 +413,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
   const handleNewSession = useCallback(() => {
     if (createSession.isPending) return;
+    markSessionClick();
     createSession.mutate();
   }, [createSession]);
 
@@ -350,19 +435,16 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     return () => window.removeEventListener('keydown', handler);
   }, [handleNewSession]);
 
-  // Customize lives as a dedicated tab next to the project sessions. We
-  // track an "open" flag in the same per-project store the session tabs
-  // use so the tab bar can render it consistently, and clicking the
-  // sidebar button both opens the tab and routes to /customize.
-  const openCustomizeTab = useProjectSessionTabsStore((s) => s.openCustomizeTab);
-  const isCustomizeRoute =
-    pathname?.startsWith(`/projects/${projectId}/customize`) ?? false;
+  // Customize is a full-screen overlay that floats over the active page
+  // (driven by the customize store) — no route change, no tab. The button
+  // just toggles it open, so you never lose your session/place.
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const customizeOpen = useCustomizeStore((s) => s.open);
 
   const goCustomize = useCallback(() => {
-    openCustomizeTab(projectId);
-    router.push(`/projects/${projectId}/customize`);
+    openCustomize();
     if (isMobile) setOpenMobile(false);
-  }, [openCustomizeTab, router, projectId, isMobile, setOpenMobile]);
+  }, [openCustomize, isMobile, setOpenMobile]);
 
   return (
     <Sidebar
@@ -374,7 +456,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           directly below. Account switching + user identity + settings live in
           the footer Account·You menu (see UserMenu).
          ==================================================================== */}
-      <SidebarHeader className="pb-1 pt-3">
+      <SidebarHeader className="pb-1 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
         <div className="flex h-7 shrink-0 items-center justify-between px-2 group-data-[collapsible=icon]:justify-center">
           <Link
             href="/projects"
@@ -393,16 +475,24 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <button
             type="button"
             onClick={() => (isMobile ? setOpenMobile(false) : setOpen(false))}
-            aria-label="Collapse sidebar"
+            aria-label={isMobile ? 'Close menu' : 'Collapse sidebar'}
             className={cn(
-              'flex h-6 w-6 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground',
+              'flex items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground',
+              isMobile ? 'h-8 w-8' : 'h-6 w-6',
               effectiveState === 'collapsed' && 'hidden',
             )}
           >
-            <ChevronLeft className="h-3.5 w-3.5" />
+            {isMobile ? (
+              <X className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-3.5 w-3.5" />
+            )}
           </button>
         </div>
-        <div className="pt-2 group-data-[collapsible=icon]:hidden">
+        {/* Project selector stays visible when collapsed — ProjectSwitcher
+            renders avatar-only + centered in the icon rail (label/chevron
+            self-hide via its own group-data-[collapsible=icon] classes). */}
+        <div className="pt-2">
           <ProjectSwitcher variant="sidebar" />
         </div>
       </SidebarHeader>
@@ -430,7 +520,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               icon={createSession.isPending
                 ? <Loader2 className="h-4 w-4 animate-spin" />
                 : <SquarePen className="h-4 w-4" />}
-              label="New session"
+              label={tHardcodedUi.raw('componentsProjectsProjectSidebar.line510JsxAttrLabelNewSession')}
               onClick={handleNewSession}
               disabled={createSession.isPending}
             />
@@ -444,11 +534,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               modal that houses Files, Skills, Agents, and the rest of
               the per-project config surfaces. */}
           <div className="mt-auto w-full space-y-0.5">
+            <ProjectSandboxAlertRailItem projectId={projectId} />
+            <ProjectSetupRailItem projectId={projectId} />
             <CollapsedIconButton
               icon={<SlidersHorizontal className="h-4 w-4" />}
               label="Customize"
               onClick={goCustomize}
-              isActive={isCustomizeRoute}
+              isActive={customizeOpen}
             />
           </div>
         </div>
@@ -465,7 +557,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <SidebarMenuButton
                   onClick={handleNewSession}
                   disabled={createSession.isPending}
-                  className="group/menu-button !text-[12.5px] font-normal [&_svg]:!size-4"
+                  className="group/menu-button !text-sm font-normal [&_svg]:!size-4"
                 >
                   {createSession.isPending ? (
                     <Loader2 className="animate-spin" />
@@ -489,7 +581,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               className="group/sessions flex min-h-0 flex-col data-[state=open]:flex-1"
             >
               <CollapsibleTrigger asChild>
-                <SidebarGroupLabel className="group/label flex h-6 cursor-pointer items-center gap-2 px-2 mt-1 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-sidebar-foreground">
+                <SidebarGroupLabel className="group/label mt-1 flex h-6 cursor-pointer items-center gap-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-sidebar-foreground">
                   <span className="flex-1 text-left">Sessions</span>
                   <ChevronDown className="size-3 transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
                 </SidebarGroupLabel>
@@ -505,11 +597,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               Skills, Agents, and every other per-project config surface. */}
           <SidebarGroup className="py-0 mt-auto">
             <SidebarMenu>
+              <ProjectSandboxAlertNavItem projectId={projectId} />
+              <ProjectSetupNavItem projectId={projectId} />
               <SidebarMenuItem>
                 <SidebarMenuButton
                   onClick={goCustomize}
-                  isActive={isCustomizeRoute}
-                  className="!text-[12.5px] font-normal data-[active=true]:font-normal !transition-none transform-none [&_svg]:!size-4"
+                  isActive={customizeOpen}
+                  className="!text-sm font-normal data-[active=true]:font-normal !transition-none transform-none [&_svg]:!size-4"
                 >
                   <SlidersHorizontal />
                   <span>Customize</span>
@@ -521,12 +615,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       </SidebarContent>
 
       {/* ====================================================================
-          FOOTER — the Account·You menu: account switching + account settings
-          + identity + settings + theme + log out. Kept separate from the
-          ProjectSwitcher at the top so the two concerns (which project vs.
-          which account / who am I) don't share one widget.
+          FOOTER — the "you" menu: identity, Home, user settings, theme, log
+          out. Account switching lives in the breadcrumb <AccountSwitcher>
+          (you don't change account mid-project); which project is the
+          ProjectSwitcher at the top.
          ==================================================================== */}
-      <SidebarFooter className="pb-2 pt-1 group-data-[collapsible=icon]:px-0">
+      <SidebarFooter className="pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1 group-data-[collapsible=icon]:px-0">
         <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
 

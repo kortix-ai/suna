@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Settings,
@@ -41,6 +43,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { List, ListRow } from '@/components/ui/list';
+import { Badge } from '@/components/ui/badge';
+import {
+  StatusDot,
+  STATUS_TEXT,
+  STATUS_BG,
+  STATUS_BORDER,
+} from '@/components/ui/status';
 import { cn } from '@/lib/utils';
 import {
   useOpenCodeConfig,
@@ -114,6 +124,7 @@ function GeneralSection({
   config: Config;
   onDraft: (key: string, value: unknown) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: providers } = useOpenCodeProviders();
   const allModels = useMemo(() => flattenModels(providers), [providers]);
 
@@ -140,12 +151,8 @@ function GeneralSection({
     <div className="space-y-6">
       {/* Custom Instructions */}
       <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Custom Instructions
-        </label>
-        <p className="text-xs text-muted-foreground/60">
-          Additional instruction file paths, one per line (e.g. docs/rules.md)
-        </p>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line152JsxTextCustomInstructions')}</label>
+        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line155JsxTextAdditionalInstructionFilePathsOnePerLineE')}</p>
         <Textarea
           value={instructionsText}
           onChange={(e) => {
@@ -154,7 +161,7 @@ function GeneralSection({
               .filter((l) => l.trim() !== '');
             onDraft('instructions', lines.length > 0 ? lines : undefined);
           }}
-          placeholder="docs/rules.md&#10;.cursorrules&#10;AGENTS.md"
+          placeholder={tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line165JsxAttrPlaceholderDocsRulesMd10Cursorrules10AgentsMd')}
           rows={4}
           className="font-mono text-sm resize-none rounded-2xl"
         />
@@ -162,9 +169,7 @@ function GeneralSection({
 
       {/* Default Model */}
       <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Default Model
-        </label>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line174JsxTextDefaultModel')}</label>
         <div className="flex items-center gap-2">
           <ModelSelector
             models={allModels}
@@ -178,9 +183,7 @@ function GeneralSection({
               variant="link"
               size="sm"
               className="h-auto p-0 text-xs text-muted-foreground"
-            >
-              Reset to auto
-            </Button>
+            >{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line190JsxTextResetToAuto')}</Button>
           )}
           {!selectedModel && (
             <span className="text-xs text-muted-foreground/60">Auto-detect</span>
@@ -195,9 +198,7 @@ function GeneralSection({
             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Snapshots
             </label>
-            <p className="text-xs text-muted-foreground/60 mt-0.5">
-              Create a git snapshot at each agentic step for reviewing changes
-            </p>
+            <p className="text-xs text-muted-foreground/60 mt-0.5">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line207JsxTextCreateAGitSnapshotAtEachAgenticStep')}</p>
           </div>
           <Switch
             checked={snapshot}
@@ -218,6 +219,7 @@ function ProvidersSection({
 }: {
   onDirty: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: providers } = useOpenCodeProviders();
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
 
@@ -230,8 +232,7 @@ function ProvidersSection({
   return (
     <div className="space-y-3 overflow-y-auto">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider">
-          Connected ({connectedProviders.length})
+        <span className="text-xs font-medium text-muted-foreground/40 uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line242JsxTextConnected')}{connectedProviders.length})
         </span>
         <Button
           variant="outline"
@@ -267,6 +268,7 @@ function PermissionsSection({
   config: Config;
   onDraft: (key: string, value: unknown) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: toolIds } = useOpenCodeToolIds();
 
   const permission = (draft.permission ?? config.permission ?? {}) as Record<
@@ -321,12 +323,8 @@ function PermissionsSection({
     <div className="space-y-6">
       {/* Global permission mode */}
       <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Global Permission Mode
-        </label>
-        <p className="text-xs text-muted-foreground/60">
-          Set a blanket permission level, or configure per-tool below.
-        </p>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line333JsxTextGlobalPermissionMode')}</label>
+        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line336JsxTextSetABlanketPermissionLevelOrConfigurePer')}</p>
         <div className="flex gap-1.5">
           {ACTIONS.map((a) => (
             <Button
@@ -339,9 +337,9 @@ function PermissionsSection({
                 : 'muted'
                 : 'muted'}
               className={cn(
-                isGlobalMode && globalAction === a && a === 'allow' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20',
-                isGlobalMode && globalAction === a && a === 'deny' && 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 hover:bg-red-500/20',
-                isGlobalMode && globalAction === a && a === 'ask' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20',
+                isGlobalMode && globalAction === a && a === 'allow' && cn('border', STATUS_BG.success, STATUS_TEXT.success, STATUS_BORDER.success),
+                isGlobalMode && globalAction === a && a === 'deny' && 'bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/15',
+                isGlobalMode && globalAction === a && a === 'ask' && cn('border', STATUS_BG.warning, STATUS_TEXT.warning, STATUS_BORDER.warning),
               )}
             >
               {a}
@@ -352,7 +350,7 @@ function PermissionsSection({
             size="toolbar"
             variant="muted"
             className={cn(
-              !isGlobalMode && 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/20 hover:bg-blue-500/20',
+              !isGlobalMode && cn('border', STATUS_BG.info, STATUS_TEXT.info, STATUS_BORDER.info),
             )}
           >
             per-tool
@@ -363,38 +361,33 @@ function PermissionsSection({
       {/* Per-tool permission overrides */}
       {!isGlobalMode && (
         <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Per-Tool Permissions
-          </label>
-          <div className="rounded-2xl border border-border/50 bg-card divide-y divide-border/30">
-            {PERMISSION_TYPES.map(({ key, label, description }) => (
-              <div
-                key={key}
-                className="flex items-center justify-between gap-3 px-3 py-2.5"
-              >
-                <div className="min-w-0">
-                  <span className="text-sm text-foreground">{label}</span>
-                  <p className="text-xs text-muted-foreground/60">{description}</p>
-                </div>
-                <div className="flex gap-1 flex-shrink-0">
-                  {ACTIONS.map((a) => (
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line375JsxTextPerToolPermissions')}</label>
+          <div className="rounded-2xl border border-border/50 bg-card">
+            <List>
+              {PERMISSION_TYPES.map(({ key, label, description }) => (
+                <ListRow
+                  key={key}
+                  className="px-3 py-2.5"
+                  title={label}
+                  subtitle={<p className="text-xs text-muted-foreground/60">{description}</p>}
+                  trailing={ACTIONS.map((a) => (
                     <Button
                       key={a}
                       onClick={() => setAction(key, a)}
                       size="xs"
                       variant="muted"
                       className={cn(
-                        getAction(key) === a && a === 'allow' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20',
-                        getAction(key) === a && a === 'deny' && 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 hover:bg-red-500/20',
-                        getAction(key) === a && a === 'ask' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20',
+                        getAction(key) === a && a === 'allow' && cn('border', STATUS_BG.success, STATUS_TEXT.success, STATUS_BORDER.success),
+                        getAction(key) === a && a === 'deny' && 'bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/15',
+                        getAction(key) === a && a === 'ask' && cn('border', STATUS_BG.warning, STATUS_TEXT.warning, STATUS_BORDER.warning),
                       )}
                     >
                       {a}
                     </Button>
                   ))}
-                </div>
-              </div>
-            ))}
+                />
+              ))}
+            </List>
           </div>
         </div>
       )}
@@ -402,27 +395,24 @@ function PermissionsSection({
       {/* Tool enable/disable overrides */}
       {builtinToolIds.length > 0 && (
         <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Tool Overrides
-          </label>
-          <p className="text-xs text-muted-foreground/60">
-            Enable or disable individual tools.
-          </p>
-          <div className="rounded-2xl border border-border/50 bg-card divide-y divide-border/30 max-h-48 overflow-y-auto">
-            {builtinToolIds.map((id) => (
-              <div
-                key={id}
-                className="flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors"
-              >
-                <span className="text-xs font-mono text-foreground/80 truncate">
-                  {id}
-                </span>
-                <Switch
-                  checked={isToolEnabled(id)}
-                  onCheckedChange={() => toggleTool(id)}
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line411JsxTextToolOverrides')}</label>
+          <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line414JsxTextEnableOrDisableIndividualTools')}</p>
+          <div className="rounded-2xl border border-border/50 bg-card max-h-48 overflow-y-auto">
+            <List>
+              {builtinToolIds.map((id) => (
+                <ListRow
+                  key={id}
+                  className="px-3 py-2"
+                  title={<span className="text-xs font-mono text-foreground/80 truncate">{id}</span>}
+                  trailing={
+                    <Switch
+                      checked={isToolEnabled(id)}
+                      onCheckedChange={() => toggleTool(id)}
+                    />
+                  }
                 />
-              </div>
-            ))}
+              ))}
+            </List>
           </div>
         </div>
       )}
@@ -437,41 +427,41 @@ function PermissionsSection({
 type McpView = { type: 'list' } | { type: 'add' } | { type: 'auth'; name: string };
 
 function StatusBadge({ status }: { status: McpStatus }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const s = status.status;
   if (s === 'connected') {
     return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+      <Badge size="sm" variant="success">
+        <StatusDot tone="success" />
         connected
-      </span>
+      </Badge>
     );
   }
   if (s === 'disabled') {
     return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground">
-        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
+      <Badge size="sm" variant="secondary">
+        <StatusDot tone="neutral" />
         disconnected
-      </span>
+      </Badge>
     );
   }
   if (s === 'needs_auth' || s === 'needs_client_registration') {
     return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-        needs auth
-      </span>
+      <Badge size="sm" variant="warning">
+        <StatusDot tone="warning" />{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line467JsxTextNeedsAuth')}</Badge>
     );
   }
   // failed
   return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400">
-      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+    <Badge size="sm" variant="outline" className="bg-destructive/10 text-destructive">
+      <span className="w-1.5 h-1.5 rounded-full bg-destructive" />
       error
-    </span>
+    </Badge>
   );
 }
 
 function McpServersSection() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: mcpStatus, isLoading } = useOpenCodeMcpStatus();
   const { data: toolIds } = useOpenCodeToolIds();
   const addMutation = useAddMcpServer();
@@ -651,23 +641,18 @@ function McpServersSection() {
         {authStartMutation.isPending && !authUrl && (
           <div className="flex items-center gap-3 py-4">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Starting authorization...</span>
+            <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line660JsxTextStartingAuthorization')}</span>
           </div>
         )}
 
         {authUrl && (
           <form onSubmit={handleAuthCallback} className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Visit the{' '}
-              <a href={authUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                authorization page
-              </a>{' '}
-              and after it redirects to `localhost`, paste the full redirected URL below.
-            </p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line667JsxTextVisitThe')}{' '}
+              <a href={authUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line669JsxTextAuthorizationPage')}</a>{' '}{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line671JsxTextAndAfterItRedirectsToLocalhostPasteThe')}</p>
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Localhost Redirect URL</label>
+              <label className="text-xs text-muted-foreground mb-1 block">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line674JsxTextLocalhostRedirectUrl')}</label>
               <Input type="text"
-                placeholder="Paste http://localhost:.../callback?..."
+                placeholder={tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line676JsxAttrPlaceholderPasteHttpLocalhostCallback')}
                 value={authCode}
                 onChange={(e) => setAuthCode(e.target.value)}
                 autoFocus
@@ -705,9 +690,7 @@ function McpServersSection() {
               size="sm"
               onClick={() => handleAuthStart(view.name)}
               className="h-8 px-3 text-xs"
-            >
-              Try again
-            </Button>
+            >{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line715JsxTextTryAgain')}</Button>
           </div>
         )}
       </div>
@@ -727,13 +710,13 @@ function McpServersSection() {
           >
             <ChevronRight className="h-4 w-4 rotate-180" />
           </Button>
-          <h3 className="text-sm font-semibold">Add MCP Server</h3>
+          <h3 className="text-sm font-semibold">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line736JsxTextAddMcpServer')}</h3>
         </div>
 
         <form onSubmit={handleAddServer} className="space-y-4">
           {/* Name */}
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Server Name</label>
+            <label className="text-xs text-muted-foreground mb-1 block">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line742JsxTextServerName')}</label>
             <Input type="text"
               placeholder="my-server"
               value={addForm.name}
@@ -744,7 +727,7 @@ function McpServersSection() {
 
           {/* Transport Type */}
           <div className="space-y-2">
-            <label className="text-xs text-muted-foreground mb-1 block">Transport Type</label>
+            <label className="text-xs text-muted-foreground mb-1 block">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line753JsxTextTransportType')}</label>
             <div className="flex gap-1.5">
               <Button
                 type="button"
@@ -752,18 +735,14 @@ function McpServersSection() {
                 size="toolbar"
                 variant={addForm.transportType === 'stdio' ? 'subtle' : 'muted'}
                 className={cn(addForm.transportType === 'stdio' && 'border border-primary/20')}
-              >
-                Stdio (command)
-              </Button>
+              >{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line762JsxTextStdioCommand')}</Button>
               <Button
                 type="button"
                 onClick={() => setAddForm((f) => ({ ...f, transportType: 'http' }))}
                 size="toolbar"
                 variant={addForm.transportType === 'http' ? 'subtle' : 'muted'}
                 className={cn(addForm.transportType === 'http' && 'border border-primary/20')}
-              >
-                HTTP (URL)
-              </Button>
+              >{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line771JsxTextHttpUrl')}</Button>
             </div>
           </div>
 
@@ -772,13 +751,11 @@ function McpServersSection() {
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Command</label>
               <Input type="text"
-                placeholder="npx -y @modelcontextprotocol/server-github"
+                placeholder={tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line781JsxAttrPlaceholderNpxYModelcontextprotocolServerGithub')}
                 value={addForm.command}
                 onChange={(e) => setAddForm((f) => ({ ...f, command: e.target.value }))}
               />
-              <p className="text-[11px] text-muted-foreground/60 mt-1">
-                Full command with arguments, space-separated
-              </p>
+              <p className="text-xs text-muted-foreground/60 mt-1">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line786JsxTextFullCommandWithArgumentsSpaceSeparated')}</p>
             </div>
           ) : (
             <div>
@@ -794,7 +771,7 @@ function McpServersSection() {
           {/* Environment Variables */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs text-muted-foreground">Environment Variables</label>
+              <label className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line803JsxTextEnvironmentVariables')}</label>
               <Button
                 type="button"
                 onClick={addEnvPair}
@@ -826,7 +803,7 @@ function McpServersSection() {
                       onClick={() => removeEnvPair(i)}
                       variant="ghost"
                       size="icon-xs"
-                      className="hover:text-destructive hover:bg-destructive/10 flex-shrink-0"
+                      className="hover:text-foreground hover:bg-muted flex-shrink-0"
                     >
                       <X className="h-3.5 w-3.5" />
                     </Button>
@@ -864,8 +841,7 @@ function McpServersSection() {
   return (
     <div className="space-y-4 overflow-y-auto pr-1">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Servers ({servers.length})
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line874JsxTextServers')}{servers.length})
         </span>
         <Button
           variant="outline"
@@ -873,9 +849,7 @@ function McpServersSection() {
           className="h-7 px-2.5 text-xs gap-1.5"
           onClick={() => { setView({ type: 'add' }); setAddError(''); }}
         >
-          <Plus className="h-3 w-3" />
-          Add Server
-        </Button>
+          <Plus className="h-3 w-3" />{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line883JsxTextAddServer')}</Button>
       </div>
 
       {isLoading ? (
@@ -917,7 +891,7 @@ function McpServersSection() {
                       </span>
                     )}
                     {isFailed && 'error' in status && (
-                      <p className="text-xs text-red-500/80 truncate mt-0.5">
+                      <p className={cn('text-xs truncate mt-0.5', STATUS_TEXT.destructive)}>
                         {(status as any).error}
                       </p>
                     )}
@@ -931,7 +905,7 @@ function McpServersSection() {
                         disabled={authStartMutation.isPending}
                         variant="ghost"
                         size="icon-sm"
-                        className="text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                        className={cn(STATUS_TEXT.warning, 'hover:bg-amber-500/10')}
                         title="Authorize"
                       >
                         <Plug className="h-3.5 w-3.5" />
@@ -945,7 +919,7 @@ function McpServersSection() {
                       variant="ghost"
                       size="icon-sm"
                       className={cn(
-                        isConnected ? 'hover:text-red-500 hover:bg-red-500/10' : 'hover:text-emerald-500 hover:bg-emerald-500/10',
+                        isConnected ? 'hover:text-foreground hover:bg-muted' : 'hover:text-emerald-500 hover:bg-emerald-500/10',
                       )}
                       title={isConnected ? 'Disconnect' : 'Connect'}
                     >
@@ -998,10 +972,8 @@ function McpServersSection() {
       ) : (
         <div className="flex flex-col items-center justify-center py-8 text-center">
           <Server className="h-6 w-6 text-muted-foreground mb-2" />
-          <p className="text-sm text-muted-foreground">No MCP servers configured</p>
-          <p className="text-xs text-muted-foreground/60 mt-1">
-            Add an MCP server to extend available tools
-          </p>
+          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line1007JsxTextNoMcpServersConfigured')}</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line1009JsxTextAddAnMcpServerToExtendAvailableTools')}</p>
         </div>
       )}
     </div>
@@ -1017,6 +989,7 @@ export function OpenCodeSettingsDialog({
   onOpenChange,
   initialTab = 'general',
 }: OpenCodeSettingsDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: config, isLoading } = useOpenCodeConfig();
   const updateMutation = useUpdateOpenCodeConfig();
   const [draft, setDraft] = useState<Record<string, unknown>>({});
@@ -1087,10 +1060,7 @@ export function OpenCodeSettingsDialog({
             <Settings className="h-4 w-4" />
             Settings
           </DialogTitle>
-          <DialogDescription id="opencode-settings-desc" className="sr-only">
-            Configure OpenCode settings including general options, providers, and
-            permissions.
-          </DialogDescription>
+          <DialogDescription id="opencode-settings-desc" className="sr-only">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line1097JsxTextConfigureOpencodeSettingsIncludingGeneralOptionsProvidersAnd')}</DialogDescription>
         </DialogHeader>
 
         {isLoading || !config ? (
@@ -1114,9 +1084,7 @@ export function OpenCodeSettingsDialog({
                   Permissions
                 </TabsTrigger>
                 <TabsTrigger value="mcp" className="flex-1 gap-1.5">
-                  <Server className="h-3.5 w-3.5" />
-                  MCP Servers
-                </TabsTrigger>
+                  <Server className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line1124JsxTextMcpServers')}</TabsTrigger>
               </TabsList>
             </div>
 
@@ -1168,9 +1136,7 @@ export function OpenCodeSettingsDialog({
                     <Loader2 className="h-3 w-3 animate-spin" />
                   ) : (
                     <Save className="h-3 w-3" />
-                  )}
-                  Save Changes
-                </Button>
+                  )}{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line1178JsxTextSaveChanges')}</Button>
               </div>
             )}
           </Tabs>

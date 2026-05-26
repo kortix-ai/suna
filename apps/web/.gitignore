@@ -52,3 +52,6 @@ infra/supabase/**/*.env
 
 # Fumadocs MDX generated source
 .source/
+
+# Generated i18n audit report (npm run i18n:audit)
+i18n-audit.json

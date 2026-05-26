@@ -28,6 +28,7 @@ import {
     Key,
     Camera,
     Upload,
+    type LucideIcon,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
@@ -69,6 +70,7 @@ import {
 import { billingApi } from '@/lib/api/billing';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -118,7 +120,7 @@ type TabId = SettingsTabId;
 interface Tab {
     id: TabId;
     label: string;
-    icon: React.ComponentType<{ className?: string }>;
+    icon: LucideIcon;
     disabled?: boolean;
 }
 
@@ -158,11 +160,15 @@ export function UserSettingsModal({
     // Tab definitions from the central menu registry (single source of truth).
     // Account-level tabs (Billing, Transactions) now live in AccountSettingsModal —
     // this modal is for user preferences and the currently-scoped instance.
-    const preferenceTabs: Tab[] = getPreferenceTabs();
-    const instanceTabs: Tab[] = hasInstance ? getInstanceTabs() : [];
-    const accountTabs: Tab[] = [
-        { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
-    ];
+    const preferenceTabs: Tab[] = React.useMemo(() => getPreferenceTabs(), []);
+    const instanceTabs: Tab[] = React.useMemo(
+        () => (hasInstance ? getInstanceTabs() : []),
+        [hasInstance],
+    );
+    const accountTabs: Tab[] = React.useMemo(
+        () => [{ id: 'tokens', label: 'CLI tokens', icon: KeyRound }],
+        [],
+    );
 
     const instanceLoading =
         open && !!currentInstanceId && !hasInstance && instanceSandboxQuery.isLoading;
@@ -178,20 +184,23 @@ export function UserSettingsModal({
               : []),
     ];
 
-    const allTabs = [...preferenceTabs, ...accountTabs, ...instanceTabs];
+    const allTabs = React.useMemo(
+        () => [...preferenceTabs, ...accountTabs, ...instanceTabs],
+        [preferenceTabs, accountTabs, instanceTabs],
+    );
+    const activeContentTab: TabId = allTabs.some((tab) => tab.id === activeTab)
+        ? activeTab
+        : 'general';
 
     useEffect(() => {
         setActiveTab(defaultTab);
     }, [defaultTab]);
 
     useEffect(() => {
-        if (
-            activeTab === 'instance-members' &&
-            !hasInstance
-        ) {
+        if (!allTabs.some((tab) => tab.id === activeTab)) {
             setActiveTab('general');
         }
-    }, [activeTab, hasInstance]);
+    }, [activeTab, allTabs]);
 
     const handleTabClick = (tabId: TabId) => {
         setActiveTab(tabId);
@@ -232,20 +241,20 @@ export function UserSettingsModal({
                             <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                                 {instanceLoading ? (
                                     <>
-                                        <Skeleton className="h-9 w-24 rounded-md" />
-                                        <Skeleton className="h-9 w-24 rounded-md" />
+                                        <Skeleton className="h-9 w-24 rounded-full" />
+                                        <Skeleton className="h-9 w-24 rounded-full" />
                                     </>
                                 ) : null}
                                 {allTabs.map((tab) => {
                                     const Icon = tab.icon;
-                                    const isActive = activeTab === tab.id;
+                                    const isActive = activeContentTab === tab.id;
 
                                     return (
                                         <Button
                                             key={tab.id}
                                             onClick={() => handleTabClick(tab.id)}
                                             disabled={tab.disabled}
-                                            variant={isActive ? "secondary" : "ghost"}
+                                            variant={isActive ? "subtle" : "ghost"}
                                             className={cn(
                                                 "flex items-center gap-2 whitespace-nowrap flex-shrink-0 justify-start",
                                                 !isActive && "text-muted-foreground hover:text-foreground"
@@ -262,13 +271,13 @@ export function UserSettingsModal({
                         {/* Mobile Content - Scrollable */}
                         <div className="flex-1 overflow-x-hidden overflow-y-auto">
                             <div className="w-full max-w-full">
-                                {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                                {activeTab === 'appearance' && <AppearanceTab />}
-                                {activeTab === 'sounds' && <SoundsTab />}
-                                {activeTab === 'notifications' && <NotificationsTab />}
-                                {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
-                                {activeTab === 'tokens' && <CliTokensTab />}
-                                {activeTab === 'instance-members' && instanceSandbox && (
+                                {activeContentTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
+                                {activeContentTab === 'appearance' && <AppearanceTab />}
+                                {activeContentTab === 'sounds' && <SoundsTab />}
+                                {activeContentTab === 'notifications' && <NotificationsTab />}
+                                {activeContentTab === 'shortcuts' && <KeyboardShortcutsTab />}
+                                {activeContentTab === 'tokens' && <CliTokensTab />}
+                                {activeContentTab === 'instance-members' && instanceSandbox && (
                                     <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
                                 )}
                             </div>
@@ -298,19 +307,19 @@ export function UserSettingsModal({
                                             {group.skeleton ? (
                                                 <Skeleton className="h-3 w-20 rounded" />
                                             ) : (
-                                                <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">{group.label}</span>
+                                                <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">{group.label}</span>
                                             )}
                                         </div>
                                         <div className="flex flex-col gap-0.5">
                                             {group.skeleton ? (
                                                 <>
-                                                    <Skeleton className="mx-2 h-9 rounded-md" />
-                                                    <Skeleton className="mx-2 h-9 rounded-md" />
+                                                    <Skeleton className="mx-2 h-9 rounded-full" />
+                                                    <Skeleton className="mx-2 h-9 rounded-full" />
                                                 </>
                                             ) : (
                                                 group.tabs.map((tab) => {
                                                 const Icon = tab.icon;
-                                                const isActive = activeTab === tab.id;
+                                                const isActive = activeContentTab === tab.id;
 
                                                 return (
                                                     <Button
@@ -339,13 +348,13 @@ export function UserSettingsModal({
 
                         {/* Desktop Content */}
                         <div className="flex-1 overflow-y-auto min-h-0 w-full max-w-full">
-                            {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                            {activeTab === 'appearance' && <AppearanceTab />}
-                            {activeTab === 'sounds' && <SoundsTab />}
-                            {activeTab === 'notifications' && <NotificationsTab />}
-                            {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
-                            {activeTab === 'tokens' && <CliTokensTab />}
-                            {activeTab === 'instance-members' && instanceSandbox && (
+                            {activeContentTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
+                            {activeContentTab === 'appearance' && <AppearanceTab />}
+                            {activeContentTab === 'sounds' && <SoundsTab />}
+                            {activeContentTab === 'notifications' && <NotificationsTab />}
+                            {activeContentTab === 'shortcuts' && <KeyboardShortcutsTab />}
+                            {activeContentTab === 'tokens' && <CliTokensTab />}
+                            {activeContentTab === 'instance-members' && instanceSandbox && (
                                 <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
                             )}
                         </div>
@@ -360,6 +369,7 @@ export function UserSettingsModal({
 
 
 function GeneralTab({ onClose }: { onClose: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const t = useTranslations('settings.general');
     const tCommon = useTranslations('common');
     const [userName, setUserName] = useState('');
@@ -428,37 +438,30 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         }
     };
 
-    const uploadAvatar = async (userId: string): Promise<string | null> => {
+    // Uploads to `${userId}/<file>` so the per-user RLS policy on the public
+    // "avatars" bucket allows it. Throws on failure so the caller can abort.
+    const uploadAvatar = async (userId: string): Promise<string> => {
         if (!avatarFile) return avatarUrl;
 
         setIsUploadingAvatar(true);
         try {
-            const fileExt = avatarFile.name.split('.').pop();
-            const fileName = `${userId}-${Date.now()}.${fileExt}`;
+            const fileExt = (avatarFile.name.split('.').pop() || 'png').toLowerCase();
+            const filePath = `${userId}/${Date.now()}.${fileExt}`;
 
-            // Upload to Supabase Storage
             const { error: uploadError } = await supabase.storage
                 .from('avatars')
-                .upload(fileName, avatarFile, {
+                .upload(filePath, avatarFile, {
                     cacheControl: '3600',
                     upsert: true,
                 });
 
-            if (uploadError) {
-                console.error('Upload error:', uploadError);
-                throw uploadError;
-            }
+            if (uploadError) throw uploadError;
 
-            // Get public URL
             const { data: { publicUrl } } = supabase.storage
                 .from('avatars')
-                .getPublicUrl(fileName);
+                .getPublicUrl(filePath);
 
             return publicUrl;
-        } catch (error) {
-            console.error('Avatar upload failed:', error);
-            toast.error(t('profilePicture.uploadFailed'));
-            return null;
         } finally {
             setIsUploadingAvatar(false);
         }
@@ -469,23 +472,18 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         try {
             const { data: userData } = await supabase.auth.getUser();
             const userId = userData.user?.id;
-            
+
             if (!userId) throw new Error('User not found');
 
-            // Upload avatar if a new one was selected
-            let newAvatarUrl = avatarUrl;
-            if (avatarFile) {
-                const uploadedUrl = await uploadAvatar(userId);
-                if (uploadedUrl) {
-                    newAvatarUrl = uploadedUrl;
-                }
-            }
+            // Upload the new avatar first — if this throws (e.g. storage not
+            // provisioned), we abort below WITHOUT saving or reloading.
+            const newAvatarUrl = avatarFile ? await uploadAvatar(userId) : avatarUrl;
 
-            const { data, error } = await supabase.auth.updateUser({
-                data: { 
+            const { error } = await supabase.auth.updateUser({
+                data: {
                     name: userName,
                     avatar_url: newAvatarUrl,
-                }
+                },
             });
 
             if (error) throw error;
@@ -498,14 +496,14 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
             setAvatarFile(null);
             setAvatarUrl(newAvatarUrl);
 
+            // No reload: updateUser fires a Supabase `USER_UPDATED` event, and
+            // AuthProvider re-renders every avatar consumer (header, sidebar)
+            // live. The old window.location.reload() was the "hard reload".
             toast.success(t('profileUpdated'));
-
-            setTimeout(() => {
-                window.location.reload();
-            }, 500);
         } catch (error) {
             console.error('Error updating profile:', error);
-            toast.error(t('profileUpdateFailed'));
+            const message = error instanceof Error && error.message ? error.message : '';
+            toast.error(message || t('profileUpdateFailed'));
         } finally {
             setIsSaving(false);
         }
@@ -596,7 +594,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                             <input
                                 ref={fileInputRef}
                                 type="file"
-                                accept="image/*"
+                                accept={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line596JsxAttrAcceptImage')}
                                 onChange={handleAvatarChange}
                                 className="hidden"
                             />
@@ -679,21 +677,19 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                         </div>
 
                         {deletionStatus?.has_pending_deletion ? (
-                            <Alert className="shadow-none border-amber-500/30 bg-amber-500/5">
-                                <Clock className="h-4 w-4 text-amber-600" />
-                                <AlertDescription>
-                                    <div className="text-sm">
-                                        <strong className="text-foreground">{t('deleteAccount.scheduled')}</strong>
-                                        <p className="mt-1 text-muted-foreground">
-                                            {t('deleteAccount.scheduledDescription', {
-                                                date: formatDate(deletionStatus.deletion_scheduled_for)
-                                            })}
-                                        </p>
-                                        <p className="mt-2 text-muted-foreground">
-                                            {t('deleteAccount.canCancel')}
-                                        </p>
-                                    </div>
-                                </AlertDescription>
+                            <InfoBanner
+                                tone="warning"
+                                icon={Clock}
+                                title={t('deleteAccount.scheduled')}
+                            >
+                                <p className="mt-1 text-muted-foreground">
+                                    {t('deleteAccount.scheduledDescription', {
+                                        date: formatDate(deletionStatus.deletion_scheduled_for)
+                                    })}
+                                </p>
+                                <p className="mt-2 text-muted-foreground">
+                                    {t('deleteAccount.canCancel')}
+                                </p>
                                 <div className="mt-3">
                                     <Button
                                         variant="outline"
@@ -704,7 +700,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         {t('deleteAccount.cancelButton')}
                                     </Button>
                                 </div>
-                            </Alert>
+                            </InfoBanner>
                         ) : (
                             <Button
                                 variant="outline"
@@ -723,29 +719,18 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                             setDeletionType('grace-period');
                         }
                     }}>
-                        <DialogContent className="max-w-md max-h-[90vh] sm:max-h-[85vh] overflow-y-auto p-4 sm:p-6">
-                            <DialogHeader>
-                                <DialogTitle className="text-base sm:text-lg">{t('deleteAccount.dialogTitle')}</DialogTitle>
+                        <DialogContent className="max-w-md max-h-[90vh] sm:max-h-[85vh] gap-0 overflow-hidden p-0">
+                            <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
+                                <DialogTitle className="text-lg font-semibold tracking-tight">{t('deleteAccount.dialogTitle')}</DialogTitle>
                             </DialogHeader>
-                            <div className="space-y-4">
-                                <Alert className={cn(
-                                    "shadow-none",
-                                    deletionType === 'immediate' 
-                                        ? "border-red-500/30 bg-red-500/5" 
-                                        : "border-amber-500/30 bg-amber-500/5"
-                                )}>
-                                    <AlertTriangle className={cn(
-                                        "h-4 w-4 flex-shrink-0",
-                                        deletionType === 'immediate' ? "text-red-600" : "text-amber-600"
-                                    )} />
-                                    <AlertDescription>
-                                        <strong className="text-foreground text-sm sm:text-base">
-                                            {deletionType === 'immediate' 
-                                                ? t('deleteAccount.warningImmediate')
-                                                : t('deleteAccount.warningGracePeriod')}
-                                        </strong>
-                                    </AlertDescription>
-                                </Alert>
+                            <div className="space-y-4 overflow-y-auto px-6 py-5">
+                                <InfoBanner tone="warning" icon={AlertTriangle}>
+                                    <strong className="text-foreground text-sm sm:text-base">
+                                        {deletionType === 'immediate'
+                                            ? t('deleteAccount.warningImmediate')
+                                            : t('deleteAccount.warningGracePeriod')}
+                                    </strong>
+                                </InfoBanner>
                                 
                                 <div>
                                     <p className="text-sm font-medium mb-2">
@@ -777,10 +762,10 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                                 </p>
                                             </div>
                                         </div>
-                                        <div className="flex items-start gap-2 sm:gap-3 rounded-2xl border border-red-500/30 p-3 sm:p-4">
+                                        <div className="flex items-start gap-2 sm:gap-3 rounded-2xl border p-3 sm:p-4">
                                             <RadioGroupItem value="immediate" id="immediate" className="mt-0.5 flex-shrink-0" />
                                             <div className="space-y-1 flex-1 min-w-0">
-                                                <Label htmlFor="immediate" className="font-medium cursor-pointer text-sm sm:text-base text-red-600 block">
+                                                <Label htmlFor="immediate" className="font-medium cursor-pointer text-sm sm:text-base block">
                                                     {t('deleteAccount.immediateOption')}
                                                 </Label>
                                                 <p className="text-xs sm:text-sm text-muted-foreground">
@@ -800,33 +785,33 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         value={deleteConfirmText}
                                         onChange={(e) => setDeleteConfirmText(e.target.value)}
                                         placeholder={t('deleteAccount.confirmPlaceholder')}
-                                        className="shadow-none text-sm sm:text-base"
+                                        className="text-sm sm:text-base"
                                         autoComplete="off"
                                     />
                                 </div>
-                                
-                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
-                                    <Button variant="outline" onClick={() => {
-                                        setShowDeleteDialog(false);
-                                        setDeleteConfirmText('');
-                                        setDeletionType('grace-period');
-                                    }} className="w-full sm:w-auto">
-                                        {t('deleteAccount.keepAccount')}
-                                    </Button>
-                                    <Button 
-                                        variant="destructive" 
-                                        onClick={handleRequestDeletion} 
-                                        disabled={
-                                            (requestDeletion.isPending || deleteImmediately.isPending) || 
-                                            deleteConfirmText !== 'delete'
-                                        }
-                                        className="w-full sm:w-auto"
-                                    >
-                                        {(requestDeletion.isPending || deleteImmediately.isPending) 
-                                            ? tCommon('processing') 
-                                            : t('deleteAccount.button')}
-                                    </Button>
-                                </div>
+                            </div>
+
+                            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+                                <Button variant="ghost" onClick={() => {
+                                    setShowDeleteDialog(false);
+                                    setDeleteConfirmText('');
+                                    setDeletionType('grace-period');
+                                }} className="w-full sm:w-auto">
+                                    {t('deleteAccount.keepAccount')}
+                                </Button>
+                                <Button
+                                    variant="destructive"
+                                    onClick={handleRequestDeletion}
+                                    disabled={
+                                        (requestDeletion.isPending || deleteImmediately.isPending) ||
+                                        deleteConfirmText !== 'delete'
+                                    }
+                                    className="w-full sm:w-auto"
+                                >
+                                    {(requestDeletion.isPending || deleteImmediately.isPending)
+                                        ? tCommon('processing')
+                                        : t('deleteAccount.button')}
+                                </Button>
                             </div>
                         </DialogContent>
                     </Dialog>
@@ -866,6 +851,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 // ============================================================================
 
 function KeyboardShortcutsTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const { preferences, setKeyboardPreferences, getModifierLabel } = useUserPreferencesStore();
     const modifier = preferences.keyboard.tabSwitchModifier;
     const modLabel = getModifierLabel();
@@ -889,18 +875,14 @@ function KeyboardShortcutsTab() {
     return (
         <div className="p-4 sm:p-6 pb-12 sm:pb-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
             <div>
-                <h3 className="text-lg font-semibold mb-1">Keyboard Shortcuts</h3>
-                <p className="text-sm text-muted-foreground">
-                    View and customize keyboard shortcuts for tab navigation.
-                </p>
+                <h3 className="text-lg font-semibold mb-1">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line876JsxTextKeyboardShortcuts')}</h3>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line878JsxTextViewAndCustomizeKeyboardShortcutsForTabNavigation')}</p>
             </div>
 
             {/* Modifier key picker */}
             <div className="space-y-3">
-                <Label className="text-sm font-medium">Modifier key</Label>
-                <p className="text-xs text-muted-foreground -mt-1">
-                    Choose which modifier key is used for tab shortcuts.
-                </p>
+                <Label className="text-sm font-medium">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line884JsxTextModifierKey')}</Label>
+                <p className="text-xs text-muted-foreground -mt-1">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line886JsxTextChooseWhichModifierKeyIsUsedForTab')}</p>
                 <RadioGroup
                     value={modifier}
                     onValueChange={(val) =>
@@ -928,12 +910,12 @@ function KeyboardShortcutsTab() {
 
             {/* All shortcuts reference */}
             <div className="space-y-3">
-                <Label className="text-sm font-medium">All shortcuts</Label>
+                <Label className="text-sm font-medium">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line915JsxTextAllShortcuts')}</Label>
                 <div className="rounded-2xl border divide-y">
                     {shortcuts.map((s) => (
                         <div key={s.label} className="flex items-center justify-between px-3 py-2.5">
                             <span className="text-sm text-foreground">{s.label}</span>
-                            <kbd className="inline-flex h-6 items-center rounded border bg-muted px-2 text-[10px] font-mono text-muted-foreground whitespace-nowrap">
+                            <kbd className="inline-flex h-6 items-center rounded border bg-muted px-2 text-xs font-mono text-muted-foreground whitespace-nowrap">
                                 {s.keys}
                             </kbd>
                         </div>
@@ -946,6 +928,7 @@ function KeyboardShortcutsTab() {
 
 // Sounds Tab
 function SoundsTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const preferences = useSoundStore((s) => s.preferences);
     const setPack = useSoundStore((s) => s.setPack);
     const setVolume = useSoundStore((s) => s.setVolume);
@@ -968,14 +951,12 @@ function SoundsTab() {
         <div className="p-6 space-y-6">
             <div>
                 <h3 className="text-lg font-semibold">Sounds</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                    Choose a sound pack and configure which events play sounds
-                </p>
+                <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line956JsxTextChooseASoundPackAndConfigureWhichEvents')}</p>
             </div>
 
             {/* Sound Pack Selection */}
             <div>
-                <h4 className="text-sm font-medium mb-3">Sound Pack</h4>
+                <h4 className="text-sm font-medium mb-3">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line962JsxTextSoundPack')}</h4>
                 <RadioGroup
                     value={preferences.pack}
                     onValueChange={(value) => setPack(value as SoundPack)}
@@ -1025,7 +1006,7 @@ function SoundsTab() {
 
                     {/* Sound Events */}
                     <div>
-                        <h4 className="text-sm font-medium mb-3">Sound Events</h4>
+                        <h4 className="text-sm font-medium mb-3">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1012JsxTextSoundEvents')}</h4>
                         <div className="rounded-2xl border divide-y">
                             {events.map((event) => {
                                 const enabled = preferences.events[event.id] !== false;
@@ -1062,6 +1043,7 @@ function SoundsTab() {
 
 // Notifications Tab
 function NotificationsTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const permission = useWebNotificationStore((s) => s.permission);
     const preferences = useWebNotificationStore((s) => s.preferences);
     const toggleEnabled = useWebNotificationStore((s) => s.toggleEnabled);
@@ -1087,16 +1069,12 @@ function NotificationsTab() {
         <div className="p-6 space-y-6">
             <div>
                 <h3 className="text-lg font-semibold">Notifications</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                    Configure how and when you receive notifications
-                </p>
+                <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1075JsxTextConfigureHowAndWhenYouReceiveNotifications')}</p>
             </div>
 
             {!supported ? (
                 <div className="rounded-2xl border p-4">
-                    <p className="text-sm text-muted-foreground">
-                        Your browser does not support notifications.
-                    </p>
+                    <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1082JsxTextYourBrowserDoesNotSupportNotifications')}</p>
                 </div>
             ) : (
                 <div className="space-y-6">
@@ -1104,7 +1082,7 @@ function NotificationsTab() {
                     <div className="rounded-2xl border p-4">
                         <NotificationToggle
                             icon={Bell}
-                            label="Enable Notifications"
+                            label={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1091JsxAttrLabelEnableNotifications')}
                             description={
                                 permission === 'granted'
                                     ? 'Browser permission granted'
@@ -1121,33 +1099,33 @@ function NotificationsTab() {
                         <>
                             {/* Notification types */}
                             <div>
-                                <h4 className="text-sm font-medium mb-3">Notification Types</h4>
+                                <h4 className="text-sm font-medium mb-3">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1108JsxTextNotificationTypes')}</h4>
                                 <div className="rounded-2xl border divide-y">
                                     <NotificationToggle
                                         icon={CheckCircle2}
-                                        label="Task Completions"
-                                        description="When a session finishes its task"
+                                        label={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1112JsxAttrLabelTaskCompletions')}
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1113JsxAttrDescriptionWhenASessionFinishesItsTask')}
                                         enabled={preferences.onCompletion}
                                         onToggle={(v) => setPreference('onCompletion', v)}
                                     />
                                     <NotificationToggle
                                         icon={AlertTriangle}
                                         label="Errors"
-                                        description="When a session encounters an error"
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1120JsxAttrDescriptionWhenASessionEncountersAnError')}
                                         enabled={preferences.onError}
                                         onToggle={(v) => setPreference('onError', v)}
                                     />
                                     <NotificationToggle
                                         icon={HelpCircle}
                                         label="Questions"
-                                        description="When Kortix needs your input to continue"
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1127JsxAttrDescriptionWhenKortixNeedsYourInputToContinue')}
                                         enabled={preferences.onQuestion}
                                         onToggle={(v) => setPreference('onQuestion', v)}
                                     />
                                     <NotificationToggle
                                         icon={ShieldCheck}
-                                        label="Permission Requests"
-                                        description="When Kortix needs permission to use a tool"
+                                        label={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1133JsxAttrLabelPermissionRequests')}
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1134JsxAttrDescriptionWhenKortixNeedsPermissionToUseATool')}
                                         enabled={preferences.onPermission}
                                         onToggle={(v) => setPreference('onPermission', v)}
                                     />
@@ -1160,15 +1138,15 @@ function NotificationsTab() {
                                 <div className="rounded-2xl border divide-y">
                                     <NotificationToggle
                                         icon={EyeOff}
-                                        label="Only When Tab is Hidden"
-                                        description="Only notify when you're on another tab or app"
+                                        label={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1147JsxAttrLabelOnlyWhenTabIsHidden')}
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1148JsxAttrDescriptionOnlyNotifyWhenYouReOnAnotherTab')}
                                         enabled={preferences.onlyWhenHidden}
                                         onToggle={(v) => setPreference('onlyWhenHidden', v)}
                                     />
                                     <NotificationToggle
                                         icon={Volume2}
-                                        label="Notification Sound"
-                                        description="Play a sound when a notification is sent"
+                                        label={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1154JsxAttrLabelNotificationSound')}
+                                        description={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1155JsxAttrDescriptionPlayASoundWhenANotificationIsSent')}
                                         enabled={preferences.playSound}
                                         onToggle={(v) => setPreference('playSound', v)}
                                     />
@@ -1176,9 +1154,7 @@ function NotificationsTab() {
                             </div>
 
                             {/* Test */}
-                            <Button onClick={handleTestNotification} variant="outline" size="sm">
-                                Send Test Notification
-                            </Button>
+                            <Button onClick={handleTestNotification} variant="outline" size="sm">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1164JsxTextSendTestNotification')}</Button>
                         </>
                     )}
                 </div>
@@ -1188,7 +1164,7 @@ function NotificationsTab() {
 }
 
 interface NotificationToggleProps {
-    icon: React.ComponentType<{ className?: string }>;
+    icon: LucideIcon;
     label: string;
     description: string;
     enabled: boolean;
@@ -1224,6 +1200,7 @@ function NotificationToggle({ icon: Icon, label, description, enabled, onToggle,
 // ─── Instances Section ───────────────────────────────────────────────────────
 
 function InstancesSection({ accountState, onRefetch }: { accountState: any; onRefetch: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const instances = accountState?.instances ?? [];
     const canAddInstances = accountState?.can_add_instances ?? false;
     const [loading, setLoading] = useState<string | null>(null);
@@ -1263,13 +1240,11 @@ function InstancesSection({ accountState, onRefetch }: { accountState: any; onRe
                         className="h-7 text-xs"
                         onClick={() => useNewInstanceModalStore.getState().openNewInstanceModal()}
                     >
-                        <Plus className="size-3 mr-1" />
-                        New Kortix
-                    </Button>
+                        <Plus className="size-3 mr-1" />{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1251JsxTextNewKortix')}</Button>
                 )}
             </div>
             {instances.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No instances yet.</p>
+                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1256JsxTextNoInstancesYet')}</p>
             ) : (
                 <div className="space-y-1.5">
                     {instances.map((inst: any) => {
@@ -1286,7 +1261,7 @@ function InstancesSection({ accountState, onRefetch }: { accountState: any; onRe
                                     <div className="flex items-center gap-2">
                                         <span className="text-sm font-medium truncate">{inst.name}</span>
                                         {isCancelling && (
-                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-600 dark:text-red-400 font-medium shrink-0">Cancelling</span>
+                                            <Badge variant="destructive" size="sm">Cancelling</Badge>
                                         )}
                                     </div>
                                     <p className="text-xs text-muted-foreground mt-0.5">
@@ -1308,7 +1283,7 @@ function InstancesSection({ accountState, onRefetch }: { accountState: any; onRe
                                         </Button>
                                     )}
                                     {hasSub && !isCancelling && (
-                                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive" onClick={() => handleCancel(inst.sandbox_id)} disabled={loading === inst.sandbox_id}>
+                                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => handleCancel(inst.sandbox_id)} disabled={loading === inst.sandbox_id}>
                                             {loading === inst.sandbox_id ? '...' : 'Cancel'}
                                         </Button>
                                     )}
@@ -1339,6 +1314,7 @@ const CREDIT_PACKAGES: { credits: number; price: number }[] = [
 ];
 
 export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: boolean }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const { session, isLoading: authLoading } = useAuth();
     const highlight = useUserSettingsModalStore((s) => s.highlight);
     const [selectedPackage, setSelectedPackage] = useState<(typeof CREDIT_PACKAGES)[number] | null>(null);
@@ -1564,22 +1540,16 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
             {/* ── Header ── */}
             <div>
                 <h1 className="text-lg font-medium tracking-tight">Billing</h1>
-                <p className="text-sm text-muted-foreground mt-0.5">Credits, instances, and subscription.</p>
+                <p className="text-sm text-muted-foreground mt-0.5">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1551JsxTextCreditsInstancesAndSubscription')}</p>
             </div>
 
             {/* ── Insufficient credits alert (routed here from 402 errors) ── */}
             {highlight === 'credits' && totalCredits <= 0 && (
-                <Alert className="border-amber-500/40 bg-amber-500/5">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    <AlertDescription>
-                        <div className="text-sm font-medium text-foreground">You ran out of credits.</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                            {canPurchaseCredits
-                                ? 'Buy credits below or enable auto top-up so it never happens again.'
-                                : 'Subscribe to continue using the assistant.'}
-                        </div>
-                    </AlertDescription>
-                </Alert>
+                <InfoBanner tone="warning" icon={AlertTriangle} title={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1556JsxAttrTitleYouRanOutOfCredits')}>
+                    {canPurchaseCredits
+                        ? 'Buy credits below or enable auto top-up so it never happens again.'
+                        : 'Subscribe to continue using the assistant.'}
+                </InfoBanner>
             )}
 
             {/* ── Credit Balance ── */}
@@ -1599,14 +1569,13 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
             {yoloUsage && (
                 <div className="border-t border-border pt-4 space-y-2">
                     <div className="flex items-center justify-between">
-                        <p className="text-xs uppercase tracking-widest text-muted-foreground">Kortix YOLO</p>
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1580JsxTextKortixYolo')}</p>
                         <a
                             href="https://yolo.kortix.com"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-                        >
-                            Learn more <ExternalLink className="size-3" />
+                            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                        >{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1587JsxTextLearnMore')}<ExternalLink className="size-3" />
                         </a>
                     </div>
                     <div className="text-2xl font-medium tabular-nums tracking-tight">{yoloUsage.used_percent}%</div>
@@ -1615,22 +1584,14 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                             ? `Resets ${yoloResetAt}`
                             : '5h window starts on first request'}
                     </p>
-                    <p className="text-xs text-muted-foreground/70 leading-relaxed pt-1">
-                        Every Kortix subscription includes{' '}
+                    <p className="text-xs text-muted-foreground/70 leading-relaxed pt-1">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1597JsxTextEveryKortixSubscriptionIncludes')}{' '}
                         <a
                             href="https://yolo.kortix.com"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="font-medium text-foreground/80 underline underline-offset-2 decoration-foreground/30 hover:decoration-foreground/60"
-                        >
-                            Kortix YOLO
-                        </a>{' '}—
-                        an all-you-can-use AI model subscription powered by our in-house model router.
-                        Choose between <span className="font-medium text-foreground/80">Fast</span> and{' '}
-                        <span className="font-medium text-foreground/80">Think</span> in the model selector
-                        by default. Zero credit cost; the rolling 5&nbsp;hour window resets automatically
-                        so you can keep building without thinking about usage.
-                    </p>
+                        >{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1604JsxTextKortixYolo')}</a>{' '}{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1605JsxTextAnAllYouCanUseAiModelSubscription')}<span className="font-medium text-foreground/80">Fast</span> and{' '}
+                        <span className="font-medium text-foreground/80">Think</span>{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1608JsxTextInTheModelSelectorByDefaultZeroCredit')}</p>
                 </div>
             )}
 
@@ -1639,10 +1600,8 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                 <div className="border-t border-border pt-4 space-y-3">
                     <div className="flex items-center justify-between">
                         <p className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                            <Zap className="size-3" />
-                            Auto top-up
-                        </p>
-                        <p className="text-[11px] text-muted-foreground/60">Never run out again</p>
+                            <Zap className="size-3" />{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1621JsxTextAutoTopUp')}</p>
+                        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1623JsxTextNeverRunOutAgain')}</p>
                     </div>
                     <AutoTopupCard fetchSettings showSaveButton />
                 </div>
@@ -1652,8 +1611,8 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
             {canPurchaseCredits && (
                 <div className="border-t border-border pt-4 space-y-3">
                     <div className="flex items-center justify-between">
-                        <p className="text-xs uppercase tracking-widest text-muted-foreground">Buy credits</p>
-                        <p className="text-[11px] text-muted-foreground/60">One-time top-up</p>
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1633JsxTextBuyCredits')}</p>
+                        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1634JsxTextOneTimeTopUp')}</p>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                         {CREDIT_PACKAGES.map((pkg) => {
@@ -1719,6 +1678,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
 }
 
 function CreditsHelpAlert() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <Alert>
       <AlertDescription>
@@ -1729,9 +1689,7 @@ function CreditsHelpAlert() {
             size="sm"
             className="h-7 text-muted-foreground"
             onClick={() => window.open('/help/credits', '_blank', 'noopener,noreferrer')}
-          >
-            Learn More about Credits
-          </Button>
+          >{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1711JsxTextLearnMoreAboutCredits')}</Button>
         </div>
       </AlertDescription>
     </Alert>
@@ -1739,13 +1697,12 @@ function CreditsHelpAlert() {
 }
 
 export function TransactionsTab() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     return (
         <div className="p-4 sm:p-6 pb-12 sm:pb-6 space-y-4 min-w-0 max-w-full overflow-x-hidden">
             <div>
-                <h3 className="text-lg font-medium tracking-tight mb-0.5">Credit ledger</h3>
-                <p className="text-sm text-muted-foreground">
-                    Ledger-backed account events from the Kortix schema: purchases, grants, usage, expirations, refunds, and bonuses.
-                </p>
+                <h3 className="text-lg font-medium tracking-tight mb-0.5">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1723JsxTextCreditLedger')}</h3>
+                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1725JsxTextLedgerBackedAccountEventsFromTheKortixSchema')}</p>
             </div>
             <CreditTransactions />
         </div>

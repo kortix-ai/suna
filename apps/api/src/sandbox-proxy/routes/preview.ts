@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { eq, and, inArray, ne } from 'drizzle-orm';
-import { sessionSandboxes } from '@kortix/db';
+import { eq, and, ne } from 'drizzle-orm';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
@@ -14,6 +14,8 @@ import {
   KORTIX_USER_CONTEXT_HEADER,
 } from '../../shared/kortix-user-context';
 import { getTraceHeaders } from '../../lib/request-context';
+import { listProjectSecretsSnapshotForUser } from '../../projects/secrets';
+import { resolveShareSubject } from '../../executor/share';
 
 interface PreviewProxyContext {
   userId: string;
@@ -37,6 +39,7 @@ interface ServiceKeyEntry {
 
 type SessionSandboxProxyRow = {
   sandboxId: string;
+  projectId: string;
   status: string;
   config: Record<string, unknown> | null;
   provider: ProviderName;
@@ -72,8 +75,10 @@ async function resolveProviderForExternalId(externalId: string): Promise<Provide
 
 const previewLinkCache = new Map<string, PreviewLinkEntry>();
 const serviceKeyCache = new Map<string, ServiceKeyEntry>();
+const sandboxTouchCache = new Map<string, number>();
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const SANDBOX_TOUCH_INTERVAL_MS = 60 * 1000;
 const STRIP_FORWARD_HEADERS = new Set([
   'host',
   'authorization',
@@ -110,6 +115,7 @@ async function loadSessionSandboxForProxy(sandboxId: string): Promise<SessionSan
   const [row] = await db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
+      projectId: sessionSandboxes.projectId,
       status: sessionSandboxes.status,
       config: sessionSandboxes.config,
       provider: sessionSandboxes.provider,
@@ -180,20 +186,38 @@ async function verifyOwnership(sandboxId: string, userId: string): Promise<boole
   return canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId });
 }
 
+// Rewrite an upstream redirect Location so the user stays on the preview.
+// `redirectPrefix` is the URL prefix that maps to this sandbox port:
+//   - subdomain previews (p{port}-{sandbox}.host):  '' (root-relative)
+//   - path-based previews (/v1/p/{sandbox}/{port}):  '/v1/p/{sandbox}/{port}'
+// App self-redirects (relative, or absolute to the upstream's own origin) are
+// kept on the preview. Genuinely external redirects (OAuth, CDNs, …) pass
+// through unchanged so the browser can follow them — we never hard-block, since
+// blocking turned ordinary app redirects into 502s.
 function sanitizeRedirectLocation(
   previewUrl: string,
   location: string | null,
-  sandboxId: string,
-  port: number,
+  redirectPrefix: string,
 ): string | null {
   if (!location) return null;
-  if (location.startsWith('/') && !location.startsWith('//')) return location;
+  if (location.startsWith('/') && !location.startsWith('//')) {
+    return `${redirectPrefix}${location}`;
+  }
 
   try {
     const target = new URL(location, previewUrl);
     const preview = new URL(previewUrl);
-    if (target.origin !== preview.origin) return null;
-    return `/v1/p/${sandboxId}/${port}${target.pathname}${target.search}${target.hash}`;
+    // Treat as "the app redirecting to itself" when it points at the upstream
+    // origin OR at loopback (apps often emit absolute self-redirects built from
+    // the Host they received, e.g. http://localhost:<port>/...). Keep those on
+    // the preview.
+    const selfHost = ['localhost', '127.0.0.1', '0.0.0.0'].includes(target.hostname);
+    if (target.origin === preview.origin || selfHost) {
+      return `${redirectPrefix}${target.pathname}${target.search}${target.hash}`;
+    }
+    // Genuinely external origin — let the browser follow it (proxy uses
+    // redirect:'manual', so it never follows the redirect itself).
+    return location;
   } catch {
     return null;
   }
@@ -250,6 +274,50 @@ async function resolvePreviewLink(
   return { url, token };
 }
 
+function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: string): boolean {
+  if (port !== 8000) return false;
+  if (method.toUpperCase() !== 'POST') return false;
+  return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
+}
+
+async function syncProjectEnvToSandbox(input: {
+  projectId: string;
+  userId: string;
+  previewUrl: string;
+  previewToken: string | null;
+  serviceKey: string | null;
+}): Promise<void> {
+  if (!input.serviceKey) return;
+
+  // Resolve as the acting user so the re-sync keeps personal overrides and
+  // share-scope restrictions consistent with what was injected at boot.
+  // TODO(phase-2): once sessions carry an owner, resolve as the session owner
+  // rather than the current requester.
+  const subject = await resolveShareSubject(input.userId);
+  const snapshot = await listProjectSecretsSnapshotForUser(input.projectId, subject);
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${input.serviceKey}`,
+    'X-Daytona-Skip-Preview-Warning': 'true',
+    'X-Daytona-Disable-CORS': 'true',
+  };
+  if (input.previewToken) {
+    headers['X-Daytona-Preview-Token'] = input.previewToken;
+  }
+
+  const res = await fetch(`${input.previewUrl.replace(/\/$/, '')}/kortix/env`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(snapshot),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`project env sync failed: ${res.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
+  }
+}
+
 // === Wake sandbox (called only when proxy fails with connection error) ===
 
 async function wakeSandbox(sandboxId: string): Promise<void> {
@@ -271,21 +339,42 @@ async function wakeSandbox(sandboxId: string): Promise<void> {
 
 async function markSandboxUsed(sandboxId: string): Promise<void> {
   if (typeof db.update !== 'function') return;
+  const nowMs = Date.now();
+  const nextTouchAt = sandboxTouchCache.get(sandboxId) ?? 0;
+  if (nowMs < nextTouchAt) return;
+  sandboxTouchCache.set(sandboxId, nowMs + SANDBOX_TOUCH_INTERVAL_MS);
+
   const now = new Date();
   try {
-    await db
-      .update(sessionSandboxes)
-      .set({ lastUsedAt: now, updatedAt: now })
-      .where(and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')));
+    const [row] = await db
+      .select({
+        sandboxId: sessionSandboxes.sandboxId,
+        sessionId: sessionSandboxes.sessionId,
+        status: sessionSandboxes.status,
+      })
+      .from(sessionSandboxes)
+      .where(and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')))
+      .limit(1);
+    if (!row) return;
 
     await db
       .update(sessionSandboxes)
-      .set({ status: 'active', lastUsedAt: now, updatedAt: now })
-      .where(and(
-        eq(sessionSandboxes.externalId, sandboxId),
-        inArray(sessionSandboxes.status, ['error', 'stopped']),
-      ));
+      .set({ lastUsedAt: now, updatedAt: now })
+      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+
+    if (['error', 'stopped'].includes(row.status)) {
+      await db
+        .update(sessionSandboxes)
+        .set({ status: 'active', lastUsedAt: now, updatedAt: now })
+        .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+    }
+
+    await db
+      .update(projectSessions)
+      .set({ status: 'running', updatedAt: now })
+      .where(eq(projectSessions.sessionId, row.sessionId));
   } catch (err) {
+    sandboxTouchCache.delete(sandboxId);
     console.warn('[PREVIEW] Failed to mark sandbox used:', err);
   }
 }
@@ -308,12 +397,16 @@ export async function proxyToDaytona(
   incomingHeaders: Headers,
   body: ArrayBuffer | undefined,
   origin: string,
+  // URL prefix that maps to this sandbox port, used to rewrite redirects.
+  // Defaults to the path-based form; subdomain callers pass '' (root-relative).
+  redirectPrefix: string = `/v1/p/${sandboxId}/${port}`,
 ): Promise<Response> {
   // 1. Enforce the v1 session-sandbox contract before touching Daytona or
   // local Docker: only active rows in `kortix.session_sandboxes` are proxyable.
   const access = await validateSandboxProxyAccess(sandboxId, userId);
   if (!access.ok) return access.response;
   const serviceKey = access.serviceKey ?? await resolveServiceKey(sandboxId);
+  const sandboxRow = await loadSessionSandboxForProxy(sandboxId);
 
   // 2. Proxy with auto-wake retry
   const MAX_RETRIES = 5;
@@ -342,6 +435,22 @@ export async function proxyToDaytona(
         for (const [k, v] of incomingParams) parsedPreview.searchParams.append(k, v);
       }
       const targetUrl = parsedPreview.toString();
+
+      if (sandboxRow?.projectId && shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
+        try {
+          await syncProjectEnvToSandbox({
+            projectId: sandboxRow.projectId,
+            userId,
+            previewUrl,
+            previewToken,
+            serviceKey,
+          });
+        } catch (err) {
+          throw new HTTPException(502, {
+            message: (err as Error).message || 'project env sync failed',
+          });
+        }
+      }
 
       // Build forwarding headers — strip user's JWT, inject sandbox service key
       const headers = new Headers();
@@ -417,13 +526,13 @@ export async function proxyToDaytona(
         const safeLocation = sanitizeRedirectLocation(
           previewUrl,
           upstream.headers.get('location'),
-          sandboxId,
-          port,
+          redirectPrefix,
         );
-        if (!safeLocation) {
-          return jsonProxyError({ error: 'blocked unsafe upstream redirect' }, 502);
+        // Only rewrite when we resolved a Location; otherwise pass the redirect
+        // through untouched (never 502 a normal app redirect).
+        if (safeLocation) {
+          respHeaders.set('Location', safeLocation);
         }
-        respHeaders.set('Location', safeLocation);
         if (origin) {
           respHeaders.set('Access-Control-Allow-Origin', origin);
           respHeaders.set('Access-Control-Allow-Credentials', 'true');

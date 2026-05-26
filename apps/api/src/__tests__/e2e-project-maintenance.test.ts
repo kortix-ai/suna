@@ -7,6 +7,7 @@ let providerStops: string[] = [];
 let cacheInvalidations: string[] = [];
 let branchDeletes: string[] = [];
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
+let providerStopError: Error | null = null;
 
 mock.module('../shared/db', () => ({
   db: {
@@ -39,6 +40,7 @@ mock.module('../platform/providers', () => ({
   getProvider: () => ({
     stop: async (externalId: string) => {
       providerStops.push(externalId);
+      if (providerStopError) throw providerStopError;
     },
   }),
 }));
@@ -50,6 +52,8 @@ mock.module('../sandbox-proxy', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   archiveRepoSubtree: async () => undefined,
   deleteRemoteSessionBranch: async (_project: unknown, branchName: string) => {
     branchDeletes.push(branchName);
@@ -81,6 +85,7 @@ beforeEach(() => {
   cacheInvalidations = [];
   branchDeletes = [];
   updateCalls = [];
+  providerStopError = null;
   process.env.KORTIX_SANDBOX_IDLE_TTL = '3600000';
   process.env.KORTIX_BRANCH_RETENTION_DAYS = '90';
 });
@@ -127,6 +132,51 @@ describe('project maintenance', () => {
     expect(updateCalls.some((call) =>
       call.table === projectSessions && call.updates.status === 'stopped',
     )).toBe(true);
+  });
+
+  test('reconciles Daytona sandboxes that are already stopped remotely', async () => {
+    sandboxCandidates = [
+      {
+        sandboxId: '00000000-0000-4000-a000-000000000003',
+        sessionId: 'session-daytona-stale',
+        accountId: '00000000-0000-4000-a000-000000000101',
+        provider: 'daytona',
+        externalId: 'daytona-external-stopped',
+      },
+    ];
+    providerStopError = new Error('Sandbox is not started');
+
+    const result = await hibernateIdleSessionSandboxes(new Date('2026-05-15T00:00:00Z'));
+
+    expect(result).toEqual({ candidates: 1, stopped: 1, skipped: 0, errors: 0 });
+    expect(providerStops).toEqual(['daytona-external-stopped']);
+    expect(cacheInvalidations).toEqual(['daytona-external-stopped']);
+    expect(updateCalls.some((call) =>
+      call.table === sessionSandboxes && call.updates.status === 'stopped',
+    )).toBe(true);
+    expect(updateCalls.some((call) =>
+      call.table === projectSessions && call.updates.status === 'stopped',
+    )).toBe(true);
+  });
+
+  test('skips Daytona sandboxes that are already transitioning', async () => {
+    sandboxCandidates = [
+      {
+        sandboxId: '00000000-0000-4000-a000-000000000004',
+        sessionId: 'session-daytona-transitioning',
+        accountId: '00000000-0000-4000-a000-000000000101',
+        provider: 'daytona',
+        externalId: 'daytona-external-transitioning',
+      },
+    ];
+    providerStopError = new Error('Sandbox state change in progress');
+
+    const result = await hibernateIdleSessionSandboxes(new Date('2026-05-15T00:00:00Z'));
+
+    expect(result).toEqual({ candidates: 1, stopped: 0, skipped: 1, errors: 0 });
+    expect(providerStops).toEqual(['daytona-external-transitioning']);
+    expect(cacheInvalidations).toEqual([]);
+    expect(updateCalls).toEqual([]);
   });
 
   test('deletes expired session branches and records branch GC metadata', async () => {

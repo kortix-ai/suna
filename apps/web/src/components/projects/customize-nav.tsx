@@ -14,7 +14,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Bot,
+  Container,
   KeyRound,
+  Plug,
   Settings,
   Slack,
   Sparkles,
@@ -41,6 +43,8 @@ const NAV_ITEMS: readonly NavItem[] = [
   { slug: 'skills',     label: 'Skills',     icon: Sparkles,       hint: 'On-demand capabilities' },
   { slug: 'commands',   label: 'Commands',   glyph: '/',           hint: 'Slash commands' },
   { slug: 'secrets',    label: 'Secrets',    icon: KeyRound,       hint: 'Per-project env values' },
+  { slug: 'sandbox',    label: 'Sandbox',    icon: Container,      hint: 'Runtime image + snapshot health' },
+  { slug: 'connectors', label: 'Connectors', icon: Plug,           hint: 'Integrations the Executor can call' },
   { slug: 'schedules',  label: 'Schedules',  icon: Timer,          hint: 'Cron-driven triggers' },
   { slug: 'webhooks',   label: 'Webhooks',   icon: Webhook,        hint: 'Signed HTTP triggers' },
   { slug: 'channels',   label: 'Channels',   icon: Slack,          hint: 'Slack workspace install' },
@@ -64,7 +68,7 @@ export function CustomizeNav({ projectId }: { projectId: string }) {
       )}
     >
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/70">
           Customize
         </span>
       </div>
@@ -124,7 +128,7 @@ function CustomizeNavLink({
       href={href}
       title={item.hint}
       className={cn(
-        'group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12.5px] font-medium transition-colors',
+        'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors',
         active
           ? 'bg-muted/70 text-foreground'
           : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
@@ -140,7 +144,7 @@ function CustomizeNavLink({
         <span
           aria-hidden
           className={cn(
-            'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center font-mono text-[12px] leading-none',
+            'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center font-mono text-xs leading-none',
             active ? 'text-foreground' : 'text-muted-foreground/70',
           )}
         >
