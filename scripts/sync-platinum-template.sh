@@ -1,88 +1,74 @@
 #!/usr/bin/env bash
-# Build apps/sandbox/Dockerfile, publish it to a registry the Platinum
-# control plane can pull from, then register/refresh the Platinum template
-# Kortix points at via PLATINUM_TEMPLATE.
+# Trigger Platinum to rebuild a template from a PUBLIC docker image.
 #
-# Why this exists:
-#   Every Platinum sandbox boots from an ext4 rootfs built from a Docker
-#   image. Platinum's `template-from-docker.sh` injects our PID-1 init
-#   (`dnah-init`) over the image — that init now mounts /tmp as tmpfs so a
-#   leaking guest service (bun PTY mmap, opencode SQLite WAL, browser
-#   cache, etc.) can't fill the fixed-size rootfs and wedge the whole
-#   sandbox. The fix only takes effect on the NEXT template build. This
-#   script triggers that rebuild end-to-end.
+# This does NOT build or push a docker image. The image is whatever it is
+# (kortix-computer, kortix/sandbox, your custom image, etc.) — Platinum
+# pulls it server-side via podman, wraps it with our PID-1 init
+# (`dnah-init`) and produces a fresh template ext4 rootfs.
+#
+# The deep fix this is the rollout vehicle for: `dnah-init` now mounts /tmp
+# as tmpfs at VM boot. That bounds the blast radius of any guest-side leak
+# (bun PTY mmap files, opencode SQLite WAL, browser caches, …) — a leaking
+# service eventually ENOSPC's its own tmpfs and fails, while the rootfs
+# (and /workspace) stay healthy. The fix only takes effect on the NEXT
+# template build; this script triggers that build.
+#
+# Prereqs (operator runs these in the platinum-dev repo BEFORE this script):
+#   infra/deploy-bundle.sh daytonah-cp   # CP updated
+#   infra/deploy-hosts.sh                # build hosts updated
 #
 # Usage:
-#   PLATINUM_API_KEY=…  scripts/sync-platinum-template.sh
-#   PLATINUM_API_KEY=…  TAG=kortix-computer scripts/sync-platinum-template.sh
-#   PLATINUM_API_KEY=…  REGISTRY=ghcr.io/kortix-ai PUSH=1 scripts/sync-platinum-template.sh
+#   PLATINUM_API_KEY=<admin-token> \
+#     IMAGE=kortix/sandbox:latest \
+#     scripts/sync-platinum-template.sh
+#
+#   # with custom name + size:
+#   PLATINUM_API_KEY=…  IMAGE=…  NAME=kortix-computer  SIZE_MB=8192 \
+#     scripts/sync-platinum-template.sh
 #
 # Env:
-#   PLATINUM_API_KEY  required — admin / org key with template:write
+#   PLATINUM_API_KEY  required — admin key (or org key with template:write)
+#   IMAGE             required — fully-qualified PUBLIC docker image
+#                                (e.g. kortix/sandbox:latest,
+#                                docker.io/kortix/computer:v1,
+#                                ghcr.io/kortix-ai/sandbox:main).
+#                                Platinum's build host pulls this via podman.
+#   NAME              default "kortix-computer". Platinum's PLATINUM_TEMPLATE
+#                     resolves by name, so keeping the same name swaps the
+#                     ready template in place on next sandbox spawn.
+#   SIZE_MB           default 8192 — rootfs ext4 size. Must be ≥ the image's
+#                     natural size + headroom for /workspace state.
 #   PLATINUM_API_URL  default https://api.platinum.dev
-#   TAG               default "kortix-computer" (the template name registered
-#                     on Platinum; PLATINUM_TEMPLATE in apps/api .env points here)
-#   IMAGE             default "kortix/sandbox:tmpfs-$(git rev-parse --short HEAD)"
-#                     — the docker tag we build + push
-#   REGISTRY          default kortix on Docker Hub. Override for ghcr/ECR.
-#   PUSH              default 1. Set PUSH=0 to skip the docker push (e.g.
-#                     when you've prebuilt + pushed elsewhere).
-#   SIZE_MB           default 8192 — rootfs filesystem size. Must be ≥ the
-#                     image's natural size + headroom for /workspace state.
-#                     The kortix/sandbox image is ~3 GiB; 8 GiB leaves
-#                     5 GiB for the user's repo + opencode state.
-#
-# After this runs successfully, Kortix users get the new template on their
-# next sandbox spawn — no client-side change required as long as the
-# PLATINUM_TEMPLATE env var in apps/api still points at TAG (default
-# "kortix-computer").
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT"
-
 API_URL="${PLATINUM_API_URL:-https://api.platinum.dev}"
 API_KEY="${PLATINUM_API_KEY:?PLATINUM_API_KEY required (admin or org key)}"
-TAG="${TAG:-kortix-computer}"
-REGISTRY="${REGISTRY:-kortix}"
-SHA="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
-IMAGE="${IMAGE:-${REGISTRY}/sandbox:tmpfs-${SHA}}"
-PUSH="${PUSH:-1}"
+IMAGE="${IMAGE:?IMAGE required (e.g. IMAGE=kortix/sandbox:latest)}"
+NAME="${NAME:-kortix-computer}"
 SIZE_MB="${SIZE_MB:-8192}"
 
 log() { printf "\033[36m▶ %s\033[0m\n" "$*"; }
 ok()  { printf "\033[32m✓ %s\033[0m\n" "$*"; }
 
-# 1) Build the sandbox image. The Dockerfile is the lean Kortix base —
-#    bun:1-debian + opencode-ai + git + kortix-agent. /tmp ends up on the
-#    rootfs by default; Platinum's dnah-init then remounts it as tmpfs at
-#    VM boot. No image-side change needed.
-log "building $IMAGE from apps/sandbox/Dockerfile"
-docker build --platform linux/amd64 \
-  -f apps/sandbox/Dockerfile \
-  -t "$IMAGE" \
-  .
+# Sanity: Platinum is reachable and the key is valid.
+log "verifying Platinum credentials"
+curl -fsS "$API_URL/v1/templates" -H "Authorization: Bearer $API_KEY" >/dev/null \
+  || { echo "auth failed: cannot GET /v1/templates with the provided key"; exit 1; }
+ok "Platinum reachable"
 
-# 2) Push so Platinum's build host can `podman pull` it. Skippable if
-#    you've prebuilt + pushed via CI.
-if [ "$PUSH" = "1" ]; then
-  log "pushing $IMAGE"
-  docker push "$IMAGE"
-  ok "pushed $IMAGE"
-fi
-
-# 3) Tell Platinum to build a fresh template from the image. The CP runs
-#    template-from-docker.sh on a build host (idempotent — running it
-#    again with the same TAG creates a new template id and deprecates the
-#    prior one of the same name). Returns 202 + the new template id.
-log "registering template '$TAG' on Platinum from $IMAGE (size=${SIZE_MB} MiB)"
+# Queue the build. Platinum's CP inserts a templates row at state='building'
+# and queues a host_command for the build host. Idempotent on NAME — a
+# successful build creates a NEW template id and deprecates the prior
+# 'ready' row of the same name, so PLATINUM_TEMPLATE pointing at NAME
+# transparently cuts over to the new one on next spawn.
+log "registering template '$NAME' from $IMAGE (size=${SIZE_MB} MiB)"
 RESP=$(curl -fsS -X POST "$API_URL/v1/templates/from-image" \
   -H "Authorization: Bearer $API_KEY" \
   -H 'Content-Type: application/json' \
   -d "$(cat <<EOF
 {
-  "name": "$TAG",
+  "name": "$NAME",
   "image": "$IMAGE",
   "size_mb": $SIZE_MB,
   "default_cpu": 4,
@@ -91,39 +77,36 @@ RESP=$(curl -fsS -X POST "$API_URL/v1/templates/from-image" \
 }
 EOF
 )")
-TPL_ID=$(echo "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
+TPL_ID=$(printf '%s' "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
 [ -n "$TPL_ID" ] || { echo "register failed: $RESP"; exit 2; }
-ok "template build queued: $TPL_ID (state=building)"
+ok "build queued: $TPL_ID (state=building)"
 
-# 4) Poll until ready. Platinum reports state via GET /v1/templates.
-#    template-from-docker.sh takes ~2-5 min for a 3 GiB image (apt + tar +
-#    mkfs.ext4) + ~30 s for chunked-CAS upload.
-log "polling template state (every 10 s, deadline 15 min)"
-DEADLINE=$(( $(date +%s) + 900 ))
+# Poll. template-from-docker.sh runs on a build host — it podman-pulls the
+# image, extracts, injects dnah-init (with /tmp tmpfs), builds ext4,
+# uploads chunked CAS. Typical: 2-8 min depending on image size and host
+# load. Cap the wait at 20 min so a stuck build doesn't trap the script.
+log "polling state every 10 s (deadline 20 min)"
+DEADLINE=$(( $(date +%s) + 1200 ))
+STATE="?"
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   STATE=$(curl -fsS "$API_URL/v1/templates" -H "Authorization: Bearer $API_KEY" 2>/dev/null \
     | python3 -c "import json,sys; rows=json.load(sys.stdin); rows=rows.get('rows',rows) if isinstance(rows,dict) else rows; m=[t for t in rows if t.get('id')=='$TPL_ID']; print(m[0]['state'] if m else 'missing')" 2>/dev/null || echo "?")
   printf "  state=%s\n" "$STATE"
   case "$STATE" in
-    ready) ok "template $TPL_ID is READY"; break ;;
-    failed) echo "FAILED — inspect /internal/admin/templates.json for build_logs"; exit 3 ;;
+    ready)  ok "$TPL_ID ready"; break ;;
+    failed) echo "BUILD FAILED — inspect GET /v1/templates/$TPL_ID for build_logs"; exit 3 ;;
   esac
   sleep 10
 done
-[ "$STATE" = "ready" ] || { echo "timed out waiting for ready"; exit 4; }
+[ "$STATE" = "ready" ] || { echo "timed out at state=$STATE"; exit 4; }
 
 cat <<EOF
 
 ────────────────────────────────────────────────────────────────────
-Done. Kortix sandboxes that resolve their template via
-PLATINUM_TEMPLATE=$TAG will now boot from $TPL_ID, which has /tmp on
-tmpfs (size=50% RAM) — so guest-side leaks can't wedge the rootfs.
+Done. Kortix sandboxes spawning with PLATINUM_TEMPLATE=$NAME will now
+boot from the rebuilt template $TPL_ID, with /tmp on tmpfs (50% RAM).
 
-If apps/api/.env doesn't already point there:
-  echo 'PLATINUM_TEMPLATE=$TAG' >> apps/api/.env
-  systemctl restart kortix-api
-
-Existing sandboxes are still on the prior template; they pick up the
-new bits on next spawn.
+Existing running sandboxes are still on the prior template; they pick
+up the new bits on next spawn.
 ────────────────────────────────────────────────────────────────────
 EOF
