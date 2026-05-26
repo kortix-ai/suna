@@ -31,10 +31,10 @@ const FAIL_THRESHOLD_RECONNECT = 2;
 
 /** Interval between health checks (ms) */
 const POLL_CONNECTED = 30_000; // 30s when healthy
-// 1.5s while a sandbox is booting/unhealthy — this is the gate between "sandbox
-// active" and "opencode healthy", so a tight cadence is what makes a freshly
-// booted runtime appear immediately instead of waiting out a poll interval.
-const POLL_FAILING = 1_500;
+// Tight cadence while a sandbox is booting/unhealthy. This is the gate between
+// "sandbox active" and "OpenCode healthy", so every extra interval is visible
+// dead time after the backend is already ready.
+const POLL_FAILING = 350;
 const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
 
 const CHECK_TIMEOUT = 20_000;

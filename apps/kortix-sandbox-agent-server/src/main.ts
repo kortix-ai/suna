@@ -20,7 +20,15 @@ export const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
 async function main() {
   const bootTime = Date.now()
   const cfg = loadConfig()
-  const bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] }
+  const prompt = (process.env.KORTIX_INITIAL_PROMPT ?? '').trim()
+  const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+  const bootState: SandboxBootState = {
+    repoMaterializationError: null,
+    timeline: [],
+    initialOpenCodeSessionRequired: prompt.length > 0 || bootstrapSession,
+    initialOpenCodeSessionId: null,
+    initialOpenCodeSessionError: null,
+  }
   // In-container boot timeline (ms since process start). Surfaced via
   // /kortix/health so the dashboard can attribute post-create boot latency.
   const bootMark = (label: string) => {
@@ -103,7 +111,9 @@ async function main() {
           )
         },
       })
-      await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort).catch((err) => {
+      await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort, bootState, bootMark).catch((err) => {
+        const message = err instanceof Error ? err.message : String(err)
+        bootState.initialOpenCodeSessionError = message
         logger.warn('[boot] initial opencode session setup failed', err)
       })
     } else {
@@ -114,7 +124,11 @@ async function main() {
   })()
 }
 
-async function maybeCreateInitialOpencodeSession(opencodePort: number): Promise<void> {
+async function maybeCreateInitialOpencodeSession(
+  opencodePort: number,
+  bootState: SandboxBootState,
+  bootMark: (label: string) => void,
+): Promise<void> {
   const prompt = (process.env.KORTIX_INITIAL_PROMPT ?? '').trim()
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   if (!prompt && !bootstrapSession) return
@@ -147,6 +161,8 @@ async function maybeCreateInitialOpencodeSession(opencodePort: number): Promise<
     } catch (err) {
       logger.warn('[boot] failed to pin opencode session id', err)
     }
+    bootState.initialOpenCodeSessionId = session.id
+    bootMark('opencode-session-created')
     logger.info('[boot] initial opencode session created', { sessionId: session.id })
     return
   }
@@ -173,6 +189,8 @@ async function maybeCreateInitialOpencodeSession(opencodePort: number): Promise<
   } catch (err) {
     logger.warn('[boot] failed to pin opencode session id', err)
   }
+  bootState.initialOpenCodeSessionId = session.id
+  bootMark('opencode-session-created')
   logger.info('[boot] initial prompt delivered', { sessionId: session.id })
 }
 

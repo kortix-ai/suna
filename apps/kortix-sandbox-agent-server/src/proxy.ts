@@ -127,6 +127,27 @@ export function buildOpencodeApp(
       )
     }
 
+    if (bootState.initialOpenCodeSessionError) {
+      return c.json(
+        {
+          error: 'sandbox runtime not ready',
+          reason: 'initial_opencode_session_failed',
+          message: bootState.initialOpenCodeSessionError,
+        },
+        503,
+      )
+    }
+
+    if (bootState.initialOpenCodeSessionRequired && !bootState.initialOpenCodeSessionId) {
+      return c.json(
+        {
+          error: 'sandbox runtime not ready',
+          reason: 'initial_opencode_session_pending',
+        },
+        503,
+      )
+    }
+
     if (opencode.getState() !== 'ok') {
       return c.json(
         {

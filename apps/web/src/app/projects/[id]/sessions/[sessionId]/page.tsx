@@ -68,12 +68,12 @@ export default function ProjectSessionPage() {
     enabled: !!user && !!sessionId && !!projectId,
     staleTime: 0,
     // Poll while the row is missing (returns null) OR while still provisioning.
-    // Tight 1s cadence so the UI flips to the sandbox the instant the backend
+    // Tight cadence so the UI flips to the sandbox the instant the backend
     // marks it active — the provisioning wall is the backend's, not ours.
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (!data) return 1_000;
-      return data.status === 'provisioning' ? 1_000 : false;
+      if (!data) return 300;
+      return data.status === 'provisioning' ? 300 : false;
     },
   });
 

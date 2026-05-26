@@ -10,6 +10,12 @@ export type SandboxBootState = {
   repoMaterializationError: string | null
   /** In-container boot timeline (ms since process start) for latency benchmarking. */
   timeline: BootMark[]
+  /** True when boot must create a first OpenCode conversation before the UI is usable. */
+  initialOpenCodeSessionRequired?: boolean
+  /** OpenCode session id created during boot, if one was requested. */
+  initialOpenCodeSessionId?: string | null
+  /** Boot-time OpenCode session creation failure. */
+  initialOpenCodeSessionError?: string | null
 }
 
 /**
@@ -46,10 +52,18 @@ export function createHealthRouter(
     const opencodeState = opencode.getState()
     const repoRequired = cfg.autoClone
     const repoReady = !repoRequired || repoInfo !== null
-    const runtimeReady = repoReady && !bootState.repoMaterializationError && opencodeState === 'ok'
+    const initialSessionReady =
+      !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
+    const initialSessionError = bootState.initialOpenCodeSessionError ?? null
+    const runtimeReady =
+      repoReady &&
+      !bootState.repoMaterializationError &&
+      !initialSessionError &&
+      opencodeState === 'ok' &&
+      initialSessionReady
     const status = runtimeReady
       ? 'ok'
-      : bootState.repoMaterializationError
+      : bootState.repoMaterializationError || initialSessionError
         ? 'error'
         : opencodeState
 
@@ -68,7 +82,9 @@ export function createHealthRouter(
       repo: repoInfo?.remoteUrl ?? null,
       branch: repoInfo?.branch ?? null,
       commit_sha: repoInfo?.commit ?? null,
-      boot_error: bootState.repoMaterializationError,
+      boot_error: bootState.repoMaterializationError ?? initialSessionError,
+      opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
+      opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
       // In-container boot timeline (ms since process start) so the dashboard can
       // attribute the post-create boot latency (clone vs opencode vs proxy).
       boot_timeline: bootState.timeline,

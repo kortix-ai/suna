@@ -291,6 +291,41 @@ describe('daemon proxy auth gate', () => {
     expect(body.reason).toBe('repo_materialization_failed')
   })
 
+  it('keeps runtime not ready until the boot OpenCode session is pinned', async () => {
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok'),
+      Date.now(),
+      {
+        repoMaterializationError: null,
+        timeline: [],
+        initialOpenCodeSessionRequired: true,
+        initialOpenCodeSessionId: null,
+      },
+    )
+
+    const health = await app.request('/kortix/health')
+    expect(health.status).toBe(200)
+    const healthBody = (await health.json()) as {
+      status: string
+      runtimeReady: boolean
+      opencode_session_required: boolean
+      opencode_session_id: string | null
+    }
+    expect(healthBody.status).toBe('ok')
+    expect(healthBody.runtimeReady).toBe(false)
+    expect(healthBody.opencode_session_required).toBe(true)
+    expect(healthBody.opencode_session_id).toBeNull()
+
+    const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+    const res = await app.request('/session?directory=%2Fworkspace', {
+      headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+    })
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as { reason: string }
+    expect(body.reason).toBe('initial_opencode_session_pending')
+  })
+
   it('keeps OpenCode proxy disabled when auto-clone is enabled but no repo is present', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-empty-workspace-'))
     try {
