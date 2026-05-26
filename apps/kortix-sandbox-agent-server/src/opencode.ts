@@ -8,7 +8,8 @@ import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
 
-const READY_POLL_MS = 250
+const READY_POLL_MS = 100
+const BOOT_READY_POLL_MS = 50
 const READY_TIMEOUT_MS = 20_000
 
 // The Kortix Executor MCP server — the agent's primary interface to every
@@ -157,6 +158,7 @@ export type Opencode = {
   getInternalUrl(): string
   getBinaryPath(): string | null
   getState(): OpencodeState
+  markReady(): void
 }
 
 /**
@@ -293,20 +295,14 @@ export function createOpencodeSupervisor(
     child = proc
   }
 
+  function markReady() {
+    if (state !== 'ok') logger.info('[opencode] ready')
+    state = 'ok'
+    restartDelayMs = 500
+  }
+
   async function checkReady(): Promise<boolean> {
-    // A bound HTTP server is not enough. When the project workspace is
-    // missing or OpenCode inherited a bad cwd, /global/health can still
-    // return 200 while every real OpenCode API route returns 500. Probe the
-    // same session API the app needs before reporting `opencode: ok`.
-    try {
-      const directory = encodeURIComponent(cfg.projectTarget)
-      const res = await fetch(`http://127.0.0.1:${cfg.opencodeInternalPort}/session?directory=${directory}`, {
-        signal: AbortSignal.timeout(2_000),
-      })
-      return res.status >= 200 && res.status < 400
-    } catch {
-      return false
-    }
+    return probeOpencodeSessionApi(`http://127.0.0.1:${cfg.opencodeInternalPort}`, cfg.projectTarget, 2_000)
   }
 
   function scheduleReadinessProbe() {
@@ -315,9 +311,7 @@ export function createOpencodeSupervisor(
       if (stopping) return
       const ready = await checkReady()
       if (ready) {
-        if (state !== 'ok') logger.info('[opencode] ready')
-        state = 'ok'
-        restartDelayMs = 500
+        markReady()
       } else if (state !== 'starting') {
         state = 'starting'
       }
@@ -395,6 +389,28 @@ export function createOpencodeSupervisor(
     getState() {
       return state
     },
+
+    markReady,
+  }
+}
+
+/**
+ * Probe the same OpenCode API the app needs. A plain process/HTTP health route
+ * is too weak because OpenCode can bind while the project directory is still
+ * unusable for real session APIs.
+ */
+export async function probeOpencodeSessionApi(
+  baseUrl: string,
+  directory: string,
+  timeoutMs = 1_000,
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(directory)}`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    return res.status >= 200 && res.status < 400
+  } catch {
+    return false
   }
 }
 
@@ -403,11 +419,18 @@ export function createOpencodeSupervisor(
  * Returns true if opencode reported ready before the deadline, false otherwise.
  * Non-throwing — the daemon should boot even on false so we can report `starting`.
  */
-export async function waitForOpencodeReady(opencode: Opencode): Promise<boolean> {
+export async function waitForOpencodeReady(
+  opencode: Opencode,
+  directory?: string,
+): Promise<boolean> {
   const deadline = Date.now() + READY_TIMEOUT_MS
   while (Date.now() < deadline) {
     if (opencode.getState() === 'ok') return true
-    await new Promise((r) => setTimeout(r, READY_POLL_MS))
+    if (directory && await probeOpencodeSessionApi(opencode.getInternalUrl(), directory, 500)) {
+      opencode.markReady()
+      return true
+    }
+    await new Promise((r) => setTimeout(r, directory ? BOOT_READY_POLL_MS : READY_POLL_MS))
   }
   return false
 }

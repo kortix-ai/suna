@@ -23,6 +23,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectRuntimeSnapshots } from '@kortix/db';
 
+process.env.NODE_ENV = 'test';
+
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
 const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
 const BRANCH = 'main';
@@ -45,6 +47,7 @@ interface Row {
 let rows: Row[] = [];
 let daytonaDeleteCalls: string[];
 let daytonaSnapshotCreateCalls: any[];
+let hiddenDaytonaSnapshots: Set<string>;
 
 function makeRow(overrides: Partial<Row> = {}): Row {
   const id = overrides.snapshotRowId ?? `row-${rows.length}`;
@@ -174,7 +177,16 @@ mock.module('../shared/daytona', () => ({
     },
   }),
   isDaytonaConfigured: () => true,
-  listDaytonaSnapshots: async () => [],
+  listDaytonaSnapshots: async () =>
+    rows
+      .filter((row) => row.snapshotId)
+      .filter((row) => !hiddenDaytonaSnapshots.has(row.snapshotId!))
+      .map((row) => ({
+        id: `daytona-${row.snapshotId}`,
+        name: row.snapshotId!,
+        state: 'active',
+        createdAt: row.createdAt.toISOString(),
+      })),
   deleteDaytonaSnapshotById: async () => true,
 }));
 
@@ -206,6 +218,7 @@ beforeEach(() => {
   rows = [];
   daytonaDeleteCalls = [];
   daytonaSnapshotCreateCalls = [];
+  hiddenDaytonaSnapshots = new Set();
   filterByCall = [() => true];
   nextSort = null;
   selectCallCount = 0;
@@ -237,6 +250,18 @@ describe('getLatestReadySnapshot', () => {
     ];
     setFilter((r) => r.status === 'ready');
     const result = await builder.getLatestReadySnapshot(PROJECT_ID, BRANCH);
+    expect(result).toBeNull();
+  });
+
+  test('ignores ready rows when Daytona no longer has the snapshot active', async () => {
+    rows = [
+      makeRow({ snapshotRowId: 'stale', status: 'ready', snapshotId: 'kortix-snap-1111-stale' }),
+    ];
+    hiddenDaytonaSnapshots = new Set(['kortix-snap-1111-stale']);
+    setFilter((r) => r.status === 'ready');
+
+    const result = await builder.getLatestReadySnapshot(PROJECT_ID, BRANCH);
+
     expect(result).toBeNull();
   });
 

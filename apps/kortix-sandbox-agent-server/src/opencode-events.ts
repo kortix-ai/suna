@@ -82,16 +82,16 @@ export function startOpencodeEventLoop(
     while (!stopping) {
       try {
         await connectOnce()
-        backoffMs = 1_000
       } catch (err) {
         if (stopping) return
         logger.warn('[opencode-events] disconnected — reconnecting', {
           err: (err as Error).message,
           backoffMs,
         })
-        await new Promise((r) => setTimeout(r, backoffMs))
-        backoffMs = Math.min(backoffMs * 2, 15_000)
       }
+      if (stopping) return
+      await new Promise((r) => setTimeout(r, backoffMs))
+      backoffMs = Math.min(backoffMs * 2, 15_000)
     }
   })().catch((err) => logger.error('[opencode-events] loop crashed', err))
 

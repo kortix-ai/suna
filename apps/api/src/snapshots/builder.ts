@@ -109,6 +109,17 @@ const BUILD_ATTEMPTS = 3;
 const BUILD_RETRY_BASE_MS = 2_000;
 const SNAPSHOT_LOG_TAIL_LIMIT = 20;
 const RUNTIME_LAYER_VERSION = 'baked-workspace-v1';
+const DAYTONA_SNAPSHOT_SELECT_CACHE_MS =
+  process.env.NODE_ENV === 'test'
+    ? 0
+    : Math.max(
+        1_000,
+        Number.parseInt(process.env.KORTIX_DAYTONA_SNAPSHOT_SELECT_CACHE_MS || '15000', 10) || 15_000,
+      );
+
+let daytonaSnapshotSelectCache:
+  | { expiresAt: number; activeNames: Set<string> }
+  | null = null;
 
 /**
  * Default retention: how many `ready` snapshots we keep per
@@ -391,14 +402,16 @@ export async function getLatestReadySnapshot(
   if (provider === 'local_docker') {
     return rows[0] ?? null;
   }
+  const bootableRows = await filterProviderBootableReadyRows(rows, provider);
+  if (bootableRows.length === 0) return null;
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
-  const currentRuntimeRow = rows.find((row) =>
+  const currentRuntimeRow = bootableRows.find((row) =>
     extractMetadataRuntimeFingerprint(row.metadata) === runtimeFingerprint
   );
   // Prefer a current-runtime image, but do not make an existing project
   // unusable while a runtime rebuild is pending/failed. A retained older
   // snapshot is still a valid degraded boot target.
-  return currentRuntimeRow ?? rows[0] ?? null;
+  return currentRuntimeRow ?? bootableRows[0] ?? null;
 }
 
 export async function getSnapshotForCommit(
@@ -437,6 +450,7 @@ export async function getReadySnapshotForCommit(
 ): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
   const row = await getSnapshotForCommit(projectId, commitSha, provider);
   if (row?.status !== 'ready' || !row.snapshotId) return null;
+  if (!(await isProviderBootableSnapshot(row, provider))) return null;
 
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   if (extractMetadataRuntimeFingerprint(row.metadata) !== runtimeFingerprint) {
@@ -444,6 +458,56 @@ export async function getReadySnapshotForCommit(
   }
 
   return row;
+}
+
+async function filterProviderBootableReadyRows(
+  rows: Array<typeof projectRuntimeSnapshots.$inferSelect>,
+  provider: SandboxProviderName,
+): Promise<Array<typeof projectRuntimeSnapshots.$inferSelect>> {
+  if (provider !== 'daytona' || !isDaytonaConfigured()) return rows;
+  const activeNames = await getActiveDaytonaSnapshotNamesForSelection();
+  if (!activeNames) return rows;
+
+  const bootable = rows.filter((row) => row.snapshotId && activeNames.has(row.snapshotId));
+  const stale = rows.filter((row) => row.snapshotId && !activeNames.has(row.snapshotId));
+  if (stale.length > 0) {
+    console.warn(
+      `[snapshots] Ignoring ${stale.length} ready DB snapshot row(s) missing from Daytona: ` +
+      stale.map((r) => r.snapshotId).join(', '),
+    );
+  }
+  return bootable;
+}
+
+async function isProviderBootableSnapshot(
+  row: typeof projectRuntimeSnapshots.$inferSelect,
+  provider: SandboxProviderName,
+): Promise<boolean> {
+  if (provider !== 'daytona' || !isDaytonaConfigured() || !row.snapshotId) return true;
+  const activeNames = await getActiveDaytonaSnapshotNamesForSelection();
+  return !activeNames || activeNames.has(row.snapshotId);
+}
+
+async function getActiveDaytonaSnapshotNamesForSelection(): Promise<Set<string> | null> {
+  const now = Date.now();
+  if (daytonaSnapshotSelectCache && daytonaSnapshotSelectCache.expiresAt > now) {
+    return daytonaSnapshotSelectCache.activeNames;
+  }
+  try {
+    const activeNames = new Set(
+      (await listDaytonaSnapshots())
+        .filter((snapshot) => String(snapshot.state).toLowerCase() === 'active')
+        .map((snapshot) => snapshot.name),
+    );
+    daytonaSnapshotSelectCache = {
+      expiresAt: now + DAYTONA_SNAPSHOT_SELECT_CACHE_MS,
+      activeNames,
+    };
+    return activeNames;
+  } catch (err) {
+    console.warn('[snapshots] Daytona snapshot liveness check failed; falling back to DB cache', err);
+    return null;
+  }
 }
 
 function isInProgressSnapshotStale(row: typeof projectRuntimeSnapshots.$inferSelect): boolean {

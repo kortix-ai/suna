@@ -97,7 +97,7 @@ async function main() {
   if (bootState.repoMaterializationError) return
 
   void (async () => {
-    const ready = await waitForOpencodeReady(opencode)
+    const ready = await waitForOpencodeReady(opencode, cfg.projectTarget)
     if (ready) {
       bootMark('opencode-ready')
       logger.info('[boot] opencode ready', {
