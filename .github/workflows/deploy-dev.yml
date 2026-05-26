@@ -1,7 +1,7 @@
 name: Deploy Dev
 
 # Builds multi-arch Docker images using native runners (amd64 + arm64 in parallel),
-# deploys API to dev VPS. Path-filtered — only builds what changed.
+# deploys API + frontend to dev VPS. Path-filtered — only builds what changed.
 #
 # Auto-deploy on push is controlled by the repo variable AUTO_DEPLOY_DEV.
 # Set to 'true' to enable, anything else to disable. Manual dispatch always works.
@@ -11,9 +11,9 @@ on:
     branches: [main]
     paths:
       - 'apps/api/**'
-      - 'apps/web/**'
-      - 'apps/sandbox/**'
       - 'apps/kortix-sandbox-agent-server/**'
+      - 'apps/sandbox/**'
+      - 'apps/web/**'
       - 'packages/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -40,7 +40,6 @@ jobs:
     outputs:
       api_changed: ${{ steps.filter.outputs.api }}
       frontend_changed: ${{ steps.filter.outputs.frontend }}
-      sandbox_changed: ${{ steps.filter.outputs.sandbox }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,17 +50,14 @@ jobs:
           filters: |
             api:
               - 'apps/api/**'
+              - 'apps/kortix-sandbox-agent-server/**'
+              - 'apps/sandbox/**'
               - 'packages/**'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
             frontend:
               - 'apps/web/**'
-              - 'packages/shared/**'
-              - 'pnpm-lock.yaml'
-            sandbox:
-              - 'apps/sandbox/**'
-              - 'apps/kortix-sandbox-agent-server/**'
-              - 'packages/shared/**'
+              - 'packages/**'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
       - name: Summary
@@ -69,7 +65,6 @@ jobs:
           echo "### Changes detected" >> "$GITHUB_STEP_SUMMARY"
           echo "- API: ${{ steps.filter.outputs.api }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Frontend: ${{ steps.filter.outputs.frontend }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Sandbox: ${{ steps.filter.outputs.sandbox }}" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Build API (amd64 + arm64 in parallel) ──────────────────────────────────
   build-api-amd64:
@@ -157,7 +152,17 @@ jobs:
         with: { node-version: 22 }
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter ./apps/web build
+        env:
+          npm_config_engine_strict: "false"
+      - name: Build frontend standalone output
+        run: pnpm --filter ./apps/web build
+        env:
+          NEXT_PUBLIC_ENV_MODE: local
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
+          NEXT_PUBLIC_BILLING_ENABLED: "false"
+          NEXT_OUTPUT: standalone
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -184,7 +189,17 @@ jobs:
         with: { node-version: 22 }
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter ./apps/web build
+        env:
+          npm_config_engine_strict: "false"
+      - name: Build frontend standalone output
+        run: pnpm --filter ./apps/web build
+        env:
+          NEXT_PUBLIC_ENV_MODE: local
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
+          NEXT_PUBLIC_BILLING_ENABLED: "false"
+          NEXT_OUTPUT: standalone
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -202,12 +217,15 @@ jobs:
     name: Frontend manifest
     needs: [build-frontend-amd64, build-frontend-arm64]
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
     steps:
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Create multi-arch manifest
+        id: meta
         run: |
           SHA8="${GITHUB_SHA::8}"
           docker manifest create "kortix/kortix-frontend:dev-${SHA8}" \
@@ -220,79 +238,7 @@ jobs:
             "kortix/kortix-frontend:dev-latest-arm64"
           docker manifest push "kortix/kortix-frontend:dev-latest"
 
-  # ── Build Sandbox (amd64 + arm64 in parallel) ─────────────────────────────
-  build-sandbox-amd64:
-    name: Sandbox (amd64)
-    needs: detect-changes
-    if: needs.detect-changes.outputs.sandbox_changed == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: false }
-      - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push
-        run: |
-          SHA8="${GITHUB_SHA::8}"
-          docker build --file apps/sandbox/Dockerfile \
-            --build-arg "SANDBOX_VERSION=dev-${SHA8}" \
-            --tag "kortix/kortix-sandbox:dev-${SHA8}-amd64" \
-            --tag "kortix/kortix-sandbox:dev-latest-amd64" .
-          docker push "kortix/kortix-sandbox:dev-${SHA8}-amd64"
-          docker push "kortix/kortix-sandbox:dev-latest-amd64"
-
-  build-sandbox-arm64:
-    name: Sandbox (arm64)
-    needs: detect-changes
-    if: needs.detect-changes.outputs.sandbox_changed == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: false }
-      - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push
-        run: |
-          SHA8="${GITHUB_SHA::8}"
-          docker build --file apps/sandbox/Dockerfile \
-            --build-arg "SANDBOX_VERSION=dev-${SHA8}" \
-            --tag "kortix/kortix-sandbox:dev-${SHA8}-arm64" \
-            --tag "kortix/kortix-sandbox:dev-latest-arm64" .
-          docker push "kortix/kortix-sandbox:dev-${SHA8}-arm64"
-          docker push "kortix/kortix-sandbox:dev-latest-arm64"
-
-  merge-sandbox:
-    name: Sandbox manifest
-    needs: [build-sandbox-amd64, build-sandbox-arm64]
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.meta.outputs.tag }}
-    steps:
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Create multi-arch manifest
-        id: meta
-        run: |
-          SHA8="${GITHUB_SHA::8}"
-          docker manifest create "kortix/kortix-sandbox:dev-${SHA8}" \
-            "kortix/kortix-sandbox:dev-${SHA8}-amd64" \
-            "kortix/kortix-sandbox:dev-${SHA8}-arm64"
-          docker manifest push "kortix/kortix-sandbox:dev-${SHA8}"
-
-          docker manifest create "kortix/kortix-sandbox:dev-latest" \
-            "kortix/kortix-sandbox:dev-latest-amd64" \
-            "kortix/kortix-sandbox:dev-latest-arm64"
-          docker manifest push "kortix/kortix-sandbox:dev-latest"
-
-          echo "tag=dev-${SHA8}" >> "$GITHUB_OUTPUT"
+          echo "image=kortix/kortix-frontend:dev-${SHA8}" >> "$GITHUB_OUTPUT"
 
   # ── Deploy API to dev VPS ──────────────────────────────────────────────────
   deploy-api:
@@ -323,3 +269,30 @@ jobs:
         run: |
           echo "### Deployed API → **dev**" >> "$GITHUB_STEP_SUMMARY"
           echo "Image: \`${{ needs.merge-api.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-frontend:
+    name: Deploy frontend to dev
+    needs: merge-frontend
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Zero-downtime deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.AWS_DEV_KEY }}
+          port: 22
+          timeout: 300s
+          script: |
+            set -e
+            cd ~/suna
+            git -c fetch.recurseSubmodules=false fetch origin main
+            git reset --hard origin/main
+            PREBUILT_IMAGE="${{ needs.merge-frontend.outputs.image }}" bash scripts/deploy-frontend-zero-downtime.sh
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Deployed frontend → **dev.kortix.com**" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image: \`${{ needs.merge-frontend.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"

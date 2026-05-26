@@ -20,7 +20,7 @@ import { printBanner } from './banner.ts';
 import { activeHostEntry } from './api/config.ts';
 import { C, header, pad, rule } from './style.ts';
 
-const VERSION = '0.1.0';
+const VERSION = process.env.KORTIX_CLI_VERSION ?? '0.1.0';
 
 interface Command {
   name: string;

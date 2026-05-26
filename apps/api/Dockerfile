@@ -6,6 +6,22 @@
 ARG BUN_VERSION=1.2
 FROM oven/bun:${BUN_VERSION}-slim AS base
 
+# ---- Sandbox Agent Stage ----
+# The API builds Daytona layered snapshots at runtime. Those snapshots bake the
+# sandbox-side daemon from this repo, so the deployable API image must carry the
+# latest compiled Linux binary even though we no longer publish a sandbox image.
+FROM oven/bun:${BUN_VERSION}-slim AS sandbox-agent
+
+WORKDIR /agent
+
+ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
+
+COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
+RUN bun install --frozen-lockfile
+
+COPY apps/kortix-sandbox-agent-server/ ./
+RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
+
 # ---- Deps Stage ----
 # Install with pnpm (matches lockfile), run with bun
 FROM node:22-slim AS deps
@@ -70,6 +86,12 @@ COPY --from=deps /app/packages/starter/tsconfig.json ./packages/starter/tsconfig
 
 # Copy SQL migrations used by ensureSchema() at runtime.
 COPY supabase/migrations ./supabase/migrations
+
+# Copy runtime artifacts used by the layered snapshot builder.
+COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
+COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
+COPY apps/sandbox/agent-cli ./apps/sandbox/agent-cli
+COPY packages/executor-sdk ./packages/executor-sdk
 
 # Copy the app (source + its node_modules if any)
 COPY --from=deps /app/${SERVICE} ./${SERVICE}

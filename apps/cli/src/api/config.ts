@@ -36,7 +36,7 @@ import { dirname, resolve } from 'node:path';
 // host so users can switch cleanly between Kortix Cloud and self-hosted APIs.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const DEFAULT_API_BASE = 'https://api.kortix.com';
+export const DEFAULT_API_BASE = process.env.KORTIX_DEFAULT_API_BASE ?? 'https://api.kortix.com';
 export const DEFAULT_LOCAL_API_BASE = 'http://localhost:13738';
 export const CLOUD_HOST_NAME = 'cloud';
 export const LOCAL_HOST_NAME = 'local';

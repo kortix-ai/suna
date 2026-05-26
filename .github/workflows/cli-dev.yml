@@ -1,23 +1,29 @@
-name: CLI release
+name: CLI dev release
 
-# Triggered by pushing a tag like `cli-v0.1.0`. Builds the standalone
-# `kortix` binary for darwin-x64, darwin-arm64, linux-x64, linux-arm64
-# using `bun build --compile --target=bun-<os>-<arch>`, then attaches
-# each artifact to a GitHub Release at the tag.
-#
-# The website's /install endpoint (kortix.com/install) serves
-# scripts/install.sh, which curls one of these binaries.
+# Publishes a mutable dev CLI build from main. Install with:
+#   curl -fsSL https://kortix.com/install | KORTIX_CHANNEL=dev bash
 
 on:
   push:
-    tags:
-      - 'cli-v*'
+    branches: [main]
+    paths:
+      - 'apps/cli/**'
+      - 'packages/starter/**'
+      - 'scripts/install.sh'
+      - 'bun.lock'
+      - 'package.json'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: cli-dev-release
+  cancel-in-progress: true
+
 env:
-  CLI_API_BASE: https://api.kortix.com
+  CLI_TAG: cli-dev-latest
+  CLI_API_BASE: https://dev-api.kortix.com
 
 jobs:
   build:
@@ -52,11 +58,10 @@ jobs:
 
       - name: Install workspace deps
         run: bun install --frozen-lockfile
-        working-directory: .
 
       - name: Build CLI binary
         run: |
-          CLI_VERSION="${GITHUB_REF_NAME#cli-v}"
+          CLI_VERSION="dev-${GITHUB_SHA::8}"
           bun build \
             --compile \
             --minify \
@@ -79,11 +84,13 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Publish Release
+    name: Publish dev CLI release
     needs: build
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -96,12 +103,24 @@ jobs:
           ls -lh
           sha256sum kortix-* > SHA256SUMS
 
-      - name: Create GitHub Release
+      - name: Move dev tag
+        run: |
+          git tag -f "${{ env.CLI_TAG }}" "$GITHUB_SHA"
+          git push -f origin "${{ env.CLI_TAG }}"
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          generate_release_notes: true
+          tag_name: ${{ env.CLI_TAG }}
+          name: ${{ env.CLI_TAG }}
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          generate_release_notes: false
+          body: |
+            Mutable dev build for `${{ github.sha }}`.
+
+            Defaults to `${{ env.CLI_API_BASE }}`.
           files: |
             artifacts/kortix-darwin-arm64
             artifacts/kortix-darwin-x64

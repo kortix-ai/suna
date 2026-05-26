@@ -2,7 +2,7 @@ name: Release Version
 
 # Manual trigger — promotes current dev images to production.
 # Re-tags dev-latest multi-arch manifests as versioned (no rebuild).
-# Deploys to prod VPS, fast-forwards production branch (Vercel), creates GitHub Release.
+# Deploys API + frontend to prod VPS and creates a GitHub Release.
 
 on:
   workflow_dispatch:
@@ -31,6 +31,8 @@ permissions:
 env:
   VERSION: ${{ inputs.version }}
   TITLE: ${{ inputs.title }}
+  CLI_API_BASE: https://api.kortix.com
+  DESKTOP_URL: https://kortix.com/dashboard
 
 jobs:
   # ── Re-tag dev images as versioned (no rebuild) ────────────────────────────
@@ -47,9 +49,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Re-tag all images
+      - name: Re-tag release images
         run: |
-          for IMAGE in kortix/kortix-api kortix/kortix-frontend kortix/kortix-sandbox; do
+          for IMAGE in kortix/kortix-api kortix/kortix-frontend; do
             echo "Re-tagging $IMAGE:dev-latest → $IMAGE:${{ env.VERSION }} + $IMAGE:latest"
 
             # Use buildx imagetools to create new tags from existing multi-arch manifest
@@ -66,12 +68,11 @@ jobs:
           echo "### Re-tagged dev-latest → v${{ env.VERSION }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`kortix/kortix-api:${{ env.VERSION }}\` (multi-arch)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`kortix/kortix-frontend:${{ env.VERSION }}\` (multi-arch)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`kortix/kortix-sandbox:${{ env.VERSION }}\` (multi-arch)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "_Zero rebuilds — re-tagged from dev-latest manifests._" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Deploy API to prod VPS ─────────────────────────────────────────────────
-  deploy-prod:
+  deploy-prod-api:
     name: Deploy API to prod
     needs: retag-images
     runs-on: ubuntu-latest
@@ -100,38 +101,326 @@ jobs:
         run: |
           echo "### Deployed API v${{ env.VERSION }} → **prod**" >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Force-sync production branch to main (Vercel) ─────────────────────────
-  update-production-branch:
-    name: Force-sync production branch (Vercel)
+  # ── Deploy frontend to prod VPS ────────────────────────────────────────────
+  deploy-prod-frontend:
+    name: Deploy frontend to prod
     needs: retag-images
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_KEY }}
+          port: 22
+          timeout: 600s
+          script: |
+            set -e
+            if [ ! -d ~/suna ]; then
+              git clone https://github.com/kortix-ai/suna.git ~/suna
+            fi
+            cd ~/suna
+            git -c fetch.recurseSubmodules=false fetch origin main
+            git reset --hard origin/main
+            PREBUILT_IMAGE="kortix/kortix-frontend:${{ env.VERSION }}" bash scripts/deploy-frontend-zero-downtime.sh
+
+      - name: Summary
+        run: |
+          echo "### Deployed frontend v${{ env.VERSION }} → **prod**" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Build production CLI binaries ──────────────────────────────────────────
+  build-prod-cli:
+    name: Build CLI ${{ matrix.target_pretty }}
+    needs: [deploy-prod-api, deploy-prod-frontend]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bun-darwin-arm64
+            target_pretty: darwin-arm64
+            asset: kortix-darwin-arm64
+            runner: macos-14
+          - target: bun-darwin-x64
+            target_pretty: darwin-x64
+            asset: kortix-darwin-x64
+            runner: macos-13
+          - target: bun-linux-x64
+            target_pretty: linux-x64
+            asset: kortix-linux-x64
+            runner: ubuntu-22.04
+          - target: bun-linux-arm64
+            target_pretty: linux-arm64
+            asset: kortix-linux-arm64
+            runner: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install workspace deps
+        run: bun install --frozen-lockfile
+
+      - name: Build CLI binary
+        run: |
+          bun build \
+            --compile \
+            --minify \
+            --target=${{ matrix.target }} \
+            --define="process.env.KORTIX_CLI_VERSION=\"${{ env.VERSION }}\"" \
+            --define="process.env.KORTIX_DEFAULT_API_BASE=\"${{ env.CLI_API_BASE }}\"" \
+            --outfile=${{ matrix.asset }} \
+            apps/cli/src/index.ts
+          ls -lh ${{ matrix.asset }}
+
+      - name: Smoke test (--version)
+        if: matrix.target_pretty == 'darwin-arm64' || matrix.target_pretty == 'linux-x64'
+        run: ./${{ matrix.asset }} version
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish-prod-cli:
+    name: Publish CLI v${{ inputs.version }}
+    needs: build-prod-cli
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # Need a PAT with `workflow` scope to push workflow file changes
-          # to the production branch (GITHUB_TOKEN cannot modify .github/workflows/*)
-          token: ${{ secrets.GH_RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
-      - name: Force-sync production branch to main
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Compute checksums
+        run: |
+          cd artifacts
+          ls -lh
+          sha256sum kortix-* > SHA256SUMS
+
+      - name: Create CLI tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout --force -B production origin/main
-          git push --force-with-lease origin production
-          echo "### Production branch force-synced to origin/main → Vercel deploys kortix.com" >> "$GITHUB_STEP_SUMMARY"
+          git tag -a "cli-v${{ env.VERSION }}" -m "CLI v${{ env.VERSION }}"
+          git push origin "cli-v${{ env.VERSION }}"
+
+      - name: Create CLI GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: cli-v${{ env.VERSION }}
+          name: cli-v${{ env.VERSION }}
+          generate_release_notes: true
+          files: |
+            artifacts/kortix-darwin-arm64
+            artifacts/kortix-darwin-x64
+            artifacts/kortix-linux-x64
+            artifacts/kortix-linux-arm64
+            artifacts/SHA256SUMS
+
+  # ── Build production desktop installers ────────────────────────────────────
+  build-prod-desktop:
+    name: Build Desktop ${{ matrix.target_pretty }}
+    needs: [deploy-prod-api, deploy-prod-frontend]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target_pretty: macos-arm64
+            runner: macos-14
+            bundles: dmg
+            artifact: desktop-macos-arm64
+            files: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          - target_pretty: macos-x64
+            runner: macos-13
+            bundles: dmg
+            artifact: desktop-macos-x64
+            files: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          - target_pretty: windows-x64
+            runner: windows-2022
+            bundles: msi
+            artifact: desktop-windows-x64
+            files: apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+          - target_pretty: linux-x64
+            runner: ubuntu-22.04
+            bundles: appimage
+            artifact: desktop-linux-x64
+            files: apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            file \
+            libgtk-3-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            wget
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install pnpm
+        run: corepack enable pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Validate signing secrets
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+        run: |
+          case "${{ runner.os }}" in
+            macOS)
+              test -n "$APPLE_CERTIFICATE" || { echo "Missing APPLE_CERTIFICATE"; exit 1; }
+              test -n "$APPLE_CERTIFICATE_PASSWORD" || { echo "Missing APPLE_CERTIFICATE_PASSWORD"; exit 1; }
+              if [ -n "$APPLE_API_ISSUER" ] || [ -n "$APPLE_API_KEY" ] || [ -n "$APPLE_API_KEY_P8" ]; then
+                test -n "$APPLE_API_ISSUER" || { echo "Missing APPLE_API_ISSUER"; exit 1; }
+                test -n "$APPLE_API_KEY" || { echo "Missing APPLE_API_KEY"; exit 1; }
+                test -n "$APPLE_API_KEY_P8" || { echo "Missing APPLE_API_KEY_P8"; exit 1; }
+              else
+                test -n "$APPLE_ID" || { echo "Missing APPLE_ID"; exit 1; }
+                test -n "$APPLE_PASSWORD" || { echo "Missing APPLE_PASSWORD"; exit 1; }
+                test -n "$APPLE_TEAM_ID" || { echo "Missing APPLE_TEAM_ID"; exit 1; }
+              fi
+              ;;
+            Windows)
+              test -n "$WINDOWS_CERTIFICATE" || { echo "Missing WINDOWS_CERTIFICATE"; exit 1; }
+              test -n "$WINDOWS_CERTIFICATE_PASSWORD" || { echo "Missing WINDOWS_CERTIFICATE_PASSWORD"; exit 1; }
+              test -n "$WINDOWS_CERTIFICATE_THUMBPRINT" || { echo "Missing WINDOWS_CERTIFICATE_THUMBPRINT"; exit 1; }
+              ;;
+          esac
+
+      - name: Prepare macOS notarization key
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+            printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH"
+            echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+          fi
+
+      - name: Import Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          New-Item -ItemType Directory -Force -Path certificate | Out-Null
+          Set-Content -Path certificate/tempCert.txt -Value $env:WINDOWS_CERTIFICATE
+          certutil -decode certificate/tempCert.txt certificate/certificate.pfx
+          Remove-Item certificate/tempCert.txt
+          Import-PfxCertificate `
+            -FilePath certificate/certificate.pfx `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -Password (ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText)
+
+      - name: Configure production desktop build
+        shell: bash
+        env:
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'apps/desktop/src-tauri/tauri.conf.json';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.version = process.env.VERSION;
+          config.productName = 'Kortix';
+          config.identifier = 'com.kortix.desktop';
+          if (process.env.WINDOWS_CERTIFICATE_THUMBPRINT) {
+            config.bundle ||= {};
+            config.bundle.windows ||= {};
+            config.bundle.windows.certificateThumbprint = process.env.WINDOWS_CERTIFICATE_THUMBPRINT;
+            config.bundle.windows.digestAlgorithm = 'sha256';
+            config.bundle.windows.timestampUrl = process.env.WINDOWS_TIMESTAMP_URL || 'http://timestamp.digicert.com';
+          }
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          NODE
+
+      - name: Prepare desktop shell assets
+        run: pnpm --filter @kortix/desktop run prepare-assets
+
+      - name: Build desktop installer
+        run: pnpm --filter @kortix/desktop tauri build --bundles ${{ matrix.bundles }}
+        env:
+          KORTIX_DESKTOP_DEFAULT_URL: ${{ env.DESKTOP_URL }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
 
   # ── Create Git tag + GitHub Release ────────────────────────────────────────
   create-release:
     name: Create GitHub Release
-    needs: [deploy-prod, update-production-branch]
+    needs: [deploy-prod-api, deploy-prod-frontend, publish-prod-cli, build-prod-desktop]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: desktop-artifacts/
+          pattern: desktop-*
+          merge-multiple: true
+
+      - name: Compute desktop checksums
+        run: |
+          cd desktop-artifacts
+          find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > DESKTOP-SHA256SUMS
+          ls -lh
 
       - name: Generate changelog from commits
         run: |
@@ -154,9 +443,18 @@ jobs:
             echo ""
             echo "### Docker Images"
             echo ""
-            echo "- \`kortix/kortix-sandbox:${{ env.VERSION }}\`"
             echo "- \`kortix/kortix-api:${{ env.VERSION }}\`"
             echo "- \`kortix/kortix-frontend:${{ env.VERSION }}\`"
+            echo ""
+            echo "### CLI"
+            echo ""
+            echo "- \`cli-v${{ env.VERSION }}\`"
+            echo ""
+            echo "### Desktop"
+            echo ""
+            echo "- macOS .dmg"
+            echo "- Windows .msi"
+            echo "- Linux .AppImage"
           } > /tmp/release-notes.md
           cat /tmp/release-notes.md
 
@@ -173,5 +471,7 @@ jobs:
             --title "v${{ env.VERSION }} — ${{ env.TITLE }}" \
             --notes-file /tmp/release-notes.md \
             --repo kortix-ai/suna
+          mapfile -d '' files < <(find desktop-artifacts -maxdepth 1 -type f -print0)
+          gh release upload "v${{ env.VERSION }}" "${files[@]}" --repo kortix-ai/suna
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

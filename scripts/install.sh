@@ -16,6 +16,7 @@ set -euo pipefail
 REPO="${KORTIX_REPO:-kortix-ai/suna}"
 INSTALL_HOME="${KORTIX_HOME:-$HOME/.kortix}"
 BINARY_NAME="kortix"
+CHANNEL="${KORTIX_CHANNEL:-prod}"
 TAG_PREFIX="cli-v"
 
 # ─── Colors ───────────────────────────────────────────────────────────────────
@@ -74,6 +75,21 @@ resolve_version() {
     info "Pinned version (from \$KORTIX_VERSION): $VERSION"
     return
   fi
+
+  case "$CHANNEL" in
+    prod|"")
+      TAG_PREFIX="cli-v"
+      ;;
+    dev)
+      VERSION="cli-dev-latest"
+      info "Dev channel selected (from \$KORTIX_CHANNEL): $VERSION"
+      return
+      ;;
+    *)
+      fatal "Unsupported KORTIX_CHANNEL: $CHANNEL. Use 'prod' or 'dev'."
+      ;;
+  esac
+
   info "Resolving latest release from GitHub…"
   local api_url="https://api.github.com/repos/${REPO}/releases"
   local tag

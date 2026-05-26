@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "tauri dev",
     "dev:macos": "tauri build --debug --bundles app && open -n src-tauri/target/debug/bundle/macos/Kortix.app",
-    "build": "tauri build",
+    "prepare-dist": "bash scripts/prepare-dist.sh",
+    "prepare-icons": "tauri icon src-tauri/icons/source.png",
+    "prepare-assets": "pnpm run prepare-dist && pnpm run prepare-icons",
+    "build": "pnpm run prepare-assets && tauri build",
     "tauri": "tauri",
     "icons": "tauri icon"
   },
