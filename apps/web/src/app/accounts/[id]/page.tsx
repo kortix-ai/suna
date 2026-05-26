@@ -14,7 +14,6 @@ import {
   Link as LinkIcon,
   Loader2,
   Mail,
-  HelpCircle,
   MoreHorizontal,
   RefreshCw,
   Search,
@@ -55,11 +54,6 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -80,6 +74,7 @@ import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
+import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { usePermission } from '@/lib/use-permission';
 import {
   type AccountDetail,
@@ -405,92 +400,6 @@ export default function AccountSettingsPage() {
         </div>
       </main>
     </div>
-  );
-}
-
-// ─── Permissions help popover ──────────────────────────────────────────────
-//
-// Cuts support tickets in half. The model is simple but never explained
-// anywhere in-app: account roles, project roles, group inheritance, and
-// the override rule (account admin/owner trumps any group attachment).
-// Lives in a popover so new admins can find it without scrolling and
-// experienced ones can ignore it.
-
-function PermissionsHelpPopover() {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
-          <HelpCircle className="h-3.5 w-3.5" />
-          How permissions work
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-96 space-y-4 text-sm">
-        <section className="space-y-1">
-          <h3 className="font-semibold text-foreground">Account roles</h3>
-          <p className="text-xs text-muted-foreground">
-            What a person can do across the whole account.
-          </p>
-          <ul className="space-y-1 text-xs">
-            <li>
-              <span className="font-medium text-foreground">Owner</span> · full
-              control + can transfer ownership and delete the account.
-            </li>
-            <li>
-              <span className="font-medium text-foreground">Admin</span> ·
-              everything except deleting the account.
-            </li>
-            <li>
-              <span className="font-medium text-foreground">Member</span> · no
-              implicit access — needs direct project grants or group
-              membership.
-            </li>
-          </ul>
-        </section>
-
-        <section className="space-y-1">
-          <h3 className="font-semibold text-foreground">Project roles</h3>
-          <p className="text-xs text-muted-foreground">
-            What a person can do on a specific project.
-          </p>
-          <ul className="space-y-1 text-xs">
-            <li>
-              <span className="font-medium text-foreground">Manager</span> ·
-              read, write, and manage members + settings.
-            </li>
-            <li>
-              <span className="font-medium text-foreground">Editor</span> ·
-              read and write, no member or settings changes.
-            </li>
-            <li>
-              <span className="font-medium text-foreground">Viewer</span> ·
-              read-only.
-            </li>
-          </ul>
-        </section>
-
-        <section className="space-y-1">
-          <h3 className="font-semibold text-foreground">Groups</h3>
-          <p className="text-xs text-muted-foreground">
-            Bundle members and attach the whole group to a project at a
-            role. Every group member inherits that role. A user picks up
-            the highest role across all their groups + any direct grant.
-          </p>
-        </section>
-
-        <section className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5">
-          <h3 className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-            Override rule
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            Owners and admins always have <strong>Manager</strong> on every
-            project, regardless of group attachments. To limit someone to
-            specific projects, change their account role to{' '}
-            <strong>Member</strong> first.
-          </p>
-        </section>
-      </PopoverContent>
-    </Popover>
   );
 }
 

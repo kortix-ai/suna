@@ -44,11 +44,18 @@ import {
   inheritedFromGroupSummary,
   isInheritedFromGroupOnly,
 } from '@/components/iam/iam-display-helpers';
+import { PROJECT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
+import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
+import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 
+// Backwards-compat alias — keep using PROJECT_ROLE_LABEL.<role> in places
+// that only need the bare label (badges, "X gets Manager via account role"
+// strings). Sourced from the same descriptor as the dropdown subtitles so
+// renaming a role is a one-file change.
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
-  manager: 'Manager',
-  editor: 'Editor',
-  viewer: 'Viewer',
+  manager: PROJECT_ROLE_DESCRIPTORS.manager.label,
+  editor: PROJECT_ROLE_DESCRIPTORS.editor.label,
+  viewer: PROJECT_ROLE_DESCRIPTORS.viewer.label,
 };
 
 function userLabel(member: Pick<ProjectAccessMember, 'email' | 'user_id'>) {
@@ -100,9 +107,15 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
-        <header className="space-y-1">
-          <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}</h2>
-          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners')}</p>
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}</h2>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners')}</p>
+          </div>
+          {/* Answers Marko's "what does a Viewer/Editor/Manager actually
+              do?" right at the point of decision — same popover the
+              account settings page uses, driven by the shared descriptor. */}
+          <PermissionsHelpPopover triggerLabel="Role help" align="end" />
         </header>
 
         {canManage && <InviteMemberCard projectId={projectId} />}
@@ -192,10 +205,13 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
             <SelectTrigger id="invite-role" className="h-9 w-full sm:w-36">
               <SelectValue />
             </SelectTrigger>
+            {/* Two-line options (role + capability blurb) so the picker
+                explains what each role does. Trigger stays one line —
+                see role-select-item.tsx for how the ItemText split works. */}
             <SelectContent>
-              <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
-              <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
-              <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+              <ProjectRoleSelectItem role="viewer" />
+              <ProjectRoleSelectItem role="editor" />
+              <ProjectRoleSelectItem role="manager" />
             </SelectContent>
           </Select>
         </div>
@@ -377,11 +393,16 @@ function ProjectAccessCard({
                           <SelectTrigger className="h-8 w-32 text-xs">
                             <SelectValue placeholder="Grant…" />
                           </SelectTrigger>
+                          {/* Compact variant — this is a secondary picker
+                              that only ratchets a layered direct grant on
+                              top of an inherited role. Blurbs would crowd
+                              the row; the bigger dropdown above carries
+                              the explanation. */}
                           <SelectContent>
                             <SelectItem value="none">No direct grant</SelectItem>
-                            <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
-                            <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
-                            <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                            <ProjectRoleSelectItem role="viewer" compact />
+                            <ProjectRoleSelectItem role="editor" compact />
+                            <ProjectRoleSelectItem role="manager" compact />
                           </SelectContent>
                         </Select>
                       )}
@@ -397,9 +418,9 @@ function ProjectAccessCard({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line328JsxTextNoAccess')}</SelectItem>
-                        <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
-                        <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
-                        <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                        <ProjectRoleSelectItem role="viewer" />
+                        <ProjectRoleSelectItem role="editor" />
+                        <ProjectRoleSelectItem role="manager" />
                       </SelectContent>
                     </Select>
                   )
@@ -543,10 +564,13 @@ function ProjectGroupGrantsCard({
               <SelectTrigger className="h-8 w-28 text-xs">
                 <SelectValue />
               </SelectTrigger>
+              {/* Full blurbs here — choosing the role for a whole group
+                  attachment is a higher-impact decision than a single
+                  per-user grant, so users benefit from the extra context. */}
               <SelectContent>
-                <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
-                <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
-                <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                <ProjectRoleSelectItem role="viewer" />
+                <ProjectRoleSelectItem role="editor" />
+                <ProjectRoleSelectItem role="manager" />
               </SelectContent>
             </Select>
             <Button
@@ -637,9 +661,9 @@ function ProjectGroupGrantsCard({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
-                          <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
-                          <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                          <ProjectRoleSelectItem role="viewer" />
+                          <ProjectRoleSelectItem role="editor" />
+                          <ProjectRoleSelectItem role="manager" />
                         </SelectContent>
                       </Select>
                       <Button
