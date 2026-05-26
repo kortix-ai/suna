@@ -37,6 +37,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -98,6 +99,7 @@ import {
   updateAccountMemberRole,
   updateAccountName,
 } from '@/lib/projects-client';
+import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { cn } from '@/lib/utils';
 
 const ROLE_LABEL: Record<AccountRole, string> = {
@@ -884,6 +886,13 @@ function MembersCard({
   // it doesn't survive tab switches — admins almost never want to jump
   // back to the same search after navigating away.
   const [search, setSearch] = useState('');
+  // Bulk-select state. Users can't bulk-modify themselves (would let an
+  // admin lock themselves out by demoting their own row in a sweep).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDialog, setBulkDialog] = useState<
+    'add_to_group' | 'set_role' | 'remove' | null
+  >(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   // canInvite/canRemove/canUpdateRole come in as props (driven by usePermission
   // at the page level). The row-level kebab respects each granularly.
@@ -957,6 +966,82 @@ function MembersCard({
     onError: (err: Error) => toast.error(err.message || 'Failed to leave team'),
   });
 
+  // Bulk surface only shows when the caller can actually do something
+  // useful (add to group OR change role OR remove). canInvite is the
+  // closest proxy for "can manage account membership" without adding
+  // another permission probe.
+  const canBulk = canInvite || canUpdateRole || canRemove;
+  // Eligible for bulk = visible after filter, excluding the current user
+  // and any pending row.
+  const bulkEligible = useMemo(
+    () => sorted.filter((m) => m.user_id !== currentUserId),
+    [sorted, currentUserId],
+  );
+  const selectedCount = selectedIds.size;
+  const allEligibleSelected =
+    bulkEligible.length > 0 &&
+    bulkEligible.every((m) => selectedIds.has(m.user_id));
+  function toggleOne(userId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+  function toggleAllEligible() {
+    if (allEligibleSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(bulkEligible.map((m) => m.user_id)));
+    }
+  }
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  // Bulk handlers — all use the existing per-user endpoints fanned out
+  // with Promise.all so a single failure doesn't block the others.
+  // Errors are aggregated into one toast at the end.
+  async function bulkRun(
+    label: string,
+    runOne: (userId: string) => Promise<unknown>,
+  ): Promise<void> {
+    setBulkBusy(true);
+    const ids = Array.from(selectedIds);
+    const results = await Promise.allSettled(ids.map(runOne));
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    setBulkBusy(false);
+    invalidateMembers();
+    if (failed === 0) {
+      toast.success(`${label}: ${ids.length} member${ids.length === 1 ? '' : 's'}`);
+      clearSelection();
+      setBulkDialog(null);
+    } else {
+      toast.error(
+        `${label}: ${ids.length - failed} succeeded, ${failed} failed`,
+      );
+    }
+  }
+  async function bulkAddToGroup(groupId: string) {
+    // addGroupMembers takes an array natively — single round-trip.
+    setBulkBusy(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const res = await addGroupMembers(account.account_id, groupId, ids);
+      invalidateMembers();
+      toast.success(
+        `Added ${res.added} member${res.added === 1 ? '' : 's'} to group`,
+      );
+      clearSelection();
+      setBulkDialog(null);
+    } catch (err) {
+      toast.error((err as Error).message || 'Failed to add to group');
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   return (
     <SectionCard
       title="Members"
@@ -1012,8 +1097,8 @@ function MembersCard({
       )}
 
       {!isLoading && !isError && members.length > 0 && (
-        <div className="border-b border-border/60 px-6 py-3">
-          <div className="relative max-w-sm">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-6 py-3">
+          <div className="relative max-w-sm flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -1022,6 +1107,69 @@ function MembersCard({
               className="h-9 pl-9"
             />
           </div>
+          {canBulk && bulkEligible.length > 0 && (
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={allEligibleSelected}
+                onChange={toggleAllEligible}
+                className="h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
+              />
+              {allEligibleSelected ? 'Deselect all' : 'Select all'}{' '}
+              {bulkEligible.length !== sorted.length && (
+                <span>(visible)</span>
+              )}
+            </label>
+          )}
+        </div>
+      )}
+
+      {selectedCount > 0 && canBulk && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-primary/[0.04] px-6 py-2.5 text-sm">
+          <span className="font-medium text-foreground">
+            {selectedCount} selected
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          {canInvite && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setBulkDialog('add_to_group')}
+              disabled={bulkBusy}
+            >
+              Add to group
+            </Button>
+          )}
+          {canUpdateRole && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setBulkDialog('set_role')}
+              disabled={bulkBusy}
+            >
+              Change role
+            </Button>
+          )}
+          {canRemove && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/5"
+              onClick={() => setBulkDialog('remove')}
+              disabled={bulkBusy}
+            >
+              Remove
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={clearSelection}
+            disabled={bulkBusy}
+            className="ml-auto text-muted-foreground"
+          >
+            Clear
+          </Button>
         </div>
       )}
 
@@ -1042,16 +1190,35 @@ function MembersCard({
             // Kebab is always available — "View & Edit permission policies"
             // is open to anyone who can view the member; backend gates writes.
             const showKebab = !pending;
+            // Self rows can't be bulk-acted on — would let an admin
+            // demote / remove themselves in a sweep.
+            const bulkEnabled = canBulk && !isSelf;
+            const isSelected = selectedIds.has(member.user_id);
 
             return (
               <ListRow
                 key={member.user_id}
                 leading={
-                  <UserAvatar
-                    email={member.email ?? member.user_id}
-                    name={member.email ?? undefined}
-                    size="md"
-                  />
+                  <div className="flex items-center gap-2.5">
+                    {bulkEnabled ? (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleOne(member.user_id)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Select ${memberLabel(member)}`}
+                        className="h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
+                      />
+                    ) : (
+                      // Spacer so avatars align across selectable + self rows.
+                      <span className="w-3.5" aria-hidden />
+                    )}
+                    <UserAvatar
+                      email={member.email ?? member.user_id}
+                      name={member.email ?? undefined}
+                      size="md"
+                    />
+                  </div>
                 }
                 title={memberLabel(member)}
                 badges={
@@ -1246,6 +1413,51 @@ function MembersCard({
         confirmLabel="Leave"
         onConfirm={() => leaveMutation.mutate()}
         isPending={leaveMutation.isPending}
+      />
+
+      <BulkAddToGroupDialog
+        open={bulkDialog === 'add_to_group'}
+        onOpenChange={(o) => !o && setBulkDialog(null)}
+        accountId={account.account_id}
+        selectedCount={selectedCount}
+        busy={bulkBusy}
+        onConfirm={bulkAddToGroup}
+      />
+
+      <BulkSetRoleDialog
+        open={bulkDialog === 'set_role'}
+        onOpenChange={(o) => !o && setBulkDialog(null)}
+        selectedCount={selectedCount}
+        busy={bulkBusy}
+        onConfirm={(role) =>
+          bulkRun('Role changed', (uid) =>
+            updateAccountMemberRole(account.account_id, uid, role),
+          )
+        }
+      />
+
+      <ConfirmDialog
+        open={bulkDialog === 'remove'}
+        onOpenChange={(o) => !o && setBulkDialog(null)}
+        title="Remove members"
+        description={
+          <span>
+            Remove{' '}
+            <span className="font-medium text-foreground">
+              {selectedCount} member{selectedCount === 1 ? '' : 's'}
+            </span>{' '}
+            from{' '}
+            <span className="font-medium text-foreground">{account.name}</span>?
+            They lose access immediately.
+          </span>
+        }
+        confirmLabel={`Remove ${selectedCount}`}
+        isPending={bulkBusy}
+        onConfirm={() =>
+          bulkRun('Removed', (uid) =>
+            removeAccountMember(account.account_id, uid),
+          )
+        }
       />
     </SectionCard>
   );
@@ -1609,5 +1821,150 @@ function PendingInvitesSection({
         }}
       />
     </div>
+  );
+}
+
+// ─── Bulk dialogs ─────────────────────────────────────────────────────────
+
+function BulkAddToGroupDialog({
+  open,
+  onOpenChange,
+  accountId,
+  selectedCount,
+  busy,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  accountId: string;
+  selectedCount: number;
+  busy: boolean;
+  onConfirm: (groupId: string) => void;
+}) {
+  const [groupId, setGroupId] = useState<string | undefined>(undefined);
+  const groupsQuery = useQuery({
+    queryKey: ['account-groups', accountId],
+    queryFn: () => listGroups(accountId),
+    enabled: open,
+    staleTime: 30_000,
+  });
+  // Reset selection every reopen so a stale id from last time doesn't
+  // pre-fill an unrelated group.
+  function handleOpenChange(v: boolean) {
+    if (v) setGroupId(undefined);
+    onOpenChange(v);
+  }
+  const groups = groupsQuery.data ?? [];
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            Add {selectedCount} member{selectedCount === 1 ? '' : 's'} to a group
+          </DialogTitle>
+          <DialogDescription>
+            Pick the group these members should join. Members already in the
+            group are skipped — re-adding is a no-op.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5 py-1">
+          <Label htmlFor="bulk-group">Group</Label>
+          {groupsQuery.isLoading ? (
+            <Skeleton className="h-9 w-full" />
+          ) : groups.length === 0 ? (
+            <p className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+              No groups exist on this account yet. Create one from the Groups
+              tab first.
+            </p>
+          ) : (
+            <Select
+              value={groupId ?? ''}
+              onValueChange={(v) => setGroupId(v || undefined)}
+            >
+              <SelectTrigger id="bulk-group">
+                <SelectValue placeholder="Choose a group…" />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((g) => (
+                  <SelectItem key={g.group_id} value={g.group_id}>
+                    {g.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!groupId || busy || groups.length === 0}
+            onClick={() => groupId && onConfirm(groupId)}
+            className="gap-1.5"
+          >
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Add to group
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BulkSetRoleDialog({
+  open,
+  onOpenChange,
+  selectedCount,
+  busy,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  selectedCount: number;
+  busy: boolean;
+  onConfirm: (role: AccountRole) => void;
+}) {
+  const [role, setRole] = useState<AccountRole>('member');
+  function handleOpenChange(v: boolean) {
+    if (v) setRole('member');
+    onOpenChange(v);
+  }
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            Change role for {selectedCount} member{selectedCount === 1 ? '' : 's'}
+          </DialogTitle>
+          <DialogDescription>
+            Owners and admins have implicit Manager on every project. Members
+            get access only via direct grants or group membership.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5 py-1">
+          <Label htmlFor="bulk-role">New role</Label>
+          <Select value={role} onValueChange={(v) => setRole(v as AccountRole)}>
+            <SelectTrigger id="bulk-role">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="owner">Owner — full control + can delete the account</SelectItem>
+              <SelectItem value="admin">Admin — everything except account deletion</SelectItem>
+              <SelectItem value="member">Member — no implicit project access</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={() => onConfirm(role)} disabled={busy} className="gap-1.5">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Apply
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
