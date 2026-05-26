@@ -191,47 +191,68 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
       title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line140JsxAttrTitleInviteByEmail')}
       description="Add a Kortix user to this project. If they don't have an account yet, they'll get an invitation email — accepting puts them on this project at the chosen role in one step."
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="flex-1 space-y-1.5">
-          <Label htmlFor="invite-email">Email</Label>
-          <Input
-            id="invite-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line151JsxAttrPlaceholderTeammateExampleCom')}
-            disabled={inviteMutation.isPending}
-            autoComplete="off"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="invite-role">Role</Label>
-          <Select
-            value={role}
-            onValueChange={(next) => setRole(next as ProjectRole)}
-            disabled={inviteMutation.isPending}
+      {/* Layout: labels on top row, controls on the row below. Stacking
+          the labels separately (rather than putting Label+control in
+          each column) means we don't have to chase column-height parity
+          with sm:items-end — every control just sits on the same
+          baseline because they're in a single grid row. */}
+      <form
+        onSubmit={handleSubmit}
+        className="grid grid-cols-1 gap-x-3 gap-y-1.5 sm:grid-cols-[1fr_10rem_auto]"
+      >
+        <Label htmlFor="invite-email" className="sm:col-start-1">Email</Label>
+        <Label htmlFor="invite-role" className="hidden sm:block sm:col-start-2">
+          Role
+        </Label>
+        {/* No label above the button — invisible placeholder keeps the
+            grid row's intrinsic height stable without rendering text. */}
+        <span aria-hidden className="hidden sm:block sm:col-start-3">&nbsp;</span>
+
+        <Input
+          id="invite-email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line151JsxAttrPlaceholderTeammateExampleCom')}
+          disabled={inviteMutation.isPending}
+          autoComplete="off"
+          className="sm:col-start-1"
+          style={{ height: 44 }}
+        />
+
+        <Label htmlFor="invite-role-mobile" className="sm:hidden">Role</Label>
+        <Select
+          value={role}
+          onValueChange={(next) => setRole(next as ProjectRole)}
+          disabled={inviteMutation.isPending}
+        >
+          {/* Inline height guarantees parity with Input regardless of
+              whether the size="lg" variant has been picked up by --hot
+              reload yet (Bun was hitting that issue earlier). */}
+          <SelectTrigger
+            id="invite-role"
+            size="lg"
+            className="w-full sm:col-start-2"
+            style={{ height: 44 }}
           >
-            {/* size="lg" (h-11) matches the Input's default height —
-                plain className="h-11" would lose to the data-[size]:h-9
-                selector on specificity. */}
-            <SelectTrigger id="invite-role" size="lg" className="w-full sm:w-40">
-              <SelectValue />
-            </SelectTrigger>
-            {/* Two-line options (role + capability blurb) so the picker
-                explains what each role does. Trigger stays one line —
-                see role-select-item.tsx for how the ItemText split works. */}
-            <SelectContent>
-              <ProjectRoleSelectItem role="viewer" />
-              <ProjectRoleSelectItem role="editor" />
-              <ProjectRoleSelectItem role="manager" />
-            </SelectContent>
-          </Select>
-        </div>
+            <SelectValue />
+          </SelectTrigger>
+          {/* Two-line options (role + capability blurb) so the picker
+              explains what each role does. Trigger stays one line —
+              see role-select-item.tsx for how the ItemText split works. */}
+          <SelectContent>
+            <ProjectRoleSelectItem role="viewer" />
+            <ProjectRoleSelectItem role="editor" />
+            <ProjectRoleSelectItem role="manager" />
+          </SelectContent>
+        </Select>
+
         <Button
           type="submit"
           size="lg"
           disabled={!email.trim() || inviteMutation.isPending}
-          className="shrink-0 gap-1.5"
+          className="shrink-0 gap-1.5 sm:col-start-3"
+          style={{ height: 44 }}
         >
           {inviteMutation.isPending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
