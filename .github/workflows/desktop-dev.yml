@@ -224,7 +224,7 @@ jobs:
           git push -f origin "${{ env.DESKTOP_TAG }}"
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.DESKTOP_TAG }}
           name: ${{ env.DESKTOP_TAG }}

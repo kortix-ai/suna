@@ -215,7 +215,7 @@ jobs:
           git push origin "cli-v${{ env.VERSION }}"
 
       - name: Create CLI GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: cli-v${{ env.VERSION }}
           name: cli-v${{ env.VERSION }}
