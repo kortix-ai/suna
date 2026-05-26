@@ -211,7 +211,10 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
             onValueChange={(next) => setRole(next as ProjectRole)}
             disabled={inviteMutation.isPending}
           >
-            <SelectTrigger id="invite-role" className="h-9 w-full sm:w-36">
+            {/* h-11 to match the Input's default height — without this
+                the dropdown sits 8px shorter than the email field and
+                the row looks ragged. */}
+            <SelectTrigger id="invite-role" className="h-11 w-full sm:w-40">
               <SelectValue />
             </SelectTrigger>
             {/* Two-line options (role + capability blurb) so the picker
@@ -226,6 +229,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
         </div>
         <Button
           type="submit"
+          size="lg"
           disabled={!email.trim() || inviteMutation.isPending}
           className="shrink-0 gap-1.5"
         >
