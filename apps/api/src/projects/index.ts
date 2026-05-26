@@ -1185,6 +1185,9 @@ async function grantProjectRole(input: {
   userId: string;
   role: ProjectRole;
   grantedBy: string;
+  /** undefined = leave as-is on update / NULL on insert; null = clear
+   *  any existing expiry; Date = set/replace the expiry. */
+  expiresAt?: Date | null | undefined;
 }) {
   const now = new Date();
   await db
@@ -1195,6 +1198,7 @@ async function grantProjectRole(input: {
       userId: input.userId,
       projectRole: input.role,
       grantedBy: input.grantedBy,
+      expiresAt: input.expiresAt ?? null,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -1203,8 +1207,31 @@ async function grantProjectRole(input: {
         projectRole: input.role,
         grantedBy: input.grantedBy,
         updatedAt: now,
+        // Only overwrite expires_at when the caller explicitly supplied
+        // it (undefined preserves the existing value).
+        ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       },
     });
+}
+
+/**
+ * Parse + validate an optional `expires_at` ISO string from a request
+ * body. undefined = caller didn't set; null = clear; Date = set.
+ * Rejects past timestamps to surface mistakes at write time.
+ */
+function parseExpiresAtBody(
+  raw: unknown,
+): { ok: true; value: Date | null | undefined } | { ok: false; error: string } {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null) return { ok: true, value: null };
+  if (typeof raw !== 'string')
+    return { ok: false, error: 'expires_at must be an ISO-8601 string or null' };
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime()))
+    return { ok: false, error: 'expires_at must be a valid ISO-8601 timestamp' };
+  if (d.getTime() < Date.now())
+    return { ok: false, error: 'expires_at must be in the future' };
+  return { ok: true, value: d };
 }
 
 async function ensureOrgMembership(
@@ -5325,6 +5352,7 @@ projectsApp.get('/:projectId/access', async (c) => {
         grantedBy: projectMembers.grantedBy,
         createdAt: projectMembers.createdAt,
         updatedAt: projectMembers.updatedAt,
+        expiresAt: projectMembers.expiresAt,
       })
       .from(projectMembers)
       .where(eq(projectMembers.projectId, loaded.row.projectId)),
@@ -5411,6 +5439,10 @@ projectsApp.get('/:projectId/access', async (c) => {
         granted_by: grant?.grantedBy ?? null,
         granted_at: grant?.createdAt?.toISOString() ?? null,
         updated_at: grant?.updatedAt?.toISOString() ?? null,
+        /** Auto-revoke timestamp for the DIRECT grant. NULL = permanent.
+         *  Group-derived expiries are surfaced per-source separately
+         *  (not yet wired into group_sources — follow-up). */
+        expires_at: grant?.expiresAt?.toISOString() ?? null,
       };
     })
     .sort((a, b) => {
@@ -5443,6 +5475,8 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
   const role = parseProjectRole(body.role);
   if (!email) return c.json({ error: 'email is required' }, 400);
   if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
+  const expires = parseExpiresAtBody(body.expires_at);
+  if (!expires.ok) return c.json({ error: expires.error }, 400);
 
   const targetUserId = await lookupUserIdByEmail(email);
   if (!targetUserId) {
@@ -5470,6 +5504,7 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
     userId: targetUserId,
     role,
     grantedBy: loaded.userId,
+    expiresAt: expires.value,
   });
 
   return c.json({
@@ -5495,6 +5530,8 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
   const body = await readBody(c);
   const role = parseProjectRole(body.role);
   if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
+  const expires = parseExpiresAtBody(body.expires_at);
+  if (!expires.ok) return c.json({ error: expires.error }, 400);
 
   const targetMembership = await getAccountMembership(targetUserId, loaded.row.accountId);
   if (!targetMembership) {
@@ -5525,6 +5562,7 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
     userId: targetUserId,
     role,
     grantedBy: loaded.userId,
+    expiresAt: expires.value,
   });
 
   return c.json({
@@ -5591,6 +5629,7 @@ projectsApp.get('/:projectId/group-grants', async (c) => {
       role: projectGroupGrants.role,
       grantedBy: projectGroupGrants.grantedBy,
       createdAt: projectGroupGrants.createdAt,
+      expiresAt: projectGroupGrants.expiresAt,
       groupName: accountGroups.name,
     })
     .from(projectGroupGrants)
@@ -5645,6 +5684,8 @@ projectsApp.get('/:projectId/group-grants', async (c) => {
         role: r.role,
         granted_by: r.grantedBy,
         created_at: r.createdAt.toISOString(),
+        /** Auto-revoke timestamp. NULL = permanent attachment. */
+        expires_at: r.expiresAt?.toISOString() ?? null,
         member_count: stats.total,
         // How many of the group's members are account owners/admins —
         // their implicit Manager access overrides this grant's role.
@@ -5675,6 +5716,8 @@ projectsApp.post('/:projectId/group-grants', async (c) => {
   if (!isProjectRole(role)) {
     return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
   }
+  const expires = parseExpiresAtBody(body.expires_at);
+  if (!expires.ok) return c.json({ error: expires.error }, 400);
 
   // Confirm the group exists and belongs to this account — prevents
   // attaching a foreign-account group via a guessed UUID.
@@ -5696,10 +5739,17 @@ projectsApp.post('/:projectId/group-grants', async (c) => {
       accountId: loaded.row.accountId,
       role,
       grantedBy: loaded.userId,
+      expiresAt: expires.value ?? null,
     })
     .onConflictDoUpdate({
       target: [projectGroupGrants.projectId, projectGroupGrants.groupId],
-      set: { role, grantedBy: loaded.userId, updatedAt: now },
+      set: {
+        role,
+        grantedBy: loaded.userId,
+        updatedAt: now,
+        // Only overwrite when caller explicitly set the field.
+        ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
+      },
     });
 
   return c.json({ project_id: projectId, group_id: groupId, role }, 201);
@@ -5724,10 +5774,16 @@ projectsApp.patch('/:projectId/group-grants/:groupId', async (c) => {
   if (!isProjectRole(body.role)) {
     return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
   }
+  const expires = parseExpiresAtBody(body.expires_at);
+  if (!expires.ok) return c.json({ error: expires.error }, 400);
 
   const result = await db
     .update(projectGroupGrants)
-    .set({ role: body.role, updatedAt: new Date() })
+    .set({
+      role: body.role,
+      updatedAt: new Date(),
+      ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
+    })
     .where(
       and(
         eq(projectGroupGrants.projectId, projectId),
