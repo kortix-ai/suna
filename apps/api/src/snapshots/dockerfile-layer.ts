@@ -65,6 +65,8 @@ export interface BuildLayeredDockerfileOpts {
    * real snapshots.
    */
   executorSdkPath: string;
+  /** Gzipped tarball containing the baked project checkout, including .git. */
+  workspaceArchivePath: string;
 }
 
 export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string {
@@ -76,6 +78,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     entrypointScriptPath,
     agentCliPath,
     executorSdkPath,
+    workspaceArchivePath,
   } = opts;
   const trimmed = userDockerfile.trimEnd();
 
@@ -140,22 +143,21 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // Keep the repo-relative layout so CLIs can import shared packages.
     `COPY ${agentCliPath}/ /opt/kortix/apps/sandbox/agent-cli/`,
     `COPY ${executorSdkPath}/ /opt/kortix/packages/executor-sdk/`,
+    `COPY ${workspaceArchivePath} /tmp/kortix-workspace.tar.gz`,
     'RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\',
     '    && rm /tmp/kortix-agent.gz \\',
     '    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix-entrypoint \\',
     '        /opt/kortix/apps/sandbox/agent-cli/install-shims.sh \\',
     '    && bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli',
     '',
-    // Pre-seed /workspace with a sentinel file. Daytona\'s runtime appears
-    // to clean up *empty* /workspace directories shortly after the
-    // container starts (likely overlayfs init), leaving the daemon\'s CWD
-    // pointing at a deleted inode and every subsequent fs op silently
-    // failing. The working default snapshot survives this because its
-    // /workspace is non-empty at image build time (XDG dirs, .bun, etc.);
-    // we replicate the property with a deliberate marker.
+    // Pre-seed /workspace with the project checkout, including .git. This is
+    // the session hot path: boot should create a local session branch from the
+    // baked default-branch checkout instead of cloning/fetching the repo again.
     'ENV KORTIX_WORKSPACE=/workspace',
     'RUN mkdir -p /workspace \\',
-    '    && echo "kortix-snapshot" > /workspace/.kortix-workspace-marker \\',
+    '    && tar -xzf /tmp/kortix-workspace.tar.gz -C /workspace \\',
+    '    && rm /tmp/kortix-workspace.tar.gz \\',
+    '    && test -d /workspace/.git \\',
     '    && chmod -R a+rwX /workspace',
     'WORKDIR /workspace',
     'EXPOSE 8000',

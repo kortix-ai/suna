@@ -78,6 +78,7 @@ const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
 import {
+  materializeRepoCheckoutTar,
   materializeRepoContext,
   readRepoFile,
   resolveCommitSha,
@@ -107,7 +108,7 @@ const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 const BUILD_ATTEMPTS = 3;
 const BUILD_RETRY_BASE_MS = 2_000;
 const SNAPSHOT_LOG_TAIL_LIMIT = 20;
-const RUNTIME_LAYER_VERSION = 'agent-browser-v1';
+const RUNTIME_LAYER_VERSION = 'baked-workspace-v1';
 
 /**
  * Default retention: how many `ready` snapshots we keep per
@@ -1400,6 +1401,7 @@ async function prepareBuildContext(
   await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
 
   const contextDir = await materializeRepoContext(project, commitSha, id.contextSubdir);
+  await materializeRepoCheckoutTar(project, commitSha, join(contextDir, 'kortix-workspace.tar.gz'));
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
   await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
@@ -1414,6 +1416,7 @@ async function prepareBuildContext(
     entrypointScriptPath: 'kortix-entrypoint',
     agentCliPath: 'kortix-agent-cli',
     executorSdkPath: 'kortix-executor-sdk',
+    workspaceArchivePath: 'kortix-workspace.tar.gz',
   });
   await Bun.write(composedPath, composed);
 

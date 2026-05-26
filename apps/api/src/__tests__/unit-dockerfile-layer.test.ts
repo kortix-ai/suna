@@ -15,6 +15,7 @@ const COMMON = {
   entrypointScriptPath: 'kortix-entrypoint',
   agentCliPath: 'kortix-agent-cli',
   executorSdkPath: 'kortix-executor-sdk',
+  workspaceArchivePath: 'kortix-workspace.tar.gz',
 };
 
 describe('buildLayeredDockerfile', () => {
@@ -33,6 +34,9 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
     expect(merged).toContain('COPY kortix-agent-cli/ /opt/kortix/apps/sandbox/agent-cli/');
     expect(merged).toContain('COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/');
+    expect(merged).toContain('COPY kortix-workspace.tar.gz /tmp/kortix-workspace.tar.gz');
+    expect(merged).toContain('tar -xzf /tmp/kortix-workspace.tar.gz -C /workspace');
+    expect(merged).toContain('test -d /workspace/.git');
     expect(merged).toContain(
       'bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli',
     );

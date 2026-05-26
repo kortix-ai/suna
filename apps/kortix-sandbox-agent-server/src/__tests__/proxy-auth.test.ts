@@ -139,6 +139,7 @@ describe('daemon proxy auth gate', () => {
       const remote = join(root, 'remote.git')
       const seed = join(root, 'seed')
       const target = join(root, 'workspace')
+      const globalGitConfig = join(root, 'gitconfig')
       git(['init', '--bare', remote])
       mkdirSync(seed)
       git(['init'], seed)
@@ -174,6 +175,60 @@ describe('daemon proxy auth gate', () => {
       expect(gitOutput(['-C', target, 'config', 'user.email'])).toBe('agent@kortix.ai')
     } finally {
       globalThis.fetch = originalFetch
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('uses a baked git checkout without fetching clone credentials', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-baked-checkout-'))
+    const originalFetch = globalThis.fetch
+    const originalGitConfigGlobal = process.env.GIT_CONFIG_GLOBAL
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+    try {
+      const remote = join(root, 'remote.git')
+      const seed = join(root, 'seed')
+      const target = join(root, 'workspace')
+      const globalGitConfig = join(root, 'gitconfig')
+      git(['init', '--bare', remote])
+      mkdirSync(seed)
+      git(['init'], seed)
+      git(['checkout', '-b', 'main'], seed)
+      writeFileSync(join(seed, 'README.md'), 'v1\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v1'], seed)
+      git(['remote', 'add', 'origin', remote], seed)
+      git(['push', '-u', 'origin', 'main'], seed)
+      git(['clone', '--branch', 'main', remote, target])
+
+      process.env.GIT_CONFIG_GLOBAL = globalGitConfig
+      globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+        const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url
+        requests.push({ url: href, init })
+        return new Response(JSON.stringify({ auth: { token: 'clone-token' } }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }) as unknown as typeof fetch
+
+      await materializeRepo(baseConfig({
+        autoClone: true,
+        projectId: 'project-123',
+        apiUrl: 'http://api.local/v1/router',
+        projectTarget: target,
+        repoUrl: remote,
+        defaultBranch: 'main',
+        branchName: 'session-branch',
+      }))
+
+      expect(requests).toHaveLength(0)
+      expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('v1\n')
+      expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-branch')
+      expect(gitOutput(['-C', target, 'remote', 'get-url', 'origin'])).toBe(remote)
+      expect(gitOutput(['-C', target, 'config', 'user.name'])).toBe('Kortix Agent')
+      expect(gitOutput(['-C', target, 'config', 'user.email'])).toBe('agent@kortix.ai')
+      expect(readFileSync(globalGitConfig, 'utf8')).toContain(`directory = ${target}`)
+    } finally {
+      globalThis.fetch = originalFetch
+      process.env.GIT_CONFIG_GLOBAL = originalGitConfigGlobal
       rmSync(root, { recursive: true, force: true })
     }
   })

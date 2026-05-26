@@ -415,6 +415,40 @@ export async function materializeRepoContext(
 }
 
 /**
+ * Materialize a real git checkout into a compressed tarball for the sandbox
+ * snapshot. Unlike `materializeRepoContext()` this intentionally preserves the
+ * `.git` directory so a new session sandbox can boot from the baked working
+ * tree instead of cloning the repository again.
+ */
+export async function materializeRepoCheckoutTar(
+  project: GitBackedProject,
+  ref: string,
+  outputPath: string,
+): Promise<void> {
+  const repoPath = await refreshMirror(project);
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const checkout = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-workspace-'));
+
+  try {
+    await runGit(['clone', '--no-local', repoPath, checkout], undefined, false);
+    await runGit(['checkout', '-B', project.defaultBranch, ref], checkout, false);
+    await runGit(['remote', 'set-url', 'origin', project.repoUrl], checkout, false);
+    await runGit(['gc', '--auto'], checkout, false).catch(() => ({ stdout: '', stderr: '' }));
+    await execFileAsync('tar', ['-czf', outputPath, '-C', checkout, '.'], {
+      env: { ...process.env },
+      timeout: 60_000,
+    });
+  } catch (error) {
+    await fs.rm(outputPath, { force: true }).catch(() => {});
+    throw error;
+  } finally {
+    await fs.rm(checkout, { recursive: true, force: true });
+  }
+}
+
+/**
  * Stream a zip archive of the repo (or a subtree) at the given ref.
  *
  * Uses `git archive --format=zip` so the work happens server-side and the

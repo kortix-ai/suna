@@ -73,6 +73,20 @@ async function configureRepoGitIdentity(cfg: GitIdentityConfig, target: string):
   logger.info('[git] configured default repo identity', { target, name: cfg.gitUserName, email: cfg.gitUserEmail })
 }
 
+async function configureSafeDirectory(target: string): Promise<void> {
+  const current = await execGit(['config', '--global', '--get-all', 'safe.directory'])
+  if (current.code === 0) {
+    const entries = current.stdout.split('\n').map((line) => line.trim()).filter(Boolean)
+    if (entries.includes(target) || entries.includes('*')) return
+  }
+
+  const set = await execGit(['config', '--global', '--add', 'safe.directory', target])
+  if (set.code !== 0) {
+    throw new Error(`git config safe.directory failed: ${set.stderr || set.stdout}`)
+  }
+  logger.info('[git] configured safe git directory', { target })
+}
+
 /** Build the `-c http.<repo-origin>/.extraheader=...` auth args for git. */
 export function buildGitAuthArgs(
   repoUrl: string | undefined,
@@ -242,6 +256,20 @@ async function checkoutSessionBranch(
   logger.info('[git] created local session branch', { branch })
 }
 
+async function checkoutLocalSessionBranch(target: string, branch: string): Promise<void> {
+  const local = await execGit([
+    '-C',
+    target,
+    'checkout',
+    '-B',
+    branch,
+  ])
+  if (local.code !== 0) {
+    throw new Error(`failed to create local session branch ${branch}: ${local.stderr}`)
+  }
+  logger.info('[git] created local session branch from baked checkout', { branch })
+}
+
 /**
  * Materialize the project repository into `cfg.projectTarget` at the configured
  * branch. Ported from core/scripts/kortix-daemon clone_project_if_requested.
@@ -253,12 +281,12 @@ export async function materializeRepo(cfg: Config): Promise<void> {
 
   const target = cfg.projectTarget
   const base = cfg.defaultBranch
-  const cloneToken = await resolveCloneToken(cfg)
   await mkdir(dirname(target), { recursive: true })
 
   if (await pathExists(`${target}/.git`)) {
-    logger.info('[git] refreshing existing repo', { target })
-    const setUrl = await gitWithAuth(cloneToken, cfg.repoUrl, [
+    logger.info('[git] using baked repo checkout', { target })
+    await configureSafeDirectory(target)
+    const setUrl = await execGit([
       '-C',
       target,
       'remote',
@@ -268,22 +296,14 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     ])
     if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
 
-    const fetched = await gitWithAuth(cloneToken, cfg.repoUrl, [
-      '-C',
-      target,
-      'fetch',
-      '--prune',
-      'origin',
-      `+refs/heads/${base}:refs/remotes/origin/${base}`,
-    ])
-    if (fetched.code !== 0) throw new Error(`git fetch (refresh) failed: ${fetched.stderr}`)
+    if (cfg.branchName) {
+      await checkoutLocalSessionBranch(target, cfg.branchName)
+    }
 
-    // Refresh path only: bring the working tree to the freshly-fetched base.
-    const reset = await gitWithAuth(cloneToken, cfg.repoUrl, [
-      '-C', target, 'reset', '--hard', `origin/${base}`,
-    ])
-    if (reset.code !== 0) throw new Error(`git reset --hard failed: ${reset.stderr}`)
+    await configureRepoGitIdentity(cfg, target)
+    return
   } else {
+    const cloneToken = await resolveCloneToken(cfg)
     const tmpTarget = join(dirname(target), `.kortix-clone-${process.pid}-${Date.now()}`)
     await rm(tmpTarget, { recursive: true, force: true })
     logger.info('[git] cloning repo', {
@@ -323,6 +343,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   }
 
   if (cfg.branchName) {
+    const cloneToken = await resolveCloneToken(cfg)
     await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
   }
 
