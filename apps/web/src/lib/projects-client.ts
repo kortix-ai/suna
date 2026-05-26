@@ -513,13 +513,35 @@ export async function revokeProjectAccess(projectId: string, userId: string) {
   );
 }
 
+/** Two-shape response:
+ *  - User had a Kortix account already → ProjectAccessMember row was
+ *    inserted/updated; UI refreshes the access list and shows them.
+ *  - User had no Kortix account → an account invitation was created
+ *    with a bootstrap_grant. UI shows "invitation sent" and skips the
+ *    access-list refresh (the user won't appear until they accept). */
+export type InviteProjectMemberResult =
+  | ProjectAccessMember
+  | {
+      status: 'invited';
+      email: string;
+      invite_id: string;
+      project_role: ProjectRole;
+      message: string;
+    };
+
+export function isInviteSent(
+  r: InviteProjectMemberResult,
+): r is Extract<InviteProjectMemberResult, { status: 'invited' }> {
+  return 'status' in r && r.status === 'invited';
+}
+
 export async function inviteProjectMember(
   projectId: string,
   email: string,
   role: ProjectRole,
 ) {
   return unwrap(
-    await backendApi.post<ProjectAccessMember>(
+    await backendApi.post<InviteProjectMemberResult>(
       `/projects/${projectId}/access/invite`,
       { email, role },
     ),

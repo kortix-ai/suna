@@ -27,6 +27,7 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import {
   getProject,
   inviteProjectMember,
+  isInviteSent,
   listProjectAccess,
   revokeProjectAccess,
   updateProjectAccess,
@@ -136,12 +137,23 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
 
   const inviteMutation = useMutation({
     mutationFn: () => inviteProjectMember(projectId, email.trim(), role),
-    onSuccess: () => {
-      toast.success('Member invited');
+    onSuccess: (result) => {
+      // Two cases. If the email already had a Kortix account, the
+      // backend granted them the role immediately and returned the
+      // ProjectAccessMember row. If not, the backend created an
+      // org-level invitation carrying the project grant — the user
+      // won't show up in the access list until they accept.
+      if (isInviteSent(result)) {
+        toast.success(
+          `Invitation sent to ${result.email}. They'll land on this project as ${result.project_role} when they sign up.`,
+        );
+      } else {
+        toast.success('Member added');
+        queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
+        queryClient.invalidateQueries({ queryKey: ['projects'] });
+        queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      }
       setEmail('');
-      queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
     },
     onError: (error: Error) => toast.error(error.message || 'Failed to invite member'),
   });
@@ -155,7 +167,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
   return (
     <SectionCard
       title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line140JsxAttrTitleInviteByEmail')}
-      description={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject')}
+      description="Add a Kortix user to this project. If they don't have an account yet, they'll get an invitation email — accepting puts them on this project at the chosen role in one step."
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex-1 space-y-1.5">
