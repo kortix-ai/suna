@@ -391,6 +391,37 @@ export async function provisionSessionSandbox(opts: {
       tl.mark(`provider-create:${attempts}x`);
       const timeline = tl.summary();
 
+      const [currentSession] = await db
+        .select({ status: projectSessions.status })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, sandbox.sandboxId))
+        .limit(1);
+      if (currentSession?.status === 'stopped') {
+        await provider.remove(result.externalId).catch((err) => {
+          console.warn(`[session-sandbox] failed to remove stopped session sandbox ${result.externalId}:`, err);
+        });
+        await db
+          .update(sessionSandboxes)
+          .set({
+            externalId: result.externalId,
+            baseUrl: result.baseUrl || null,
+            status: 'stopped',
+            metadata: {
+              ...((sandbox.metadata as Record<string, unknown> | null) ?? {}),
+              initStatus: 'failed',
+              initAbortedAt: new Date().toISOString(),
+              lastInitError: 'Session was stopped before provider create completed',
+              provisionTimeline: timeline,
+              daytonaSandboxId: result.externalId,
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+        tl.mark('row-stopped-before-active');
+        tl.log({ provider: providerName, degraded: bootedDegraded, attempts, stoppedBeforeActive: true });
+        return;
+      }
+
       // Async providers leave the row at 'provisioning' so the dashboard
       // poller can flip it to 'active' once port 8000 is reachable. Sync
       // providers (none today) would be ready immediately on create.

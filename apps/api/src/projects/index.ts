@@ -6400,6 +6400,16 @@ projectsApp.delete('/:projectId/sessions/:sessionId', async (c) => {
     return c.json({ error: 'Only the session owner or a project manager can stop this session' }, 403);
   }
 
+  const [sandbox] = await db
+    .select()
+    .from(sessionSandboxes)
+    .where(and(
+      eq(sessionSandboxes.sessionId, sessionId),
+      eq(sessionSandboxes.projectId, projectId),
+      eq(sessionSandboxes.accountId, loaded.row.accountId),
+    ))
+    .limit(1);
+
   const [row] = await db
     .update(projectSessions)
     .set({ status: 'stopped', updatedAt: new Date() })
@@ -6411,6 +6421,35 @@ projectsApp.delete('/:projectId/sessions/:sessionId', async (c) => {
     .returning();
 
   if (!row) return c.json({ error: 'Not found' }, 404);
+
+  if (sandbox) {
+    await db
+      .update(sessionSandboxes)
+      .set({
+        status: 'stopped',
+        metadata: {
+          ...(sandbox.metadata ?? {}),
+          stoppedAt: new Date().toISOString(),
+          initStatus: sandbox.status === 'active' ? 'ready' : 'failed',
+          ...(sandbox.status === 'active'
+            ? {}
+            : { lastInitError: 'Session was stopped before sandbox initialization completed' }),
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId))
+      .catch((err) => {
+        console.warn(`[projects] failed to mark session sandbox stopped for ${sessionId}:`, err);
+      });
+
+    if (sandbox.externalId && (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider)) {
+      const provider = getProvider(sandbox.provider as SandboxProviderName);
+      void provider.remove(sandbox.externalId).catch((err) => {
+        console.warn(`[projects] failed to remove provider sandbox ${sandbox.externalId} for stopped session ${sessionId}:`, err);
+      });
+    }
+  }
+
   return c.json({ ok: true });
 });
 

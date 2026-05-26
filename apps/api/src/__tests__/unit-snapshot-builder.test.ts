@@ -185,6 +185,7 @@ mock.module('../projects/git', () => ({
   resolveTreeOid: async () => 'tree-oid',
   readRepoFile: async () => 'FROM ubuntu:24.04\n',
   materializeRepoContext: async () => '/tmp/fake-context',
+  materializeRepoCheckoutTar: async () => ({ archivePath: '/tmp/fake-checkout.tar.gz', bytes: 1 }),
 }));
 
 mock.module('../projects/triggers', () => ({
@@ -260,6 +261,28 @@ describe('getLatestReadySnapshot', () => {
     const result = await builder.getLatestReadySnapshot(PROJECT_ID, BRANCH);
     expect(result?.snapshotRowId).toBe('current-older');
   });
+
+  test('falls back to the newest retained ready row when the runtime is outdated', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'stale-newer',
+        status: 'ready',
+        metadata: { runtimeFingerprint: 'runtime-old' },
+        createdAt: new Date(2026, 0, 5),
+      }),
+      makeRow({
+        snapshotRowId: 'stale-older',
+        status: 'ready',
+        metadata: { runtimeFingerprint: 'runtime-older' },
+        createdAt: new Date(2026, 0, 1),
+      }),
+    ];
+    setFilter((r) => r.status === 'ready');
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const result = await builder.getLatestReadySnapshot(PROJECT_ID, BRANCH);
+    expect(result?.snapshotRowId).toBe('stale-newer');
+  });
 });
 
 describe('getReadySnapshotForCommit', () => {
@@ -326,6 +349,25 @@ describe('ensureBuildForLatestCommit', () => {
       { branch: BRANCH, accountId: ACCOUNT_ID, source: 'manual' },
     );
     expect(result.status).toBe('already-building');
+  });
+
+  test('starts a non-destructive rebuild when the branch tip has an outdated ready row', async () => {
+    rows = [
+      makeRow({
+        commitSha: 'head-of-main',
+        status: 'ready',
+        snapshotId: 'kortix-snap-1111-old-runtime',
+        metadata: { runtimeFingerprint: 'runtime-old' },
+      }),
+    ];
+    setFilter((r) => r.commitSha === 'head-of-main' && r.status !== 'failed');
+
+    const result = await builder.ensureBuildForLatestCommit(
+      { projectId: PROJECT_ID, repoUrl: 'r', defaultBranch: BRANCH, manifestPath: 'm' },
+      { branch: BRANCH, accountId: ACCOUNT_ID, source: 'manual' },
+    );
+    expect(result.status).toBe('started');
+    expect(result.commitSha).toBe('head-of-main');
   });
 
   test('returns started when no row exists for the head commit', async () => {

@@ -41,6 +41,16 @@ process.env.KORTIX_SESSION_SNAPSHOT_READY_POLL_MS = '1';
 
 mock.module('../shared/db', () => ({
   db: {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: async () => {
+            if (table === projectSessions) return [projectSessionStatus];
+            return [];
+          },
+        }),
+      }),
+    }),
     insert: (table: unknown) => ({
       values: (values: any) => ({
         returning: async () => {

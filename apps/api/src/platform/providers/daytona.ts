@@ -65,6 +65,11 @@ export class DaytonaProvider implements SandboxProvider {
       .replace(/\/v1\/router$/, '')
       .replace(/\/v1$/, '');
 
+    const createTimeoutSeconds = Math.max(
+      1,
+      Number.parseInt(process.env.KORTIX_DAYTONA_CREATE_TIMEOUT_SECONDS || '30', 10) || 30,
+    );
+
     const daytonaSandbox = await daytona.create(
       {
         snapshot,
@@ -80,7 +85,7 @@ export class DaytonaProvider implements SandboxProvider {
         autoArchiveInterval: 30,
         public: false,
       },
-      { timeout: 300 },
+      { timeout: createTimeoutSeconds },
     );
 
     const externalId = daytonaSandbox.id;

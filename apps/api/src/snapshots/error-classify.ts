@@ -67,7 +67,7 @@ const RULES: Array<{ category: SnapshotErrorCategory; test: RegExp }> = [
   // Daytona transport / gateway flakiness.
   {
     category: 'provider',
-    test: /daytona|socket connection|idle connection|socket hang up|bad gateway|\bgateway\b|\b50[234]\b|econnreset|econnrefused|etimedout|\beof\b|network error/i,
+    test: /daytona|snapshot with name .* not found|socket connection|idle connection|socket hang up|bad gateway|\bgateway\b|\b50[234]\b|econnreset|econnrefused|etimedout|\beof\b|network error/i,
   },
   // The user's Dockerfile / build steps failed.
   {

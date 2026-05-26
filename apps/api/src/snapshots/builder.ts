@@ -27,7 +27,7 @@
  * DB row keyed on commit.
  */
 
-import { and, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { copyFile, cp, rm, stat } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -392,34 +392,13 @@ export async function getLatestReadySnapshot(
     return rows[0] ?? null;
   }
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
-  return rows.find((row) =>
+  const currentRuntimeRow = rows.find((row) =>
     extractMetadataRuntimeFingerprint(row.metadata) === runtimeFingerprint
-  ) ?? null;
-}
-
-/**
- * Find any (non-failed) row for a specific commit. Used by the rebuild-
- * check fast path so we don't re-claim a commit that's already built or
- * actively building.
- */
-async function findActiveRowForCommit(
-  projectId: string,
-  commitSha: string,
-  provider: SandboxProviderName,
-): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
-  const [row] = await db
-    .select()
-    .from(projectRuntimeSnapshots)
-    .where(
-      and(
-        eq(projectRuntimeSnapshots.projectId, projectId),
-        eq(projectRuntimeSnapshots.commitSha, commitSha),
-        eq(projectRuntimeSnapshots.provider, provider),
-        ne(projectRuntimeSnapshots.status, 'failed'),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
+  );
+  // Prefer a current-runtime image, but do not make an existing project
+  // unusable while a runtime rebuild is pending/failed. A retained older
+  // snapshot is still a valid degraded boot target.
+  return currentRuntimeRow ?? rows[0] ?? null;
 }
 
 export async function getSnapshotForCommit(
@@ -530,19 +509,61 @@ export async function ensureBuildForLatestCommit(
     return { status: 'failed-to-start', error: message };
   }
 
-  const existing = await findActiveRowForCommit(project.projectId, commitSha, provider);
+  let existing: typeof projectRuntimeSnapshots.$inferSelect | null =
+    await findSnapshotRow(project.projectId, commitSha, provider);
+  if (existing?.status === 'failed') {
+    // Manual/session retry must actually retry. The unique key is
+    // (projectId, commitSha, provider), so leaving the failed row in place makes
+    // the later insert lose the race while the API misleadingly reports
+    // "started".
+    await deleteSnapshotRow(project.projectId, commitSha, provider);
+    existing = null;
+  }
   if (existing?.status === 'ready') {
     try {
       const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
       if (extractMetadataRuntimeFingerprint(existing.metadata) === runtimeFingerprint) {
         return { status: 'already-ready', commitSha };
       }
+      if (extractMetadataNumber(existing.metadata, 'rebuildStartedAt') != null) {
+        return { status: 'already-building', commitSha };
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { status: 'failed-to-start', commitSha, error: message };
     }
+
+    // This commit has a ready image from an older runtime. Rebuild through the
+    // non-destructive path in buildSnapshotForCommit(): it keeps the existing
+    // snapshot bootable and swaps to the new image only after success. Falling
+    // through to the insert path would hit the unique index and report a bogus
+    // "failed to start" instead of actually rebuilding.
+    void (async () => {
+      try {
+        await buildSnapshotForCommit(project, {
+          ref: branch,
+          accountId: options.accountId,
+          provider,
+          source: options.source,
+        });
+        pruneOldSnapshots(project.projectId, branch, provider).catch((err) => {
+          console.warn(
+            `[snapshots] prune failed for project ${project.projectId} branch ${branch}:`,
+            err,
+          );
+        });
+      } catch (err) {
+        console.warn(
+          `[snapshots] background rebuild failed for project ${project.projectId} ` +
+          `commit ${commitSha.slice(0, 8)} (source=${options.source}):`,
+          err,
+        );
+      }
+    })();
+
+    return { status: 'started', commitSha };
   }
-  if (existing && existing.status !== 'ready') {
+  if (existing) {
     if (!isInProgressSnapshotStale(existing)) {
       return { status: 'already-building', commitSha };
     }
@@ -1229,6 +1250,7 @@ function isTransientDaytonaError(err: unknown): boolean {
     m.includes('idle connection') ||
     m.includes('not read from or written to') ||
     m.includes('socket hang up') ||
+    (m.includes('snapshot with name') && m.includes('not found')) ||
     m.includes('timeout') ||
     m.includes('timed out') ||
     m.includes('econnreset') ||
