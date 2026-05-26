@@ -16,14 +16,10 @@
 import * as React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, BookOpen, Check, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Check, Sparkles, X } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { List, ListRow } from '@/components/ui/list';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
-import { SectionCard } from '@/components/ui/section-card';
 import {
   SidebarMenuButton,
   SidebarMenuItem,
@@ -38,6 +34,7 @@ import {
   useProjectSetup,
   type ProjectSetupState,
   type ProjectSetupStep,
+  type ProjectSetupStepId,
 } from '@/hooks/projects/use-project-setup';
 
 // ---------------------------------------------------------------------------
@@ -66,85 +63,112 @@ function SetupRing({ value, className }: { value: number; className?: string }) 
   );
 }
 
-/** Leading status glyph for a step row: a check when done, the step icon otherwise. */
-function StatusCircle({ step }: { step: ProjectSetupStep }) {
+/** Step row — three visual states: done, next-up (emphasized), waiting. */
+function StepRow({
+  step,
+  isNext,
+  onClick,
+}: {
+  step: ProjectSetupStep;
+  isNext: boolean;
+  onClick: () => void;
+}) {
   const Icon = step.icon;
+  const isDone = step.done;
+
   return (
-    <span
+    <button
+      type="button"
+      disabled={isDone}
+      onClick={isDone ? undefined : onClick}
       className={cn(
-        'flex size-6 items-center justify-center rounded-full',
-        step.done
-          ? 'bg-primary/10 text-primary'
-          : 'border border-border text-muted-foreground/70',
+        'group relative flex w-full items-center gap-3 px-4 py-3 text-left',
+        'transition-colors duration-150',
+        isDone
+          ? 'cursor-default'
+          : 'cursor-pointer hover:bg-muted/50 focus-visible:bg-muted/50',
+        'focus-visible:outline-none',
       )}
     >
-      {step.done ? <Check className="size-3.5" /> : <Icon className="size-3.5" />}
-    </span>
+      <span
+        className={cn(
+          'flex size-7 shrink-0 items-center justify-center rounded-full border transition-colors',
+          isDone
+            ? 'border-primary/20 bg-primary/10 text-primary'
+            : isNext
+              ? 'border-primary/40 bg-primary/5 text-primary'
+              : 'border-border bg-background text-muted-foreground/80',
+        )}
+      >
+        {isDone ? <Check className="size-3.5" /> : <Icon className="size-3.5" />}
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              'truncate text-sm font-medium tracking-tight',
+              isDone ? 'text-muted-foreground line-through decoration-muted-foreground/40' : 'text-foreground',
+            )}
+          >
+            {step.title}
+          </span>
+        </div>
+        <p
+          className={cn(
+            'mt-0.5 line-clamp-1 text-xs',
+            isDone ? 'text-muted-foreground/60' : 'text-muted-foreground',
+          )}
+        >
+          {step.description}
+        </p>
+      </div>
+
+      {!isDone && (
+        <span
+          className={cn(
+            'ml-auto flex shrink-0 items-center gap-1 text-xs font-medium transition-colors',
+            isNext ? 'text-primary' : 'text-muted-foreground/70 group-hover:text-foreground',
+          )}
+        >
+          {step.cta}
+          <ArrowRight className="size-3" />
+        </span>
+      )}
+    </button>
   );
 }
 
-/** The shared list of step rows. */
-function SetupStepList({
+function StepSection({
+  label,
   steps,
+  nextId,
   onStep,
 }: {
+  label?: string;
   steps: ProjectSetupStep[];
+  nextId: ProjectSetupStepId | null;
   onStep: (step: ProjectSetupStep) => void;
 }) {
+  if (steps.length === 0) return null;
   return (
-    <List>
-      {steps.map((step) => (
-        <ListRow
-          key={step.id}
-          className={step.done ? 'opacity-60' : undefined}
-          onClick={step.done ? undefined : () => onStep(step)}
-          leading={<StatusCircle step={step} />}
-          title={step.title}
-          badges={
-            step.optional ? (
-              <Badge size="sm" variant="outline">
-                Optional
-              </Badge>
-            ) : null
-          }
-          subtitle={<span className="text-xs text-muted-foreground">{step.description}</span>}
-          trailing={
-            step.done ? null : (
-              <div className="flex items-center gap-0.5">
-                <Button
-                  asChild
-                  size="icon-sm"
-                  variant="ghost"
-                  className="text-muted-foreground/70 hover:text-foreground"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <a
-                    href={step.learnHref}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Learn more"
-                  >
-                    <BookOpen className="size-3.5" />
-                  </a>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-primary hover:bg-primary/10 hover:text-primary"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onStep(step);
-                  }}
-                >
-                  {step.cta}
-                  <ArrowRight />
-                </Button>
-              </div>
-            )
-          }
-        />
-      ))}
-    </List>
+    <div>
+      {label && (
+        <div className="px-4 pt-3 pb-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">
+          {label}
+        </div>
+      )}
+      <div className="flex flex-col">
+        {steps.map((step) => (
+          <StepRow
+            key={step.id}
+            step={step}
+            isNext={step.id === nextId}
+            onClick={() => onStep(step)}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -204,30 +228,81 @@ export function ProjectSetupChecklist({
 
   if (setup.isLoading || setup.isComplete || dismissed) return null;
 
+  const essentials = setup.steps.filter((s) => !s.optional);
+  const optionals = setup.steps.filter((s) => s.optional);
+  const nextId = essentials.find((s) => !s.done)?.id ?? null;
+  const remaining = setup.requiredTotal - setup.requiredDone;
+
   return (
-    <SectionCard
-      className={cn('w-full max-w-md shadow-sm', className)}
-      title="Finish setting up your project"
-      description={`${setup.requiredDone} of ${setup.requiredTotal} essential steps complete`}
-      action={
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Dismiss setup checklist"
-          onClick={dismiss}
-        >
-          <X />
-        </Button>
-      }
-      flush
+    <div
+      className={cn(
+        'relative w-full max-w-md overflow-hidden rounded-2xl border border-border/60 bg-card',
+        className,
+      )}
     >
-      <div className="px-6 py-3">
-        <Progress value={setup.percent} className="h-1.5" />
-      </div>
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="Dismiss"
+        className="absolute right-3 top-3 z-10 grid size-7 place-items-center rounded-full text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+      >
+        <X className="size-3.5" />
+      </button>
+
+      <SetupHeader
+        remaining={remaining}
+        total={setup.requiredTotal}
+        percent={setup.percent}
+      />
+
       <div className="border-t border-border/60">
-        <SetupStepList steps={setup.steps} onStep={onStep} />
+        <StepSection steps={essentials} nextId={nextId} onStep={onStep} />
+        {optionals.length > 0 && (
+          <div className="border-t border-border/60">
+            <StepSection label="Optional" steps={optionals} nextId={null} onStep={onStep} />
+          </div>
+        )}
       </div>
-    </SectionCard>
+    </div>
+  );
+}
+
+/** Shared header for the popover + card surfaces. */
+function SetupHeader({
+  remaining,
+  total,
+  percent,
+}: {
+  remaining: number;
+  total: number;
+  percent: number;
+}) {
+  const headline =
+    remaining === 0
+      ? 'All set'
+      : remaining === total
+        ? "Let's get your project running"
+        : remaining === 1
+          ? 'One step to go'
+          : `${remaining} steps to go`;
+
+  return (
+    <div className="px-5 pt-5 pb-4">
+      <div className="flex items-center gap-2.5">
+        <span className="grid size-7 place-items-center rounded-full bg-primary/10 text-primary">
+          <Sparkles className="size-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-semibold tracking-tight text-foreground">
+            {headline}
+          </h3>
+        </div>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {total - remaining}/{total}
+        </span>
+      </div>
+      <Progress value={percent} className="mt-3 h-1" />
+    </div>
   );
 }
 
@@ -242,20 +317,35 @@ function SetupPopoverContent({
   setup: ProjectSetupState;
   onStep: (step: ProjectSetupStep) => void;
 }) {
+  const essentials = setup.steps.filter((s) => !s.optional);
+  const optionals = setup.steps.filter((s) => s.optional);
+  const nextId = essentials.find((s) => !s.done)?.id ?? null;
+  const remaining = setup.requiredTotal - setup.requiredDone;
+
   return (
     <div className="w-full overflow-hidden">
-      <div className="px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-semibold text-foreground">Project setup</span>
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {setup.requiredDone}/{setup.requiredTotal}
-          </span>
-        </div>
-        <Progress value={setup.percent} className="mt-2.5 h-1.5" />
-      </div>
+      <SetupHeader
+        remaining={remaining}
+        total={setup.requiredTotal}
+        percent={setup.percent}
+      />
       <div className="max-h-[60vh] overflow-y-auto border-t border-border/60">
-        <SetupStepList steps={setup.steps} onStep={onStep} />
+        <StepSection steps={essentials} nextId={nextId} onStep={onStep} />
+        {optionals.length > 0 && (
+          <div className="border-t border-border/60">
+            <StepSection label="Optional" steps={optionals} nextId={null} onStep={onStep} />
+          </div>
+        )}
       </div>
+      <a
+        href="/docs/quickstart"
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-center justify-center gap-1.5 border-t border-border/60 px-4 py-2.5 text-xs text-muted-foreground/80 transition-colors hover:bg-muted/50 hover:text-foreground"
+      >
+        <BookOpen className="size-3" />
+        Read the quickstart guide
+      </a>
     </div>
   );
 }
@@ -279,7 +369,7 @@ export function ProjectSetupNavItem({ projectId }: { projectId: string }) {
             </span>
           </SidebarMenuButton>
         </PopoverTrigger>
-        <PopoverContent side="right" align="end" sideOffset={12} className="w-80 p-0">
+        <PopoverContent side="right" align="end" sideOffset={12} className="w-[360px] p-0 overflow-hidden rounded-2xl">
           <SetupPopoverContent setup={setup} onStep={onStep} />
         </PopoverContent>
       </Popover>
@@ -312,7 +402,7 @@ export function ProjectSetupRailItem({ projectId }: { projectId: string }) {
           Set up project · {setup.requiredDone}/{setup.requiredTotal}
         </TooltipContent>
       </Tooltip>
-      <PopoverContent side="right" align="start" sideOffset={12} className="w-80 p-0">
+      <PopoverContent side="right" align="start" sideOffset={12} className="w-[360px] p-0 overflow-hidden rounded-2xl">
         <SetupPopoverContent setup={setup} onStep={onStep} />
       </PopoverContent>
     </Popover>

@@ -29,6 +29,7 @@ import {
   BookOpen,
   ChevronsUpDown,
   Home,
+  LifeBuoy,
   LogOut,
   Settings as SettingsIcon,
 } from 'lucide-react';
@@ -55,6 +56,7 @@ import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
 import { transitionFromElement } from '@/lib/view-transition';
 import { themeOptions, type SettingsTabId } from '@/lib/menu-registry';
+import { SupportDialog } from '@/components/layout/support-dialog';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralDialog } from '@/components/referrals/referral-dialog';
@@ -89,6 +91,7 @@ export function UserMenu({
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
+  const [supportOpen, setSupportOpen] = useState(false);
 
   // Mounted on every authenticated page, so this menu owns the "default
   // selected account" guarantee for the whole app. The account *switcher*
@@ -248,6 +251,11 @@ export function UserMenu({
             onSelect={() => deferAfterClose(() => router.push('/docs'))}
           />
           <ActionRow
+            icon={<LifeBuoy className="size-3.5" />}
+            label="Support"
+            onSelect={() => deferAfterClose(() => setSupportOpen(true))}
+          />
+          <ActionRow
             icon={<SettingsIcon className="size-3.5" />}
             label={tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
             onSelect={() => openUserSettings('general')}
@@ -314,6 +322,7 @@ export function UserMenu({
         defaultTab={settingsTab}
         returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
       />
+      <SupportDialog open={supportOpen} onOpenChange={setSupportOpen} />
       <ReferralDialog open={referralOpen} onOpenChange={closeReferral} />
     </>
   );

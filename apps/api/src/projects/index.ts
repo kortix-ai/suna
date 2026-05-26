@@ -5310,6 +5310,39 @@ projectsApp.patch('/:projectId', async (c) => {
   }));
 });
 
+// PATCH /v1/projects/:projectId/onboarding
+// Persist whether the project's guided onboarding wizard has been completed
+// (or explicitly skipped). Stored in `metadata.onboarding_completed_at` so we
+// avoid a schema migration — the projects.metadata jsonb already exists and
+// is already exposed by serializeProject. Project-wide state (not per-user).
+projectsApp.patch('/:projectId/onboarding', async (c) => {
+  const projectId = c.req.param('projectId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const completed = body.completed === true;
+  const previousMetadata = (loaded.row.metadata ?? {}) as Record<string, unknown>;
+  const nextMetadata: Record<string, unknown> = { ...previousMetadata };
+  if (completed) {
+    nextMetadata.onboarding_completed_at = new Date().toISOString();
+  } else {
+    delete nextMetadata.onboarding_completed_at;
+  }
+
+  const [row] = await db
+    .update(projects)
+    .set({ metadata: nextMetadata, updatedAt: new Date() })
+    .where(eq(projects.projectId, projectId))
+    .returning();
+
+  if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+  return c.json(serializeProject(row, {
+    projectRole: loaded.projectRole,
+    effectiveRole: loaded.effectiveRole,
+  }));
+});
+
 // DELETE /v1/projects/:projectId
 projectsApp.delete('/:projectId', async (c) => {
   const projectId = c.req.param('projectId');

@@ -1907,6 +1907,18 @@ export async function updateProject(
   );
 }
 
+export async function setProjectOnboardingComplete(
+  projectId: string,
+  completed: boolean,
+) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(
+      `/projects/${projectId}/onboarding`,
+      { completed },
+    ),
+  );
+}
+
 export async function archiveProject(projectId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`),

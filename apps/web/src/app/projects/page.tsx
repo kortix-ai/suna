@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  FolderPlus,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -17,7 +18,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { ProjectCreateModal } from '@/components/projects/project-create-modal';
-import { AccountOnboardingGuide } from '@/components/projects/account-onboarding';
+import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import {
   archiveProject,
   listAccounts,
@@ -274,12 +275,24 @@ export default function ProjectsPage() {
           )}
 
           {showEmptyState && (
-            <div className="flex justify-center pt-2">
-              <AccountOnboardingGuide
-                accountId={activeAccountId}
-                onCreateProject={() => setModalOpen(true)}
+            <SectionCard flush>
+              <EmptyState
+                icon={FolderPlus}
+                title="No projects yet"
+                description="A project is a dedicated space for one company, product, or idea."
+                action={
+                  <Button
+                    onClick={() => setModalOpen(true)}
+                    disabled={!canCreateProjects}
+                    size="sm"
+                    className="gap-1.5"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create your first project
+                  </Button>
+                }
               />
-            </div>
+            </SectionCard>
           )}
 
           {showNoResults && (
@@ -291,15 +304,6 @@ export default function ProjectsPage() {
                 description={tHardcodedUi.raw('appProjectsPage.line288JsxAttrDescriptionTryADifferentSearchTerm')}
               />
             </SectionCard>
-          )}
-
-          {total > 0 && (
-            <AccountOnboardingGuide
-              accountId={activeAccountId}
-              onCreateProject={() => setModalOpen(true)}
-              dismissible
-              className="max-w-none"
-            />
           )}
 
           {filtered.length > 0 && (
@@ -323,6 +327,8 @@ export default function ProjectsPage() {
         onOpenChange={setModalOpen}
         accountId={activeAccountId}
       />
+
+      <PersonalOnboardingWelcome />
     </div>
   );
 }

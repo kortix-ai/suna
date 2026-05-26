@@ -24,6 +24,8 @@ import {
   BookOpen,
   Bot,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   Loader2,
   MessageSquare,
   Plug,
@@ -44,15 +46,11 @@ import {
   listProjectAccess,
   listProjectTriggers,
 } from '@/lib/projects-client';
+import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
+import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
-
-const SUGGESTIONS = [
-  'Give me an overview of this project',
-  'What can you help me with?',
-  'Summarize what changed recently',
-];
 
 export function ProjectHome({
   projectId,
@@ -72,6 +70,13 @@ export function ProjectHome({
 
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Reactive subscription scoped to THIS project — fires whether the prefill
+  // was set before mount or arrives later (e.g. wizard hands one off while
+  // we're already on the page).
+  const pendingPrefill = useComposerPrefillStore(
+    (s) => s.prefillByProject[projectId],
+  );
+  const consumePrefill = useComposerPrefillStore((s) => s.consume);
 
   const resize = useCallback(() => {
     const el = textareaRef.current;
@@ -83,6 +88,17 @@ export function ProjectHome({
   useEffect(() => {
     resize();
   }, [text, resize]);
+
+  useEffect(() => {
+    if (!pendingPrefill) return;
+    consumePrefill(projectId);
+    setText(pendingPrefill);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      const len = pendingPrefill.length;
+      textareaRef.current?.setSelectionRange(len, len);
+    });
+  }, [pendingPrefill, projectId, consumePrefill]);
 
   const submit = () => {
     const t = text.trim();
@@ -172,25 +188,66 @@ export function ProjectHome({
               </div>
             </div>
 
-            {/* Quick-start suggestions */}
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => applySuggestion(s)}
-                  className="rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:bg-card hover:text-foreground"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+            {/* Quick-start suggestions — paged carousel of the shared
+                starter prompts. Arrows let the user browse the full set
+                without crowding the composer. */}
+            <StarterPromptsCarousel onPick={applySuggestion} />
           </div>
 
           {/* Sections */}
           <ProjectHomeSections projectId={projectId} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) {
+  // How many chips fit per page. Kept conservative so the row never wraps
+  // on narrow viewports and the arrows always have a stable position.
+  const PAGE_SIZE = 3;
+  const totalPages = Math.max(1, Math.ceil(STARTER_PROMPTS.length / PAGE_SIZE));
+  const [page, setPage] = useState(0);
+  const visible = STARTER_PROMPTS.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  return (
+    <div className="mt-3 flex items-center justify-center gap-1.5">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Previous suggestions"
+        disabled={page === 0}
+        onClick={() => setPage((p) => Math.max(0, p - 1))}
+        className="text-muted-foreground/60 hover:text-foreground"
+      >
+        <ChevronLeft className="size-3.5" />
+      </Button>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {visible.map((p) => {
+          const Icon = p.icon;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onPick(p.prompt)}
+              className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:bg-card hover:text-foreground"
+            >
+              <Icon className="size-3.5" />
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="More suggestions"
+        disabled={page >= totalPages - 1}
+        onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+        className="text-muted-foreground/60 hover:text-foreground"
+      >
+        <ChevronRight className="size-3.5" />
+      </Button>
     </div>
   );
 }
