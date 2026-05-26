@@ -998,14 +998,11 @@ function MembersCard({
         </List>
       )}
 
+      {/* Search lives at the top of the list so it filters EVERYTHING
+          below it — pending invites + members alike. Looking up
+          "@foo.com" shouldn't care whether the person has accepted yet;
+          they're all people you're trying to find. */}
       {!isLoading && !isError && (
-        <PendingInvitesSection
-          accountId={account.account_id}
-          canManage={canInvite}
-        />
-      )}
-
-      {!isLoading && !isError && members.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-6 py-3">
           <div className="relative max-w-sm flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -1031,6 +1028,14 @@ function MembersCard({
             </label>
           )}
         </div>
+      )}
+
+      {!isLoading && !isError && (
+        <PendingInvitesSection
+          accountId={account.account_id}
+          canManage={canInvite}
+          search={search}
+        />
       )}
 
       {selectedCount > 0 && canBulk && (
@@ -1578,9 +1583,13 @@ function DangerZoneCard() {
 function PendingInvitesSection({
   accountId,
   canManage,
+  search = '',
 }: {
   accountId: string;
   canManage: boolean;
+  /** Optional email filter — when the parent's search input has a
+   *  value, hide invites whose email doesn't include the query. */
+  search?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -1634,7 +1643,16 @@ function PendingInvitesSection({
       toast.error(err.message || 'Failed to cancel invite'),
   });
 
-  const invites = invitesQuery.data ?? [];
+  const allInvites = invitesQuery.data ?? [];
+  // Filter by search query — case-insensitive substring on email.
+  const query = search.trim().toLowerCase();
+  const invites = query
+    ? allInvites.filter((i) => i.email.toLowerCase().includes(query))
+    : allInvites;
+  // Hide the whole section when there are no invites at all OR when
+  // the search filtered everything out — there's no useful empty state
+  // to show here (the parent's members list handles the "no matches"
+  // copy for the combined search).
   if (!invites.length) return null;
 
   return (
