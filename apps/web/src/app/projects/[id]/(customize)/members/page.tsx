@@ -434,19 +434,21 @@ function ProjectAccessCard({
                           onValueChange={(next) => setRole(member, next)}
                           disabled={!canManage}
                         >
-                          <SelectTrigger className="h-8 w-32 text-xs">
+                          {/* w-40 fits "No direct grant" without
+                              truncation — the previous w-32 was clipping
+                              to "No direct gran". */}
+                          <SelectTrigger className="h-8 w-40 text-xs">
                             <SelectValue placeholder="Grant…" />
                           </SelectTrigger>
-                          {/* Compact variant — this is a secondary picker
-                              that only ratchets a layered direct grant on
-                              top of an inherited role. Blurbs would crowd
-                              the row; the bigger dropdown above carries
-                              the explanation. */}
+                          {/* Same two-line layout as the invite form
+                              picker so admins layering a direct grant
+                              see what each role does without leaving
+                              the row. */}
                           <SelectContent>
                             <SelectItem value="none">No direct grant</SelectItem>
-                            <ProjectRoleSelectItem role="viewer" compact />
-                            <ProjectRoleSelectItem role="editor" compact />
-                            <ProjectRoleSelectItem role="manager" compact />
+                            <ProjectRoleSelectItem role="viewer" />
+                            <ProjectRoleSelectItem role="editor" />
+                            <ProjectRoleSelectItem role="manager" />
                           </SelectContent>
                         </Select>
                       )}
