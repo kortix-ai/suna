@@ -697,6 +697,9 @@ function GroupProjectGrantsCard({
   );
 
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  // Detach is destructive — strips every group member's inherited
+  // access on the project at once. Confirm first.
+  const [detachTarget, setDetachTarget] = useState<GroupProjectGrant | null>(null);
 
   const detachMutation = useMutation({
     // detach the grant via the per-project route — that's the one gated
@@ -713,6 +716,7 @@ function GroupProjectGrantsCard({
   });
 
   return (
+    <>
     <SectionCard
       flush
       title="Project access"
@@ -813,7 +817,7 @@ function GroupProjectGrantsCard({
                       type="button"
                       size="sm"
                       variant="ghost"
-                      onClick={() => detachMutation.mutate(g.project_id)}
+                      onClick={() => setDetachTarget(g)}
                     >
                       Detach
                     </Button>
@@ -825,6 +829,37 @@ function GroupProjectGrantsCard({
         </List>
       )}
     </SectionCard>
+
+    <ConfirmDialog
+      open={detachTarget !== null}
+      onOpenChange={(open) => {
+        if (!open) setDetachTarget(null);
+      }}
+      title="Detach from project?"
+      description={
+        detachTarget ? (
+          <span>
+            <strong>{groupName}</strong> will no longer be attached to{' '}
+            <strong>{detachTarget.project_name}</strong>. Every group
+            member will lose their inherited{' '}
+            <strong>{detachTarget.role}</strong> access on that
+            project (unless they also have a direct grant or another
+            group attached). Owners and admins keep their implicit
+            Manager access either way.
+          </span>
+        ) : null
+      }
+      confirmLabel="Detach"
+      confirmVariant="destructive"
+      isPending={detachMutation.isPending}
+      onConfirm={() => {
+        if (!detachTarget) return;
+        const target = detachTarget;
+        setDetachTarget(null);
+        detachMutation.mutate(target.project_id);
+      }}
+    />
+    </>
   );
 }
 

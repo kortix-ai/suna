@@ -10,6 +10,7 @@ import { CustomizeSectionHeader } from '@/components/projects/customize/customiz
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -260,6 +261,11 @@ function ProjectAccessCard({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  // Confirmation modal target. Holds the member chosen for revocation
+  // until the user confirms — picking "No access" from the dropdown is
+  // a destructive action and previously fired without warning, which
+  // made it easy to lock someone out by misclicking.
+  const [revokeTarget, setRevokeTarget] = useState<ProjectAccessMember | null>(null);
 
   const sortedMembers = useMemo(() => {
     const rank = { owner: 0, admin: 1, member: 2 };
@@ -302,13 +308,18 @@ function ProjectAccessCard({
   function setRole(member: ProjectAccessMember, value: string) {
     if (member.has_implicit_access || !canManage) return;
     if (value === 'none') {
-      revokeMutation.mutate(member.user_id);
+      // Stash the target; ConfirmDialog below picks it up. We DON'T
+      // fire the mutation here — the dropdown will visually snap back
+      // to the prior role on next render since the underlying data
+      // hasn't changed, so cancel = no-op without manual state reset.
+      setRevokeTarget(member);
       return;
     }
     updateMutation.mutate({ userId: member.user_id, role: value as ProjectRole });
   }
 
   return (
+    <>
     <SectionCard
       flush
       title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line260JsxAttrTitleProjectAccess')}
@@ -439,6 +450,37 @@ function ProjectAccessCard({
         </List>
       )}
     </SectionCard>
+
+    <ConfirmDialog
+      open={revokeTarget !== null}
+      onOpenChange={(open) => {
+        if (!open) setRevokeTarget(null);
+      }}
+      title="Revoke project access?"
+      description={
+        revokeTarget ? (
+          <span>
+            <strong>{userLabel(revokeTarget)}</strong> will lose direct
+            access to this project. If they belong to a group that's
+            attached here, they'll still see the project at the group's
+            role.
+          </span>
+        ) : null
+      }
+      confirmLabel="Revoke access"
+      confirmVariant="destructive"
+      isPending={revokeMutation.isPending}
+      onConfirm={() => {
+        if (!revokeTarget) return;
+        const target = revokeTarget;
+        // Close the dialog optimistically — the mutation's onSuccess
+        // toast is enough feedback, and leaving the modal open while
+        // it fires looks janky.
+        setRevokeTarget(null);
+        revokeMutation.mutate(target.user_id);
+      }}
+    />
+    </>
   );
 }
 
@@ -467,6 +509,10 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const queryKey = ['project-pending-invites', projectId];
   const [pendingInviteId, setPendingInviteId] = useState<string | null>(null);
+  // Revoking an invitation is destructive (and may cancel the whole
+  // org-level invite when this was the only bootstrap_grant) — gate
+  // behind a confirmation.
+  const [revokeTarget, setRevokeTarget] = useState<{ inviteId: string; email: string } | null>(null);
 
   const invitesQuery = useQuery({
     queryKey,
@@ -497,6 +543,7 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
   if (!invitesQuery.isLoading && pending.length === 0) return null;
 
   return (
+    <>
     <SectionCard
       flush
       title="Pending invitations"
@@ -554,7 +601,7 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
                       type="button"
                       size="sm"
                       variant="ghost"
-                      onClick={() => revokeMutation.mutate(invite.invite_id)}
+                      onClick={() => setRevokeTarget({ inviteId: invite.invite_id, email: invite.email })}
                       title="Cancel this invitation"
                       className="gap-1.5"
                     >
@@ -569,6 +616,34 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
         </List>
       )}
     </SectionCard>
+
+    <ConfirmDialog
+      open={revokeTarget !== null}
+      onOpenChange={(open) => {
+        if (!open) setRevokeTarget(null);
+      }}
+      title="Revoke invitation?"
+      description={
+        revokeTarget ? (
+          <span>
+            The invitation for <strong>{revokeTarget.email}</strong> will
+            be cancelled. If they were only invited to this project,
+            the whole invitation is removed. To resend later you'd need
+            to invite them again.
+          </span>
+        ) : null
+      }
+      confirmLabel="Revoke invitation"
+      confirmVariant="destructive"
+      isPending={revokeMutation.isPending}
+      onConfirm={() => {
+        if (!revokeTarget) return;
+        const target = revokeTarget;
+        setRevokeTarget(null);
+        revokeMutation.mutate(target.inviteId);
+      }}
+    />
+    </>
   );
 }
 
@@ -609,6 +684,9 @@ function ProjectGroupGrantsCard({
   const [pickerGroupId, setPickerGroupId] = useState<string>('');
   const [pickerRole, setPickerRole] = useState<ProjectRole>('editor');
   const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
+  // Detaching a group revokes inherited access for every group member
+  // in one shot — easily a dozen users at once. Always confirm.
+  const [detachTarget, setDetachTarget] = useState<ProjectGroupGrant | null>(null);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: grantsKey });
@@ -651,6 +729,7 @@ function ProjectGroupGrantsCard({
   });
 
   return (
+    <>
     <SectionCard
       flush
       title="Group access"
@@ -796,7 +875,7 @@ function ProjectGroupGrantsCard({
                         type="button"
                         size="sm"
                         variant="ghost"
-                        onClick={() => detachMutation.mutate(g.group_id)}
+                        onClick={() => setDetachTarget(g)}
                       >
                         Detach
                       </Button>
@@ -813,5 +892,35 @@ function ProjectGroupGrantsCard({
         </List>
       )}
     </SectionCard>
+
+    <ConfirmDialog
+      open={detachTarget !== null}
+      onOpenChange={(open) => {
+        if (!open) setDetachTarget(null);
+      }}
+      title="Detach group from project?"
+      description={
+        detachTarget ? (
+          <span>
+            <strong>{detachTarget.group_name}</strong> will no longer be
+            attached to this project. Members of this group will lose
+            their inherited <strong>{detachTarget.role}</strong> access
+            (unless they also have a direct grant or belong to another
+            attached group). Owners and admins keep their implicit
+            Manager access either way.
+          </span>
+        ) : null
+      }
+      confirmLabel="Detach group"
+      confirmVariant="destructive"
+      isPending={detachMutation.isPending}
+      onConfirm={() => {
+        if (!detachTarget) return;
+        const target = detachTarget;
+        setDetachTarget(null);
+        detachMutation.mutate(target.group_id);
+      }}
+    />
+    </>
   );
 }
