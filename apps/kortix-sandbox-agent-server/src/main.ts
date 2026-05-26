@@ -97,6 +97,30 @@ async function main() {
   if (bootState.repoMaterializationError) return
 
   void (async () => {
+    if (bootState.initialOpenCodeSessionRequired) {
+      await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort, bootState, bootMark).catch((err) => {
+        const message = err instanceof Error ? err.message : String(err)
+        bootState.initialOpenCodeSessionError = message
+        logger.warn('[boot] initial opencode session setup failed', err)
+      })
+      if (bootState.initialOpenCodeSessionId) {
+        opencode.markReady()
+        bootMark('opencode-ready')
+        logger.info('[boot] opencode ready via initial session', {
+          opencodePid: opencode.getPid(),
+          timeline: bootState.timeline,
+        })
+        startOpencodeEventLoop(opencode, cfg, {
+          onQuestionAsked: (req) => {
+            void relayQuestionToApi(req, cfg).catch((err) =>
+              logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
+            )
+          },
+        })
+        return
+      }
+    }
+
     const ready = await waitForOpencodeReady(opencode, cfg.projectTarget)
     if (ready) {
       bootMark('opencode-ready')
@@ -110,11 +134,6 @@ async function main() {
             logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
           )
         },
-      })
-      await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort, bootState, bootMark).catch((err) => {
-        const message = err instanceof Error ? err.message : String(err)
-        bootState.initialOpenCodeSessionError = message
-        logger.warn('[boot] initial opencode session setup failed', err)
       })
     } else {
       logger.warn('[boot] opencode did not become ready within deadline; supervisor still retrying', {
@@ -142,15 +161,7 @@ async function maybeCreateInitialOpencodeSession(
     workspace,
   })
 
-  const sessionRes = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(workspace)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!sessionRes.ok) {
-    throw new Error(`opencode session create failed: ${sessionRes.status} ${await sessionRes.text()}`)
-  }
+  const sessionRes = await waitForInitialSessionCreate(baseUrl, workspace)
   const session = (await sessionRes.json()) as { id?: string }
   if (!session.id) throw new Error('opencode session create returned no id')
 
@@ -192,6 +203,30 @@ async function maybeCreateInitialOpencodeSession(
   bootState.initialOpenCodeSessionId = session.id
   bootMark('opencode-session-created')
   logger.info('[boot] initial prompt delivered', { sessionId: session.id })
+}
+
+async function waitForInitialSessionCreate(baseUrl: string, workspace: string): Promise<Response> {
+  const url = `${baseUrl}/session?directory=${encodeURIComponent(workspace)}`
+  const deadline = Date.now() + 20_000
+  let lastError = 'opencode session create timed out'
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(1_000),
+      })
+      if (res.ok) return res
+      const body = await res.text().catch(() => '')
+      lastError = `opencode session create failed: ${res.status} ${body}`
+      if (res.status >= 400 && res.status < 500 && res.status !== 404) break
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err)
+    }
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  throw new Error(lastError)
 }
 
 // Relay an opencode question.asked event to apps/api. apps/api blocks until

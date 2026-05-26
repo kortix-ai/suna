@@ -44,7 +44,8 @@ function normalizeNames(names: unknown, env: Record<string, string>): string[] {
 }
 
 export function createProjectEnvStore(initialEnv: NodeJS.ProcessEnv = process.env): ProjectEnvStore {
-  let revision: string | null = null
+  const initialRevision = initialEnv.KORTIX_PROJECT_SECRETS_REVISION?.trim()
+  let revision: string | null = initialRevision || null
   let names = (initialEnv.KORTIX_PROJECT_SECRET_NAMES ?? '')
     .split(',')
     .map((name) => name.trim().toUpperCase())

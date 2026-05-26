@@ -538,6 +538,39 @@ describe('daemon proxy auth gate', () => {
     expect(restartCalls).toBe(1)
   })
 
+  it('does not restart opencode when env sync matches the boot revision and values', async () => {
+    let restartCalls = 0
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRETS_REVISION: 'rev-boot',
+      KORTIX_PROJECT_SECRET_NAMES: 'BOOT_SECRET',
+      BOOT_SECRET: 'already-loaded',
+    } as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      store,
+    )
+
+    const res = await app.request('/kortix/env', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TEST_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        revision: 'rev-boot',
+        env: { BOOT_SECRET: 'already-loaded' },
+        names: ['BOOT_SECRET'],
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, changed: false, revision: 'rev-boot' })
+    expect(restartCalls).toBe(0)
+  })
+
   it('rejects /kortix/env without sandbox service bearer token', async () => {
     const app = buildOpencodeApp(
       baseConfig(),
