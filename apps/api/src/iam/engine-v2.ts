@@ -13,7 +13,7 @@
 // The pure-function helpers (deriveEffectiveProjectRole, scopeForAction)
 // are exported so they can be unit-tested without a DB.
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountMembers,
@@ -146,11 +146,23 @@ async function loadEffectiveProjectRole(
 ): Promise<ProjectRole | null> {
   const accountRole = actor.accountRole ?? 'member';
 
+  // Time-bounded grants: a row whose expires_at is in the past is
+  // effectively gone. Filter at the SQL layer so the row is invisible
+  // to every authorize() call the moment the clock crosses the line —
+  // no waiting on the sweeper. (The sweeper just emits the audit
+  // event afterwards; correctness doesn't depend on it.)
   const [direct] = await db
     .select({ role: projectMembers.projectRole })
     .from(projectMembers)
     .where(
-      and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)),
+      and(
+        eq(projectMembers.projectId, projectId),
+        eq(projectMembers.userId, userId),
+        or(
+          isNull(projectMembers.expiresAt),
+          gt(projectMembers.expiresAt, sql`now()`),
+        ),
+      ),
     )
     .limit(1);
 
@@ -163,6 +175,10 @@ async function loadEffectiveProjectRole(
         and(
           eq(projectGroupGrants.projectId, projectId),
           inArray(projectGroupGrants.groupId, actor.groupIds),
+          or(
+            isNull(projectGroupGrants.expiresAt),
+            gt(projectGroupGrants.expiresAt, sql`now()`),
+          ),
         ),
       );
     groupRoles = rows.map((r) => r.role as ProjectRole);
@@ -336,6 +352,15 @@ export async function listAccessibleProjectsV2(
   // Plain member: union of direct project_members + group-derived grants.
   // For each project, compute effective role and check if it allows the
   // action. Cheap because the union is bounded by membership count.
+  const notExpiredMember = or(
+    isNull(projectMembers.expiresAt),
+    gt(projectMembers.expiresAt, sql`now()`),
+  );
+  const notExpiredGrant = or(
+    isNull(projectGroupGrants.expiresAt),
+    gt(projectGroupGrants.expiresAt, sql`now()`),
+  );
+
   const directRows = await db
     .select({
       projectId: projectMembers.projectId,
@@ -344,7 +369,11 @@ export async function listAccessibleProjectsV2(
     .from(projectMembers)
     .innerJoin(projects, eq(projects.projectId, projectMembers.projectId))
     .where(
-      and(eq(projectMembers.userId, userId), eq(projects.accountId, accountId)),
+      and(
+        eq(projectMembers.userId, userId),
+        eq(projects.accountId, accountId),
+        notExpiredMember,
+      ),
     );
 
   let groupRows: Array<{ projectId: string; role: ProjectRole }> = [];
@@ -359,6 +388,7 @@ export async function listAccessibleProjectsV2(
         and(
           eq(projectGroupGrants.accountId, accountId),
           inArray(projectGroupGrants.groupId, actor.groupIds),
+          notExpiredGrant,
         ),
       );
     groupRows = rows.map((r) => ({
