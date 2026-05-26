@@ -214,7 +214,7 @@ app.get('/health', (c) => {
     service: 'kortix-api',
     version: API_VERSION,
     timestamp: new Date().toISOString(),
-    env: config.ENV_MODE,
+    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),
   });
 });
@@ -226,7 +226,7 @@ app.get('/v1/health', (c) => {
     service: 'kortix-api',
     version: API_VERSION,
     timestamp: new Date().toISOString(),
-    env: config.ENV_MODE,
+    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),
   });
 });
@@ -308,8 +308,9 @@ if (config.KORTIX_DEPLOYMENTS_ENABLED) {
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
 
-// Setup — local/self-hosted only. Disabled in cloud mode (not needed, exposes admin surface).
-if (config.isLocal()) {
+// Setup — local/self-hosted only. Hidden when billing is enabled so the admin
+// surface isn't exposed on managed/cloud deployments.
+if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
   app.route('/v1/setup', setupApp);        // /v1/setup/install-status (public), rest (auth inside router)
 }
 // /v1/admin/* — legacy admin dashboard surface removed. Web admin pages will 404.
@@ -446,7 +447,6 @@ console.log(`
 ║                  Kortix API Starting                      ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Port: ${config.PORT.toString().padEnd(49)}║
-║  Mode: ${config.ENV_MODE.padEnd(49)}║
 ║  Env:  ${config.INTERNAL_KORTIX_ENV.padEnd(49)}║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Services:                                                ║

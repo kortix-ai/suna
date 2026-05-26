@@ -74,7 +74,6 @@ export class DaytonaProvider implements SandboxProvider {
       {
         snapshot,
         envVars: {
-          ENV_MODE: 'cloud',
           // Session identity, git context, KORTIX_API_URL + KORTIX_TOKEN, and
           // the project's own secrets (incl. provider keys set via `kortix
           // providers`, picked up by opencode at boot) — see

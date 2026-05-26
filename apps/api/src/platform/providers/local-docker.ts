@@ -864,7 +864,6 @@ export class LocalDockerProvider implements SandboxProvider {
       'SANDBOX_ID',
       'INTERNAL_SERVICE_KEY',
       'PROJECT_ID',
-      'ENV_MODE',
       'CORS_ALLOWED_ORIGINS',
       'TAVILY_API_URL',
       'REPLICATE_API_URL',
@@ -916,7 +915,6 @@ export class LocalDockerProvider implements SandboxProvider {
       `SERPER_API_URL=${routerBase}/serper`,
       `FIRECRAWL_API_URL=${routerBase}/firecrawl`,
       ...(config.KORTIX_LOCAL_IMAGES ? ['KORTIX_LOCAL_SOURCE=1'] : []),
-      `ENV_MODE=${config.KORTIX_BILLING_INTERNAL_ENABLED ? 'cloud' : 'local'}`,
       `CORS_ALLOWED_ORIGINS=${[config.FRONTEND_URL, config.KORTIX_URL].filter(Boolean).join(',')}`,
       ...filteredSandboxEnv,
     ];

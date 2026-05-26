@@ -22,7 +22,7 @@ import type {
 } from '../../types';
 
 async function getYoloUsage(serviceKey: string | null): Promise<AccountStateResponse['yolo_usage']> {
-  if (config.ENV_MODE !== 'cloud') return null;
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
   if (!serviceKey) return null;
   try {
     const res = await fetch(`${config.KORTIX_YOLO_URL}/me`, {

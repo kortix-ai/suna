@@ -167,7 +167,7 @@ opsApp.get('/overview', async (c) => {
     generated_at: new Date().toISOString(),
     api: {
       status: 'ok',
-      env: config.ENV_MODE,
+      billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
       tunnel: getTunnelServiceStatus(),
     },
     totals: {

@@ -59,7 +59,6 @@ const envSchema = z.object({
 
   // ── Core (required) ──────────────────────────────────────────────────────
   PORT:                        optInt(8008),
-  ENV_MODE:                    z.enum(['local', 'cloud']).optional().default('local'),
 
   // ── Database (REQUIRED) ──────────────────────────────────────────────────
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required — cannot start without a database'),
@@ -76,7 +75,10 @@ const envSchema = z.object({
 
   // ── Internal Deployment Controls (optional, safe defaults for self-hosted) ─
   INTERNAL_KORTIX_ENV:              z.enum(['dev', 'staging', 'prod']).optional().default('dev'),
-  KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,  // NOTE: overridden by ENV_MODE=cloud below
+  // Master switch: turns on real billing (Stripe + credit ledger), makes
+  // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
+  // Set to true on managed/cloud deployments; leave false for self-host + dev.
+  KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,
   KORTIX_DEPLOYMENTS_ENABLED:       optBoolFalse,
   // EXPERIMENTAL: turns on the [[apps]] section in kortix.toml — manifest
   // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
@@ -280,10 +282,10 @@ function validateEnv(): z.infer<typeof envSchema> {
   }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
-  const billingWillBeEnabled = (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === 'true' || (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === true || (raw as any).ENV_MODE === 'cloud';
+  const billingWillBeEnabled = (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === 'true' || (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === true;
   if (billingWillBeEnabled) {
-    if (!raw.STRIPE_SECRET_KEY)    issues.push({ var: 'STRIPE_SECRET_KEY',    message: 'Required when billing is enabled (ENV_MODE=cloud)', level: 'error' });
-    if (!raw.STRIPE_WEBHOOK_SECRET) issues.push({ var: 'STRIPE_WEBHOOK_SECRET', message: 'Required when billing is enabled (ENV_MODE=cloud)', level: 'error' });
+    if (!raw.STRIPE_SECRET_KEY)    issues.push({ var: 'STRIPE_SECRET_KEY',    message: 'Required when KORTIX_BILLING_INTERNAL_ENABLED=true', level: 'error' });
+    if (!raw.STRIPE_WEBHOOK_SECRET) issues.push({ var: 'STRIPE_WEBHOOK_SECRET', message: 'Required when KORTIX_BILLING_INTERNAL_ENABLED=true', level: 'error' });
   }
 
   // ── Conditional: Tunnel enabled → need signing secret ──────────────────
@@ -293,15 +295,15 @@ function validateEnv(): z.infer<typeof envSchema> {
   }
 
   // ── Conditional: KORTIX_URL — required for sandbox routing ──────────────
-  // Auto-derive from PORT in local mode if not set — fatal in cloud mode.
+  // Auto-derive from PORT for self-host/dev — fatal when billing is enabled
+  // (you can't bill against an unreachable origin).
   if (!raw.KORTIX_URL) {
-    const envMode = (raw as any).ENV_MODE || 'local';
     const port = (raw as any).PORT || '8008';
-    if (envMode === 'cloud') {
-      issues.push({ var: 'KORTIX_URL', message: 'Required in cloud mode — sandbox routing and health checks will break', level: 'error' });
+    if (billingWillBeEnabled) {
+      issues.push({ var: 'KORTIX_URL', message: 'Required when KORTIX_BILLING_INTERNAL_ENABLED=true — sandbox routing and health checks will break', level: 'error' });
     } else {
-      // Auto-derive for local mode so it "just works". KORTIX_URL is the
-      // public API origin/base; individual callers append /v1, /v1/router, etc.
+      // Auto-derive so dev/self-host "just works". KORTIX_URL is the public
+      // API origin/base; individual callers append /v1, /v1/router, etc.
       const derived = `http://localhost:${port}`;
       process.env.KORTIX_URL = derived;
       if (result.success) (result.data as any).KORTIX_URL = derived;
@@ -368,12 +370,11 @@ const allowedProviders = parseAllowedProviders(env.ALLOWED_SANDBOX_PROVIDERS);
 
 export const config = {
   PORT: env.PORT,
-  ENV_MODE: env.ENV_MODE,
 
   // ─── Internal Deployment Controls ─────────────────────────────────────────
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
-  // Billing is enabled when ENV_MODE is 'cloud' — no separate env var needed.
-  KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED || env.ENV_MODE === 'cloud',
+  // Single master switch — see schema docstring above.
+  KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_DEPLOYMENTS_ENABLED: env.KORTIX_DEPLOYMENTS_ENABLED,
   KORTIX_APPS_EXPERIMENTAL: env.KORTIX_APPS_EXPERIMENTAL,
 
@@ -553,14 +554,6 @@ export const config = {
   KORTIX_DATA_DIR: env.KORTIX_DATA_DIR,
 
   // ─── Helper Methods ────────────────────────────────────────────────────────
-
-  isLocal(): boolean {
-    return this.ENV_MODE === 'local';
-  },
-
-  isCloud(): boolean {
-    return !this.isLocal();
-  },
 
   isProviderEnabled(name: SandboxProviderName): boolean {
     if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;

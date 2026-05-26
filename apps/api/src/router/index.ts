@@ -16,7 +16,7 @@ router.get('/health', (c) => {
     status: 'ok',
     service: 'kortix-router',
     timestamp: new Date().toISOString(),
-    env: config.ENV_MODE,
+    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
   });
 });
 

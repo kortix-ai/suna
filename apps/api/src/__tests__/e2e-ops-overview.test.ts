@@ -23,7 +23,7 @@ mock.module('../middleware/require-admin', () => ({
 }));
 
 mock.module('../config', () => ({
-  config: { ENV_MODE: 'test' },
+  config: { KORTIX_BILLING_INTERNAL_ENABLED: false },
 }));
 
 mock.module('../tunnel', () => ({
@@ -84,7 +84,7 @@ describe('ops overview dashboard API', () => {
 
     expect(body.api).toEqual({
       status: 'ok',
-      env: 'test',
+      billing_enabled: false,
       tunnel: { enabled: true, connectedAgents: 2 },
     });
     expect(body.totals).toMatchObject({

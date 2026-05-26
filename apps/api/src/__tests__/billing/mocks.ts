@@ -68,7 +68,7 @@ export function registerGlobalMocks() {
   mock.module('../../config', () => ({
     config: {
       STRIPE_WEBHOOK_SECRET: 'whsec_test',
-      ENV_MODE: 'cloud',
+      KORTIX_BILLING_INTERNAL_ENABLED: true,
       INTERNAL_KORTIX_ENV: 'staging',
     },
   }));

@@ -15,20 +15,13 @@ export async function checkCredits(
   minimumRequired: number = 0.01,
   options?: { skipDevCheck?: boolean }
 ): Promise<BillingCheckResult> {
-  if (!config.DATABASE_URL) {
-    // In local mode without a DB, skip credit checks entirely
-    if (config.isLocal()) {
-      return { hasCredits: true, balance: 0, message: 'Credits check skipped (local mode, no DB)' };
-    }
-    throw new Error('DATABASE_URL is required for credit checks');
+  // When billing is disabled (self-host/dev), all checks pass — no Stripe, no
+  // real subscriptions, and gating on a $0 balance just stalls everything.
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+    return { hasCredits: true, balance: 0, message: 'Credits check skipped (billing disabled)' };
   }
 
   const result = await checkCreditsDb(accountId, minimumRequired);
-
-  // In local mode, allow even when no credit account row exists (e.g. migrations not run)
-  if (!result.hasCredits && config.isLocal()) {
-    return { hasCredits: true, balance: 0, message: 'Credits check skipped (local mode)' };
-  }
 
   return {
     hasCredits: result.hasCredits,
@@ -55,25 +48,17 @@ export async function deductToolCredits(
     return { success: true, cost: 0, newBalance: 0 };
   }
 
+  // Skip deduction when billing is disabled (self-host/dev) — no Stripe, no
+  // real subscriptions, billing on a $0 balance would just stall everything
+  // with InsufficientCreditsError.
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+    return { success: true, cost: 0, newBalance: 0 };
+  }
+
   const baseDescription =
     description ||
     `Kortix ${toolName.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}`;
   const deductDescription = sessionId ? `${baseDescription} [session:${sessionId}]` : baseDescription;
-
-  if (!config.DATABASE_URL) {
-    if (config.isLocal()) {
-      return { success: true, cost: 0, newBalance: 0 };
-    }
-    throw new Error('DATABASE_URL is required for credit deductions');
-  }
-
-  // Skip deduction in local mode regardless of DB. ENV_MODE=local users
-  // are running their own dev stack (no Stripe, no real subscriptions),
-  // and billing on a $0 balance just stalls everything with
-  // InsufficientCreditsError. Cloud mode (ENV_MODE=cloud) still bills.
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    return { success: true, cost: 0, newBalance: 0 };
-  }
 
   console.info(`[BILLING] Deducting $${cost.toFixed(4)} for ${toolName} (direct DB)`);
 
@@ -110,20 +95,13 @@ export async function deductLLMCredits(
     return { success: true, cost: 0, newBalance: 0 };
   }
 
-  const baseDescription = `LLM: ${model} (${inputTokens}/${outputTokens} tokens)`;
-  const description = sessionId ? `${baseDescription} [session:${sessionId}]` : baseDescription;
-
-  if (!config.DATABASE_URL) {
-    if (config.isLocal()) {
-      return { success: true, cost: 0, newBalance: 0 };
-    }
-    throw new Error('DATABASE_URL is required for credit deductions');
-  }
-
-  // Skip deduction in local mode (see deductToolCredits for full rationale).
+  // Skip deduction when billing is disabled (see deductToolCredits for rationale).
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
     return { success: true, cost: 0, newBalance: 0 };
   }
+
+  const baseDescription = `LLM: ${model} (${inputTokens}/${outputTokens} tokens)`;
+  const description = sessionId ? `${baseDescription} [session:${sessionId}]` : baseDescription;
 
   console.info(`[BILLING] Deducting $${calculatedCost.toFixed(6)} for ${model} (direct DB)`);
 

@@ -80,13 +80,13 @@ async function handleProxy(c: any, service: ProxyServiceConfig, prefix: string) 
     return handleKortixPassthrough(c, service, subPath, queryString, method, auth.accountId);
   } else {
     // Mode 3: No Kortix token — pure passthrough, no billing.
-    // In cloud mode, reject: only kortix_ tokens with billing are accepted.
-    if (config.isCloud()) {
+    // When billing is enabled, reject: only kortix_ tokens with billing are accepted.
+    if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       throw new HTTPException(401, {
         message: 'Kortix API key required. Get one at https://kortix.com',
       });
     }
-    // Local/self-hosted: allow passthrough for BYOC users with their own API keys.
+    // Self-hosted: allow passthrough for BYOC users with their own API keys.
     return handlePassthrough(c, service, subPath, queryString, method);
   }
 }
