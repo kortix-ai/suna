@@ -4,8 +4,8 @@
 import { describe, test, expect } from 'bun:test';
 import {
   PER_SEAT_PRICE_USD,
-  INCLUDED_COMPUTE_PER_SEAT_USD,
-  INCLUDED_YOLO_PER_SEAT_USD,
+  TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
+  TYPICAL_LLM_BUDGET_PER_SEAT_USD,
   COMPUTE_CPU_PRICE_PER_CORE_SECOND,
   COMPUTE_MEMORY_PRICE_PER_GB_SECOND,
   COMPUTE_DISK_PRICE_PER_GB_SECOND,
@@ -13,8 +13,7 @@ import {
   AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT,
   AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT,
   defaultAutoTopupForSeats,
-  includedComputeForSeats,
-  includedYoloForSeats,
+  grantForSeats,
   isPerSeatAccount,
   isLegacyAccount,
 } from '../../billing/services/tiers';
@@ -22,26 +21,20 @@ import {
 import { calculateComputeCost } from '../../billing/services/compute-metering';
 
 describe('Per-seat pricing math', () => {
-  test('$20/seat splits 12 compute + 8 YOLO', () => {
+  test('$20/seat — typical budget split is display-only and adds up', () => {
     expect(PER_SEAT_PRICE_USD).toBe(20);
-    expect(INCLUDED_COMPUTE_PER_SEAT_USD + INCLUDED_YOLO_PER_SEAT_USD).toBe(20);
+    expect(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD + TYPICAL_LLM_BUDGET_PER_SEAT_USD).toBe(20);
   });
 
-  test('included compute scales linearly with seats', () => {
-    expect(includedComputeForSeats(1)).toBe(12);
-    expect(includedComputeForSeats(5)).toBe(60);
-    expect(includedComputeForSeats(10)).toBe(120);
-  });
-
-  test('included YOLO scales linearly with seats', () => {
-    expect(includedYoloForSeats(1)).toBe(8);
-    expect(includedYoloForSeats(5)).toBe(40);
-    expect(includedYoloForSeats(10)).toBe(80);
+  test('seat grant equals $20 × seat count (single fungible wallet)', () => {
+    expect(grantForSeats(1)).toBe(20);
+    expect(grantForSeats(5)).toBe(100);
+    expect(grantForSeats(10)).toBe(200);
   });
 
   test('seat counts below 1 are clamped to 1', () => {
-    expect(includedComputeForSeats(0)).toBe(12);
-    expect(includedYoloForSeats(-3)).toBe(8);
+    expect(grantForSeats(0)).toBe(20);
+    expect(grantForSeats(-3)).toBe(20);
   });
 
   test('auto-topup defaults scale with seat count', () => {
@@ -89,16 +82,13 @@ describe('Compute cost calculation', () => {
       COMPUTE_PRICE_MARKUP;
 
     const actual = calculateComputeCost(spec, seconds);
-    // Float tolerance — within 1e-9.
     expect(Math.abs(actual - expected)).toBeLessThan(1e-9);
   });
 
-  test('hourly cost for a 2vCPU/4GB/20GB sandbox is roughly $0.10', () => {
-    // 2 * 0.04 + 4 * 0.005 + 20 * 0.0001 = 0.08 + 0.02 + 0.002 = 0.102
-    // × 1.2 markup = 0.1224
+  test('hourly cost for a 2vCPU/4GB/20GB sandbox is roughly $0.10–0.15', () => {
     const hourCost = calculateComputeCost(spec, 3600);
-    expect(hourCost).toBeGreaterThan(0.11);
-    expect(hourCost).toBeLessThan(0.14);
+    expect(hourCost).toBeGreaterThan(0.10);
+    expect(hourCost).toBeLessThan(0.15);
   });
 
   test('cost scales linearly with both spec and time', () => {
@@ -113,14 +103,11 @@ describe('Compute cost calculation', () => {
     expect(doubleSpec / baseline).toBeCloseTo(2, 5);
   });
 
-  test('a 2vCPU/4GB/20GB sandbox running 8h/day for 22 days fits inside the $12 compute budget', () => {
-    // 8h × 22d × $0.1224/hr ≈ $21.55? No, $21.55 is over budget.
-    // The actual hourly rate ≈ $0.1224 means heavy usage exceeds budget,
-    // which is exactly what we want (heavy users pay overage via topup).
-    // Verify the calculation is consistent though.
+  test('monthly heavy usage exceeds typical compute budget (overage funded via topup)', () => {
+    // 8h × 22 days at $0.12/hr ≈ $21+, which exceeds the $12 typical compute
+    // budget but stays within the $20 fungible seat wallet.
     const monthlySeconds = 8 * 3600 * 22;
     const monthlyCost = calculateComputeCost(spec, monthlySeconds);
-    // Sanity bounds — between $20 and $30 for these inputs.
     expect(monthlyCost).toBeGreaterThan(20);
     expect(monthlyCost).toBeLessThan(30);
   });

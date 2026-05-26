@@ -1344,14 +1344,12 @@ export const creditAccounts = kortixSchema.table(
     autoTopupAmount: numeric('auto_topup_amount', { precision: 10, scale: 2 }).default('20').notNull(),
     autoTopupLastCharged: timestamp('auto_topup_last_charged', { withTimezone: true, mode: 'string' }),
     // Billing v2 — per-seat model. Existing rows default to 'legacy' so legacy
-    // customers are untouched; new signups use 'per_seat'.
+    // customers are untouched; new signups use 'per_seat'. The wallet is a
+    // single fungible balance; usage breakdown by category comes from
+    // aggregating credit_ledger entries by `type` (compute_debit / llm_debit).
     billingModel: text('billing_model').default('legacy').notNull(),
     seatCount: integer('seat_count').default(1).notNull(),
     seatSubscriptionItemId: text('seat_subscription_item_id'),
-    includedComputePerSeatUsd: numeric('included_compute_per_seat_usd', { precision: 10, scale: 4 }),
-    includedYoloPerSeatUsd: numeric('included_yolo_per_seat_usd', { precision: 10, scale: 4 }),
-    includedComputeBalance: numeric('included_compute_balance', { precision: 12, scale: 4 }).default('0').notNull(),
-    includedYoloBalance: numeric('included_yolo_balance', { precision: 12, scale: 4 }).default('0').notNull(),
     autoTopupCustomized: boolean('auto_topup_customized').default(false).notNull(),
   },
   (table) => [

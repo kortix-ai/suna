@@ -14,13 +14,20 @@ export const COMPUTE_PRICE_MARKUP = 1.2;
 
 // ─── Billing v2 — per-seat model ─────────────────────────────────────────────
 // Each account is billed $20/month × number of accepted account_members.
-// $20/seat is split into an included budget for sandbox compute and YOLO usage.
-// Overage on either pulls from the shared wallet; if the wallet hits the
-// scaled threshold and auto-topup is on, auto-refill kicks in.
+// The $20 grants $20 of fungible wallet credits — there's NO separate
+// compute/LLM bucket in the wallet. Spend is debited from the unified
+// balance; the credit_ledger.type tag (`compute_debit` / `llm_debit`)
+// drives the UI usage breakdown.
+//
+// The two TYPICAL_* constants below are display-only — surfaced on the
+// pricing page as "roughly N hours of compute or M tokens" rough guidance,
+// not enforced anywhere.
 
 export const PER_SEAT_PRICE_USD = 20;
-export const INCLUDED_COMPUTE_PER_SEAT_USD = 12;
-export const INCLUDED_YOLO_PER_SEAT_USD = 8;
+/** Display-only: rough indication for pricing-page copy. */
+export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 12;
+/** Display-only: rough indication for pricing-page copy. */
+export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 8;
 
 // Per-second pricing for reserved sandbox spec (declared in kortix.toml [sandbox]).
 // Numbers are pre-markup; debit emitter multiplies by COMPUTE_PRICE_MARKUP.
@@ -56,14 +63,13 @@ export function defaultAutoTopupForSeats(seatCount: number): { threshold: number
   };
 }
 
-/** Monthly included compute credits granted on subscription start/renew. */
-export function includedComputeForSeats(seatCount: number): number {
-  return INCLUDED_COMPUTE_PER_SEAT_USD * Math.max(1, seatCount);
-}
-
-/** Monthly included YOLO credits granted on subscription start/renew. */
-export function includedYoloForSeats(seatCount: number): number {
-  return INCLUDED_YOLO_PER_SEAT_USD * Math.max(1, seatCount);
+/**
+ * Monthly wallet grant for N seats. $20 per seat, fungible across compute
+ * and LLM usage. Per-category transparency comes from the credit_ledger
+ * (compute_debit / llm_debit), not from a wallet partition.
+ */
+export function grantForSeats(seatCount: number): number {
+  return PER_SEAT_PRICE_USD * Math.max(1, seatCount);
 }
 
 // ─── Compute instance definitions ───────────────────────────────────────────
@@ -141,15 +147,14 @@ const TIERS: Record<string, TierConfig> = {
   },
 
   // Billing v2 — per-member seat plan. $20 × seat_count / month.
-  // The TIERS entry models a single seat; actual seat math is in
-  // includedComputeForSeats() / includedYoloForSeats() and applied at
-  // subscription create + renew.
+  // The TIERS entry models a single seat; multi-seat math is in
+  // grantForSeats() and applied at subscription create + renew.
   per_seat: {
     name: 'per_seat',
     displayName: 'Team',
     monthlyPrice: PER_SEAT_PRICE_USD,
     yearlyPrice: 0,
-    monthlyCredits: INCLUDED_COMPUTE_PER_SEAT_USD + INCLUDED_YOLO_PER_SEAT_USD,
+    monthlyCredits: PER_SEAT_PRICE_USD,
     canPurchaseCredits: true,
     models: ['all'],
     dailyCreditConfig: null,

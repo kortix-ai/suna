@@ -75,8 +75,6 @@ export async function getSubscriptionInfo(accountId: string) {
       billingModel: creditAccounts.billingModel,
       seatCount: creditAccounts.seatCount,
       seatSubscriptionItemId: creditAccounts.seatSubscriptionItemId,
-      includedComputeBalance: creditAccounts.includedComputeBalance,
-      includedYoloBalance: creditAccounts.includedYoloBalance,
       autoTopupCustomized: creditAccounts.autoTopupCustomized,
     })
     .from(creditAccounts)

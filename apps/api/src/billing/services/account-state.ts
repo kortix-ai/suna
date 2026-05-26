@@ -12,9 +12,10 @@ import {
   isPerSeatAccount,
   MINIMUM_CREDIT_FOR_RUN,
   PER_SEAT_PRICE_USD,
-  INCLUDED_COMPUTE_PER_SEAT_USD,
-  INCLUDED_YOLO_PER_SEAT_USD,
+  TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
+  TYPICAL_LLM_BUDGET_PER_SEAT_USD,
 } from './tiers';
+import { getUsageBreakdownThisPeriod } from './usage-breakdown';
 import { getCreditSummary } from './credits';
 import { getAutoTopupSettings } from './auto-topup';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -188,12 +189,13 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       ? {
           count: sub?.seatCount ?? 1,
           price_per_seat_usd: PER_SEAT_PRICE_USD,
-          included_compute_per_seat_usd: INCLUDED_COMPUTE_PER_SEAT_USD,
-          included_yolo_per_seat_usd: INCLUDED_YOLO_PER_SEAT_USD,
-          included_compute_remaining_usd: Number(sub?.includedComputeBalance ?? 0),
-          included_yolo_remaining_usd: Number(sub?.includedYoloBalance ?? 0),
+          typical_compute_budget_per_seat_usd: TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
+          typical_llm_budget_per_seat_usd: TYPICAL_LLM_BUDGET_PER_SEAT_USD,
         }
       : undefined,
+    usage_this_period: isPerSeatAccount(sub?.billingModel)
+      ? await getUsageBreakdownThisPeriod(accountId, sub?.billingCycleAnchor ?? null).catch(() => null)
+      : null,
   };
 
   return state;

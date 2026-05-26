@@ -20,8 +20,7 @@ import {
   isRevenueCatAnonymous,
   isPerSeatAccount,
   resolvePerSeatPriceId,
-  includedComputeForSeats,
-  includedYoloForSeats,
+  PER_SEAT_PRICE_USD,
   defaultAutoTopupForSeats,
 } from './tiers';
 import { grantCredits, resetExpiringCredits } from './credits';
@@ -348,36 +347,25 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     }
   }
 
-  // Per-seat included credit grants. Stripe handles the dollar proration on
+  // Per-seat included credit grant. Stripe handles the dollar proration on
   // the invoice; we mirror that in the wallet so the new seat can spend
   // immediately rather than waiting for the next bill cycle.
+  //
+  // Wallet is fungible — $20/seat goes into one bucket. The compute-vs-LLM
+  // split is a pricing-page message, not a wallet partition. Spend
+  // attribution happens at the ledger entry level (compute_debit / llm_debit).
   if (perSeatItem && perSeatDelta > 0) {
-    const computeGrant = includedComputeForSeats(perSeatDelta);
-    const yoloGrant = includedYoloForSeats(perSeatDelta);
-    if (computeGrant > 0) {
-      await grantCredits(
-        accountId,
-        computeGrant,
-        'seat_grant_compute',
-        `Per-seat compute allowance (+${perSeatDelta} seats)`,
-        true,
-        `${subscription.id}:seats:${updates.seatCount}:compute`,
-      ).catch((err) =>
-        console.warn(`[Webhook] per-seat compute grant failed for ${accountId}:`, err),
-      );
-    }
-    if (yoloGrant > 0) {
-      await grantCredits(
-        accountId,
-        yoloGrant,
-        'seat_grant_yolo',
-        `Per-seat YOLO allowance (+${perSeatDelta} seats)`,
-        true,
-        `${subscription.id}:seats:${updates.seatCount}:yolo`,
-      ).catch((err) =>
-        console.warn(`[Webhook] per-seat YOLO grant failed for ${accountId}:`, err),
-      );
-    }
+    const seatGrant = PER_SEAT_PRICE_USD * perSeatDelta;
+    await grantCredits(
+      accountId,
+      seatGrant,
+      'seat_grant',
+      `Per-seat allowance (+${perSeatDelta} ${perSeatDelta === 1 ? 'seat' : 'seats'})`,
+      true,
+      `${subscription.id}:seats:${updates.seatCount}`,
+    ).catch((err) =>
+      console.warn(`[Webhook] per-seat grant failed for ${accountId}:`, err),
+    );
   }
 }
 

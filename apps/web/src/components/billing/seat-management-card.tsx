@@ -1,12 +1,13 @@
 'use client';
 
 // Billing v2 — seat management card.
-// Only rendered when account_state.billing_model === 'per_seat'. Shows current
-// seat count, the headline price, and the running tally of included compute +
-// YOLO budgets so the member can see what their $20/seat is paying for.
+// Rendered when account_state.billing_model === 'per_seat'. Shows seat count,
+// monthly cost, and the running spend breakdown (compute vs LLM) sourced from
+// credit_ledger aggregation. The wallet itself is a single number — only the
+// SPEND attribution is split.
 
 import type { AccountState } from '@/lib/api/billing';
-import { Users } from 'lucide-react';
+import { Cpu, Sparkles, Users } from 'lucide-react';
 
 export interface SeatManagementCardProps {
   accountState: AccountState;
@@ -17,14 +18,7 @@ export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
   if (!seats || accountState.billing_model !== 'per_seat') return null;
 
   const monthlyTotal = seats.price_per_seat_usd * seats.count;
-  const computeIncluded = seats.included_compute_per_seat_usd * seats.count;
-  const yoloIncluded = seats.included_yolo_per_seat_usd * seats.count;
-  const computeRemainingPct = computeIncluded
-    ? Math.max(0, Math.min(100, Math.round((seats.included_compute_remaining_usd / computeIncluded) * 100)))
-    : 0;
-  const yoloRemainingPct = yoloIncluded
-    ? Math.max(0, Math.min(100, Math.round((seats.included_yolo_remaining_usd / yoloIncluded) * 100)))
-    : 0;
+  const usage = accountState.usage_this_period;
 
   return (
     <div className="rounded-lg border bg-card p-6 space-y-5">
@@ -36,7 +30,7 @@ export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
           <div>
             <h3 className="text-base font-semibold">Team seats</h3>
             <p className="text-sm text-muted-foreground">
-              ${seats.price_per_seat_usd}/seat — includes Kortix YOLO + compute budget
+              ${seats.price_per_seat_usd}/teammate · includes compute + LLM usage
             </p>
           </div>
         </div>
@@ -48,55 +42,54 @@ export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
         </div>
       </header>
 
-      <div className="grid grid-cols-2 gap-4">
-        <BudgetBar
-          label="Compute"
-          totalUsd={computeIncluded}
-          remainingUsd={seats.included_compute_remaining_usd}
-          percent={computeRemainingPct}
-        />
-        <BudgetBar
-          label="Kortix YOLO"
-          totalUsd={yoloIncluded}
-          remainingUsd={seats.included_yolo_remaining_usd}
-          percent={yoloRemainingPct}
-        />
-      </div>
+      {usage ? (
+        <div className="space-y-3">
+          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            This period
+          </h4>
+          <div className="grid grid-cols-2 gap-3">
+            <UsageStat
+              icon={<Cpu className="size-4" />}
+              label="Compute"
+              valueUsd={usage.compute_usd}
+            />
+            <UsageStat
+              icon={<Sparkles className="size-4" />}
+              label="LLM"
+              valueUsd={usage.llm_usd}
+            />
+          </div>
+          <div className="flex items-baseline justify-between border-t pt-3 text-sm">
+            <span className="text-muted-foreground">Total spend this period</span>
+            <span className="tabular-nums font-medium">${usage.total_usd.toFixed(2)}</span>
+          </div>
+        </div>
+      ) : null}
 
-      <p className="text-xs text-muted-foreground">
-        Adding a teammate adds ${seats.price_per_seat_usd}/mo and grants
-        ${seats.included_compute_per_seat_usd + seats.included_yolo_per_seat_usd} of included usage
-        for that seat. Stripe handles proration automatically.
+      <p className="text-xs text-muted-foreground border-t pt-4">
+        Adding a teammate adds ${seats.price_per_seat_usd}/mo and grants ${seats.price_per_seat_usd}
+        {' '}of wallet credits. Spend it on compute, LLM, or both — Stripe prorates automatically.
       </p>
     </div>
   );
 }
 
-function BudgetBar({
+function UsageStat({
+  icon,
   label,
-  totalUsd,
-  remainingUsd,
-  percent,
+  valueUsd,
 }: {
+  icon: React.ReactNode;
   label: string;
-  totalUsd: number;
-  remainingUsd: number;
-  percent: number;
+  valueUsd: number;
 }) {
   return (
-    <div>
-      <div className="flex items-baseline justify-between text-sm">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="tabular-nums">
-          ${remainingUsd.toFixed(2)} <span className="text-muted-foreground">/ ${totalUsd.toFixed(0)}</span>
-        </span>
+    <div className="rounded-md border bg-background p-3">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        {icon}
+        <span>{label}</span>
       </div>
-      <div className="mt-1.5 h-2 rounded-full bg-muted overflow-hidden">
-        <div
-          className="h-full bg-primary transition-[width] duration-300"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
+      <div className="mt-1 text-xl font-semibold tabular-nums">${valueUsd.toFixed(2)}</div>
     </div>
   );
 }

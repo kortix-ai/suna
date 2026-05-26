@@ -241,11 +241,23 @@ export interface AccountStateResponse {
   seats?: {
     count: number;
     price_per_seat_usd: number;
-    included_compute_per_seat_usd: number;
-    included_yolo_per_seat_usd: number;
-    included_compute_remaining_usd: number;
-    included_yolo_remaining_usd: number;
+    /** Pricing-page transparency only — not a wallet partition. */
+    typical_compute_budget_per_seat_usd: number;
+    /** Pricing-page transparency only — not a wallet partition. */
+    typical_llm_budget_per_seat_usd: number;
   };
+  /**
+   * Spend breakdown by category for the current billing period. Sourced from
+   * credit_ledger aggregation, not from a partitioned wallet. Null for legacy
+   * accounts.
+   */
+  usage_this_period?: {
+    compute_usd: number;
+    llm_usd: number;
+    total_usd: number;
+    period_start: string | null;
+    period_end: string | null;
+  } | null;
 }
 
 export interface ScheduledChange {

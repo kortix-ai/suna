@@ -125,6 +125,7 @@ async function settleComputeWindow(
       row.accountId,
       windowCost,
       `Sandbox compute · ${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s`,
+      'compute_debit',
     );
     debited = true;
   } catch (err) {

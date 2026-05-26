@@ -126,11 +126,16 @@ export interface AccountState {
   seats?: {
     count: number;
     price_per_seat_usd: number;
-    included_compute_per_seat_usd: number;
-    included_yolo_per_seat_usd: number;
-    included_compute_remaining_usd: number;
-    included_yolo_remaining_usd: number;
+    typical_compute_budget_per_seat_usd: number;
+    typical_llm_budget_per_seat_usd: number;
   };
+  usage_this_period?: {
+    compute_usd: number;
+    llm_usd: number;
+    total_usd: number;
+    period_start: string | null;
+    period_end: string | null;
+  } | null;
   _cache?: {
     cached: boolean;
     ttl_seconds?: number;

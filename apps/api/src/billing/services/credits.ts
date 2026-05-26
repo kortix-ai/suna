@@ -41,10 +41,21 @@ export async function getCreditSummary(accountId: string) {
   };
 }
 
+/**
+ * Optional ledger type tag for breakdown reporting. Defaults to 'usage' for
+ * backward compatibility with every existing call site.
+ *
+ * Known tagged types used by Billing v2:
+ *   - 'compute_debit' : per-second sandbox compute spend (compute-metering.ts)
+ *   - 'llm_debit'     : LLM router spend (deductForLlmUsage below)
+ */
+export type LedgerDebitType = 'usage' | 'compute_debit' | 'llm_debit' | 'token_deduction' | 'token_overage';
+
 export async function deductCredits(
   accountId: string,
   amount: number,
   description: string,
+  ledgerType: LedgerDebitType = 'usage',
 ) {
   const supabase = getSupabase();
 
@@ -52,6 +63,7 @@ export async function deductCredits(
     p_account_id: accountId,
     p_amount: amount,
     p_description: description,
+    p_ledger_type: ledgerType,
   });
 
   if (error) {
@@ -85,6 +97,29 @@ export async function deductCredits(
     newBalance: result.new_total ?? 0,
     transactionId: result.transaction_id,
   };
+}
+
+/**
+ * Billing v2 — LLM router debit. Same wallet as compute; only the ledger
+ * type tag differs so the breakdown UI can split "you spent $X compute, $Y
+ * LLM this period."
+ *
+ * Integration point for the LLM router: call this once per completed call,
+ * passing the post-markup cost from calculateTokenCost(). actorUserId is
+ * threaded through for per-member attribution dashboards (usage_events
+ * already records it; the ledger metadata mirrors it here for ledger-only
+ * reports).
+ */
+export async function deductForLlmUsage(opts: {
+  accountId: string;
+  costUsd: number;
+  model: string;
+  provider?: string;
+  actorUserId?: string | null;
+}) {
+  if (opts.costUsd <= 0) return { success: true, cost: 0, newBalance: 0, transactionId: null };
+  const description = `LLM · ${opts.provider ? `${opts.provider}/` : ''}${opts.model}`;
+  return deductCredits(opts.accountId, opts.costUsd, description, 'llm_debit');
 }
 
 interface ModelPricing {
