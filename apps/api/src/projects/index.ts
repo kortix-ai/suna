@@ -111,13 +111,6 @@ import {
   type ShareSubject,
 } from '../executor/share';
 import {
-  createManagedRepo,
-  mintRepoPushToken,
-  deleteManagedRepo,
-  seedRepoWithFiles,
-  isFreestyleGitConfigured,
-} from './freestyle-git';
-import {
   ensureBuildForLatestCommit,
   getProjectSandboxHealth,
   listSnapshotsForProject,

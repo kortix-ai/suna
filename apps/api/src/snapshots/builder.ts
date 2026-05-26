@@ -454,7 +454,7 @@ export async function getSnapshotForCommit(
 export async function getReadySnapshotForCommit(
   projectId: string,
   commitSha: string,
-  provider: SandboxProviderName = 'daytona',
+  provider: SnapshotProviderName = 'daytona',
 ): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
   const row = await getSnapshotForCommit(projectId, commitSha, provider);
   if (row?.status !== 'ready' || !row.snapshotId) return null;

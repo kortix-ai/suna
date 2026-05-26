@@ -92,7 +92,7 @@ function snapshotDegradeGraceMs(waitMs: number): number {
 async function waitForLatestReadySnapshot(
   projectId: string,
   branch: string,
-  providerName: ProviderName,
+  providerName: Extract<ProviderName, 'daytona' | 'local_docker'>,
   commitSha?: string,
 ): Promise<NonNullable<Awaited<ReturnType<typeof getLatestReadySnapshot>>> | null> {
   const waitMs = snapshotReadyWaitMs();
@@ -266,6 +266,13 @@ export async function provisionSessionSandbox(opts: {
   // and the dashboard's ConnectingScreen handles the long tail.
   void (async () => {
     let bgExternalId: string | null = null;
+    // Per-project snapshot bookkeeping. Only daytona/local_docker populate
+    // these; for platinum they stay null and the runtimeArtifact metadata
+    // is skipped below. Hoisted so the post-block status writes can read
+    // them once the else branch runs.
+    let latest: Awaited<ReturnType<typeof getLatestReadySnapshot>> = null;
+    let headCommitSha: string | null = null;
+    let bootedDegraded = false;
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
       if (providerName === 'platinum') {
@@ -278,9 +285,12 @@ export async function provisionSessionSandbox(opts: {
           `${opts.imageSpec ? `inline image (${opts.imageSpec.base_image})` : `template ${config.PLATINUM_TEMPLATE}`} (branch ${branch})`,
         );
       } else {
-        // Daytona / local_docker: per-project snapshot.
+        // Daytona / local_docker: per-project snapshot. (TypeScript can't
+        // narrow `providerName` to SnapshotProviderName through the
+        // === 'platinum' guard above, so we cast for the snapshot-API calls.)
+        const snapProvider = providerName as 'daytona' | 'local_docker';
         let gitProject = opts.gitProject;
-        let latest = await getLatestReadySnapshot(opts.gitProject.projectId, branch, providerName);
+        latest = await getLatestReadySnapshot(opts.gitProject.projectId, branch, snapProvider);
         let build: Awaited<ReturnType<typeof ensureBuildForLatestCommit>> | null = null;
 
         if (latest?.snapshotId) {
@@ -325,7 +335,7 @@ export async function provisionSessionSandbox(opts: {
           build = await ensureBuildForLatestCommit(gitProject, {
             branch,
             accountId,
-            provider: providerName,
+            provider: snapProvider,
             source: 'session-start',
           });
           if (build.status === 'failed-to-start') {
@@ -334,21 +344,21 @@ export async function provisionSessionSandbox(opts: {
           tl.mark(`ensure-build:${build.status}`);
 
           latest = build.commitSha
-            ? await getReadySnapshotForCommit(opts.gitProject.projectId, build.commitSha, providerName)
+            ? await getReadySnapshotForCommit(opts.gitProject.projectId, build.commitSha, snapProvider)
             : null;
 
           if (!latest?.snapshotId && build.commitSha) {
             latest = await waitForLatestReadySnapshot(
               opts.gitProject.projectId,
               branch,
-              providerName,
+              snapProvider,
               build.commitSha,
             );
           } else if (!build.commitSha) {
             latest = await waitForLatestReadySnapshot(
               opts.gitProject.projectId,
               branch,
-              providerName,
+              snapProvider,
             );
           }
         }
@@ -364,8 +374,8 @@ export async function provisionSessionSandbox(opts: {
         // building past the grace window), so we booted the most recent healthy
         // snapshot instead. Recorded so the UI can show "running an older
         // snapshot" rather than silently serving stale code.
-        const headCommitSha = build?.commitSha ?? null;
-        const bootedDegraded = !!(headCommitSha && latest.commitSha !== headCommitSha);
+        headCommitSha = build?.commitSha ?? null;
+        bootedDegraded = !!(headCommitSha && latest.commitSha !== headCommitSha);
         tl.mark('snapshot-ready');
         providerCreateInput.snapshot = latest.snapshotId;
         console.log(
@@ -456,19 +466,24 @@ export async function provisionSessionSandbox(opts: {
             provisioningStage: firstStage?.id,
             provisionTimeline: timeline,
             daytonaSandboxId: result.externalId,
-            runtimeArtifact: {
-              artifactType: providerName === 'daytona' ? 'daytona_snapshot' : 'unknown',
-              providerArtifactRef: latest.snapshotId,
-              snapshotRowId: latest.snapshotRowId,
-              contentHash: stringMetadataValue(latest.metadata, 'contentHash'),
-              shortHash: stringMetadataValue(latest.metadata, 'shortHash'),
-              runtimeFingerprint: stringMetadataValue(latest.metadata, 'runtimeFingerprint'),
-              commitSha: latest.commitSha,
-              branch,
-              provider: providerName,
-              degraded: bootedDegraded,
-              headCommitSha,
-            },
+            // runtimeArtifact only populated for providers that use the
+            // per-project snapshot system. Platinum boots from a shared
+            // template, so `latest` is null and there's nothing to record.
+            ...(latest ? {
+              runtimeArtifact: {
+                artifactType: providerName === 'daytona' ? 'daytona_snapshot' : 'unknown',
+                providerArtifactRef: latest.snapshotId,
+                snapshotRowId: latest.snapshotRowId,
+                contentHash: stringMetadataValue(latest.metadata, 'contentHash'),
+                shortHash: stringMetadataValue(latest.metadata, 'shortHash'),
+                runtimeFingerprint: stringMetadataValue(latest.metadata, 'runtimeFingerprint'),
+                commitSha: latest.commitSha,
+                branch,
+                provider: providerName,
+                degraded: bootedDegraded,
+                headCommitSha,
+              },
+            } : {}),
           },
           attempts,
         ),
