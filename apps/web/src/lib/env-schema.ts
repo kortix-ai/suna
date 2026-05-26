@@ -10,6 +10,8 @@ const RuntimeEnvSchema = z.object({
   SANDBOX_ID: z.string().optional().default('kortix-sandbox'),
   /** Comma-separated list of social auth providers to surface on the auth page (e.g. "google"). Empty = none. */
   AUTH_PROVIDERS: z.string().optional().default(''),
+  /** Comma-separated list of email auth methods to surface on the auth page (e.g. "magic,password"). */
+  AUTH_METHODS: z.string().optional().default('magic,password'),
 })
 
 export type RuntimeEnv = z.infer<typeof RuntimeEnvSchema>

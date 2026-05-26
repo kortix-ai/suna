@@ -7,8 +7,9 @@ import { useTranslations } from 'next-intl';
  *
  * Identical in local and cloud. The only mode-dependent piece is whether
  * Supabase requires email confirmation (Supabase config, not ENV_MODE).
- * Social providers (Google, etc.) render only when listed in
- * `NEXT_PUBLIC_AUTH_PROVIDERS` — never as a hardcoded surface.
+ * Email auth methods and social providers render only when listed in
+ * `NEXT_PUBLIC_AUTH_METHODS` / `NEXT_PUBLIC_AUTH_PROVIDERS` — never as a
+ * hardcoded surface.
  */
 
 import Link from 'next/link';
@@ -17,7 +18,12 @@ import { FormEvent, Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, ChevronRight } from 'lucide-react';
 
-import { signInWithPassword, signUpWithPassword } from './actions';
+import {
+  signIn as signInWithMagicLink,
+  signInWithPassword,
+  signUp as signUpWithMagicLink,
+  signUpWithPassword,
+} from './actions';
 import { useAuth } from '@/components/AuthProvider';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -34,6 +40,7 @@ import { getEnv } from '@/lib/env-config';
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
 
 type Mode = 'signin' | 'signup';
+type AuthMethod = 'magic' | 'password';
 
 /* ─── Live clock ────────────────────────────────────────────────────────── */
 
@@ -73,7 +80,18 @@ function LiveClock() {
 function AuthCardForm({ returnUrl }: { returnUrl: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>('signin');
+  const [mode, setMode] = useState<Mode>('signup');
+  const enabledMethods = useMemo(() => {
+    const raw = getEnv().AUTH_METHODS || 'magic,password';
+    const parsed = raw
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter((s): s is AuthMethod => s === 'magic' || s === 'password');
+    return parsed.length ? parsed : ['magic', 'password'];
+  }, []);
+  const magicLinkEnabled = enabledMethods.includes('magic');
+  const passwordEnabled = enabledMethods.includes('password');
+  const [method, setMethod] = useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
   const [pending, setPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -97,22 +115,34 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
     const formData = new FormData(form);
     formData.set('returnUrl', returnUrl);
     formData.set('origin', window.location.origin);
+    if (method === 'magic' && mode === 'signup') {
+      formData.set('acceptedTerms', 'true');
+    }
 
     try {
       const result =
-        mode === 'signup'
-          ? await signUpWithPassword(null, formData)
-          : await signInWithPassword(null, formData);
+        method === 'magic'
+          ? mode === 'signup'
+            ? await signUpWithMagicLink(null, formData)
+            : await signInWithMagicLink(null, formData)
+          : mode === 'signup'
+            ? await signUpWithPassword(null, formData)
+            : await signInWithPassword(null, formData);
 
       if (
         result &&
         typeof result === 'object' &&
         'message' in result &&
-        !('success' in result)
+        (!('success' in result) || !(result as any).success)
       ) {
         const msg = result.message as string;
         setErrorMessage(msg);
         toast.error(msg);
+        return;
+      }
+
+      if (result && method === 'magic' && (result as any).success) {
+        setInfo((result as any).message || 'Check your email for a magic link');
         return;
       }
 
@@ -190,7 +220,11 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           {mode === 'signup' ? 'Create your account' : 'Sign in to Kortix'}
         </h1>
         <p className="text-sm text-foreground/40 mt-0.5">
-          {mode === 'signup' ? 'Email and password is all you need' : 'Your AI Computer'}
+          {method === 'magic'
+            ? 'We will email you a secure sign-in link'
+            : mode === 'signup'
+              ? 'Email and password is all you need'
+              : 'Your AI Computer'}
         </p>
       </div>
 
@@ -218,25 +252,29 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           autoComplete="email"
           className="text-sm"
         />
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          placeholder="Password"
-          required
-          autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-          className="text-sm"
-        />
-        {mode === 'signup' && (
-          <Input
-            id="confirmPassword"
-            name="confirmPassword"
-            type="password"
-            placeholder={tHardcodedUi.raw('appAuthPage.line234JsxAttrPlaceholderConfirmPassword')}
-            required
-            autoComplete="new-password"
-            className="text-sm"
-          />
+        {method === 'password' && (
+          <>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="Password"
+              required
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              className="text-sm"
+            />
+            {mode === 'signup' && (
+              <Input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                placeholder={tHardcodedUi.raw('appAuthPage.line234JsxAttrPlaceholderConfirmPassword')}
+                required
+                autoComplete="new-password"
+                className="text-sm"
+              />
+            )}
+          </>
         )}
 
         <Button
@@ -246,14 +284,34 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           className="w-full text-sm"
         >
           {pending
-            ? mode === 'signup'
-              ? 'Creating account…'
-              : 'Signing in…'
-            : mode === 'signup'
-              ? 'Create account'
-              : 'Sign in'}
+            ? method === 'magic'
+              ? 'Sending link…'
+              : mode === 'signup'
+                ? 'Creating account…'
+                : 'Signing in…'
+            : method === 'magic'
+              ? 'Email me a sign-in link'
+              : mode === 'signup'
+                ? 'Create account'
+                : 'Sign in'}
         </Button>
       </form>
+
+      {magicLinkEnabled && passwordEnabled && (
+        <div className="mt-4 text-center">
+          <button
+            type="button"
+            onClick={() => {
+              setMethod(method === 'magic' ? 'password' : 'magic');
+              setErrorMessage(null);
+              setInfo(null);
+            }}
+            className="text-xs text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
+          >
+            {method === 'magic' ? 'Use password instead' : 'Use email link instead'}
+          </button>
+        </div>
+      )}
 
       {/* Social providers — only when configured */}
       {googleEnabled && (
@@ -269,7 +327,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         </>
       )}
 
-      {mode === 'signin' && (
+      {mode === 'signin' && passwordEnabled && (
         <div className="mt-5 text-center">
           <Link
             href="/auth/forgot-password"
