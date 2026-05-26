@@ -70,6 +70,12 @@ const IAM_ACTION_MAP: Record<
   'iam.service_account.delete':  { title: 'Deleted service account',    kind: 'delete' },
   'iam.audit.export':         { title: 'Exported audit log',            kind: 'export' },
   'iam.policy_template.apply':{ title: 'Applied policy template',        kind: 'grant'  },
+  // V1 IAM policies were removed in PR5, but historical audit rows
+  // still reference these codes — humanize them so the audit history
+  // stays readable. New activity won't add more.
+  'iam.policy.create':        { title: 'Created IAM policy',             kind: 'create' },
+  'iam.policy.update':        { title: 'Updated IAM policy',             kind: 'update' },
+  'iam.policy.delete':        { title: 'Deleted IAM policy',             kind: 'delete' },
 };
 
 // ─── HTTP path patterns ──────────────────────────────────────────────────
@@ -123,6 +129,12 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       }
       if (m === 'POST' && raw.endsWith(':rotate')) {
         return { title: 'Rotated secret', detail: name ?? undefined, kind: 'update' };
+      }
+      // POST /v1/projects/:id/secrets with name in body (not in path).
+      // The name isn't recoverable from the URL so we just label the
+      // action and rely on the before/after diff for the detail.
+      if (m === 'POST' && s.length === 3) {
+        return { title: 'Set project secret', kind: 'update' };
       }
     }
     return null;
@@ -220,6 +232,20 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
         return { title: 'Applied policy template', detail: slug ?? undefined, kind: 'grant' };
       if (m === 'GET')
         return { title: 'Listed policy templates', kind: 'read' };
+    }
+    return null;
+  },
+  // ── V1 IAM policies (legacy, kept for audit history) ─────────────
+  // The V1 policies surface was removed in PR5, but applying a policy
+  // template still writes underlying iam.policy.create rows, and old
+  // audit rows reference the bare /iam/policies endpoints. Map them so
+  // the historical log doesn't look like raw curl commands.
+  (m, s) => {
+    if (s[0] === 'accounts' && s[2] === 'iam' && s[3] === 'policies') {
+      if (m === 'POST' && s.length === 4) return { title: 'Created IAM policy', kind: 'create' };
+      if (m === 'PATCH' && s.length === 5) return { title: 'Updated IAM policy', kind: 'update' };
+      if (m === 'DELETE' && s.length === 5) return { title: 'Deleted IAM policy', kind: 'delete' };
+      if (m === 'GET') return { title: 'Listed IAM policies', kind: 'read' };
     }
     return null;
   },

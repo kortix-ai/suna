@@ -194,6 +194,39 @@ describe('humanizeAuditAction — HTTP routes', () => {
       humanizeAuditAction(`POST /v1/projects/${UID}/triggers/${UID2}/fire`).title,
     ).toBe('Fired trigger');
   });
+
+  test('POST /v1/projects/:id/secrets (root, no name) → Set project secret', () => {
+    expect(humanizeAuditAction(`POST /v1/projects/${UID}/secrets`)).toEqual({
+      title: 'Set project secret',
+      kind: 'update',
+    });
+  });
+
+  test('POST /v1/accounts/:id/iam/policies → Created IAM policy', () => {
+    expect(
+      humanizeAuditAction(`POST /v1/accounts/${UID}/iam/policies`),
+    ).toEqual({
+      title: 'Created IAM policy',
+      kind: 'create',
+    });
+  });
+
+  test('DELETE /v1/accounts/:id/iam/policies/:pid → Deleted IAM policy', () => {
+    expect(
+      humanizeAuditAction(`DELETE /v1/accounts/${UID}/iam/policies/${UID2}`).title,
+    ).toBe('Deleted IAM policy');
+  });
+
+  test('iam.policy.create → Created IAM policy (legacy code)', () => {
+    expect(humanizeAuditAction('iam.policy.create')).toEqual({
+      title: 'Created IAM policy',
+      kind: 'create',
+    });
+  });
+
+  test('iam.policy.delete → Deleted IAM policy', () => {
+    expect(humanizeAuditAction('iam.policy.delete').title).toBe('Deleted IAM policy');
+  });
 });
 
 describe('humanizeAuditAction — fallbacks', () => {
