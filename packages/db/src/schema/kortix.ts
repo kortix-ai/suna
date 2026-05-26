@@ -329,6 +329,12 @@ export const projectMembers = kortixSchema.table(
     userId: uuid('user_id').notNull(),
     projectRole: projectRoleEnum('project_role').default('viewer').notNull(),
     grantedBy: uuid('granted_by'),
+    /** Optional auto-revoke timestamp. NULL = permanent grant.
+     *  When set and in the past, the V2 engine treats the row as if it
+     *  didn't exist. A periodic sweeper emits one audit event per
+     *  expiry then leaves the row in place (deferred cleanup keeps the
+     *  audit trail readable). */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1833,6 +1839,9 @@ export const projectGroupGrants = kortixSchema.table(
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     role: projectRoleEnum('role').default('viewer').notNull(),
     grantedBy: uuid('granted_by'),
+    /** Optional auto-revoke timestamp. NULL = permanent attachment.
+     *  Same semantics as project_members.expires_at. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
