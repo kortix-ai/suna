@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { FormEvent, use, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Shield, UserPlus, Users } from 'lucide-react';
+import { Clock, Loader2, Mail, Shield, UserPlus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 
@@ -28,7 +28,9 @@ import {
   getProject,
   inviteProjectMember,
   isInviteSent,
+  listPendingProjectInvites,
   listProjectAccess,
+  revokePendingProjectInvite,
   revokeProjectAccess,
   updateProjectAccess,
   attachGroupToProject,
@@ -120,6 +122,8 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
 
         {canManage && <InviteMemberCard projectId={projectId} />}
 
+        {canManage && <PendingInvitesCard projectId={projectId} />}
+
         <ProjectAccessCard
           projectId={projectId}
           canManage={!!canManage}
@@ -160,6 +164,10 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
         toast.success(
           `Invitation sent to ${result.email}. They'll land on this project as ${result.project_role} when they sign up.`,
         );
+        // Make the new pending row visible immediately — without this
+        // the page looked unchanged after invite, which was the exact
+        // confusion that prompted this card to exist.
+        queryClient.invalidateQueries({ queryKey: ['project-pending-invites', projectId] });
       } else {
         toast.success('Member added');
         queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
@@ -443,6 +451,124 @@ function AccountRoleBadge({ role }: { role: ProjectAccessMember['account_role'] 
     >
       {role}
     </Badge>
+  );
+}
+
+// ─── Pending invitations (non-Kortix users who haven't signed up yet) ─────
+//
+// Bridges the gap between "I invited foo@example.com" and "foo joined the
+// project". Without this card, the page looks identical before and after
+// a successful invite to a non-Kortix email — the inviter has no way to
+// recall who they queued up, resend the link, or take it back. Mirrors
+// the "Pending invitations" pattern in GitHub / Slack / Linear member
+// settings.
+
+function PendingInvitesCard({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const queryKey = ['project-pending-invites', projectId];
+  const [pendingInviteId, setPendingInviteId] = useState<string | null>(null);
+
+  const invitesQuery = useQuery({
+    queryKey,
+    queryFn: () => listPendingProjectInvites(projectId),
+    staleTime: 20_000,
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (inviteId: string) => revokePendingProjectInvite(projectId, inviteId),
+    onMutate: (inviteId) => setPendingInviteId(inviteId),
+    onSettled: () => setPendingInviteId(null),
+    onSuccess: (result) => {
+      toast.success(
+        result.invitation_cancelled
+          ? 'Invitation cancelled.'
+          : 'Project access removed from invitation.',
+      );
+      queryClient.invalidateQueries({ queryKey });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to revoke invitation'),
+  });
+
+  const pending = invitesQuery.data?.pending ?? [];
+
+  // Hide the entire card when empty — no point adding visual noise.
+  // (Different from group grants card which always shows an empty state
+  // because it has a primary action affordance in the header.)
+  if (!invitesQuery.isLoading && pending.length === 0) return null;
+
+  return (
+    <SectionCard
+      flush
+      title="Pending invitations"
+      description="People you've invited by email who haven't accepted yet. They'll join the project at the chosen role as soon as they sign up."
+      count={pending.length}
+    >
+      {invitesQuery.isLoading && (
+        <div className="px-6 py-5">
+          <Skeleton className="h-8 w-full" />
+        </div>
+      )}
+
+      {!invitesQuery.isLoading && pending.length > 0 && (
+        <List>
+          {pending.map((invite) => {
+            const busy = pendingInviteId === invite.invite_id;
+            return (
+              <ListRow
+                key={invite.invite_id}
+                leading={
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                    <Mail className="h-4 w-4" />
+                  </span>
+                }
+                title={invite.email}
+                badges={
+                  <Badge variant="outline" size="sm" className="capitalize">
+                    {invite.project_role}
+                  </Badge>
+                }
+                subtitle={
+                  <InlineMeta>
+                    <span>Invited {formatDate(invite.created_at)}</span>
+                    {invite.invited_by_email && (
+                      <span>by {invite.invited_by_email}</span>
+                    )}
+                    {invite.invite_expired ? (
+                      <span className="text-amber-700 dark:text-amber-400">
+                        Invite link expired — ask them to request a fresh
+                        one from the email
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        Link expires {formatDate(invite.invite_expires_at)}
+                      </span>
+                    )}
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => revokeMutation.mutate(invite.invite_id)}
+                      title="Cancel this invitation"
+                      className="gap-1.5"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Revoke
+                    </Button>
+                  )
+                }
+              />
+            );
+          })}
+        </List>
+      )}
+    </SectionCard>
   );
 }
 

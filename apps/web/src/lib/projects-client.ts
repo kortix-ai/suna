@@ -548,6 +548,41 @@ export async function inviteProjectMember(
   );
 }
 
+// ── Pending project invites (non-Kortix users who haven't signed up yet) ──
+
+/** Pending account-invitation that bootstraps into THIS project on accept.
+ *  Shape mirrors the backend GET /access/pending-invites response.
+ *
+ *  `expires_at` here is the *grant's* time-bounded clock (auto-revoke once
+ *  they're in). `invite_expires_at` is the *invitation* clock — after that
+ *  the user can't redeem the link and needs a resend. */
+export interface PendingProjectInvite {
+  invite_id: string;
+  email: string;
+  project_role: ProjectRole;
+  expires_at: string | null;
+  invited_by_email: string | null;
+  created_at: string;
+  invite_expires_at: string;
+  invite_expired: boolean;
+}
+
+export async function listPendingProjectInvites(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ pending: PendingProjectInvite[] }>(
+      `/projects/${projectId}/access/pending-invites`,
+    ),
+  );
+}
+
+export async function revokePendingProjectInvite(projectId: string, inviteId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean; invitation_cancelled: boolean }>(
+      `/projects/${projectId}/access/pending-invites/${inviteId}`,
+    ),
+  );
+}
+
 // ── IAM V2: project ⇄ group attachments ────────────────────────────────────
 
 export interface ProjectGroupGrant {

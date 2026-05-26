@@ -5579,6 +5579,133 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
   });
 });
 
+// GET /v1/projects/:projectId/access/pending-invites
+// Lists pending account_invitations whose bootstrap_grants target this
+// project. Surfaces the "I invited someone whose email doesn't have a
+// Kortix account yet" intermediate state — without this the UI looks
+// the same before and after a successful invite, leaving the inviter
+// to wonder if anything happened.
+//
+// Restricted to project managers — viewers don't need to see who's
+// queued up for membership.
+projectsApp.get('/:projectId/access/pending-invites', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+
+  // JSONB containment check (`@>`) finds invitations whose grants array
+  // contains an entry with this project_id. Includes expired invites in
+  // the result with a flag so the UI can show them dimmed + a "Resend"
+  // affordance later if we want it (out of scope for now — just hide).
+  const rows = await db
+    .select({
+      inviteId: accountInvitations.inviteId,
+      email: accountInvitations.email,
+      initialRole: accountInvitations.initialRole,
+      invitedBy: accountInvitations.invitedBy,
+      createdAt: accountInvitations.createdAt,
+      expiresAt: accountInvitations.expiresAt,
+      bootstrapGrants: accountInvitations.bootstrapGrants,
+    })
+    .from(accountInvitations)
+    .where(
+      and(
+        eq(accountInvitations.accountId, loaded.row.accountId),
+        isNull(accountInvitations.acceptedAt),
+        sql`${accountInvitations.bootstrapGrants} @> ${JSON.stringify([{ project_id: projectId }])}::jsonb`,
+      ),
+    );
+
+  // Resolve inviter emails in one shot (one auth.admin call per inviter
+  // since the Supabase helper has no batch API; the set is tiny in
+  // practice — usually 1 or 2 distinct admins).
+  const inviterIds = Array.from(
+    new Set(rows.map((r) => r.invitedBy).filter((v): v is string => !!v)),
+  );
+  const inviterEmails = await lookupEmailsByUserIds(inviterIds);
+
+  const now = Date.now();
+  const items = rows
+    .map((r) => {
+      const grant = (r.bootstrapGrants ?? []).find((g) => g.project_id === projectId);
+      // Defensive — the WHERE already filtered for project_id, but the
+      // type system doesn't know that, and a corrupt row shouldn't 500.
+      if (!grant) return null;
+      return {
+        invite_id: r.inviteId,
+        email: r.email,
+        project_role: grant.role as 'manager' | 'editor' | 'viewer',
+        expires_at: grant.expires_at ?? null,
+        invited_by_email: r.invitedBy ? (inviterEmails.get(r.invitedBy) ?? null) : null,
+        created_at: r.createdAt.toISOString(),
+        invite_expires_at: r.expiresAt.toISOString(),
+        invite_expired: r.expiresAt.getTime() <= now,
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  return c.json({ pending: items });
+});
+
+// DELETE /v1/projects/:projectId/access/pending-invites/:inviteId
+// Removes this project's bootstrap_grant from a pending invitation. If
+// that was the only grant AND the invitation is the auto-created
+// "member" variety (always how project /access/invite creates them), the
+// whole invitation row goes away — the user simply isn't being invited
+// anywhere anymore. If the inviter had set a higher initial_role
+// (admin/owner) or other project grants remain, we keep the invitation
+// and just strip this project from it.
+projectsApp.delete('/:projectId/access/pending-invites/:inviteId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const inviteId = c.req.param('inviteId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+
+  const [invite] = await db
+    .select({
+      inviteId: accountInvitations.inviteId,
+      accountId: accountInvitations.accountId,
+      initialRole: accountInvitations.initialRole,
+      acceptedAt: accountInvitations.acceptedAt,
+      bootstrapGrants: accountInvitations.bootstrapGrants,
+    })
+    .from(accountInvitations)
+    .where(eq(accountInvitations.inviteId, inviteId))
+    .limit(1);
+
+  if (!invite || invite.accountId !== loaded.row.accountId) {
+    return c.json({ error: 'Invitation not found' }, 404);
+  }
+  if (invite.acceptedAt) {
+    return c.json({ error: 'Invitation has already been accepted' }, 409);
+  }
+
+  const remaining = (invite.bootstrapGrants ?? []).filter(
+    (g) => g.project_id !== projectId,
+  );
+
+  // Auto-cancel the whole invitation if (a) nothing else is being
+  // granted AND (b) the original invite was for a plain member (which
+  // is the only role our project invite endpoint creates). Anything
+  // higher-tier must have been set deliberately at the account level
+  // and shouldn't be silently dropped.
+  if (remaining.length === 0 && invite.initialRole === 'member') {
+    await db
+      .delete(accountInvitations)
+      .where(eq(accountInvitations.inviteId, inviteId));
+    return c.json({ ok: true, invitation_cancelled: true });
+  }
+
+  await db
+    .update(accountInvitations)
+    .set({ bootstrapGrants: remaining })
+    .where(eq(accountInvitations.inviteId, inviteId));
+
+  return c.json({ ok: true, invitation_cancelled: false });
+});
+
 projectsApp.put('/:projectId/access/:userId', async (c) => {
   const projectId = c.req.param('projectId');
   const targetUserId = c.req.param('userId');
