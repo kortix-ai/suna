@@ -493,6 +493,14 @@ ensureSchema()
     startTunnelService();
     startProjectMaintenance();
     startProjectTriggerScheduler();
+    // IAM V2 time-bounded grants: tick every 60s, emit one audit event
+    // per row that just transitioned to expired. Engine already filters
+    // expired rows out of authorize() so correctness doesn't depend on
+    // this — it's purely for the audit trail.
+    {
+      const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
+      startGrantExpirySweeper();
+    }
     // Clear snapshot builds orphaned by a previous restart so sessions don't
     // spin on a dead `building` row for the full build deadline.
     try {
