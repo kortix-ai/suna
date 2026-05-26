@@ -278,9 +278,9 @@ One section per call, sequential in document order. Categorize each issue by its
 Create an annotated copy of the document with issues as comments. `{base_name}` is the original filename without its extension.
 
 - **PDF/PPTX/XLSX** — Single command; the script reads issues from `document_review_state.json` automatically:
-  - `python skills/document-review/scripts/annotate_pdf.py input.pdf {base_name}_reviewed.pdf`
-  - `python skills/document-review/scripts/annotate_pptx.py input.pptx {base_name}_reviewed.pptx`
-  - `python skills/document-review/scripts/annotate_xlsx.py input.xlsx {base_name}_reviewed.xlsx`
+  - `python skills/GENERAL-KNOWLEDGE-WORKER/document-review/scripts/annotate_pdf.py input.pdf {base_name}_reviewed.pdf`
+  - `python skills/GENERAL-KNOWLEDGE-WORKER/document-review/scripts/annotate_pptx.py input.pptx {base_name}_reviewed.pptx`
+  - `python skills/GENERAL-KNOWLEDGE-WORKER/document-review/scripts/annotate_xlsx.py input.xlsx {base_name}_reviewed.xlsx`
 - **DOCX** — `read `skills/GENERAL-KNOWLEDGE-WORKER/docx/SKILL.md`` and follow its workflow to unpack, edit XML, and repack. Use `manage_state.py get-issues` to list all issues, then for each issue:
   1. **Add a comment** using `comment.py --author "Kortix"`, then insert `<w:commentRangeStart>`, `<w:commentRangeEnd>`, and `<w:commentReference>` markers in `document.xml`. Place `<w:commentRangeStart>` immediately before the first `<w:r>` that contains the `original_text`, and `<w:commentRangeEnd>` immediately after the last `<w:r>` that contains it — do NOT place these at the paragraph or body level.
 
@@ -390,7 +390,7 @@ Phase 4: Create issues
   → Issues created for all problems
 
 Phase 5: Annotate document
-  Step 17: python skills/document-review/scripts/annotate_pdf.py Report.pdf Report_reviewed.pdf
+  Step 17: python skills/GENERAL-KNOWLEDGE-WORKER/document-review/scripts/annotate_pdf.py Report.pdf Report_reviewed.pdf
   → Annotated document saved to workspace
 
 Phase 6: Submit review

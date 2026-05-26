@@ -9,7 +9,7 @@ description: "> Scope: Non-website assets only. This skill applies to slides, do
 
 This skill provides a curated collection of professional font and color themes, each with carefully selected color palettes and font pairings. Once a theme is chosen, it can be applied to any non-web artifact.
 
-**Design philosophy:** All themes follow the design-foundations principle of **1 accent + neutrals**. Each theme has one dominant accent color — use it sparingly (headings, key data, icons). The remaining palette colors are neutral/muted surface and text tones. See `skills/design-foundations/SKILL.md` for the full color philosophy. If no theme is selected, default to the Nexus palette.
+**Design philosophy:** All themes follow the design-foundations principle of **1 accent + neutrals**. Each theme has one dominant accent color — use it sparingly (headings, key data, icons). The remaining palette colors are neutral/muted surface and text tones. See `skills/GENERAL-KNOWLEDGE-WORKER/design-foundations/SKILL.md` for the full color philosophy. If no theme is selected, default to the Nexus palette.
 
 ## Purpose
 

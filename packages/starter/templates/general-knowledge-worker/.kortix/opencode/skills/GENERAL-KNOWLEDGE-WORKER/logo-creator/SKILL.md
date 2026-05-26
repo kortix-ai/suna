@@ -80,7 +80,7 @@ Replicate background-removal models are good but not perfect — especially on l
 **If the result has artifacts** (gray halos, jagged edges, eaten details), use the local fallback:
 ```bash
 pip install rembg pillow onnxruntime  # first time only
-python3 skills/logo-creator/scripts/remove_bg.py \
+python3 skills/GENERAL-KNOWLEDGE-WORKER/logo-creator/scripts/remove_bg.py \
   logos/<brand>/round-1/symbol.webp \
   logos/<brand>/round-1/symbol-transparent.png
 ```
@@ -160,7 +160,7 @@ logos/<brand-name>/
    - If bad: re-run with `scripts/remove_bg.py` (local fallback)
 5. **Build contact sheet, open it, and give the user the path:**
    ```bash
-   python3 skills/logo-creator/scripts/create_logo_sheet.py \
+   python3 skills/GENERAL-KNOWLEDGE-WORKER/logo-creator/scripts/create_logo_sheet.py \
      logos/<brand-name>/round-1/ \
      logos/<brand-name>/round-1/sheet.html \
      --title "<Brand> Symbols — Round 1" && \
@@ -174,7 +174,7 @@ logos/<brand-name>/
 **Goal:** Combine approved symbol + real typography into complete logo layouts.
 
 ```bash
-python3 skills/logo-creator/scripts/compose_logo.py \
+python3 skills/GENERAL-KNOWLEDGE-WORKER/logo-creator/scripts/compose_logo.py \
   --brand "BrandName" \
   --symbol "logos/<brand>/round-1/symbol-transparent.png" \
   --output-dir "logos/<brand>/composed/" \
@@ -196,7 +196,7 @@ If anything looks wrong (font didn't load, proportions off, text clipped), re-ru
 
 **Build contact sheet, open it, and tell the user:**
 ```bash
-python3 skills/logo-creator/scripts/create_logo_sheet.py \
+python3 skills/GENERAL-KNOWLEDGE-WORKER/logo-creator/scripts/create_logo_sheet.py \
   logos/<brand>/composed/ \
   logos/<brand>/composed/sheet.html \
   --title "<Brand> — Compositions" --cols 2 && \
@@ -228,7 +228,7 @@ Each iteration = adjust parameters → re-run compose → **Read to verify** →
 2. **Dark-mode versions** if useful
 3. **Build and open final contact sheet:**
    ```bash
-   python3 skills/logo-creator/scripts/create_logo_sheet.py \
+   python3 skills/GENERAL-KNOWLEDGE-WORKER/logo-creator/scripts/create_logo_sheet.py \
      logos/<brand>/final/ logos/<brand>/final/sheet.html \
      --title "<Brand> — Final Logo Package" --cols 2 && \
    open logos/<brand>/final/sheet.html

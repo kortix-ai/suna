@@ -9,7 +9,7 @@ Use this skill when a task involves repository work, implementation, code review
 
 ## Core Rule
 
-Prefer background sessions for substantial coding or data work. Read `skills/KORTIX-system/sessions/SKILL.md` and use `session_start_background` / `session_spawn`, then inspect results with `session_read`.
+Prefer background sessions for substantial coding or data work. Read `skills/kortix-system/sessions/SKILL.md` and use `session_start_background` / `session_spawn`, then inspect results with `session_read`.
 
 ## When To Delegate
 

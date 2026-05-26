@@ -16,7 +16,7 @@ await deck.writeFile({ fileName: "/tmp/output/deck.pptx" });
 After generating, always run the repair script — PptxGenJS produces files with OOXML bugs (phantom slideMaster entries, invalid ZIP directory entries) that PowerPoint will reject:
 
 ```bash
-python skills/pptx/scripts/repair.py output.pptx
+python skills/GENERAL-KNOWLEDGE-WORKER/pptx/scripts/repair.py output.pptx
 ```
 
 Standard slide dimensions for layout math: `LAYOUT_16x9` is 10" wide × 5.625" tall, `LAYOUT_16x10` is 10" × 6.25", `LAYOUT_4x3` is 10" × 7.5", `LAYOUT_WIDE` is 13.33" × 7.5".

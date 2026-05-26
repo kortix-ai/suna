@@ -4,21 +4,21 @@
 
 **Inspect a template:**
 ```bash
-python skills/pptx/scripts/slides.py thumbnail template.pptx   # → thumbnails.jpg (labeled grid)
+python skills/GENERAL-KNOWLEDGE-WORKER/pptx/scripts/slides.py thumbnail template.pptx   # → thumbnails.jpg (labeled grid)
 python -m markitdown template.pptx                              # → placeholder text
 ```
 
 **Unpack / repack:**
 ```bash
-python skills/pptx/scripts/unpack.py input.pptx unpacked/      # extract + pretty-print XML + normalize smart quotes
-python skills/pptx/scripts/slides.py clean unpacked/            # delete orphaned slides, media, rels, content types
-python skills/pptx/scripts/pack.py unpacked/ output.pptx        # minify XML + compress
+python skills/GENERAL-KNOWLEDGE-WORKER/pptx/scripts/unpack.py input.pptx unpacked/      # extract + pretty-print XML + normalize smart quotes
+python skills/GENERAL-KNOWLEDGE-WORKER/pptx/scripts/slides.py clean unpacked/            # delete orphaned slides, media, rels, content types
+python skills/GENERAL-KNOWLEDGE-WORKER/pptx/scripts/pack.py unpacked/ output.pptx        # minify XML + compress
 ```
 
 **Clone / add slides:**
 ```bash
-python skills/pptx/scripts/slides.py add unpacked/ slide3.xml       # clone existing slide
-python skills/pptx/scripts/slides.py add unpacked/ slideLayout4.xml  # instantiate from layout
+python skills/GENERAL-KNOWLEDGE-WORKER/pptx/scripts/slides.py add unpacked/ slide3.xml       # clone existing slide
+python skills/GENERAL-KNOWLEDGE-WORKER/pptx/scripts/slides.py add unpacked/ slideLayout4.xml  # instantiate from layout
 ```
 Prints a `<p:sldId>` element to insert into `<p:sldIdLst>`.
 

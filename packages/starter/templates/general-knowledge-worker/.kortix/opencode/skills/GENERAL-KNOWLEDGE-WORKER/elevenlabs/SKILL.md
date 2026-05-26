@@ -22,7 +22,7 @@ The CLI script at `scripts/tts.py` uses only Python stdlib (`urllib`, `json`, `a
 All commands use the CLI script:
 
 ```bash
-python skills/elevenlabs/scripts/tts.py <command> [args]
+python skills/GENERAL-KNOWLEDGE-WORKER/elevenlabs/scripts/tts.py <command> [args]
 ```
 
 ### Speak — Convert text to speech

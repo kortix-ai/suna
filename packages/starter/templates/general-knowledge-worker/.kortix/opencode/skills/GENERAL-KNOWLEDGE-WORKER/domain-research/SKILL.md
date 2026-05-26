@@ -14,7 +14,7 @@ Free domain availability checking and WHOIS/RDAP lookup. Zero credentials. Works
 ## CLI Script
 
 ```bash
-SCRIPT="skills/domain-research/scripts/domain-lookup.py"
+SCRIPT="skills/GENERAL-KNOWLEDGE-WORKER/domain-research/scripts/domain-lookup.py"
 ```
 
 No env vars, no API keys, no setup. Just run it.

@@ -5,7 +5,7 @@ Fixes issues that cause PowerPoint to show "cannot read" or "repair" dialogs:
   - ZIP directory entries (violate Open Packaging Convention)
 
 Usage:
-    python skills/pptx/scripts/repair.py presentation.pptx
+    python skills/GENERAL-KNOWLEDGE-WORKER/pptx/scripts/repair.py presentation.pptx
 """
 
 import re

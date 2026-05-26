@@ -55,9 +55,9 @@ describe('applyScaffold', () => {
     const result = applyScaffold({ repoRoot: dir, projectName: 'Hello World' });
 
     for (const path of BASE_STARTER_PATHS) expect(result.written).toContain(path);
-    expect(result.written).toContain('.kortix/opencode/skills/account-research/SKILL.md');
-    expect(result.written).toContain('.kortix/opencode/skills/audit-support/SKILL.md');
-    expect(result.written).toContain('.kortix/opencode/skills/content-creation/SKILL.md');
+    expect(result.written).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/account-research/SKILL.md');
+    expect(result.written).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/audit-support/SKILL.md');
+    expect(result.written).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/content-creation/SKILL.md');
     expect(result.skipped).toEqual([]);
 
     // Same files now exist on disk.
@@ -85,7 +85,7 @@ describe('applyScaffold', () => {
     const result = applyScaffold({ repoRoot: dir, projectName: 'Minimal', template: 'minimal' });
 
     expect(result.written.sort()).toEqual([...BASE_STARTER_PATHS].sort());
-    expect(result.written).not.toContain('.kortix/opencode/skills/account-research/SKILL.md');
+    expect(result.written).not.toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/account-research/SKILL.md');
     expect(walk(dir)).toEqual([...BASE_STARTER_PATHS].sort());
   });
 

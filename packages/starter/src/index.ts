@@ -75,7 +75,13 @@ export function normalizeStarterTemplateId(value: unknown): StarterTemplateId {
 }
 
 export function listGeneralKnowledgeWorkerSkills(): string[] {
-  const skillsDir = join(GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR, '.kortix', 'opencode', 'skills');
+  const skillsDir = join(
+    GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR,
+    '.kortix',
+    'opencode',
+    'skills',
+    'GENERAL-KNOWLEDGE-WORKER',
+  );
   return readdirSync(skillsDir)
     .filter((entry) => statSync(join(skillsDir, entry)).isDirectory())
     .sort((a, b) => a.localeCompare(b));

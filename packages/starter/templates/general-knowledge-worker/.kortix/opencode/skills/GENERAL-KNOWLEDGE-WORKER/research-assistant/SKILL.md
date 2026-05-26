@@ -23,7 +23,7 @@ Preferred research flow:
 - `session_search` and `session_get` for continuity when prior work may exist
 - `bash` for calculations, parsing, or chart generation when needed
 
-For substantial parallel research or long-running build-plus-research work, use the background-session flow from `skills/KORTIX-system/sessions/SKILL.md`.
+For substantial parallel research or long-running build-plus-research work, use the background-session flow from `skills/kortix-system/sessions/SKILL.md`.
 
 ## Research Continuity
 

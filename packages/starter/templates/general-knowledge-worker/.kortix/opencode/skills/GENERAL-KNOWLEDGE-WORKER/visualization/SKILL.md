@@ -7,7 +7,7 @@ description: "Chart selection guidance, Python visualization code patterns, desi
 
 Chart selection guidance, Python visualization code patterns, design principles, and accessibility considerations for creating effective data visualizations.
 
-**Design defaults:** See `skills/design-foundations/SKILL.md` for the canonical chart color sequence and default palette.
+**Design defaults:** See `skills/GENERAL-KNOWLEDGE-WORKER/design-foundations/SKILL.md` for the canonical chart color sequence and default palette.
 
 ## Chart Selection Guide
 
@@ -63,8 +63,8 @@ plt.rcParams.update({
     'figure.titlesize': 16,
 })
 
-# Default categorical palette — from skills/design-foundations/SKILL.md
-# See skills/design-foundations/SKILL.md for full chart color guidance
+# Default categorical palette — from skills/GENERAL-KNOWLEDGE-WORKER/design-foundations/SKILL.md
+# See skills/GENERAL-KNOWLEDGE-WORKER/design-foundations/SKILL.md for full chart color guidance
 PALETTE_CATEGORICAL = ['#20808D', '#A84B2F', '#1B474D', '#BCE2E7', '#944454', '#FFC553', '#848456', '#6E522B']
 PALETTE_SEQUENTIAL = 'YlOrRd'
 PALETTE_DIVERGING = 'RdBu_r'

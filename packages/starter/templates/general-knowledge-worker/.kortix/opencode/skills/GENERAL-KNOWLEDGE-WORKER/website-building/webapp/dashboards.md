@@ -1,6 +1,6 @@
 # Dashboard & Data-Dense Interface Design
 
-**Mandatory shared files (read if not already loaded):** `skills/website-building/shared/01-design-tokens.md`.
+**Mandatory shared files (read if not already loaded):** `skills/GENERAL-KNOWLEDGE-WORKER/website-building/shared/01-design-tokens.md`.
 
 Dashboards are the most common source of broken, unusable layouts. Follow these rules strictly.
 

@@ -427,10 +427,10 @@ describe('create-repo starter scaffold contract', () => {
     const paths = files.map((file) => file.path);
 
     for (const path of BASE_STARTER_PATHS) expect(paths).toContain(path);
-    expect(paths).toContain('.kortix/opencode/skills/account-research/SKILL.md');
-    expect(paths).toContain('.kortix/opencode/skills/audit-support/SKILL.md');
-    expect(paths).toContain('.kortix/opencode/skills/content-creation/SKILL.md');
-    expect(paths).toContain('.kortix/opencode/skills/brand-voice/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/account-research/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/audit-support/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/content-creation/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/brand-voice/SKILL.md');
     expect(new Set(paths).size).toBe(paths.length);
   });
 
@@ -605,9 +605,9 @@ describe('create-repo starter scaffold contract', () => {
 
     const committedPaths = commitCalls.map((call) => call.path);
     for (const path of BASE_STARTER_PATHS) expect(committedPaths).toContain(path);
-    expect(committedPaths).toContain('.kortix/opencode/skills/account-research/SKILL.md');
-    expect(committedPaths).toContain('.kortix/opencode/skills/audit-support/SKILL.md');
-    expect(committedPaths).toContain('.kortix/opencode/skills/content-creation/SKILL.md');
+    expect(committedPaths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/account-research/SKILL.md');
+    expect(committedPaths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/audit-support/SKILL.md');
+    expect(committedPaths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/content-creation/SKILL.md');
     expect(commitCalls.every((call) => call.auth?.token === 'installation-token')).toBe(true);
     expect(commitCalls.every((call) => call.branch === 'main')).toBe(true);
     expect(commitCalls.every((call) => call.message === `chore: scaffold ${call.path}`)).toBe(true);
