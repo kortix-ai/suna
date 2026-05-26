@@ -21,12 +21,12 @@ instance. The "active" host is what every other command operates on
 unless you pass \`--host <name>\` per invocation.
 
 Subcommands:
-  ls                                  List hosts (cloud/local always exist)
+  ls                                  List hosts (cloud/local/dev always exist)
   use <name>                          Switch the active host
   add <name> --url <url> [--login]    Register a new host; with --login
                                       run the browser flow immediately
   rm <name>                           Remove a custom host; built-in
-                                      cloud/local are reset instead
+                                      cloud/local/dev are reset instead
   info [<name>]                       Show one host (or the active)
   current                             Print the active host name
 
@@ -36,7 +36,9 @@ Global options:
 
 Examples:
   kortix hosts use local
+  kortix hosts use dev
   kortix hosts use cloud
+  kortix projects ls --host dev
   kortix projects ls --host local
   kortix hosts ls
 `;

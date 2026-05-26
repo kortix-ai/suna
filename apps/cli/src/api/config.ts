@@ -25,7 +25,8 @@ import { dirname, resolve } from 'node:path';
 //         "account_id": "...",
 //         "logged_in_at": "2026-05-19T..."
 //       },
-//       "local": { "url": "http://localhost:13738", "token": "", ... }
+//       "local": { "url": "http://localhost:13738", "token": "", ... },
+//       "dev": { "url": "http://localhost:8008", "token": "", ... }
 //     }
 //   }
 //
@@ -38,8 +39,10 @@ import { dirname, resolve } from 'node:path';
 
 export const DEFAULT_API_BASE = process.env.KORTIX_DEFAULT_API_BASE ?? 'https://api.kortix.com';
 export const DEFAULT_LOCAL_API_BASE = 'http://localhost:13738';
+export const DEFAULT_DEV_API_BASE = 'http://localhost:8008';
 export const CLOUD_HOST_NAME = 'cloud';
 export const LOCAL_HOST_NAME = 'local';
+export const DEV_HOST_NAME = 'dev';
 export const DEFAULT_HOST_NAME = CLOUD_HOST_NAME;
 
 export interface Host {
@@ -211,6 +214,8 @@ export function removeHost(name: string): { removed: boolean; switchedTo?: strin
     config.hosts[name] = defaultHost(DEFAULT_API_BASE);
   } else if (name === LOCAL_HOST_NAME) {
     config.hosts[name] = defaultHost(DEFAULT_LOCAL_API_BASE);
+  } else if (name === DEV_HOST_NAME) {
+    config.hosts[name] = defaultHost(DEFAULT_DEV_API_BASE);
   } else {
     delete config.hosts[name];
   }
@@ -273,6 +278,9 @@ function normalizeConfig(parsed: Partial<Config>): Config {
   if (!cleaned[LOCAL_HOST_NAME]) {
     cleaned[LOCAL_HOST_NAME] = defaultHost(DEFAULT_LOCAL_API_BASE);
   }
+  if (!cleaned[DEV_HOST_NAME]) {
+    cleaned[DEV_HOST_NAME] = defaultHost(DEFAULT_DEV_API_BASE);
+  }
   let active = parsed.active && cleaned[parsed.active] ? parsed.active : DEFAULT_HOST_NAME;
   if (parsed.active === 'default' && !cleaned.default && cleaned[CLOUD_HOST_NAME]) {
     active = CLOUD_HOST_NAME;
@@ -316,6 +324,7 @@ function importSingleHostAuth(parsed: Record<string, unknown> | Partial<Config> 
     hosts: {
       [CLOUD_HOST_NAME]: host,
       [LOCAL_HOST_NAME]: defaultHost(DEFAULT_LOCAL_API_BASE),
+      [DEV_HOST_NAME]: defaultHost(DEFAULT_DEV_API_BASE),
     },
   };
 }
