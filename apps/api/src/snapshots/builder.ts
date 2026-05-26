@@ -51,7 +51,7 @@ import type { SandboxProviderName } from '../config';
  * included in the runtime artifact fingerprint so changing it invalidates
  * the Daytona snapshot cache even if SANDBOX_VERSION is unchanged in dev.
  */
-const OPENCODE_VERSION = '1.14.28';
+const OPENCODE_VERSION = '1.15.10';
 
 /**
  * Pinned `agent-browser` (Vercel agent-browser) CLI version baked into every
@@ -1203,6 +1203,7 @@ async function runBuild(
           {
             name: ctx.snapshotName,
             image: Image.fromDockerfile(ctx.composedPath),
+            entrypoint: ['/usr/local/bin/kortix-entrypoint'],
             ...(resources ? { resources } : {}),
           },
           {

@@ -9,7 +9,7 @@ import {
 } from '../snapshots/dockerfile-layer';
 
 const COMMON = {
-  opencodeVersion: '1.14.28',
+  opencodeVersion: '1.15.10',
   agentBrowserVersion: '0.27.0',
   agentBinaryPath: 'kortix-agent.gz',
   entrypointScriptPath: 'kortix-entrypoint',
@@ -24,7 +24,7 @@ describe('buildLayeredDockerfile', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: user, ...COMMON });
     expect(merged.startsWith('FROM ubuntu:24.04\nRUN apt-get install -y foo')).toBe(true);
     expect(merged).toContain('Kortix runtime layer (auto-injected)');
-    expect(merged).toContain('opencode-ai@1.14.28');
+    expect(merged).toContain('opencode-ai@1.15.10');
     expect(merged).toContain('agent-browser@0.27.0');
     // Chromium is sourced from Playwright (cross-arch) and wired via ENV.
     expect(merged).toContain('playwright@1.60.0 install --with-deps chromium');
