@@ -171,6 +171,21 @@ export const accountInvitations = kortixSchema.table(
     email: varchar('email', { length: 255 }).notNull(),
     invitedBy: uuid('invited_by'),
     initialRole: accountRoleEnum('initial_role').default('member').notNull(),
+    /** Optional list of project grants to apply when the invite is
+     *  accepted. Lets a project admin invite a non-Kortix user "into
+     *  project X as Editor" in one step — the system creates an
+     *  account invite + records the project grant here; on accept,
+     *  the user joins the org as a member AND gets the project role
+     *  in the same transaction. Shape:
+     *    [{ project_id: uuid, role: 'manager'|'editor'|'viewer',
+     *       expires_at?: iso }]
+     *  Multiple grants are allowed — the same email could be invited
+     *  to several projects at once via repeated calls (they upsert). */
+    bootstrapGrants: jsonb('bootstrap_grants').$type<Array<{
+      project_id: string;
+      role: 'manager' | 'editor' | 'viewer';
+      expires_at?: string | null;
+    }>>(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true })
