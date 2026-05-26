@@ -30,6 +30,10 @@ interface PtSandbox {
   state: string;
   host_id?: string;
   warm?: boolean;
+  // Present when the create body included `expose: [{port, ...}]` — saves the
+  // dedicated POST /v1/sandboxes/:id/expose round-trip. Each entry is the
+  // same shape POST /expose would have returned.
+  exposed?: Array<{ port: number; url: string; token?: string; public: boolean }>;
 }
 
 interface PtSandboxState {
@@ -181,6 +185,10 @@ export class PlatinumProvider implements SandboxProvider {
     };
     if (opts.imageSpec) body.image = opts.imageSpec;
     else body.template = template;
+    // One-RTT spawn-with-expose: ask Platinum to bind the public route for
+    // port 8000 in the same response as create. Falls back to the dedicated
+    // POST /expose if the CP is an older build that drops the field.
+    body.expose = [{ port: 8000 }];
 
     const created = await this.pt<PtSandbox>(
       'POST',
@@ -194,7 +202,13 @@ export class PlatinumProvider implements SandboxProvider {
       throw new Error(`Platinum sandbox ${externalId} did not reach running (state=${created.state})`);
     }
 
-    const exposed = await this.pt<PtExposeResult>('POST', `/v1/sandboxes/${externalId}/expose`, { port: 8000 });
+    // Prefer the inline expose payload from the create response. Old CPs
+    // that don't honour `expose` will omit the field — fall back to the
+    // dedicated endpoint so existing prod stays working during the rollout.
+    const inlineExposed = created.exposed?.find((e) => e.port === 8000);
+    const exposed = inlineExposed
+      ? { url: inlineExposed.url, port: 8000, sandbox_id: externalId }
+      : await this.pt<PtExposeResult>('POST', `/v1/sandboxes/${externalId}/expose`, { port: 8000 });
 
     return {
       externalId,
