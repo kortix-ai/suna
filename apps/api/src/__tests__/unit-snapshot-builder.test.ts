@@ -46,6 +46,7 @@ interface Row {
 
 let rows: Row[] = [];
 let daytonaDeleteCalls: string[];
+let daytonaDeleteByIdCalls: string[];
 let daytonaSnapshotCreateCalls: any[];
 let hiddenDaytonaSnapshots: Set<string>;
 
@@ -114,13 +115,20 @@ mock.module('../shared/db', () => ({
       const filter = currentFilter();
       return {
         from: (table: unknown) => ({
-          where: (_predicate: unknown) => ({
-            orderBy: (_order: unknown) => makeOrderByThenable(table, filter),
-            limit: async (n: number) => {
-              if (table !== projectRuntimeSnapshots) return [];
-              return rows.filter(filter).slice(0, n);
-            },
-          }),
+          where: (_predicate: unknown) => {
+            const runAll = () => table === projectRuntimeSnapshots ? rows.filter(filter) : [];
+            return {
+              then: (resolve: (rows: Row[]) => unknown, reject?: (err: unknown) => unknown) => {
+                try { return Promise.resolve(runAll()).then(resolve, reject); }
+                catch (err) { return Promise.reject(err); }
+              },
+              orderBy: (_order: unknown) => makeOrderByThenable(table, filter),
+              limit: async (n: number) => {
+                if (table !== projectRuntimeSnapshots) return [];
+                return rows.filter(filter).slice(0, n);
+              },
+            };
+          },
         }),
       };
     },
@@ -158,7 +166,11 @@ mock.module('../shared/db', () => ({
     delete: (_table: unknown) => ({
       // pruneOldSnapshots uses inArray on snapshotRowId — we don't model
       // that predicate; the test verifies behavior via call counts.
-      where: async (_predicate: unknown) => undefined,
+      where: (_predicate: unknown) => ({
+        then: (resolve: (value: undefined) => unknown, reject?: (err: unknown) => unknown) =>
+          Promise.resolve(undefined).then(resolve, reject),
+        returning: async () => [],
+      }),
     }),
   },
 }));
@@ -170,7 +182,10 @@ mock.module('../shared/daytona', () => ({
       // SDK signature: get(name) → Snapshot, delete(snapshot) → void.
       // The shim returns a stub object keyed on name so the test can
       // assert prune called delete with the expected snapshotId.
-      get: async (name: string) => ({ id: `daytona-${name}`, name }),
+      get: async (name: string) => {
+        if (hiddenDaytonaSnapshots.has(name)) throw new Error('snapshot not found');
+        return { id: `daytona-${name}`, name, state: 'active' };
+      },
       delete: async (snapshot: { name: string }) => {
         daytonaDeleteCalls.push(snapshot.name);
       },
@@ -187,7 +202,10 @@ mock.module('../shared/daytona', () => ({
         state: 'active',
         createdAt: row.createdAt.toISOString(),
       })),
-  deleteDaytonaSnapshotById: async () => true,
+  deleteDaytonaSnapshotById: async (id: string) => {
+    daytonaDeleteByIdCalls.push(id);
+    return true;
+  },
 }));
 
 mock.module('../projects/git', () => ({
@@ -217,6 +235,7 @@ const builder = await import('../snapshots/builder');
 beforeEach(() => {
   rows = [];
   daytonaDeleteCalls = [];
+  daytonaDeleteByIdCalls = [];
   daytonaSnapshotCreateCalls = [];
   hiddenDaytonaSnapshots = new Set();
   filterByCall = [() => true];
@@ -395,6 +414,25 @@ describe('ensureBuildForLatestCommit', () => {
     expect(result.commitSha).toBe('head-of-main');
   });
 
+  test('starts a rebuild when the ready DB row is missing from Daytona', async () => {
+    rows = [
+      makeRow({
+        commitSha: 'head-of-main',
+        status: 'ready',
+        snapshotId: 'kortix-snap-1111-missing',
+      }),
+    ];
+    hiddenDaytonaSnapshots = new Set(['kortix-snap-1111-missing']);
+    setFilter((r) => r.commitSha === 'head-of-main' && r.status !== 'failed');
+
+    const result = await builder.ensureBuildForLatestCommit(
+      { projectId: PROJECT_ID, repoUrl: 'r', defaultBranch: BRANCH, manifestPath: 'm' },
+      { branch: BRANCH, accountId: ACCOUNT_ID, source: 'session-start' },
+    );
+    expect(result.status).toBe('started');
+    expect(result.commitSha).toBe('head-of-main');
+  });
+
   test('returns started when no row exists for the head commit', async () => {
     rows = []; // No existing row.
     setFilter(() => false); // Nothing matches the lookup.
@@ -502,6 +540,27 @@ describe('pruneOldSnapshots', () => {
     // branch row → Daytona delete must NOT be called.
     expect(result.deletedDaytonaSnapshots).toBe(0);
     expect(daytonaDeleteCalls).toHaveLength(0);
+  });
+});
+
+describe('reconcileDaytonaSnapshots', () => {
+  test('does not delete provider snapshots referenced by in-progress DB rows', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'building-row',
+        commitSha: 'head-of-main',
+        snapshotId: 'kortix-snap-1111-building',
+        status: 'building',
+        metadata: { runtimeFingerprint: 'runtime-current' },
+      }),
+    ];
+    setFilter(() => true);
+
+    const result = await builder.reconcileDaytonaSnapshots();
+
+    expect(result.orphansDeleted).toBe(0);
+    expect(result.deadRowsCleared).toBe(0);
+    expect(daytonaDeleteByIdCalls).toHaveLength(0);
   });
 });
 

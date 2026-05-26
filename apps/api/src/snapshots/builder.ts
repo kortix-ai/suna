@@ -109,17 +109,6 @@ const BUILD_ATTEMPTS = 3;
 const BUILD_RETRY_BASE_MS = 2_000;
 const SNAPSHOT_LOG_TAIL_LIMIT = 20;
 const RUNTIME_LAYER_VERSION = 'baked-workspace-v1';
-const DAYTONA_SNAPSHOT_SELECT_CACHE_MS =
-  process.env.NODE_ENV === 'test'
-    ? 0
-    : Math.max(
-        1_000,
-        Number.parseInt(process.env.KORTIX_DAYTONA_SNAPSHOT_SELECT_CACHE_MS || '15000', 10) || 15_000,
-      );
-
-let daytonaSnapshotSelectCache:
-  | { expiresAt: number; activeNames: Set<string> }
-  | null = null;
 
 /**
  * Default retention: how many `ready` snapshots we keep per
@@ -465,11 +454,14 @@ async function filterProviderBootableReadyRows(
   provider: SandboxProviderName,
 ): Promise<Array<typeof projectRuntimeSnapshots.$inferSelect>> {
   if (provider !== 'daytona' || !isDaytonaConfigured()) return rows;
-  const activeNames = await getActiveDaytonaSnapshotNamesForSelection();
-  if (!activeNames) return rows;
-
-  const bootable = rows.filter((row) => row.snapshotId && activeNames.has(row.snapshotId));
-  const stale = rows.filter((row) => row.snapshotId && !activeNames.has(row.snapshotId));
+  const checks = await Promise.all(
+    rows.map(async (row) => ({
+      row,
+      bootable: await isProviderBootableSnapshot(row, provider),
+    })),
+  );
+  const bootable = checks.filter((check) => check.bootable).map((check) => check.row);
+  const stale = checks.filter((check) => !check.bootable).map((check) => check.row);
   if (stale.length > 0) {
     console.warn(
       `[snapshots] Ignoring ${stale.length} ready DB snapshot row(s) missing from Daytona: ` +
@@ -484,29 +476,11 @@ async function isProviderBootableSnapshot(
   provider: SandboxProviderName,
 ): Promise<boolean> {
   if (provider !== 'daytona' || !isDaytonaConfigured() || !row.snapshotId) return true;
-  const activeNames = await getActiveDaytonaSnapshotNamesForSelection();
-  return !activeNames || activeNames.has(row.snapshotId);
-}
-
-async function getActiveDaytonaSnapshotNamesForSelection(): Promise<Set<string> | null> {
-  const now = Date.now();
-  if (daytonaSnapshotSelectCache && daytonaSnapshotSelectCache.expiresAt > now) {
-    return daytonaSnapshotSelectCache.activeNames;
-  }
   try {
-    const activeNames = new Set(
-      (await listDaytonaSnapshots())
-        .filter((snapshot) => String(snapshot.state).toLowerCase() === 'active')
-        .map((snapshot) => snapshot.name),
-    );
-    daytonaSnapshotSelectCache = {
-      expiresAt: now + DAYTONA_SNAPSHOT_SELECT_CACHE_MS,
-      activeNames,
-    };
-    return activeNames;
+    const snapshot = await getDaytona().snapshot.get(row.snapshotId);
+    return String((snapshot as { state?: string } | null)?.state ?? '').toLowerCase() === 'active';
   } catch (err) {
-    console.warn('[snapshots] Daytona snapshot liveness check failed; falling back to DB cache', err);
-    return null;
+    return false;
   }
 }
 
@@ -583,6 +557,17 @@ export async function ensureBuildForLatestCommit(
     await deleteSnapshotRow(project.projectId, commitSha, provider);
     existing = null;
   }
+  if (existing?.status === 'ready') {
+    if (!(await isProviderBootableSnapshot(existing, provider))) {
+      console.warn(
+        `[snapshots] Ready DB snapshot ${existing.snapshotId ?? '(missing id)'} for project ` +
+        `${project.projectId} commit ${commitSha.slice(0, 8)} is missing/inactive in ${provider}; rebuilding`,
+      );
+      await deleteSnapshotRow(project.projectId, commitSha, provider);
+      existing = null;
+    }
+  }
+
   if (existing?.status === 'ready') {
     try {
       const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
@@ -1004,17 +989,19 @@ export async function reconcileDaytonaSnapshots(opts: { budget?: number } = {}):
     const liveByName = new Map(live.map((s) => [s.name, s]));
     const liveBefore = live.length;
 
-    const readyRows = await db
+    const snapshotRows = await db
       .select()
       .from(projectRuntimeSnapshots)
       .where(
         and(
           eq(projectRuntimeSnapshots.provider, 'daytona'),
-          eq(projectRuntimeSnapshots.status, 'ready'),
+          inArray(projectRuntimeSnapshots.status, ['queued', 'building', 'ready']),
         ),
       );
+
+    const readyRows = snapshotRows.filter((row) => row.status === 'ready');
     const referenced = new Set(
-      readyRows.map((r) => r.snapshotId).filter((s): s is string => Boolean(s)),
+      snapshotRows.map((r) => r.snapshotId).filter((s): s is string => Boolean(s)),
     );
 
     // 1. Orphans — on Daytona, named like ours, unreferenced.
@@ -1230,6 +1217,7 @@ async function runBuild(
             },
           },
         );
+        await waitForUsableSnapshot(daytona, ctx.snapshotName);
         return {
           daytonaName: ctx.snapshotName,
           contentHash: ctx.contentHash,
@@ -1290,7 +1278,7 @@ async function getUsableSnapshot(
   try {
     const snap = await daytona.snapshot.get(name);
     if (!snap) return false;
-    const state = (snap as { state?: string }).state;
+    const state = String((snap as { state?: string }).state ?? '').toLowerCase();
     if (state === 'active') return true;
     if (state === 'error' || state === 'build_failed') {
       await daytona.snapshot.delete(snap).catch(() => {});
@@ -1299,6 +1287,30 @@ async function getUsableSnapshot(
   } catch {
     return false; // not found / transient — treat as absent, caller proceeds to build
   }
+}
+
+async function waitForUsableSnapshot(
+  daytona: ReturnType<typeof getDaytona>,
+  name: string,
+): Promise<void> {
+  const deadline = Date.now() + 120_000;
+  let lastState = 'unknown';
+  while (Date.now() < deadline) {
+    try {
+      const snap = await daytona.snapshot.get(name);
+      lastState = String((snap as { state?: string } | null)?.state ?? 'missing').toLowerCase();
+      if (lastState === 'active') return;
+      if (lastState === 'error' || lastState === 'build_failed') {
+        throw new Error(`Snapshot ${name} is ${lastState}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('build_failed') || message.includes('error')) throw err;
+      lastState = message.slice(0, 120) || 'lookup failed';
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(`Snapshot ${name} did not become active after create (last state: ${lastState})`);
 }
 
 /** Org-wide snapshot quota exhaustion — recoverable by reconciling first. */
@@ -1389,6 +1401,7 @@ async function recoverInProgressSnapshotRow(
     const daytona = getDaytona();
     const existing = await daytona.snapshot.get(expectedName).catch(() => null);
     if (!existing) return null;
+    if (String((existing as { state?: string }).state ?? '').toLowerCase() !== 'active') return null;
 
     const outcome: BuildOutcome = {
       daytonaName: expectedName,
