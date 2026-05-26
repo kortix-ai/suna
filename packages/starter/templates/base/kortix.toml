@@ -39,7 +39,30 @@ config_dir = ".kortix/opencode"
 # Each `[[triggers]]` entry spawns a fresh session that runs `prompt` as
 # its initial message. Add from the Kortix UI or uncomment one below.
 # Slugs must be lowercase URL-safe and unique per project.
+
+# Memory reflector — surveys recent project activity and curates
+# `.kortix/memory/` (the project brain). Reads its rubric from the
+# `kortix-memory` skill. Opens a `memory: …` change request at the end
+# of each run; exits silently when nothing is worth changing.
 #
+# Disabled by default. Flip `enabled = true` once your project has
+# enough activity for reflection to find signal — usually after the
+# first week or two.
+[[triggers]]
+slug = "memory-reflector"
+name = "Memory reflector"
+type = "cron"
+agent = "memory-reflector"
+enabled = false
+cron = "0 0 3 * * *"             # 03:00 daily
+timezone = "UTC"
+prompt = """
+Load the `kortix-memory` skill, then reflect on the last 24h of
+project activity (git log, merged CRs). Update `.kortix/memory/` per
+the rubric and open a single CR titled `memory: …`. Exit silently if
+nothing is worth changing.
+"""
+
 # Cron trigger — fires on a 6-field croner expression
 # (second minute hour day month weekday).
 #
