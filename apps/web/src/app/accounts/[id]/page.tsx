@@ -7,6 +7,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
+  ChevronDown,
   Clock,
   ExternalLink,
   Github,
@@ -30,6 +31,11 @@ import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
@@ -102,6 +108,15 @@ const ROLE_LABEL: Record<AccountRole, string> = {
   admin: 'Admin',
   member: 'Member',
 };
+
+// Build-time feature flag for the enterprise IdP surface (SAML SSO +
+// SCIM provisioning). Defaults OFF — those cards add real clutter for
+// the 95% of accounts that don't have an Okta/Azure AD/Google
+// Workspace IdP wired up. Set NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY=true
+// in the environment to bring them back. Backend endpoints stay live
+// either way so existing configurations keep working.
+const ENABLE_ENTERPRISE_IDENTITY =
+  process.env.NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY === 'true';
 
 function formatDate(input: string | null | undefined) {
   if (!input) return '—';
@@ -333,6 +348,11 @@ export default function AccountSettingsPage() {
                 </SettingsGroup>
 
                 {/* ── Security ──────────────────────────────────── */}
+                {/* MFA is the only security control 95% of accounts ever
+                    touch — keep it primary. Session lifetime + idle
+                    timeout tuning matters for compliance shops but is
+                    noise for everyone else, so it hides under an
+                    "Advanced" disclosure (closed by default). */}
                 <SettingsGroup
                   title="Security"
                   description="Account-wide gates that apply to every member."
@@ -341,26 +361,51 @@ export default function AccountSettingsPage() {
                     accountId={account.account_id}
                     canManage={canWriteAccount}
                   />
-                  <SessionControlsCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
+                  <Collapsible>
+                    <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-2xl border border-dashed border-border/60 bg-card/30 px-4 py-3 text-left text-sm transition hover:border-border hover:bg-card/60">
+                      <div>
+                        <div className="font-medium text-foreground">
+                          Advanced security
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Session lifetimes, idle timeouts, and force-logout.
+                          Defaults are fine for most teams.
+                        </div>
+                      </div>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-6 pt-4">
+                      <SessionControlsCard
+                        accountId={account.account_id}
+                        canManage={canWriteAccount}
+                      />
+                    </CollapsibleContent>
+                  </Collapsible>
                 </SettingsGroup>
 
                 {/* ── Identity & directory ─────────────────────── */}
-                <SettingsGroup
-                  title="Identity & directory"
-                  description="Bring members in from your IdP. Group memberships sync; admin still picks project access."
-                >
-                  <SsoCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
-                  <ScimCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
-                </SettingsGroup>
+                {/* SAML SSO + SCIM are enterprise-only — only render
+                    when explicitly enabled. The flag is a build-time
+                    env var (NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY=true)
+                    so dev + prod can opt in independently. Backend
+                    endpoints stay live regardless so existing
+                    configurations keep working; this just hides the
+                    setup UI from the 95% of accounts that don't use it. */}
+                {ENABLE_ENTERPRISE_IDENTITY && (
+                  <SettingsGroup
+                    title="Identity & directory"
+                    description="Bring members in from your IdP. Group memberships sync; admin still picks project access."
+                  >
+                    <SsoCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                    <ScimCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                  </SettingsGroup>
+                )}
 
                 {/* ── Tokens & automation ──────────────────────── */}
                 <SettingsGroup
