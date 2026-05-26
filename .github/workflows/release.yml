@@ -155,7 +155,7 @@ jobs:
             asset: kortix-linux-arm64
             runner: ubuntu-22.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -192,7 +192,7 @@ jobs:
     needs: build-prod-cli
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -257,7 +257,7 @@ jobs:
             artifact: desktop-linux-x64
             files: apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Linux Tauri dependencies
         if: runner.os == 'Linux'
@@ -406,7 +406,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 

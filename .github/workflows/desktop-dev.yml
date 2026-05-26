@@ -56,7 +56,7 @@ jobs:
             artifact: desktop-linux-x64
             files: apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Linux Tauri dependencies
         if: runner.os == 'Linux'
@@ -203,7 +203,7 @@ jobs:
     needs: build
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
