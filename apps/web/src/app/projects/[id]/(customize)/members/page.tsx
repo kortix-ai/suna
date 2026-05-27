@@ -717,6 +717,14 @@ function ProjectGroupGrantsCard({
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: grantsKey });
+    // Attaching, detaching, or re-roling a group changes the EFFECTIVE
+    // access of every member of that group on this project. Without
+    // these the Members card above shows stale data — a user might
+    // appear as "No project access" right after their group was just
+    // attached at Editor, until the user manually refetches. Same for
+    // the project header (effective_project_role for the current user).
+    queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['project', projectId] });
   }
 
   const attachMutation = useMutation({
