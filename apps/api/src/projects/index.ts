@@ -123,6 +123,7 @@ import { config, type SandboxProviderName } from '../config';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../shared/account-limits';
 import { recordAuditEvent } from '../shared/audit';
 import { pauseComputeSession, endComputeSession } from '../billing/services/compute-metering';
+import { checkBillingActive } from '../billing/services/billing-gate';
 import {
   decryptProjectSecret,
   encryptProjectSecret,
@@ -1652,10 +1653,6 @@ export async function createProjectSession(input: {
     providerName = requestedProvider as SandboxProviderName;
   }
 
-  // Fail fast on an unreachable callback URL — a loopback KORTIX_URL guarantees
-  // a dead sandbox (repo clone-credential fetch can't reach us). Refusing here
-  // avoids minting a doomed session row + remote branch and surfaces the real
-  // fix to the user instead of a cryptic "OpenCode runtime is not ready" later.
   const callbackUnreachable = providerName === 'local_docker' ? null : sandboxCallbackUnreachableReason();
   if (callbackUnreachable) {
     return { error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } } };
@@ -1667,6 +1664,21 @@ export async function createProjectSession(input: {
     const capResult = await checkConcurrentSessionCap(accountId, userId, input.request);
     responseHeaders = capResult.headers;
     if (capResult.error) return { error: capResult.error };
+  }
+
+  const billingCheck = await checkBillingActive(accountId);
+  if (!billingCheck.ok) {
+    return {
+      error: {
+        status: 402,
+        body: {
+          error: billingCheck.message,
+          message: billingCheck.message,
+          code: billingCheck.reason,
+          balance: billingCheck.balance,
+        },
+      },
+    };
   }
 
   const requestedSessionId = normalizeString(body.session_id ?? body.sessionId);
@@ -6510,6 +6522,23 @@ projectsApp.post('/:projectId/sessions/:sessionId/wake', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   if (!(await loadVisibleSession(loaded, sessionId))) return c.json({ error: 'Not found' }, 404);
+
+  // Billing v2 — same gate as session create. An unsubscribed account can
+  // own a stopped sandbox (e.g. they cancelled their sub after creating it),
+  // but they shouldn't be able to resume it without re-activating billing.
+  // Body shape mirrors createProjectSession's 402 (see note there).
+  const billingCheck = await checkBillingActive(loaded.row.accountId);
+  if (!billingCheck.ok) {
+    return c.json(
+      {
+        error: billingCheck.message,
+        message: billingCheck.message,
+        code: billingCheck.reason,
+        balance: billingCheck.balance,
+      },
+      402,
+    );
+  }
 
   const [row] = await db
     .select()

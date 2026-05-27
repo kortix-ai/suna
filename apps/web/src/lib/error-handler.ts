@@ -2,6 +2,7 @@ import { toast } from '@/lib/toast';
 import { BillingError, isBillingError, formatBillingErrorForUI } from './api/errors';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import * as Sentry from '@sentry/nextjs';
 
 export interface ApiError extends Error {
@@ -174,6 +175,43 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
     });
   }
 
+  // Billing v2 — structured 402 detection runs BEFORE shouldShowError, because
+  // shouldShowError short-circuits on `error instanceof BillingError` to
+  // suppress its toast — but we still need to open the upgrade dialog for
+  // those errors. Don't rely on `instanceof` here either, since Next.js HMR
+  // can swap the class identity across module reloads.
+  const v2Status: number | undefined =
+    (error as any)?.status ?? (error as any)?.response?.status;
+  const errAny = error as any;
+  const v2Detail =
+    errAny?.detail ??
+    errAny?.data ??
+    errAny?.details ??
+    (typeof errAny === 'object' ? errAny : null);
+  const v2Code: string | undefined =
+    v2Detail?.code ??
+    errAny?.code;
+  const v2Message: string | undefined =
+    v2Detail?.message ??
+    v2Detail?.error ??
+    errAny?.message;
+  const v2Balance: number =
+    typeof v2Detail?.balance === 'number' ? v2Detail.balance : 0;
+
+  if (
+    v2Status === 402 &&
+    (v2Code === 'subscription_required' ||
+      v2Code === 'insufficient_credits' ||
+      v2Code === 'no_account')
+  ) {
+    useUpgradeDialogStore.getState().openUpgradeDialog({
+      reason: v2Code,
+      message: v2Message ?? '',
+      balance: v2Balance,
+    });
+    return;
+  }
+
   if (!shouldShowError(error, context)) {
     return;
   }
@@ -181,12 +219,14 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   const rawMessage = extractErrorMessage(error);
   const formattedMessage = formatErrorMessage(rawMessage, context);
 
-  // Handle billing errors.
-  // Insufficient-credits 402s route to the Billing tab (inline auto top-up + buy credits);
-  // other 402s (e.g. no subscription) still open the new-instance flow.
+  // Legacy 402 paths (no structured code) — preserved behaviour.
   const errorUI = formatBillingErrorForUI(error);
   if (errorUI) {
-    const message = (error as BillingError)?.detail?.message?.toLowerCase() || '';
+    const detail = (error as BillingError)?.detail as
+      | { code?: string; message?: string; balance?: number }
+      | undefined;
+
+    const message = detail?.message?.toLowerCase() || '';
     const isCreditsExhausted =
       message.includes('credit') ||
       message.includes('balance') ||

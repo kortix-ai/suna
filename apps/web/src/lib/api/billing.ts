@@ -456,7 +456,7 @@ export const billingApi = {
       request
     );
     if (response.error) throw response.error;
-    
+
     const data = response.data!;
     if (data.checkout_url) {
       return {
@@ -473,6 +473,18 @@ export const billingApi = {
       } as CreateCheckoutSessionResponse;
     }
     return data;
+  },
+
+  // Billing v2 — per-seat plan checkout. Stripe quantity = current member count.
+  async createPerSeatCheckout(args: { success_url: string; cancel_url: string; locale?: string }) {
+    const response = await backendApi.post<{
+      status: 'subscription_created' | 'checkout_created';
+      checkout_url?: string;
+      subscription_id?: string;
+      seat_count: number;
+    }>('/billing/create-per-seat-checkout', args);
+    if (response.error) throw response.error;
+    return response.data!;
   },
 
   async createPortalSession(request: CreatePortalSessionRequest) {

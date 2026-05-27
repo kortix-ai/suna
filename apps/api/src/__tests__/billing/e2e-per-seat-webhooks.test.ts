@@ -124,7 +124,7 @@ describe('per-seat webhook reconciliation', () => {
 
     const persistedUpdate = updateCalls.find((c) => c.data.autoTopupThreshold !== undefined);
     expect(persistedUpdate).toBeDefined();
-    // 5 seats × $5 threshold-per-seat = $25; × $20 amount = $100.
+    // 5 seats × $5 threshold-per-seat = $25; × $20 amount-per-seat = $100.
     expect(persistedUpdate?.data.autoTopupThreshold).toBe('25');
     expect(persistedUpdate?.data.autoTopupAmount).toBe('100');
   });

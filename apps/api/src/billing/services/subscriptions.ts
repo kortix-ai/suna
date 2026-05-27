@@ -9,7 +9,7 @@ import {
 import { getCustomerByAccountId, upsertCustomer } from '../repositories/customers';
 import { BillingError, SubscriptionError } from '../../errors';
 import { getTier, isUpgrade, isDowngrade, getMonthlyCredits, resolvePriceId, getComputeDisplayPriceCents, getComputeProductId, getComputeDescription, resolvePerSeatPriceId, defaultAutoTopupForSeats, MAX_SEATS_PER_ACCOUNT } from './tiers';
-import { countActiveMembers } from './seat-management';
+import { countActiveMembers, mintYoloTokensForAllMembers } from './seat-management';
 import { grantCredits, resetExpiringCredits } from './credits';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import Stripe from 'stripe';
@@ -299,6 +299,10 @@ export async function createPerSeatCheckoutSession(params: {
           autoTopupThreshold: String(account?.autoTopupCustomized ? account.autoTopupThreshold : defaults.threshold),
           autoTopupAmount: String(account?.autoTopupCustomized ? account.autoTopupAmount : defaults.amount),
         });
+        // Mint YOLO tokens for everyone already on the account (the owner +
+        // any pre-subscription members). New post-subscription adds go through
+        // onMemberAdded which handles minting per member.
+        void mintYoloTokensForAllMembers(accountId).catch(() => {});
         return {
           status: 'subscription_created' as const,
           subscription_id: subscription.id,

@@ -28,6 +28,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   BookOpen,
   ChevronsUpDown,
+  CreditCard,
   Home,
   LifeBuoy,
   LogOut,
@@ -58,6 +59,8 @@ import { transitionFromElement } from '@/lib/view-transition';
 import { themeOptions, type SettingsTabId } from '@/lib/menu-registry';
 import { SupportDialog } from '@/components/layout/support-dialog';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
+import { AccountSettingsModal } from '@/components/settings/account-settings-modal';
+import { isBillingEnabled } from '@/lib/config';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralDialog } from '@/components/referrals/referral-dialog';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -90,6 +93,7 @@ export function UserMenu({
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [billingModalOpen, setBillingModalOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
   const [supportOpen, setSupportOpen] = useState(false);
 
@@ -260,6 +264,18 @@ export function UserMenu({
             label={tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
             onSelect={() => openUserSettings('general')}
           />
+          {/* Billing v2 — surface the AccountSettingsModal Billing tab from the
+              user menu too. The AccountSwitcher in the header already has this,
+              but discoverability is better with two entry points. Local mount
+              below (sibling to UserSettingsModal) because project routes don't
+              mount GlobalAccountSettingsModal. */}
+          {isBillingEnabled() && (
+            <ActionRow
+              icon={<CreditCard className="size-3.5" />}
+              label="Billing"
+              onSelect={() => deferAfterClose(() => setBillingModalOpen(true))}
+            />
+          )}
 
           {/* Theme — inline segmented control, pill radius (on-brand). */}
           <div className="flex h-8 items-center justify-between rounded-lg px-2">
@@ -323,6 +339,11 @@ export function UserMenu({
         returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
       />
       <SupportDialog open={supportOpen} onOpenChange={setSupportOpen} />
+      <AccountSettingsModal
+        open={billingModalOpen}
+        onOpenChange={setBillingModalOpen}
+        defaultTab="billing"
+      />
       <ReferralDialog open={referralOpen} onOpenChange={closeReferral} />
     </>
   );

@@ -13,11 +13,16 @@ export const MACHINE_CREDIT_BONUS = 5;
 export const COMPUTE_PRICE_MARKUP = 1.2;
 
 // ─── Billing v2 — per-seat model ─────────────────────────────────────────────
+// Every new account is born on the per-seat plan — there is no free tier
+// for new signups. Existing 'free' / 'legacy' tier accounts are preserved
+// (billing_model='legacy') but new accounts get billing_model='per_seat'
+// from the setup flow.
+//
 // Each account is billed $20/month × number of accepted account_members.
-// The $20 grants $20 of fungible wallet credits — there's NO separate
-// compute/LLM bucket in the wallet. Spend is debited from the unified
-// balance; the credit_ledger.type tag (`compute_debit` / `llm_debit`)
-// drives the UI usage breakdown.
+// $20 grants $20 of fungible wallet credits — there's NO separate compute/
+// LLM bucket in the wallet. Spend is debited from the unified balance; the
+// credit_ledger.type tag (`compute_debit` / `llm_debit`) drives the UI
+// usage breakdown.
 //
 // The two TYPICAL_* constants below are display-only — surfaced on the
 // pricing page as "roughly N hours of compute or M tokens" rough guidance,
@@ -43,6 +48,8 @@ export const COMPUTE_ARCHIVE_DISK_MULTIPLIER     = 0.25;
 // Auto-topup defaults for per-seat accounts scale with seat count.
 // effectiveThreshold = AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT × seat_count
 // effectiveAmount    = AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT × seat_count
+//   threshold = 25% of one seat (top up when wallet has < 1/4 seat-month left)
+//   amount    = 1 seat-month (refill the equivalent of one seat)
 // Legacy accounts keep their flat $5/$20 (auto_topup_customized=true or just unaffected).
 export const AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT = 5;
 export const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT    = 20;
@@ -131,7 +138,9 @@ const TIERS: Record<string, TierConfig> = {
     canPurchaseCredits: false,
     models: ['haiku'],
     dailyCreditConfig: null,   // No daily credits — BYOC only
-    hidden: false,
+    // Hidden from new signup flows. Existing rows with tier='free' continue
+    // to be honored for backwards compatibility (they remain billing_model='legacy').
+    hidden: true,
   },
 
   pro: {
@@ -226,7 +235,8 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
     pro:  { monthly: 'price_1T7yiuG6CaZppiKc7VsgnlKI' },
-    per_seat: { monthly: PER_SEAT_STRIPE_PRICE_ID_PLACEHOLDER }, // TODO(ops): fill in staging per-seat price ID
+    // Billing v2 — $20/month recurring under product prod_UAFOsPU765hNnu (test mode).
+    per_seat: { monthly: 'price_1TbQv8G6l1KZGqIrdRLsUnCz' },
   },
   credits: {
     10:  'price_1T56YGG6CaZppiKcSwnwZSoE',

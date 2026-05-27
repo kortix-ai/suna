@@ -351,7 +351,7 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
   // the invoice; we mirror that in the wallet so the new seat can spend
   // immediately rather than waiting for the next bill cycle.
   //
-  // Wallet is fungible — $20/seat goes into one bucket. The compute-vs-LLM
+  // Wallet is fungible — $40/seat goes into one bucket. The compute-vs-LLM
   // split is a pricing-page message, not a wallet partition. Spend
   // attribution happens at the ledger entry level (compute_debit / llm_debit).
   if (perSeatItem && perSeatDelta > 0) {
@@ -366,6 +366,16 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     ).catch((err) =>
       console.warn(`[Webhook] per-seat grant failed for ${accountId}:`, err),
     );
+
+    // First-time transition: account just flipped from legacy/free to per_seat.
+    // Mint YOLO tokens for every existing member who doesn't have one (owner
+    // + any pre-subscription joiners). Idempotent on subsequent webhook fires.
+    if (perSeatItem && !isPerSeatAccount(account?.billingModel)) {
+      const { mintYoloTokensForAllMembers } = await import('./seat-management');
+      void mintYoloTokensForAllMembers(accountId).catch((err) =>
+        console.warn(`[Webhook] mint YOLO tokens for existing members failed for ${accountId}:`, err),
+      );
+    }
   }
 }
 

@@ -40,7 +40,11 @@ function newPlaintext(): string {
 }
 
 /**
- * Mint a fresh token for a member, revoking any existing one.
+ * Mint a fresh token for a member. If a prior token row exists for this
+ * (user, account) pair, the row is UPDATED in place with the new hash/prefix
+ * and revoked_at is cleared. We can't insert a new row because the table has
+ * PRIMARY KEY (user_id, account_id) — there's at most one row per pair, ever.
+ *
  * Returns the plaintext — caller MUST inject it into the sandbox immediately;
  * subsequent fetches return cached plaintext, but the cache can be wiped at
  * any time by a server restart.
@@ -49,16 +53,25 @@ export async function mintYoloTokenForMember(
   userId: string,
   accountId: string,
 ): Promise<string> {
-  // Revoke any prior row so token_prefix lookups stay unique.
-  await revokeYoloToken(userId, accountId);
-
   const plaintext = newPlaintext();
-  await insertYoloToken({
-    userId,
-    accountId,
-    tokenPrefix: plaintext.slice(0, PREFIX_LEN),
-    tokenHash: hashToken(plaintext),
-  });
+  const tokenPrefix = plaintext.slice(0, PREFIX_LEN);
+  const tokenHash = hashToken(plaintext);
+
+  const { db } = await import('../../shared/db');
+  const { yoloMemberTokens } = await import('@kortix/db');
+  await db
+    .insert(yoloMemberTokens)
+    .values({ userId, accountId, tokenPrefix, tokenHash })
+    .onConflictDoUpdate({
+      target: [yoloMemberTokens.userId, yoloMemberTokens.accountId],
+      set: {
+        tokenPrefix,
+        tokenHash,
+        createdAt: new Date().toISOString(),
+        revokedAt: null,
+        lastUsedAt: null,
+      },
+    });
 
   plaintextCache.set(cacheKey(userId, accountId), plaintext);
   return plaintext;

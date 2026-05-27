@@ -20,6 +20,7 @@ export {
   
   // Mutation hooks
   useCreateCheckoutSession,
+  useCreatePerSeatCheckout,
   useCreatePortalSession,
   useCancelSubscription,
   useReactivateSubscription,

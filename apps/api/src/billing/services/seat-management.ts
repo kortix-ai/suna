@@ -16,6 +16,7 @@ import { db } from '../../shared/db';
 import { getStripe } from '../../shared/stripe';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { mintYoloTokenForMember, revokeYoloTokenForMember } from './yolo-tokens';
+import { getActiveYoloTokenRow } from '../repositories/yolo-tokens';
 import {
   isPerSeatAccount,
   defaultAutoTopupForSeats,
@@ -72,18 +73,56 @@ export async function syncSeatQuantity(accountId: string): Promise<{
     throw err;
   }
 
-  // Mirror the new count locally. The webhook will run too and reconcile
-  // anything else (e.g. proration metadata), but we set seat_count immediately
-  // so concurrent reads see consistent state.
-  const patch: Record<string, unknown> = { seatCount };
+  // IMPORTANT: do NOT mirror seat_count locally here. The webhook handler
+  // (services/webhooks.ts:syncSubscriptionState) computes the per-seat delta
+  // as `newSeats - account.seatCount`. If we wrote seat_count first, the
+  // webhook would see delta=0 and skip the seat_grant. Letting the webhook
+  // be the sole writer of seat_count keeps the grant logic correct. The UI
+  // is briefly stale (≤1s) between the Stripe push and the webhook arriving,
+  // which is acceptable.
+  //
+  // Auto-topup defaults DO scale with seats and don't affect the grant calc,
+  // so update those here for immediate consistency.
   if (!account.autoTopupCustomized) {
     const defaults = defaultAutoTopupForSeats(seatCount);
-    patch.autoTopupThreshold = String(defaults.threshold);
-    patch.autoTopupAmount = String(defaults.amount);
+    await updateCreditAccount(accountId, {
+      autoTopupThreshold: String(defaults.threshold),
+      autoTopupAmount: String(defaults.amount),
+    });
   }
-  await updateCreditAccount(accountId, patch);
 
   return { synced: true, seatCount };
+}
+
+/**
+ * Mint a YOLO token for every existing member of an account that doesn't
+ * already have one. Called once at per-seat subscription start so the owner
+ * (and anyone who joined the account before billing_model='per_seat' flipped)
+ * gets a token without having to re-add them.
+ *
+ * Safe to call repeatedly — only members WITHOUT an active token get one.
+ */
+export async function mintYoloTokensForAllMembers(accountId: string): Promise<{ minted: number }> {
+  const memberRows = await db
+    .select({ userId: accountMembers.userId })
+    .from(accountMembers)
+    .where(eq(accountMembers.accountId, accountId));
+
+  let minted = 0;
+  for (const m of memberRows) {
+    const existing = await getActiveYoloTokenRow(m.userId, accountId);
+    if (existing) continue;
+    try {
+      await mintYoloTokenForMember(m.userId, accountId);
+      minted += 1;
+    } catch (err) {
+      console.warn(
+        `[seat-management] mint YOLO token failed for ${m.userId}@${accountId}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+  return { minted };
 }
 
 /**

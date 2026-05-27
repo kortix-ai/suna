@@ -279,14 +279,19 @@ export async function provisionSessionSandbox(opts: {
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
 
   // Billing v2 — for per-seat accounts, inject the requesting member's per-
-  // member YOLO token instead of relying on the legacy account-wide token. For
-  // legacy accounts the env var is omitted; the kortix-agent-sandbox-server
-  // demon falls back to its existing behaviour (account-wide token at the
-  // sandbox-auth.ts injection point).
+  // member YOLO token. The token is only minted when the account has an
+  // ACTIVE Stripe subscription — without it, YOLO calls (which bypass our
+  // LLM router's 402 check) would let unsubscribed users hit YOLO for free.
+  // For legacy accounts the env var is omitted; the kortix-agent-sandbox-
+  // server demon falls back to its existing account-wide-token behaviour.
   let yoloApiKey: string | null = null;
   try {
     const account = await getCreditAccount(accountId);
-    if (isPerSeatAccount(account?.billingModel) && userId) {
+    const hasActiveSub =
+      !!account?.stripeSubscriptionId &&
+      account.stripeSubscriptionStatus !== 'canceled' &&
+      account.stripeSubscriptionStatus !== 'unpaid';
+    if (isPerSeatAccount(account?.billingModel) && hasActiveSub && userId) {
       yoloApiKey = await resolveYoloTokenForMember(userId, accountId);
     }
   } catch (err) {
