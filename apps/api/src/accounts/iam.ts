@@ -16,7 +16,7 @@
 // from the engine entry-point in ../iam.
 
 import { Context, Hono } from 'hono';
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountMembers,
@@ -418,7 +418,12 @@ iamRouter.get('/:accountId/iam/groups/:groupId/project-grants', async (c) => {
         eq(projectGroupGrants.groupId, groupId),
         eq(projectGroupGrants.accountId, accountId),
       ),
-    );
+    )
+    // Deterministic order so the row position doesn't visibly shift after
+    // a role change. Without ORDER BY, Postgres can return rows in heap
+    // order, which moves UPDATEd rows around. See twin query in
+    // apps/api/src/projects/index.ts.
+    .orderBy(asc(projectGroupGrants.createdAt), asc(projectGroupGrants.projectId));
 
   return c.json({
     grants: rows.map((r) => ({

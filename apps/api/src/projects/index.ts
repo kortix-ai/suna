@@ -10,7 +10,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Cron } from 'croner';
 import { Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGithubInstallations,
   accountGithubInstallationStates,
@@ -5867,7 +5867,13 @@ projectsApp.get('/:projectId/group-grants', async (c) => {
     })
     .from(projectGroupGrants)
     .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
-    .where(eq(projectGroupGrants.projectId, projectId));
+    .where(eq(projectGroupGrants.projectId, projectId))
+    // Deterministic order — without ORDER BY, Postgres can return rows
+    // in heap-scan order, which shifts when the row is UPDATEd (e.g., a
+    // role change). The UI list would then visibly reshuffle after a
+    // role flip. Oldest attachments first matches the "Attached <date>"
+    // subtitle most users scan along.
+    .orderBy(asc(projectGroupGrants.createdAt), asc(projectGroupGrants.groupId));
 
   // Per-group member breakdown so the UI can flag attachments where the
   // grant role won't apply uniformly. When a group includes account

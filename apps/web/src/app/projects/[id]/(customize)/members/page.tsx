@@ -730,7 +730,18 @@ function ProjectGroupGrantsCard({
     staleTime: 60_000,
   });
 
-  const grants = grantsQuery.data?.grants ?? [];
+  // Defensive client-side sort. The API already sets ORDER BY, but
+  // belt-and-braces here so a future API tweak (e.g. switching to a
+  // join that loses the ORDER BY) can't cause rows to visibly swap
+  // places after a role update. Oldest attachment first matches what
+  // the "Attached <date>" subtitle implies.
+  const grants = useMemo(() => {
+    const raw = grantsQuery.data?.grants ?? [];
+    return [...raw].sort((a, b) => {
+      const t = a.created_at.localeCompare(b.created_at);
+      return t !== 0 ? t : a.group_id.localeCompare(b.group_id);
+    });
+  }, [grantsQuery.data]);
   const groups: AccountGroup[] = groupsQuery.data ?? [];
   const attachedIds = useMemo(() => new Set(grants.map((g) => g.group_id)), [grants]);
   const available = useMemo(
