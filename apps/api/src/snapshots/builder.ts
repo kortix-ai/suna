@@ -105,11 +105,11 @@ import {
 
 /** Cap how long the Daytona-side snapshot build is allowed to take. */
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
-/** One provider build per request. Retrying hides failures and doubles cold-build latency. */
-const BUILD_ATTEMPTS = 1;
+/** How many times to retry a snapshot build that fails with a transient error. */
+const BUILD_ATTEMPTS = 3;
 const BUILD_RETRY_BASE_MS = 2_000;
 const SNAPSHOT_LOG_TAIL_LIMIT = 20;
-const RUNTIME_LAYER_VERSION = 'baked-workspace-minimal-v5';
+const RUNTIME_LAYER_VERSION = 'baked-workspace-minimal-v6';
 const DEFAULT_SANDBOX_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_SANDBOX_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_SANDBOX_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -117,16 +117,6 @@ const DEFAULT_SANDBOX_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
   return Number.isFinite(raw) && raw > 0 ? raw : fallback;
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
 }
 
 /**
@@ -342,25 +332,52 @@ export async function buildSnapshotForCommit(
       };
     }
 
-    if (!isInProgressSnapshotStale(existing)) {
+    if (await providerInProgressRowIsGone(existing, provider)) {
+      console.warn(
+        `[snapshots] In-progress DB snapshot ${existing.snapshotId ?? '(missing id)'} for project ` +
+        `${project.projectId} commit ${commitSha.slice(0, 8)} is missing/failed in ${provider}; rebuilding`,
+      );
+      await deleteSnapshotRow(project.projectId, commitSha, provider);
+    } else if (!isInProgressSnapshotStale(existing)) {
       // Another build is in flight for this exact commit. Don't race it.
       throw new SnapshotBuildError(
         `Snapshot build for commit ${commitSha.slice(0, 8)} is already in progress`,
       );
+    } else {
+      const staleRecovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
+      if (staleRecovered) {
+        return {
+          daytonaName: staleRecovered.daytonaName,
+          commitSha,
+          contentHash: staleRecovered.contentHash,
+          runtimeFingerprint: staleRecovered.runtimeFingerprint,
+          built: false,
+        };
+      }
+      await deleteSnapshotRow(project.projectId, commitSha, provider);
     }
-
-    const staleRecovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
-    if (staleRecovered) {
+  } else if (existing?.status === 'failed') {
+    const recovered = await recoverBootableInProgressSnapshotRow(
+      project,
+      commitSha,
+      provider,
+      options.source,
+      existing,
+    );
+    if (recovered) {
       return {
-        daytonaName: staleRecovered.daytonaName,
+        daytonaName: recovered.daytonaName,
         commitSha,
-        contentHash: staleRecovered.contentHash,
-        runtimeFingerprint: staleRecovered.runtimeFingerprint,
+        contentHash: recovered.contentHash,
+        runtimeFingerprint: recovered.runtimeFingerprint,
         built: false,
       };
     }
-    await deleteSnapshotRow(project.projectId, commitSha, provider);
-  } else if (existing?.status === 'failed') {
+    if (await markProviderBuildingRow(existing, provider)) {
+      throw new SnapshotBuildError(
+        `Snapshot build for commit ${commitSha.slice(0, 8)} is still in progress in ${provider}`,
+      );
+    }
     // Retry from scratch — failures shouldn't pin a project forever.
     await deleteSnapshotRow(project.projectId, commitSha, provider);
   }
@@ -473,7 +490,10 @@ export async function getReadySnapshotForCommit(
   commitSha: string,
   provider: SandboxProviderName = 'daytona',
 ): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
-  const row = await getSnapshotForCommit(projectId, commitSha, provider);
+  let row = await getSnapshotForCommit(projectId, commitSha, provider);
+  if (row && row.status !== 'ready' && row.snapshotId) {
+    row = await recoverProviderActiveRow(row, provider);
+  }
   if (row?.status !== 'ready' || !row.snapshotId) return null;
   if (!(await isProviderBootableSnapshot(row, provider))) return null;
 
@@ -530,6 +550,51 @@ async function getProviderSnapshotState(snapshotId: string): Promise<ProviderSna
   } catch (err) {
     return 'missing';
   }
+}
+
+async function recoverProviderActiveRow(
+  row: typeof projectRuntimeSnapshots.$inferSelect,
+  provider: SandboxProviderName,
+): Promise<typeof projectRuntimeSnapshots.$inferSelect> {
+  if (provider !== 'daytona' || !isDaytonaConfigured() || !row.snapshotId) return row;
+  if ((await getProviderSnapshotState(row.snapshotId)) !== 'active') return row;
+  const [updated] = await db
+    .update(projectRuntimeSnapshots)
+    .set({
+      status: 'ready',
+      error: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(projectRuntimeSnapshots.snapshotRowId, row.snapshotRowId))
+    .returning();
+  return updated ?? row;
+}
+
+async function markProviderBuildingRow(
+  row: typeof projectRuntimeSnapshots.$inferSelect,
+  provider: SandboxProviderName,
+): Promise<boolean> {
+  if (provider !== 'daytona' || !isDaytonaConfigured() || !row.snapshotId) return false;
+  if ((await getProviderSnapshotState(row.snapshotId)) !== 'building') return false;
+  await db
+    .update(projectRuntimeSnapshots)
+    .set({
+      status: 'building',
+      error: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(projectRuntimeSnapshots.snapshotRowId, row.snapshotRowId));
+  return true;
+}
+
+async function providerInProgressRowIsGone(
+  row: typeof projectRuntimeSnapshots.$inferSelect,
+  provider: SandboxProviderName,
+): Promise<boolean> {
+  if (row.status !== 'queued' && row.status !== 'building') return false;
+  if (provider !== 'daytona' || !isDaytonaConfigured() || !row.snapshotId) return false;
+  const state = await getProviderSnapshotState(row.snapshotId);
+  return state === 'missing' || state === 'error' || state === 'build_failed';
 }
 
 function isInProgressSnapshotStale(row: typeof projectRuntimeSnapshots.$inferSelect): boolean {
@@ -598,6 +663,13 @@ export async function ensureBuildForLatestCommit(
   let existing: typeof projectRuntimeSnapshots.$inferSelect | null =
     await findSnapshotRow(project.projectId, commitSha, provider);
   if (existing?.status === 'failed') {
+    existing = await recoverProviderActiveRow(existing, provider);
+    if (existing.status === 'ready') {
+      return { status: 'already-ready', commitSha };
+    }
+    if (await markProviderBuildingRow(existing, provider)) {
+      return { status: 'already-building', commitSha };
+    }
     // Manual/session retry must actually retry. The unique key is
     // (projectId, commitSha, provider), so leaving the failed row in place makes
     // the later insert lose the race while the API misleadingly reports
@@ -681,13 +753,19 @@ export async function ensureBuildForLatestCommit(
     );
     if (recovered) return { status: 'already-ready', commitSha };
 
-    if (!isInProgressSnapshotStale(existing)) {
+    if (await providerInProgressRowIsGone(existing, provider)) {
+      console.warn(
+        `[snapshots] In-progress DB snapshot ${existing.snapshotId ?? '(missing id)'} for project ` +
+        `${project.projectId} commit ${commitSha.slice(0, 8)} is missing/failed in ${provider}; rebuilding`,
+      );
+      await deleteSnapshotRow(project.projectId, commitSha, provider);
+    } else if (!isInProgressSnapshotStale(existing)) {
       return { status: 'already-building', commitSha };
+    } else {
+      const staleRecovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
+      if (staleRecovered) return { status: 'already-ready', commitSha };
+      await deleteSnapshotRow(project.projectId, commitSha, provider);
     }
-
-    const staleRecovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
-    if (staleRecovered) return { status: 'already-ready', commitSha };
-    await deleteSnapshotRow(project.projectId, commitSha, provider);
   }
 
   // Detach the build — we promised the caller this is non-blocking.
@@ -743,8 +821,9 @@ export async function sweepStaleSnapshotBuilds(): Promise<number> {
 
   let recovered = 0;
   let failed = 0;
+  let stillBuilding = 0;
   for (const row of rows) {
-    if (row.snapshotId && (await isProviderBootableSnapshot(row, row.provider))) {
+    if (row.snapshotId && (await getProviderSnapshotState(row.snapshotId)) === 'active') {
       await db
         .update(projectRuntimeSnapshots)
         .set({
@@ -754,6 +833,10 @@ export async function sweepStaleSnapshotBuilds(): Promise<number> {
         })
         .where(eq(projectRuntimeSnapshots.snapshotRowId, row.snapshotRowId));
       recovered += 1;
+      continue;
+    }
+    if (row.snapshotId && (await getProviderSnapshotState(row.snapshotId)) === 'building') {
+      stillBuilding += 1;
       continue;
     }
 
@@ -771,7 +854,7 @@ export async function sweepStaleSnapshotBuilds(): Promise<number> {
 
   const swept = recovered + failed;
   if (swept > 0) {
-    console.warn(`[snapshots] swept ${swept} in-progress build row(s) on startup`, { recovered, failed });
+    console.warn(`[snapshots] swept ${swept} in-progress build row(s) on startup`, { recovered, failed, stillBuilding });
   }
   return swept;
 }
@@ -1037,10 +1120,21 @@ function globalSnapshotBudget(): number {
 
 /** Stale `failed` rows older than this are swept (a fresh build re-creates them). */
 const FAILED_ROW_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * Daytona's snapshot list/get APIs can lag right after `snapshot.create()`
+ * returns active. Do not let maintenance clear a brand-new ready DB row during
+ * that consistency window, or the next pass can see the provider image as an
+ * orphan and delete the snapshot we just built.
+ */
+const RECENT_READY_ROW_RECONCILE_GRACE_MS = 15 * 60 * 1000;
 
 function rowUpdatedMs(row: { updatedAt: Date | string }): number {
   const t = row.updatedAt instanceof Date ? row.updatedAt.getTime() : new Date(row.updatedAt).getTime();
   return Number.isFinite(t) ? t : 0;
+}
+
+function isRecentReadySnapshotRow(row: typeof projectRuntimeSnapshots.$inferSelect): boolean {
+  return Date.now() - rowUpdatedMs(row) < RECENT_READY_ROW_RECONCILE_GRACE_MS;
 }
 
 let reconcileRunning = false;
@@ -1114,6 +1208,7 @@ export async function reconcileDaytonaSnapshots(opts: { budget?: number } = {}):
       readyRows.map(async (row) => {
         if (!row.snapshotId) return { row, bootable: false };
         if (liveByName.has(row.snapshotId)) return { row, bootable: true };
+        if (isRecentReadySnapshotRow(row)) return { row, bootable: true };
         return { row, bootable: await isProviderBootableSnapshot(row, row.provider) };
       }),
     );
@@ -1291,7 +1386,7 @@ async function runBuild(
     for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
       const buildLogs: string[] = [];
       try {
-        await withTimeout(daytona.snapshot.create(
+        await daytona.snapshot.create(
           {
             name: ctx.snapshotName,
             image: Image.fromDockerfile(ctx.composedPath),
@@ -1321,8 +1416,8 @@ async function runBuild(
               }
             },
           },
-        ), BUILD_TIMEOUT_MS, `Snapshot ${ctx.snapshotName} build timed out after ${Math.round(BUILD_TIMEOUT_MS / 1000)}s`);
-        await waitForStableUsableSnapshot(daytona, ctx.snapshotName);
+        );
+        await waitForUsableSnapshot(daytona, ctx.snapshotName);
         return {
           daytonaName: ctx.snapshotName,
           contentHash: ctx.contentHash,
@@ -1332,12 +1427,11 @@ async function runBuild(
         };
       } catch (err) {
         lastErr = err;
-        // Daytona's `snapshot.create()` can throw "not found" right after the
-        // image actually finished building; the registry takes a few seconds to
-        // surface the new name. Settle on the registry instead of failing on a
-        // single eventual-consistency miss.
-        try {
-          await waitForStableUsableSnapshot(daytona, ctx.snapshotName);
+        // The connection may have dropped after the build actually completed —
+        // if the snapshot is now active, treat it as success. getUsableSnapshot
+        // also reaps an errored/build_failed snapshot so the retry rebuilds
+        // clean instead of seeing it as a (poisoned) cache hit.
+        if (await getUsableSnapshot(daytona, ctx.snapshotName)) {
           return {
             daytonaName: ctx.snapshotName,
             contentHash: ctx.contentHash,
@@ -1345,25 +1439,6 @@ async function runBuild(
             runtimeFingerprint: ctx.runtimeFingerprint,
             built: true,
           };
-        } catch {
-          // fall through to the existing recovery paths
-        }
-        if (isSnapshotAlreadyExistsError(err)) {
-          const reaped = await reapUnusableSnapshot(daytona, ctx.snapshotName);
-          if (reaped === 'active') {
-            return {
-              daytonaName: ctx.snapshotName,
-              contentHash: ctx.contentHash,
-              shortHash: ctx.shortHash,
-              runtimeFingerprint: ctx.runtimeFingerprint,
-              built: true,
-            };
-          }
-          if (reaped === 'deleted') {
-            console.warn(`[snapshots] deleted non-active existing snapshot ${ctx.snapshotName} after create conflict; retrying`);
-            attempt--;
-            continue;
-          }
         }
         // Org-wide snapshot quota hit — reclaim orphaned / over-budget
         // snapshots once, then retry. Without this the cap is a death-spiral:
@@ -1387,18 +1462,6 @@ async function runBuild(
   } finally {
     await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
   }
-}
-
-async function reapUnusableSnapshot(
-  daytona: ReturnType<typeof getDaytona>,
-  name: string,
-): Promise<'active' | 'deleted' | 'missing'> {
-  const snap = await daytona.snapshot.get(name).catch(() => null);
-  if (!snap) return 'missing';
-  const state = String((snap as { state?: string }).state ?? '').toLowerCase();
-  if (state === 'active') return 'active';
-  await daytona.snapshot.delete(snap).catch(() => {});
-  return 'deleted';
 }
 
 /**
@@ -1426,23 +1489,17 @@ async function getUsableSnapshot(
   }
 }
 
-async function waitForStableUsableSnapshot(
+async function waitForUsableSnapshot(
   daytona: ReturnType<typeof getDaytona>,
   name: string,
 ): Promise<void> {
   const deadline = Date.now() + 120_000;
   let lastState = 'unknown';
-  let activeChecks = 0;
   while (Date.now() < deadline) {
     try {
       const snap = await daytona.snapshot.get(name);
       lastState = String((snap as { state?: string } | null)?.state ?? 'missing').toLowerCase();
-      if (lastState === 'active') {
-        activeChecks += 1;
-        if (activeChecks >= 2) return;
-      } else {
-        activeChecks = 0;
-      }
+      if (lastState === 'active') return;
       if (lastState === 'error' || lastState === 'build_failed') {
         throw new Error(`Snapshot ${name} is ${lastState}`);
       }
@@ -1453,18 +1510,13 @@ async function waitForStableUsableSnapshot(
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  throw new Error(`Snapshot ${name} did not remain active after create (last state: ${lastState})`);
+  throw new Error(`Snapshot ${name} did not become active after create (last state: ${lastState})`);
 }
 
 /** Org-wide snapshot quota exhaustion — recoverable by reconciling first. */
 function isQuotaError(err: unknown): boolean {
   const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return m.includes('quota') || m.includes('maximum allowed');
-}
-
-function isSnapshotAlreadyExistsError(err: unknown): boolean {
-  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return m.includes('snapshot with name') && m.includes('already exists');
 }
 
 /** Transient Daytona build/transport errors worth retrying (vs a real build failure). */

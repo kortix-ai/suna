@@ -97,10 +97,10 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && bun --version',
     '',
     // Keep the browser-control CLI available, but do not bake Chromium into
-    // every project snapshot. The browser binary/deps made Daytona snapshot
-    // export flaky and added >100MB of cold-build work. Browser-specific flows
-    // can install a browser lazily in-session; OpenCode/session boot does not
-    // depend on it.
+    // every project snapshot. Browser binaries and their OS deps add hundreds
+    // of MB and make Daytona's snapshot export/register phase unreliable.
+    // Browser-specific flows can install a browser lazily in-session; normal
+    // OpenCode/session boot does not depend on it.
     `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
     '    && agent-browser --version',
     'ENV AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
@@ -141,11 +141,9 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
 }
 
 export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
-  // The generated starter Dockerfile used to install baseline tools that the
-  // injected Kortix runtime layer installs again. On a cold Daytona builder that
-  // duplicate apt step can be the first multi-minute blocker before the actual
-  // runtime layer even starts. Strip only the exact starter block; custom user
-  // Dockerfiles are preserved verbatim.
+  // The generated starter Dockerfile installs baseline tools that the injected
+  // Kortix layer installs again. Strip only that exact starter block so cold
+  // builds avoid duplicate apt work; custom Dockerfiles remain unchanged.
   const starterBlock =
     /# Bring in baseline tooling\. The Kortix layer on top also installs\n# git\/curl\/ca-certificates\/nodejs\/npm, but having them in your base\n# makes interactive sessions snappier\.\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends \\\n        ca-certificates \\\n        curl \\\n        git \\\n        build-essential \\\n    && rm -rf \/var\/lib\/apt\/lists\/\*\n\n?/;
   return dockerfile.replace(starterBlock, '');
