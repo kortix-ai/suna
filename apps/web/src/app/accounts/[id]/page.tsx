@@ -944,7 +944,21 @@ function MembersCard({
     () => sorted.filter((m) => m.user_id !== currentUserId),
     [sorted, currentUserId],
   );
-  const selectedCount = selectedIds.size;
+  // Effective selection = what's both clicked AND currently eligible.
+  // We don't prune selectedIds when the search filter changes (so the
+  // user can temporarily filter to scan a name without losing their
+  // selection), but every consumer — the "X selected" badge, the action
+  // buttons, bulkRun — has to act on the intersection. Without this,
+  // selecting alice/bob/charlie then typing "alice" in the search bar
+  // would display "3 selected" and silently fire bulk actions on all 3,
+  // not just the visible row.
+  const effectiveSelectedIds = useMemo(() => {
+    const eligibleIds = new Set(bulkEligible.map((m) => m.user_id));
+    return new Set(
+      Array.from(selectedIds).filter((id) => eligibleIds.has(id)),
+    );
+  }, [selectedIds, bulkEligible]);
+  const selectedCount = effectiveSelectedIds.size;
   const allEligibleSelected =
     bulkEligible.length > 0 &&
     bulkEligible.every((m) => selectedIds.has(m.user_id));
@@ -981,7 +995,11 @@ function MembersCard({
     runOne: (userId: string) => Promise<unknown>,
   ): Promise<void> {
     setBulkBusy(true);
-    const ids = Array.from(selectedIds);
+    // Use the eligible intersection — see effectiveSelectedIds above for
+    // why we don't just iterate selectedIds. A row that's been
+    // filtered out of view shouldn't be silently included in the bulk
+    // action just because it was clicked before the filter applied.
+    const ids = Array.from(effectiveSelectedIds);
     const results = await Promise.allSettled(ids.map(runOne));
     setBulkBusy(false);
     invalidateMembers();
@@ -1032,9 +1050,11 @@ function MembersCard({
   }
   async function bulkAddToGroup(groupId: string) {
     // addGroupMembers takes an array natively — single round-trip.
+    // Use the eligible intersection (see effectiveSelectedIds) so a
+    // hidden-by-filter row doesn't get silently added.
     setBulkBusy(true);
     try {
-      const ids = Array.from(selectedIds);
+      const ids = Array.from(effectiveSelectedIds);
       const res = await addGroupMembers(account.account_id, groupId, ids);
       invalidateMembers();
       toast.success(
