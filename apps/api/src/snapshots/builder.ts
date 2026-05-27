@@ -1370,16 +1370,24 @@ async function runBuild(
     // (build failures aren't retried by the provision loop). Retry transient
     // failures, and after any failure re-check the registry first — the socket
     // can drop AFTER the image finished building server-side.
-    // A custom `[sandbox]` spec is baked into the snapshot here — Daytona
-    // inherits a sandbox's resources from its snapshot, so this is the one
-    // place they can be set. Empty spec → omit `resources` and take the
-    // provider default.
-    const resources = sandboxSpecIsEmpty(ctx.spec) ? undefined : ctx.spec;
-    if (resources) {
-      console.info(
-        `[snapshots] ${ctx.snapshotName}: building with custom spec ${JSON.stringify(resources)}`,
-      );
-    }
+    // Custom [sandbox] spec from kortix.toml drives Daytona's build container
+    // size AND the resulting sandbox size. Daytona's default is 1cpu/1gb/3gb
+    // disk — too tight for the Kortix runtime layer (Chrome + headless shell
+    // + node + bun + agent binary together exceed 3 GB extracted). When the
+    // project doesn't declare a spec, fall back to a roomy floor instead of
+    // letting Daytona kill the build silently when it runs out of disk.
+    const DEFAULT_FLOOR = { cpu: 2, memory: 4, disk: 20 };
+    const resources = sandboxSpecIsEmpty(ctx.spec)
+      ? DEFAULT_FLOOR
+      : {
+          cpu: ctx.spec.cpu ?? DEFAULT_FLOOR.cpu,
+          memory: ctx.spec.memory ?? DEFAULT_FLOOR.memory,
+          disk: ctx.spec.disk ?? DEFAULT_FLOOR.disk,
+          ...(ctx.spec.gpu !== undefined ? { gpu: ctx.spec.gpu } : {}),
+        };
+    console.info(
+      `[snapshots] ${ctx.snapshotName}: building with spec ${JSON.stringify(resources)}`,
+    );
 
     let lastErr: unknown;
     let quotaRecovered = false;

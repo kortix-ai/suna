@@ -279,6 +279,55 @@ app.get('/v1/user-roles', supabaseAuth, async (c: any) => {
 // All services follow the pattern: /v1/{serviceName}/...
 
 app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
+
+{
+  const { createLlmGateway } = await import('./llm-gateway');
+  const { attributeYoloToken } = await import('./billing/services/yolo-tokens');
+  const { assertBillingActive } = await import('./billing/services/billing-gate');
+  const { deductForLlmUsage } = await import('./billing/services/credits');
+  const { recordUsageEvent } = await import('./shared/usage-events');
+
+  app.route(
+    '/v1/llm',
+    createLlmGateway(
+      {
+        enabled: process.env.LLM_GATEWAY_ENABLED === 'true',
+        openrouterApiKey: process.env.KORTIX_OPENROUTER_API_KEY ?? '',
+        markup: 1.2,
+        appName: 'Kortix',
+        appReferer: process.env.KORTIX_URL,
+      },
+      {
+        authenticateToken: (token) => attributeYoloToken(token),
+        assertBillingActive,
+        recordUsage: async (event) => {
+          await Promise.all([
+            deductForLlmUsage({
+              accountId: event.accountId,
+              costUsd: event.finalCost,
+              model: event.model,
+              provider: event.provider,
+              actorUserId: event.actorUserId,
+            }),
+            recordUsageEvent({
+              accountId: event.accountId,
+              actorUserId: event.actorUserId,
+              provider: event.provider,
+              model: event.model,
+              route: '/v1/llm/chat/completions',
+              inputTokens: event.promptTokens,
+              outputTokens: event.completionTokens,
+              cachedTokens: event.cachedTokens,
+              costUsd: event.finalCost,
+              streaming: event.streaming,
+            }),
+          ]);
+        },
+      },
+    ),
+  );
+}
+
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*, /v1/billing/setup/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
