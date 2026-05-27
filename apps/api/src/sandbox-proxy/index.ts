@@ -106,6 +106,18 @@ async function parseProxyRequest(c: { req: { url: string; method: string; raw: R
   };
 }
 
+function buildPublicProxyForwardHeaders(incomingHeaders: Headers, sandboxId: string, port: number): Record<string, string> {
+  const host = incomingHeaders.get('host');
+  if (!host) return {};
+
+  const proto = incomingHeaders.get('x-forwarded-proto') || 'https';
+  return {
+    'X-Forwarded-Prefix': `${proto}://${host}/v1/p/${sandboxId}/${port}`,
+    'X-Forwarded-Proto': proto,
+    'X-Forwarded-Host': host,
+  };
+}
+
 /**
  * Drop a sandbox from the in-process provider cache so the next request
  * re-reads from the DB. Used after a proxy-token refresh so cached stale
@@ -261,6 +273,7 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
     }
     const userId = c.get('userId') || '';
     Object.assign(extraHeaders, await buildSignedUserContextHeader(sandboxId, userId, resolved.serviceKey));
+    Object.assign(extraHeaders, buildPublicProxyForwardHeaders(request.headers, sandboxId, port));
 
     return proxyToSandbox(sandboxId, 8000, request.method, request.remainingPath, request.queryString, request.headers, request.body, false, request.origin, cfProxyUrl, resolved.serviceKey, extraHeaders);
   });
@@ -306,6 +319,7 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
         extra['X-Proxy-Token'] = resolved.proxyToken;
       }
       Object.assign(extra, await buildSignedUserContextHeader(sandboxId, userId, resolved.serviceKey));
+      Object.assign(extra, buildPublicProxyForwardHeaders(request.headers, sandboxId, port));
       return proxyToSandbox(sandboxId, 8000, request.method, request.remainingPath, request.queryString, request.headers, request.body, false, request.origin, cfProxyUrl, resolved.serviceKey, extra);
     }
 
