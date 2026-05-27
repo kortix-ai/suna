@@ -707,10 +707,16 @@ function GroupProjectGrantsCard({
     mutationFn: (projectId: string) => detachGroupFromProject(projectId, groupId),
     onMutate: (projectId) => setPendingProjectId(projectId),
     onSettled: () => setPendingProjectId(null),
-    onSuccess: () => {
+    onSuccess: (_data, projectId) => {
       toast.success('Group detached from project');
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+      // The target project's Members card (in another tab) shows
+      // every group member's effective access — detaching this group
+      // removes a path. Invalidate so a stale tab refetches on next
+      // focus.
+      queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to detach'),
   });
@@ -766,9 +772,14 @@ function GroupProjectGrantsCard({
         open={attachOpen}
         onOpenChange={setAttachOpen}
         attachedProjectIds={attachedProjectIds}
-        onAttached={() => {
+        onAttached={(attachedProjectId) => {
           queryClient.invalidateQueries({ queryKey });
           queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+          // The target project's Members card (in another tab) shows
+          // group-derived access for every member — without these the
+          // tab would be stale until the next focus + 20s staleTime.
+          queryClient.invalidateQueries({ queryKey: ['project-access', attachedProjectId] });
+          queryClient.invalidateQueries({ queryKey: ['project', attachedProjectId] });
           setAttachOpen(false);
         }}
       />
@@ -886,7 +897,9 @@ function AttachToProjectDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   attachedProjectIds: Set<string>;
-  onAttached: () => void;
+  /** Receives the projectId so the parent can scope cache
+   *  invalidations to the project that was just attached. */
+  onAttached: (projectId: string) => void;
 }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(
     undefined,
@@ -947,7 +960,9 @@ function AttachToProjectDialog({
     },
     onSuccess: () => {
       toast.success(`"${groupName}" attached to project`);
-      onAttached();
+      // selectedProjectId is non-null here — the mutationFn throws
+      // synchronously if it isn't set, which short-circuits onSuccess.
+      onAttached(selectedProjectId!);
     },
     onError: (err: Error) =>
       toast.error(err.message || 'Failed to attach group to project'),
