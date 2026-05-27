@@ -191,9 +191,7 @@ export async function retrySandboxProvisionCreate(
       const snapshotStillBuilding = isSnapshotStillBuilding(error);
       const maxAttempts = snapshotStillBuilding
         ? SNAPSHOT_BUILDING_MAX_ATTEMPTS
-        : createOpts.image
-          ? 1
-          : SANDBOX_INIT_MAX_ATTEMPTS;
+        : SANDBOX_INIT_MAX_ATTEMPTS;
       const willRetry = attempt < maxAttempts;
       await hooks.onAttemptFailure?.(attempt, error, willRetry);
       if (!willRetry) throw error;

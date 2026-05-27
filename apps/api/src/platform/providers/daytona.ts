@@ -39,17 +39,19 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
-    // Prefer the ad-hoc declarative image path. Named Daytona snapshots have
-    // proven non-durable in local testing: snapshot.create can report active
-    // while the snapshot is absent from REST/list and a fresh SDK lookup.
-    // The ad-hoc path avoids that registry dependency and uses Daytona's
-    // per-runner build cache for repeat sessions.
+    // Every Daytona sandbox boots from its project's own per-project
+    // snapshot (`kortix-snap-…`), resolved by the snapshot builder before
+    // we get here (see platform/services/session-sandbox.ts +
+    // snapshots/builder.ts). There is intentionally no shared platform
+    // fallback: a missing snapshot means the project's first build
+    // hasn't finished, which is a session-creation error — not something
+    // we paper over with an unrelated image.
     const snapshot = opts.snapshot;
-    const image = opts.image;
-    if (!snapshot && !image) {
+    if (!snapshot) {
       throw new Error(
-        'Daytona create() called without opts.snapshot or opts.image. ' +
-        'Every sandbox must boot from a project image prepared by the builder.',
+        'Daytona create() called without opts.snapshot. ' +
+        'Every sandbox must boot from a per-project snapshot built by ' +
+        'apps/api/src/snapshots/builder.ts. There is no shared fallback.',
       );
     }
 
@@ -65,13 +67,12 @@ export class DaytonaProvider implements SandboxProvider {
 
     const createTimeoutSeconds = Math.max(
       1,
-      Number.parseInt(process.env.KORTIX_DAYTONA_CREATE_TIMEOUT_SECONDS || '120', 10) || 120,
+      Number.parseInt(process.env.KORTIX_DAYTONA_CREATE_TIMEOUT_SECONDS || '30', 10) || 30,
     );
 
     const daytonaSandbox = await daytona.create(
       {
-        ...(snapshot ? { snapshot } : { image }),
-        ...(opts.resources ? { resources: opts.resources } : {}),
+        snapshot,
         envVars: {
           // Session identity, git context, KORTIX_API_URL + KORTIX_TOKEN, and
           // the project's own secrets (incl. provider keys set via `kortix
@@ -96,7 +97,7 @@ export class DaytonaProvider implements SandboxProvider {
       metadata: {
         provisionedBy: opts.userId,
         daytonaSandboxId: externalId,
-        ...(snapshot ? { snapshot } : { image: 'adhoc' }),
+        snapshot,
         version: SANDBOX_VERSION,
       },
     };

@@ -24,6 +24,17 @@
  */
 const DEFAULT_AGENT_BROWSER_VERSION = '0.27.0';
 
+/**
+ * Playwright version we use *only* as a cross-arch source for a headless
+ * Chromium binary. Chrome for Testing (what `agent-browser install` downloads)
+ * ships no Linux arm64 build, so on arm64 nodes / Apple-Silicon dev that path
+ * hard-fails. Playwright publishes prebuilt Chromium for both linux-x64 and
+ * linux-arm64 and its `--with-deps` installs the OS libraries on Debian/Ubuntu,
+ * so we bake that binary and point agent-browser at it via
+ * `AGENT_BROWSER_EXECUTABLE_PATH`.
+ */
+const PLAYWRIGHT_VERSION = '1.60.0';
+
 export interface BuildLayeredDockerfileOpts {
   /** Literal contents of the user's project Dockerfile. */
   userDockerfile: string;
@@ -96,14 +107,36 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\',
     '    && bun --version',
     '',
-    // Keep the browser-control CLI available, but do not bake Chromium into
-    // every project snapshot. The browser binary/deps made Daytona snapshot
-    // export flaky and added >100MB of cold-build work. Browser-specific flows
-    // can install a browser lazily in-session; OpenCode/session boot does not
-    // depend on it.
+    // Install the `kortix` CLI for in-sandbox use. Curls the platform's
+    // install script which downloads the right binary for this image's
+    // arch from GitHub Releases. Failsoft: if the install script can't
+    // resolve a release (e.g. first boot before any `cli-v*` tag is
+    // pushed), we still build the snapshot — the sandbox just won't
+    // have `kortix` on PATH until a later snapshot build.
+    'RUN curl -fsSL https://kortix.com/install | bash \\',
+    '    || echo "kortix CLI not yet available — sandbox will boot without it"',
+    '',
+    // agent-browser (Vercel agent-browser): fast browser-automation CLI for
+    // the agent — drives Chrome/Chromium over CDP from accessibility-tree
+    // snapshots. Install the Rust CLI globally, then bake a headless Chromium.
+    // We source Chromium from Playwright (not `agent-browser install`, whose
+    // Chrome-for-Testing has no linux-arm64 build) since Playwright ships both
+    // linux-x64 and linux-arm64 builds and installs the OS libs via
+    // `--with-deps`. agent-browser is pointed at it through the ENV below; the
+    // agent loads usage via `agent-browser skills get core` at runtime.
     `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
+    '    && apt-get update \\',
+    `    && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \\`,
+    '    && rm -rf /var/lib/apt/lists/* \\',
+    "    && ln -sf \"$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)\" /usr/local/bin/chromium \\",
+    '    && /usr/local/bin/chromium --version \\',
     '    && agent-browser --version',
-    'ENV AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
+    // --no-sandbox: the sandbox already runs as root inside an isolated VM, and
+    // Chromium refuses its own sandbox as root. Point agent-browser at the
+    // Playwright Chromium baked above.
+    'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
+    '    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\',
+    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
     '',
     `COPY ${agentBinaryPath} /tmp/kortix-agent.gz`,
     `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,
@@ -127,10 +160,29 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && test -d /workspace/.git \\',
     '    && chmod -R a+rwX /workspace',
     '',
-    // Keep build deterministic: do not start OpenCode during image creation.
-    // User/project OpenCode config can be malformed and must fail at runtime
-    // with normal session diagnostics, not poison the provider snapshot.
-    'RUN mkdir -p /opt/kortix/home /ephemeral/kortix-master/opencode',
+    // Pay OpenCode's first-run cost during snapshot build instead of session
+    // boot: DB migration, config package install, model metadata cache, and
+    // bundled helper extraction. This is fail-soft because user config can be
+    // malformed while the sandbox should still build and report the runtime
+    // error at boot.
+    'RUN mkdir -p /opt/kortix/home /ephemeral/kortix-master/opencode \\',
+    '    && ( \\',
+    '      export HOME=/opt/kortix/home XDG_DATA_HOME=/opt/kortix/home/.local/share XDG_CONFIG_HOME=/opt/kortix/home/.config XDG_CACHE_HOME=/opt/kortix/home/.cache; \\',
+    '      cfg=/ephemeral/kortix-master/opencode; \\',
+    '      if [ -f /workspace/.kortix/opencode/opencode.jsonc ] || [ -f /workspace/.kortix/opencode/opencode.json ]; then cfg=/workspace/.kortix/opencode; fi; \\',
+    '      export OPENCODE_CONFIG_DIR="$cfg"; \\',
+    '      (opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/opencode-prewarm.log 2>&1 & pid=$!; \\',
+    '       for i in $(seq 1 180); do \\',
+    '         curl --max-time 0.2 --connect-timeout 0.05 -fsS "http://127.0.0.1:4096/session?directory=/workspace" >/dev/null 2>&1 && break; \\',
+    '         sleep 0.05; \\',
+    '       done; \\',
+    '       kill "$pid" >/dev/null 2>&1 || true; \\',
+    '       sleep 0.2; \\',
+    '       kill -9 "$pid" >/dev/null 2>&1 || true; \\',
+    '       wait "$pid" >/dev/null 2>&1 || true; \\',
+    '       cat /tmp/opencode-prewarm.log || true; \\',
+    '       rm -f /tmp/opencode-prewarm.log); \\',
+    '    ) || true',
     'WORKDIR /workspace',
     'EXPOSE 8000',
     'ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]',

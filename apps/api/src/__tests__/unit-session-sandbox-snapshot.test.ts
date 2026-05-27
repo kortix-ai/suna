@@ -31,7 +31,10 @@ let providerRemoveCalls: any[] = [];
 let sandboxRow: any = null;
 let sessionStatus: { status: string; error?: string | null; metadata?: any } = { status: 'provisioning' };
 let projectSessionStatus: { status: string; error?: string | null } = { status: 'provisioning' };
-let prepareImageCalls: any[] = [];
+let latestReadyResult: { snapshotId: string | null; commitSha: string } | null = null;
+let readyForCommitResult: { snapshotId: string | null; commitSha: string } | null = null;
+let ensureBuildCalls: any[] = [];
+let completeBuildOnEnsure = false;
 
 process.env.KORTIX_SESSION_SNAPSHOT_READY_WAIT_MS = '1';
 process.env.KORTIX_SESSION_SNAPSHOT_READY_POLL_MS = '1';
@@ -111,18 +114,18 @@ mock.module('../platform/providers', () => {
 });
 
 mock.module('../snapshots/builder', () => ({
+  getLatestReadySnapshot: async () => latestReadyResult,
+  getReadySnapshotForCommit: async () => readyForCommitResult,
   getSnapshotForCommit: async () => null,
-  prepareProjectSandboxImage: async (project: any, opts: any) => {
-    prepareImageCalls.push({ projectId: project.projectId, ref: opts.ref });
-    return {
-      image: { __fakeImage: true },
-      resources: { cpu: 2, memory: 4, disk: 20 },
-      commitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      contentHash: 'content-hash',
-      shortHash: 'short-hash',
-      runtimeFingerprint: 'runtime-fingerprint',
-      cleanup: async () => {},
-    };
+  ensureBuildForLatestCommit: async (project: any, opts: any) => {
+    ensureBuildCalls.push({ projectId: project.projectId, branch: opts.branch, source: opts.source });
+    if (completeBuildOnEnsure) {
+      readyForCommitResult = {
+        snapshotId: 'kortix-snap-built-after-wait',
+        commitSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      };
+    }
+    return { status: 'started', commitSha: 'aaaaaaaa' };
   },
 }));
 
@@ -184,23 +187,70 @@ beforeEach(() => {
   sandboxRow = null;
   sessionStatus = { status: 'provisioning' };
   projectSessionStatus = { status: 'provisioning' };
-  prepareImageCalls = [];
+  latestReadyResult = null;
+  readyForCommitResult = null;
+  ensureBuildCalls = [];
+  completeBuildOnEnsure = false;
 });
 
 describe('provisionSessionSandbox snapshot resolution', () => {
-  test('boots from a prepared ad-hoc project image; never reads any env snapshot fallback', async () => {
+  test('boots from latest ready snapshot when one exists; never reads any env var', async () => {
+    latestReadyResult = {
+      snapshotId: 'kortix-snap-aaaa-1234567890ab',
+      commitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    };
+
     await callProvision();
     await flush();
 
-    expect(prepareImageCalls).toEqual([{ projectId: PROJECT_ID, ref: 'main' }]);
     expect(providerCreateCalls).toHaveLength(1);
-    expect(providerCreateCalls[0].snapshot).toBeUndefined();
-    expect(providerCreateCalls[0].image).toEqual({ __fakeImage: true });
-    expect(providerCreateCalls[0].resources).toEqual({ cpu: 2, memory: 4, disk: 20 });
+    expect(providerCreateCalls[0].snapshot).toBe('kortix-snap-aaaa-1234567890ab');
     expect(providerCreateCalls[0].envVars).toMatchObject({
       KORTIX_TOKEN: 'fake-token',
       KORTIX_EXECUTOR_TOKEN: 'fake-executor-token',
     });
+    expect(ensureBuildCalls).toHaveLength(1);
+    expect(ensureBuildCalls[0].source).toBe('session-start');
+  });
+
+  test('boots from a ready commit snapshot even when the branch row is absent', async () => {
+    latestReadyResult = null;
+    readyForCommitResult = {
+      snapshotId: 'kortix-snap-feature-commit-built-on-main',
+      commitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    };
+
+    await callProvision();
+    await flush();
+
+    expect(providerCreateCalls).toHaveLength(1);
+    expect(providerCreateCalls[0].snapshot).toBe('kortix-snap-feature-commit-built-on-main');
     expect(projectSessionStatus.status).toBe('running');
+  });
+
+  test('waits for a snapshot kicked by ensureBuildForLatestCommit before provider create', async () => {
+    latestReadyResult = null;
+    completeBuildOnEnsure = true;
+
+    await callProvision();
+    await flush();
+
+    expect(ensureBuildCalls).toHaveLength(1);
+    expect(providerCreateCalls).toHaveLength(1);
+    expect(providerCreateCalls[0].snapshot).toBe('kortix-snap-built-after-wait');
+    expect(projectSessionStatus.status).toBe('running');
+  });
+
+  test('fails the session with explicit message when no ready snapshot appears (no fallback)', async () => {
+    latestReadyResult = null;
+
+    await callProvision();
+    await flush();
+
+    expect(providerCreateCalls).toHaveLength(0);
+    expect(sessionStatus.status).toBe('error');
+    const lastError = sessionStatus.metadata?.lastError ?? '';
+    expect(lastError).toContain('still building');
+    expect(ensureBuildCalls).toHaveLength(1);
   });
 });

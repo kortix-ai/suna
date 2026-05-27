@@ -58,32 +58,4 @@ describe('sandbox init state helpers', () => {
     expect(result.attempts).toBe(3);
     expect(result.result.externalId).toBe('machine-123');
   });
-
-  test('does not retry ad-hoc image create failures', async () => {
-    let attempts = 0;
-    const provider = {
-      name: 'daytona' as const,
-      provisioning: { async: true, stages: [] },
-      async create() {
-        attempts += 1;
-        throw new Error('Sandbox failed to become ready within the timeout period');
-      },
-      async start() {},
-      async stop() {},
-      async remove() {},
-      async getStatus() { return 'unknown' as const; },
-      async resolveEndpoint() { return { url: '', headers: {} }; },
-      async ensureRunning() {},
-      async getProvisioningStatus() { return null; },
-    };
-
-    await expect(retrySandboxProvisionCreate(provider, {
-      accountId: 'acct',
-      userId: 'user',
-      name: 'sandbox',
-      image: {} as any,
-    })).rejects.toThrow('Sandbox failed to become ready within the timeout period');
-
-    expect(attempts).toBe(1);
-  });
 });

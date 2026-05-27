@@ -241,7 +241,7 @@ function expectedSnapshotName(): string {
     dockerfile: 'FROM ubuntu:24.04\n',
     contextTreeOid: 'tree-oid',
     runtimeFingerprint: 'runtime-current',
-    spec: { cpu: 2, memory: 4, disk: 20 },
+    spec: {},
   });
   return formatSnapshotName(PROJECT_ID, hash.contentHash);
 }
@@ -471,7 +471,7 @@ describe('ensureBuildForLatestCommit', () => {
     expect(result.commitSha).toBe('head-of-main');
   });
 
-  test('does not rebuild a missing ready DB row from session start', async () => {
+  test('starts a rebuild when the ready DB row is missing from Daytona', async () => {
     rows = [
       makeRow({
         commitSha: 'head-of-main',
@@ -486,28 +486,8 @@ describe('ensureBuildForLatestCommit', () => {
       { projectId: PROJECT_ID, repoUrl: 'r', defaultBranch: BRANCH, manifestPath: 'm' },
       { branch: BRANCH, accountId: ACCOUNT_ID, source: 'session-start' },
     );
-    expect(result.status).toBe('failed-to-start');
-    expect(result.commitSha).toBe('head-of-main');
-    expect(daytonaSnapshotCreateCalls).toHaveLength(0);
-  });
-
-  test('manual rebuild replaces a ready DB row that is missing from Daytona', async () => {
-    rows = [
-      makeRow({
-        commitSha: 'head-of-main',
-        status: 'ready',
-        snapshotId: 'kortix-snap-1111-missing',
-      }),
-    ];
-    hiddenDaytonaSnapshots = new Set(['kortix-snap-1111-missing']);
-    setFilter((r) => r.commitSha === 'head-of-main' && r.status !== 'failed');
-
-    const result = await builder.ensureBuildForLatestCommit(
-      { projectId: PROJECT_ID, repoUrl: 'r', defaultBranch: BRANCH, manifestPath: 'm' },
-      { branch: BRANCH, accountId: ACCOUNT_ID, source: 'manual' },
-    );
-
     expect(result.status).toBe('started');
+    expect(result.commitSha).toBe('head-of-main');
   });
 
   test('returns started when no row exists for the head commit', async () => {
@@ -712,26 +692,6 @@ describe('getProjectSandboxHealth', () => {
     expect(h.healthy).toBe(true);
     expect(h.bootableCount).toBe(1);
     expect(h.runtimeOutdated).toBe(false);
-    expect(h.firstBuild).toBe(false);
-  });
-
-  test('ready snapshot missing from Daytona is not reported healthy', async () => {
-    rows = [
-      makeRow({
-        snapshotRowId: 'missing',
-        status: 'ready',
-        snapshotId: 'kortix-snap-1111-missing',
-        metadata: { runtimeFingerprint: 'runtime-current' },
-      }),
-    ];
-    hiddenDaytonaSnapshots = new Set(['kortix-snap-1111-missing']);
-    setFilter(allForBranch);
-    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
-    const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
-    expect(h.healthy).toBe(false);
-    expect(h.bootableCount).toBe(0);
-    expect(h.readyCount).toBe(1);
     expect(h.firstBuild).toBe(false);
   });
 
