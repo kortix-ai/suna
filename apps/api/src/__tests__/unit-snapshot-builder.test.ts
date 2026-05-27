@@ -50,6 +50,7 @@ let daytonaDeleteByIdCalls: string[];
 let daytonaSnapshotCreateCalls: any[];
 let hiddenDaytonaSnapshots: Set<string>;
 let omittedFromDaytonaList: Set<string>;
+let daytonaSnapshotStates: Map<string, string>;
 
 function makeRow(overrides: Partial<Row> = {}): Row {
   const id = overrides.snapshotRowId ?? `row-${rows.length}`;
@@ -185,7 +186,7 @@ mock.module('../shared/daytona', () => ({
       // assert prune called delete with the expected snapshotId.
       get: async (name: string) => {
         if (hiddenDaytonaSnapshots.has(name)) throw new Error('snapshot not found');
-        return { id: `daytona-${name}`, name, state: 'active' };
+        return { id: `daytona-${name}`, name, state: daytonaSnapshotStates.get(name) ?? 'active' };
       },
       delete: async (snapshot: { name: string }) => {
         daytonaDeleteCalls.push(snapshot.name);
@@ -252,6 +253,7 @@ beforeEach(() => {
   daytonaSnapshotCreateCalls = [];
   hiddenDaytonaSnapshots = new Set();
   omittedFromDaytonaList = new Set();
+  daytonaSnapshotStates = new Map();
   filterByCall = [() => true];
   nextSort = null;
   selectCallCount = 0;
@@ -426,6 +428,28 @@ describe('ensureBuildForLatestCommit', () => {
     );
     expect(result.status).toBe('already-ready');
     expect(daytonaSnapshotCreateCalls).toHaveLength(0);
+  });
+
+  test('does not delete and duplicate a ready row while provider reports the snapshot is building', async () => {
+    rows = [
+      makeRow({
+        commitSha: 'head-of-main',
+        status: 'ready',
+        snapshotId: 'kortix-snap-1111-provider-building',
+      }),
+    ];
+    daytonaSnapshotStates.set('kortix-snap-1111-provider-building', 'building');
+    setFilter((r) => r.commitSha === 'head-of-main' && r.status !== 'failed');
+
+    const result = await builder.ensureBuildForLatestCommit(
+      { projectId: PROJECT_ID, repoUrl: 'r', defaultBranch: BRANCH, manifestPath: 'm' },
+      { branch: BRANCH, accountId: ACCOUNT_ID, source: 'session-start' },
+    );
+
+    expect(result.status).toBe('already-building');
+    expect(daytonaSnapshotCreateCalls).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe('ready');
   });
 
   test('starts a non-destructive rebuild when the branch tip has an outdated ready row', async () => {

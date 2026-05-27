@@ -504,11 +504,23 @@ async function isProviderBootableSnapshot(
   provider: SandboxProviderName,
 ): Promise<boolean> {
   if (provider !== 'daytona' || !isDaytonaConfigured() || !row.snapshotId) return true;
+  return (await getProviderSnapshotState(row.snapshotId)) === 'active';
+}
+
+type ProviderSnapshotState = 'active' | 'building' | 'missing' | 'error' | 'other';
+
+async function getProviderSnapshotState(snapshotId: string): Promise<ProviderSnapshotState> {
   try {
-    const snapshot = await getDaytona().snapshot.get(row.snapshotId);
-    return String((snapshot as { state?: string } | null)?.state ?? '').toLowerCase() === 'active';
+    const snapshot = await getDaytona().snapshot.get(snapshotId);
+    const state = String((snapshot as { state?: string } | null)?.state ?? '').toLowerCase();
+    if (state === 'active') return 'active';
+    if (state === 'building' || state === 'pending' || state === 'queued' || state === 'creating') {
+      return 'building';
+    }
+    if (state === 'error' || state === 'build_failed' || state === 'failed') return 'error';
+    return 'other';
   } catch (err) {
-    return false;
+    return 'missing';
   }
 }
 
@@ -586,10 +598,21 @@ export async function ensureBuildForLatestCommit(
     existing = null;
   }
   if (existing?.status === 'ready') {
-    if (!(await isProviderBootableSnapshot(existing, provider))) {
+    const providerState =
+      provider === 'daytona' && existing.snapshotId
+        ? await getProviderSnapshotState(existing.snapshotId)
+        : 'active';
+    if (providerState === 'building') {
       console.warn(
         `[snapshots] Ready DB snapshot ${existing.snapshotId ?? '(missing id)'} for project ` +
-        `${project.projectId} commit ${commitSha.slice(0, 8)} is missing/inactive in ${provider}; rebuilding`,
+        `${project.projectId} commit ${commitSha.slice(0, 8)} is still building in ${provider}; not duplicating`,
+      );
+      return { status: 'already-building', commitSha };
+    }
+    if (providerState !== 'active') {
+      console.warn(
+        `[snapshots] Ready DB snapshot ${existing.snapshotId ?? '(missing id)'} for project ` +
+        `${project.projectId} commit ${commitSha.slice(0, 8)} is ${providerState} in ${provider}; rebuilding`,
       );
       await deleteSnapshotRow(project.projectId, commitSha, provider);
       existing = null;
