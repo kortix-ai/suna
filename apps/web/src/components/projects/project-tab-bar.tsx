@@ -15,10 +15,15 @@ import {
 } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/ui/sidebar';
 import { isDesktop, desktopPlatform } from '@/lib/desktop';
-import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
+import {
+  getProjectSessionSandbox,
+  listProjectSessions,
+  type ProjectSession,
+} from '@/lib/projects-client';
 import { Button } from '@/components/ui/button';
 import { SessionShareDialog, SessionVisibilityBadge } from '@/components/projects/session-share-dialog';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
 
 interface ProjectTabBarProps {
   projectId: string;
@@ -78,12 +83,22 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
 
   const tabsByProject = useProjectSessionTabsStore((s) => s.tabsByProject);
   const openTab = useProjectSessionTabsStore((s) => s.openTab);
-  const closeTab = useProjectSessionTabsStore((s) => s.closeTab);
+  const optimisticActive = useProjectSessionTabsStore(
+    (s) => s.optimisticActiveByProject[projectId] ?? null,
+  );
+  const setOptimisticActive = useProjectSessionTabsStore(
+    (s) => s.setOptimisticActive,
+  );
   const openTabIds = useMemo(
     () => tabsByProject[projectId] ?? [],
     [tabsByProject, projectId],
   );
   const isProjectHome = pathname === `/projects/${projectId}`;
+  // Effective active id — optimistic pin wins until the URL catches up, so
+  // the highlight on the tab bar moves in lockstep with the close click
+  // instead of blanking for a frame.
+  const effectiveActiveId = optimisticActive ?? activeSessionId;
+  const closeProjectTab = useCloseProjectTab(projectId);
 
   // Auto-open the current session as a tab whenever the URL points at one.
   // Customize is no longer a tab — it's a full-screen overlay (see
@@ -91,6 +106,32 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   useEffect(() => {
     if (activeSessionId) openTab(projectId, activeSessionId);
   }, [projectId, activeSessionId, openTab]);
+
+  // Drop the optimistic pin once the real URL settles. Match OR mismatch
+  // both clear it — if the user navigated elsewhere mid-transition, the
+  // real route is the source of truth.
+  useEffect(() => {
+    if (optimisticActive !== null) {
+      setOptimisticActive(projectId, null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
+
+  const queryClient = useQueryClient();
+
+  // Pre-warm open tabs so the click→render round-trip lands on cached
+  // routes + cached sandbox metadata instead of a cold compile + fetch.
+  // In dev this is the bulk of the perceived close lag.
+  useEffect(() => {
+    openTabIds.forEach((id) => {
+      router.prefetch(`/projects/${projectId}/sessions/${id}`);
+      queryClient.prefetchQuery({
+        queryKey: ['project', 'session-sandbox', projectId, id],
+        queryFn: () => getProjectSessionSandbox(projectId, id),
+        staleTime: 15_000,
+      });
+    });
+  }, [openTabIds, projectId, router, queryClient]);
 
   // Load session metadata so tabs can show the real title instead of a UUID.
   const { data: sessions } = useQuery({
@@ -106,8 +147,6 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
     return map;
   }, [sessions]);
 
-  // Share control for the currently-open session (the "session header" slot).
-  const queryClient = useQueryClient();
   const [shareOpen, setShareOpen] = useState(false);
   const activeSession = activeSessionId ? sessionById.get(activeSessionId) ?? null : null;
 
@@ -120,25 +159,7 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
 
   const hrefForTab = (id: string) => `/projects/${projectId}/sessions/${id}`;
 
-  const isTabActive = (id: string) =>
-    pathname?.startsWith(`/projects/${projectId}/sessions/${id}`) ?? false;
-
-  const handleCloseTab = (id: string) => {
-    const wasActive = isTabActive(id);
-    const remaining = openTabIds.filter((t) => t !== id);
-    closeTab(projectId, id);
-
-    if (!wasActive) return;
-    if (remaining.length > 0) {
-      // Focus the closest neighbor (the tab that took this one's slot).
-      const idx = openTabIds.indexOf(id);
-      const next = remaining[Math.min(idx, remaining.length - 1)];
-      router.push(hrefForTab(next));
-    } else {
-      // No tabs left → back to the project index (new-session composer).
-      router.push(`/projects/${projectId}`);
-    }
-  };
+  const isTabActive = (id: string) => effectiveActiveId === id;
 
   return (
     <div
@@ -232,7 +253,7 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleCloseTab(tabId);
+                  closeProjectTab(tabId);
                 }}
                 className={cn(
                   'flex-shrink-0 p-0.5 rounded-sm transition-colors duration-100 cursor-pointer',

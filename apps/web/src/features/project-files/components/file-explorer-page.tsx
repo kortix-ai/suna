@@ -57,14 +57,14 @@ import { DRAG_MIME } from './file-tree-item';
 
 /**
  * Google Drive-style file explorer page.
- * 
+ *
  * Layout:
  * +---------------------------------------------------+
  * | DriveToolbar (breadcrumbs + actions)               |
  * +---------------------------------------------------+
  * | Main area (grid or list view)                      |
  * +---------------------------------------------------+
- * 
+ *
  * File preview opens as a full-screen modal overlay.
  */
 export function FileExplorerPage() {

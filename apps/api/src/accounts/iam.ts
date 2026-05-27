@@ -1740,4 +1740,3 @@ iamRouter.delete('/:accountId/iam/service-accounts/:saId', async (c) => {
   });
   return c.json({ deleted: true });
 });
-

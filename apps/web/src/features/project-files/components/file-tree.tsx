@@ -826,7 +826,7 @@ export function FileTree() {
 
   // Handlers for creating inside a specific folder (via context menu)
   const expandDir = useFilesStore((s) => s.expandDir);
-  
+
   const handleCreateInDir = useCallback((dirPath: string, type: 'file' | 'folder') => {
     // Expand the folder so the inline input is visible
     expandDir(dirPath);
