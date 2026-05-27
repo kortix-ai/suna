@@ -241,7 +241,7 @@ function expectedSnapshotName(): string {
     dockerfile: 'FROM ubuntu:24.04\n',
     contextTreeOid: 'tree-oid',
     runtimeFingerprint: 'runtime-current',
-    spec: {},
+    spec: { cpu: 2, memory: 4, disk: 20 },
   });
   return formatSnapshotName(PROJECT_ID, hash.contentHash);
 }
@@ -692,6 +692,26 @@ describe('getProjectSandboxHealth', () => {
     expect(h.healthy).toBe(true);
     expect(h.bootableCount).toBe(1);
     expect(h.runtimeOutdated).toBe(false);
+    expect(h.firstBuild).toBe(false);
+  });
+
+  test('ready snapshot missing from Daytona is not reported healthy', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'missing',
+        status: 'ready',
+        snapshotId: 'kortix-snap-1111-missing',
+        metadata: { runtimeFingerprint: 'runtime-current' },
+      }),
+    ];
+    hiddenDaytonaSnapshots = new Set(['kortix-snap-1111-missing']);
+    setFilter(allForBranch);
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
+    expect(h.healthy).toBe(false);
+    expect(h.bootableCount).toBe(0);
+    expect(h.readyCount).toBe(1);
     expect(h.firstBuild).toBe(false);
   });
 
