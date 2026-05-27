@@ -105,11 +105,19 @@ import {
 
 /** Cap how long the Daytona-side snapshot build is allowed to take. */
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
-/** How many times to retry a snapshot build that fails with a transient error. */
-const BUILD_ATTEMPTS = 3;
+/** One provider build per request. Retrying hides failures and doubles cold-build latency. */
+const BUILD_ATTEMPTS = 1;
 const BUILD_RETRY_BASE_MS = 2_000;
 const SNAPSHOT_LOG_TAIL_LIMIT = 20;
-const RUNTIME_LAYER_VERSION = 'baked-workspace-opencode-prewarm-v2';
+const RUNTIME_LAYER_VERSION = 'baked-workspace-minimal-v5';
+const DEFAULT_SANDBOX_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
+const DEFAULT_SANDBOX_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
+const DEFAULT_SANDBOX_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
+
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -157,6 +165,36 @@ export class SnapshotBuildError extends Error {
     super(message);
     this.name = 'SnapshotBuildError';
   }
+}
+
+export interface PreparedProjectSandboxImage {
+  image: Image;
+  resources?: SandboxSpec;
+  commitSha: string;
+  contentHash: string;
+  shortHash: string;
+  runtimeFingerprint: string;
+  cleanup: () => Promise<void>;
+}
+
+export async function prepareProjectSandboxImage(
+  project: GitBackedProject,
+  options: { ref?: string } = {},
+): Promise<PreparedProjectSandboxImage> {
+  const commitSha = await resolveCommitSha(project, options.ref ?? project.defaultBranch);
+  const identity = await computeSnapshotIdentity(project, commitSha);
+  const ctx = await prepareBuildContext(project, commitSha, identity);
+  return {
+    image: Image.fromDockerfile(ctx.composedPath),
+    resources: sandboxSpecIsEmpty(ctx.spec) ? undefined : ctx.spec,
+    commitSha,
+    contentHash: ctx.contentHash,
+    shortHash: ctx.shortHash,
+    runtimeFingerprint: ctx.runtimeFingerprint,
+    cleanup: async () => {
+      await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
+    },
+  };
 }
 
 /**
@@ -590,6 +628,13 @@ export async function ensureBuildForLatestCommit(
   let existing: typeof projectRuntimeSnapshots.$inferSelect | null =
     await findSnapshotRow(project.projectId, commitSha, provider);
   if (existing?.status === 'failed') {
+    if (options.source === 'session-start') {
+      return {
+        status: 'failed-to-start',
+        commitSha,
+        error: existing.error ?? `Project sandbox build failed for commit ${commitSha.slice(0, 8)}`,
+      };
+    }
     // Manual/session retry must actually retry. The unique key is
     // (projectId, commitSha, provider), so leaving the failed row in place makes
     // the later insert lose the race while the API misleadingly reports
@@ -610,6 +655,15 @@ export async function ensureBuildForLatestCommit(
       return { status: 'already-building', commitSha };
     }
     if (providerState !== 'active') {
+      if (options.source === 'session-start') {
+        return {
+          status: 'failed-to-start',
+          commitSha,
+          error:
+            `Ready DB snapshot ${existing.snapshotId ?? '(missing id)'} is ` +
+            `${providerState} in ${provider}; explicit rebuild required`,
+        };
+      }
       console.warn(
         `[snapshots] Ready DB snapshot ${existing.snapshotId ?? '(missing id)'} for project ` +
         `${project.projectId} commit ${commitSha.slice(0, 8)} is ${providerState} in ${provider}; rebuilding`,
@@ -865,10 +919,11 @@ export async function getProjectSandboxHealth(
   // like builds were vanishing. Bootable = the subset that matches the current
   // runtime (boots HEAD with no rebuild).
   const readyRows = rows.filter((r) => r.status === 'ready' && r.snapshotId);
+  const providerBootableRows = await filterProviderBootableReadyRows(readyRows, provider);
   const bootableRows =
     runtimeFingerprint === null
-      ? readyRows
-      : readyRows.filter((r) => extractMetadataRuntimeFingerprint(r.metadata) === runtimeFingerprint);
+      ? providerBootableRows
+      : providerBootableRows.filter((r) => extractMetadataRuntimeFingerprint(r.metadata) === runtimeFingerprint);
   // A ready row carrying a `rebuildStartedAt` marker is mid non-destructive
   // rebuild (still bootable) — surface that as "building" too.
   const building = rows.some(
@@ -902,13 +957,13 @@ export async function getProjectSandboxHealth(
     bootableCount: Math.min(bootableRows.length, retention),
     totalCount: rows.length,
     retention,
-    healthy: readyRows.length > 0,
+    healthy: providerBootableRows.length > 0,
     building,
     // "First build" only when no usable ready snapshot has *ever* been produced
     // — so an existing project rebuilding for a runtime bump reads as "updating",
     // not "building first sandbox".
     firstBuild: rows.length === 0,
-    runtimeOutdated: readyRows.length > 0 && bootableRows.length === 0,
+    runtimeOutdated: providerBootableRows.length > 0 && bootableRows.length === 0,
     latestReadyCommitSha: readyRows[0]?.commitSha ?? null,
     latestStatus: latest?.status ?? null,
     failure,
@@ -1313,7 +1368,7 @@ async function runBuild(
             },
           },
         ), BUILD_TIMEOUT_MS, `Snapshot ${ctx.snapshotName} build timed out after ${Math.round(BUILD_TIMEOUT_MS / 1000)}s`);
-        await waitForUsableSnapshot(daytona, ctx.snapshotName);
+        await waitForStableUsableSnapshot(daytona, ctx.snapshotName);
         return {
           daytonaName: ctx.snapshotName,
           contentHash: ctx.contentHash,
@@ -1323,11 +1378,14 @@ async function runBuild(
         };
       } catch (err) {
         lastErr = err;
-        // The connection may have dropped after the build actually completed —
-        // if the snapshot is now active, treat it as success. getUsableSnapshot
-        // also reaps an errored/build_failed snapshot so the retry rebuilds
-        // clean instead of seeing it as a (poisoned) cache hit.
-        if (await getUsableSnapshot(daytona, ctx.snapshotName)) {
+        // Daytona's `snapshot.create()` regularly throws "not found" right after
+        // the image actually finished building — the registry takes a few seconds
+        // to surface the new name. Settle on the registry instead of failing on
+        // a single eventual-consistency miss; if the snapshot truly never
+        // becomes active, waitForStableUsableSnapshot throws and we proceed to
+        // the normal error path below.
+        try {
+          await waitForStableUsableSnapshot(daytona, ctx.snapshotName);
           return {
             daytonaName: ctx.snapshotName,
             contentHash: ctx.contentHash,
@@ -1335,6 +1393,8 @@ async function runBuild(
             runtimeFingerprint: ctx.runtimeFingerprint,
             built: true,
           };
+        } catch {
+          // fall through to the existing recovery paths
         }
         if (isSnapshotAlreadyExistsError(err)) {
           const reaped = await reapUnusableSnapshot(daytona, ctx.snapshotName);
@@ -1414,17 +1474,26 @@ async function getUsableSnapshot(
   }
 }
 
-async function waitForUsableSnapshot(
+async function waitForStableUsableSnapshot(
   daytona: ReturnType<typeof getDaytona>,
   name: string,
 ): Promise<void> {
   const deadline = Date.now() + 120_000;
   let lastState = 'unknown';
+  let activeChecks = 0;
   while (Date.now() < deadline) {
     try {
       const snap = await daytona.snapshot.get(name);
       lastState = String((snap as { state?: string } | null)?.state ?? 'missing').toLowerCase();
-      if (lastState === 'active') return;
+      if (lastState === 'active') {
+        activeChecks += 1;
+        // Daytona can briefly emit `active` while the named snapshot is still
+        // settling in the registry — but only briefly. Two consecutive reads is
+        // enough to clear the flap without adding seconds to every cold build.
+        if (activeChecks >= 2) return;
+      } else {
+        activeChecks = 0;
+      }
       if (lastState === 'error' || lastState === 'build_failed') {
         throw new Error(`Snapshot ${name} is ${lastState}`);
       }
@@ -1435,7 +1504,7 @@ async function waitForUsableSnapshot(
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  throw new Error(`Snapshot ${name} did not become active after create (last state: ${lastState})`);
+  throw new Error(`Snapshot ${name} did not remain active after create (last state: ${lastState})`);
 }
 
 /** Org-wide snapshot quota exhaustion — recoverable by reconciling first. */
@@ -1804,7 +1873,16 @@ async function resolveSandboxConfig(
   const raw = parsed?.raw ?? null;
   return {
     paths: extractSandboxPaths(raw),
-    spec: extractSandboxSpec(raw),
+    spec: applyDefaultSandboxSpec(extractSandboxSpec(raw)),
+  };
+}
+
+function applyDefaultSandboxSpec(spec: SandboxSpec): SandboxSpec {
+  return {
+    cpu: spec.cpu ?? DEFAULT_SANDBOX_CPU,
+    memory: spec.memory ?? DEFAULT_SANDBOX_MEMORY_GB,
+    disk: spec.disk ?? DEFAULT_SANDBOX_DISK_GB,
+    ...(spec.gpu !== undefined ? { gpu: spec.gpu } : {}),
   };
 }
 

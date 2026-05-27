@@ -1,6 +1,8 @@
 import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
 import { LocalDockerProvider } from './local-docker';
+import type { Image } from '@daytonaio/sdk';
+import type { SandboxSpec } from '../../snapshots/dockerfile-layer';
 
 /**
  * Sandbox provider lineup. Extensible registry — adding a new runtime is
@@ -28,6 +30,8 @@ export interface CreateSandboxOpts {
    * boots; falls back to the provider-wide default when absent.
    */
   snapshot?: string;
+  image?: Image;
+  resources?: SandboxSpec;
 }
 
 export interface ProvisionResult {
