@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion, useMotionValue } from 'framer-motion';
 import {
   ArrowRight,
   ArrowUp,
@@ -208,40 +208,27 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
   // copies of the prompt list are rendered back-to-back so the wrap is
   // seamless — when the strip has translated one list-width, it looks
   // identical to its starting position and we silently reset.
+  //
+  // We DON'T use framer-motion's useScroll here because it errors loudly
+  // when passed a ref whose .current is still null (see
+  // motion.dev/troubleshooting/use-scroll-ref). Our scroll container is
+  // an inner div we have to discover via DOM walk on mount, so on first
+  // render the ref always reads null. A plain scroll listener writing
+  // to a useMotionValue avoids that handshake entirely.
   const rootRef = useRef<HTMLDivElement>(null);
-
-  // The page's scroll container isn't `window` — it's an inner
-  // <div className="overflow-y-auto"> a few levels up (see ProjectHome
-  // layout). Walk up the DOM to find it so useScroll can attach to the
-  // right element; otherwise scrollY would always read 0.
-  const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    let el: HTMLElement | null | undefined = rootRef.current?.parentElement;
-    while (el) {
-      const overflowY = getComputedStyle(el).overflowY;
-      if (overflowY === 'auto' || overflowY === 'scroll') break;
-      el = el.parentElement;
-    }
-    setScrollContainer(el ?? null);
-  }, []);
-
-  // useScroll wants a RefObject, not a raw element — wrap it in one.
-  const containerRef = useMemo(
-    () => ({ current: scrollContainer }),
-    [scrollContainer],
-  );
-  const { scrollY } = useScroll({ container: containerRef });
-
-  // Measure ONE list-width on mount so the modulo loop is exact. Without
-  // this the seam would jump as soon as fonts loaded or the viewport
-  // resized. We re-measure on resize for the same reason.
   const stripRef = useRef<HTMLDivElement>(null);
-  const [listWidth, setListWidth] = useState(0);
+  const x = useMotionValue(0);
+  const listWidthRef = useRef(0);
+
+  // Measure ONE list-width and re-measure on resize. The strip holds
+  // 2× STARTER_PROMPTS so we divide its scrollWidth by 2. We stash the
+  // result in a ref (not state) because the scroll listener below reads
+  // it on every tick and we don't want to re-bind it whenever width
+  // changes by a pixel.
   useEffect(() => {
     const measure = () => {
       if (!stripRef.current) return;
-      // The strip holds 2× STARTER_PROMPTS; divide by 2 for one list width.
-      setListWidth(stripRef.current.scrollWidth / 2);
+      listWidthRef.current = stripRef.current.scrollWidth / 2;
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -249,17 +236,44 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
     return () => ro.disconnect();
   }, []);
 
-  // Map vertical scroll to horizontal offset, modulo one list width so
-  // the strip loops indefinitely. 0.6 ratio = "slide ~1px left per
-  // 1.7px scrolled" — slow enough to feel intentional, fast enough that
-  // a flick of the wheel visibly moves it.
-  const x = useTransform(scrollY, (v) => {
-    if (listWidth === 0) return 0;
-    const raw = -v * 0.6;
-    // JavaScript `%` keeps the sign of the dividend; for a continuous
-    // -ve drift we want the result in [-listWidth, 0].
-    return ((raw % listWidth) + listWidth) % listWidth - listWidth;
-  });
+  // Find the scrolling ancestor and tie its scrollTop to x. 0.6 px-per-
+  // px feels gentle enough not to be manic, fast enough that a single
+  // mousewheel tick clearly moves the strip. JavaScript's `%` keeps the
+  // sign of the dividend, so we double-mod into [-listWidth, 0] for a
+  // continuous leftward drift that loops without a visible jump.
+  useEffect(() => {
+    let container: HTMLElement | null = rootRef.current?.parentElement ?? null;
+    while (container) {
+      const overflowY = getComputedStyle(container).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') break;
+      container = container.parentElement;
+    }
+    if (!container) return;
+
+    const target = container;
+    let raf = 0;
+    const update = () => {
+      const w = listWidthRef.current;
+      if (w === 0) {
+        x.set(0);
+        return;
+      }
+      const raw = -target.scrollTop * 0.6;
+      x.set(((raw % w) + w) % w - w);
+    };
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
+    };
+    // Set the initial position once (in case the container is already
+    // scrolled when we mount, e.g. after a soft nav back).
+    update();
+    target.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      target.removeEventListener('scroll', onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, [x]);
 
   // Render the list twice. When the first copy has fully scrolled out
   // (translateX = -listWidth) the second copy occupies its slot and
