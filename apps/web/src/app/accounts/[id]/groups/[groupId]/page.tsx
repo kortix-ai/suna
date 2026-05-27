@@ -696,7 +696,12 @@ function GroupProjectGrantsCard({
     [grants],
   );
 
-  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  // Set rather than scalar so two concurrent detaches (admin clicks
+  // Revoke on row A, then row B before A finishes) both show their
+  // own spinner instead of A's spinner jumping to B.
+  const [pendingProjectIds, setPendingProjectIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   // Detach is destructive — strips every group member's inherited
   // access on the project at once. Confirm first.
   const [detachTarget, setDetachTarget] = useState<GroupProjectGrant | null>(null);
@@ -705,8 +710,14 @@ function GroupProjectGrantsCard({
     // detach the grant via the per-project route — that's the one gated
     // by project.members.manage and the canonical write surface.
     mutationFn: (projectId: string) => detachGroupFromProject(projectId, groupId),
-    onMutate: (projectId) => setPendingProjectId(projectId),
-    onSettled: () => setPendingProjectId(null),
+    onMutate: (projectId) =>
+      setPendingProjectIds((prev) => new Set(prev).add(projectId)),
+    onSettled: (_data, _error, projectId) =>
+      setPendingProjectIds((prev) => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      }),
     onSuccess: (_data, projectId) => {
       toast.success('Group detached from project');
       queryClient.invalidateQueries({ queryKey });
@@ -788,7 +799,7 @@ function GroupProjectGrantsCard({
       {!grantsQuery.isLoading && grants.length > 0 && (
         <List>
           {grants.map((g: GroupProjectGrant) => {
-            const busy = pendingProjectId === g.project_id;
+            const busy = pendingProjectIds.has(g.project_id);
             return (
               <ListRow
                 key={g.project_id}
