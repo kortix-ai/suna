@@ -29,25 +29,39 @@ import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
 
 const TICK_MS = 60_000;
-let timer: ReturnType<typeof setInterval> | null = null;
+let timer: ReturnType<typeof setTimeout> | null = null;
+let stopped = false;
 
+// Recursive setTimeout (not setInterval) so a slow tick can't cause
+// overlapping runs. With setInterval, if runOnce() took longer than
+// TICK_MS (large account + slow DB + audit backpressure), the next
+// tick would start before the prior finished — two ticks racing
+// inside one process, same duplicate-audit problem the multi-replica
+// case had before the UPDATE … RETURNING refactor. Re-arming AFTER
+// settle guarantees serial execution per process.
 export function startGrantExpirySweeper(): void {
-  if (timer) return;
+  if (timer) return; // already armed, idempotent
+  stopped = false;
   // Fire once on boot so an expiry that happened during downtime is
-  // logged immediately rather than waiting up to a minute.
-  void runOnce().catch((err) =>
-    console.error('[iam expiry sweeper] tick failed', err),
-  );
-  timer = setInterval(() => {
-    void runOnce().catch((err) =>
-      console.error('[iam expiry sweeper] tick failed', err),
-    );
-  }, TICK_MS);
+  // logged immediately rather than waiting up to a minute. The rest
+  // of the loop is driven by tickAndRearm() re-scheduling itself.
+  void tickAndRearm();
+}
+
+async function tickAndRearm(): Promise<void> {
+  try {
+    await runOnce();
+  } catch (err) {
+    console.error('[iam expiry sweeper] tick failed', err);
+  }
+  if (stopped) return;
+  timer = setTimeout(tickAndRearm, TICK_MS);
 }
 
 export function stopGrantExpirySweeper(): void {
+  stopped = true;
   if (timer) {
-    clearInterval(timer);
+    clearTimeout(timer);
     timer = null;
   }
 }
