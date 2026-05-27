@@ -483,7 +483,7 @@ function Header({
         type="button"
         onClick={onClose}
         aria-label="Skip onboarding"
-        className="grid size-7 place-items-center rounded-full text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+        className="grid size-7 cursor-pointer place-items-center rounded-full text-muted-foreground/70 hover:bg-muted hover:text-foreground"
       >
         <X className="size-3.5" />
       </button>
@@ -567,7 +567,7 @@ function StepCard({
                 type="button"
                 onClick={() => onPickStarterPrompt(p)}
                 className={cn(
-                  'group relative flex items-start gap-3 rounded-xl border bg-card/60 p-3 text-left',
+                  'group relative flex cursor-pointer items-start gap-3 rounded-xl border bg-card/60 p-3 text-left',
                   'transition-all duration-150',
                   'hover:border-foreground/25 hover:bg-card hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.18)]',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
@@ -653,7 +653,7 @@ function BusinessAppLogos({ onPick }: { onPick: () => void }) {
           title={app.name}
           aria-label={`Connect ${app.name}`}
           className={cn(
-            'group flex flex-col items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-card/60 px-2 py-3',
+            'group flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-card/60 px-2 py-3',
             'transition-all duration-150',
             'hover:border-foreground/25 hover:bg-card hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.18)]',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
