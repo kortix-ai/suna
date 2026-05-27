@@ -14,6 +14,20 @@ function bearer(header: string | undefined): string | null {
   return m ? m[1].trim() : null;
 }
 
+const REASONING_CAPABLE_MODELS = new Set<string>([
+  'anthropic/claude-sonnet-4-5',
+  'anthropic/claude-haiku-4-5',
+  'anthropic/claude-opus-4-7',
+  'google/gemini-2.5-flash-lite-preview-09-2025',
+]);
+
+function supportsReasoning(model: string): boolean {
+  if (!model) return false;
+  if (REASONING_CAPABLE_MODELS.has(model)) return true;
+  const stripped = model.replace(/^openrouter\//, '');
+  return REASONING_CAPABLE_MODELS.has(stripped);
+}
+
 export function createChatCompletionsRoute(
   config: LlmGatewayConfig,
   hooks: LlmGatewayHooks,
@@ -49,6 +63,20 @@ export function createChatCompletionsRoute(
     }
     const streaming = body.stream === true;
     const baseUrl = config.baseUrl ?? 'https://openrouter.ai/api/v1';
+
+    const modelId = typeof body.model === 'string' ? body.model : '';
+    const hasReasoning =
+      body.reasoning !== undefined ||
+      body.reasoning_effort !== undefined ||
+      body.thinking !== undefined;
+    if (!hasReasoning && supportsReasoning(modelId)) {
+      body.reasoning = { effort: 'medium' };
+    }
+    console.info(
+      `[llm-gateway] ${requestId} model=${modelId} stream=${streaming} reasoning=${
+        hasReasoning ? 'forwarded' : supportsReasoning(modelId) ? 'injected' : 'n/a'
+      } keys=${Object.keys(body).join(',')}`,
+    );
 
     const upstream = await callOpenRouter(
       streaming ? { ...body, stream: true, stream_options: { include_usage: true } } : body,

@@ -1351,6 +1351,8 @@ export const creditAccounts = kortixSchema.table(
     seatCount: integer('seat_count').default(1).notNull(),
     seatSubscriptionItemId: text('seat_subscription_item_id'),
     autoTopupCustomized: boolean('auto_topup_customized').default(false).notNull(),
+    autoTopupConsecutiveFailures: integer('auto_topup_consecutive_failures').default(0).notNull(),
+    autoTopupDisabledReason: text('auto_topup_disabled_reason'),
   },
   (table) => [
     index('kortix_credit_accounts_account_id_idx').on(table.accountId),

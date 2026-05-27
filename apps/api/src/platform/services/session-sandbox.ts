@@ -34,6 +34,7 @@ import {
   getLatestReadySnapshot,
   getReadySnapshotForCommit,
   getSnapshotForCommit,
+  invalidateSnapshotIfMissingOnProvider,
 } from '../../snapshots/builder';
 import { config } from '../../config';
 import { ProvisionTimeline } from './provision-timeline';
@@ -182,6 +183,22 @@ async function waitForLatestReadySnapshot(
   }
 }
 
+/**
+ * Detects the DB↔provider divergence where our row says the snapshot is ready
+ * but the provider's create() call comes back saying it doesn't have one. Seen
+ * with Daytona returning 400/404 ("Snapshot ... not found. Did you add it
+ * through the Daytona Dashboard?") after a row was marked ready but the
+ * underlying image was purged / never finished server-side. Triggering this
+ * marks the row failed so the next session start rebuilds from scratch.
+ */
+function isSnapshotMissingOnProvider(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  if (!message.includes('snapshot')) return false;
+  if (message.includes('not found')) return true;
+  if (message.includes('does not exist')) return true;
+  return false;
+}
+
 function stringMetadataValue(metadata: unknown, key: string): string | null {
   if (!metadata || typeof metadata !== 'object') return null;
   const value = (metadata as Record<string, unknown>)[key];
@@ -322,10 +339,11 @@ export async function provisionSessionSandbox(opts: {
   // and the dashboard's ConnectingScreen handles the long tail.
   void (async () => {
     let bgExternalId: string | null = null;
+    let latest: Awaited<ReturnType<typeof getLatestReadySnapshot>> = null;
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
       let gitProject = opts.gitProject;
-      let latest = await getLatestReadySnapshot(opts.gitProject.projectId, branch, providerName);
+      latest = await getLatestReadySnapshot(opts.gitProject.projectId, branch, providerName);
       let build: Awaited<ReturnType<typeof ensureBuildForLatestCommit>> | null = null;
 
       if (latest?.snapshotId) {
@@ -562,6 +580,21 @@ export async function provisionSessionSandbox(opts: {
     } catch (bgErr) {
       console.error(`[session-sandbox] Background provisioning failed for ${sandbox.sandboxId}:`, bgErr);
       const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);
+
+      if (isSnapshotMissingOnProvider(bgErr) && latest?.snapshotRowId) {
+        const invalidated = await invalidateSnapshotIfMissingOnProvider(
+          latest.snapshotRowId,
+          latest.snapshotId,
+          providerName,
+          `${providerName}.sandbox.create reported snapshot ${latest.snapshotId ?? '<unknown>'} missing`,
+        );
+        if (invalidated) {
+          console.warn(
+            `[session-sandbox] invalidated stale snapshot row ${latest.snapshotRowId} ` +
+            `(${latest.snapshotId}); next session start will rebuild`,
+          );
+        }
+      }
 
       if (bgExternalId) {
         try {

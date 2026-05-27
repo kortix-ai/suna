@@ -286,6 +286,7 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
   const { assertBillingActive } = await import('./billing/services/billing-gate');
   const { deductForLlmUsage } = await import('./billing/services/credits');
   const { recordUsageEvent } = await import('./shared/usage-events');
+  const { llmPriceMarkup } = await import('./billing/services/tiers');
 
   app.route(
     '/v1/llm',
@@ -293,7 +294,7 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
       {
         enabled: process.env.LLM_GATEWAY_ENABLED === 'true',
         openrouterApiKey: process.env.KORTIX_OPENROUTER_API_KEY ?? '',
-        markup: 1.2,
+        markup: llmPriceMarkup(),
         appName: 'Kortix',
         appReferer: process.env.KORTIX_URL,
       },
@@ -301,27 +302,33 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
         authenticateToken: (token) => attributeYoloToken(token),
         assertBillingActive,
         recordUsage: async (event) => {
-          await Promise.all([
-            deductForLlmUsage({
-              accountId: event.accountId,
-              costUsd: event.finalCost,
-              model: event.model,
-              provider: event.provider,
-              actorUserId: event.actorUserId,
-            }),
-            recordUsageEvent({
-              accountId: event.accountId,
-              actorUserId: event.actorUserId,
-              provider: event.provider,
-              model: event.model,
-              route: '/v1/llm/chat/completions',
-              inputTokens: event.promptTokens,
-              outputTokens: event.completionTokens,
-              cachedTokens: event.cachedTokens,
-              costUsd: event.finalCost,
-              streaming: event.streaming,
-            }),
-          ]);
+          const usageEventId = await recordUsageEvent({
+            accountId: event.accountId,
+            actorUserId: event.actorUserId,
+            provider: event.provider,
+            model: event.model,
+            route: '/v1/llm/chat/completions',
+            inputTokens: event.promptTokens,
+            outputTokens: event.completionTokens,
+            cachedTokens: event.cachedTokens,
+            costUsd: event.finalCost,
+            streaming: event.streaming,
+            metadata: {
+              upstreamCostUsd: event.upstreamCost,
+              markup: llmPriceMarkup(),
+              requestId: event.requestId,
+            },
+          });
+          await deductForLlmUsage({
+            accountId: event.accountId,
+            costUsd: event.finalCost,
+            model: event.model,
+            provider: event.provider,
+            actorUserId: event.actorUserId,
+            usageEventId,
+            upstreamCostUsd: event.upstreamCost,
+            markup: llmPriceMarkup(),
+          });
         },
       },
     ),

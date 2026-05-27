@@ -1,4 +1,5 @@
 import { getSupabase } from '../../shared/supabase';
+import { db } from '../../shared/db';
 import {
   getCreditAccount,
   getCreditBalance,
@@ -26,7 +27,6 @@ export async function getCreditSummary(accountId: string) {
     return { total: 0, daily: 0, monthly: 0, extra: 0, canRun: false };
   }
 
-  // Pure read. balance is kept in sync by the atomic RPCs (deduct/grant/reset).
   const daily = Number(account.dailyCreditsBalance) || 0;
   const monthly = Number(account.expiringCredits) || 0;
   const extra = Number(account.nonExpiringCredits) || 0;
@@ -41,14 +41,6 @@ export async function getCreditSummary(accountId: string) {
   };
 }
 
-/**
- * Optional ledger type tag for breakdown reporting. Defaults to 'usage' for
- * backward compatibility with every existing call site.
- *
- * Known tagged types used by Billing v2:
- *   - 'compute_debit' : per-second sandbox compute spend (compute-metering.ts)
- *   - 'llm_debit'     : LLM router spend (deductForLlmUsage below)
- */
 export type LedgerDebitType = 'usage' | 'compute_debit' | 'llm_debit' | 'token_deduction' | 'token_overage';
 
 export async function deductCredits(
@@ -87,7 +79,6 @@ export async function deductCredits(
     throw new InsufficientCreditsError(actualBalance, amount);
   }
 
-  // Fire-and-forget: check if auto-topup should trigger
   const { checkAndTriggerAutoTopup } = await import('./auto-topup');
   void checkAndTriggerAutoTopup(accountId);
 
@@ -99,27 +90,39 @@ export async function deductCredits(
   };
 }
 
-/**
- * Billing v2 — LLM router debit. Same wallet as compute; only the ledger
- * type tag differs so the breakdown UI can split "you spent $X compute, $Y
- * LLM this period."
- *
- * Integration point for the LLM router: call this once per completed call,
- * passing the post-markup cost from calculateTokenCost(). actorUserId is
- * threaded through for per-member attribution dashboards (usage_events
- * already records it; the ledger metadata mirrors it here for ledger-only
- * reports).
- */
 export async function deductForLlmUsage(opts: {
   accountId: string;
   costUsd: number;
   model: string;
   provider?: string;
   actorUserId?: string | null;
+  usageEventId?: string | null;
+  upstreamCostUsd?: number | null;
+  markup?: number | null;
 }) {
   if (opts.costUsd <= 0) return { success: true, cost: 0, newBalance: 0, transactionId: null };
   const description = `LLM · ${opts.provider ? `${opts.provider}/` : ''}${opts.model}`;
-  return deductCredits(opts.accountId, opts.costUsd, description, 'llm_debit');
+  const result = await deductCredits(opts.accountId, opts.costUsd, description, 'llm_debit');
+  if (result.success && result.transactionId && (opts.usageEventId || opts.upstreamCostUsd != null)) {
+    const { creditLedger } = await import('@kortix/db');
+    const { eq, sql } = await import('drizzle-orm');
+    const auditPatch: Record<string, unknown> = {};
+    if (opts.usageEventId) auditPatch.usageEventId = opts.usageEventId;
+    if (opts.upstreamCostUsd != null) auditPatch.upstreamCostUsd = opts.upstreamCostUsd;
+    if (opts.markup != null) auditPatch.markup = opts.markup;
+    if (opts.actorUserId) auditPatch.actorUserId = opts.actorUserId;
+    auditPatch.route = '/v1/llm/chat/completions';
+    await db
+      .update(creditLedger)
+      .set({
+        metadata: sql`COALESCE(${creditLedger.metadata}, '{}'::jsonb) || ${JSON.stringify(auditPatch)}::jsonb`,
+      })
+      .where(eq(creditLedger.id, result.transactionId))
+      .catch((err: unknown) => {
+        console.warn('[Credits] failed to stamp ledger audit metadata:', err);
+      });
+  }
+  return result;
 }
 
 interface ModelPricing {
@@ -297,5 +300,3 @@ export async function resetExpiringCredits(
     }
   }
 }
-
-

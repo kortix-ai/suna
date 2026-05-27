@@ -12,6 +12,20 @@ export const MACHINE_CREDIT_BONUS = 5;
 /** Markup applied to managed VPS prices for additional instances. */
 export const COMPUTE_PRICE_MARKUP = 1.2;
 
+/**
+ * Margin multiplier applied to OpenRouter's upstream cost on every LLM
+ * gateway call. 1.2 = 20% margin (default). Override per-environment with
+ * KORTIX_LLM_MARKUP — useful for staging (1.0 = at-cost) or promotional
+ * periods. Clamped to >= 1 so we never undercut OpenRouter.
+ */
+export const DEFAULT_LLM_PRICE_MARKUP = 1.2;
+
+export function llmPriceMarkup(): number {
+  const raw = Number.parseFloat(process.env.KORTIX_LLM_MARKUP ?? '');
+  if (!Number.isFinite(raw) || raw < 1) return DEFAULT_LLM_PRICE_MARKUP;
+  return raw;
+}
+
 // ─── Billing v2 — per-seat model ─────────────────────────────────────────────
 // Every new account is born on the per-seat plan — there is no free tier
 // for new signups. Existing 'free' / 'legacy' tier accounts are preserved
@@ -239,12 +253,12 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
     per_seat: { monthly: 'price_1TbQv8G6l1KZGqIrdRLsUnCz' },
   },
   credits: {
-    10:  'price_1T56YGG6CaZppiKcSwnwZSoE',
-    25:  'price_1T56YHG6CaZppiKcFhLsjEHI',
-    50:  'price_1T56YIG6CaZppiKc6fdKANgh',
-    100: 'price_1T56YIG6CaZppiKcBsRi2UH0',
-    250: 'price_1T56YKG6CaZppiKcGeILSj6N',
-    500: 'price_1T56YKG6CaZppiKcHDTLQLIM',
+    10:  'price_1RxXOvG6l1KZGqIrMqsiYQvk',
+    25:  'price_1RxXPNG6l1KZGqIrQprPgDme',
+    50:  'price_1RxmNhG6l1KZGqIrTq2zPtgi',
+    100: 'price_1RxmNwG6l1KZGqIrnliwPDM6',
+    250: 'price_1RxmO6G6l1KZGqIrBF8Kx87G',
+    500: 'price_1RxmOFG6l1KZGqIrn4wgORnH',
   },
   productId: 'prod_U3CxqRenahYVvj',
   computeProductId: 'prod_U6B5Gh1aMPdnLO',

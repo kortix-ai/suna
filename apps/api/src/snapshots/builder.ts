@@ -110,6 +110,8 @@ const BUILD_ATTEMPTS = 3;
 const BUILD_RETRY_BASE_MS = 2_000;
 const SNAPSHOT_LOG_TAIL_LIMIT = 20;
 const RUNTIME_LAYER_VERSION = 'baked-workspace-minimal-v6';
+const POST_FAILURE_SETTLE_TIMEOUT_MS = 5 * 60 * 1000;
+const POST_FAILURE_SETTLE_POLL_MS = 4_000;
 const DEFAULT_SANDBOX_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_SANDBOX_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_SANDBOX_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -177,6 +179,51 @@ export type SnapshotBuildSource = 'project-create' | 'session-start' | 'manual' 
  * fix-with-agent flow can route the failure. Best-effort — a DB blip here
  * must not mask the underlying build error to the caller.
  */
+/**
+ * Self-heal hook for the DB↔Daytona divergence where our row says `ready` but
+ * Daytona claims no such snapshot exists. Called by the session provisioner
+ * when sandbox.create() rejects with a "snapshot not found" error.
+ *
+ * Verifies with Daytona FIRST — the error may be a transient blip (region
+ * routing, the snapshot is in `removing`/`pulling` state, a stale CloudFront
+ * response, etc.) where Daytona actually still has an `active` snapshot.
+ * Invalidating in that case would loop: row→failed, rebuild, ready, sandbox-
+ * create blip, row→failed, rebuild, … indefinitely. Returns true if the row
+ * was actually invalidated, false if Daytona confirms the snapshot is fine
+ * and the row was left alone.
+ */
+export async function invalidateSnapshotIfMissingOnProvider(
+  snapshotRowId: string,
+  snapshotId: string | null,
+  provider: SandboxProviderName,
+  reason: string,
+): Promise<boolean> {
+  if (provider === 'daytona' && snapshotId) {
+    try {
+      const snap = await getDaytona().snapshot.get(snapshotId);
+      const state = (snap as { state?: string } | null | undefined)?.state;
+      if (state === 'active') {
+        console.warn(
+          `[snapshots] self-heal skipped for ${snapshotId}: Daytona reports state='active', ` +
+          `treating the original error as transient`,
+        );
+        return false;
+      }
+    } catch {
+    }
+  }
+  await db
+    .update(projectRuntimeSnapshots)
+    .set({
+      status: 'failed',
+      error: `Self-heal: ${reason}`.slice(0, 2000),
+      updatedAt: new Date(),
+    })
+    .where(eq(projectRuntimeSnapshots.snapshotRowId, snapshotRowId))
+    .catch(() => {});
+  return true;
+}
+
 async function markSnapshotFailed(
   projectId: string,
   commitSha: string,
@@ -1435,11 +1482,17 @@ async function runBuild(
         };
       } catch (err) {
         lastErr = err;
-        // The connection may have dropped after the build actually completed —
-        // if the snapshot is now active, treat it as success. getUsableSnapshot
-        // also reaps an errored/build_failed snapshot so the retry rebuilds
-        // clean instead of seeing it as a (poisoned) cache hit.
-        if (await getUsableSnapshot(daytona, ctx.snapshotName)) {
+        // Daytona's create() can reject (NotFound during the snapshot's
+        // 'removing' phase, socket drops, etc.) while the build is actually
+        // still progressing server-side — onLogs continues streaming layers
+        // after the SDK has given up. Wait for the snapshot to settle to a
+        // terminal state before deciding the build truly failed.
+        const settled = await waitForSnapshotToSettle(
+          daytona,
+          ctx.snapshotName,
+          POST_FAILURE_SETTLE_TIMEOUT_MS,
+        );
+        if (settled === 'active') {
           return {
             daytonaName: ctx.snapshotName,
             contentHash: ctx.contentHash,
@@ -1521,6 +1574,28 @@ async function waitForUsableSnapshot(
   throw new Error(`Snapshot ${name} did not become active after create (last state: ${lastState})`);
 }
 
+async function waitForSnapshotToSettle(
+  daytona: ReturnType<typeof getDaytona>,
+  name: string,
+  timeoutMs: number,
+): Promise<'active' | 'failed' | 'unknown'> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const snap = await daytona.snapshot.get(name);
+      const state = (snap as { state?: string } | null | undefined)?.state;
+      if (state === 'active') return 'active';
+      if (state === 'error' || state === 'build_failed') {
+        await daytona.snapshot.delete(snap as never).catch(() => {});
+        return 'failed';
+      }
+    } catch {
+    }
+    await new Promise((r) => setTimeout(r, POST_FAILURE_SETTLE_POLL_MS));
+  }
+  return 'unknown';
+}
+
 /** Org-wide snapshot quota exhaustion — recoverable by reconciling first. */
 function isQuotaError(err: unknown): boolean {
   const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
@@ -1530,6 +1605,8 @@ function isQuotaError(err: unknown): boolean {
 /** Transient Daytona build/transport errors worth retrying (vs a real build failure). */
 function isTransientDaytonaError(err: unknown): boolean {
   const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  const statusCode = (err as { statusCode?: number } | null | undefined)?.statusCode;
+  if (statusCode === 404) return true;
   return (
     m.includes('socket connection') ||
     m.includes('idle connection') ||
@@ -1544,6 +1621,7 @@ function isTransientDaytonaError(err: unknown): boolean {
     m.includes('eof') ||
     m.includes('network') ||
     m.includes('gateway') ||
+    m.includes('not found') ||
     m.includes(' 502') || m.includes(' 503') || m.includes(' 504')
   );
 }

@@ -144,6 +144,68 @@ describe('gateway — happy path (non-streaming)', () => {
   });
 });
 
+describe('gateway — reasoning injection', () => {
+  test('injects reasoning.effort=medium for reasoning-capable Anthropic models', async () => {
+    fetchImpl = async () =>
+      new Response(JSON.stringify({ choices: [], usage: {} }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    const { hooks } = makeHooks();
+    const app = createLlmGateway(defaultConfig, hooks);
+    await app.fetch(
+      jsonReq(
+        { model: 'anthropic/claude-sonnet-4-5', messages: [{ role: 'user', content: 'hi' }] },
+        { Authorization: 'Bearer good' },
+      ),
+    );
+    const sent = JSON.parse(fetchCalls[0].init?.body as string);
+    expect(sent.reasoning).toEqual({ effort: 'medium' });
+  });
+
+  test('does NOT inject reasoning for non-reasoning models (gpt-4o)', async () => {
+    fetchImpl = async () =>
+      new Response(JSON.stringify({ choices: [], usage: {} }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    const { hooks } = makeHooks();
+    const app = createLlmGateway(defaultConfig, hooks);
+    await app.fetch(
+      jsonReq(
+        { model: 'openai/gpt-4o', messages: [{ role: 'user', content: 'hi' }] },
+        { Authorization: 'Bearer good' },
+      ),
+    );
+    const sent = JSON.parse(fetchCalls[0].init?.body as string);
+    expect(sent.reasoning).toBeUndefined();
+    expect(sent.reasoning_effort).toBeUndefined();
+  });
+
+  test('respects caller-supplied reasoning_effort (does not overwrite)', async () => {
+    fetchImpl = async () =>
+      new Response(JSON.stringify({ choices: [], usage: {} }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    const { hooks } = makeHooks();
+    const app = createLlmGateway(defaultConfig, hooks);
+    await app.fetch(
+      jsonReq(
+        {
+          model: 'anthropic/claude-opus-4-7',
+          messages: [{ role: 'user', content: 'hi' }],
+          reasoning_effort: 'high',
+        },
+        { Authorization: 'Bearer good' },
+      ),
+    );
+    const sent = JSON.parse(fetchCalls[0].init?.body as string);
+    expect(sent.reasoning_effort).toBe('high');
+    expect(sent.reasoning).toBeUndefined();
+  });
+});
+
 describe('gateway — upstream errors', () => {
   test('propagates upstream non-2xx status', async () => {
     fetchImpl = async () =>
