@@ -64,6 +64,20 @@ export type CrudOutcome =
   | { ok: true; sync?: SyncResult }
   | { ok: false; error: string; status: number };
 
+export type PolicyAction = 'always_run' | 'require_approval' | 'block';
+export type DefaultMode = 'risk' | 'allow_all';
+
+export interface ProjectPolicyView {
+  match: string;
+  action: PolicyAction;
+}
+
+export interface ProjectPoliciesViewResponse {
+  policies: ProjectPolicyView[];
+  defaultMode: DefaultMode;
+  errors: Array<{ path: string; error: string }>;
+}
+
 export interface ExecutorRouterDeps {
   /** Gateway auth: resolve the executor token → principal, or null for 401. */
   resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null>;
@@ -95,6 +109,15 @@ export interface ExecutorRouterDeps {
     nextCursor?: string;
     hasMore: boolean;
   }>;
+  /** Read project-level [[policies]] + [policy].default_mode from kortix.toml. */
+  getProjectPolicies?(projectId: string): Promise<ProjectPoliciesViewResponse | null>;
+  /** Replace project policies + default_mode (CRUD round-trips to kortix.toml). */
+  setProjectPolicies?(
+    projectId: string,
+    accountId: string,
+    policies: ProjectPolicyView[],
+    defaultMode: DefaultMode,
+  ): Promise<CrudOutcome>;
 }
 
 export function createExecutorRouter(deps: ExecutorRouterDeps): Hono {
@@ -260,6 +283,47 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): Hono {
     return c.json(result);
   });
 
+  // ── Admin: read project policies (top-level [[policies]] + [policy]) ────
+  app.get('/projects/:projectId/policies', async (c) => {
+    const projectId = c.req.param('projectId');
+    const admin = await deps.resolveAdmin(c, projectId);
+    if (!admin) return c.json({ error: 'forbidden' }, 403);
+    if (!deps.getProjectPolicies) return c.json({ error: 'not supported' }, 501);
+    const result = await deps.getProjectPolicies(projectId);
+    if (!result) return c.json({ error: 'project not found' }, 404);
+    return c.json(result);
+  });
+
+  // ── Admin: replace project policies (write-through to kortix.toml) ──────
+  app.put('/projects/:projectId/policies', async (c) => {
+    const projectId = c.req.param('projectId');
+    const admin = await deps.resolveAdmin(c, projectId);
+    if (!admin) return c.json({ error: 'forbidden' }, 403);
+    if (!deps.setProjectPolicies) return c.json({ error: 'not supported' }, 501);
+
+    let body: any;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+
+    const rawPolicies = Array.isArray(body?.policies) ? body.policies : [];
+    const policies: ProjectPolicyView[] = [];
+    for (let i = 0; i < rawPolicies.length; i++) {
+      const p = rawPolicies[i];
+      const match = typeof p?.match === 'string' ? p.match.trim() : '';
+      const action = typeof p?.action === 'string' ? p.action.trim() : '';
+      if (!match) return c.json({ error: `policy #${i + 1}: \`match\` is required` }, 400);
+      if (action !== 'always_run' && action !== 'require_approval' && action !== 'block') {
+        return c.json({ error: `policy #${i + 1}: invalid \`action\` "${action}"` }, 400);
+      }
+      policies.push({ match, action });
+    }
+    const defaultMode = body?.defaultMode === 'risk' ? 'risk' : 'allow_all';
+
+    const result = await deps.setProjectPolicies(projectId, admin.accountId, policies, defaultMode);
+    return result.ok
+      ? c.json({ ok: true, sync: result.sync })
+      : c.json({ error: result.error }, result.status as 400);
+  });
+
   // ── Pipedream webhook (no user auth — HMAC-signed) ────────────────────────
   app.post('/webhook/pipedream', async (c) => {
     if (!deps.pipedreamWebhook) return c.json({ error: 'pipedream not configured' }, 501);
@@ -274,4 +338,3 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): Hono {
 
   return app;
 }
-

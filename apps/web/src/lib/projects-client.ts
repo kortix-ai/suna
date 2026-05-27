@@ -906,6 +906,41 @@ export async function setConnectorCredential(projectId: string, slug: string, va
   );
 }
 
+// ─── Executor policies (kortix.toml-backed) ────────────────────────────────
+
+export type PolicyAction = 'always_run' | 'require_approval' | 'block';
+export type PolicyDefaultMode = 'risk' | 'allow_all';
+
+export interface ProjectPolicy {
+  match: string;
+  action: PolicyAction;
+}
+
+export interface ProjectPoliciesResponse {
+  policies: ProjectPolicy[];
+  defaultMode: PolicyDefaultMode;
+  errors: Array<{ path: string; error: string }>;
+}
+
+export async function listProjectPolicies(projectId: string) {
+  return unwrap(
+    await backendApi.get<ProjectPoliciesResponse>(`/executor/projects/${projectId}/policies`),
+  );
+}
+
+export async function setProjectPolicies(
+  projectId: string,
+  policies: ProjectPolicy[],
+  defaultMode: PolicyDefaultMode,
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/policies`,
+      { policies, defaultMode },
+    ),
+  );
+}
+
 export async function pipedreamFinalize(projectId: string, slug: string) {
   return unwrap(
     await backendApi.post<{ connected: boolean; accountId?: string }>(

@@ -2326,6 +2326,52 @@ export const executorConnectorPolicies = kortixSchema.table(
   ],
 );
 
+/**
+ * Project-scoped tool-call policies — materialized from top-level [[policies]]
+ * in kortix.toml. Patterns are fully-qualified (`<slug>.<path>` globs) and apply
+ * across ALL connectors in the project; evaluated BEFORE any connector-scoped
+ * rule. See docs/specs/executor.md §8.
+ */
+export const executorProjectPolicies = kortixSchema.table(
+  'executor_project_policies',
+  {
+    policyId: uuid('policy_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** Glob over fully-qualified tool paths (e.g. `stripe.charges.create`). */
+    match: varchar('match', { length: 512 }).notNull(),
+    action: executorPolicyActionEnum('action').notNull(),
+    /** Authoring order — evaluated top-to-bottom, first match wins. */
+    position: integer('position').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_executor_project_policies_project').on(table.projectId),
+  ],
+);
+
+export const executorDefaultModeEnum = kortixSchema.enum('executor_default_mode', [
+  'risk',
+  'allow_all',
+]);
+
+/**
+ * One row per project — non-policy executor settings (just `default_mode`
+ * today). Materialized from [policy] in kortix.toml; missing block = allow_all
+ * for back-compat with existing projects.
+ */
+export const executorProjectSettings = kortixSchema.table(
+  'executor_project_settings',
+  {
+    projectId: uuid('project_id')
+      .primaryKey()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    defaultMode: executorDefaultModeEnum('default_mode').default('allow_all').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+);
+
 /** Audit + approval ledger for every executor call. */
 export const executorExecutions = kortixSchema.table(
   'executor_executions',
@@ -2381,6 +2427,20 @@ export const executorConnectorPoliciesRelations = relations(executorConnectorPol
   connector: one(executorConnectors, {
     fields: [executorConnectorPolicies.connectorId],
     references: [executorConnectors.connectorId],
+  }),
+}));
+
+export const executorProjectPoliciesRelations = relations(executorProjectPolicies, ({ one }) => ({
+  project: one(projects, {
+    fields: [executorProjectPolicies.projectId],
+    references: [projects.projectId],
+  }),
+}));
+
+export const executorProjectSettingsRelations = relations(executorProjectSettings, ({ one }) => ({
+  project: one(projects, {
+    fields: [executorProjectSettings.projectId],
+    references: [projects.projectId],
   }),
 }));
 

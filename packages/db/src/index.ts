@@ -143,10 +143,14 @@ export {
   executorCredentials,
   executorConnectorActions,
   executorConnectorPolicies,
+  executorProjectPolicies,
+  executorProjectSettings,
   executorExecutions,
   executorConnectorsRelations,
   executorConnectorActionsRelations,
   executorConnectorPoliciesRelations,
+  executorProjectPoliciesRelations,
+  executorProjectSettingsRelations,
   projectSecretGrantsRelations,
 } from './schema/kortix';
 

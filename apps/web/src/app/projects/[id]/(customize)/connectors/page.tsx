@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { use, useMemo, useState } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFrontendClient } from '@pipedream/sdk/browser';
@@ -45,6 +46,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { SharingPicker, ShareOption } from '@/components/projects/sharing-picker';
 import { toast } from '@/lib/toast';
 import {
@@ -101,37 +103,66 @@ function ConnectorsBody({ projectId }: { projectId: string }) {
   });
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
 
+  // Tabs persist via ?tab=connectors|policies so deep links + the command
+  // palette can land on the right pane. Default = connectors.
+  const search = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const rawTab = search?.get('tab');
+  const tab = rawTab === 'policies' ? 'policies' : 'connectors';
+  const setTab = (next: 'connectors' | 'policies') => {
+    const params = new URLSearchParams(search?.toString() ?? '');
+    if (next === 'connectors') params.delete('tab');
+    else params.set('tab', next);
+    const qs = params.toString();
+    router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+  };
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
         <header className="space-y-1">
           <h2 className="text-base font-semibold text-foreground">Connectors</h2>
           <p className="text-xs text-muted-foreground">
-            {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line111JsxTextIntegrationsTheAgentReachesThroughTheExecutorStored')}{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">kortix.toml</code>{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">[[connectors]]</code>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line113JsxTextCredentialsAndWhoCanUseThemAreManaged')}</p>
+            Integrations the Executor can call, plus the approval rules that gate them. Both live in{' '}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">kortix.toml</code>.
+          </p>
         </header>
 
-        {query.isLoading ? (
-          <ConnectorsSkeleton />
-        ) : isForbidden ? (
-          <InfoBanner tone="warning" icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line122JsxAttrTitleAdminAccessRequired')}>
-            {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line123JsxTextOnlyProjectManagersCanManageConnectors')}</InfoBanner>
-        ) : query.isError ? (
-          <InfoBanner
-            tone="destructive"
-            title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line128JsxAttrTitleFailedToLoadConnectors')}
-            action={
-              <Button variant="outline" size="sm" onClick={() => query.refetch()}>
-                Retry
-              </Button>
-            }
-          >
-            {(query.error as Error)?.message ?? 'Unknown error'}
-          </InfoBanner>
-        ) : (
-          <ConnectorsCard projectId={projectId} connectors={query.data?.connectors ?? []} />
-        )}
+        <Tabs value={tab} onValueChange={(v) => setTab(v as 'connectors' | 'policies')}>
+          <TabsList>
+            <TabsTrigger value="connectors">Connectors</TabsTrigger>
+            <TabsTrigger value="policies">Policies</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="connectors" className="mt-4">
+            {query.isLoading ? (
+              <ConnectorsSkeleton />
+            ) : isForbidden ? (
+              <InfoBanner tone="warning" icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line122JsxAttrTitleAdminAccessRequired')}>
+                {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line123JsxTextOnlyProjectManagersCanManageConnectors')}
+              </InfoBanner>
+            ) : query.isError ? (
+              <InfoBanner
+                tone="destructive"
+                title={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line128JsxAttrTitleFailedToLoadConnectors')}
+                action={
+                  <Button variant="outline" size="sm" onClick={() => query.refetch()}>
+                    Retry
+                  </Button>
+                }
+              >
+                {(query.error as Error)?.message ?? 'Unknown error'}
+              </InfoBanner>
+            ) : (
+              <ConnectorsCard projectId={projectId} connectors={query.data?.connectors ?? []} />
+            )}
+          </TabsContent>
+
+          <TabsContent value="policies" className="mt-4">
+            <PoliciesPanel projectId={projectId} />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

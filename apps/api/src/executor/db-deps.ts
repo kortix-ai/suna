@@ -11,6 +11,8 @@ import {
   executorConnectorPolicies,
   executorConnectors,
   executorExecutions,
+  executorProjectPolicies,
+  executorProjectSettings,
   projects,
 } from '@kortix/db';
 import { db } from '../shared/db';
@@ -29,7 +31,11 @@ import {
   resolveCredentialValue,
   setConnectorSharingDb,
 } from './credentials';
-import { resolvePolicyAction, type Policy } from './policy';
+import {
+  resolveEffectiveAction,
+  type DefaultMode,
+  type Policy,
+} from './policy';
 import { syncProjectConnectors } from './sync';
 import {
   finalizePipedreamConnection,
@@ -41,7 +47,9 @@ import {
 } from './pipedream';
 import {
   deleteConnectorFromManifest,
+  getProjectPoliciesFromManifest,
   setConnectorCredentialShared,
+  setProjectPoliciesInManifest,
   upsertConnectorInManifest,
   type ConnectorDraft,
 } from './manifest-crud';
@@ -127,10 +135,9 @@ export function makeDbGatewayDeps(): GatewayDeps {
       } satisfies GatewayAction;
     },
     resolveCredential: (connectorId, userId) => resolveCredentialValue(connectorId, userId),
-    loadPolicies: async (connectorId) => {
-      const rows = await db.select().from(executorConnectorPolicies).where(eq(executorConnectorPolicies.connectorId, connectorId));
-      return rows.map((r): Policy => ({ match: r.match, action: r.action, position: r.position }));
-    },
+    loadPolicies: loadConnectorPoliciesFor,
+    loadProjectPolicies: loadProjectPoliciesFor,
+    loadDefaultMode: loadDefaultModeFor,
     recordExecution: async (rec) => {
       await db.insert(executorExecutions).values({
         accountId: rec.accountId,
@@ -150,6 +157,31 @@ export function makeDbGatewayDeps(): GatewayDeps {
     fetchImpl: nodeFetch,
     enforcePolicies: true,
   };
+}
+
+async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> {
+  const rows = await db
+    .select()
+    .from(executorConnectorPolicies)
+    .where(eq(executorConnectorPolicies.connectorId, connectorId));
+  return rows.map((r) => ({ match: r.match, action: r.action, position: r.position }));
+}
+
+async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
+  const rows = await db
+    .select()
+    .from(executorProjectPolicies)
+    .where(eq(executorProjectPolicies.projectId, projectId));
+  return rows.map((r) => ({ match: r.match, action: r.action, position: r.position }));
+}
+
+async function loadDefaultModeFor(projectId: string): Promise<DefaultMode> {
+  const [row] = await db
+    .select({ defaultMode: executorProjectSettings.defaultMode })
+    .from(executorProjectSettings)
+    .where(eq(executorProjectSettings.projectId, projectId))
+    .limit(1);
+  return (row?.defaultMode as DefaultMode) ?? 'allow_all';
 }
 
 /** Load a pipedream connector's app slug, id, mode (verifies provider). */
@@ -180,13 +212,19 @@ async function resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null> {
   };
 }
 
-/** The catalog a principal can actually use (access + credential present). */
+/** The catalog a principal can actually use (access + credential present + not blocked). */
 async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
   const conns = await db
     .select()
     .from(executorConnectors)
     .where(and(eq(executorConnectors.projectId, p.projectId), eq(executorConnectors.enabled, true)));
   const grantsByConnector = await loadGrantsForMany(conns.map((c) => c.connectorId));
+
+  // Project-scoped layer is the same for every connector in this list — load once.
+  const [projectPolicies, defaultMode] = await Promise.all([
+    loadProjectPoliciesFor(p.projectId),
+    loadDefaultModeFor(p.projectId),
+  ]);
 
   const out: CatalogConnector[] = [];
   for (const row of conns) {
@@ -197,7 +235,7 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
       const uid = row.credentialMode === 'per_user' ? p.userId : null;
       if (!(await credentialExists(row.connectorId, uid))) continue; // not connected for this user
     }
-    const policies = await loadPoliciesFor(row.connectorId);
+    const connectorPolicies = await loadConnectorPoliciesFor(row.connectorId);
     const actions = await db.select().from(executorConnectorActions).where(eq(executorConnectorActions.connectorId, row.connectorId));
     out.push({
       slug: row.slug,
@@ -205,16 +243,18 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
       provider: row.providerType,
       status: row.status,
       actions: actions
-        .filter((a) => resolvePolicyAction(a.path, policies) !== 'block')
+        .filter((a) => resolveEffectiveAction({
+          fullPath: `${row.slug}.${a.path}`,
+          relPath: a.path,
+          projectPolicies,
+          connectorPolicies,
+          risk: a.risk,
+          defaultMode,
+        }).action !== 'block')
         .map((a) => ({ path: a.path, name: a.name, description: a.description ?? '', risk: a.risk, inputSchema: a.inputSchema ?? null })),
     });
   }
   return out;
-}
-
-async function loadPoliciesFor(connectorId: string): Promise<Policy[]> {
-  const rows = await db.select().from(executorConnectorPolicies).where(eq(executorConnectorPolicies.connectorId, connectorId));
-  return rows.map((r) => ({ match: r.match, action: r.action, position: r.position }));
 }
 
 async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId: string; userId: string } | null> {
@@ -313,4 +353,7 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   listPipedreamApps: pipedreamConfigured()
     ? (query, cursor) => browsePipedreamApps(query, cursor)
     : undefined,
+  getProjectPolicies: getProjectPoliciesFromManifest,
+  setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
+    setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),
 };

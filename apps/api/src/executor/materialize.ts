@@ -1,13 +1,19 @@
 /**
- * Materialization — map `[[connectors]]` specs (from kortix.toml) onto the rows
- * the platform stores (executor_connectors + executor_connector_policies) and
- * onto the gateway's runtime view. Pure mapping + diff here (unit-tested); the
- * DB upsert + network catalog sync (fetch spec/introspection/listTools →
+ * Materialization — map `[[connectors]]` + `[[policies]]` + `[policy]` specs
+ * (from kortix.toml) onto the rows the platform stores (executor_connectors,
+ * executor_connector_policies, executor_project_policies, executor_project_settings)
+ * and onto the gateway's runtime view. Pure mapping + diff here (unit-tested);
+ * the DB upsert + network catalog sync (fetch spec/introspection/listTools →
  * normalize → executor_connector_actions) is the integration layer that calls
- * these. See docs/specs/executor.md §3, §7.
+ * these. See docs/specs/executor.md §3, §7, §8.
  */
 import type { ConnectorSpec } from '../projects/connectors';
 import { manifestHashForConnector } from '../projects/connectors';
+import type {
+  ProjectPolicySpec,
+  ProjectPolicySettings,
+  DefaultMode,
+} from '../projects/policies';
 import type { ExecutorAuth } from './execute';
 
 /** The row shape we persist for a connector (sans ids/timestamps). */
@@ -87,6 +93,19 @@ export function toDesiredConnector(spec: ConnectorSpec, openapiServer?: string |
 /** Map a connector's policies → ordered policy rows (authoring order = position). */
 export function toPolicyRows(spec: ConnectorSpec): DesiredPolicy[] {
   return spec.policies.map((p, i) => ({ match: p.match, action: p.action, position: i }));
+}
+
+/** Map project-level [[policies]] → ordered policy rows (same shape as connector). */
+export function toProjectPolicyRows(policies: ProjectPolicySpec[]): DesiredPolicy[] {
+  return policies.map((p, i) => ({ match: p.match, action: p.action, position: i }));
+}
+
+/** Project settings row shape — just default_mode for now. */
+export interface DesiredProjectSettings {
+  defaultMode: DefaultMode;
+}
+export function toProjectSettings(settings: ProjectPolicySettings): DesiredProjectSettings {
+  return { defaultMode: settings.defaultMode };
 }
 
 export interface DiffResult<T> {

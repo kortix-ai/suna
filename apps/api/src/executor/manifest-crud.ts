@@ -10,6 +10,13 @@ import { executorConnectors, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
 import { extractConnectors } from '../projects/connectors';
+import {
+  extractProjectPolicies,
+  projectPoliciesToTomlEntries,
+  projectPolicySettingsToToml,
+  type ProjectPolicySpec,
+  type DefaultMode,
+} from '../projects/policies';
 import { syncProjectConnectors, type SyncResult } from './sync';
 import { setConnectorSharingDb, upsertCredential } from './credentials';
 import type { SharingIntent } from './share';
@@ -150,4 +157,79 @@ export async function setConnectorCredentialShared(projectId: string, slug: stri
   if (!connectorId) return { ok: false, error: 'connector not found', status: 404 };
   await upsertCredential({ projectId, connectorId, userId: null, value, kind: 'secret' });
   return { ok: true };
+}
+
+// ─── Project-level policies (top-level [[policies]] + [policy]) ──────────────
+
+export interface ProjectPoliciesView {
+  policies: ProjectPolicySpec[];
+  defaultMode: DefaultMode;
+  errors: Array<{ path: string; error: string }>;
+}
+
+/** Read the project's [[policies]] + [policy] block (kortix.toml = source of truth). */
+export async function getProjectPoliciesFromManifest(projectId: string): Promise<ProjectPoliciesView | null> {
+  const row = await loadRow(projectId);
+  if (!row) return null;
+  const manifest = await loadManifestForEdit(row).catch(() => null);
+  if (!manifest) return { policies: [], defaultMode: 'allow_all', errors: [] };
+  const parsed = extractProjectPolicies(manifest);
+  return { policies: parsed.policies, defaultMode: parsed.settings.defaultMode, errors: parsed.errors };
+}
+
+/**
+ * Replace the WHOLE [[policies]] array + [policy].default_mode in kortix.toml,
+ * commit, and re-sync so the runtime tables reflect the new posture. The UI is
+ * an ordered list; "save" PUTs the whole list back. Per-rule add/edit/delete
+ * remain client-side until commit.
+ */
+export async function setProjectPoliciesInManifest(
+  projectId: string,
+  accountId: string,
+  policies: ProjectPolicySpec[],
+  defaultMode: DefaultMode,
+): Promise<CrudResult> {
+  const row = await loadRow(projectId);
+  if (!row) return { ok: false, error: 'project not found', status: 404 };
+
+  // Validate against the parser before writing — same rules the runtime enforces.
+  for (const [i, p] of policies.entries()) {
+    if (!p.match || typeof p.match !== 'string') {
+      return { ok: false, error: `policy #${i + 1}: \`match\` is required`, status: 400 };
+    }
+    if (p.action !== 'always_run' && p.action !== 'require_approval' && p.action !== 'block') {
+      return { ok: false, error: `policy #${i + 1}: \`action\` must be always_run | require_approval | block`, status: 400 };
+    }
+  }
+  if (defaultMode !== 'risk' && defaultMode !== 'allow_all') {
+    return { ok: false, error: '`default_mode` must be risk | allow_all', status: 400 };
+  }
+
+  let manifest;
+  try {
+    manifest = await loadManifestForEdit(row);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
+  }
+
+  // Rewrite both knobs. Omit empties so the manifest stays clean.
+  const entries = projectPoliciesToTomlEntries(policies);
+  if (entries.length > 0) {
+    manifest.raw.policies = entries;
+  } else {
+    delete manifest.raw.policies;
+  }
+  const settingsBlock = projectPolicySettingsToToml({ defaultMode });
+  if (settingsBlock) {
+    manifest.raw.policy = settingsBlock;
+  } else {
+    delete manifest.raw.policy;
+  }
+
+  const committed = await commitManifest(row, manifest, 'chore: update executor policies');
+  if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
+
+  // Materialize: project policies are reconciled inside syncProjectConnectors.
+  const sync = await syncProjectConnectors(projectId, accountId);
+  return { ok: true, sync };
 }

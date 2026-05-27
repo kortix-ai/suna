@@ -13,7 +13,7 @@ import {
   type GatewayConnector,
   type GatewayDeps,
 } from '../executor/gateway';
-import type { Policy } from '../executor/policy';
+import type { DefaultMode, Policy } from '../executor/policy';
 
 const ALICE = 'user-alice';
 
@@ -43,6 +43,8 @@ interface FakeOpts {
   action?: GatewayAction | null;
   secret?: string | null; // resolveCredential return
   policies?: Policy[];
+  projectPolicies?: Policy[];
+  defaultMode?: DefaultMode;
   enforcePolicies?: boolean;
   fetchStatus?: number;
   fetchBody?: string;
@@ -60,6 +62,8 @@ function makeDeps(o: FakeOpts = {}) {
       return o.secret === undefined ? 'sk_live_123' : o.secret;
     },
     loadPolicies: async () => o.policies ?? [],
+    loadProjectPolicies: async () => o.projectPolicies ?? [],
+    loadDefaultMode: async () => o.defaultMode ?? 'allow_all',
     enforcePolicies: o.enforcePolicies,
     recordExecution: async (r) => { records.push(r); },
     fetchImpl: async (url, init) => {
@@ -205,5 +209,70 @@ describe('handleCall — policy layer', () => {
   test('require_approval pauses', async () => {
     const { deps } = makeDeps({ policies: [{ match: '*', action: 'require_approval' }], enforcePolicies: true });
     expect(await handleCall(deps, baseInput)).toEqual({ status: 'pending_approval', reason: 'policy_require_approval' });
+  });
+});
+
+describe('handleCall — layered policies (project → connector → default)', () => {
+  test('project [[policies]] block wins even when connector allows', async () => {
+    // Connector says "always_run *" — but project says "*.delete*" → block.
+    // Project wins (admin trust property).
+    const { deps, fetchCalls } = makeDeps({
+      action: { ...CREATE_CHARGE, path: 'stripe.charges.delete', relPath: 'charges.delete', risk: 'destructive' },
+      projectPolicies: [{ match: '*.delete*', action: 'block' }],
+      policies: [{ match: '*', action: 'always_run' }],
+    });
+    const res = await handleCall(deps, { ...baseInput, actionPath: 'charges.delete' });
+    expect(res).toEqual({ status: 'denied', reason: 'policy_block' });
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test('project [[policies]] sees the fully-qualified path (slug.path)', async () => {
+    // Project pattern is "stripe.*" — must include connector slug.
+    const { deps } = makeDeps({
+      projectPolicies: [{ match: 'stripe.*', action: 'require_approval' }],
+    });
+    expect((await handleCall(deps, baseInput)).status).toBe('pending_approval');
+  });
+
+  test('default_mode=risk: unmatched WRITE → require_approval', async () => {
+    const { deps } = makeDeps({ defaultMode: 'risk' });
+    expect((await handleCall(deps, baseInput)).status).toBe('pending_approval');
+  });
+
+  test('default_mode=risk: unmatched READ → runs', async () => {
+    const { deps, fetchCalls } = makeDeps({
+      action: { ...CREATE_CHARGE, path: 'stripe.charges.list', relPath: 'charges.list', risk: 'read', binding: { kind: 'openapi', method: 'GET', path: '/v1/charges', server: 'https://api.stripe.com' } },
+      defaultMode: 'risk',
+    });
+    const res = await handleCall(deps, { ...baseInput, actionPath: 'charges.list' });
+    expect(res.status).toBe('ok');
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  test('default_mode=allow_all: unmatched destructive still runs', async () => {
+    const { deps } = makeDeps({
+      action: { ...CREATE_CHARGE, risk: 'destructive' },
+      defaultMode: 'allow_all',
+    });
+    expect((await handleCall(deps, baseInput)).status).toBe('ok');
+  });
+
+  test('connector always_run overrides risk-default require_approval', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: 'charges.create', action: 'always_run' }],
+      defaultMode: 'risk', // would otherwise require_approval for risk=write
+    });
+    expect((await handleCall(deps, baseInput)).status).toBe('ok');
+  });
+
+  test('block path is audited with policy_block + source', async () => {
+    const { deps, records } = makeDeps({
+      projectPolicies: [{ match: '*', action: 'block' }],
+    });
+    await handleCall(deps, baseInput);
+    expect(records.at(-1)).toMatchObject({
+      status: 'denied',
+      resultSummary: { reason: 'policy_block', policy_source: 'project' },
+    });
   });
 });
