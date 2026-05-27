@@ -1,0 +1,78 @@
+name: Prod API Hotpatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch containing the hotpatch file'
+        required: true
+        default: 'fix/production-preview-assets'
+        type: string
+
+concurrency:
+  group: prod-api-hotpatch
+  cancel-in-progress: false
+
+jobs:
+  hotpatch:
+    name: Hotpatch prod API container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply hotpatch via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_KEY }}
+          port: 22
+          timeout: 600s
+          command_timeout: 10m
+          script: |
+            set -eu
+
+            HOTPATCH_BRANCH='${{ inputs.branch }}'
+            TARGET_FILE='apps/api/src/sandbox-proxy/index.ts'
+            PATCH_FILE='/tmp/kortix-preview-proxy-index.ts'
+
+            if [ ! -d "$HOME/suna" ]; then
+              git clone https://github.com/kortix-ai/suna.git "$HOME/suna"
+            fi
+
+            cd "$HOME/suna"
+            git -c fetch.recurseSubmodules=false fetch origin "$HOTPATCH_BRANCH"
+            git show "origin/$HOTPATCH_BRANCH:$TARGET_FILE" > "$PATCH_FILE"
+
+            ACTIVE_SLOT="$(cat "$HOME/.kortix-deploy-slot" 2>/dev/null || printf green)"
+            ACTIVE_CONTAINER="kortix-api-$ACTIVE_SLOT"
+
+            if ! docker ps --format '{{.Names}}' | grep -qx "$ACTIVE_CONTAINER"; then
+              ACTIVE_CONTAINER="$(docker ps --format '{{.Names}}' | grep -E '^kortix-api-(blue|green)$' | head -n 1 || true)"
+            fi
+
+            if [ -z "$ACTIVE_CONTAINER" ]; then
+              echo 'No running kortix-api blue/green container found'
+              docker ps --format '{{.Names}} {{.Ports}}'
+              exit 1
+            fi
+
+            echo "Hotpatching $ACTIVE_CONTAINER:$TARGET_FILE from origin/$HOTPATCH_BRANCH"
+            docker cp "$PATCH_FILE" "$ACTIVE_CONTAINER:/app/$TARGET_FILE"
+            docker restart "$ACTIVE_CONTAINER"
+
+            if [ "$ACTIVE_CONTAINER" = 'kortix-api-blue' ]; then
+              ACTIVE_PORT=8008
+            else
+              ACTIVE_PORT=8009
+            fi
+
+            for i in $(seq 1 30); do
+              if curl -sf "http://127.0.0.1:$ACTIVE_PORT/v1/health" >/dev/null 2>&1; then
+                echo "Hotpatch healthy on $ACTIVE_CONTAINER:$ACTIVE_PORT"
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "Health check failed after restarting $ACTIVE_CONTAINER"
+            docker logs "$ACTIVE_CONTAINER" --tail 80
+            exit 1
