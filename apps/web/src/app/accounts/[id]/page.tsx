@@ -968,8 +968,14 @@ function MembersCard({
   }
 
   // Bulk handlers — all use the existing per-user endpoints fanned out
-  // with Promise.all so a single failure doesn't block the others.
-  // Errors are aggregated into one toast at the end.
+  // with Promise.allSettled so a single failure doesn't block the
+  // others. On any failure we:
+  //   1. console.error a full table (email + userId + reason) — admins
+  //      doing bulk ops are likely to have devtools open.
+  //   2. surface the FIRST failure reason inline in the toast so the
+  //      user sees at least one actionable hint without expanding it.
+  //   3. preserve the selection so they can retry only the failing rows
+  //      after fixing whatever was wrong (e.g. a missing permission).
   async function bulkRun(
     label: string,
     runOne: (userId: string) => Promise<unknown>,
@@ -977,18 +983,52 @@ function MembersCard({
     setBulkBusy(true);
     const ids = Array.from(selectedIds);
     const results = await Promise.allSettled(ids.map(runOne));
-    const failed = results.filter((r) => r.status === 'rejected').length;
     setBulkBusy(false);
     invalidateMembers();
-    if (failed === 0) {
+
+    const failures: { userId: string; email: string; reason: string }[] = [];
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        const userId = ids[i];
+        const member = members.find((m) => m.user_id === userId);
+        failures.push({
+          userId,
+          email: member?.email ?? userId,
+          reason:
+            r.reason instanceof Error
+              ? r.reason.message
+              : String(r.reason ?? 'Unknown error'),
+        });
+      }
+    });
+
+    if (failures.length === 0) {
       toast.success(`${label}: ${ids.length} member${ids.length === 1 ? '' : 's'}`);
       clearSelection();
       setBulkDialog(null);
-    } else {
-      toast.error(
-        `${label}: ${ids.length - failed} succeeded, ${failed} failed`,
-      );
+      return;
     }
+
+    // Devtools-friendly dump. console.table renders one row per failure
+    // so an admin can copy/paste or grep through them.
+    console.error(`[bulk:${label}] ${failures.length} failed`, failures);
+
+    // First failure is shown inline; rest summarised. Trim long
+    // messages so a 500-char stack trace doesn't blow up the toast.
+    const first = failures[0];
+    const reasonShort =
+      first.reason.length > 140 ? `${first.reason.slice(0, 137)}…` : first.reason;
+    const tail =
+      failures.length > 1
+        ? ` (+${failures.length - 1} more — see console)`
+        : '';
+    toast.error(
+      `${label}: ${ids.length - failures.length} succeeded, ${failures.length} failed. ${first.email}: ${reasonShort}${tail}`,
+    );
+    // Drop succeeded rows from the selection so a retry only re-runs
+    // the ones that failed.
+    const failedIds = new Set(failures.map((f) => f.userId));
+    setSelectedIds(failedIds);
   }
   async function bulkAddToGroup(groupId: string) {
     // addGroupMembers takes an array natively — single round-trip.
