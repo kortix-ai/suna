@@ -80,7 +80,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     executorSdkPath,
     workspaceArchivePath,
   } = opts;
-  const trimmed = userDockerfile.trimEnd();
+  const trimmed = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
 
   const kortixLayer = [
     '',
@@ -159,6 +159,30 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && rm /tmp/kortix-workspace.tar.gz \\',
     '    && test -d /workspace/.git \\',
     '    && chmod -R a+rwX /workspace',
+    '',
+    // Pay OpenCode's first-run cost during snapshot build instead of session
+    // boot: DB migration, config package install, model metadata cache, and
+    // bundled helper extraction. This is fail-soft because user config can be
+    // malformed while the sandbox should still build and report the runtime
+    // error at boot.
+    'RUN mkdir -p /opt/kortix/home /ephemeral/kortix-master/opencode \\',
+    '    && ( \\',
+    '      export HOME=/opt/kortix/home XDG_DATA_HOME=/opt/kortix/home/.local/share XDG_CONFIG_HOME=/opt/kortix/home/.config XDG_CACHE_HOME=/opt/kortix/home/.cache; \\',
+    '      cfg=/ephemeral/kortix-master/opencode; \\',
+    '      if [ -f /workspace/.kortix/opencode/opencode.jsonc ] || [ -f /workspace/.kortix/opencode/opencode.json ]; then cfg=/workspace/.kortix/opencode; fi; \\',
+    '      export OPENCODE_CONFIG_DIR="$cfg"; \\',
+    '      (opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/opencode-prewarm.log 2>&1 & pid=$!; \\',
+    '       for i in $(seq 1 180); do \\',
+    '         curl --max-time 0.2 --connect-timeout 0.05 -fsS "http://127.0.0.1:4096/session?directory=/workspace" >/dev/null 2>&1 && break; \\',
+    '         sleep 0.05; \\',
+    '       done; \\',
+    '       kill "$pid" >/dev/null 2>&1 || true; \\',
+    '       sleep 0.2; \\',
+    '       kill -9 "$pid" >/dev/null 2>&1 || true; \\',
+    '       wait "$pid" >/dev/null 2>&1 || true; \\',
+    '       cat /tmp/opencode-prewarm.log || true; \\',
+    '       rm -f /tmp/opencode-prewarm.log); \\',
+    '    ) || true',
     'WORKDIR /workspace',
     'EXPOSE 8000',
     'ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]',
@@ -166,6 +190,17 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
   ].join('\n');
 
   return `${trimmed}\n${kortixLayer}`;
+}
+
+export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
+  // The generated starter Dockerfile used to install baseline tools that the
+  // injected Kortix runtime layer installs again. On a cold Daytona builder that
+  // duplicate apt step can be the first multi-minute blocker before the actual
+  // runtime layer even starts. Strip only the exact starter block; custom user
+  // Dockerfiles are preserved verbatim.
+  const starterBlock =
+    /# Bring in baseline tooling\. The Kortix layer on top also installs\n# git\/curl\/ca-certificates\/nodejs\/npm, but having them in your base\n# makes interactive sessions snappier\.\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends \\\n        ca-certificates \\\n        curl \\\n        git \\\n        build-essential \\\n    && rm -rf \/var\/lib\/apt\/lists\/\*\n\n?/;
+  return dockerfile.replace(starterBlock, '');
 }
 
 /**

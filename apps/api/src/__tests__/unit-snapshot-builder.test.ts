@@ -620,14 +620,14 @@ describe('getProjectSandboxHealth', () => {
   const allForBranch = (r: Row) =>
     r.projectId === PROJECT_ID && r.branch === BRANCH && r.provider === 'daytona';
 
-  test('first build: only a building row, no ready snapshot ever', async () => {
+  test('building row with no ready snapshot is not treated as first build after the row exists', async () => {
     // Fresh updatedAt so the in-flight build isn't treated as a stale orphan.
     rows = [makeRow({ snapshotRowId: 'b', status: 'building', metadata: {}, updatedAt: new Date() })];
     setFilter(allForBranch);
     setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
-    expect(h.firstBuild).toBe(true);
+    expect(h.firstBuild).toBe(false);
     expect(h.healthy).toBe(false);
     expect(h.building).toBe(true);
     expect(h.readyCount).toBe(0);

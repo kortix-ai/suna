@@ -90,6 +90,7 @@ import {
   buildLayeredDockerfile,
   extractSandboxPaths,
   extractSandboxSpec,
+  normalizeUserDockerfileForSnapshot,
   sandboxSpecIsEmpty,
   type SandboxPaths,
   type SandboxSpec,
@@ -108,7 +109,17 @@ const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 const BUILD_ATTEMPTS = 3;
 const BUILD_RETRY_BASE_MS = 2_000;
 const SNAPSHOT_LOG_TAIL_LIMIT = 20;
-const RUNTIME_LAYER_VERSION = 'baked-workspace-v1';
+const RUNTIME_LAYER_VERSION = 'baked-workspace-opencode-prewarm-v2';
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
 
 /**
  * Default retention: how many `ready` snapshots we keep per
@@ -873,7 +884,7 @@ export async function getProjectSandboxHealth(
     // "First build" only when no usable ready snapshot has *ever* been produced
     // — so an existing project rebuilding for a runtime bump reads as "updating",
     // not "building first sandbox".
-    firstBuild: readyRows.length === 0,
+    firstBuild: rows.length === 0,
     runtimeOutdated: readyRows.length > 0 && bootableRows.length === 0,
     latestReadyCommitSha: readyRows[0]?.commitSha ?? null,
     latestStatus: latest?.status ?? null,
@@ -1248,7 +1259,7 @@ async function runBuild(
     for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
       const buildLogs: string[] = [];
       try {
-        await daytona.snapshot.create(
+        await withTimeout(daytona.snapshot.create(
           {
             name: ctx.snapshotName,
             image: Image.fromDockerfile(ctx.composedPath),
@@ -1278,7 +1289,7 @@ async function runBuild(
               }
             },
           },
-        );
+        ), BUILD_TIMEOUT_MS, `Snapshot ${ctx.snapshotName} build timed out after ${Math.round(BUILD_TIMEOUT_MS / 1000)}s`);
         await waitForUsableSnapshot(daytona, ctx.snapshotName);
         return {
           daytonaName: ctx.snapshotName,
@@ -1302,6 +1313,23 @@ async function runBuild(
             built: true,
           };
         }
+        if (isSnapshotAlreadyExistsError(err)) {
+          const reaped = await reapUnusableSnapshot(daytona, ctx.snapshotName);
+          if (reaped === 'active') {
+            return {
+              daytonaName: ctx.snapshotName,
+              contentHash: ctx.contentHash,
+              shortHash: ctx.shortHash,
+              runtimeFingerprint: ctx.runtimeFingerprint,
+              built: true,
+            };
+          }
+          if (reaped === 'deleted') {
+            console.warn(`[snapshots] deleted non-active existing snapshot ${ctx.snapshotName} after create conflict; retrying`);
+            attempt--;
+            continue;
+          }
+        }
         // Org-wide snapshot quota hit — reclaim orphaned / over-budget
         // snapshots once, then retry. Without this the cap is a death-spiral:
         // builds fail, so per-project prune (which only runs after a *successful*
@@ -1324,6 +1352,18 @@ async function runBuild(
   } finally {
     await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+async function reapUnusableSnapshot(
+  daytona: ReturnType<typeof getDaytona>,
+  name: string,
+): Promise<'active' | 'deleted' | 'missing'> {
+  const snap = await daytona.snapshot.get(name).catch(() => null);
+  if (!snap) return 'missing';
+  const state = String((snap as { state?: string }).state ?? '').toLowerCase();
+  if (state === 'active') return 'active';
+  await daytona.snapshot.delete(snap).catch(() => {});
+  return 'deleted';
 }
 
 /**
@@ -1379,6 +1419,11 @@ async function waitForUsableSnapshot(
 function isQuotaError(err: unknown): boolean {
   const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return m.includes('quota') || m.includes('maximum allowed');
+}
+
+function isSnapshotAlreadyExistsError(err: unknown): boolean {
+  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return m.includes('snapshot with name') && m.includes('already exists');
 }
 
 /** Transient Daytona build/transport errors worth retrying (vs a real build failure). */
@@ -1544,7 +1589,9 @@ async function computeSnapshotIdentity(
   commitSha: string,
 ): Promise<SnapshotIdentity> {
   const { paths: sandboxPaths, spec } = await resolveSandboxConfig(project, commitSha);
-  const userDockerfile = await readRepoFile(project, sandboxPaths.dockerfile, commitSha);
+  const userDockerfile = normalizeUserDockerfileForSnapshot(
+    await readRepoFile(project, sandboxPaths.dockerfile, commitSha),
+  );
   if (!userDockerfile.trim()) {
     throw new SnapshotBuildError(
       `Empty Dockerfile at ${sandboxPaths.dockerfile} (commit ${commitSha.slice(0, 8)})`,

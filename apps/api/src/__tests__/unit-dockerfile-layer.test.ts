@@ -43,6 +43,29 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
   });
 
+  test('strips only the generated starter baseline apt block', () => {
+    const user = `FROM ubuntu:24.04
+
+# Bring in baseline tooling. The Kortix layer on top also installs
+# git/curl/ca-certificates/nodejs/npm, but having them in your base
+# makes interactive sessions snappier.
+RUN apt-get update \\
+    && apt-get install -y --no-install-recommends \\
+        ca-certificates \\
+        curl \\
+        git \\
+        build-essential \\
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+`;
+    const merged = buildLayeredDockerfile({ userDockerfile: user, ...COMMON });
+    expect(merged).toContain('FROM ubuntu:24.04');
+    expect(merged).toContain('WORKDIR /workspace');
+    expect(merged).not.toContain('having them in your base');
+    expect(merged.match(/apt-get update/g)?.length).toBe(2);
+  });
+
   test('trims trailing whitespace before the seam so blank-line runs do not stack', () => {
     const user = 'FROM scratch\n\n\n\n';
     const merged = buildLayeredDockerfile({ userDockerfile: user, ...COMMON });
