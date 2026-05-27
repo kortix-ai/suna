@@ -16,16 +16,15 @@
  * Counts come from the same cached queries the rest of the project uses.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { motion, useScroll, useTransform } from 'framer-motion';
 import {
   ArrowRight,
   ArrowUp,
   BookOpen,
   Bot,
   CalendarClock,
-  ChevronLeft,
-  ChevronRight,
   Loader2,
   MessageSquare,
   Plug,
@@ -203,51 +202,104 @@ export function ProjectHome({
 }
 
 function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) {
-  // How many chips fit per page. Kept conservative so the row never wraps
-  // on narrow viewports and the arrows always have a stable position.
-  const PAGE_SIZE = 3;
-  const totalPages = Math.max(1, Math.ceil(STARTER_PROMPTS.length / PAGE_SIZE));
-  const [page, setPage] = useState(0);
-  const visible = STARTER_PROMPTS.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  // Scroll-linked marquee. The chip strip glides horizontally as the
+  // page scrolls vertically, so the home page feels alive on first
+  // interaction without us needing a noisy autoplaying ticker. Two
+  // copies of the prompt list are rendered back-to-back so the wrap is
+  // seamless — when the strip has translated one list-width, it looks
+  // identical to its starting position and we silently reset.
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // The page's scroll container isn't `window` — it's an inner
+  // <div className="overflow-y-auto"> a few levels up (see ProjectHome
+  // layout). Walk up the DOM to find it so useScroll can attach to the
+  // right element; otherwise scrollY would always read 0.
+  const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    let el: HTMLElement | null | undefined = rootRef.current?.parentElement;
+    while (el) {
+      const overflowY = getComputedStyle(el).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') break;
+      el = el.parentElement;
+    }
+    setScrollContainer(el ?? null);
+  }, []);
+
+  // useScroll wants a RefObject, not a raw element — wrap it in one.
+  const containerRef = useMemo(
+    () => ({ current: scrollContainer }),
+    [scrollContainer],
+  );
+  const { scrollY } = useScroll({ container: containerRef });
+
+  // Measure ONE list-width on mount so the modulo loop is exact. Without
+  // this the seam would jump as soon as fonts loaded or the viewport
+  // resized. We re-measure on resize for the same reason.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [listWidth, setListWidth] = useState(0);
+  useEffect(() => {
+    const measure = () => {
+      if (!stripRef.current) return;
+      // The strip holds 2× STARTER_PROMPTS; divide by 2 for one list width.
+      setListWidth(stripRef.current.scrollWidth / 2);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (stripRef.current) ro.observe(stripRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // Map vertical scroll to horizontal offset, modulo one list width so
+  // the strip loops indefinitely. 0.6 ratio = "slide ~1px left per
+  // 1.7px scrolled" — slow enough to feel intentional, fast enough that
+  // a flick of the wheel visibly moves it.
+  const x = useTransform(scrollY, (v) => {
+    if (listWidth === 0) return 0;
+    const raw = -v * 0.6;
+    // JavaScript `%` keeps the sign of the dividend; for a continuous
+    // -ve drift we want the result in [-listWidth, 0].
+    return ((raw % listWidth) + listWidth) % listWidth - listWidth;
+  });
+
+  // Render the list twice. When the first copy has fully scrolled out
+  // (translateX = -listWidth) the second copy occupies its slot and
+  // the modulo wraps us back to translateX = 0 invisibly.
+  const items = useMemo(() => [...STARTER_PROMPTS, ...STARTER_PROMPTS], []);
 
   return (
-    <div className="mt-3 flex items-center justify-center gap-1.5">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Previous suggestions"
-        disabled={page === 0}
-        onClick={() => setPage((p) => Math.max(0, p - 1))}
-        className="text-muted-foreground/60 hover:text-foreground"
+    <div
+      ref={rootRef}
+      className="mt-3 overflow-hidden"
+      // Soft fade on both edges so chips don't pop in/out at hard borders.
+      // ~14% of width on each side gives just enough breathing room
+      // without eating into the middle chips.
+      style={{
+        WebkitMaskImage:
+          'linear-gradient(to right, transparent, black 14%, black 86%, transparent)',
+        maskImage:
+          'linear-gradient(to right, transparent, black 14%, black 86%, transparent)',
+      }}
+    >
+      <motion.div
+        ref={stripRef}
+        className="flex w-max items-center gap-2"
+        style={{ x }}
       >
-        <ChevronLeft className="size-3.5" />
-      </Button>
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {visible.map((p) => {
+        {items.map((p, i) => {
           const Icon = p.icon;
           return (
             <button
-              key={p.id}
+              key={`${p.id}-${i}`}
               type="button"
               onClick={() => onPick(p.prompt)}
-              className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:bg-card hover:text-foreground"
+              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:bg-card hover:text-foreground"
             >
               <Icon className="size-3.5" />
               {p.label}
             </button>
           );
         })}
-      </div>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="More suggestions"
-        disabled={page >= totalPages - 1}
-        onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-        className="text-muted-foreground/60 hover:text-foreground"
-      >
-        <ChevronRight className="size-3.5" />
-      </Button>
+      </motion.div>
     </div>
   );
 }
