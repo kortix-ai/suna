@@ -15,8 +15,8 @@
 // Cadence: every 60s. The two partial indexes on expires_at keep the
 // scan cheap (only rows with a bounded grant are visited).
 
-import { and, eq, gt, isNotNull, lt, sql } from 'drizzle-orm';
-import { accounts, projectGroupGrants, projectMembers, projects } from '@kortix/db';
+import { and, eq, isNotNull, lt, sql } from 'drizzle-orm';
+import { projectGroupGrants, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
 
@@ -152,9 +152,4 @@ async function runOnce(): Promise<void> {
       );
   }
 
-  // accounts import unused warning silencer — kept available for future
-  // per-account filtering (e.g. cap by account.iam_v2_enabled if we ever
-  // re-introduce a flag).
-  void accounts;
-  void gt;
 }
