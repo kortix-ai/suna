@@ -833,7 +833,20 @@ function MembersCard({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  // Set rather than scalar so multiple per-row mutations (remove + role
+  // change on different rows) can fly in parallel without their spinners
+  // hopping between rows. Helpers below add/remove on mutate/settle.
+  const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const markPending = (userId: string) =>
+    setPendingUserIds((prev) => new Set(prev).add(userId));
+  const clearPending = (userId: string) =>
+    setPendingUserIds((prev) => {
+      const next = new Set(prev);
+      next.delete(userId);
+      return next;
+    });
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   // Free-text search over email + user_id. Lives in component state so
@@ -884,8 +897,8 @@ function MembersCard({
   const removeMutation = useMutation({
     mutationFn: (userId: string) =>
       removeAccountMember(account.account_id, userId),
-    onMutate: (userId) => setPendingUserId(userId),
-    onSettled: () => setPendingUserId(null),
+    onMutate: (userId) => markPending(userId),
+    onSettled: (_data, _error, userId) => clearPending(userId),
     onSuccess: () => {
       toast.success('Member removed');
       invalidateMembers();
@@ -898,8 +911,8 @@ function MembersCard({
   const roleMutation = useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: AccountRole }) =>
       updateAccountMemberRole(account.account_id, userId, role),
-    onMutate: ({ userId }) => setPendingUserId(userId),
-    onSettled: () => setPendingUserId(null),
+    onMutate: ({ userId }) => markPending(userId),
+    onSettled: (_data, _error, vars) => clearPending(vars.userId),
     onSuccess: () => {
       toast.success('Role updated');
       invalidateMembers();
@@ -910,8 +923,8 @@ function MembersCard({
 
   const leaveMutation = useMutation({
     mutationFn: () => leaveAccount(account.account_id),
-    onMutate: () => setPendingUserId(currentUserId),
-    onSettled: () => setPendingUserId(null),
+    onMutate: () => markPending(currentUserId),
+    onSettled: () => clearPending(currentUserId),
     onSuccess: () => {
       toast.success(`Left ${account.name}`);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -1145,7 +1158,7 @@ function MembersCard({
             const isLastOwner =
               member.account_role === 'owner' &&
               sorted.filter((m) => m.account_role === 'owner').length === 1;
-            const pending = pendingUserId === member.user_id;
+            const pending = pendingUserIds.has(member.user_id);
             // Kebab is always available — "View & Edit permission policies"
             // is open to anyone who can view the member; backend gates writes.
             const showKebab = !pending;
@@ -1638,7 +1651,18 @@ function PendingInvitesSection({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  // Per-invite spinner state. Set rather than scalar so resending one
+  // invite + cancelling another (or rapid clicks across rows) don't
+  // make the spinner jump between rows.
+  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
+  const markPending = (id: string) =>
+    setPendingIds((prev) => new Set(prev).add(id));
+  const clearPending = (id: string) =>
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   const [cancelTarget, setCancelTarget] = useState<AccountInvitation | null>(
     null,
   );
@@ -1654,8 +1678,8 @@ function PendingInvitesSection({
 
   const resendMutation = useMutation({
     mutationFn: (inviteId: string) => resendAccountInvite(accountId, inviteId),
-    onMutate: (id) => setPendingId(id),
-    onSettled: () => setPendingId(null),
+    onMutate: (id) => markPending(id),
+    onSettled: (_data, _error, id) => clearPending(id),
     onSuccess: (res) => {
       if (res.email_sent) {
         toast.success('Invite email sent');
@@ -1678,8 +1702,8 @@ function PendingInvitesSection({
 
   const cancelMutation = useMutation({
     mutationFn: (inviteId: string) => cancelAccountInvite(accountId, inviteId),
-    onMutate: (id) => setPendingId(id),
-    onSettled: () => setPendingId(null),
+    onMutate: (id) => markPending(id),
+    onSettled: (_data, _error, id) => clearPending(id),
     onSuccess: () => {
       toast.success('Invite cancelled');
       invalidate();
@@ -1706,7 +1730,7 @@ function PendingInvitesSection({
       </div>
       <List>
         {invites.map((invite) => {
-          const busy = pendingId === invite.invite_id;
+          const busy = pendingIds.has(invite.invite_id);
           return (
             <ListRow
               key={invite.invite_id}
