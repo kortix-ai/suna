@@ -16,15 +16,16 @@
  * Counts come from the same cached queries the rest of the project uses.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { motion, useMotionValue } from 'framer-motion';
 import {
   ArrowRight,
   ArrowUp,
   BookOpen,
   Bot,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   Loader2,
   MessageSquare,
   Plug,
@@ -202,108 +203,77 @@ export function ProjectHome({
 }
 
 function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) {
-  // Scroll-linked marquee. The chip strip glides horizontally as the
-  // page scrolls vertically, so the home page feels alive on first
-  // interaction without us needing a noisy autoplaying ticker. Two
-  // copies of the prompt list are rendered back-to-back so the wrap is
-  // seamless — when the strip has translated one list-width, it looks
-  // identical to its starting position and we silently reset.
-  //
-  // We DON'T use framer-motion's useScroll here because it errors loudly
-  // when passed a ref whose .current is still null (see
-  // motion.dev/troubleshooting/use-scroll-ref). Our scroll container is
-  // an inner div we have to discover via DOM walk on mount, so on first
-  // render the ref always reads null. A plain scroll listener writing
-  // to a useMotionValue avoids that handshake entirely.
-  const rootRef = useRef<HTMLDivElement>(null);
-  const stripRef = useRef<HTMLDivElement>(null);
-  const x = useMotionValue(0);
-  const listWidthRef = useRef(0);
+  // Native horizontal scroll on the chip strip — works with trackpad
+  // swipes, touch flicks, and the chevron buttons. The chevrons call
+  // scrollBy({ behavior: 'smooth' }) so the user sees a glide whether
+  // they click an arrow or trackpad-swipe directly on the row. Edge
+  // mask gradients fade chips in/out at the borders so partially-
+  // visible chips look intentional rather than clipped.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Arrow enabled-state is driven by actual scrollLeft, not a page
+  // counter — anything else (counting chip widths, paginating) goes
+  // out of sync as soon as the viewport resizes mid-session.
+  const [atStart, setAtStart] = useState(true);
+  const [atEnd, setAtEnd] = useState(false);
 
-  // Measure ONE list-width and re-measure on resize. The strip holds
-  // 2× STARTER_PROMPTS so we divide its scrollWidth by 2. We stash the
-  // result in a ref (not state) because the scroll listener below reads
-  // it on every tick and we don't want to re-bind it whenever width
-  // changes by a pixel.
   useEffect(() => {
-    const measure = () => {
-      if (!stripRef.current) return;
-      listWidthRef.current = stripRef.current.scrollWidth / 2;
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => {
+      // 4px slack so a sub-pixel scrollLeft (Chrome rounds inconsistently
+      // after a smooth scroll) doesn't keep an arrow falsely enabled.
+      setAtStart(el.scrollLeft <= 4);
+      setAtEnd(el.scrollLeft >= el.scrollWidth - el.clientWidth - 4);
     };
-    measure();
-    const ro = new ResizeObserver(measure);
-    if (stripRef.current) ro.observe(stripRef.current);
-    return () => ro.disconnect();
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro.disconnect();
+    };
   }, []);
 
-  // Find the scrolling ancestor and tie its scrollTop to x. 0.6 px-per-
-  // px feels gentle enough not to be manic, fast enough that a single
-  // mousewheel tick clearly moves the strip. JavaScript's `%` keeps the
-  // sign of the dividend, so we double-mod into [-listWidth, 0] for a
-  // continuous leftward drift that loops without a visible jump.
-  useEffect(() => {
-    let container: HTMLElement | null = rootRef.current?.parentElement ?? null;
-    while (container) {
-      const overflowY = getComputedStyle(container).overflowY;
-      if (overflowY === 'auto' || overflowY === 'scroll') break;
-      container = container.parentElement;
-    }
-    if (!container) return;
-
-    const target = container;
-    let raf = 0;
-    const update = () => {
-      const w = listWidthRef.current;
-      if (w === 0) {
-        x.set(0);
-        return;
-      }
-      const raw = -target.scrollTop * 0.6;
-      x.set(((raw % w) + w) % w - w);
-    };
-    const onScroll = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(update);
-    };
-    // Set the initial position once (in case the container is already
-    // scrolled when we mount, e.g. after a soft nav back).
-    update();
-    target.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      target.removeEventListener('scroll', onScroll);
-      cancelAnimationFrame(raf);
-    };
-  }, [x]);
-
-  // Render the list twice. When the first copy has fully scrolled out
-  // (translateX = -listWidth) the second copy occupies its slot and
-  // the modulo wraps us back to translateX = 0 invisibly.
-  const items = useMemo(() => [...STARTER_PROMPTS, ...STARTER_PROMPTS], []);
+  const scrollByPage = (direction: 1 | -1) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // 70% of viewport: nudges enough that new chips clearly appear, but
+    // leaves one chip in common with the previous frame as a visual
+    // anchor — feels less jarring than a full-viewport jump.
+    el.scrollBy({ left: direction * el.clientWidth * 0.7, behavior: 'smooth' });
+  };
 
   return (
-    <div
-      ref={rootRef}
-      className="mt-3 overflow-hidden"
-      // Soft fade on both edges so chips don't pop in/out at hard borders.
-      // ~14% of width on each side gives just enough breathing room
-      // without eating into the middle chips.
-      style={{
-        WebkitMaskImage:
-          'linear-gradient(to right, transparent, black 14%, black 86%, transparent)',
-        maskImage:
-          'linear-gradient(to right, transparent, black 14%, black 86%, transparent)',
-      }}
-    >
-      <motion.div
-        ref={stripRef}
-        className="flex w-max items-center gap-2"
-        style={{ x }}
+    <div className="mt-3 flex items-center gap-1.5">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Previous suggestions"
+        disabled={atStart}
+        onClick={() => scrollByPage(-1)}
+        className="shrink-0 text-muted-foreground/60 hover:text-foreground"
       >
-        {items.map((p, i) => {
+        <ChevronLeft className="size-3.5" />
+      </Button>
+      <div
+        ref={scrollRef}
+        className="scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto"
+        // Edge fade so the row visually "continues" past the chevrons
+        // instead of clipping at a hard border. 6% is enough to soften
+        // without eating real chip pixels.
+        style={{
+          WebkitMaskImage:
+            'linear-gradient(to right, transparent, black 6%, black 94%, transparent)',
+          maskImage:
+            'linear-gradient(to right, transparent, black 6%, black 94%, transparent)',
+        }}
+      >
+        {STARTER_PROMPTS.map((p) => {
           const Icon = p.icon;
           return (
             <button
-              key={`${p.id}-${i}`}
+              key={p.id}
               type="button"
               onClick={() => onPick(p.prompt)}
               className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:bg-card hover:text-foreground"
@@ -313,7 +283,17 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
             </button>
           );
         })}
-      </motion.div>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="More suggestions"
+        disabled={atEnd}
+        onClick={() => scrollByPage(1)}
+        className="shrink-0 text-muted-foreground/60 hover:text-foreground"
+      >
+        <ChevronRight className="size-3.5" />
+      </Button>
     </div>
   );
 }
