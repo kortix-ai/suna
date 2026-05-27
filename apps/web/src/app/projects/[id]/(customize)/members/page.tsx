@@ -568,7 +568,13 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
   const invitesQuery = useQuery({
     queryKey,
     queryFn: () => listPendingProjectInvites(projectId),
-    staleTime: 20_000,
+    // Shorter staleTime than the other cards (5s vs 20s) because the
+    // invite_expired flag flips with wall-clock time, not user action —
+    // a row sitting in this list will silently transition from "Link
+    // expires Tue" to "Invite link expired" without any mutation we
+    // could invalidate on. Refetching every 5s keeps that hint honest
+    // for an admin actively watching the page.
+    staleTime: 5_000,
   });
 
   const revokeMutation = useMutation({
