@@ -285,7 +285,19 @@ function ProjectAccessCard({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  // Set rather than scalar so cycling roles on row A while a revoke
+  // on row B is still in flight doesn't make the spinner jump.
+  const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const markPending = (userId: string) =>
+    setPendingUserIds((prev) => new Set(prev).add(userId));
+  const clearPending = (userId: string) =>
+    setPendingUserIds((prev) => {
+      const next = new Set(prev);
+      next.delete(userId);
+      return next;
+    });
   // Confirmation modal target. Holds the member chosen for revocation
   // until the user confirms — picking "No access" from the dropdown is
   // a destructive action and previously fired without warning, which
@@ -310,8 +322,8 @@ function ProjectAccessCard({
   const updateMutation = useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: ProjectRole }) =>
       updateProjectAccess(projectId, userId, role),
-    onMutate: ({ userId }) => setPendingUserId(userId),
-    onSettled: () => setPendingUserId(null),
+    onMutate: ({ userId }) => markPending(userId),
+    onSettled: (_data, _error, vars) => clearPending(vars.userId),
     onSuccess: () => {
       toast.success('Access updated');
       invalidate();
@@ -321,8 +333,8 @@ function ProjectAccessCard({
 
   const revokeMutation = useMutation({
     mutationFn: (userId: string) => revokeProjectAccess(projectId, userId),
-    onMutate: (userId) => setPendingUserId(userId),
-    onSettled: () => setPendingUserId(null),
+    onMutate: (userId) => markPending(userId),
+    onSettled: (_data, _error, userId) => clearPending(userId),
     onSuccess: () => {
       toast.success('Access revoked');
       invalidate();
@@ -378,7 +390,7 @@ function ProjectAccessCard({
       {!isLoading && !isError && (
         <List>
           {sortedMembers.map((member) => {
-            const busy = pendingUserId === member.user_id;
+            const busy = pendingUserIds.has(member.user_id);
             const value = member.project_role ?? (member.has_implicit_access ? 'manager' : 'none');
             // Group-derived access — at least one project_group_grants
             // row attaches a group this user belongs to. When this is the
@@ -535,7 +547,19 @@ function AccountRoleBadge({ role }: { role: ProjectAccessMember['account_role'] 
 function PendingInvitesCard({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const queryKey = ['project-pending-invites', projectId];
-  const [pendingInviteId, setPendingInviteId] = useState<string | null>(null);
+  // Set rather than scalar — multiple rapid revokes shouldn't make the
+  // spinner jump between rows. Each row tracks its own pending state.
+  const [pendingInviteIds, setPendingInviteIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const markPending = (id: string) =>
+    setPendingInviteIds((prev) => new Set(prev).add(id));
+  const clearPending = (id: string) =>
+    setPendingInviteIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   // Revoking an invitation is destructive (and may cancel the whole
   // org-level invite when this was the only bootstrap_grant) — gate
   // behind a confirmation.
@@ -549,8 +573,8 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
 
   const revokeMutation = useMutation({
     mutationFn: (inviteId: string) => revokePendingProjectInvite(projectId, inviteId),
-    onMutate: (inviteId) => setPendingInviteId(inviteId),
-    onSettled: () => setPendingInviteId(null),
+    onMutate: (inviteId) => markPending(inviteId),
+    onSettled: (_data, _error, inviteId) => clearPending(inviteId),
     onSuccess: (result) => {
       toast.success(
         result.invitation_cancelled
@@ -586,7 +610,7 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
       {!invitesQuery.isLoading && pending.length > 0 && (
         <List>
           {pending.map((invite) => {
-            const busy = pendingInviteId === invite.invite_id;
+            const busy = pendingInviteIds.has(invite.invite_id);
             return (
               <ListRow
                 key={invite.invite_id}
@@ -710,7 +734,20 @@ function ProjectGroupGrantsCard({
 
   const [pickerGroupId, setPickerGroupId] = useState<string>('');
   const [pickerRole, setPickerRole] = useState<ProjectRole>('editor');
-  const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
+  // Set rather than scalar — attach, update, and detach can each be
+  // in-flight on different rows at the same time without the spinner
+  // jumping to whatever was last written.
+  const [pendingGroupIds, setPendingGroupIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const markPending = (id: string) =>
+    setPendingGroupIds((prev) => new Set(prev).add(id));
+  const clearPending = (id: string) =>
+    setPendingGroupIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   // Detaching a group revokes inherited access for every group member
   // in one shot — easily a dozen users at once. Always confirm.
   const [detachTarget, setDetachTarget] = useState<ProjectGroupGrant | null>(null);
@@ -729,8 +766,10 @@ function ProjectGroupGrantsCard({
 
   const attachMutation = useMutation({
     mutationFn: () => attachGroupToProject(projectId, pickerGroupId, pickerRole),
-    onMutate: () => setPendingGroupId(pickerGroupId),
-    onSettled: () => setPendingGroupId(null),
+    // Snapshot pickerGroupId at call-time so onSettled can clear the
+    // correct row even if the picker changes before the request lands.
+    onMutate: () => { markPending(pickerGroupId); return { groupId: pickerGroupId }; },
+    onSettled: (_data, _error, _vars, ctx) => clearPending(ctx!.groupId),
     onSuccess: () => {
       toast.success('Group attached');
       setPickerGroupId('');
@@ -743,8 +782,8 @@ function ProjectGroupGrantsCard({
   const updateMutation = useMutation({
     mutationFn: (input: { groupId: string; role: ProjectRole }) =>
       updateProjectGroupGrant(projectId, input.groupId, input.role),
-    onMutate: (input) => setPendingGroupId(input.groupId),
-    onSettled: () => setPendingGroupId(null),
+    onMutate: (input) => markPending(input.groupId),
+    onSettled: (_data, _error, input) => clearPending(input.groupId),
     onSuccess: () => {
       toast.success('Role updated');
       invalidate();
@@ -754,8 +793,8 @@ function ProjectGroupGrantsCard({
 
   const detachMutation = useMutation({
     mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
-    onMutate: (groupId) => setPendingGroupId(groupId),
-    onSettled: () => setPendingGroupId(null),
+    onMutate: (groupId) => markPending(groupId),
+    onSettled: (_data, _error, groupId) => clearPending(groupId),
     onSuccess: () => {
       toast.success('Group detached');
       invalidate();
@@ -855,7 +894,7 @@ function ProjectGroupGrantsCard({
       {!grantsQuery.isLoading && grants.length > 0 && (
         <List>
           {grants.map((g: ProjectGroupGrant) => {
-            const busy = pendingGroupId === g.group_id;
+            const busy = pendingGroupIds.has(g.group_id);
             return (
               <ListRow
                 key={g.group_id}
