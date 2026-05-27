@@ -3783,11 +3783,16 @@ function SessionTurn({
             ))}
 
           {/* Answered question parts — shown after the response text only when
-				    there are no steps (no-steps turns). When hasSteps is true,
-				    answered questions render inline within the steps section above.
-				    Skip while working — the steps section (guarded by `working || hasSteps`)
-				    already renders them to avoid duplicates. */}
-          {!hasSteps && !working && answeredQuestionParts.length > 0 && (
+				    NONE of the upstream renderers fire. The steps section above is
+				    gated by `working || hasSteps || hasReasoning`; if any of those
+				    is true, the question parts have already been rendered inline
+				    there as AnsweredQuestionCards. Mirroring that guard's inverse
+				    here is the only way to avoid the double-render that showed up
+				    on interrupted sessions that contained reasoning but no tool
+				    steps (e.g. "Planning a process for questions" → user answers
+				    → interrupt; hasSteps=false, working=false, hasReasoning=true,
+				    and without the !hasReasoning check the card rendered twice). */}
+          {!hasSteps && !working && !hasReasoning && answeredQuestionParts.length > 0 && (
             <div className="space-y-2 mt-3">
               {answeredQuestionParts.map(({ part }) => (
                 <AnsweredQuestionCard key={part.id} part={part as ToolPart} />
