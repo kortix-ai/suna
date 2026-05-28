@@ -54,7 +54,10 @@ export const useListFactors = () => {
     queryKey: ['phone-verification-factors'],
     queryFn: phoneVerificationService.listFactors,
     enabled: !!user, // Only run when user is authenticated
-    staleTime: Infinity, // 2 minutes
+    // Finite window so enrolled/unenrolled factors picked up elsewhere refetch
+    // on mount/focus (mutations still invalidate explicitly). Was Infinity,
+    // which never refetched despite the "2 minutes" intent.
+    staleTime: 2 * 60 * 1000, // 2 minutes
     retry: 2,
   });
 };
@@ -96,7 +99,10 @@ export const useGetAAL = () => {
     queryKey: ['mfa-aal'],
     queryFn: phoneVerificationService.getAAL,
     enabled: !!user, // Only run when user is authenticated
-    staleTime: Infinity, // 1 minute
+    // Finite window so the MFA assurance level refetches on mount/focus rather
+    // than serving a stale gate forever (was Infinity despite the "1 minute"
+    // intent; mutations still invalidate ['mfa-aal'] explicitly).
+    staleTime: 60 * 1000, // 1 minute
     retry: 2,
   });
 };
