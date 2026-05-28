@@ -22,6 +22,10 @@ import {
   StatRow,
 } from '../_components/section-header';
 
+// Cap how many audit rows we render — the list is unbounded and re-renders on a
+// 15s poll, so showing the latest N keeps the DOM bounded if the backend grows it.
+const MAX_AUDIT_ROWS = 100;
+
 export default function AdminOpsPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { data, isLoading, refetch, isFetching } = useOpsOverview();
@@ -139,7 +143,7 @@ export default function AdminOpsPage() {
               <TableRow>
                 <TableCell colSpan={4} className="text-muted-foreground">{tHardcodedUi.raw('appAdminOpsPage.line137JsxTextNoRecentAuditEvents')}</TableCell>
               </TableRow>
-            ) : data.audit.recent.map((event) => (
+            ) : data.audit.recent.slice(0, MAX_AUDIT_ROWS).map((event) => (
               <TableRow key={event.event_id}>
                 <TableCell className="whitespace-nowrap text-muted-foreground">{formatDate(event.occurred_at)}</TableCell>
                 <TableCell>{event.action}</TableCell>
@@ -149,6 +153,11 @@ export default function AdminOpsPage() {
             ))}
           </TableBody>
         </Table>
+        {data.audit.recent.length > MAX_AUDIT_ROWS && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Showing the latest {MAX_AUDIT_ROWS} of {data.audit.recent.length} events.
+          </p>
+        )}
       </SignalPanel>
     </SectionContainer>
   );
