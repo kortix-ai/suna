@@ -15,9 +15,12 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "db:generate": "bunx drizzle-kit generate",
-    "db:push": "bunx drizzle-kit push --force",
-    "db:studio": "bunx drizzle-kit studio"
+    "db:studio": "bunx drizzle-kit studio",
+    "db:migrate:new": "bun scripts/migrate.ts new",
+    "db:migrate:generate": "bun scripts/migrate.ts generate",
+    "db:migrate:status": "bun scripts/migrate.ts status",
+    "db:migrate:up": "bun scripts/migrate.ts up",
+    "db:migrate:verify": "bun scripts/migrate.ts verify"
   },
   "dependencies": {
     "drizzle-kit": "^0.31.10",

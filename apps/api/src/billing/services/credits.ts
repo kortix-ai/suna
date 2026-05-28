@@ -1,5 +1,10 @@
-import { getSupabase } from '../../shared/supabase';
+import { sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import {
+  callAtomicUseCredits,
+  callAtomicAddCredits,
+  callAtomicResetExpiringCredits,
+} from './credit-rpcs';
 import {
   getCreditAccount,
   getCreditBalance,
@@ -49,29 +54,16 @@ export async function deductCredits(
   description: string,
   ledgerType: LedgerDebitType = 'usage',
 ) {
-  const supabase = getSupabase();
-
-  const { data, error } = await supabase.rpc('atomic_use_credits', {
-    p_account_id: accountId,
-    p_amount: amount,
-    p_description: description,
-    p_ledger_type: ledgerType,
-  });
-
-  if (error) {
-    console.error('[Credits] Deduction RPC error:', error);
+  let result: NonNullable<Awaited<ReturnType<typeof callAtomicUseCredits>>>;
+  try {
+    const rpc = await callAtomicUseCredits({ accountId, amount, description, ledgerType });
+    result = (rpc ?? { success: false, error: 'Empty RPC response' }) as typeof result;
+  } catch (err) {
+    console.error('[Credits] Deduction RPC error:', err);
     const account = await getCreditAccount(accountId);
     const actualBalance = account ? Number(account.balance) : 0;
     throw new InsufficientCreditsError(actualBalance, amount);
   }
-
-  const result = data as {
-    success: boolean;
-    error?: string;
-    amount_deducted?: number;
-    new_total?: number;
-    transaction_id?: string;
-  };
 
   if (!result.success) {
     const account = await getCreditAccount(accountId);
@@ -105,7 +97,7 @@ export async function deductForLlmUsage(opts: {
   const result = await deductCredits(opts.accountId, opts.costUsd, description, 'llm_debit');
   if (result.success && result.transactionId && (opts.usageEventId || opts.upstreamCostUsd != null)) {
     const { creditLedger } = await import('@kortix/db');
-    const { eq, sql } = await import('drizzle-orm');
+    const { eq } = await import('drizzle-orm');
     const auditPatch: Record<string, unknown> = {};
     if (opts.usageEventId) auditPatch.usageEventId = opts.usageEventId;
     if (opts.upstreamCostUsd != null) auditPatch.upstreamCostUsd = opts.upstreamCostUsd;
@@ -177,19 +169,24 @@ export async function grantCredits(
   isExpiring: boolean = true,
   stripeEventId?: string,
 ) {
-  const supabase = getSupabase();
   const idempotencyKey = stripeEventId ? `grant:${accountId}:${stripeEventId}` : null;
 
-  const { data, error } = await supabase.rpc('atomic_add_credits', {
-    p_account_id: accountId,
-    p_amount: amount,
-    p_is_expiring: isExpiring,
-    p_description: description,
-    p_expires_at: null,
-    p_type: type,
-    p_stripe_event_id: stripeEventId ?? null,
-    p_idempotency_key: idempotencyKey,
-  });
+  let data: unknown;
+  let error: unknown = null;
+  try {
+    data = await callAtomicAddCredits({
+      accountId,
+      amount,
+      isExpiring,
+      description,
+      expiresAt: null,
+      type,
+      stripeEventId: stripeEventId ?? null,
+      idempotencyKey,
+    });
+  } catch (err) {
+    error = err;
+  }
 
   if (error) {
     console.error('[Credits] Grant RPC error:', error);
@@ -258,14 +255,17 @@ export async function resetExpiringCredits(
   description: string,
   stripeEventId?: string,
 ) {
-  const supabase = getSupabase();
-
-  const { error } = await supabase.rpc('atomic_reset_expiring_credits', {
-    p_account_id: accountId,
-    p_description: description,
-    p_new_credits: newCredits,
-    p_stripe_event_id: stripeEventId ?? null,
-  });
+  let error: unknown = null;
+  try {
+    await callAtomicResetExpiringCredits({
+      accountId,
+      description,
+      newCredits,
+      stripeEventId: stripeEventId ?? null,
+    });
+  } catch (err) {
+    error = err;
+  }
 
   if (error) {
     console.error('[Credits] Reset expiring credits error, using drizzle fallback:', error);

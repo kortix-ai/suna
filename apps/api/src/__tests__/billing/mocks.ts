@@ -61,6 +61,72 @@ export function registerGlobalMocks() {
     }),
   }));
 
+  // After the Drizzle RPC swap, credits.ts goes through credit-rpcs.ts instead
+  // of supabase. Mock that module to route to the same supabaseRpc mock so the
+  // 8 existing tests keep working with the same API.
+  mock.module('../../billing/services/credit-rpcs', () => ({
+    callAtomicUseCredits: async (params: {
+      accountId: string;
+      amount: number;
+      description: string;
+      ledgerType: string;
+    }) => {
+      if (mockRegistry.supabaseRpc) {
+        const { data, error } = await mockRegistry.supabaseRpc.rpc('atomic_use_credits', {
+          p_account_id: params.accountId,
+          p_amount: params.amount,
+          p_description: params.description,
+          p_ledger_type: params.ledgerType,
+        });
+        if (error) throw error;
+        return data;
+      }
+      return null;
+    },
+    callAtomicAddCredits: async (params: {
+      accountId: string;
+      amount: number;
+      isExpiring: boolean;
+      description: string;
+      expiresAt: string | null;
+      type: string;
+      stripeEventId: string | null;
+      idempotencyKey: string | null;
+    }) => {
+      if (mockRegistry.supabaseRpc) {
+        const { data, error } = await mockRegistry.supabaseRpc.rpc('atomic_add_credits', {
+          p_account_id: params.accountId,
+          p_amount: params.amount,
+          p_is_expiring: params.isExpiring,
+          p_description: params.description,
+          p_expires_at: params.expiresAt,
+          p_type: params.type,
+          p_stripe_event_id: params.stripeEventId,
+          p_idempotency_key: params.idempotencyKey,
+        });
+        if (error) throw error;
+        return data;
+      }
+      return null;
+    },
+    callAtomicResetExpiringCredits: async (params: {
+      accountId: string;
+      description: string;
+      newCredits: number;
+      stripeEventId: string | null;
+    }) => {
+      if (mockRegistry.supabaseRpc) {
+        const { error } = await mockRegistry.supabaseRpc.rpc('atomic_reset_expiring_credits', {
+          p_account_id: params.accountId,
+          p_description: params.description,
+          p_new_credits: params.newCredits,
+          p_stripe_event_id: params.stripeEventId,
+        });
+        if (error) throw error;
+      }
+    },
+  }));
+
   mock.module('../../shared/stripe', () => ({
     getStripe: () => mockRegistry.stripeClient ?? createMockStripeClient(),
   }));

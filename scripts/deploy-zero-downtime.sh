@@ -84,6 +84,19 @@ else
     .
 fi
 
+# ── 2.5. Apply DB migrations (must succeed before the new code serves traffic) ─
+if [ -n "${DATABASE_URL:-}" ]; then
+  echo "[2.5/6] Applying DB migrations..."
+  docker run --rm \
+    --network host \
+    -e DATABASE_URL="$DATABASE_URL" \
+    "$IMAGE_TAG" \
+    bun /app/packages/db/scripts/migrate.ts up
+  echo "[2.5/6] Migrations applied."
+else
+  echo "[2.5/6] WARNING: DATABASE_URL not set — skipping migrations. Set it before next deploy."
+fi
+
 # ── 3. Start standby container ───────────────────────────────────────────────
 echo "[3/6] Starting $STANDBY_SLOT on port $STANDBY_PORT..."
 docker rm -f "kortix-api-$STANDBY_SLOT" 2>/dev/null || true

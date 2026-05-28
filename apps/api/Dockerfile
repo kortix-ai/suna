@@ -75,6 +75,9 @@ COPY --from=deps /app/packages/shared/src ./packages/shared/src
 COPY --from=deps /app/packages/shared/package.json ./packages/shared/package.json
 COPY --from=deps /app/packages/shared/tsconfig.json ./packages/shared/tsconfig.json
 COPY --from=deps /app/packages/db/src ./packages/db/src
+COPY --from=deps /app/packages/db/scripts ./packages/db/scripts
+COPY --from=deps /app/packages/db/migrations ./packages/db/migrations
+COPY --from=deps /app/packages/db/drizzle ./packages/db/drizzle
 COPY --from=deps /app/packages/db/drizzle.config.ts ./packages/db/drizzle.config.ts
 COPY --from=deps /app/packages/db/package.json ./packages/db/package.json
 COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
@@ -83,9 +86,6 @@ COPY --from=deps /app/packages/agent-tunnel/package.json ./packages/agent-tunnel
 COPY --from=deps /app/packages/starter/src ./packages/starter/src
 COPY --from=deps /app/packages/starter/package.json ./packages/starter/package.json
 COPY --from=deps /app/packages/starter/tsconfig.json ./packages/starter/tsconfig.json
-
-# Copy SQL migrations used by ensureSchema() at runtime.
-COPY supabase/migrations ./supabase/migrations
 
 # Copy runtime artifacts used by the layered snapshot builder.
 COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
