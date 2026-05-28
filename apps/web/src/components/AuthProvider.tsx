@@ -86,7 +86,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSession(newSession);
         setUser(newSession?.user ?? null);
 
-        if (isLoading) setIsLoading(false);
+        // Functional update: the previous `if (isLoading)` read a stale
+        // `isLoading` captured at mount (the effect only depends on `supabase`),
+        // so the guard never short-circuited. This is behavior-equivalent but
+        // doesn't rely on a stale closure value.
+        setIsLoading((prev) => (prev ? false : prev));
         switch (event) {
           case 'SIGNED_IN': {
             if (newSession?.access_token) {
@@ -134,7 +138,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       authListener?.subscription.unsubscribe();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase]);
 
   const signOut = useCallback(async () => {
