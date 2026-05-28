@@ -157,17 +157,17 @@ describe('computeSnapshotHash', () => {
 });
 
 describe('formatSnapshotName', () => {
-  test('embeds project + content hash, strips dashes from project id', () => {
+  test('is a pure content-hash name (no project tier)', () => {
     const projectId = '12345678-90ab-cdef-1234-567890abcdef';
     const name = formatSnapshotName(projectId, 'a'.repeat(64));
-    expect(name).toBe('kortix-snap-12345678-aaaaaaaaaaaa');
+    expect(name).toBe('kortix-snap-aaaaaaaaaaaa');
   });
 
-  test('two distinct projects with identical content get distinct names', () => {
+  test('two distinct projects with identical content COLLAPSE to one name (starter sharing)', () => {
     const hash = 'b'.repeat(64);
     const a = formatSnapshotName('11111111-1111-1111-1111-111111111111', hash);
     const b = formatSnapshotName('22222222-2222-2222-2222-222222222222', hash);
-    expect(a).not.toBe(b);
+    expect(a).toBe(b);
   });
 
   test('two commits in the same project with identical content collapse to one name', () => {

@@ -5,6 +5,13 @@ import { join } from 'node:path';
 export interface RuntimeArtifact {
   label: string;
   path: string;
+  /**
+   * Directory entry names to skip when walking this artifact. Lets callers
+   * exclude generated/install state like `node_modules` (pnpm symlink targets
+   * can shift across installs even when the source hasn't changed, which would
+   * otherwise flip the fingerprint and force every project to rebuild).
+   */
+  excludeNames?: readonly string[];
 }
 
 export interface RuntimeArtifactFingerprintInput {
@@ -21,20 +28,26 @@ export async function buildRuntimeArtifactFingerprint(
   hash.update(`opencode_version\0${input.opencodeVersion}\0`);
 
   for (const artifact of [...input.artifacts].sort((a, b) => a.label.localeCompare(b.label))) {
-    await hashPath(hash, artifact.path, artifact.label);
+    await hashPath(hash, artifact.path, artifact.label, artifact.excludeNames);
   }
 
   return `kortix-runtime:${input.sandboxVersion}:artifacts:${hash.digest('hex')}`;
 }
 
-async function hashPath(hash: Hash, path: string, logicalPath: string): Promise<void> {
+async function hashPath(
+  hash: Hash,
+  path: string,
+  logicalPath: string,
+  excludeNames?: readonly string[],
+): Promise<void> {
   const stats = await lstat(path);
   if (stats.isDirectory()) {
     hash.update(`dir\0${logicalPath}\0`);
     const entries = await readdir(path, { withFileTypes: true });
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
-      await hashPath(hash, join(path, entry.name), `${logicalPath}/${entry.name}`);
+      if (excludeNames && excludeNames.includes(entry.name)) continue;
+      await hashPath(hash, join(path, entry.name), `${logicalPath}/${entry.name}`, excludeNames);
     }
     return;
   }

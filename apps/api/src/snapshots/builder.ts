@@ -38,10 +38,8 @@ import { Image } from '@daytonaio/sdk';
 import { projectRuntimeSnapshots } from '@kortix/db';
 import { db } from '../shared/db';
 import {
-  deleteDaytonaSnapshotById,
   getDaytona,
   isDaytonaConfigured,
-  listDaytonaSnapshots,
 } from '../shared/daytona';
 import { SANDBOX_VERSION } from '../config';
 import type { SandboxProviderName } from '../config';
@@ -71,12 +69,27 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
 const AGENT_BIN_PATH = process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
   || resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent');
+/**
+ * Source tree for the in-sandbox daemon. We fingerprint the *source* (not the
+ * compiled binary) because `bun build --compile` is non-deterministic — two
+ * builds of identical source produce different output bytes, which would
+ * otherwise flip the runtime fingerprint on every dev rebuild and force every
+ * project's snapshot to rebuild from scratch.
+ */
+const AGENT_SRC_DIR = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
+const AGENT_PKG_JSON = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/package.json');
 const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/agent-cli');
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
+/**
+ * Directory entry names skipped when fingerprinting runtime artifact trees.
+ * pnpm install can shuffle node_modules symlink targets and `.bin` shim
+ * contents without any real source change — hashing them is pure noise.
+ */
+const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 import {
   materializeRepoCheckoutTar,
   materializeRepoContext,
@@ -379,13 +392,7 @@ export async function buildSnapshotForCommit(
       };
     }
 
-    if (await providerInProgressRowIsGone(existing, provider)) {
-      console.warn(
-        `[snapshots] In-progress DB snapshot ${existing.snapshotId ?? '(missing id)'} for project ` +
-        `${project.projectId} commit ${commitSha.slice(0, 8)} is missing/failed in ${provider}; rebuilding`,
-      );
-      await deleteSnapshotRow(project.projectId, commitSha, provider);
-    } else if (!isInProgressSnapshotStale(existing)) {
+    if (!isInProgressSnapshotStale(existing)) {
       // Another build is in flight for this exact commit. Don't race it.
       throw new SnapshotBuildError(
         `Snapshot build for commit ${commitSha.slice(0, 8)} is already in progress`,
@@ -419,11 +426,6 @@ export async function buildSnapshotForCommit(
         runtimeFingerprint: recovered.runtimeFingerprint,
         built: false,
       };
-    }
-    if (await markProviderBuildingRow(existing, provider)) {
-      throw new SnapshotBuildError(
-        `Snapshot build for commit ${commitSha.slice(0, 8)} is still in progress in ${provider}`,
-      );
     }
     // Retry from scratch — failures shouldn't pin a project forever.
     await deleteSnapshotRow(project.projectId, commitSha, provider);
@@ -488,19 +490,17 @@ export async function getLatestReadySnapshot(
     )
     .orderBy(desc(projectRuntimeSnapshots.createdAt))
     .limit(10);
-  if (provider === 'local_docker') {
-    return rows[0] ?? null;
-  }
-  const bootableRows = await filterProviderBootableReadyRows(rows, provider);
-  if (bootableRows.length === 0) return null;
+  if (rows.length === 0) return null;
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
-  const currentRuntimeRow = bootableRows.find((row) =>
+  const currentRuntimeRow = rows.find((row) =>
     extractMetadataRuntimeFingerprint(row.metadata) === runtimeFingerprint
   );
   // Prefer a current-runtime image, but do not make an existing project
   // unusable while a runtime rebuild is pending/failed. A retained older
-  // snapshot is still a valid degraded boot target.
-  return currentRuntimeRow ?? bootableRows[0] ?? null;
+  // snapshot is still a valid degraded boot target. If the chosen row's
+  // snapshot turns out to be missing on the provider, sandbox.create() will
+  // fail and invalidateSnapshotIfMissingOnProvider() will rebuild lazily.
+  return currentRuntimeRow ?? rows[0] ?? null;
 }
 
 export async function getSnapshotForCommit(
@@ -537,12 +537,8 @@ export async function getReadySnapshotForCommit(
   commitSha: string,
   provider: SandboxProviderName = 'daytona',
 ): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
-  let row = await getSnapshotForCommit(projectId, commitSha, provider);
-  if (row && row.status !== 'ready' && row.snapshotId) {
-    row = await recoverProviderActiveRow(row, provider);
-  }
+  const row = await getSnapshotForCommit(projectId, commitSha, provider);
   if (row?.status !== 'ready' || !row.snapshotId) return null;
-  if (!(await isProviderBootableSnapshot(row, provider))) return null;
 
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   if (extractMetadataRuntimeFingerprint(row.metadata) !== runtimeFingerprint) {
@@ -550,36 +546,6 @@ export async function getReadySnapshotForCommit(
   }
 
   return row;
-}
-
-async function filterProviderBootableReadyRows(
-  rows: Array<typeof projectRuntimeSnapshots.$inferSelect>,
-  provider: SandboxProviderName,
-): Promise<Array<typeof projectRuntimeSnapshots.$inferSelect>> {
-  if (provider !== 'daytona' || !isDaytonaConfigured()) return rows;
-  const checks = await Promise.all(
-    rows.map(async (row) => ({
-      row,
-      bootable: await isProviderBootableSnapshot(row, provider),
-    })),
-  );
-  const bootable = checks.filter((check) => check.bootable).map((check) => check.row);
-  const stale = checks.filter((check) => !check.bootable).map((check) => check.row);
-  if (stale.length > 0) {
-    console.warn(
-      `[snapshots] Ignoring ${stale.length} ready DB snapshot row(s) missing from Daytona: ` +
-      stale.map((r) => r.snapshotId).join(', '),
-    );
-  }
-  return bootable;
-}
-
-async function isProviderBootableSnapshot(
-  row: typeof projectRuntimeSnapshots.$inferSelect,
-  provider: SandboxProviderName,
-): Promise<boolean> {
-  if (provider !== 'daytona' || !isDaytonaConfigured() || !row.snapshotId) return true;
-  return (await getProviderSnapshotState(row.snapshotId)) === 'active';
 }
 
 type ProviderSnapshotState = 'active' | 'building' | 'missing' | 'error' | 'other';
@@ -597,51 +563,6 @@ async function getProviderSnapshotState(snapshotId: string): Promise<ProviderSna
   } catch (err) {
     return 'missing';
   }
-}
-
-async function recoverProviderActiveRow(
-  row: typeof projectRuntimeSnapshots.$inferSelect,
-  provider: SandboxProviderName,
-): Promise<typeof projectRuntimeSnapshots.$inferSelect> {
-  if (provider !== 'daytona' || !isDaytonaConfigured() || !row.snapshotId) return row;
-  if ((await getProviderSnapshotState(row.snapshotId)) !== 'active') return row;
-  const [updated] = await db
-    .update(projectRuntimeSnapshots)
-    .set({
-      status: 'ready',
-      error: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(projectRuntimeSnapshots.snapshotRowId, row.snapshotRowId))
-    .returning();
-  return updated ?? row;
-}
-
-async function markProviderBuildingRow(
-  row: typeof projectRuntimeSnapshots.$inferSelect,
-  provider: SandboxProviderName,
-): Promise<boolean> {
-  if (provider !== 'daytona' || !isDaytonaConfigured() || !row.snapshotId) return false;
-  if ((await getProviderSnapshotState(row.snapshotId)) !== 'building') return false;
-  await db
-    .update(projectRuntimeSnapshots)
-    .set({
-      status: 'building',
-      error: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(projectRuntimeSnapshots.snapshotRowId, row.snapshotRowId));
-  return true;
-}
-
-async function providerInProgressRowIsGone(
-  row: typeof projectRuntimeSnapshots.$inferSelect,
-  provider: SandboxProviderName,
-): Promise<boolean> {
-  if (row.status !== 'queued' && row.status !== 'building') return false;
-  if (provider !== 'daytona' || !isDaytonaConfigured() || !row.snapshotId) return false;
-  const state = await getProviderSnapshotState(row.snapshotId);
-  return state === 'missing' || state === 'error' || state === 'build_failed';
 }
 
 function isInProgressSnapshotStale(row: typeof projectRuntimeSnapshots.$inferSelect): boolean {
@@ -710,40 +631,12 @@ export async function ensureBuildForLatestCommit(
   let existing: typeof projectRuntimeSnapshots.$inferSelect | null =
     await findSnapshotRow(project.projectId, commitSha, provider);
   if (existing?.status === 'failed') {
-    existing = await recoverProviderActiveRow(existing, provider);
-    if (existing.status === 'ready') {
-      return { status: 'already-ready', commitSha };
-    }
-    if (await markProviderBuildingRow(existing, provider)) {
-      return { status: 'already-building', commitSha };
-    }
     // Manual/session retry must actually retry. The unique key is
     // (projectId, commitSha, provider), so leaving the failed row in place makes
     // the later insert lose the race while the API misleadingly reports
     // "started".
     await deleteSnapshotRow(project.projectId, commitSha, provider);
     existing = null;
-  }
-  if (existing?.status === 'ready') {
-    const providerState =
-      provider === 'daytona' && existing.snapshotId
-        ? await getProviderSnapshotState(existing.snapshotId)
-        : 'active';
-    if (providerState === 'building') {
-      console.warn(
-        `[snapshots] Ready DB snapshot ${existing.snapshotId ?? '(missing id)'} for project ` +
-        `${project.projectId} commit ${commitSha.slice(0, 8)} is still building in ${provider}; not duplicating`,
-      );
-      return { status: 'already-building', commitSha };
-    }
-    if (providerState !== 'active') {
-      console.warn(
-        `[snapshots] Ready DB snapshot ${existing.snapshotId ?? '(missing id)'} for project ` +
-        `${project.projectId} commit ${commitSha.slice(0, 8)} is ${providerState} in ${provider}; rebuilding`,
-      );
-      await deleteSnapshotRow(project.projectId, commitSha, provider);
-      existing = null;
-    }
   }
 
   if (existing?.status === 'ready') {
@@ -800,13 +693,7 @@ export async function ensureBuildForLatestCommit(
     );
     if (recovered) return { status: 'already-ready', commitSha };
 
-    if (await providerInProgressRowIsGone(existing, provider)) {
-      console.warn(
-        `[snapshots] In-progress DB snapshot ${existing.snapshotId ?? '(missing id)'} for project ` +
-        `${project.projectId} commit ${commitSha.slice(0, 8)} is missing/failed in ${provider}; rebuilding`,
-      );
-      await deleteSnapshotRow(project.projectId, commitSha, provider);
-    } else if (!isInProgressSnapshotStale(existing)) {
+    if (!isInProgressSnapshotStale(existing)) {
       return { status: 'already-building', commitSha };
     } else {
       const staleRecovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
@@ -1001,13 +888,14 @@ export async function getProjectSandboxHealth(
   // counting only current-runtime ones made an existing project read as "0
   // retained / building first sandbox" right after a runtime bump, which looked
   // like builds were vanishing. Bootable = the subset that matches the current
-  // runtime (boots HEAD with no rebuild).
+  // runtime (boots HEAD with no rebuild). We trust the DB row here: if a
+  // snapshot is gone from the provider, sandbox.create() will fail and the
+  // session provisioner invalidates the row lazily then.
   const readyRows = rows.filter((r) => r.status === 'ready' && r.snapshotId);
-  const providerBootableRows = await filterProviderBootableReadyRows(readyRows, provider);
   const bootableRows =
     runtimeFingerprint === null
-      ? providerBootableRows
-      : providerBootableRows.filter((r) => extractMetadataRuntimeFingerprint(r.metadata) === runtimeFingerprint);
+      ? readyRows
+      : readyRows.filter((r) => extractMetadataRuntimeFingerprint(r.metadata) === runtimeFingerprint);
   // A ready row carrying a `rebuildStartedAt` marker is mid non-destructive
   // rebuild (still bootable) — surface that as "building" too.
   const building = rows.some(
@@ -1041,13 +929,13 @@ export async function getProjectSandboxHealth(
     bootableCount: Math.min(bootableRows.length, retention),
     totalCount: rows.length,
     retention,
-    healthy: providerBootableRows.length > 0,
+    healthy: readyRows.length > 0,
     building,
     // "First build" only when no usable ready snapshot has *ever* been produced
     // — so an existing project rebuilding for a runtime bump reads as "updating",
     // not "building first sandbox".
     firstBuild: rows.length === 0,
-    runtimeOutdated: providerBootableRows.length > 0 && bootableRows.length === 0,
+    runtimeOutdated: readyRows.length > 0 && bootableRows.length === 0,
     latestReadyCommitSha: readyRows[0]?.commitSha ?? null,
     latestStatus: latest?.status ?? null,
     failure,
@@ -1101,9 +989,10 @@ export async function pruneOldSnapshots(
     .where(inArray(projectRuntimeSnapshots.snapshotRowId, expiredRowIds));
 
   // For each expired Daytona snapshot, check whether any *surviving* row
-  // in the same project still references it. Only delete from Daytona
-  // when no references remain. Cross-project sharing isn't possible
-  // because snapshot names are project-scoped.
+  // (in ANY project) still references it. Only delete from Daytona when no
+  // references remain — snapshot names are content-addressed globally, so a
+  // sibling project from the same starter may still be booting from this
+  // image even though THIS project's row is being pruned.
   let deletedDaytonaSnapshots = 0;
   if (provider === 'daytona' && expiredSnapshotIds.length > 0) {
     const daytona = getDaytona();
@@ -1113,7 +1002,6 @@ export async function pruneOldSnapshots(
         .from(projectRuntimeSnapshots)
         .where(
           and(
-            eq(projectRuntimeSnapshots.projectId, projectId),
             eq(projectRuntimeSnapshots.provider, provider),
             eq(projectRuntimeSnapshots.snapshotId, snapshotId),
           ),
@@ -1145,16 +1033,12 @@ export async function pruneOldSnapshots(
   return { deletedRows: expired.length, deletedDaytonaSnapshots };
 }
 
-/** Content-addressed name prefix for every per-project session snapshot. */
-const SNAPSHOT_NAME_PREFIX = 'kortix-snap-';
-
 /**
- * Org-wide ceiling on how many `ready` per-project snapshots we let pile up on
- * Daytona. Daytona enforces a HARD global cap (100/org); per-project retention
- * (`DEFAULT_SNAPSHOT_RETENTION`, keep-N each) can't bound a *global* total —
- * N projects × keep-5 blows past 100. This budget is the real bound: stay
- * comfortably under the provider cap so a runtime-fingerprint bump (which
- * rebuilds every project at once) has headroom. Tunable via
+ * Org-wide ceiling on how many `ready` snapshots we let pile up on Daytona.
+ * Daytona enforces a HARD global cap (100/org); with content-addressed names
+ * the same image is shared across all projects with identical content, but a
+ * runtime-fingerprint bump still rebuilds every distinct content variant —
+ * keep headroom below the provider cap. Tunable via
  * `KORTIX_SNAPSHOT_GLOBAL_BUDGET`.
  */
 const DEFAULT_GLOBAL_SNAPSHOT_BUDGET = 80;
@@ -1167,128 +1051,65 @@ function globalSnapshotBudget(): number {
 
 /** Stale `failed` rows older than this are swept (a fresh build re-creates them). */
 const FAILED_ROW_TTL_MS = 24 * 60 * 60 * 1000;
-/**
- * Daytona's snapshot list/get APIs can lag right after `snapshot.create()`
- * returns active. Do not let maintenance clear a brand-new ready DB row during
- * that consistency window, or the next pass can see the provider image as an
- * orphan and delete the snapshot we just built.
- */
-const RECENT_READY_ROW_RECONCILE_GRACE_MS = 15 * 60 * 1000;
 
 function rowUpdatedMs(row: { updatedAt: Date | string }): number {
   const t = row.updatedAt instanceof Date ? row.updatedAt.getTime() : new Date(row.updatedAt).getTime();
   return Number.isFinite(t) ? t : 0;
 }
 
-function isRecentReadySnapshotRow(row: typeof projectRuntimeSnapshots.$inferSelect): boolean {
-  return Date.now() - rowUpdatedMs(row) < RECENT_READY_ROW_RECONCILE_GRACE_MS;
-}
-
 let reconcileRunning = false;
 
 /**
- * Org-wide snapshot reconciliation — the global counterpart to the per-project
- * `pruneOldSnapshots`. Idempotent, best-effort, safe to run on a timer.
+ * Org-wide snapshot reconciliation. Idempotent, best-effort, safe to run on a
+ * timer. The hot-path no longer second-guesses the DB by polling Daytona —
+ * sessions self-heal lazily through `invalidateSnapshotIfMissingOnProvider`,
+ * so reconcile only handles state that needs *bounding*:
  *
- *   1. ORPHANS: Daytona snapshots named `kortix-snap-*` that no `ready` DB row
- *      references — leaked when a rebuild/version-bump replaced a row's
- *      snapshotId without deleting the old image. Deleted from Daytona.
- *   2. DEAD ROWS: DB rows marked `ready` whose image is gone from Daytona.
- *      Deleted so the next session rebuilds cleanly instead of booting a 404.
- *   3. GLOBAL BUDGET: if more than `budget` ready snapshots survive, evict the
+ *   1. GLOBAL BUDGET: if more than `budget` ready snapshots survive, evict the
  *      globally least-recently-updated ones (DB row + image) — never a
  *      project's most-recent row, so every project stays bootable.
- *   4. STALE FAILURES: `failed` rows older than `FAILED_ROW_TTL_MS`.
+ *   2. STALE FAILURES: `failed` rows older than `FAILED_ROW_TTL_MS`.
  *
- * Refuses to delete anything if the Daytona snapshot list can't be fetched
- * (never act on a partial view). No-op when Daytona isn't configured.
+ * No "orphan deletion" / "dead row clearing" — both relied on the broken
+ * active-state polling path and could prune images that were actually fine
+ * (Daytona's REST list endpoint isn't authoritative for SDK-created snapshots).
  */
 export async function reconcileDaytonaSnapshots(opts: { budget?: number } = {}): Promise<{
-  orphansDeleted: number;
-  deadRowsCleared: number;
   evicted: number;
   failedCleared: number;
-  liveBefore: number;
 }> {
-  const noop = { orphansDeleted: 0, deadRowsCleared: 0, evicted: 0, failedCleared: 0, liveBefore: 0 };
+  const noop = { evicted: 0, failedCleared: 0 };
   if (!isDaytonaConfigured() || reconcileRunning) return noop;
   reconcileRunning = true;
   try {
-    // Throws if the list is unavailable — we never delete based on a partial view.
-    const live = (await listDaytonaSnapshots()).filter((s) => s.name.startsWith(SNAPSHOT_NAME_PREFIX));
-    const liveByName = new Map(live.map((s) => [s.name, s]));
-    const liveBefore = live.length;
-
-    const snapshotRows = await db
+    const readyRows = await db
       .select()
       .from(projectRuntimeSnapshots)
       .where(
         and(
           eq(projectRuntimeSnapshots.provider, 'daytona'),
-          inArray(projectRuntimeSnapshots.status, ['queued', 'building', 'ready']),
+          eq(projectRuntimeSnapshots.status, 'ready'),
         ),
       );
 
-    const readyRows = snapshotRows.filter((row) => row.status === 'ready');
-    const referenced = new Set(
-      snapshotRows.map((r) => r.snapshotId).filter((s): s is string => Boolean(s)),
-    );
-
-    // 1. Orphans — on Daytona, named like ours, unreferenced.
-    let orphansDeleted = 0;
-    for (const snap of live) {
-      if (referenced.has(snap.name)) continue;
-      if (await deleteDaytonaSnapshotById(snap.id)) orphansDeleted += 1;
-    }
-
-    // 2. Dead cache rows — `ready` but the image no longer exists.
-    //
-    // Daytona's REST list endpoint is not authoritative for snapshots created
-    // through the SDK in all regions/targets. We have observed `snapshot.get()`
-    // and sandbox create-by-name succeed for a snapshot that was absent from
-    // `/snapshots`, which made this reconciler delete the only ready DB row and
-    // forced the next session back through the slow build/recovery path. Treat
-    // the list as an optimization only: if a ready row is missing from the list,
-    // verify it with the same provider lookup used by session boot before
-    // clearing the row.
-    const readyChecks = await Promise.all(
-      readyRows.map(async (row) => {
-        if (!row.snapshotId) return { row, bootable: false };
-        if (liveByName.has(row.snapshotId)) return { row, bootable: true };
-        if (isRecentReadySnapshotRow(row)) return { row, bootable: true };
-        return { row, bootable: await isProviderBootableSnapshot(row, row.provider) };
-      }),
-    );
-    const deadRowIds = readyChecks
-      .filter((check) => !check.bootable)
-      .map((check) => check.row.snapshotRowId);
-    if (deadRowIds.length > 0) {
-      await db
-        .delete(projectRuntimeSnapshots)
-        .where(inArray(projectRuntimeSnapshots.snapshotRowId, deadRowIds));
-    }
-
-    // 3. Global budget — evict oldest-updated surviving rows beyond the cap,
-    //    keeping each project's most-recent row as a protected floor.
-    const deadSet = new Set(deadRowIds);
-    const surviving = readyChecks
-      .filter((check) => check.bootable && !deadSet.has(check.row.snapshotRowId))
-      .map((check) => check.row);
+    // 1. Global budget — evict oldest-updated rows beyond the cap, keeping
+    //    each project's most-recent row as a protected floor. Image deletion
+    //    only when no surviving row references the same content-addressed name
+    //    (starter-shared images stay alive until the last project drops them).
     const budget = opts.budget ?? globalSnapshotBudget();
     let evicted = 0;
-    if (surviving.length > budget) {
+    if (readyRows.length > budget) {
       const newestPerProject = new Map<string, string>();
-      for (const r of [...surviving].sort((a, b) => rowUpdatedMs(b) - rowUpdatedMs(a))) {
+      for (const r of [...readyRows].sort((a, b) => rowUpdatedMs(b) - rowUpdatedMs(a))) {
         if (!newestPerProject.has(r.projectId)) newestPerProject.set(r.projectId, r.snapshotRowId);
       }
-      const evictRows = [...surviving]
+      const evictRows = [...readyRows]
         .filter((r) => newestPerProject.get(r.projectId) !== r.snapshotRowId)
         .sort((a, b) => rowUpdatedMs(a) - rowUpdatedMs(b))
-        .slice(0, surviving.length - budget);
+        .slice(0, readyRows.length - budget);
       const evictRowIds = new Set(evictRows.map((r) => r.snapshotRowId));
-      // Images still pointed at by a surviving (non-evicted) row must not be deleted.
       const keptRefs = new Set(
-        surviving
+        readyRows
           .filter((r) => !evictRowIds.has(r.snapshotRowId))
           .map((r) => r.snapshotId)
           .filter((s): s is string => Boolean(s)),
@@ -1299,14 +1120,19 @@ export async function reconcileDaytonaSnapshots(opts: { budget?: number } = {}):
           .where(inArray(projectRuntimeSnapshots.snapshotRowId, [...evictRowIds]));
         for (const sid of new Set(evictRows.map((r) => r.snapshotId).filter((s): s is string => Boolean(s)))) {
           if (keptRefs.has(sid)) continue;
-          const snap = liveByName.get(sid);
-          if (snap) await deleteDaytonaSnapshotById(snap.id);
+          // Best-effort image cleanup — look up by name and delete. Failures
+          // are non-fatal; the image will be garbage-collected by the next
+          // pass or by Daytona's own quota pressure.
+          try {
+            const snap = await getDaytona().snapshot.get(sid).catch(() => null);
+            if (snap) await getDaytona().snapshot.delete(snap).catch(() => {});
+          } catch {}
         }
         evicted = evictRowIds.size;
       }
     }
 
-    // 4. Stale failed rows.
+    // 2. Stale failed rows.
     const failed = await db
       .delete(projectRuntimeSnapshots)
       .where(
@@ -1317,14 +1143,8 @@ export async function reconcileDaytonaSnapshots(opts: { budget?: number } = {}):
       )
       .returning({ id: projectRuntimeSnapshots.snapshotRowId });
 
-    const result = {
-      orphansDeleted,
-      deadRowsCleared: deadRowIds.length,
-      evicted,
-      failedCleared: failed.length,
-      liveBefore,
-    };
-    if (orphansDeleted || result.deadRowsCleared || evicted || result.failedCleared) {
+    const result = { evicted, failedCleared: failed.length };
+    if (evicted || result.failedCleared) {
       console.log('[snapshots] reconcile', { ...result, budget });
     }
     return result;
@@ -1847,14 +1667,18 @@ async function prepareBuildContext(
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 
 async function currentRuntimeArtifactFingerprint(): Promise<string> {
-  // The fingerprint hashes the ~99MB agent binary; doing that on every session
-  // start is wasteful since the runtime artifacts only change when the API is
-  // rebuilt/redeployed. Memoize keyed on the agent binary's mtime+size so a dev
-  // rebuild (which restages the CLI/SDK alongside it) still busts the cache.
+  // Fingerprint the daemon's SOURCE, not the compiled binary. `bun build
+  // --compile` is non-deterministic, so hashing the binary bytes would flip the
+  // fingerprint every time anyone touched a source mtime (e.g. `git checkout`)
+  // and trigger a cascade rebuild of every project's snapshot. Hashing source
+  // means: same source → same fingerprint → cached snapshots stay valid.
+  //
+  // Memoize on the source dir mtime so we don't re-walk the tree on every
+  // session boot.
   let key = '';
   try {
-    const s = await stat(AGENT_BIN_PATH);
-    key = `${s.mtimeMs}:${s.size}:${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
+    const s = await stat(AGENT_SRC_DIR);
+    key = `${s.mtimeMs}:${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
   } catch {
     key = ''; // couldn't stat — compute uncached this call
   }
@@ -1865,10 +1689,11 @@ async function currentRuntimeArtifactFingerprint(): Promise<string> {
     sandboxVersion: `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:ab:${AGENT_BROWSER_VERSION}`,
     opencodeVersion: OPENCODE_VERSION,
     artifacts: [
-      { label: 'kortix-agent', path: AGENT_BIN_PATH },
+      { label: 'kortix-agent-src', path: AGENT_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
+      { label: 'kortix-agent-pkg', path: AGENT_PKG_JSON },
       { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
-      { label: 'kortix-agent-cli', path: AGENT_CLI_SRC_PATH },
-      { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH },
+      { label: 'kortix-agent-cli', path: AGENT_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
+      { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
     ],
   });
   if (key) runtimeFingerprintCache = { key, value };

@@ -36,6 +36,38 @@ describe('buildRuntimeArtifactFingerprint', () => {
     }
   });
 
+  test('excludeNames skips matching dir entries (e.g. node_modules) so install state does not flip the fingerprint', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'kortix-runtime-fingerprint-'));
+    try {
+      await mkdir(join(root, 'pkg'));
+      await writeFile(join(root, 'pkg', 'index.ts'), 'src-v1');
+      await mkdir(join(root, 'pkg', 'node_modules'));
+      await writeFile(join(root, 'pkg', 'node_modules', 'lockfile-shim'), 'pnpm-state-v1');
+
+      const artifacts = [
+        { label: 'pkg', path: join(root, 'pkg'), excludeNames: ['node_modules'] },
+      ];
+
+      const before = await buildRuntimeArtifactFingerprint({
+        sandboxVersion: 'dev-test',
+        opencodeVersion: '1.2.3',
+        artifacts,
+      });
+
+      await writeFile(join(root, 'pkg', 'node_modules', 'lockfile-shim'), 'pnpm-state-v2');
+
+      const after = await buildRuntimeArtifactFingerprint({
+        sandboxVersion: 'dev-test',
+        opencodeVersion: '1.2.3',
+        artifacts,
+      });
+
+      expect(after).toBe(before);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('changes when a copied runtime artifact changes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'kortix-runtime-fingerprint-'));
     try {

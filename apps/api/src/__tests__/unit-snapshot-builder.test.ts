@@ -288,16 +288,16 @@ describe('getLatestReadySnapshot', () => {
     expect(result).toBeNull();
   });
 
-  test('ignores ready rows when Daytona no longer has the snapshot active', async () => {
+  test('trusts the DB ready row even when Daytona list is missing the snapshot (lazy heal happens at sandbox.create)', async () => {
     rows = [
-      makeRow({ snapshotRowId: 'stale', status: 'ready', snapshotId: 'kortix-snap-1111-stale' }),
+      makeRow({ snapshotRowId: 'live', status: 'ready', snapshotId: 'kortix-snap-1111-live' }),
     ];
-    hiddenDaytonaSnapshots = new Set(['kortix-snap-1111-stale']);
+    hiddenDaytonaSnapshots = new Set(['kortix-snap-1111-live']);
     setFilter((r) => r.status === 'ready');
 
     const result = await builder.getLatestReadySnapshot(PROJECT_ID, BRANCH);
 
-    expect(result).toBeNull();
+    expect(result?.snapshotId).toBe('kortix-snap-1111-live');
   });
 
   test('ignores ready rows from an old runtime fingerprint', async () => {
@@ -430,7 +430,7 @@ describe('ensureBuildForLatestCommit', () => {
     expect(daytonaSnapshotCreateCalls).toHaveLength(0);
   });
 
-  test('does not delete and duplicate a ready row while provider reports the snapshot is building', async () => {
+  test('returns already-ready for a ready DB row even when Daytona reports the snapshot is still building (trust the DB)', async () => {
     rows = [
       makeRow({
         commitSha: 'head-of-main',
@@ -446,7 +446,7 @@ describe('ensureBuildForLatestCommit', () => {
       { branch: BRANCH, accountId: ACCOUNT_ID, source: 'session-start' },
     );
 
-    expect(result.status).toBe('already-building');
+    expect(result.status).toBe('already-ready');
     expect(daytonaSnapshotCreateCalls).toHaveLength(0);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe('ready');
@@ -471,7 +471,7 @@ describe('ensureBuildForLatestCommit', () => {
     expect(result.commitSha).toBe('head-of-main');
   });
 
-  test('starts a rebuild when the ready DB row is missing from Daytona', async () => {
+  test('trusts a ready DB row even when missing from Daytona list (lazy heal via invalidateSnapshotIfMissingOnProvider on sandbox.create failure)', async () => {
     rows = [
       makeRow({
         commitSha: 'head-of-main',
@@ -486,8 +486,9 @@ describe('ensureBuildForLatestCommit', () => {
       { projectId: PROJECT_ID, repoUrl: 'r', defaultBranch: BRANCH, manifestPath: 'm' },
       { branch: BRANCH, accountId: ACCOUNT_ID, source: 'session-start' },
     );
-    expect(result.status).toBe('started');
+    expect(result.status).toBe('already-ready');
     expect(result.commitSha).toBe('head-of-main');
+    expect(daytonaSnapshotCreateCalls).toHaveLength(0);
   });
 
   test('returns started when no row exists for the head commit', async () => {
@@ -601,26 +602,7 @@ describe('pruneOldSnapshots', () => {
 });
 
 describe('reconcileDaytonaSnapshots', () => {
-  test('does not delete provider snapshots referenced by in-progress DB rows', async () => {
-    rows = [
-      makeRow({
-        snapshotRowId: 'building-row',
-        commitSha: 'head-of-main',
-        snapshotId: 'kortix-snap-1111-building',
-        status: 'building',
-        metadata: { runtimeFingerprint: 'runtime-current' },
-      }),
-    ];
-    setFilter(() => true);
-
-    const result = await builder.reconcileDaytonaSnapshots();
-
-    expect(result.orphansDeleted).toBe(0);
-    expect(result.deadRowsCleared).toBe(0);
-    expect(daytonaDeleteByIdCalls).toHaveLength(0);
-  });
-
-  test('keeps ready rows omitted from the Daytona list when get-by-name is still active', async () => {
+  test('trusts the DB — does not poll Daytona for ready-row state, returns no eviction when under budget', async () => {
     rows = [
       makeRow({
         snapshotRowId: 'ready-row',
@@ -629,12 +611,13 @@ describe('reconcileDaytonaSnapshots', () => {
         metadata: { runtimeFingerprint: 'runtime-current' },
       }),
     ];
+    // The reconcile sweep no longer cares whether Daytona's list shows this
+    // snapshot — sandbox.create() handles lazy invalidation.
     omittedFromDaytonaList = new Set(['kortix-snap-1111-list-omitted']);
     setFilter(() => true);
 
     const result = await builder.reconcileDaytonaSnapshots();
 
-    expect(result.deadRowsCleared).toBe(0);
     expect(result.evicted).toBe(0);
     expect(daytonaDeleteByIdCalls).toHaveLength(0);
   });
@@ -695,7 +678,7 @@ describe('getProjectSandboxHealth', () => {
     expect(h.firstBuild).toBe(false);
   });
 
-  test('ready snapshot missing from Daytona is not reported healthy', async () => {
+  test('ready DB row missing from Daytona list still reads healthy — trust the DB (lazy heal at sandbox.create)', async () => {
     rows = [
       makeRow({
         snapshotRowId: 'missing',
@@ -709,8 +692,8 @@ describe('getProjectSandboxHealth', () => {
     setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
-    expect(h.healthy).toBe(false);
-    expect(h.bootableCount).toBe(0);
+    expect(h.healthy).toBe(true);
+    expect(h.bootableCount).toBe(1);
     expect(h.readyCount).toBe(1);
     expect(h.firstBuild).toBe(false);
   });

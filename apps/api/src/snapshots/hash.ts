@@ -108,13 +108,20 @@ function serializeSpec(spec?: SandboxSpec): string {
 }
 
 /**
- * Format the Daytona snapshot name for a given project + content hash.
- * Daytona snapshot names are global per organization, so we prefix with
- * `kortix-snap-` to claim our namespace and embed the project id so
- * two projects with byte-identical Dockerfiles still get distinct
- * snapshots (avoids accidental cross-project sharing).
+ * Format the Daytona snapshot name for a given content hash. Snapshot names
+ * are *globally* content-addressed under the `kortix-snap-` namespace, so two
+ * projects with byte-identical inputs share one Daytona image — a new project
+ * cloned off an existing starter hits the cache instead of paying for a fresh
+ * build (and instead of consuming a slot of the 100/org snapshot quota).
+ *
+ * Safe to share because the image carries no per-project identity: the inputs
+ * (Dockerfile + git tree + runtime fingerprint + spec) are pure source bytes;
+ * secrets are injected at sandbox boot, not baked into the image.
+ *
+ * The `_projectId` argument is retained for callers that previously needed it
+ * (and may want it back if we ever re-tier the namespace), but it is currently
+ * ignored.
  */
-export function formatSnapshotName(projectId: string, contentHash: string): string {
-  const projectSlug = projectId.replace(/-/g, '').slice(0, 8);
-  return `kortix-snap-${projectSlug}-${contentHash.slice(0, 12)}`;
+export function formatSnapshotName(_projectId: string, contentHash: string): string {
+  return `kortix-snap-${contentHash.slice(0, 12)}`;
 }

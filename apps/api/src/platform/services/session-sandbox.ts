@@ -340,6 +340,13 @@ export async function provisionSessionSandbox(opts: {
   void (async () => {
     let bgExternalId: string | null = null;
     let latest: Awaited<ReturnType<typeof getLatestReadySnapshot>> = null;
+    // Auto-heal flag: on the first sandbox.create failure caused by a stale
+    // snapshot row pointing at a Daytona image that's gone, we invalidate the
+    // row and retry the whole provisioning once. Without this, the FIRST
+    // session to hit a stale row surfaces an ugly "Snapshot ... not found"
+    // error to the user — see [[project_snapshot_simplified_2026_05_28]].
+    let healedStaleSnapshot = false;
+    provisioning: while (true) {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
       let gitProject = opts.gitProject;
@@ -577,24 +584,42 @@ export async function provisionSessionSandbox(opts: {
             err instanceof Error ? err.message : String(err),
           ),
       );
+      break provisioning;
     } catch (bgErr) {
-      console.error(`[session-sandbox] Background provisioning failed for ${sandbox.sandboxId}:`, bgErr);
-      const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);
-
-      if (isSnapshotMissingOnProvider(bgErr) && latest?.snapshotRowId) {
-        const invalidated = await invalidateSnapshotIfMissingOnProvider(
+      // Auto-heal: a stale `ready` row pointed at a Daytona image that's gone.
+      // Mark the row failed, clean up the partial provider resource, then retry
+      // the whole provisioning. The retry's `getLatestReadySnapshot` will skip
+      // the now-failed row and either pick a different ready snapshot or fall
+      // through to `ensureBuildForLatestCommit` + wait for a fresh build.
+      // Capped at 1 heal per session start so a real broken-build doesn't loop.
+      if (
+        isSnapshotMissingOnProvider(bgErr) &&
+        latest?.snapshotRowId &&
+        !healedStaleSnapshot
+      ) {
+        healedStaleSnapshot = true;
+        await invalidateSnapshotIfMissingOnProvider(
           latest.snapshotRowId,
           latest.snapshotId,
           providerName,
           `${providerName}.sandbox.create reported snapshot ${latest.snapshotId ?? '<unknown>'} missing`,
         );
-        if (invalidated) {
-          console.warn(
-            `[session-sandbox] invalidated stale snapshot row ${latest.snapshotRowId} ` +
-            `(${latest.snapshotId}); next session start will rebuild`,
+        console.warn(
+          `[session-sandbox] auto-healing stale snapshot row ${latest.snapshotRowId} ` +
+          `(${latest.snapshotId}) for session ${sandbox.sandboxId} — retrying`,
+        );
+        if (bgExternalId) {
+          await provider.remove(bgExternalId).catch((cleanupErr) =>
+            console.warn(`[session-sandbox] post-heal cleanup of ${bgExternalId} failed:`, cleanupErr),
           );
+          bgExternalId = null;
         }
+        latest = null;
+        continue provisioning;
       }
+
+      console.error(`[session-sandbox] Background provisioning failed for ${sandbox.sandboxId}:`, bgErr);
+      const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);
 
       if (bgExternalId) {
         try {
@@ -630,6 +655,8 @@ export async function provisionSessionSandbox(opts: {
       } catch (markErr) {
         console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
       }
+      break provisioning;
+    }
     }
   })();
 

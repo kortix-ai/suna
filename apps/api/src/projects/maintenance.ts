@@ -266,8 +266,7 @@ export async function runProjectMaintenance(): Promise<void> {
         return { settled: 0 };
       }),
     ]);
-    const snapChanged =
-      snapshots && (snapshots.orphansDeleted || snapshots.deadRowsCleared || snapshots.evicted || snapshots.failedCleared);
+    const snapChanged = snapshots && (snapshots.evicted || snapshots.failedCleared);
     if (idle.stopped || idle.errors || branches.deleted || branches.errors || snapChanged || computeTick.settled) {
       console.log('[project-maintenance] completed', { idle, branches, snapshots, computeTick });
     }
