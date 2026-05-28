@@ -3,27 +3,33 @@
 import { useTranslations } from 'next-intl';
 
 /**
- * /projects/[id]/commands — Project slash commands browser.
+ * Agents section — project agents browser (Customize overlay).
  *
- * Same two-pane shape as Skills and Agents. Commands live at
- * `.opencode/command/<slug>.md` (or `commands/`); the body is the prompt
- * the agent runs when the user invokes `/<slug>`.
+ * Mirrors the Skills page two-pane shape:
+ *   • Left  — agent list with search + selectable rows
+ *   • Right — selected agent file rendered as markdown
+ *
+ * The repo at `<opencode_config_dir>/agents/<name>.md` is the source of
+ * truth — `opencode_config_dir` comes from `[opencode] config_dir` in
+ * kortix.toml and defaults to `.kortix/opencode`. The Edit button is the
+ * future hook for inline editing.
  */
 
-import { use, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  Bot,
   Copy,
   ExternalLink,
   Pencil,
   Plus,
   Search,
   ShieldAlert,
-  TerminalSquare,
+  Star,
 } from 'lucide-react';
 
 import { UnifiedMarkdown } from '@/components/markdown';
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -46,19 +52,14 @@ import {
   newConfigPrompt,
   editConfigPrompt,
 } from '@/components/projects/customize/use-configure-thread';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 
-type Command = ProjectConfigSummary['commands'][number];
+type Agent = ProjectConfigSummary['agents'][number];
 
-export default function ProjectCommandsPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id: projectId } = use(params);
-  return <CommandsView projectId={projectId} />;
-}
+/* ─── Page entry ────────────────────────────────────────────────────────── */
 
-export function CommandsView({ projectId }: { projectId: string }) {
+
+export function AgentsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
@@ -66,7 +67,8 @@ export function CommandsView({ projectId }: { projectId: string }) {
     staleTime: 10_000,
   });
 
-  const commands = detailQuery.data?.config?.commands ?? [];
+  const agents = detailQuery.data?.config?.agents ?? [];
+  const defaultAgent = detailQuery.data?.config?.open_code_default_agent ?? null;
   const isForbidden =
     detailQuery.isError &&
     /403|forbidden/i.test((detailQuery.error as Error)?.message ?? '');
@@ -74,38 +76,42 @@ export function CommandsView({ projectId }: { projectId: string }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
+  // Auto-select first agent on first load — prefer the default agent if
+  // we can identify it, otherwise the first in the list.
   useEffect(() => {
-    if (commands.length === 0) return;
-    if (selectedPath && commands.some((c) => c.path === selectedPath)) return;
-    setSelectedPath(commands[0].path);
-  }, [commands, selectedPath]);
+    if (agents.length === 0) return;
+    if (selectedPath && agents.some((a) => a.path === selectedPath)) return;
+    const preferred =
+      agents.find((a) => a.name === defaultAgent) ?? agents[0];
+    setSelectedPath(preferred.path);
+  }, [agents, defaultAgent, selectedPath]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return commands;
-    return commands.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.description?.toLowerCase().includes(q) ?? false),
+    if (!q) return agents;
+    return agents.filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        (a.description?.toLowerCase().includes(q) ?? false),
     );
-  }, [commands, query]);
+  }, [agents, query]);
 
-  const selected = commands.find((c) => c.path === selectedPath) ?? null;
+  const selected = agents.find((a) => a.path === selectedPath) ?? null;
   const startThread = useConfigureThread(projectId);
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[240px] md:border-b-0 md:border-r">
         <CustomizeSectionHeader
-          icon={TerminalSquare}
-          title="Commands"
-          count={commands.length}
+          icon={Bot}
+          title="Agents"
+          count={agents.length}
           actions={
             <Button
               size="sm"
               variant="outline"
               className="h-7 gap-1 px-2 text-xs"
-              onClick={() => startThread(newConfigPrompt('command'))}
+              onClick={() => startThread(newConfigPrompt('agent'))}
             >
               <Plus className="h-3 w-3" />
               New
@@ -117,7 +123,7 @@ export function CommandsView({ projectId }: { projectId: string }) {
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <Input
-              placeholder={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line107JsxAttrPlaceholderSearchCommands')}
+              placeholder={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line118JsxAttrPlaceholderSearchAgents')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="h-8 pl-8 text-sm placeholder:text-muted-foreground/60"
@@ -132,21 +138,22 @@ export function CommandsView({ projectId }: { projectId: string }) {
             <ForbiddenNotice />
           ) : detailQuery.isError ? (
             <ErrorNotice
-              message={(detailQuery.error as Error)?.message ?? 'Failed to load'}
+              message={(detailQuery.error as Error)?.message ?? 'Failed to load agents'}
               onRetry={() => detailQuery.refetch()}
             />
-          ) : commands.length === 0 ? (
-            <EmptyList onCreate={() => startThread(newConfigPrompt('command'))} />
+          ) : agents.length === 0 ? (
+            <EmptyList onCreate={() => startThread(newConfigPrompt('agent'))} />
           ) : filtered.length === 0 ? (
             <NoMatches query={query} />
           ) : (
             <ul className="space-y-0.5">
-              {filtered.map((cmd) => (
-                <li key={cmd.path}>
-                  <CommandRow
-                    command={cmd}
-                    active={selectedPath === cmd.path}
-                    onSelect={() => setSelectedPath(cmd.path)}
+              {filtered.map((agent) => (
+                <li key={agent.path}>
+                  <AgentRow
+                    agent={agent}
+                    isDefault={defaultAgent === agent.name}
+                    active={selectedPath === agent.path}
+                    onSelect={() => setSelectedPath(agent.path)}
                   />
                 </li>
               ))}
@@ -157,7 +164,11 @@ export function CommandsView({ projectId }: { projectId: string }) {
 
       <section className="flex min-w-0 flex-1 flex-col bg-background">
         {selected ? (
-          <CommandDetail projectId={projectId} command={selected} />
+          <AgentDetail
+            projectId={projectId}
+            agent={selected}
+            isDefault={defaultAgent === selected.name}
+          />
         ) : detailQuery.isLoading ? (
           <DetailSkeleton />
         ) : (
@@ -170,12 +181,14 @@ export function CommandsView({ projectId }: { projectId: string }) {
 
 /* ─── List bits ─────────────────────────────────────────────────────────── */
 
-function CommandRow({
-  command,
+function AgentRow({
+  agent,
+  isDefault,
   active,
   onSelect,
 }: {
-  command: Command;
+  agent: Agent;
+  isDefault: boolean;
   active: boolean;
   onSelect: () => void;
 }) {
@@ -190,38 +203,40 @@ function CommandRow({
           : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
       )}
     >
-      <span
-        className={cn(
-          'inline-flex h-4 min-w-[1rem] items-center justify-center rounded text-xs font-mono font-medium',
-          active ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground/80',
-        )}
-        aria-hidden
-      >
-        /
-      </span>
-      <span className="truncate text-sm font-medium">{command.name}</span>
+      <span className="truncate text-sm font-medium">{agent.name}</span>
+      {isDefault && (
+        <Star
+          className={cn(
+            'ml-auto h-3 w-3 shrink-0 fill-current',
+            active ? 'text-foreground' : 'text-muted-foreground/60',
+          )}
+        />
+      )}
     </button>
   );
 }
 
 /* ─── Detail ────────────────────────────────────────────────────────────── */
 
-function CommandDetail({
+function AgentDetail({
   projectId,
-  command,
+  agent,
+  isDefault,
 }: {
   projectId: string;
-  command: Command;
+  agent: Agent;
+  isDefault: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const startThread = useConfigureThread(projectId);
   const fileQuery = useQuery({
-    queryKey: ['project-file-source', projectId, command.path],
-    queryFn: () => readProjectFile(projectId, command.path),
+    queryKey: ['project-file-source', projectId, agent.path],
+    queryFn: () => readProjectFile(projectId, agent.path),
     staleTime: 30_000,
   });
 
-  const fileName = command.path.split('/').pop() ?? command.path;
+  const fileName = agent.path.split('/').pop() ?? agent.path;
+  const modeLabel = agent.mode ? formatMode(agent.mode) : null;
 
   const onCopy = async () => {
     if (!fileQuery.data?.content) return;
@@ -244,11 +259,11 @@ function CommandDetail({
         <span className="truncate text-sm font-mono text-foreground">{fileName}</span>
         <span className="text-muted-foreground/40">·</span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground/70">
-          {command.path}
+          {agent.path}
         </span>
         <DetailToolbarActions
           onCopy={onCopy}
-          onEdit={() => startThread(editConfigPrompt('command', command.name, command.path))}
+          onEdit={() => startThread(editConfigPrompt('agent', agent.name, agent.path))}
           copyDisabled={!fileQuery.data?.content}
         />
       </header>
@@ -256,16 +271,34 @@ function CommandDetail({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-6 py-8">
           <div className="space-y-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
-              Command
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
+              Agent
+              {modeLabel && (
+                <Badge
+                  variant="outline"
+                  size="sm"
+                  className="font-medium normal-case tracking-normal text-muted-foreground"
+                >
+                  {modeLabel}
+                </Badge>
+              )}
+              {isDefault && (
+                <Badge
+                  variant="outline"
+                  size="sm"
+                  className="font-medium normal-case tracking-normal text-muted-foreground"
+                >
+                  <Star className="fill-current" />
+                  Default
+                </Badge>
+              )}
             </div>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
-              <span className="text-muted-foreground/40">/</span>
-              <span>{command.name}</span>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              {agent.name}
             </h1>
-            {command.description && (
+            {agent.description && (
               <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                {command.description}
+                {agent.description}
               </p>
             )}
           </div>
@@ -277,14 +310,14 @@ function CommandDetail({
               <DetailError
                 message={
                   (fileQuery.error as Error)?.message ??
-                  'Failed to read command source'
+                  'Failed to read agent source'
                 }
                 onRetry={() => fileQuery.refetch()}
               />
             ) : body.trim() ? (
               <UnifiedMarkdown content={body} />
             ) : (
-              <p className="text-sm italic text-muted-foreground/60">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line276JsxTextCommandBodyIsEmptyAddThePromptContent')}</p>
+              <p className="text-sm italic text-muted-foreground/60">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line314JsxTextAgentBodyIsEmptyAddPromptContentBelow')}</p>
             )}
           </div>
         </div>
@@ -317,7 +350,7 @@ function DetailToolbarActions({
             <Copy className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line326JsxTextCopySource')}</TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line363JsxTextCopySource')}</TooltipContent>
       </Tooltip>
       <Button
         variant="outline"
@@ -375,9 +408,9 @@ function DetailEmpty() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
-      icon={TerminalSquare}
-      title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line393JsxAttrTitleSelectACommand')}
-      description={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line394JsxAttrDescriptionPickACommandFromTheListToPreview')}
+      icon={Bot}
+      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line430JsxAttrTitleSelectAnAgent')}
+      description={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line431JsxAttrDescriptionPickAnAgentFromTheListToPreview')}
     />
   );
 }
@@ -386,7 +419,7 @@ function NoMatches({ query }: { query: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-6 text-center">
-      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line403JsxTextNoMatchesFor')}{' '}
+      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line440JsxTextNoMatchesFor')}{' '}
         <span className="font-mono text-foreground">{query}</span>.
       </p>
     </div>
@@ -397,22 +430,22 @@ function EmptyList({ onCreate }: { onCreate: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
-      icon={TerminalSquare}
+      icon={Bot}
       size="sm"
-      title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line415JsxAttrTitleNoCommandsYet')}
+      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line452JsxAttrTitleNoAgentsYet')}
       description={
-        <>{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line418JsxTextCommitA')}{' '}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line420JsxTextOpencodeCommandLtSlugGtMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line422JsxTextToAddASlashCommand')}</>
+        <>{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line455JsxTextCommitA')}{' '}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line457JsxTextKortixOpencodeAgentsLtNameGtMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line459JsxTextAndItAposLlShowUpHere')}</>
       }
       action={
         <div className="flex flex-col items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1.5" onClick={onCreate}>
             <Plus className="h-3.5 w-3.5" />
-            Create a command
+            Create an agent
           </Button>
           <Button asChild variant="ghost" size="sm" className="gap-1.5">
             <a
-              href="https://opencode.ai/docs/commands/"
+              href="https://opencode.ai/docs/agents/"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -437,7 +470,7 @@ function DetailError({
   return (
     <InfoBanner
       tone="destructive"
-      title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line451JsxAttrTitleCouldnTLoadSource')}
+      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line488JsxAttrTitleCouldnTLoadSource')}
       action={
         <Button variant="outline" size="sm" onClick={onRetry}>
           Retry
@@ -452,7 +485,7 @@ function DetailError({
 function ForbiddenNotice() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <InfoBanner icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line465JsxAttrTitleAccessRequired')}>{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line466JsxTextNoPermissionToReadThisRepo')}</InfoBanner>
+    <InfoBanner icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line502JsxAttrTitleAccessRequired')}>{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line503JsxTextNoPermissionToReadThisRepo')}</InfoBanner>
   );
 }
 
@@ -466,7 +499,7 @@ function ErrorNotice({
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-4">
-      <p className="text-sm font-medium text-destructive">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line480JsxTextFailedToLoad')}</p>
+      <p className="text-sm font-medium text-destructive">{tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line517JsxTextFailedToLoad')}</p>
       <p className="mt-1 text-xs text-destructive/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry
@@ -486,4 +519,11 @@ function splitFrontmatter(raw: string): { frontmatter: string; body: string } {
     frontmatter: raw.slice(3, end).replace(/^\n/, ''),
     body: afterTerminator.replace(/^\r?\n/, ''),
   };
+}
+
+function formatMode(mode: string): string {
+  const m = mode.toLowerCase();
+  if (m === 'primary') return 'Primary';
+  if (m === 'subagent') return 'Subagent';
+  return mode;
 }

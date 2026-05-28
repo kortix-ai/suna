@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { FormEvent, use, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import {
@@ -98,14 +98,6 @@ interface SecretRow {
   updatedAt: string | null;
 }
 
-export default function ProjectSecretsPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id: projectId } = use(params);
-  return <SecretsView projectId={projectId} />;
-}
 
 export function SecretsView({ projectId }: { projectId: string }) {
   return (

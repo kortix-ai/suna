@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { FormEvent, use, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ExternalLink,
@@ -27,14 +27,6 @@ import {
   updateProject,
 } from '@/lib/projects-client';
 
-export default function ProjectSettingsPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id: projectId } = use(params);
-  return <SettingsView projectId={projectId} />;
-}
 
 export function SettingsView({ projectId }: { projectId: string }) {
   return (

@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { FormEvent, use, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock, Loader2, Mail, Shield, UserPlus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -73,14 +73,6 @@ function formatDate(input: string | null | undefined) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export default function ProjectMembersPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id: projectId } = use(params);
-  return <MembersView projectId={projectId} />;
-}
 
 export function MembersView({ projectId }: { projectId: string }) {
   return (

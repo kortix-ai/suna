@@ -51,6 +51,7 @@ import {
   listProjectSecrets,
   listProjectSessions,
 } from '@/lib/projects-client';
+import type { CustomizeSection } from '@/lib/customize-sections';
 
 export type ProjectSetupStepId =
   | 'secrets'
@@ -68,8 +69,9 @@ export interface ProjectSetupStep {
   /** Recommended-but-not-required: shown, badged, excluded from completion. */
   optional: boolean;
   icon: LucideIcon;
-  /** Customize surface that completes this step; null = handled by the caller. */
-  href: string | null;
+  /** Customize overlay section that completes this step; null = handled by the
+   *  caller (e.g. "session" starts a session rather than opening Customize). */
+  section: CustomizeSection | null;
   cta: string;
   /** Docs page for the "Learn more" affordance. */
   learnHref: string;
@@ -178,8 +180,6 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
   }, [enabled, detail.data, projectId, baseline, agentCount, skillCount]);
 
   return useMemo<ProjectSetupState>(() => {
-    const base = (path: string) => `/projects/${projectId}/${path}`;
-
     const requiredEnv = secrets.data?.required ?? [];
     const secretItems = secrets.data?.items ?? [];
     const secretsApply = requiredEnv.length > 0;
@@ -209,7 +209,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
               done: secretsDone,
               optional: false,
               icon: KeyRound,
-              href: base('secrets'),
+              section: 'secrets' as const,
               cta: 'Add secrets',
               learnHref: '/docs/concepts/secrets',
             },
@@ -222,7 +222,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         done: memberCount > 1,
         optional: false,
         icon: Users,
-        href: base('members'),
+        section: 'members' as const,
         cta: 'Invite',
         learnHref: '/docs/concepts/accounts',
       },
@@ -233,7 +233,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         done: connectorCount > 0,
         optional: false,
         icon: Plug,
-        href: base('connectors'),
+        section: 'connectors' as const,
         cta: 'Connect',
         learnHref: '/docs/concepts/connections',
       },
@@ -244,7 +244,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         done: sessionCount > 0,
         optional: false,
         icon: SquarePen,
-        href: null,
+        section: null,
         cta: 'Start',
         learnHref: '/docs/quickstart',
       },
@@ -255,7 +255,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         done: agentDone,
         optional: false,
         icon: Bot,
-        href: base('agents'),
+        section: 'agents' as const,
         cta: 'Create',
         learnHref: '/docs/concepts/agents',
       },
@@ -266,7 +266,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         done: skillDone,
         optional: false,
         icon: Wand2,
-        href: base('skills'),
+        section: 'skills' as const,
         cta: 'Add',
         learnHref: '/docs/concepts/agents',
       },

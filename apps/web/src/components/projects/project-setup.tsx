@@ -30,6 +30,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { useCustomizeStore } from '@/stores/customize-store';
 import {
   useProjectSetup,
   type ProjectSetupState,
@@ -172,9 +173,14 @@ function StepSection({
   );
 }
 
-/** Routes a step click: the "session" step is handled by the caller. */
+/**
+ * Routes a step click. Most steps open the Customize overlay (in place, no
+ * navigation) at the section that completes them; the "session" step starts a
+ * session instead.
+ */
 function useStepHandler(projectId: string, onStartSession?: () => void) {
   const router = useRouter();
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
   return useCallback(
     (step: ProjectSetupStep) => {
       if (step.id === 'session') {
@@ -182,9 +188,9 @@ function useStepHandler(projectId: string, onStartSession?: () => void) {
         else router.push(`/projects/${projectId}`);
         return;
       }
-      if (step.href) router.push(step.href);
+      if (step.section) openCustomize(step.section);
     },
-    [router, projectId, onStartSession],
+    [router, projectId, onStartSession, openCustomize],
   );
 }
 

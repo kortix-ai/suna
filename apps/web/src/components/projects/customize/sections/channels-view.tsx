@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
 import {
   Check,
   ChevronDown,
@@ -28,11 +27,6 @@ import {
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
 
-export default function ProjectChannelsPage() {
-  const params = useParams<{ id: string }>();
-  const projectId = params?.id ?? null;
-  return <ChannelsView projectId={projectId} />;
-}
 
 export function ChannelsView({ projectId }: { projectId: string | null }) {
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);

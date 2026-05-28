@@ -1,6 +1,5 @@
 'use client';
 
-import { use } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Container } from 'lucide-react';
 
@@ -13,14 +12,6 @@ import { CustomizeSectionHeader } from '@/components/projects/customize/customiz
  * every session boots from, their health, retention, and recovery (Retry /
  * Fix with agent). Env vars live under Secrets; this surface owns the image.
  */
-export default function ProjectSandboxPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id: projectId } = use(params);
-  return <SandboxView projectId={projectId} />;
-}
 
 export function SandboxView({ projectId }: { projectId: string }) {
   const projectQuery = useQuery({

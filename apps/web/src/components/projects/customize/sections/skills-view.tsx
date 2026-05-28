@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 /**
- * /projects/[id]/skills — Project skills browser.
+ * Skills section — project skills browser (Customize overlay).
  *
  * Two-pane shape:
  *   • Left  — list column with search + group headers + selectable rows
@@ -17,7 +17,6 @@ import { useTranslations } from 'next-intl';
  */
 
 import {
-  use,
   useEffect,
   useMemo,
   useState,
@@ -72,14 +71,6 @@ const pierreSpriteSheet = getBuiltInSpriteSheet('complete');
 
 /* ─── Page entry ────────────────────────────────────────────────────────── */
 
-export default function ProjectSkillsPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id: projectId } = use(params);
-  return <SkillsView projectId={projectId} />;
-}
 
 export function SkillsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');

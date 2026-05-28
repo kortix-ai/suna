@@ -41,15 +41,15 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import { AgentsView } from '@/app/projects/[id]/(customize)/agents/page';
-import { ChannelsView } from '@/app/projects/[id]/(customize)/channels/page';
-import { CommandsView } from '@/app/projects/[id]/(customize)/commands/page';
-import { ConnectorsView } from '@/app/projects/[id]/(customize)/connectors/page';
-import { MembersView } from '@/app/projects/[id]/(customize)/members/page';
-import { SandboxView } from '@/app/projects/[id]/(customize)/sandbox/page';
-import { SecretsView } from '@/app/projects/[id]/(customize)/secrets/page';
-import { SettingsView } from '@/app/projects/[id]/(customize)/settings/page';
-import { SkillsView } from '@/app/projects/[id]/(customize)/skills/page';
+import { AgentsView } from '@/components/projects/customize/sections/agents-view';
+import { ChannelsView } from '@/components/projects/customize/sections/channels-view';
+import { CommandsView } from '@/components/projects/customize/sections/commands-view';
+import { ConnectorsView } from '@/components/projects/customize/sections/connectors-view';
+import { MembersView } from '@/components/projects/customize/sections/members-view';
+import { SandboxView } from '@/components/projects/customize/sections/sandbox-view';
+import { SecretsView } from '@/components/projects/customize/sections/secrets-view';
+import { SettingsView } from '@/components/projects/customize/sections/settings-view';
+import { SkillsView } from '@/components/projects/customize/sections/skills-view';
 import { TriggersView } from '@/components/projects/triggers-view';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useIsMobile } from '@/hooks/utils';

@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { use, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -79,12 +79,8 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
   destructive: 'destructive',
 };
 
-export default function ProjectConnectorsPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: projectId } = use(params);
-  return <ConnectorsView projectId={projectId} />;
-}
 
-/** Reusable view — rendered both at /connectors and inside CustomizeView. */
+/** Connectors section — rendered inside the Customize overlay. */
 export function ConnectorsView({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
