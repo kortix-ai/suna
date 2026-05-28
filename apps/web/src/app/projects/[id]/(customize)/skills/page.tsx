@@ -252,7 +252,7 @@ function SkillListItem({
         type="button"
         onClick={onPickSkill}
         className={cn(
-          'group flex w-full items-center rounded-lg px-2 py-1.5 text-left transition-colors',
+          'group flex w-full cursor-pointer items-center rounded-lg px-2 py-1.5 text-left transition-colors',
           expanded
             ? 'bg-muted/70 text-foreground'
             : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
@@ -316,12 +316,6 @@ function InlineSkillTree({
   }, [filesQuery.data, skillDir, skill.path]);
 
   const treeRows = useMemo(() => buildInlineSkillRows(relativePaths), [relativePaths]);
-  const rowHeightPx = 28;
-  const verticalPaddingPx = 8;
-  const fullTreeHeightPx = Math.max(treeRows.length, 1) * rowHeightPx + verticalPaddingPx;
-  const treeHeightPx = Math.min(fullTreeHeightPx, 280);
-  const isTreeScrollable = fullTreeHeightPx > treeHeightPx;
-  const showFades = isTreeScrollable && treeRows.length > 1;
 
   return (
     <div className="mt-1 pl-3 pr-1">
@@ -339,15 +333,7 @@ function InlineSkillTree({
       ) : filesQuery.isError ? (
         <p className="px-2 py-1.5 text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line320JsxTextCouldnAposTLoadFiles')}</p>
       ) : (
-        <div className="relative">
-          <div
-            className="overflow-y-auto overflow-x-hidden overscroll-contain py-1"
-            style={{
-              height: treeHeightPx,
-              maxHeight: treeHeightPx,
-              contain: 'layout paint',
-            }}
-          >
+        <div className="py-1">
             <div className="py-0.5">
               {treeRows.map((row) => {
                 const fullPath = row.kind === 'file' ? `${skillDir}/${row.path}` : null;
@@ -364,7 +350,7 @@ function InlineSkillTree({
                       'group flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left text-sm transition-colors',
                       row.kind === 'directory'
                         ? 'cursor-default text-muted-foreground/75'
-                        : 'text-muted-foreground hover:bg-muted/45 hover:text-foreground',
+                        : 'cursor-pointer text-muted-foreground hover:bg-muted/45 hover:text-foreground',
                       selected && 'bg-muted text-foreground',
                     )}
                     style={{ paddingLeft: 8 + row.depth * 14 }}
@@ -382,13 +368,6 @@ function InlineSkillTree({
                 );
               })}
             </div>
-          </div>
-          {showFades && (
-            <>
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-3 bg-gradient-to-b from-background/90 to-transparent" />
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-background via-background/85 to-transparent" />
-            </>
-          )}
         </div>
       )}
     </div>
