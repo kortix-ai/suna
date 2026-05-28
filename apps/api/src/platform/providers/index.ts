@@ -65,6 +65,15 @@ export type SandboxStatus = 'running' | 'stopped' | 'removed' | 'unknown';
 export interface ResolvedEndpoint {
   url: string;
   headers: Record<string, string>;
+  // Optional HMAC preview-access token. Required for Platinum-provisioned
+  // sandboxes whose ports are private — the token signs (sandbox_id, port,
+  // generation, expiry) and platinum's edge proxy verifies it before
+  // forwarding. When set, downstream callers should attach it as the
+  // `?t=<token>` query parameter OR the `X-Daytona-Preview-Token` request
+  // header (both are accepted by platinum's edge); see
+  // sandbox-proxy/routes/preview.ts. Daytona-provisioned endpoints have
+  // their token embedded in `url` and leave this null.
+  token?: string | null;
 }
 
 export interface ProvisioningStage {

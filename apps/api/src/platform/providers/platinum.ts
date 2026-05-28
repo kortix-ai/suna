@@ -48,6 +48,12 @@ interface PtExposeResult {
   url: string;
   port: number;
   sandbox_id: string;
+  // HMAC-signed preview token, also embedded as `?t=<token>` in `url`.
+  // Returned as a separate field so callers that need to attach it via
+  // header (instead of query param) don't have to re-parse the URL.
+  // Older Platinum CPs may omit this field; in that case the caller
+  // should fall back to extracting `?t=` from `url`.
+  token?: string;
 }
 
 /**
@@ -272,11 +278,33 @@ export class PlatinumProvider implements SandboxProvider {
     // expose is idempotent — re-call so we always get a fresh HMAC-signed
     // URL even after a stop/start may have moved the sandbox to a new host.
     const exposed = await this.pt<PtExposeResult>('POST', `/v1/sandboxes/${externalId}/expose`, { port: 8000 });
-    const url = exposed.url.replace(/\/$/, '');
+
+    // Platinum returns `https://<short>.sbx.platinum.dev/?t=<token>`. The
+    // trailing `?t=...` query is the HMAC signature edge proxy verifies
+    // before forwarding. If we leave it in `url` and the caller appends a
+    // path (e.g. preview.ts:syncProjectEnvToSandbox doing
+    // `url + '/kortix/env'`), the path lands AFTER the query, producing
+    // `?t=<token>/kortix/env` — the slashed token then fails HMAC verify
+    // with `404 bad-token`. Strip the query here so the bare base URL is
+    // safe to append paths to, and surface the token via the dedicated
+    // `token` field so downstream code attaches it as a header (the
+    // platinum edge accepts both query and header forms equally).
+    //
+    // Back-compat: if a newer CP omits the separate `token` field, fall
+    // back to extracting from the URL's `t` query parameter. If both are
+    // empty (public exposure), `token` stays null.
+    const parsed = new URL(exposed.url);
+    const cleanUrl = `${parsed.origin}${parsed.pathname}`.replace(/\/$/, '');
+    const token = exposed.token ?? parsed.searchParams.get('t') ?? null;
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
+    // Attach the preview token by default so callers that just use
+    // `{url, headers}` (without consulting `token`) still authenticate
+    // correctly against platinum's edge. Callers that prefer the query-
+    // string form can read `token` and re-build the URL themselves.
+    if (token) headers['X-Daytona-Preview-Token'] = token;
 
     // Look up the per-sandbox service key from the sessionSandboxes row so
     // Kortix can authenticate to the in-VM supervisor (same pattern as
@@ -296,7 +324,7 @@ export class PlatinumProvider implements SandboxProvider {
       console.warn(`[PLATINUM] Failed to look up service key for ${externalId}:`, err);
     }
 
-    return { url, headers };
+    return { url: cleanUrl, headers, token };
   }
 
   async ensureRunning(externalId: string): Promise<void> {

@@ -260,8 +260,14 @@ async function resolvePreviewLink(
     // port 8000 in the provider today; for other ports we'd need to extend
     // the SandboxProvider interface.
     const ep = await getProvider('platinum').resolveEndpoint(sandboxId);
-    setCachedPreviewLink(sandboxId, port, ep.url, null);
-    return { url: ep.url, token: null };
+    // Carry the HMAC token through so syncProjectEnvToSandbox attaches it
+    // as `X-Daytona-Preview-Token`. Without this, the env-sync POST hit
+    // platinum's edge with no token and got 404 bad-token, surfacing as
+    // `project env sync failed: 404 ...` 502s on every send-message call
+    // (observed 2026-05-28).
+    const token = ep.token ?? null;
+    setCachedPreviewLink(sandboxId, port, ep.url, token);
+    return { url: ep.url, token };
   }
 
   // Daytona path — the original SDK call.
