@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
+import { shouldPollDeployments } from './deployment-status';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -238,7 +239,11 @@ export const useDeployments = (status?: DeploymentStatus, limit = 50, offset = 0
     queryKey: [...deploymentKeys.list(status), limit, offset],
     queryFn: () => fetchDeployments(status, limit, offset),
     staleTime: 30_000,
-    refetchInterval: 15_000,
+    // Only poll while a deployment is still in progress; stop once everything is
+    // settled (a new deployment re-triggers a fetch via mutation invalidation or
+    // window focus).
+    refetchInterval: (query) =>
+      shouldPollDeployments(query.state.data?.deployments) ? 15_000 : false,
     refetchOnWindowFocus: true,
   });
 };
@@ -293,12 +298,14 @@ export const useDeleteDeployment = () => {
   });
 };
 
-export const useDeploymentLogs = (id: string, enabled = true) => {
+export const useDeploymentLogs = (id: string, enabled = true, isActive = true) => {
   return useQuery({
     queryKey: deploymentKeys.logs(id),
     queryFn: () => fetchDeploymentLogs(id),
     enabled: !!id && enabled,
     staleTime: 10_000,
-    refetchInterval: 10_000,
+    // Fetch logs whenever the dialog is open, but only keep polling while the
+    // deployment is still in progress — terminal deployments have final logs.
+    refetchInterval: isActive ? 10_000 : false,
   });
 };

@@ -13,6 +13,7 @@ import {
 import { ScrollText, Loader2 } from 'lucide-react';
 import { useDeploymentLogs } from '@/hooks/deployments/use-deployments';
 import type { Deployment } from '@/hooks/deployments/use-deployments';
+import { isDeploymentInProgress } from '@/hooks/deployments/deployment-status';
 import { cn } from '@/lib/utils';
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -32,6 +33,7 @@ export function DeploymentLogsDialog({
   const { data, isLoading, error } = useDeploymentLogs(
     deployment?.deploymentId || '',
     open && !!deployment,
+    deployment ? isDeploymentInProgress(deployment.status) : false,
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
