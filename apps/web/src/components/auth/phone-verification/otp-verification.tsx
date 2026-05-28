@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,27 +50,44 @@ export function OtpVerification({
   const [canResend, setCanResend] = useState(false);
   const [countdown, setCountdown] = useState(30);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Single ref-tracked countdown timer so it can be cleared on unmount and
+  // restarted on resend without leaking a second interval (the resend timer
+  // previously lived in a local var and was never cleaned up — it kept firing
+  // setState after unmount).
+  const startCountdown = useCallback(() => {
+    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    setCanResend(false);
+    setCountdown(30);
+    countdownTimerRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          setCanResend(true);
+          if (countdownTimerRef.current) {
+            clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
 
   useEffect(() => {
     if (challengeId) {
       // Focus first input when challenge is available
       inputRefs.current[0]?.focus();
-
-      // Start countdown timer
-      const timer = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) {
-            setCanResend(true);
-            clearInterval(timer);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-
-      return () => clearInterval(timer);
+      startCountdown();
     }
-  }, [challengeId]);
+    return () => {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+    };
+  }, [challengeId, startCountdown]);
 
   const handleOtpChange = (index: number, value: string) => {
     setLocalError(null);
@@ -129,23 +146,12 @@ export function OtpVerification({
   };
 
   const handleResend = async () => {
-    setCanResend(false);
-    setCountdown(30);
     setOtp(['', '', '', '', '', '']);
     setLocalError(null);
 
     await onResend();
 
-    const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          setCanResend(true);
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    startCountdown();
   };
 
   const handleSendCode = async () => {
