@@ -291,6 +291,10 @@ export default async function RootLayout({
               </ReactQueryProvider>
             </I18nProvider>
           </AuthProvider>
+          {/* Non-critical lazy widgets — wrap in a boundary so a failed chunk
+              load reports to Sentry and renders nothing, instead of escalating
+              to global-error and blanking the whole app. */}
+          <ClientErrorBoundary fallback={() => null}>
           {/* Analytics - lazy loaded to not block FCP */}
           <Suspense fallback={null}>
             <Analytics />
@@ -315,6 +319,7 @@ export default async function RootLayout({
           <Suspense fallback={null}>
             <LocalhostLinkInterceptor />
           </Suspense>
+          </ClientErrorBoundary>
         </ThemeProvider>
       </body>
     </html>
