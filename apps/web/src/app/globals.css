@@ -959,6 +959,16 @@
     /* stylelint-disable-next-line at-rule-no-unknown */
     @apply border-border outline-ring/50;
   }
+
+  /* Tailwind v4 dropped the default pointer cursor on buttons. Restore it for
+     all enabled buttons / role="button" so interactive controls feel clickable.
+     Lives in the base layer, so disabled controls and any explicit cursor-*
+     utility (e.g. cursor-default) still win over this default. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
   html {
     scroll-behavior: smooth;
     font-size: 100%;
