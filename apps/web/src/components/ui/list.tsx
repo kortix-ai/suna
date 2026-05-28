@@ -97,10 +97,10 @@ export function ListRow({
         {leading ? <div className="shrink-0">{leading}</div> : null}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className={cn('truncate text-sm font-medium text-foreground', compact && 'leading-tight')}>{title}</span>
+            <span className={cn('truncate text-sm font-medium text-foreground', compact && 'leading-none')}>{title}</span>
             {badges}
           </div>
-          {subtitle ? <div className={cn(!compact && 'mt-0.5')}>{subtitle}</div> : null}
+          {subtitle ? <div className={cn(compact ? 'text-xs leading-none' : 'mt-0.5')}>{subtitle}</div> : null}
         </div>
         {trailing ? (
           <div className="flex shrink-0 items-center gap-1.5">{trailing}</div>
