@@ -79,11 +79,19 @@ class ErrorBoundaryInner extends Component<InnerProps, State> {
 export function ClientErrorBoundary({
   children,
   fallback,
+  silent,
 }: {
   children: React.ReactNode;
   fallback?: ErrorBoundaryFallback;
+  /**
+   * Render nothing on error (for non-critical widgets like analytics). Use this
+   * instead of `fallback={() => null}` so a Server Component can use the
+   * boundary — functions can't cross the server/client boundary, but a boolean
+   * can. The null-rendering fallback is created here, inside the client module.
+   */
+  silent?: boolean;
 }) {
   const render: ErrorBoundaryFallback =
-    fallback ?? ((props) => <DefaultAppFallback reset={props.reset} />);
+    fallback ?? (silent ? () => null : (props) => <DefaultAppFallback reset={props.reset} />);
   return <ErrorBoundaryInner render={render}>{children}</ErrorBoundaryInner>;
 }
