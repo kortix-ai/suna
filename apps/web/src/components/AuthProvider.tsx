@@ -74,6 +74,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           localStorage.setItem('kortix-last-user-id', currentSession.user.id);
         }
       } catch (error) {
+        console.warn('[AuthProvider] Failed to bootstrap initial session:', error);
       } finally {
         setIsLoading(false);
       }
