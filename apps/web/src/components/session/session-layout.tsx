@@ -351,7 +351,7 @@ function PanelHeaderSwitcher({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="flex-shrink-0 flex items-center justify-between h-10 pl-4 pr-2 border-b border-border/40">
+    <div className="flex-shrink-0 flex items-center justify-between h-10 pl-4 pr-2 border-b border-border/60">
       {/* Plain text tabs with an underline on active — no chip, no fill. */}
       <div role="tablist" aria-label={tHardcodedUi.raw('componentsSessionSessionLayout.line348JsxAttrAriaLabelSidePanelView')} className="flex items-center gap-5">
         <PanelTabButton
@@ -429,7 +429,7 @@ function SidePanelFrame({
   children: React.ReactNode;
 }) {
   return (
-    <div className="h-full w-full flex flex-col bg-card overflow-hidden min-w-0 min-h-0 border rounded-2xl">
+    <div className="h-full w-full flex flex-col bg-card overflow-hidden min-w-0 min-h-0 border border-border rounded-[24px]">
       {header}
       <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
     </div>

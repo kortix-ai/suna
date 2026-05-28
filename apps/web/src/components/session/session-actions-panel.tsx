@@ -176,7 +176,7 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
 
       {/* Navigator — only when there's more than one action. */}
       {count > 1 && (
-        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/60 bg-muted/30 px-2 py-1.5">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/60 px-2 py-1.5">
           <Button
             variant="ghost"
             size="icon"
