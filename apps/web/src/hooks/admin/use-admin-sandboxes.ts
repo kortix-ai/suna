@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
-import { ADMIN_ROLE_QUERY_KEY } from './use-admin-role';
+import { stopOnAdminRevoked, isAdminRevokedError } from './use-admin-role';
 
 export interface AdminSandbox {
   sandboxId: string;
@@ -134,19 +134,6 @@ export interface ProviderMachineDetail {
   ssh_key?: { setup_command?: string | null; key_path?: string | null } | null;
 }
 
-// If an admin hook gets 403, the user's role has been revoked (or the
-// frontend's `useAdminRole` cache is stale). Invalidate the role cache so
-// the next render drops `isAdmin` to false and stops firing admin calls,
-// and return `false` from `refetchInterval` to stop the 10s polling.
-function stopOnAdminRevoked(qc: ReturnType<typeof useQueryClient>, err: unknown): false | number {
-  const msg = err instanceof Error ? err.message : '';
-  if (/admin access required|forbidden|403/i.test(msg)) {
-    qc.invalidateQueries({ queryKey: [ADMIN_ROLE_QUERY_KEY] });
-    return false;
-  }
-  return 10_000;
-}
-
 export function useAdminSandboxDetail(sandboxId: string | null) {
   const qc = useQueryClient();
   return useQuery<AdminSandboxDetail>({
@@ -157,8 +144,8 @@ export function useAdminSandboxDetail(sandboxId: string | null) {
       if (response.error) throw new Error(response.error.message);
       return response.data!;
     },
-    refetchInterval: (q) => stopOnAdminRevoked(qc, q.state.error),
-    retry: (_n, err) => !/admin access required|403/i.test(err?.message || ''),
+    refetchInterval: (q) => stopOnAdminRevoked(qc, q.state.error, 10_000),
+    retry: (_n, err) => !isAdminRevokedError(err),
   });
 }
 
@@ -172,8 +159,8 @@ export function useAdminSandboxHealth(sandboxId: string | null, enabled = true) 
       if (response.error) throw new Error(response.error.message);
       return response.data!;
     },
-    refetchInterval: (q) => stopOnAdminRevoked(qc, q.state.error),
-    retry: (_n, err) => !/admin access required|403/i.test(err?.message || ''),
+    refetchInterval: (q) => stopOnAdminRevoked(qc, q.state.error, 10_000),
+    retry: (_n, err) => !isAdminRevokedError(err),
   });
 }
 

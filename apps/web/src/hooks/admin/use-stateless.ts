@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
+import { stopOnAdminRevoked, isAdminRevokedError } from './use-admin-role';
 
 export interface StatelessHealth {
   healthy: boolean;
@@ -141,6 +142,7 @@ const QUERY_KEYS = {
 };
 
 export const useStatelessHealth = () => {
+  const queryClient = useQueryClient();
   return useQuery<StatelessHealth>({
     queryKey: QUERY_KEYS.health,
     queryFn: async () => {
@@ -149,11 +151,13 @@ export const useStatelessHealth = () => {
       return response.data!;
     },
     staleTime: 5 * 1000,
-    refetchInterval: 10 * 1000,
+    refetchInterval: (q) => stopOnAdminRevoked(queryClient, q.state.error, 10 * 1000),
+    retry: (_n, err) => !isAdminRevokedError(err),
   });
 };
 
 export const useStatelessDashboard = () => {
+  const queryClient = useQueryClient();
   return useQuery<StatelessDashboard>({
     queryKey: QUERY_KEYS.dashboard,
     queryFn: async () => {
@@ -162,11 +166,13 @@ export const useStatelessDashboard = () => {
       return response.data!;
     },
     staleTime: 5 * 1000,
-    refetchInterval: 10 * 1000,
+    refetchInterval: (q) => stopOnAdminRevoked(queryClient, q.state.error, 10 * 1000),
+    retry: (_n, err) => !isAdminRevokedError(err),
   });
 };
 
 export const useStatelessStuckRuns = (minAge: number = 5) => {
+  const queryClient = useQueryClient();
   return useQuery<StuckRun[]>({
     queryKey: [...QUERY_KEYS.stuck, minAge],
     queryFn: async () => {
@@ -175,11 +181,13 @@ export const useStatelessStuckRuns = (minAge: number = 5) => {
       return response.data!;
     },
     staleTime: 10 * 1000,
-    refetchInterval: 30 * 1000,
+    refetchInterval: (q) => stopOnAdminRevoked(queryClient, q.state.error, 30 * 1000),
+    retry: (_n, err) => !isAdminRevokedError(err),
   });
 };
 
 export const useStatelessDLQ = (count: number = 50, runId?: string) => {
+  const queryClient = useQueryClient();
   return useQuery<DLQEntry[]>({
     queryKey: [...QUERY_KEYS.dlq, count, runId],
     queryFn: async () => {
@@ -190,11 +198,13 @@ export const useStatelessDLQ = (count: number = 50, runId?: string) => {
       return response.data!;
     },
     staleTime: 10 * 1000,
-    refetchInterval: 30 * 1000,
+    refetchInterval: (q) => stopOnAdminRevoked(queryClient, q.state.error, 30 * 1000),
+    retry: (_n, err) => !isAdminRevokedError(err),
   });
 };
 
 export const useStatelessWALStats = () => {
+  const queryClient = useQueryClient();
   return useQuery<{ total_pending: number; runs_with_pending: number; local_buffer_runs: number }>({
     queryKey: QUERY_KEYS.wal,
     queryFn: async () => {
@@ -203,11 +213,13 @@ export const useStatelessWALStats = () => {
       return response.data!;
     },
     staleTime: 10 * 1000,
-    refetchInterval: 30 * 1000,
+    refetchInterval: (q) => stopOnAdminRevoked(queryClient, q.state.error, 30 * 1000),
+    retry: (_n, err) => !isAdminRevokedError(err),
   });
 };
 
 export const useStatelessCircuitBreakers = () => {
+  const queryClient = useQueryClient();
   return useQuery<Record<string, CircuitBreaker>>({
     queryKey: QUERY_KEYS.circuitBreakers,
     queryFn: async () => {
@@ -216,11 +228,13 @@ export const useStatelessCircuitBreakers = () => {
       return response.data!;
     },
     staleTime: 5 * 1000,
-    refetchInterval: 10 * 1000,
+    refetchInterval: (q) => stopOnAdminRevoked(queryClient, q.state.error, 10 * 1000),
+    retry: (_n, err) => !isAdminRevokedError(err),
   });
 };
 
 export const useStatelessBackpressure = () => {
+  const queryClient = useQueryClient();
   return useQuery<Backpressure>({
     queryKey: QUERY_KEYS.backpressure,
     queryFn: async () => {
@@ -229,7 +243,8 @@ export const useStatelessBackpressure = () => {
       return response.data!;
     },
     staleTime: 5 * 1000,
-    refetchInterval: 10 * 1000,
+    refetchInterval: (q) => stopOnAdminRevoked(queryClient, q.state.error, 10 * 1000),
+    retry: (_n, err) => !isAdminRevokedError(err),
   });
 };
 
@@ -249,6 +264,7 @@ export interface RateLimiterStats {
 }
 
 export const useStatelessRateLimiters = () => {
+  const queryClient = useQueryClient();
   return useQuery<Record<string, RateLimiterStats>>({
     queryKey: QUERY_KEYS.rateLimiters,
     queryFn: async () => {
@@ -257,7 +273,8 @@ export const useStatelessRateLimiters = () => {
       return response.data!;
     },
     staleTime: 5 * 1000,
-    refetchInterval: 10 * 1000,
+    refetchInterval: (q) => stopOnAdminRevoked(queryClient, q.state.error, 10 * 1000),
+    retry: (_n, err) => !isAdminRevokedError(err),
   });
 };
 
@@ -309,6 +326,7 @@ export interface MetricsHistory {
 }
 
 export const useStatelessMetricsHistory = (minutes: number = 30) => {
+  const queryClient = useQueryClient();
   return useQuery<MetricsHistory>({
     queryKey: ['admin-stateless-metrics-history', minutes],
     queryFn: async () => {
@@ -317,7 +335,9 @@ export const useStatelessMetricsHistory = (minutes: number = 30) => {
       return response.data!;
     },
     staleTime: 10 * 1000,
-    refetchInterval: 15 * 1000, // Poll every 15s to build history
+    // Poll every 15s to build history
+    refetchInterval: (q) => stopOnAdminRevoked(queryClient, q.state.error, 15 * 1000),
+    retry: (_n, err) => !isAdminRevokedError(err),
   });
 };
 
