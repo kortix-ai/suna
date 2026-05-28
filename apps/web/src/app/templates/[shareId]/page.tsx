@@ -287,11 +287,15 @@ export default function TemplateSharePage() {
     );
   }
 
-  const tools = template.mcp_requirements || [];
-  const toolRequirements = tools.filter((req: any) => req.source === 'tool');
-  const integrations = toolRequirements.filter((tool: any) => !tool.custom_type || tool.custom_type !== 'sse');
-  const customTools = toolRequirements.filter((tool: any) => tool.custom_type === 'sse');
-  const agentpressTools = Object.entries(template.agentpress_tools || {})
+  const tools = Array.isArray(template.mcp_requirements) ? template.mcp_requirements : [];
+  const toolRequirements = tools.filter((req: any) => req?.source === 'tool');
+  const integrations = toolRequirements.filter((tool: any) => !tool?.custom_type || tool.custom_type !== 'sse');
+  const customTools = toolRequirements.filter((tool: any) => tool?.custom_type === 'sse');
+  const agentpressToolsMap =
+    template.agentpress_tools && typeof template.agentpress_tools === 'object' && !Array.isArray(template.agentpress_tools)
+      ? template.agentpress_tools
+      : {};
+  const agentpressTools = Object.entries(agentpressToolsMap)
     .filter(([_, enabled]) => enabled)
     .map(([toolName]) => toolName);
 
