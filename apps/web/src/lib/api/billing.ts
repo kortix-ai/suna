@@ -116,13 +116,6 @@ export interface AccountState {
     cancel_at?: string | null;
     created_at: string;
   }>;
-  yolo_usage?: {
-    used_percent: number;
-    used_percent_precise: number;
-    window_started: boolean;
-    window_reset_in: number;
-    window_reset_at: string;
-  } | null;
   can_add_instances?: boolean;
   can_claim_computer?: boolean;
   // Billing v2 — present for accounts on the new per-seat plan.

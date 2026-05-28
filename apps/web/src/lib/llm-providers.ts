@@ -89,7 +89,6 @@ const FEATURED_IDS = new Set([
   'cohere',
   'cohere-platform',
   'nvidia',
-  'kortix-yolo',
   'kortix',
 ]);
 
