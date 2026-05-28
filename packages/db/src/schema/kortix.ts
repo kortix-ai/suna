@@ -1463,6 +1463,18 @@ export const sandboxComputeSessions = kortixSchema.table(
 // Billing v2 — per-member Kortix YOLO tokens.
 // Token plaintext is returned once at mint and never stored. Sandbox bootstrap
 // fetches plaintext from an in-memory/KV cache; cache miss = rotate.
+export const stripeWebhookEventsProcessed = kortixSchema.table(
+  'stripe_webhook_events_processed',
+  {
+    eventId: text('event_id').primaryKey().notNull(),
+    eventType: text('event_type').notNull(),
+    processedAt: timestamp('processed_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_stripe_webhook_events_processed_at').on(table.processedAt),
+  ],
+);
+
 export const yoloMemberTokens = kortixSchema.table(
   'yolo_member_tokens',
   {
