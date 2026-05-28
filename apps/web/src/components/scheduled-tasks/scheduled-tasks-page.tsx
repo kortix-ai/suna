@@ -390,9 +390,9 @@ export function ScheduledTasksPage() {
                 <div className="space-y-4">
                   {filteredTriggers.map((trigger) => (
                     <TaskListItem
-                      key={trigger.triggerId}
+                      key={trigger.id}
                       trigger={trigger}
-                      isSelected={selectedTrigger?.triggerId === trigger.triggerId}
+                      isSelected={selectedTrigger?.id === trigger.id}
                       onClick={() => handleTriggerClick(trigger)}
                       onDelete={(e) => handleDelete(e, trigger)}
                       isDeleting={deleteMutation.isPending}
