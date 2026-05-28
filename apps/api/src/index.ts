@@ -51,6 +51,34 @@ import { accountInvitesRouter } from './accounts/invites';
 import { auditStateChangingRequest } from './shared/audit';
 import { opsApp } from './ops';
 
+// ─── Process-level crash guards ───────────────────────────────────────────────
+// A stray rejected promise or throw escaping any fire-and-forget path — the
+// dozens of `void (async …)()` provisioning/sweep ticks and the module-load
+// `setInterval`s — must never take the whole multi-tenant server down. These run
+// asynchronously, so they fire after these handlers are registered. We log +
+// report and keep serving; orchestrator-level restart policy is deliberately
+// left to the platform. Registering these handlers also overrides the runtime's
+// default "crash on unhandled rejection" behavior, so this can only prevent
+// crashes, never introduce one.
+process.on('unhandledRejection', (reason: unknown) => {
+  try {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    appLogger.error('Unhandled promise rejection', { error: err.message, stack: err.stack });
+    captureException(err, { handler: 'unhandledRejection' });
+  } catch {
+    // never let the crash guard itself crash the process
+  }
+});
+
+process.on('uncaughtException', (err: Error) => {
+  try {
+    appLogger.error('Uncaught exception', { error: err?.message ?? String(err), stack: err?.stack });
+    captureException(err, { handler: 'uncaughtException' });
+  } catch {
+    // never let the crash guard itself crash the process
+  }
+});
+
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
 const app = new Hono();
