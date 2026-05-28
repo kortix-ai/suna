@@ -54,6 +54,9 @@ export interface ListRowProps {
   trailing?: React.ReactNode;
   onClick?: () => void;
   className?: string;
+  /** Tighten the title↔subtitle spacing (smaller title line-height + no top
+   *  margin on the subtitle). Opt-in so existing rows are unaffected. */
+  compact?: boolean;
 }
 
 export function ListRow({
@@ -64,6 +67,7 @@ export function ListRow({
   trailing,
   onClick,
   className,
+  compact,
 }: ListRowProps) {
   const interactive = !!onClick;
 
@@ -93,10 +97,10 @@ export function ListRow({
         {leading ? <div className="shrink-0">{leading}</div> : null}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium text-foreground">{title}</span>
+            <span className={cn('truncate text-sm font-medium text-foreground', compact && 'leading-tight')}>{title}</span>
             {badges}
           </div>
-          {subtitle ? <div className="mt-0.5">{subtitle}</div> : null}
+          {subtitle ? <div className={cn(!compact && 'mt-0.5')}>{subtitle}</div> : null}
         </div>
         {trailing ? (
           <div className="flex shrink-0 items-center gap-1.5">{trailing}</div>

@@ -436,6 +436,7 @@ function SecretListRow({
   if (row.system) {
     return (
       <ListRow
+        compact
         leading={<EntityAvatar icon={KeyRound} size="sm" />}
         title={<code className="truncate font-mono text-xs text-foreground">{row.name}</code>}
         badges={<Badge variant="outline" size="sm">Managed</Badge>}
@@ -463,6 +464,7 @@ function SecretListRow({
 
   return (
     <ListRow
+      compact
       className={cn(row.requirement === 'required' && row.effectiveSource === 'none' && 'bg-amber-500/[0.02]')}
       leading={<EntityAvatar icon={row.effectiveSource === 'mine' ? User : KeyRound} size="sm" />}
       title={<code className="truncate font-mono text-xs text-foreground">{row.name}</code>}
