@@ -99,15 +99,40 @@ function isLikelyBinary(name: string): boolean {
   return false;
 }
 
-/** Recursively collect all source (text) files from a directory */
+// Caps so an enormous workspace can't hang the dialog or exhaust memory by
+// reading every file into the browser.
+const MAX_COLLECT_FILES = 2000;
+const MAX_COLLECT_BYTES = 25 * 1024 * 1024; // 25 MB total
+const MAX_COLLECT_DEPTH = 12;
+
+interface CollectBudget {
+  count: number;
+  bytes: number;
+  truncated: boolean;
+}
+
+/** Recursively collect all source (text) files from a directory, bounded by
+ *  file-count / total-size / depth caps. Sets `budget.truncated` when a cap is
+ *  hit so the caller can warn the user. */
 async function collectFilesRecursively(
   dirPath: string,
   basePath: string,
+  budget: CollectBudget = { count: 0, bytes: 0, truncated: false },
+  depth = 0,
 ): Promise<Array<{ path: string; content: string }>> {
-  const nodes = await listFiles(dirPath);
   const result: Array<{ path: string; content: string }> = [];
+  if (depth > MAX_COLLECT_DEPTH) {
+    budget.truncated = true;
+    return result;
+  }
+
+  const nodes = await listFiles(dirPath);
 
   for (const node of nodes) {
+    if (budget.count >= MAX_COLLECT_FILES || budget.bytes >= MAX_COLLECT_BYTES) {
+      budget.truncated = true;
+      break;
+    }
     // Skip hidden files/dirs and common non-deployable paths
     if (node.name.startsWith('.')) continue;
     if (node.type === 'directory' && SKIP_DIRS.has(node.name)) continue;
@@ -116,6 +141,8 @@ async function collectFilesRecursively(
       const children = await collectFilesRecursively(
         node.absolute || node.path,
         basePath,
+        budget,
+        depth + 1,
       );
       result.push(...children);
     } else {
@@ -138,6 +165,8 @@ async function collectFilesRecursively(
           : node.name;
 
         result.push({ path: relativePath, content: content.content });
+        budget.count += 1;
+        budget.bytes += content.content.length;
       } catch {
         // Skip files that can't be read
       }
@@ -627,11 +656,17 @@ export function CreateDeploymentDialog({
     setDetectedPreset(null);
     setIsCollectingFiles(true);
     try {
-      const collected = await collectFilesRecursively(path, path);
+      const budget = { count: 0, bytes: 0, truncated: false };
+      const collected = await collectFilesRecursively(path, path, budget);
       setWorkspaceFiles(collected);
       if (collected.length === 0) {
         toast.error('No files found in the selected folder');
         return;
+      }
+      if (budget.truncated) {
+        toast.warning(
+          `Large workspace — only the first ${collected.length} files were included. Trim the folder if something is missing.`,
+        );
       }
 
       // Auto-detect project type and fill config

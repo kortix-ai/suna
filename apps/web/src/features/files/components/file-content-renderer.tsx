@@ -28,6 +28,7 @@ import { useBinaryBlob } from '../hooks/use-binary-blob';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
+import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { CodeEditor } from '@/components/file-editors/code-editor';
 import { useDiagnosticsStore, findDiagnosticsForFile } from '@/stores/diagnostics-store';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -669,6 +670,21 @@ export function FileContentRenderer({
       {/* Content area — readOnly uses overflow-auto so the read-only editor
           (which renders at auto height) can scroll within the fixed-size parent. */}
       <div className={cn('flex-1', readOnly ? 'overflow-auto' : 'overflow-hidden')}>
+        <ClientErrorBoundary
+          fallback={() => (
+            <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
+              <div className="h-12 w-12 rounded-2xl bg-destructive/10 flex items-center justify-center">
+                <FileWarning className="h-6 w-6 text-destructive/50" />
+              </div>
+              <p className="text-sm font-medium text-muted-foreground">Couldn&apos;t preview this file</p>
+              <p className="text-xs text-muted-foreground/50 max-w-sm break-all font-mono">{filePath}</p>
+              <Button variant="outline" size="sm" onClick={handleDownload}>
+                <Download className="h-3.5 w-3.5 mr-1.5" />
+                Download
+              </Button>
+            </div>
+          )}
+        >
         {/* Loading */}
         {showLoadingState && (
           <div className="flex items-center justify-center h-full">
@@ -883,6 +899,7 @@ export function FileContentRenderer({
         {!showLoadingState && !contentError && isNotFound && (
           <FileNotFoundState filePath={filePath} />
         )}
+        </ClientErrorBoundary>
       </div>
     </div>
   );

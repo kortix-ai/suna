@@ -17,7 +17,8 @@ export async function GET(request: NextRequest) {
     }
 
     const templateResponse = await fetch(
-      `${runtimeEnv.BACKEND_URL}/templates/public/${shareId}`
+      `${runtimeEnv.BACKEND_URL}/templates/public/${shareId}`,
+      { signal: AbortSignal.timeout(5000) }
     );
 
     if (!templateResponse.ok) {

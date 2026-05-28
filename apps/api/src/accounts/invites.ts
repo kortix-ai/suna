@@ -31,6 +31,45 @@ async function lookupAuthEmail(userId: string | null): Promise<string | null> {
   }
 }
 
+// ─── Bootstrap-grant payload validation ───────────────────────────────────
+//
+// The bootstrap_grants column is a jsonb array shape-enforced app-side
+// (no DB CHECK constraint) because the entries are typed as JSON. Today
+// only POST /v1/projects/:id/access/invite writes to it, and it
+// constructs entries from validated inputs — so in practice we trust
+// what's there. The cost of being wrong, though, is that the accept
+// handler would feed garbage straight into projectMembers (e.g., a
+// non-UUID project_id would 22023 on the insert, or an out-of-range
+// role would 22P02 on the enum cast). Validate defensively so an
+// unrelated future code path can't break invite acceptance.
+type ValidatedGrant = {
+  project_id: string;
+  role: 'manager' | 'editor' | 'viewer';
+  expires_at: string | null;
+};
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const VALID_PROJECT_ROLES = new Set(['manager', 'editor', 'viewer']);
+
+function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const g = raw as Record<string, unknown>;
+  if (typeof g.project_id !== 'string' || !UUID_RE.test(g.project_id)) return null;
+  if (typeof g.role !== 'string' || !VALID_PROJECT_ROLES.has(g.role)) return null;
+  // expires_at is optional; when present must parse to a real date.
+  let expiresAt: string | null = null;
+  if (g.expires_at != null) {
+    if (typeof g.expires_at !== 'string') return null;
+    const d = new Date(g.expires_at);
+    if (Number.isNaN(d.getTime())) return null;
+    expiresAt = g.expires_at;
+  }
+  return {
+    project_id: g.project_id,
+    role: g.role as 'manager' | 'editor' | 'viewer',
+    expires_at: expiresAt,
+  };
+}
+
 // GET /v1/account-invites/:inviteId — describe an invite. Redacts identifying
 // fields when the caller's email doesn't match the invite, so the URL alone
 // can't be used to enumerate accounts.
@@ -179,10 +218,23 @@ accountInvitesRouter.post('/:inviteId/accept', async (c) => {
   // redundant noise. Errors are best-effort and logged; the account
   // membership itself is already committed and shouldn't be rolled
   // back if a project no longer exists or similar.
-  const bootstraps = invite.bootstrapGrants ?? [];
+  //
+  // Each grant entry is validated before being applied — see
+  // validateBootstrapGrant above. Malformed entries are skipped with a
+  // warn so a future bad-write to the jsonb column can't break invite
+  // acceptance for the addressed user.
+  const rawBootstraps = invite.bootstrapGrants ?? [];
   const appliedGrants: Array<{ project_id: string; role: string }> = [];
-  if (bootstraps.length > 0 && invite.initialRole === 'member') {
-    for (const g of bootstraps) {
+  if (rawBootstraps.length > 0 && invite.initialRole === 'member') {
+    for (const raw of rawBootstraps) {
+      const g = validateBootstrapGrant(raw);
+      if (!g) {
+        console.warn(
+          '[accept-invite] skipping malformed bootstrap grant',
+          { invite_id: invite.inviteId, raw },
+        );
+        continue;
+      }
       try {
         await db
           .insert(projectMembers)

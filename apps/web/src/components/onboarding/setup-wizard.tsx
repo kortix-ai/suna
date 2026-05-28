@@ -49,6 +49,8 @@ import type { FlatModel } from '@/components/session/session-chat-input';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { authenticatedFetch } from '@/lib/auth-token';
+import { toast } from '@/lib/toast';
+import { saveToolKeys } from './save-tool-keys';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { backendApi } from '@/lib/api-client';
@@ -611,7 +613,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
   const [modalOpen, setModalOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savedCount, setSavedCount] = useState(0);
 
   const filled = Object.values(values).filter((v) => v.trim()).length;
 
@@ -621,17 +623,26 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
 
     setSaving(true);
     const base = getActiveOpenCodeUrl();
-    try {
-      for (const [key, value] of toSave) {
-        await authenticatedFetch(`${base}/env/${encodeURIComponent(key)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ value: value.trim() }),
-        }).catch(() => {});
-      }
-    } catch { /* continue */ }
+    const { succeeded, failed } = await saveToolKeys(toSave, async (key, value) => {
+      const res = await authenticatedFetch(`${base}/env/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: value.trim() }),
+      });
+      return { ok: res.ok };
+    });
     setSaving(false);
-    setSaved(true);
+    setSavedCount(succeeded.length);
+
+    if (failed.length > 0) {
+      toast.error(
+        succeeded.length > 0
+          ? `Saved ${succeeded.length} of ${toSave.length} keys. Couldn't save: ${failed.join(', ')}`
+          : `Couldn't save tool keys: ${failed.join(', ')}`,
+      );
+      // Keep the modal open so the user can retry the keys that failed.
+      return;
+    }
     setModalOpen(false);
   }, [values]);
 
@@ -662,10 +673,10 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
         </div>
 
         {/* Saved confirmation */}
-        {saved && (
+        {savedCount > 0 && (
           <div className="flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 font-medium">
             <Check className="h-3.5 w-3.5" />
-            {filled} key{filled > 1 ? 's' : ''} saved
+            {savedCount} key{savedCount > 1 ? 's' : ''} saved
           </div>
         )}
 

@@ -833,7 +833,20 @@ function MembersCard({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  // Set rather than scalar so multiple per-row mutations (remove + role
+  // change on different rows) can fly in parallel without their spinners
+  // hopping between rows. Helpers below add/remove on mutate/settle.
+  const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const markPending = (userId: string) =>
+    setPendingUserIds((prev) => new Set(prev).add(userId));
+  const clearPending = (userId: string) =>
+    setPendingUserIds((prev) => {
+      const next = new Set(prev);
+      next.delete(userId);
+      return next;
+    });
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   // Free-text search over email + user_id. Lives in component state so
@@ -884,8 +897,8 @@ function MembersCard({
   const removeMutation = useMutation({
     mutationFn: (userId: string) =>
       removeAccountMember(account.account_id, userId),
-    onMutate: (userId) => setPendingUserId(userId),
-    onSettled: () => setPendingUserId(null),
+    onMutate: (userId) => markPending(userId),
+    onSettled: (_data, _error, userId) => clearPending(userId),
     onSuccess: () => {
       toast.success('Member removed');
       invalidateMembers();
@@ -898,8 +911,8 @@ function MembersCard({
   const roleMutation = useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: AccountRole }) =>
       updateAccountMemberRole(account.account_id, userId, role),
-    onMutate: ({ userId }) => setPendingUserId(userId),
-    onSettled: () => setPendingUserId(null),
+    onMutate: ({ userId }) => markPending(userId),
+    onSettled: (_data, _error, vars) => clearPending(vars.userId),
     onSuccess: () => {
       toast.success('Role updated');
       invalidateMembers();
@@ -910,8 +923,8 @@ function MembersCard({
 
   const leaveMutation = useMutation({
     mutationFn: () => leaveAccount(account.account_id),
-    onMutate: () => setPendingUserId(currentUserId),
-    onSettled: () => setPendingUserId(null),
+    onMutate: () => markPending(currentUserId),
+    onSettled: () => clearPending(currentUserId),
     onSuccess: () => {
       toast.success(`Left ${account.name}`);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -931,7 +944,21 @@ function MembersCard({
     () => sorted.filter((m) => m.user_id !== currentUserId),
     [sorted, currentUserId],
   );
-  const selectedCount = selectedIds.size;
+  // Effective selection = what's both clicked AND currently eligible.
+  // We don't prune selectedIds when the search filter changes (so the
+  // user can temporarily filter to scan a name without losing their
+  // selection), but every consumer — the "X selected" badge, the action
+  // buttons, bulkRun — has to act on the intersection. Without this,
+  // selecting alice/bob/charlie then typing "alice" in the search bar
+  // would display "3 selected" and silently fire bulk actions on all 3,
+  // not just the visible row.
+  const effectiveSelectedIds = useMemo(() => {
+    const eligibleIds = new Set(bulkEligible.map((m) => m.user_id));
+    return new Set(
+      Array.from(selectedIds).filter((id) => eligibleIds.has(id)),
+    );
+  }, [selectedIds, bulkEligible]);
+  const selectedCount = effectiveSelectedIds.size;
   const allEligibleSelected =
     bulkEligible.length > 0 &&
     bulkEligible.every((m) => selectedIds.has(m.user_id));
@@ -955,33 +982,79 @@ function MembersCard({
   }
 
   // Bulk handlers — all use the existing per-user endpoints fanned out
-  // with Promise.all so a single failure doesn't block the others.
-  // Errors are aggregated into one toast at the end.
+  // with Promise.allSettled so a single failure doesn't block the
+  // others. On any failure we:
+  //   1. console.error a full table (email + userId + reason) — admins
+  //      doing bulk ops are likely to have devtools open.
+  //   2. surface the FIRST failure reason inline in the toast so the
+  //      user sees at least one actionable hint without expanding it.
+  //   3. preserve the selection so they can retry only the failing rows
+  //      after fixing whatever was wrong (e.g. a missing permission).
   async function bulkRun(
     label: string,
     runOne: (userId: string) => Promise<unknown>,
   ): Promise<void> {
     setBulkBusy(true);
-    const ids = Array.from(selectedIds);
+    // Use the eligible intersection — see effectiveSelectedIds above for
+    // why we don't just iterate selectedIds. A row that's been
+    // filtered out of view shouldn't be silently included in the bulk
+    // action just because it was clicked before the filter applied.
+    const ids = Array.from(effectiveSelectedIds);
     const results = await Promise.allSettled(ids.map(runOne));
-    const failed = results.filter((r) => r.status === 'rejected').length;
     setBulkBusy(false);
     invalidateMembers();
-    if (failed === 0) {
+
+    const failures: { userId: string; email: string; reason: string }[] = [];
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        const userId = ids[i];
+        const member = members.find((m) => m.user_id === userId);
+        failures.push({
+          userId,
+          email: member?.email ?? userId,
+          reason:
+            r.reason instanceof Error
+              ? r.reason.message
+              : String(r.reason ?? 'Unknown error'),
+        });
+      }
+    });
+
+    if (failures.length === 0) {
       toast.success(`${label}: ${ids.length} member${ids.length === 1 ? '' : 's'}`);
       clearSelection();
       setBulkDialog(null);
-    } else {
-      toast.error(
-        `${label}: ${ids.length - failed} succeeded, ${failed} failed`,
-      );
+      return;
     }
+
+    // Devtools-friendly dump. console.table renders one row per failure
+    // so an admin can copy/paste or grep through them.
+    console.error(`[bulk:${label}] ${failures.length} failed`, failures);
+
+    // First failure is shown inline; rest summarised. Trim long
+    // messages so a 500-char stack trace doesn't blow up the toast.
+    const first = failures[0];
+    const reasonShort =
+      first.reason.length > 140 ? `${first.reason.slice(0, 137)}…` : first.reason;
+    const tail =
+      failures.length > 1
+        ? ` (+${failures.length - 1} more — see console)`
+        : '';
+    toast.error(
+      `${label}: ${ids.length - failures.length} succeeded, ${failures.length} failed. ${first.email}: ${reasonShort}${tail}`,
+    );
+    // Drop succeeded rows from the selection so a retry only re-runs
+    // the ones that failed.
+    const failedIds = new Set(failures.map((f) => f.userId));
+    setSelectedIds(failedIds);
   }
   async function bulkAddToGroup(groupId: string) {
     // addGroupMembers takes an array natively — single round-trip.
+    // Use the eligible intersection (see effectiveSelectedIds) so a
+    // hidden-by-filter row doesn't get silently added.
     setBulkBusy(true);
     try {
-      const ids = Array.from(selectedIds);
+      const ids = Array.from(effectiveSelectedIds);
       const res = await addGroupMembers(account.account_id, groupId, ids);
       invalidateMembers();
       toast.success(
@@ -1145,7 +1218,7 @@ function MembersCard({
             const isLastOwner =
               member.account_role === 'owner' &&
               sorted.filter((m) => m.account_role === 'owner').length === 1;
-            const pending = pendingUserId === member.user_id;
+            const pending = pendingUserIds.has(member.user_id);
             // Kebab is always available — "View & Edit permission policies"
             // is open to anyone who can view the member; backend gates writes.
             const showKebab = !pending;
@@ -1638,7 +1711,18 @@ function PendingInvitesSection({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  // Per-invite spinner state. Set rather than scalar so resending one
+  // invite + cancelling another (or rapid clicks across rows) don't
+  // make the spinner jump between rows.
+  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
+  const markPending = (id: string) =>
+    setPendingIds((prev) => new Set(prev).add(id));
+  const clearPending = (id: string) =>
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   const [cancelTarget, setCancelTarget] = useState<AccountInvitation | null>(
     null,
   );
@@ -1654,8 +1738,8 @@ function PendingInvitesSection({
 
   const resendMutation = useMutation({
     mutationFn: (inviteId: string) => resendAccountInvite(accountId, inviteId),
-    onMutate: (id) => setPendingId(id),
-    onSettled: () => setPendingId(null),
+    onMutate: (id) => markPending(id),
+    onSettled: (_data, _error, id) => clearPending(id),
     onSuccess: (res) => {
       if (res.email_sent) {
         toast.success('Invite email sent');
@@ -1678,8 +1762,8 @@ function PendingInvitesSection({
 
   const cancelMutation = useMutation({
     mutationFn: (inviteId: string) => cancelAccountInvite(accountId, inviteId),
-    onMutate: (id) => setPendingId(id),
-    onSettled: () => setPendingId(null),
+    onMutate: (id) => markPending(id),
+    onSettled: (_data, _error, id) => clearPending(id),
     onSuccess: () => {
       toast.success('Invite cancelled');
       invalidate();
@@ -1706,7 +1790,7 @@ function PendingInvitesSection({
       </div>
       <List>
         {invites.map((invite) => {
-          const busy = pendingId === invite.invite_id;
+          const busy = pendingIds.has(invite.invite_id);
           return (
             <ListRow
               key={invite.invite_id}

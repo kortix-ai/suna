@@ -436,11 +436,12 @@ function SecretListRow({
   if (row.system) {
     return (
       <ListRow
+        compact
         leading={<EntityAvatar icon={KeyRound} size="sm" />}
-        title={<code className="truncate font-mono text-xs text-foreground">{row.name}</code>}
+        title={<code className="truncate font-mono text-xs leading-none text-foreground">{row.name}</code>}
         badges={<Badge variant="outline" size="sm">Managed</Badge>}
         subtitle={
-          <span className="truncate text-xs text-muted-foreground">
+          <span className="truncate text-xs leading-none text-muted-foreground">
             {row.sharedConfigured ? 'Managed by Kortix' : 'Not set'}
           </span>
         }
@@ -449,7 +450,7 @@ function SecretListRow({
   }
 
   const subtitle = (
-    <span className="truncate text-xs text-muted-foreground">
+    <span className="truncate text-xs leading-none text-muted-foreground">
       {row.effectiveSource === 'mine'
         ? 'Using your own value'
         : row.effectiveSource === 'shared'
@@ -463,9 +464,10 @@ function SecretListRow({
 
   return (
     <ListRow
+      compact
       className={cn(row.requirement === 'required' && row.effectiveSource === 'none' && 'bg-amber-500/[0.02]')}
       leading={<EntityAvatar icon={row.effectiveSource === 'mine' ? User : KeyRound} size="sm" />}
-      title={<code className="truncate font-mono text-xs text-foreground">{row.name}</code>}
+      title={<code className="truncate font-mono text-xs leading-none text-foreground">{row.name}</code>}
       badges={
         <>
           {row.requirement === 'required' && <Badge variant="warning" size="sm">Required</Badge>}

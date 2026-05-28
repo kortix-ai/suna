@@ -50,7 +50,7 @@ export function DocxRenderer({ url, blob, className }: DocxRendererProps) {
             } else if (blobRef.current) {
                 docxBlob = blobRef.current;
             } else if (url) {
-                const response = await fetch(url);
+                const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
                 if (!response.ok) {
                     throw new Error('Failed to fetch document');
                 }

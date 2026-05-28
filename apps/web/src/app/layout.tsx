@@ -11,7 +11,8 @@ import { roobert } from './fonts/roobert';
 import { roobertMono } from './fonts/roobert-mono';
 import { Suspense, lazy } from 'react';
 import { I18nProvider } from '@/components/i18n-provider';
-import { getServerPublicEnv } from '@/lib/public-env-server';
+import { serializeRuntimeConfigScript } from '@/lib/public-env-server';
+import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { featureFlags } from '@/lib/feature-flags';
 import { connection } from 'next/server';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
@@ -108,7 +109,6 @@ export default async function RootLayout({
   // Opt into dynamic rendering so process.env is evaluated at request time,
   // not baked at build time. Critical for Docker images with runtime env vars.
   await connection();
-  const runtimeEnv = getServerPublicEnv();
 
   return (
     <html lang="en" translate="no" suppressHydrationWarning className={`notranslate ${roobert.variable} ${roobertMono.variable}`}>
@@ -117,7 +117,7 @@ export default async function RootLayout({
             Docker images get correct env vars regardless of build-time defaults. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.__KORTIX_RUNTIME_CONFIG=${JSON.stringify(runtimeEnv)};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`,
+            __html: serializeRuntimeConfigScript(),
           }}
         />
 
@@ -284,11 +284,17 @@ export default async function RootLayout({
           <AuthProvider>
             <I18nProvider>
               <ReactQueryProvider>
-                {children}
+                <ClientErrorBoundary>
+                  {children}
+                </ClientErrorBoundary>
                 <Toaster />
               </ReactQueryProvider>
             </I18nProvider>
           </AuthProvider>
+          {/* Non-critical lazy widgets — wrap in a boundary so a failed chunk
+              load reports to Sentry and renders nothing, instead of escalating
+              to global-error and blanking the whole app. */}
+          <ClientErrorBoundary silent>
           {/* Analytics - lazy loaded to not block FCP */}
           <Suspense fallback={null}>
             <Analytics />
@@ -313,6 +319,7 @@ export default async function RootLayout({
           <Suspense fallback={null}>
             <LocalhostLinkInterceptor />
           </Suspense>
+          </ClientErrorBoundary>
         </ThemeProvider>
       </body>
     </html>

@@ -21,7 +21,6 @@ function CheckoutContent() {
   useEffect(() => {
     const checkStripe = () => {
       if (typeof window !== 'undefined' && typeof window.Stripe !== 'undefined') {
-        console.log('✅ Stripe already loaded on window!');
         setStripeLoaded(true);
         return true;
       }
@@ -41,7 +40,7 @@ function CheckoutContent() {
     const timeout = setTimeout(() => {
       clearInterval(interval);
       if (typeof window.Stripe === 'undefined') {
-        console.error('❌ Stripe still not loaded after 5 seconds');
+        console.error('Stripe.js did not load within 5s');
         setError('Payment system taking too long to load. Please refresh the page.');
         setIsLoading(false);
       }
@@ -54,65 +53,47 @@ function CheckoutContent() {
   }, []);
 
   useEffect(() => {
-    console.log('🔍 Effect running - clientSecret:', clientSecret ? 'YES' : 'NO', 'stripeLoaded:', stripeLoaded);
-
     if (!clientSecret) {
-      console.error('❌ No client secret provided');
       setError('No checkout session provided. Please start the checkout process again.');
       setIsLoading(false);
       return;
     }
 
     if (!stripeLoaded) {
-      console.log('⏳ Waiting for Stripe to load...');
       return; // Wait for Stripe to load
     }
-
-    console.log('✅ Both client secret and Stripe are ready - initializing...');
 
     // Initialize Stripe checkout
     const initCheckout = async () => {
       try {
         const stripeKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
 
-        console.log('🔄 Initializing Stripe checkout...');
-        console.log('🔑 Stripe key:', stripeKey?.substring(0, 20) + '...');
-        console.log('🎫 Client secret:', clientSecret.substring(0, 20) + '...');
-
         if (typeof window.Stripe === 'undefined') {
           throw new Error('Stripe not loaded on window');
         }
 
         const stripe = window.Stripe(stripeKey);
-        console.log('✅ Stripe instance created');
 
         // Initialize embedded checkout
-        console.log('🚀 Calling initEmbeddedCheckout...');
         const checkout = await stripe.initEmbeddedCheckout({
           clientSecret: clientSecret,
         });
-        console.log('✅ Embedded checkout created');
 
         // Stop loading FIRST so the container renders
-        console.log('📍 Rendering checkout container...');
         setIsLoading(false);
 
         // Wait for DOM to update, then mount
         setTimeout(() => {
           const container = document.getElementById('checkout-container');
-          console.log('🔍 Container exists?', container ? 'YES' : 'NO');
 
           if (!container) {
             throw new Error('Checkout container not found in DOM');
           }
 
-          console.log('📍 Mounting to #checkout-container...');
           checkout.mount('#checkout-container');
-          console.log('✅ Checkout mounted successfully!');
         }, 100);
       } catch (err: any) {
-        console.error('❌ Checkout error:', err);
-        console.error('❌ Error details:', err.message, err.stack);
+        console.error('Checkout initialization failed:', err);
         setError(err.message || 'Failed to load checkout. Please try again.');
         setIsLoading(false);
       }
@@ -126,16 +107,14 @@ function CheckoutContent() {
       <Script
         src="https://js.stripe.com/v3/"
         onLoad={() => {
-          console.log('✅ Stripe.js loaded!');
           setStripeLoaded(true);
         }}
         onError={(e) => {
-          console.error('❌ Stripe.js failed to load:', e);
+          console.error('Stripe.js failed to load:', e);
           setError('Failed to load payment system');
           setIsLoading(false);
         }}
         onReady={() => {
-          console.log('✅ Stripe.js ready!');
           setStripeLoaded(true);
         }}
       />

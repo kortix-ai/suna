@@ -203,34 +203,80 @@ export function ProjectHome({
 }
 
 function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) {
-  // How many chips fit per page. Kept conservative so the row never wraps
-  // on narrow viewports and the arrows always have a stable position.
-  const PAGE_SIZE = 3;
-  const totalPages = Math.max(1, Math.ceil(STARTER_PROMPTS.length / PAGE_SIZE));
-  const [page, setPage] = useState(0);
-  const visible = STARTER_PROMPTS.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  // Native horizontal scroll on the chip strip — works with trackpad
+  // swipes, touch flicks, and the chevron buttons. The chevrons call
+  // scrollBy({ behavior: 'smooth' }) so the user sees a glide whether
+  // they click an arrow or trackpad-swipe directly on the row. Edge
+  // mask gradients fade chips in/out at the borders so partially-
+  // visible chips look intentional rather than clipped.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Arrow enabled-state is driven by actual scrollLeft, not a page
+  // counter — anything else (counting chip widths, paginating) goes
+  // out of sync as soon as the viewport resizes mid-session.
+  const [atStart, setAtStart] = useState(true);
+  const [atEnd, setAtEnd] = useState(false);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => {
+      // 4px slack so a sub-pixel scrollLeft (Chrome rounds inconsistently
+      // after a smooth scroll) doesn't keep an arrow falsely enabled.
+      setAtStart(el.scrollLeft <= 4);
+      setAtEnd(el.scrollLeft >= el.scrollWidth - el.clientWidth - 4);
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro.disconnect();
+    };
+  }, []);
+
+  const scrollByPage = (direction: 1 | -1) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // 70% of viewport: nudges enough that new chips clearly appear, but
+    // leaves one chip in common with the previous frame as a visual
+    // anchor — feels less jarring than a full-viewport jump.
+    el.scrollBy({ left: direction * el.clientWidth * 0.7, behavior: 'smooth' });
+  };
 
   return (
-    <div className="mt-3 flex items-center justify-center gap-1.5">
+    <div className="mt-3 flex items-center gap-1.5">
       <Button
         variant="ghost"
         size="icon-sm"
         aria-label="Previous suggestions"
-        disabled={page === 0}
-        onClick={() => setPage((p) => Math.max(0, p - 1))}
-        className="text-muted-foreground/60 hover:text-foreground"
+        disabled={atStart}
+        onClick={() => scrollByPage(-1)}
+        className="shrink-0 text-muted-foreground/60 hover:text-foreground"
       >
         <ChevronLeft className="size-3.5" />
       </Button>
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {visible.map((p) => {
+      <div
+        ref={scrollRef}
+        className="scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto"
+        // Edge fade so the row visually "continues" past the chevrons
+        // instead of clipping at a hard border. 6% is enough to soften
+        // without eating real chip pixels.
+        style={{
+          WebkitMaskImage:
+            'linear-gradient(to right, transparent, black 6%, black 94%, transparent)',
+          maskImage:
+            'linear-gradient(to right, transparent, black 6%, black 94%, transparent)',
+        }}
+      >
+        {STARTER_PROMPTS.map((p) => {
           const Icon = p.icon;
           return (
             <button
               key={p.id}
               type="button"
               onClick={() => onPick(p.prompt)}
-              className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:bg-card hover:text-foreground"
+              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:bg-card hover:text-foreground"
             >
               <Icon className="size-3.5" />
               {p.label}
@@ -242,9 +288,9 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
         variant="ghost"
         size="icon-sm"
         aria-label="More suggestions"
-        disabled={page >= totalPages - 1}
-        onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-        className="text-muted-foreground/60 hover:text-foreground"
+        disabled={atEnd}
+        onClick={() => scrollByPage(1)}
+        className="shrink-0 text-muted-foreground/60 hover:text-foreground"
       >
         <ChevronRight className="size-3.5" />
       </Button>

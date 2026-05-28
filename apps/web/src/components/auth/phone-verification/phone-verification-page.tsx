@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense, lazy } from 'react';
+import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
@@ -42,6 +42,12 @@ export function PhoneVerificationPage({
   const [isSubmittingPhone, setIsSubmittingPhone] = useState(false);
   const [hasExistingFactor, setHasExistingFactor] = useState(false);
   const router = useRouter();
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear the post-verify redirect timer if we unmount before it fires.
+  useEffect(() => () => {
+    if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+  }, []);
 
   // Use React Query hooks
   const enrollMutation = useEnrollPhoneNumber();
@@ -173,8 +179,9 @@ export function PhoneVerificationPage({
 
       setSuccess(t('phoneNumberVerified'));
 
-      // Wait a bit for cache invalidation, then redirect
-      setTimeout(() => {
+      // Wait a bit for cache invalidation, then redirect. Track the timer so a
+      // pre-redirect unmount doesn't fire router.push/onSuccess after unmount.
+      redirectTimerRef.current = setTimeout(() => {
         if (onSuccess) {
           onSuccess();
         } else {

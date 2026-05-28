@@ -10,7 +10,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Cron } from 'croner';
 import { Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGithubInstallations,
   accountGithubInstallationStates,
@@ -5544,34 +5544,41 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
         ? { expires_at: expires.value.toISOString() }
         : {}),
     };
-    const [existing] = await db
-      .select({
-        inviteId: accountInvitations.inviteId,
-        bootstrapGrants: accountInvitations.bootstrapGrants,
-      })
-      .from(accountInvitations)
-      .where(
-        and(
-          eq(accountInvitations.accountId, loaded.row.accountId),
-          sql`lower(${accountInvitations.email}) = ${email}`,
-          isNull(accountInvitations.acceptedAt),
-        ),
-      )
-      .limit(1);
-    let inviteId: string;
-    if (existing) {
-      // Merge bootstrap grants by project_id (later wins on role).
-      const merged = [...(existing.bootstrapGrants ?? [])];
-      const idx = merged.findIndex((g) => g.project_id === projectId);
-      if (idx >= 0) merged[idx] = bootstrap;
-      else merged.push(bootstrap);
-      await db
-        .update(accountInvitations)
-        .set({ bootstrapGrants: merged })
-        .where(eq(accountInvitations.inviteId, existing.inviteId));
-      inviteId = existing.inviteId;
-    } else {
-      const [created] = await db
+    // Wrap the find-or-create in a transaction with SELECT … FOR UPDATE
+    // so two concurrent admins inviting the same email can't both see
+    // the same pre-state and produce a last-write-wins merge that
+    // drops one of their grants. The lock blocks the second admin's
+    // SELECT until the first transaction commits; the second admin
+    // then sees the first's grant and merges on top of it.
+    const inviteId = await db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({
+          inviteId: accountInvitations.inviteId,
+          bootstrapGrants: accountInvitations.bootstrapGrants,
+        })
+        .from(accountInvitations)
+        .where(
+          and(
+            eq(accountInvitations.accountId, loaded.row.accountId),
+            sql`lower(${accountInvitations.email}) = ${email}`,
+            isNull(accountInvitations.acceptedAt),
+          ),
+        )
+        .for('update')
+        .limit(1);
+      if (existing) {
+        // Merge bootstrap grants by project_id (later wins on role).
+        const merged = [...(existing.bootstrapGrants ?? [])];
+        const idx = merged.findIndex((g) => g.project_id === projectId);
+        if (idx >= 0) merged[idx] = bootstrap;
+        else merged.push(bootstrap);
+        await tx
+          .update(accountInvitations)
+          .set({ bootstrapGrants: merged })
+          .where(eq(accountInvitations.inviteId, existing.inviteId));
+        return existing.inviteId;
+      }
+      const [created] = await tx
         .insert(accountInvitations)
         .values({
           accountId: loaded.row.accountId,
@@ -5581,8 +5588,8 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
           bootstrapGrants: [bootstrap],
         })
         .returning({ inviteId: accountInvitations.inviteId });
-      inviteId = created.inviteId;
-    }
+      return created.inviteId;
+    });
     return c.json(
       {
         status: 'invited',
@@ -5873,7 +5880,13 @@ projectsApp.get('/:projectId/group-grants', async (c) => {
     })
     .from(projectGroupGrants)
     .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
-    .where(eq(projectGroupGrants.projectId, projectId));
+    .where(eq(projectGroupGrants.projectId, projectId))
+    // Deterministic order — without ORDER BY, Postgres can return rows
+    // in heap-scan order, which shifts when the row is UPDATEd (e.g., a
+    // role change). The UI list would then visibly reshuffle after a
+    // role flip. Oldest attachments first matches the "Attached <date>"
+    // subtitle most users scan along.
+    .orderBy(asc(projectGroupGrants.createdAt), asc(projectGroupGrants.groupId));
 
   // Per-group member breakdown so the UI can flag attachments where the
   // grant role won't apply uniformly. When a group includes account

@@ -14,147 +14,156 @@
 //
 // Cadence: every 60s. The two partial indexes on expires_at keep the
 // scan cheap (only rows with a bounded grant are visited).
+//
+// Concurrency model: each tick uses a single UPDATE … RETURNING to
+// atomically claim the rows it's going to audit. Postgres serializes
+// per-row UPDATEs, so when N API replicas all run the sweeper at the
+// same minute, every expired row ends up returned to EXACTLY ONE
+// replica — no duplicate audit events. The previous SELECT-then-UPDATE
+// pattern had a TOCTOU window that produced N audit events per row in
+// a multi-replica deployment.
 
-import { and, eq, gt, isNotNull, lt, sql } from 'drizzle-orm';
-import { accounts, projectGroupGrants, projectMembers, projects } from '@kortix/db';
+import { and, isNotNull, lt, sql } from 'drizzle-orm';
+import { projectGroupGrants, projectMembers } from '@kortix/db';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
 
 const TICK_MS = 60_000;
-let timer: ReturnType<typeof setInterval> | null = null;
+let timer: ReturnType<typeof setTimeout> | null = null;
+let stopped = false;
 
+// Recursive setTimeout (not setInterval) so a slow tick can't cause
+// overlapping runs. With setInterval, if runOnce() took longer than
+// TICK_MS (large account + slow DB + audit backpressure), the next
+// tick would start before the prior finished — two ticks racing
+// inside one process, same duplicate-audit problem the multi-replica
+// case had before the UPDATE … RETURNING refactor. Re-arming AFTER
+// settle guarantees serial execution per process.
 export function startGrantExpirySweeper(): void {
-  if (timer) return;
+  if (timer) return; // already armed, idempotent
+  stopped = false;
   // Fire once on boot so an expiry that happened during downtime is
-  // logged immediately rather than waiting up to a minute.
-  void runOnce().catch((err) =>
-    console.error('[iam expiry sweeper] tick failed', err),
-  );
-  timer = setInterval(() => {
-    void runOnce().catch((err) =>
-      console.error('[iam expiry sweeper] tick failed', err),
-    );
-  }, TICK_MS);
+  // logged immediately rather than waiting up to a minute. The rest
+  // of the loop is driven by tickAndRearm() re-scheduling itself.
+  void tickAndRearm();
+}
+
+async function tickAndRearm(): Promise<void> {
+  try {
+    await runOnce();
+  } catch (err) {
+    console.error('[iam expiry sweeper] tick failed', err);
+  }
+  if (stopped) return;
+  timer = setTimeout(tickAndRearm, TICK_MS);
 }
 
 export function stopGrantExpirySweeper(): void {
+  stopped = true;
   if (timer) {
-    clearInterval(timer);
+    clearTimeout(timer);
     timer = null;
   }
 }
 
 /**
- * One pass over both grant tables. Emits an audit event per newly-expired
- * row and bumps updated_at as a latch so the next pass skips it.
+ * One pass over both grant tables.
+ *
+ * For each table:
+ *   1. UPDATE … RETURNING atomically claims every row that's both
+ *      expired AND not yet audited (updated_at < expires_at).
+ *   2. We then emit one audit event per returned row in parallel.
  *
  * The "newly expired" predicate is `expires_at < now() AND updated_at <
  * expires_at` — i.e. the row hasn't been touched since its own expiry.
- * That handles the natural case AND lets an admin's manual update
- * (changing role, etc.) reset the latch if they bump expires_at.
+ * Setting `updated_at = now()` in the UPDATE flips the latch so the
+ * next tick (or another replica's concurrent tick) won't re-match.
+ * Using SQL `now()` on both sides of the predicate AND the set keeps
+ * the database clock as the single source of truth.
+ *
+ * If the audit insert fails, the row is already latched (updated_at is
+ * past expires_at), so the next tick won't retry. That's deliberate:
+ * we'd rather drop one audit event than spin re-trying forever and
+ * spamming the log. Failures are surfaced via console.error.
  */
 async function runOnce(): Promise<void> {
   // ── Direct project_members grants ──────────────────────────────────
-  const expiredMembers = await db
-    .select({
+  const claimedMembers = await db
+    .update(projectMembers)
+    .set({ updatedAt: sql`now()` })
+    .where(
+      and(
+        isNotNull(projectMembers.expiresAt),
+        lt(projectMembers.expiresAt, sql`now()`),
+        lt(projectMembers.updatedAt, projectMembers.expiresAt),
+      ),
+    )
+    .returning({
       projectId: projectMembers.projectId,
       userId: projectMembers.userId,
       accountId: projectMembers.accountId,
       projectRole: projectMembers.projectRole,
       expiresAt: projectMembers.expiresAt,
-      // Pull project name for audit readability.
-      projectName: projects.name,
-    })
-    .from(projectMembers)
-    .innerJoin(projects, eq(projects.projectId, projectMembers.projectId))
-    .where(
-      and(
-        isNotNull(projectMembers.expiresAt),
-        lt(projectMembers.expiresAt, sql`now()`),
-        // Latch: skip rows we've already audited (updated_at was bumped
-        // past the expiry timestamp on the previous tick).
-        lt(projectMembers.updatedAt, projectMembers.expiresAt),
-      ),
-    );
+    });
 
-  for (const m of expiredMembers) {
-    await recordAuditEvent({
-      accountId: m.accountId,
-      actorUserId: null, // system event
-      action: 'iam.project.member.expired',
-      resourceType: 'project_member',
-      resourceId: `${m.projectId}:${m.userId}`,
-      before: {
-        project_role: m.projectRole,
-        expires_at: m.expiresAt?.toISOString() ?? null,
-      },
-      after: null,
-      ip: null,
-      userAgent: 'system:expiry-sweeper',
-    }).catch((err) =>
-      console.error('[iam expiry sweeper] audit failed for member', err),
-    );
-    // Latch — bumps updated_at so we don't re-log this expiry.
-    await db
-      .update(projectMembers)
-      .set({ updatedAt: new Date() })
-      .where(
-        and(
-          eq(projectMembers.projectId, m.projectId),
-          eq(projectMembers.userId, m.userId),
-        ),
-      );
-  }
+  await Promise.all(
+    claimedMembers.map((m) =>
+      recordAuditEvent({
+        accountId: m.accountId,
+        actorUserId: null, // system event
+        action: 'iam.project.member.expired',
+        resourceType: 'project_member',
+        resourceId: `${m.projectId}:${m.userId}`,
+        before: {
+          project_role: m.projectRole,
+          expires_at: m.expiresAt?.toISOString() ?? null,
+        },
+        after: null,
+        ip: null,
+        userAgent: 'system:expiry-sweeper',
+      }).catch((err) =>
+        console.error('[iam expiry sweeper] audit failed for member', err),
+      ),
+    ),
+  );
 
   // ── Group-grant attachments ────────────────────────────────────────
-  const expiredGrants = await db
-    .select({
-      projectId: projectGroupGrants.projectId,
-      groupId: projectGroupGrants.groupId,
-      accountId: projectGroupGrants.accountId,
-      role: projectGroupGrants.role,
-      expiresAt: projectGroupGrants.expiresAt,
-    })
-    .from(projectGroupGrants)
+  const claimedGrants = await db
+    .update(projectGroupGrants)
+    .set({ updatedAt: sql`now()` })
     .where(
       and(
         isNotNull(projectGroupGrants.expiresAt),
         lt(projectGroupGrants.expiresAt, sql`now()`),
         lt(projectGroupGrants.updatedAt, projectGroupGrants.expiresAt),
       ),
-    );
+    )
+    .returning({
+      projectId: projectGroupGrants.projectId,
+      groupId: projectGroupGrants.groupId,
+      accountId: projectGroupGrants.accountId,
+      role: projectGroupGrants.role,
+      expiresAt: projectGroupGrants.expiresAt,
+    });
 
-  for (const g of expiredGrants) {
-    await recordAuditEvent({
-      accountId: g.accountId,
-      actorUserId: null,
-      action: 'iam.project.group.expired',
-      resourceType: 'project_group_grant',
-      resourceId: `${g.projectId}:${g.groupId}`,
-      before: {
-        role: g.role,
-        expires_at: g.expiresAt?.toISOString() ?? null,
-      },
-      after: null,
-      ip: null,
-      userAgent: 'system:expiry-sweeper',
-    }).catch((err) =>
-      console.error('[iam expiry sweeper] audit failed for grant', err),
-    );
-    await db
-      .update(projectGroupGrants)
-      .set({ updatedAt: new Date() })
-      .where(
-        and(
-          eq(projectGroupGrants.projectId, g.projectId),
-          eq(projectGroupGrants.groupId, g.groupId),
-        ),
-      );
-  }
-
-  // accounts import unused warning silencer — kept available for future
-  // per-account filtering (e.g. cap by account.iam_v2_enabled if we ever
-  // re-introduce a flag).
-  void accounts;
-  void gt;
+  await Promise.all(
+    claimedGrants.map((g) =>
+      recordAuditEvent({
+        accountId: g.accountId,
+        actorUserId: null,
+        action: 'iam.project.group.expired',
+        resourceType: 'project_group_grant',
+        resourceId: `${g.projectId}:${g.groupId}`,
+        before: {
+          role: g.role,
+          expires_at: g.expiresAt?.toISOString() ?? null,
+        },
+        after: null,
+        ip: null,
+        userAgent: 'system:expiry-sweeper',
+      }).catch((err) =>
+        console.error('[iam expiry sweeper] audit failed for grant', err),
+      ),
+    ),
+  );
 }

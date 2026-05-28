@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { motion, useScroll } from 'framer-motion';
@@ -38,7 +38,6 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useTheme } from 'next-themes';
-import ColorThief from 'colorthief';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
@@ -114,8 +113,6 @@ export default function TemplateSharePage() {
   const router = useRouter();
   const { theme, resolvedTheme, setTheme } = useTheme();
   const [colorPalette, setColorPalette] = useState<string[]>([]);
-  const imageRef = useRef<HTMLImageElement>(null);
-  const [imageLoaded, setImageLoaded] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const [activeSection, setActiveSection] = useState('');
   const { scrollY } = useScroll();
@@ -196,13 +193,6 @@ export default function TemplateSharePage() {
     enabled: !!templateId,
   });
 
-  const rgbToHex = (r: number, g: number, b: number) => {
-    return '#' + [r, g, b].map(x => {
-      const hex = x.toString(16);
-      return hex.length === 1 ? '0' + hex : hex;
-    }).join('');
-  };
-
   useEffect(() => {
     if (template?.icon_name && template?.icon_background) {
       // For icons, use the icon background color as the primary color
@@ -217,28 +207,13 @@ export default function TemplateSharePage() {
         '#ec4899',
         '#f43f5e'
       ]);
-      if (imageRef.current && imageLoaded) {
-        const colorThief = new ColorThief();
-        try {
-          const palette = colorThief.getPalette(imageRef.current, 6);
-          const colors = palette.map((rgb: number[]) => rgbToHex(rgb[0], rgb[1], rgb[2]));
-          console.log('Extracted colors (hex):', colors);
-          setColorPalette(colors);
-        } catch (error) {
-          console.error('Error extracting colors:', error);
-          setColorPalette([
-            '#6366f1', '#8b5cf6', '#ec4899',
-            '#f43f5e', '#f97316', '#facc15'
-          ]);
-        }
-      }
     } else {
       setColorPalette([
         '#6366f1', '#8b5cf6', '#ec4899',
         '#f43f5e', '#f97316', '#facc15'
       ]);
     }
-  }, [template?.icon_name, template?.icon_background, template?.icon_color, imageLoaded]);
+  }, [template?.icon_name, template?.icon_background, template?.icon_color]);
 
   const handleInstall = () => {
     if (!template) return;
@@ -287,11 +262,15 @@ export default function TemplateSharePage() {
     );
   }
 
-  const tools = template.mcp_requirements || [];
-  const toolRequirements = tools.filter((req: any) => req.source === 'tool');
-  const integrations = toolRequirements.filter((tool: any) => !tool.custom_type || tool.custom_type !== 'sse');
-  const customTools = toolRequirements.filter((tool: any) => tool.custom_type === 'sse');
-  const agentpressTools = Object.entries(template.agentpress_tools || {})
+  const tools = Array.isArray(template.mcp_requirements) ? template.mcp_requirements : [];
+  const toolRequirements = tools.filter((req: any) => req?.source === 'tool');
+  const integrations = toolRequirements.filter((tool: any) => !tool?.custom_type || tool.custom_type !== 'sse');
+  const customTools = toolRequirements.filter((tool: any) => tool?.custom_type === 'sse');
+  const agentpressToolsMap =
+    template.agentpress_tools && typeof template.agentpress_tools === 'object' && !Array.isArray(template.agentpress_tools)
+      ? template.agentpress_tools
+      : {};
+  const agentpressTools = Object.entries(agentpressToolsMap)
     .filter(([_, enabled]) => enabled)
     .map(([toolName]) => toolName);
 
@@ -405,15 +384,6 @@ export default function TemplateSharePage() {
                       size={120}
                     />
                   </div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    ref={imageRef}
-                    src={""}
-                    alt={template.name}
-                    className="w-full h-full object-cover"
-                    crossOrigin="anonymous"
-                    onLoad={() => setImageLoaded(true)}
-                  />
                 </div>
               </div>
               <div className="space-y-4">

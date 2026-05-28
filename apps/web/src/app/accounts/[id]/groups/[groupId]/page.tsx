@@ -690,13 +690,28 @@ function GroupProjectGrantsCard({
     queryFn: () => listGroupProjectGrants(accountId, groupId),
     staleTime: 30_000,
   });
-  const grants = grantsQuery.data ?? [];
+  // Defensive client-side sort. The API also sets ORDER BY (see twin
+  // query in apps/api/src/accounts/iam.ts), but a stable order here
+  // means a role change can't ever visibly reshuffle rows even if a
+  // future API refactor drops the ORDER BY.
+  const grants = useMemo(() => {
+    const raw = grantsQuery.data ?? [];
+    return [...raw].sort((a, b) => {
+      const t = a.created_at.localeCompare(b.created_at);
+      return t !== 0 ? t : a.project_id.localeCompare(b.project_id);
+    });
+  }, [grantsQuery.data]);
   const attachedProjectIds = useMemo(
     () => new Set(grants.map((g) => g.project_id)),
     [grants],
   );
 
-  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  // Set rather than scalar so two concurrent detaches (admin clicks
+  // Revoke on row A, then row B before A finishes) both show their
+  // own spinner instead of A's spinner jumping to B.
+  const [pendingProjectIds, setPendingProjectIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   // Detach is destructive — strips every group member's inherited
   // access on the project at once. Confirm first.
   const [detachTarget, setDetachTarget] = useState<GroupProjectGrant | null>(null);
@@ -705,12 +720,24 @@ function GroupProjectGrantsCard({
     // detach the grant via the per-project route — that's the one gated
     // by project.members.manage and the canonical write surface.
     mutationFn: (projectId: string) => detachGroupFromProject(projectId, groupId),
-    onMutate: (projectId) => setPendingProjectId(projectId),
-    onSettled: () => setPendingProjectId(null),
-    onSuccess: () => {
+    onMutate: (projectId) =>
+      setPendingProjectIds((prev) => new Set(prev).add(projectId)),
+    onSettled: (_data, _error, projectId) =>
+      setPendingProjectIds((prev) => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      }),
+    onSuccess: (_data, projectId) => {
       toast.success('Group detached from project');
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+      // The target project's Members card (in another tab) shows
+      // every group member's effective access — detaching this group
+      // removes a path. Invalidate so a stale tab refetches on next
+      // focus.
+      queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to detach'),
   });
@@ -766,9 +793,14 @@ function GroupProjectGrantsCard({
         open={attachOpen}
         onOpenChange={setAttachOpen}
         attachedProjectIds={attachedProjectIds}
-        onAttached={() => {
+        onAttached={(attachedProjectId) => {
           queryClient.invalidateQueries({ queryKey });
           queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+          // The target project's Members card (in another tab) shows
+          // group-derived access for every member — without these the
+          // tab would be stale until the next focus + 20s staleTime.
+          queryClient.invalidateQueries({ queryKey: ['project-access', attachedProjectId] });
+          queryClient.invalidateQueries({ queryKey: ['project', attachedProjectId] });
           setAttachOpen(false);
         }}
       />
@@ -777,7 +809,7 @@ function GroupProjectGrantsCard({
       {!grantsQuery.isLoading && grants.length > 0 && (
         <List>
           {grants.map((g: GroupProjectGrant) => {
-            const busy = pendingProjectId === g.project_id;
+            const busy = pendingProjectIds.has(g.project_id);
             return (
               <ListRow
                 key={g.project_id}
@@ -886,7 +918,9 @@ function AttachToProjectDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   attachedProjectIds: Set<string>;
-  onAttached: () => void;
+  /** Receives the projectId so the parent can scope cache
+   *  invalidations to the project that was just attached. */
+  onAttached: (projectId: string) => void;
 }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(
     undefined,
@@ -947,7 +981,9 @@ function AttachToProjectDialog({
     },
     onSuccess: () => {
       toast.success(`"${groupName}" attached to project`);
-      onAttached();
+      // selectedProjectId is non-null here — the mutationFn throws
+      // synchronously if it isn't set, which short-circuits onSuccess.
+      onAttached(selectedProjectId!);
     },
     onError: (err: Error) =>
       toast.error(err.message || 'Failed to attach group to project'),

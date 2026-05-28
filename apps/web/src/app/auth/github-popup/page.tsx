@@ -23,6 +23,9 @@ export default function GitHubOAuthPopup() {
 
   useEffect(() => {
     const supabase = createClient();
+    let authSubscription: { unsubscribe: () => void } | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
 
     // Get return URL from sessionStorage (set by parent component)
     const returnUrl =
@@ -85,11 +88,13 @@ export default function GitHubOAuthPopup() {
           try {
             // Wait a moment for Supabase to process the session
             await new Promise((resolve) => setTimeout(resolve, 1000));
+            if (cancelled) return;
 
             const {
               data: { session },
               error,
             } = await supabase.auth.getSession();
+            if (cancelled) return;
 
             if (error) {
               throw error;
@@ -112,9 +117,10 @@ export default function GitHubOAuthPopup() {
                 handleError('Authentication failed - please try again');
               }
             });
+            authSubscription = subscription;
 
             // Cleanup subscription after timeout
-            setTimeout(() => {
+            timeoutId = setTimeout(() => {
               subscription.unsubscribe();
               handleError('Authentication timeout - please try again');
             }, 10000); // 10 second timeout
@@ -158,7 +164,10 @@ export default function GitHubOAuthPopup() {
     handleOAuth();
 
     return () => {
+      cancelled = true;
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      authSubscription?.unsubscribe();
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, []);
 
