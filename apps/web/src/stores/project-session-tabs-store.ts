@@ -33,6 +33,13 @@ interface State {
   tabsByProject: Record<string, string[]>;
   /** projectId → stack of recently-closed tab ids (most recent last) */
   recentlyClosedByProject: Record<string, string[]>;
+  /**
+   * Transient override of which tab is "active" in the bar. Set the moment
+   * a close-and-switch transition starts so the highlight moves before
+   * Next.js commits the new URL — `usePathname` only flips after the route
+   * has resolved. Cleared once the real URL catches up. Not persisted.
+   */
+  optimisticActiveByProject: Record<string, string | null>;
 }
 
 interface Actions {
@@ -50,6 +57,8 @@ interface Actions {
   openCustomizeTab: (projectId: string) => void;
   /** Close the Customize tab for this project. */
   closeCustomizeTab: (projectId: string) => void;
+  /** Set the transient "active" override (see `optimisticActiveByProject`). */
+  setOptimisticActive: (projectId: string, sessionId: string | null) => void;
 }
 
 export const useProjectSessionTabsStore = create<State & Actions>()(
@@ -57,6 +66,18 @@ export const useProjectSessionTabsStore = create<State & Actions>()(
     (set, get) => ({
       tabsByProject: {},
       recentlyClosedByProject: {},
+      optimisticActiveByProject: {},
+
+      setOptimisticActive: (projectId, sessionId) => {
+        const current = get().optimisticActiveByProject[projectId] ?? null;
+        if (current === sessionId) return;
+        set({
+          optimisticActiveByProject: {
+            ...get().optimisticActiveByProject,
+            [projectId]: sessionId,
+          },
+        });
+      },
 
       // Customize is just another tab in the ordered list — append on open,
       // drop on close. Same code path as session tabs.
@@ -117,6 +138,14 @@ export const useProjectSessionTabsStore = create<State & Actions>()(
 
       getTabs: (projectId) => get().tabsByProject[projectId] ?? [],
     }),
-    { name: 'kortix.project-session-tabs' },
+    {
+      name: 'kortix.project-session-tabs',
+      // `optimisticActiveByProject` is transient; persisting it would leave a
+      // stale highlight pointing at a closed tab on next page load.
+      partialize: (state) => ({
+        tabsByProject: state.tabsByProject,
+        recentlyClosedByProject: state.recentlyClosedByProject,
+      }),
+    },
   ),
 );

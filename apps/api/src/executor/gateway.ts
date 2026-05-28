@@ -1,17 +1,24 @@
 /**
  * Executor gateway — the chokepoint every tool call goes through. Resolves the
  * connector + action, checks the acting user can use it (project-secret
- * sharing), resolves the credential SERVER-SIDE, runs the call, and audits it.
+ * sharing), resolves the credential SERVER-SIDE, runs the call, audits it.
  * The sandbox never holds an app secret.
+ *
+ * Policy enforcement is layered (docs/specs/executor.md §8):
+ *   1. project-level [[policies]] (fully-qualified patterns) — admin guardrails
+ *   2. connector-level [[connectors.policies]] (relative patterns) — connector-author rules
+ *   3. risk-derived default (when `default_mode = risk`) or always_run (`allow_all`)
  *
  * Written against an injectable `GatewayDeps` so the full decision+execution
  * path is unit-tested with fakes (incl. a mocked third party). The HTTP router
- * (router.ts) wires real DB/secret deps. Policy enforcement is OFF by default
- * (allow-all core); flip `enforcePolicies` when the policy layer ships last.
- *
- * See docs/specs/executor.md §7.
+ * (router.ts) wires real DB/secret deps. `enforcePolicies` exists for back-compat
+ * with the original allow-all engine; production sets it true.
  */
-import { resolvePolicyAction, type Policy } from './policy';
+import {
+  resolveEffectiveAction,
+  type DefaultMode,
+  type Policy,
+} from './policy';
 import { isSecretUsableBy, type SecretGrant, type ShareScope, type ShareSubject } from './share';
 import { executeCall, paramHintsFromSchema, type ExecResult, type ExecutorAuth, type FetchImpl } from './execute';
 import type { ActionBinding, Risk } from './types';
@@ -60,7 +67,12 @@ export interface GatewayDeps {
   loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
   /** Resolve the credential value/binding. `userId=null` = shared; set = that member's own. */
   resolveCredential(connectorId: string, userId: string | null): Promise<string | null>;
+  /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
+  /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
+  loadProjectPolicies?(projectId: string): Promise<Policy[]>;
+  /** Project's policy.default_mode setting (risk | allow_all). Defaults to allow_all. */
+  loadDefaultMode?(projectId: string): Promise<DefaultMode>;
   recordExecution(rec: ExecutionRecord): Promise<void>;
   fetchImpl: FetchImpl;
   /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
@@ -74,7 +86,7 @@ export interface GatewayDeps {
     /** Effective user for the Pipedream external_user_id (null = shared). */
     userId: string | null;
   }): Promise<ExecResult>;
-  /** OFF by default — the core engine is allow-all; policies are wired last. */
+  /** OFF disables ALL policy checks (legacy allow-all). Default ON. */
   enforcePolicies?: boolean;
 }
 
@@ -135,16 +147,33 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason: usable.reason };
   }
 
-  // Policy layer (OFF in the core engine; wired last).
-  if (deps.enforcePolicies) {
-    const policies = await deps.loadPolicies(connector.connectorId);
-    const decision = resolvePolicyAction(input.actionPath, policies);
-    if (decision === 'block') {
-      await audit(deps, input, connector.connectorId, 'denied', action.risk, { reason: 'policy_block' });
+  // Layered policy enforcement: project policies first → connector → risk default.
+  if (deps.enforcePolicies !== false) {
+    const [connectorPolicies, projectPolicies, defaultMode] = await Promise.all([
+      deps.loadPolicies(connector.connectorId),
+      deps.loadProjectPolicies?.(input.projectId) ?? Promise.resolve([] as Policy[]),
+      deps.loadDefaultMode?.(input.projectId) ?? Promise.resolve('allow_all' as DefaultMode),
+    ]);
+    const decision = resolveEffectiveAction({
+      fullPath,
+      relPath: input.actionPath,
+      projectPolicies,
+      connectorPolicies,
+      risk: action.risk,
+      defaultMode,
+    });
+    if (decision.action === 'block') {
+      await audit(deps, input, connector.connectorId, 'denied', action.risk, {
+        reason: 'policy_block',
+        policy_source: decision.source,
+      });
       return { status: 'denied', reason: 'policy_block' };
     }
-    if (decision === 'require_approval') {
-      await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, { reason: 'policy_require_approval' });
+    if (decision.action === 'require_approval') {
+      await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
+        reason: 'policy_require_approval',
+        policy_source: decision.source,
+      });
       return { status: 'pending_approval', reason: 'policy_require_approval' };
     }
   }

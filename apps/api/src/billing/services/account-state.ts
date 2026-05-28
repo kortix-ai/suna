@@ -9,8 +9,13 @@ import {
   getDailyCreditConfig,
   isPaidTier,
   isLegacyPaidTier,
+  isPerSeatAccount,
   MINIMUM_CREDIT_FOR_RUN,
+  PER_SEAT_PRICE_USD,
+  TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
+  TYPICAL_LLM_BUDGET_PER_SEAT_USD,
 } from './tiers';
+import { getUsageBreakdownThisPeriod } from './usage-breakdown';
 import { getCreditSummary } from './credits';
 import { getAutoTopupSettings } from './auto-topup';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -179,6 +184,18 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     yolo_usage: yoloUsage,
     can_add_instances: isAdmin || isPaidTier(tierName),
     can_claim_computer: canClaimComputer,
+    billing_model: (isPerSeatAccount(sub?.billingModel) ? 'per_seat' : 'legacy') as 'per_seat' | 'legacy',
+    seats: isPerSeatAccount(sub?.billingModel)
+      ? {
+          count: sub?.seatCount ?? 1,
+          price_per_seat_usd: PER_SEAT_PRICE_USD,
+          typical_compute_budget_per_seat_usd: TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
+          typical_llm_budget_per_seat_usd: TYPICAL_LLM_BUDGET_PER_SEAT_USD,
+        }
+      : undefined,
+    usage_this_period: isPerSeatAccount(sub?.billingModel)
+      ? await getUsageBreakdownThisPeriod(accountId, sub?.billingCycleAnchor ?? null).catch(() => null)
+      : null,
   };
 
   return state;
@@ -237,6 +254,7 @@ export function buildLocalAccountState(): AccountStateResponse {
     yolo_usage: null,
     can_add_instances: false,
     can_claim_computer: false,
+    billing_model: 'legacy',
   };
 }
 

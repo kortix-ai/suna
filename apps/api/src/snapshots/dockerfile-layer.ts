@@ -24,17 +24,6 @@
  */
 const DEFAULT_AGENT_BROWSER_VERSION = '0.27.0';
 
-/**
- * Playwright version we use *only* as a cross-arch source for a headless
- * Chromium binary. Chrome for Testing (what `agent-browser install` downloads)
- * ships no Linux arm64 build, so on arm64 nodes / Apple-Silicon dev that path
- * hard-fails. Playwright publishes prebuilt Chromium for both linux-x64 and
- * linux-arm64 and its `--with-deps` installs the OS libraries on Debian/Ubuntu,
- * so we bake that binary and point agent-browser at it via
- * `AGENT_BROWSER_EXECUTABLE_PATH`.
- */
-const PLAYWRIGHT_VERSION = '1.60.0';
-
 export interface BuildLayeredDockerfileOpts {
   /** Literal contents of the user's project Dockerfile. */
   userDockerfile: string;
@@ -80,7 +69,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     executorSdkPath,
     workspaceArchivePath,
   } = opts;
-  const trimmed = userDockerfile.trimEnd();
+  const trimmed = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
 
   const kortixLayer = [
     '',
@@ -107,36 +96,14 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\',
     '    && bun --version',
     '',
-    // Install the `kortix` CLI for in-sandbox use. Curls the platform's
-    // install script which downloads the right binary for this image's
-    // arch from GitHub Releases. Failsoft: if the install script can't
-    // resolve a release (e.g. first boot before any `cli-v*` tag is
-    // pushed), we still build the snapshot — the sandbox just won't
-    // have `kortix` on PATH until a later snapshot build.
-    'RUN curl -fsSL https://kortix.com/install | bash \\',
-    '    || echo "kortix CLI not yet available — sandbox will boot without it"',
-    '',
-    // agent-browser (Vercel agent-browser): fast browser-automation CLI for
-    // the agent — drives Chrome/Chromium over CDP from accessibility-tree
-    // snapshots. Install the Rust CLI globally, then bake a headless Chromium.
-    // We source Chromium from Playwright (not `agent-browser install`, whose
-    // Chrome-for-Testing has no linux-arm64 build) since Playwright ships both
-    // linux-x64 and linux-arm64 builds and installs the OS libs via
-    // `--with-deps`. agent-browser is pointed at it through the ENV below; the
-    // agent loads usage via `agent-browser skills get core` at runtime.
+    // Keep the browser-control CLI available, but do not bake Chromium into
+    // every project snapshot. Browser binaries and their OS deps add hundreds
+    // of MB and make Daytona's snapshot export/register phase unreliable.
+    // Browser-specific flows can install a browser lazily in-session; normal
+    // OpenCode/session boot does not depend on it.
     `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
-    '    && apt-get update \\',
-    `    && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \\`,
-    '    && rm -rf /var/lib/apt/lists/* \\',
-    "    && ln -sf \"$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)\" /usr/local/bin/chromium \\",
-    '    && /usr/local/bin/chromium --version \\',
     '    && agent-browser --version',
-    // --no-sandbox: the sandbox already runs as root inside an isolated VM, and
-    // Chromium refuses its own sandbox as root. Point agent-browser at the
-    // Playwright Chromium baked above.
-    'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
-    '    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\',
-    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
+    'ENV AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
     '',
     `COPY ${agentBinaryPath} /tmp/kortix-agent.gz`,
     `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,
@@ -159,6 +126,11 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && rm /tmp/kortix-workspace.tar.gz \\',
     '    && test -d /workspace/.git \\',
     '    && chmod -R a+rwX /workspace',
+    '',
+    // Keep build deterministic: do not start OpenCode during image creation.
+    // User/project OpenCode config can be malformed and must fail at runtime
+    // with normal session diagnostics, not poison the provider snapshot.
+    'RUN mkdir -p /opt/kortix/home /ephemeral/kortix-master/opencode',
     'WORKDIR /workspace',
     'EXPOSE 8000',
     'ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]',
@@ -166,6 +138,15 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
   ].join('\n');
 
   return `${trimmed}\n${kortixLayer}`;
+}
+
+export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
+  // The generated starter Dockerfile installs baseline tools that the injected
+  // Kortix layer installs again. Strip only that exact starter block so cold
+  // builds avoid duplicate apt work; custom Dockerfiles remain unchanged.
+  const starterBlock =
+    /# Bring in baseline tooling\. The Kortix layer on top also installs\n# git\/curl\/ca-certificates\/nodejs\/npm, but having them in your base\n# makes interactive sessions snappier\.\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends \\\n        ca-certificates \\\n        curl \\\n        git \\\n        build-essential \\\n    && rm -rf \/var\/lib\/apt\/lists\/\*\n\n?/;
+  return dockerfile.replace(starterBlock, '');
 }
 
 /**

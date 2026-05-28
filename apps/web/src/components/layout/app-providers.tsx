@@ -13,6 +13,8 @@ import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { AccountSettingsModal } from '@/components/settings/account-settings-modal';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
+import { isBillingEnabled } from '@/lib/config';
 import { SidebarLeft } from '@/components/sidebar/sidebar-left';
 import { SidebarRight } from '@/components/sidebar/sidebar-right';
 
@@ -102,6 +104,7 @@ function GlobalUserSettingsModal() {
  *  402 error handler, session error banner) can open it from anywhere. */
 function GlobalAccountSettingsModal() {
   const { isOpen, defaultTab, closeAccountSettings } = useAccountSettingsModalStore();
+  if (!isBillingEnabled()) return null;
   return (
     <AccountSettingsModal
       open={isOpen}
@@ -138,8 +141,6 @@ export function AppProviders({
   showGlobalNewInstanceModal = false,
   showGlobalUserSettingsModal = false,
 }: AppProvidersProps) {
-  // Legacy dashboard pages still read the sandbox-side model preference. Repo-first
-  // project pages disable the legacy right rail, so keep them off this old route.
   useModelHydration(showRightSidebar);
 
   const content = (
@@ -153,6 +154,7 @@ export function AppProviders({
             <GlobalAccountSettingsModal />
           </>
         )}
+        {isBillingEnabled() && <GlobalUpgradeDialog />}
       </SubscriptionStoreSync>
     </DeleteOperationEffectsWrapper>
   );

@@ -1343,9 +1343,79 @@ export const creditAccounts = kortixSchema.table(
     autoTopupThreshold: numeric('auto_topup_threshold', { precision: 10, scale: 2 }).default('5').notNull(),
     autoTopupAmount: numeric('auto_topup_amount', { precision: 10, scale: 2 }).default('20').notNull(),
     autoTopupLastCharged: timestamp('auto_topup_last_charged', { withTimezone: true, mode: 'string' }),
+    // Billing v2 — per-seat model. Existing rows default to 'legacy' so legacy
+    // customers are untouched; new signups use 'per_seat'. The wallet is a
+    // single fungible balance; usage breakdown by category comes from
+    // aggregating credit_ledger entries by `type` (compute_debit / llm_debit).
+    billingModel: text('billing_model').default('legacy').notNull(),
+    seatCount: integer('seat_count').default(1).notNull(),
+    seatSubscriptionItemId: text('seat_subscription_item_id'),
+    autoTopupCustomized: boolean('auto_topup_customized').default(false).notNull(),
+    autoTopupConsecutiveFailures: integer('auto_topup_consecutive_failures').default(0).notNull(),
+    autoTopupDisabledReason: text('auto_topup_disabled_reason'),
   },
   (table) => [
     index('kortix_credit_accounts_account_id_idx').on(table.accountId),
+    index('idx_credit_accounts_billing_model').on(table.billingModel),
+  ],
+);
+
+// Billing v2 — per-second sandbox compute metering.
+// One row per active window. Hibernate closes the row; resume opens a new one.
+// Cost flows into credit_ledger as 'compute_debit'; this table is the audit trail.
+export const sandboxComputeSessions = kortixSchema.table(
+  'sandbox_compute_sessions',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    accountId: uuid('account_id').notNull(),
+    sandboxId: uuid('sandbox_id').notNull(),
+    sessionId: text('session_id'),
+    actorUserId: uuid('actor_user_id'),
+    cpuCores: integer('cpu_cores').notNull(),
+    memoryGb: integer('memory_gb').notNull(),
+    diskGb: integer('disk_gb').notNull(),
+    gpuCount: integer('gpu_count').default(0).notNull(),
+    state: text().default('active').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true, mode: 'string' }),
+    lastBilledAt: timestamp('last_billed_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
+    ledgerId: uuid('ledger_id'),
+    metadata: jsonb().default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
+    index('idx_sandbox_compute_sessions_open')
+      .on(table.sandboxId)
+      .where(sql`${table.endedAt} IS NULL`),
+    index('idx_sandbox_compute_sessions_last_billed')
+      .on(table.lastBilledAt)
+      .where(sql`${table.state} = 'active'`),
+  ],
+);
+
+// Billing v2 — per-member Kortix YOLO tokens.
+// Token plaintext is returned once at mint and never stored. Sandbox bootstrap
+// fetches plaintext from an in-memory/KV cache; cache miss = rotate.
+export const yoloMemberTokens = kortixSchema.table(
+  'yolo_member_tokens',
+  {
+    userId: uuid('user_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    tokenPrefix: varchar('token_prefix', { length: 16 }).notNull(),
+    tokenHash: varchar('token_hash', { length: 128 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true, mode: 'string' }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'string' }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.accountId] }),
+    index('idx_yolo_member_tokens_prefix')
+      .on(table.tokenPrefix)
+      .where(sql`${table.revokedAt} IS NULL`),
+    index('idx_yolo_member_tokens_account').on(table.accountId),
   ],
 );
 
@@ -2326,6 +2396,52 @@ export const executorConnectorPolicies = kortixSchema.table(
   ],
 );
 
+/**
+ * Project-scoped tool-call policies — materialized from top-level [[policies]]
+ * in kortix.toml. Patterns are fully-qualified (`<slug>.<path>` globs) and apply
+ * across ALL connectors in the project; evaluated BEFORE any connector-scoped
+ * rule. See docs/specs/executor.md §8.
+ */
+export const executorProjectPolicies = kortixSchema.table(
+  'executor_project_policies',
+  {
+    policyId: uuid('policy_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** Glob over fully-qualified tool paths (e.g. `stripe.charges.create`). */
+    match: varchar('match', { length: 512 }).notNull(),
+    action: executorPolicyActionEnum('action').notNull(),
+    /** Authoring order — evaluated top-to-bottom, first match wins. */
+    position: integer('position').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_executor_project_policies_project').on(table.projectId),
+  ],
+);
+
+export const executorDefaultModeEnum = kortixSchema.enum('executor_default_mode', [
+  'risk',
+  'allow_all',
+]);
+
+/**
+ * One row per project — non-policy executor settings (just `default_mode`
+ * today). Materialized from [policy] in kortix.toml; missing block = allow_all
+ * for back-compat with existing projects.
+ */
+export const executorProjectSettings = kortixSchema.table(
+  'executor_project_settings',
+  {
+    projectId: uuid('project_id')
+      .primaryKey()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    defaultMode: executorDefaultModeEnum('default_mode').default('allow_all').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+);
+
 /** Audit + approval ledger for every executor call. */
 export const executorExecutions = kortixSchema.table(
   'executor_executions',
@@ -2381,6 +2497,20 @@ export const executorConnectorPoliciesRelations = relations(executorConnectorPol
   connector: one(executorConnectors, {
     fields: [executorConnectorPolicies.connectorId],
     references: [executorConnectors.connectorId],
+  }),
+}));
+
+export const executorProjectPoliciesRelations = relations(executorProjectPolicies, ({ one }) => ({
+  project: one(projects, {
+    fields: [executorProjectPolicies.projectId],
+    references: [projects.projectId],
+  }),
+}));
+
+export const executorProjectSettingsRelations = relations(executorProjectSettings, ({ one }) => ({
+  project: one(projects, {
+    fields: [executorProjectSettings.projectId],
+    references: [projects.projectId],
   }),
 }));
 

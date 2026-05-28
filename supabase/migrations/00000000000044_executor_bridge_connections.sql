@@ -43,4 +43,3 @@ create index if not exists idx_project_connection_tools_project
   on kortix.project_connection_tools(project_id);
 create unique index if not exists idx_project_connection_tools_project_name
   on kortix.project_connection_tools(project_id, name);
-

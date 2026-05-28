@@ -26,10 +26,9 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('Kortix runtime layer (auto-injected)');
     expect(merged).toContain('opencode-ai@1.15.10');
     expect(merged).toContain('agent-browser@0.27.0');
-    // Chromium is sourced from Playwright (cross-arch) and wired via ENV.
-    expect(merged).toContain('playwright@1.60.0 install --with-deps chromium');
-    expect(merged).toContain('AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium');
     expect(merged).toContain('AGENT_BROWSER_ARGS=--no-sandbox');
+    expect(merged).not.toContain('playwright');
+    expect(merged).not.toContain('kortix.com/install');
     expect(merged).toContain('COPY kortix-agent.gz /tmp/kortix-agent.gz');
     expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
     expect(merged).toContain('COPY kortix-agent-cli/ /opt/kortix/apps/sandbox/agent-cli/');
@@ -37,10 +36,35 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('COPY kortix-workspace.tar.gz /tmp/kortix-workspace.tar.gz');
     expect(merged).toContain('tar -xzf /tmp/kortix-workspace.tar.gz -C /workspace');
     expect(merged).toContain('test -d /workspace/.git');
+    expect(merged).toContain('mkdir -p /opt/kortix/home /ephemeral/kortix-master/opencode');
+    expect(merged).not.toContain('opencode serve --port 4096');
     expect(merged).toContain(
       'bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli',
     );
     expect(merged).toContain('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
+  });
+
+  test('strips only the generated starter baseline apt block', () => {
+    const user = `FROM ubuntu:24.04
+
+# Bring in baseline tooling. The Kortix layer on top also installs
+# git/curl/ca-certificates/nodejs/npm, but having them in your base
+# makes interactive sessions snappier.
+RUN apt-get update \\
+    && apt-get install -y --no-install-recommends \\
+        ca-certificates \\
+        curl \\
+        git \\
+        build-essential \\
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+`;
+    const merged = buildLayeredDockerfile({ userDockerfile: user, ...COMMON });
+    expect(merged).toContain('FROM ubuntu:24.04');
+    expect(merged).toContain('WORKDIR /workspace');
+    expect(merged).not.toContain('having them in your base');
+    expect(merged.match(/apt-get update/g)?.length).toBe(1);
   });
 
   test('trims trailing whitespace before the seam so blank-line runs do not stack', () => {
@@ -58,7 +82,7 @@ describe('buildLayeredDockerfile', () => {
     const { agentBrowserVersion, ...withoutVersion } = COMMON;
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...withoutVersion });
     expect(merged).toContain('agent-browser@0.27.0');
-    expect(merged).toContain('playwright@1.60.0 install --with-deps chromium');
+    expect(merged).not.toContain('playwright');
   });
 });
 

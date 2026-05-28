@@ -397,6 +397,7 @@ export async function materializeRepoContext(
       env: { ...process.env },
       timeout: 60_000,
     });
+    await scrubGeneratedSnapshotFiles(target);
   } catch (error) {
     await fs.rm(target, { recursive: true, force: true });
     throw error;
@@ -436,8 +437,9 @@ export async function materializeRepoCheckoutTar(
     await runGit(['checkout', '-B', project.defaultBranch, ref], checkout, false);
     await runGit(['remote', 'set-url', 'origin', project.repoUrl], checkout, false);
     await runGit(['gc', '--auto'], checkout, false).catch(() => ({ stdout: '', stderr: '' }));
-    await execFileAsync('tar', ['-czf', outputPath, '-C', checkout, '.'], {
-      env: { ...process.env },
+    await scrubGeneratedSnapshotFiles(checkout);
+    await execFileAsync('tar', ['--no-xattrs', '-czf', outputPath, '-C', checkout, '.'], {
+      env: { ...process.env, COPYFILE_DISABLE: '1' },
       timeout: 60_000,
     });
   } catch (error) {
@@ -446,6 +448,43 @@ export async function materializeRepoCheckoutTar(
   } finally {
     await fs.rm(checkout, { recursive: true, force: true });
   }
+}
+
+async function scrubGeneratedSnapshotFiles(root: string): Promise<void> {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+
+  const removeIfPresent = async (relativePath: string) => {
+    await fs.rm(path.join(root, relativePath), { recursive: true, force: true }).catch(() => {});
+  };
+
+  await Promise.all([
+    removeIfPresent('.kortix/opencode/node_modules'),
+    removeIfPresent('.kortix/opencode/package-lock.json'),
+    removeIfPresent('.kortix/opencode/npm-shrinkwrap.json'),
+    removeIfPresent('.kortix/opencode/pnpm-lock.yaml'),
+    removeIfPresent('.kortix/opencode/yarn.lock'),
+    removeIfPresent('.kortix/opencode/bun.lockb'),
+  ]);
+
+  async function walk(dir: string): Promise<void> {
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    await Promise.all(entries.map(async (entry) => {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.name.startsWith('._')) {
+        await fs.rm(fullPath, { recursive: true, force: true }).catch(() => {});
+        return;
+      }
+      if (entry.isDirectory()) await walk(fullPath);
+    }));
+  }
+
+  await walk(root);
 }
 
 /**

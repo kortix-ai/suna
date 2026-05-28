@@ -10,9 +10,12 @@ import {
   gatewayBaseUrl,
   toDesiredConnector,
   toPolicyRows,
+  toProjectPolicyRows,
+  toProjectSettings,
   type DesiredConnector,
 } from '../executor/materialize';
 import { extractConnectors } from '../projects/connectors';
+import { extractProjectPolicies } from '../projects/policies';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
 
 function specFrom(body: string) {
@@ -121,6 +124,44 @@ spec = "https://x/y.json"
       { match: '*.delete*', action: 'block', position: 0 },
       { match: '*', action: 'always_run', position: 1 },
     ]);
+  });
+});
+
+describe('toProjectPolicyRows', () => {
+  test('top-level [[policies]] preserves order as position', () => {
+    const m = parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}
+[project]
+name="t"
+
+[[policies]]
+match = "*.delete*"
+action = "block"
+
+[[policies]]
+match = "stripe.*"
+action = "require_approval"
+`);
+    const parsed = extractProjectPolicies(m);
+    expect(toProjectPolicyRows(parsed.policies)).toEqual([
+      { match: '*.delete*', action: 'block', position: 0 },
+      { match: 'stripe.*', action: 'require_approval', position: 1 },
+    ]);
+  });
+});
+
+describe('toProjectSettings', () => {
+  test('reflects parsed default_mode (risk explicit)', () => {
+    const m = parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}
+[project]
+name="t"
+[policy]
+default_mode = "risk"
+`);
+    expect(toProjectSettings(extractProjectPolicies(m).settings)).toEqual({ defaultMode: 'risk' });
+  });
+  test('falls back to allow_all when [policy] absent', () => {
+    const m = parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n`);
+    expect(toProjectSettings(extractProjectPolicies(m).settings)).toEqual({ defaultMode: 'allow_all' });
   });
 });
 

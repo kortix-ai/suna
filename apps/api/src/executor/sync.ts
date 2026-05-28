@@ -13,6 +13,8 @@ import {
   executorConnectorActions,
   executorConnectorPolicies,
   executorConnectors,
+  executorProjectPolicies,
+  executorProjectSettings,
   projects,
 } from '@kortix/db';
 import { db } from '../shared/db';
@@ -20,6 +22,7 @@ import { withProjectGitAuth } from '../projects/index';
 import { readManifest } from '../projects/triggers';
 import { readRepoFile, type GitBackedProject } from '../projects/git';
 import { extractConnectors, manifestHashForConnector, type ConnectorSpec } from '../projects/connectors';
+import { extractProjectPolicies } from '../projects/policies';
 import {
   normalizeGraphql,
   normalizeHttp,
@@ -29,7 +32,7 @@ import {
 } from './normalize';
 import type { NormalizedAction, HttpRouteSpec } from './types';
 import { parseResponseBody } from './execute';
-import { connectorConfig, toPolicyRows } from './materialize';
+import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import { pipedreamCatalog, pipedreamConfigured } from './pipedream';
 
 export interface SyncResult {
@@ -69,6 +72,13 @@ export async function syncProjectConnectors(projectId: string, accountId: string
 
   const { specs, errors: parseErrors } = extractConnectors(manifest);
   const errors: SyncResult['errors'] = parseErrors.map((e) => ({ slug: e.slug, error: e.error }));
+
+  // Project-level policies + settings — separate scope, always reconciled (cheap).
+  const projectPoliciesParsed = extractProjectPolicies(manifest);
+  for (const e of projectPoliciesParsed.errors) {
+    errors.push({ slug: '(policies)', error: e.error });
+  }
+  await reconcileProjectPolicies(projectId, projectPoliciesParsed);
 
   const existing = await db
     .select({ slug: executorConnectors.slug, connectorId: executorConnectors.connectorId, manifestHash: executorConnectors.manifestHash, status: executorConnectors.status })
@@ -264,6 +274,33 @@ async function introspectGraphql(endpoint: string): Promise<any> {
     body: JSON.stringify({ query }),
   });
   return res.json();
+}
+
+/**
+ * Replace the project's [[policies]] + [policy].default_mode with what
+ * kortix.toml currently declares. Delete-then-insert (the manifest is the
+ * source of truth, so we don't preserve DB-only edits). Cheap — runs every
+ * sync, no network call.
+ */
+async function reconcileProjectPolicies(
+  projectId: string,
+  parsed: { policies: { match: string; action: 'always_run' | 'require_approval' | 'block' }[]; settings: { defaultMode: 'risk' | 'allow_all' } },
+): Promise<void> {
+  await db.delete(executorProjectPolicies).where(eq(executorProjectPolicies.projectId, projectId));
+  const rows = toProjectPolicyRows(parsed.policies);
+  if (rows.length > 0) {
+    await db.insert(executorProjectPolicies).values(
+      rows.map((p) => ({ projectId, match: p.match, action: p.action, position: p.position })),
+    );
+  }
+  // Upsert default_mode (one row per project).
+  await db
+    .insert(executorProjectSettings)
+    .values({ projectId, defaultMode: parsed.settings.defaultMode })
+    .onConflictDoUpdate({
+      target: executorProjectSettings.projectId,
+      set: { defaultMode: parsed.settings.defaultMode, updatedAt: new Date() },
+    });
 }
 
 async function listMcpTools(url: string): Promise<any[]> {

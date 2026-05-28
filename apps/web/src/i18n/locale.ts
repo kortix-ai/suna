@@ -81,4 +81,3 @@ export function hasExplicitBrowserLocalePreference(user: UserWithLocale): boolea
       getLocalStorageLocale(window.localStorage),
   );
 }
-

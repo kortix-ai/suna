@@ -78,6 +78,9 @@ export {
   creditUsage,
   accountDeletionRequests,
   creditPurchases,
+  // Billing v2 — per-seat + compute metering + per-member YOLO
+  sandboxComputeSessions,
+  yoloMemberTokens,
   // Tunnel
   tunnelStatusEnum,
   tunnelCapabilityEnum,
@@ -143,10 +146,14 @@ export {
   executorCredentials,
   executorConnectorActions,
   executorConnectorPolicies,
+  executorProjectPolicies,
+  executorProjectSettings,
   executorExecutions,
   executorConnectorsRelations,
   executorConnectorActionsRelations,
   executorConnectorPoliciesRelations,
+  executorProjectPoliciesRelations,
+  executorProjectSettingsRelations,
   projectSecretGrantsRelations,
 } from './schema/kortix';
 

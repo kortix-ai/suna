@@ -404,6 +404,17 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'connectors integrations pipedream mcp openapi apps executor project customize',
   },
   {
+    id: 'proj-connectors-policies',
+    label: 'Customize · Connectors · Policies',
+    icon: Plug,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/connectors?tab=policies',
+    requiresProject: true,
+    keywords: 'policies approval block require_approval rules tools executor guardrails project customize',
+  },
+  {
     id: 'proj-members',
     label: 'Customize · Members',
     icon: Users,

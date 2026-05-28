@@ -50,6 +50,7 @@ let daytonaDeleteByIdCalls: string[];
 let daytonaSnapshotCreateCalls: any[];
 let hiddenDaytonaSnapshots: Set<string>;
 let omittedFromDaytonaList: Set<string>;
+let daytonaSnapshotStates: Map<string, string>;
 
 function makeRow(overrides: Partial<Row> = {}): Row {
   const id = overrides.snapshotRowId ?? `row-${rows.length}`;
@@ -185,7 +186,7 @@ mock.module('../shared/daytona', () => ({
       // assert prune called delete with the expected snapshotId.
       get: async (name: string) => {
         if (hiddenDaytonaSnapshots.has(name)) throw new Error('snapshot not found');
-        return { id: `daytona-${name}`, name, state: 'active' };
+        return { id: `daytona-${name}`, name, state: daytonaSnapshotStates.get(name) ?? 'active' };
       },
       delete: async (snapshot: { name: string }) => {
         daytonaDeleteCalls.push(snapshot.name);
@@ -240,7 +241,7 @@ function expectedSnapshotName(): string {
     dockerfile: 'FROM ubuntu:24.04\n',
     contextTreeOid: 'tree-oid',
     runtimeFingerprint: 'runtime-current',
-    spec: {},
+    spec: { cpu: 2, memory: 4, disk: 20 },
   });
   return formatSnapshotName(PROJECT_ID, hash.contentHash);
 }
@@ -252,6 +253,7 @@ beforeEach(() => {
   daytonaSnapshotCreateCalls = [];
   hiddenDaytonaSnapshots = new Set();
   omittedFromDaytonaList = new Set();
+  daytonaSnapshotStates = new Map();
   filterByCall = [() => true];
   nextSort = null;
   selectCallCount = 0;
@@ -426,6 +428,28 @@ describe('ensureBuildForLatestCommit', () => {
     );
     expect(result.status).toBe('already-ready');
     expect(daytonaSnapshotCreateCalls).toHaveLength(0);
+  });
+
+  test('does not delete and duplicate a ready row while provider reports the snapshot is building', async () => {
+    rows = [
+      makeRow({
+        commitSha: 'head-of-main',
+        status: 'ready',
+        snapshotId: 'kortix-snap-1111-provider-building',
+      }),
+    ];
+    daytonaSnapshotStates.set('kortix-snap-1111-provider-building', 'building');
+    setFilter((r) => r.commitSha === 'head-of-main' && r.status !== 'failed');
+
+    const result = await builder.ensureBuildForLatestCommit(
+      { projectId: PROJECT_ID, repoUrl: 'r', defaultBranch: BRANCH, manifestPath: 'm' },
+      { branch: BRANCH, accountId: ACCOUNT_ID, source: 'session-start' },
+    );
+
+    expect(result.status).toBe('already-building');
+    expect(daytonaSnapshotCreateCalls).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe('ready');
   });
 
   test('starts a non-destructive rebuild when the branch tip has an outdated ready row', async () => {
@@ -620,14 +644,14 @@ describe('getProjectSandboxHealth', () => {
   const allForBranch = (r: Row) =>
     r.projectId === PROJECT_ID && r.branch === BRANCH && r.provider === 'daytona';
 
-  test('first build: only a building row, no ready snapshot ever', async () => {
+  test('building row with no ready snapshot is not treated as first build after the row exists', async () => {
     // Fresh updatedAt so the in-flight build isn't treated as a stale orphan.
     rows = [makeRow({ snapshotRowId: 'b', status: 'building', metadata: {}, updatedAt: new Date() })];
     setFilter(allForBranch);
     setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
-    expect(h.firstBuild).toBe(true);
+    expect(h.firstBuild).toBe(false);
     expect(h.healthy).toBe(false);
     expect(h.building).toBe(true);
     expect(h.readyCount).toBe(0);
@@ -668,6 +692,26 @@ describe('getProjectSandboxHealth', () => {
     expect(h.healthy).toBe(true);
     expect(h.bootableCount).toBe(1);
     expect(h.runtimeOutdated).toBe(false);
+    expect(h.firstBuild).toBe(false);
+  });
+
+  test('ready snapshot missing from Daytona is not reported healthy', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'missing',
+        status: 'ready',
+        snapshotId: 'kortix-snap-1111-missing',
+        metadata: { runtimeFingerprint: 'runtime-current' },
+      }),
+    ];
+    hiddenDaytonaSnapshots = new Set(['kortix-snap-1111-missing']);
+    setFilter(allForBranch);
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const h = await builder.getProjectSandboxHealth(PROJECT_ID, BRANCH);
+    expect(h.healthy).toBe(false);
+    expect(h.bootableCount).toBe(0);
+    expect(h.readyCount).toBe(1);
     expect(h.firstBuild).toBe(false);
   });
 

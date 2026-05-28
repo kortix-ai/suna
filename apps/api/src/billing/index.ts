@@ -43,76 +43,54 @@ billingApp.use('*', async (c, next) => {
   return next();
 });
 
-// Setup initialize endpoint (requires billing — creates Stripe subscription + sandbox)
-// DESIGN: Returns fast (<2s). Kicks off sandbox provisioning in the background.
-// Sandbox status is polled via GET /platform/sandbox/:id/status.
+// Setup initialize endpoint.
+//
+// Billing v2 — every new account is born on the per-seat plan. There is no
+// free tier for new signups. We seed credit_accounts with
+// billing_model='per_seat', tier='per_seat', seat_count=1, balance=$0.
+// The user then completes Stripe Checkout (Settings → Billing → Subscribe)
+// to activate their first seat and land the $20 wallet grant.
+//
+// Existing rows (tier='free', billing_model='legacy') are preserved untouched.
 billingApp.post('/setup/initialize', async (c: any) => {
   const userId = c.get('userId') as string;
-  const email = c.get('userEmail') as string;
-  const body = await c.req.json().catch(() => ({}));
-  const requestedServerType = (body?.server_type as string | undefined) || undefined;
-  const requestedLocation = (body?.location as string | undefined) || undefined;
+  void c.get('userEmail');
+  await c.req.json().catch(() => ({}));
   const { upsertCreditAccount, getCreditAccount } = await import('./repositories/credit-accounts');
-  const { resolvePriceId, isPaidTier } = await import('./services/tiers');
-  const { getOrCreateStripeCustomer } = await import('./services/subscriptions');
+  const { defaultAutoTopupForSeats } = await import('./services/tiers');
   const { resolveAccountId } = await import('../shared/resolve-account');
 
   const accountId = await resolveAccountId(userId);
 
-  // ── Step 1: Create free Stripe subscription ──────────────────────────
   const existing = await getCreditAccount(accountId);
   let subscriptionStatus: 'already_initialized' | 'initialized' = 'initialized';
-  const currentTier = existing?.tier ?? 'free';
 
-  if (existing?.stripeSubscriptionId) {
+  if (existing) {
+    // Pre-existing account — leave alone. Legacy customers stay legacy;
+    // per-seat customers keep whatever subscription state they have.
     subscriptionStatus = 'already_initialized';
   } else {
-    const customerId = await getOrCreateStripeCustomer(accountId, email);
-    const { getStripe } = await import('../shared/stripe');
-    const stripe = getStripe();
-
-    const freePriceId = resolvePriceId('free', 'monthly');
-    if (!freePriceId) {
-      return c.json({ error: 'Free tier price not configured' }, 500);
-    }
-
-    const subscription = await stripe.subscriptions.create({
-      customer: customerId,
-      items: [{ price: freePriceId }],
-      payment_behavior: 'allow_incomplete',
-      payment_settings: { save_default_payment_method: 'on_subscription' },
-      metadata: { account_id: accountId, tier_key: 'free' },
-    });
-
+    // Fresh account — seed as per-seat with no subscription yet. The user
+    // will land at $0 balance and see the "Subscribe to Team plan" CTA.
+    const defaults = defaultAutoTopupForSeats(1);
     await upsertCreditAccount(accountId, {
-      tier: 'free',
+      tier: 'per_seat',
+      billingModel: 'per_seat',
+      seatCount: 1,
       provider: 'stripe',
-      stripeSubscriptionId: subscription.id,
-      stripeSubscriptionStatus: 'active',
-      planType: 'monthly',
       balance: '0',
       dailyCreditsBalance: '0',
       autoTopupEnabled: false,
-      autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
-      autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
+      autoTopupThreshold: String(defaults.threshold),
+      autoTopupAmount: String(defaults.amount),
     });
-  }
-
-  // ── Step 2: Sandbox provisioning (only for paid plans) ────────────────
-  // Free users: no sandbox — they connect their own (BYOC).
-  // Paid users: machine creation is handled explicitly via the checkout / create-machine flow.
-  let sandboxStatus: 'created' | 'exists' | 'provisioning' | 'skipped' | 'failed' = 'skipped';
-
-  if (!isPaidTier(currentTier)) {
-    console.log(`[setup/initialize] Free tier — no sandbox provisioning for account ${accountId}`);
-  } else {
-    console.log(`[setup/initialize] Paid tier ready for explicit machine checkout for account ${accountId}`);
+    console.log(`[setup/initialize] Seeded per_seat account ${accountId} (awaiting Stripe checkout)`);
   }
 
   return c.json({
     status: subscriptionStatus,
-    tier: currentTier,
-    sandbox: sandboxStatus,
+    tier: existing?.tier ?? 'per_seat',
+    sandbox: 'skipped' as const,
   });
 });
 

@@ -18,6 +18,10 @@ import {
   mapRevenueCatProductToTier,
   getRevenueCatPeriodType,
   isRevenueCatAnonymous,
+  isPerSeatAccount,
+  resolvePerSeatPriceId,
+  PER_SEAT_PRICE_USD,
+  defaultAutoTopupForSeats,
 } from './tiers';
 import { grantCredits, resetExpiringCredits } from './credits';
 import { grantMachineBonusOnce, getStripeMachineBonusKey } from './machine-bonus';
@@ -297,6 +301,34 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     updates.paymentStatus = 'active';
   }
 
+  // Billing v2 — if this subscription has a per-seat item, reconcile quantity
+  // and grant additional seat credits for net additions. Identified by the
+  // per-seat price ID on any item (also accepts metadata.billing_model='per_seat'
+  // as a hint during the cutover before price IDs are wired up).
+  const perSeatPriceId = resolvePerSeatPriceId();
+  const perSeatItem = subscription.items.data.find(
+    (item) =>
+      (perSeatPriceId && item.price?.id === perSeatPriceId) ||
+      subscription.metadata?.billing_model === 'per_seat',
+  );
+  let perSeatDelta = 0;
+  if (perSeatItem) {
+    const newSeats = Math.max(1, Math.floor(perSeatItem.quantity ?? 1));
+    const oldSeats = account?.seatCount ?? 0;
+    perSeatDelta = newSeats - oldSeats;
+    updates.billingModel = 'per_seat';
+    updates.seatCount = newSeats;
+    updates.seatSubscriptionItemId = perSeatItem.id;
+    updates.tier = 'per_seat';
+
+    // Apply scaled auto-topup defaults if the user hasn't customised them.
+    if (!account?.autoTopupCustomized) {
+      const defaults = defaultAutoTopupForSeats(newSeats);
+      updates.autoTopupThreshold = String(defaults.threshold);
+      updates.autoTopupAmount = String(defaults.amount);
+    }
+  }
+
   if (!account) {
     await upsertCreditAccount(accountId, updates);
   } else {
@@ -311,6 +343,37 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
         credits,
         `Recovered Stripe subscription: ${credits} credits`,
         `legacy_sync:${subscription.id}`,
+      );
+    }
+  }
+
+  // Per-seat included credit grant. Stripe handles the dollar proration on
+  // the invoice; we mirror that in the wallet so the new seat can spend
+  // immediately rather than waiting for the next bill cycle.
+  //
+  // Wallet is fungible — $40/seat goes into one bucket. The compute-vs-LLM
+  // split is a pricing-page message, not a wallet partition. Spend
+  // attribution happens at the ledger entry level (compute_debit / llm_debit).
+  if (perSeatItem && perSeatDelta > 0) {
+    const seatGrant = PER_SEAT_PRICE_USD * perSeatDelta;
+    await grantCredits(
+      accountId,
+      seatGrant,
+      'seat_grant',
+      `Per-seat allowance (+${perSeatDelta} ${perSeatDelta === 1 ? 'seat' : 'seats'})`,
+      true,
+      `${subscription.id}:seats:${updates.seatCount}`,
+    ).catch((err) =>
+      console.warn(`[Webhook] per-seat grant failed for ${accountId}:`, err),
+    );
+
+    // First-time transition: account just flipped from legacy/free to per_seat.
+    // Mint YOLO tokens for every existing member who doesn't have one (owner
+    // + any pre-subscription joiners). Idempotent on subsequent webhook fires.
+    if (perSeatItem && !isPerSeatAccount(account?.billingModel)) {
+      const { mintYoloTokensForAllMembers } = await import('./seat-management');
+      void mintYoloTokensForAllMembers(accountId).catch((err) =>
+        console.warn(`[Webhook] mint YOLO tokens for existing members failed for ${accountId}:`, err),
       );
     }
   }

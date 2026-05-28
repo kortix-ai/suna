@@ -64,7 +64,7 @@ interface DriveToolbarProps {
 
 /**
  * Google Drive-style toolbar.
- * 
+ *
  * Layout: [Breadcrumbs] ... [New +] [View Toggle] [Sort] [Search] [More]
  */
 export function DriveToolbar({

@@ -7,6 +7,7 @@ import {
   useProjectSessionTabsStore,
   CUSTOMIZE_TAB_ID,
 } from '@/stores/project-session-tabs-store';
+import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
 import { isDesktop } from '@/lib/desktop';
 
 /**
@@ -44,8 +45,8 @@ export function useProjectShellShortcuts({
   const tabSwitchModifier = useUserPreferencesStore(
     (s) => s.preferences.keyboard.tabSwitchModifier,
   );
-  const closeTab = useProjectSessionTabsStore((s) => s.closeTab);
   const reopenLastClosed = useProjectSessionTabsStore((s) => s.reopenLastClosed);
+  const closeProjectTab = useCloseProjectTab(projectId);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -92,15 +93,9 @@ export function useProjectShellShortcuts({
       ) {
         if (urlProject !== projectId || !activeTabId) return;
         e.preventDefault();
-        const remaining = tabs.filter((id) => id !== activeTabId);
-        closeTab(projectId, activeTabId);
-        if (remaining.length > 0) {
-          const idx = tabs.indexOf(activeTabId);
-          goToTab(remaining[Math.min(idx, remaining.length - 1)]);
-        } else {
-          // Nothing left → project index (the new-session composer).
-          router.push(`/projects/${projectId}`);
-        }
+        // Single source of truth for tab close (handles stale-event guard,
+        // optimistic active pin, navigate-first ordering, transition).
+        closeProjectTab(activeTabId);
         return;
       }
 
@@ -169,5 +164,5 @@ export function useProjectShellShortcuts({
     // DesktopChrome captures Cmd+R. Capturing guarantees Ctrl+W et al. fire.
     window.addEventListener('keydown', handler, { capture: true });
     return () => window.removeEventListener('keydown', handler, { capture: true });
-  }, [projectId, pathname, router, tabSwitchModifier, onNewSession, closeTab, reopenLastClosed]);
+  }, [projectId, pathname, router, tabSwitchModifier, onNewSession, closeProjectTab, reopenLastClosed]);
 }

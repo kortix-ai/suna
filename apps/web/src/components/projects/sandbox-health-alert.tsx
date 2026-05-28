@@ -77,7 +77,7 @@ const SEVERITY_TONE: Record<Severity, { text: string; icon: string; dot: string 
 const SEVERITY_LABEL: Record<Severity, string> = {
   critical: 'Fix sandbox build',
   degraded: 'Sandbox build failing',
-  building: 'Building first sandbox…',
+  building: 'Sandbox build running…',
 };
 
 /** Shared health query — pollable, used by the alert and the settings panel. */
@@ -176,7 +176,9 @@ function SandboxAlertContent({
               ? 'Sandbox build failed'
               : severity === 'degraded'
                 ? 'Latest build failed'
-                : 'Building first sandbox'}
+                : health.first_build
+                  ? 'Building first sandbox'
+                  : 'Rebuilding sandbox'}
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -184,7 +186,9 @@ function SandboxAlertContent({
             ? 'No healthy snapshot remains, so new sessions can’t start until this is fixed.'
             : severity === 'degraded'
               ? `Sessions still run on the last healthy snapshot (${health.ready_count} retained). New commits won’t apply until the build succeeds.`
-              : 'This one-time build runs the first time a project is created. Sessions can start once it’s ready.'}
+              : health.first_build
+                ? 'This one-time build runs the first time a project is created. Sessions can start once it’s ready.'
+                : 'A new sandbox image is building. Sessions can start once a healthy snapshot is available.'}
         </p>
       </div>
 
