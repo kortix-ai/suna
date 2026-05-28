@@ -58,13 +58,12 @@ import { useAuth } from '@/components/AuthProvider';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { AutoTopupCard } from '@/components/billing/auto-topup-card';
-import { 
-    useAccountState,
+import { SeatManagementCard } from '@/components/billing/seat-management-card';
+import {
     accountStateKeys,
     accountStateSelectors,
     useCreatePortalSession,
-    useCancelSubscription,
-    useReactivateSubscription,
+    useCreatePerSeatCheckout,
     invalidateAccountState,
 } from '@/hooks/billing';
 import { billingApi } from '@/lib/api/billing';
@@ -1565,6 +1564,9 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                 </div>
             </div>
 
+            {/* ── Team plan (Billing v2) ── */}
+            <TeamPlanSection accountState={accountState} />
+
             {/* ── Kortix YOLO (shown between Credits and Top-up actions) ── */}
             {yoloUsage && (
                 <div className="border-t border-border pt-4 space-y-2">
@@ -1673,6 +1675,75 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                 </Button>
             </div>
 
+        </div>
+    );
+}
+
+// Billing v2 — Team plan section.
+// Two states:
+//   - per-seat already active → render SeatManagementCard with usage breakdown.
+//   - any other tier → CTA card pitching the plan + "Subscribe" button.
+// "Subscribe" calls /billing/create-per-seat-checkout. If a card is on file
+// the API instant-creates the sub; otherwise it returns a Stripe Checkout URL
+// and the hook redirects the browser there.
+function TeamPlanSection({ accountState }: { accountState: AccountState | undefined }) {
+    const createPerSeat = useCreatePerSeatCheckout();
+
+    if (!accountState) return null;
+
+    const isPerSeat = accountState.billing_model === 'per_seat';
+    // New signups are seeded with billing_model='per_seat' but no subscription
+    // until they complete Stripe checkout. Use subscription_id as the activation
+    // gate so we still show the CTA for fresh accounts.
+    const hasActiveSubscription = Boolean(accountState.subscription?.subscription_id);
+
+    if (isPerSeat && hasActiveSubscription) {
+        return (
+            <div className="border-t border-border pt-4">
+                <SeatManagementCard accountState={accountState} />
+            </div>
+        );
+    }
+
+    // No active subscription yet — pitch the team plan.
+    const handleSubscribe = () => {
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        createPerSeat.mutate({
+            success_url: `${origin}/?team_signup=success`,
+            cancel_url: `${origin}/?team_signup=cancelled`,
+        });
+    };
+
+    return (
+        <div className="border-t border-border pt-4 space-y-3">
+            <div className="flex items-center justify-between">
+                <p className="text-xs uppercase tracking-widest text-muted-foreground">Team plan</p>
+                <p className="text-xs text-muted-foreground/60">$20 / teammate / month</p>
+            </div>
+            <div className="rounded-lg border bg-card p-4 space-y-3">
+                <div>
+                    <h3 className="text-sm font-semibold">Activate your seat</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        $20 per teammate gives your account $20 of usage credits each month.
+                        Spend on sandbox compute, LLM calls, or both — one wallet, auto-topup.
+                    </p>
+                </div>
+                <Button
+                    onClick={handleSubscribe}
+                    disabled={createPerSeat.isPending}
+                    className="w-full"
+                >
+                    {createPerSeat.isPending ? 'Starting…' : 'Subscribe to Team plan'}
+                </Button>
+                {createPerSeat.isError && (
+                    <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                            {(createPerSeat.error as Error)?.message ?? 'Could not start checkout.'}
+                        </AlertDescription>
+                    </Alert>
+                )}
+            </div>
         </div>
     );
 }

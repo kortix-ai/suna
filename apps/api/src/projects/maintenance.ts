@@ -5,6 +5,7 @@ import { getProvider, type ProviderName } from '../platform/providers';
 import { invalidateProviderCache } from '../sandbox-proxy';
 import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
 import { reconcileDaytonaSnapshots } from '../snapshots/builder';
+import { pauseComputeSession, tickRunningComputeCharges } from '../billing/services/compute-metering';
 
 const DEFAULT_IDLE_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
@@ -123,6 +124,12 @@ export async function hibernateIdleSessionSandboxes(now = new Date()): Promise<{
       await provider.stop(row.externalId);
       invalidateProviderCache(row.externalId);
       const stoppedAt = new Date();
+
+      // Billing v2 — close out the compute metering row before flipping
+      // status, so the wall-time delta is computed against an `active` row.
+      void pauseComputeSession(row.sandboxId).catch((err) =>
+        console.warn(`[maintenance] compute pauseComputeSession failed for ${row.sandboxId}:`, err),
+      );
 
       await db
         .update(sessionSandboxes)
@@ -243,7 +250,7 @@ export async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, branches, snapshots] = await Promise.all([
+    const [idle, branches, snapshots, computeTick] = await Promise.all([
       hibernateIdleSessionSandboxes(),
       sweepExpiredSessionBranches(),
       // Org-wide snapshot GC: reclaim orphaned/over-budget Daytona snapshots so
@@ -252,11 +259,17 @@ export async function runProjectMaintenance(): Promise<void> {
         console.warn('[project-maintenance] snapshot reconcile failed:', err instanceof Error ? err.message : err);
         return null;
       }),
+      // Billing v2 — partial-bill any active compute sessions that haven't
+      // settled in > 1h, so a missed stop hook can't accrue uncharged compute.
+      tickRunningComputeCharges().catch((err) => {
+        console.warn('[project-maintenance] compute tick failed:', err instanceof Error ? err.message : err);
+        return { settled: 0 };
+      }),
     ]);
     const snapChanged =
       snapshots && (snapshots.orphansDeleted || snapshots.deadRowsCleared || snapshots.evicted || snapshots.failedCleared);
-    if (idle.stopped || idle.errors || branches.deleted || branches.errors || snapChanged) {
-      console.log('[project-maintenance] completed', { idle, branches, snapshots });
+    if (idle.stopped || idle.errors || branches.deleted || branches.errors || snapChanged || computeTick.settled) {
+      console.log('[project-maintenance] completed', { idle, branches, snapshots, computeTick });
     }
   } finally {
     maintenanceRunning = false;

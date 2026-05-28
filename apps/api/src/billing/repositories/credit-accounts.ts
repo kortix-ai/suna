@@ -71,6 +71,11 @@ export async function getSubscriptionInfo(accountId: string) {
       revenuecatPendingChangeType: creditAccounts.revenuecatPendingChangeType,
       revenuecatCancelledAt: creditAccounts.revenuecatCancelledAt,
       revenuecatCancelAtPeriodEnd: creditAccounts.revenuecatCancelAtPeriodEnd,
+      // Billing v2 — per-seat fields surfaced for the account-state response.
+      billingModel: creditAccounts.billingModel,
+      seatCount: creditAccounts.seatCount,
+      seatSubscriptionItemId: creditAccounts.seatSubscriptionItemId,
+      autoTopupCustomized: creditAccounts.autoTopupCustomized,
     })
     .from(creditAccounts)
     .where(eq(creditAccounts.accountId, accountId))

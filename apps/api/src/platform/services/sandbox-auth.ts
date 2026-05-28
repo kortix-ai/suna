@@ -25,14 +25,32 @@ export async function getLocalSandboxServiceKey(): Promise<string> {
   return getSandboxServiceKeyByExternalId(config.SANDBOX_CONTAINER_NAME);
 }
 
-export function buildCanonicalSandboxAuthCommand(token: string, apiUrl: string): string {
+/**
+ * Generate the s6/bootstrap auth script that runs inside a sandbox at boot.
+ *
+ * Billing v2 — `yoloApiKey` is the per-member YOLO token resolved by
+ * services/yolo-tokens.ts at provision time. When provided, it's used as
+ * KORTIX_YOLO_API_KEY so the kortix-agent-sandbox-server / opencode demon
+ * authenticates against api-yolo.kortix.com as that specific member. When
+ * absent (legacy accounts, non-cloud env, or token resolution failure), we
+ * fall back to the legacy behaviour: cloud sandboxes get the account-wide
+ * service key as their YOLO key.
+ */
+export function buildCanonicalSandboxAuthCommand(
+  token: string,
+  apiUrl: string,
+  llmApiKey?: string | null,
+): string {
+  const effectiveLlmKey = llmApiKey ?? token;
+  const llmBaseUrl = `${apiUrl.replace(/\/+$/, '')}/llm`;
   return `python3 - <<PY
 from pathlib import Path
 import json
 
 token = ${JSON.stringify(token)}
+llm_key = ${JSON.stringify(effectiveLlmKey)}
 api_url = ${JSON.stringify(apiUrl)}
-yolo_url = ${JSON.stringify(config.KORTIX_YOLO_URL)}
+llm_base_url = ${JSON.stringify(llmBaseUrl)}
 billing_enabled = ${config.KORTIX_BILLING_INTERNAL_ENABLED ? 'True' : 'False'}
 
 s6_dir = Path("/run/s6/container_environment")
@@ -48,8 +66,10 @@ values = {
     "TUNNEL_API_URL": api_url,
 }
 if billing_enabled:
-    values["KORTIX_YOLO_API_KEY"] = token
-    values["KORTIX_YOLO_URL"] = yolo_url
+    values["KORTIX_LLM_API_KEY"] = llm_key
+    values["KORTIX_LLM_BASE_URL"] = llm_base_url
+    values["KORTIX_YOLO_API_KEY"] = llm_key
+    values["KORTIX_YOLO_URL"] = llm_base_url
 for key, value in values.items():
     (s6_dir / key).write_text(value)
 
@@ -69,8 +89,10 @@ data.update({
     "KORTIX_API_URL": api_url,
 })
 if billing_enabled:
-    data["KORTIX_YOLO_API_KEY"] = token
-    data["KORTIX_YOLO_URL"] = yolo_url
+    data["KORTIX_LLM_API_KEY"] = llm_key
+    data["KORTIX_LLM_BASE_URL"] = llm_base_url
+    data["KORTIX_YOLO_API_KEY"] = llm_key
+    data["KORTIX_YOLO_URL"] = llm_base_url
 bootstrap.write_text(json.dumps(data))
 PY`
 }

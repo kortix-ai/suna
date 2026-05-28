@@ -180,14 +180,36 @@ export function useAccountStateWithStreaming(isStreaming: boolean = false) {
 
 export function useCreateCheckoutSession() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: (request: CreateCheckoutSessionRequest) => 
+    mutationFn: (request: CreateCheckoutSessionRequest) =>
       billingApi.createCheckoutSession(request),
     onSuccess: (data) => {
       // Invalidate and refetch on upgrade/update - checkout redirects user anyway
       if (data.status === 'upgraded' || data.status === 'updated') {
         invalidateAccountState(queryClient, true, true); // Force refetch with skipCache after checkout
+      }
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url;
+      }
+    },
+  });
+}
+
+// Billing v2 — start the per-seat subscription flow. If a card is on file,
+// the API creates the subscription directly and returns { status: 'subscription_created' };
+// otherwise it returns { status: 'checkout_created', checkout_url } and we redirect.
+export function useCreatePerSeatCheckout() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (args: { success_url: string; cancel_url: string; locale?: string }) =>
+      billingApi.createPerSeatCheckout(args),
+    onSuccess: (data) => {
+      if (data.status === 'subscription_created') {
+        // Direct sub creation — refresh account state to show the new tier + wallet grant.
+        invalidateAccountState(queryClient, true, true);
+        return;
       }
       if (data.checkout_url) {
         window.location.href = data.checkout_url;

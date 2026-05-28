@@ -34,10 +34,48 @@ import {
   getLatestReadySnapshot,
   getReadySnapshotForCommit,
   getSnapshotForCommit,
+  invalidateSnapshotIfMissingOnProvider,
 } from '../../snapshots/builder';
 import { config } from '../../config';
 import { ProvisionTimeline } from './provision-timeline';
 import type { GitBackedProject } from '../../projects/git';
+import { startComputeSession } from '../../billing/services/compute-metering';
+import { resolveYoloTokenForMember } from '../../billing/services/yolo-tokens';
+import { getCreditAccount } from '../../billing/repositories/credit-accounts';
+import { isPerSeatAccount } from '../../billing/services/tiers';
+import { readManifest } from '../../projects/triggers';
+import { extractSandboxSpec } from '../../snapshots/dockerfile-layer';
+
+// Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
+// Mirrors a sensible Daytona default (1 vCPU / 2 GB / 10 GB).
+const DEFAULT_METERING_SPEC = { cpuCores: 1, memoryGb: 2, diskGb: 10, gpuCount: 0 };
+
+async function openComputeSessionForSandbox(
+  sandboxId: string,
+  accountId: string,
+  project: GitBackedProject,
+  userId: string | null | undefined,
+): Promise<void> {
+  let spec = { ...DEFAULT_METERING_SPEC };
+  try {
+    const manifest = await readManifest(project);
+    const declared = extractSandboxSpec(manifest?.raw ?? null);
+    if (declared.cpu !== undefined) spec.cpuCores = declared.cpu;
+    if (declared.memory !== undefined) spec.memoryGb = declared.memory;
+    if (declared.disk !== undefined) spec.diskGb = declared.disk;
+    if (declared.gpu !== undefined) spec.gpuCount = declared.gpu;
+  } catch {
+    // Manifest read failed (repo unreachable, parse error, etc.). Fall back
+    // to defaults so metering still records the session.
+  }
+  await startComputeSession({
+    sandboxId,
+    accountId,
+    sessionId: sandboxId,
+    actorUserId: userId ?? null,
+    spec,
+  });
+}
 
 const DEFAULT_SNAPSHOT_READY_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_SNAPSHOT_READY_POLL_MS = 5 * 1000;
@@ -145,6 +183,22 @@ async function waitForLatestReadySnapshot(
   }
 }
 
+/**
+ * Detects the DB↔provider divergence where our row says the snapshot is ready
+ * but the provider's create() call comes back saying it doesn't have one. Seen
+ * with Daytona returning 400/404 ("Snapshot ... not found. Did you add it
+ * through the Daytona Dashboard?") after a row was marked ready but the
+ * underlying image was purged / never finished server-side. Triggering this
+ * marks the row failed so the next session start rebuilds from scratch.
+ */
+function isSnapshotMissingOnProvider(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  if (!message.includes('snapshot')) return false;
+  if (message.includes('not found')) return true;
+  if (message.includes('does not exist')) return true;
+  return false;
+}
+
 function stringMetadataValue(metadata: unknown, key: string): string | null {
   if (!metadata || typeof metadata !== 'object') return null;
   const value = (metadata as Record<string, unknown>)[key];
@@ -240,6 +294,26 @@ export async function provisionSessionSandbox(opts: {
   tl.mark('tokens');
 
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
+
+  let llmApiKey: string | null = null;
+  try {
+    const account = await getCreditAccount(accountId);
+    const hasActiveSub =
+      !!account?.stripeSubscriptionId &&
+      account.stripeSubscriptionStatus !== 'canceled' &&
+      account.stripeSubscriptionStatus !== 'unpaid';
+    if (isPerSeatAccount(account?.billingModel) && hasActiveSub && userId) {
+      llmApiKey = await resolveYoloTokenForMember(userId, accountId);
+    }
+  } catch (err) {
+    console.warn(
+      `[session-sandbox] failed to resolve LLM gateway token for ${userId}@${accountId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  const llmBaseUrl = `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/llm`;
+
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
     userId,
@@ -250,6 +324,14 @@ export async function provisionSessionSandbox(opts: {
       ...(opts.extraEnvVars ?? {}),
       KORTIX_TOKEN: sandboxKey.secretKey,
       ...(executorToken ? { KORTIX_EXECUTOR_TOKEN: executorToken } : {}),
+      ...(llmApiKey
+        ? {
+            KORTIX_LLM_API_KEY: llmApiKey,
+            KORTIX_LLM_BASE_URL: llmBaseUrl,
+            KORTIX_YOLO_API_KEY: llmApiKey,
+            KORTIX_YOLO_URL: llmBaseUrl,
+          }
+        : {}),
     },
   };
 
@@ -257,10 +339,11 @@ export async function provisionSessionSandbox(opts: {
   // and the dashboard's ConnectingScreen handles the long tail.
   void (async () => {
     let bgExternalId: string | null = null;
+    let latest: Awaited<ReturnType<typeof getLatestReadySnapshot>> = null;
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
       let gitProject = opts.gitProject;
-      let latest = await getLatestReadySnapshot(opts.gitProject.projectId, branch, providerName);
+      latest = await getLatestReadySnapshot(opts.gitProject.projectId, branch, providerName);
       let build: Awaited<ReturnType<typeof ensureBuildForLatestCommit>> | null = null;
 
       if (latest?.snapshotId) {
@@ -484,9 +567,34 @@ export async function provisionSessionSandbox(opts: {
 
       tl.mark('row-active');
       tl.log({ provider: providerName, degraded: bootedDegraded, attempts });
+
+      // Billing v2 — open a compute metering row. No-op for legacy accounts.
+      // Spec is resolved from the project manifest with provider-default fallbacks.
+      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId).catch(
+        (err) =>
+          console.warn(
+            `[session-sandbox] failed to open compute metering for ${sandbox.sandboxId}:`,
+            err instanceof Error ? err.message : String(err),
+          ),
+      );
     } catch (bgErr) {
       console.error(`[session-sandbox] Background provisioning failed for ${sandbox.sandboxId}:`, bgErr);
       const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);
+
+      if (isSnapshotMissingOnProvider(bgErr) && latest?.snapshotRowId) {
+        const invalidated = await invalidateSnapshotIfMissingOnProvider(
+          latest.snapshotRowId,
+          latest.snapshotId,
+          providerName,
+          `${providerName}.sandbox.create reported snapshot ${latest.snapshotId ?? '<unknown>'} missing`,
+        );
+        if (invalidated) {
+          console.warn(
+            `[session-sandbox] invalidated stale snapshot row ${latest.snapshotRowId} ` +
+            `(${latest.snapshotId}); next session start will rebuild`,
+          );
+        }
+      }
 
       if (bgExternalId) {
         try {

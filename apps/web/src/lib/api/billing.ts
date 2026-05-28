@@ -121,6 +121,21 @@ export interface AccountState {
   } | null;
   can_add_instances?: boolean;
   can_claim_computer?: boolean;
+  // Billing v2 — present for accounts on the new per-seat plan.
+  billing_model?: 'legacy' | 'per_seat';
+  seats?: {
+    count: number;
+    price_per_seat_usd: number;
+    typical_compute_budget_per_seat_usd: number;
+    typical_llm_budget_per_seat_usd: number;
+  };
+  usage_this_period?: {
+    compute_usd: number;
+    llm_usd: number;
+    total_usd: number;
+    period_start: string | null;
+    period_end: string | null;
+  } | null;
   _cache?: {
     cached: boolean;
     ttl_seconds?: number;
@@ -441,7 +456,7 @@ export const billingApi = {
       request
     );
     if (response.error) throw response.error;
-    
+
     const data = response.data!;
     if (data.checkout_url) {
       return {
@@ -458,6 +473,18 @@ export const billingApi = {
       } as CreateCheckoutSessionResponse;
     }
     return data;
+  },
+
+  // Billing v2 — per-seat plan checkout. Stripe quantity = current member count.
+  async createPerSeatCheckout(args: { success_url: string; cancel_url: string; locale?: string }) {
+    const response = await backendApi.post<{
+      status: 'subscription_created' | 'checkout_created';
+      checkout_url?: string;
+      subscription_id?: string;
+      seat_count: number;
+    }>('/billing/create-per-seat-checkout', args);
+    if (response.error) throw response.error;
+    return response.data!;
   },
 
   async createPortalSession(request: CreatePortalSessionRequest) {

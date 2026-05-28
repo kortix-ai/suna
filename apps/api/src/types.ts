@@ -234,6 +234,30 @@ export interface AccountStateResponse {
   can_add_instances: boolean;
   /** True when a legacy paid user has no active machine and can claim one. */
   can_claim_computer?: boolean;
+
+  // Billing v2 — surfaced for per-seat accounts only. Legacy accounts get
+  // billing_model='legacy' here and the frontend renders the legacy UI.
+  billing_model: 'legacy' | 'per_seat';
+  seats?: {
+    count: number;
+    price_per_seat_usd: number;
+    /** Pricing-page transparency only — not a wallet partition. */
+    typical_compute_budget_per_seat_usd: number;
+    /** Pricing-page transparency only — not a wallet partition. */
+    typical_llm_budget_per_seat_usd: number;
+  };
+  /**
+   * Spend breakdown by category for the current billing period. Sourced from
+   * credit_ledger aggregation, not from a partitioned wallet. Null for legacy
+   * accounts.
+   */
+  usage_this_period?: {
+    compute_usd: number;
+    llm_usd: number;
+    total_usd: number;
+    period_start: string | null;
+    period_end: string | null;
+  } | null;
 }
 
 export interface ScheduledChange {
