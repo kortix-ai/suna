@@ -59,10 +59,8 @@ const PUBLIC_ROUTES = [
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
 
-// Routes that require authentication but are related to billing/trials/setup
-const BILLING_ROUTES = [
-  '/activate-trial',
-];
+// Routes that require authentication but are related to billing/setup
+const BILLING_ROUTES: string[] = [];
 
 // Routes that require authentication and active subscription
 const PROTECTED_ROUTES = [

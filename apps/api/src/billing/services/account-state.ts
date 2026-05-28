@@ -77,7 +77,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     };
   }
 
-  const isTrial = sub?.trialStatus === 'active';
   const isCancelled = sub?.stripeSubscriptionStatus === 'canceled'
     || (sub?.revenuecatCancelledAt != null);
   const subscriptionStatus = getSubscriptionStatus(sub, tierName, isAdmin);
@@ -152,9 +151,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       subscription_id: subscriptionId,
       current_period_end: null,
       cancel_at_period_end: false,
-      is_trial: isTrial,
-      trial_status: sub?.trialStatus ?? null,
-      trial_ends_at: sub?.trialEndsAt ?? null,
       is_cancelled: isCancelled,
       cancellation_effective_date: null,
       has_scheduled_change: scheduledChange !== null,
@@ -223,9 +219,6 @@ export function buildLocalAccountState(): AccountStateResponse {
       subscription_id: null,
       current_period_end: null,
       cancel_at_period_end: false,
-      is_trial: false,
-      trial_status: null,
-      trial_ends_at: null,
       is_cancelled: false,
       cancellation_effective_date: null,
       has_scheduled_change: false,

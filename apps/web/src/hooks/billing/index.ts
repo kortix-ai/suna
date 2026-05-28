@@ -33,11 +33,6 @@ export {
   // Usage history (transactions ledger lives in ./use-transactions below)
   useUsageHistory,
 
-  // Trial
-  useTrialStatus,
-  useStartTrial,
-  useCancelTrial,
-  
   // Selectors for extracting data
   accountStateSelectors,
 } from './use-account-state';
