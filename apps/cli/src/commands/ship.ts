@@ -7,8 +7,15 @@ import { ApiError, clientFromAuth, type ApiClient } from '../api/client.ts';
 import { isKortixProject, loadLink, saveLink, resolveProjectId } from '../project-link.ts';
 import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
+import { promptSecret } from '../prompts.ts';
+import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
 import { C, status } from '../style.ts';
-import type { ProjectSummary, MeResponse, AccountMembership } from '../api/types.ts';
+import type {
+  ProjectSummary,
+  MeResponse,
+  AccountMembership,
+  ProjectSecretsResponse,
+} from '../api/types.ts';
 
 const HELP = `Usage: kortix ship [options]
 
@@ -17,8 +24,10 @@ repo — in one command. Run it once to create the project, then run it again
 any time to sync. It's the everyday "save my work to the cloud" command.
 
 Every run:
-  1. git add -A + commit   (skipped if nothing changed)
-  2. push the branch you're on → the same-named branch on the project's repo
+  1. verify kortix.toml parses + validates   (skip with --no-verify)
+  2. git add -A + commit                      (skipped if nothing changed)
+  3. offer to set any [env] secret not yet set (prompts you; skip with --no-env)
+  4. push the branch you're on → the same-named branch on the project's repo
 
 First ship vs. after:
   * First ship   creates the cloud project + a git repo, links this folder
@@ -50,7 +59,9 @@ Options:
                          <git-url>    register + push to this remote
   -m, --message <msg>  Commit message for the sync (default: "kortix: ship").
   --no-commit          Don't commit. Fail if the working tree is dirty.
-  -y, --yes            Don't prompt; use the active account.
+  --no-verify          Skip the kortix.toml validation (compile) check.
+  --no-env             Skip the [env] secret check + prompts.
+  -y, --yes            Don't prompt; use the active account, skip secret prompts.
   -n, --dry-run        Print what would happen, do nothing.
   --project <id>       Operate on this project id (default: linked).
   --host <name>        Operate against a non-default Kortix host.
@@ -63,6 +74,8 @@ interface ShipFlags {
   origin?: string;
   message?: string;
   noCommit: boolean;
+  noVerify: boolean;
+  noEnv: boolean;
   yes: boolean;
   dryRun: boolean;
   project?: string;
@@ -127,15 +140,162 @@ export async function runShip(argv: string[]): Promise<number> {
   }
   const client = clientFromAuth(auth);
 
+  // ── Verify the manifest "compiles" before we touch the cloud ──────────────
+  // Parse + validate kortix.toml locally so a broken config fails fast — long
+  // before we create a project, commit, or push. Also yields the [env] spec
+  // we use to make sure required secrets are set.
+  const prepared = prepareManifest(flags);
+  if (!prepared.ok) return 1;
+
   // ── Resolve state: already linked (sync) vs first ship (create) ───────────
   const linkedId = resolveProjectId(flags.project);
   try {
     if (linkedId) {
-      return await shipExisting(client, auth, linkedId, flags);
+      return await shipExisting(client, auth, linkedId, flags, prepared.env);
     }
-    return await shipFirstTime(client, auth, hostName, flags);
+    return await shipFirstTime(client, auth, hostName, flags, prepared.env);
   } catch (err) {
     return surface(err);
+  }
+}
+
+/**
+ * Parse + statically validate the local kortix.toml (the "compile" check).
+ * Returns `ok:false` to abort the ship, plus the parsed `[env]` spec so the
+ * caller can reconcile required secrets. A TOML syntax error or a schema
+ * error blocks the ship unless `--no-verify` is passed; warnings never block.
+ */
+function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
+  const empty: EnvSpec = { required: [], optional: [] };
+
+  let manifest: LocalManifest | null;
+  try {
+    manifest = loadLocalManifest();
+  } catch (err) {
+    const detail = (err as Error).message;
+    if (flags.noVerify) {
+      process.stdout.write(
+        `  ${status.warn(`kortix.toml has a syntax error (ignored via --no-verify)`)}\n`,
+      );
+      return { ok: true, env: empty };
+    }
+    process.stderr.write(
+      `\n${status.err("kortix.toml doesn't parse — fix it before shipping.")}\n` +
+        `  ${C.dim}${detail.split('\n').join('\n  ')}${C.reset}\n` +
+        `  ${C.dim}Bypass with ${C.reset}${C.cyan}--no-verify${C.reset}${C.dim}.${C.reset}\n\n`,
+    );
+    return { ok: false, env: empty };
+  }
+
+  // No kortix.toml at all (a `.kortix/`-only project) — nothing to verify.
+  if (!manifest) return { ok: true, env: empty };
+
+  if (!flags.noVerify) {
+    const { errors, warnings } = lintManifest(manifest.data);
+    for (const w of warnings) process.stdout.write(`  ${status.warn(w)}\n`);
+    if (errors.length > 0) {
+      process.stderr.write(
+        `\n${status.err(
+          `kortix.toml has ${errors.length} error${errors.length === 1 ? '' : 's'}:`,
+        )}\n`,
+      );
+      for (const e of errors) process.stderr.write(`  ${C.dim}•${C.reset} ${e}\n`);
+      process.stderr.write(
+        `  ${C.dim}Fix them, or bypass with ${C.reset}${C.cyan}--no-verify${C.reset}${C.dim}.${C.reset}\n\n`,
+      );
+      return { ok: false, env: manifest.env };
+    }
+    process.stdout.write(`  ${status.ok('kortix.toml verified')}\n`);
+  }
+
+  return { ok: true, env: manifest.env };
+}
+
+/**
+ * Make sure the env vars the manifest declares (`[env]` required + optional)
+ * are set on the cloud project. Missing ones are prompted for (masked) and
+ * uploaded in place — so a single `kortix ship` leaves the project ready to
+ * run. Required and optional are both offered (blank skips); skipping a
+ * required one warns but never hard-fails (required is advisory at boot).
+ * Non-interactive / --yes / --no-env: skip prompts, warn only about missing
+ * required vars.
+ */
+async function ensureProjectEnv(
+  client: ApiClient,
+  projectId: string,
+  spec: EnvSpec,
+  flags: ShipFlags,
+): Promise<void> {
+  if (flags.noEnv || (spec.required.length === 0 && spec.optional.length === 0)) return;
+
+  // Which declared secrets already exist on the cloud project?
+  let setNames = new Set<string>();
+  try {
+    const resp = await client.get<ProjectSecretsResponse>(`/projects/${projectId}/secrets`);
+    setNames = new Set(resp.items.map((s) => s.name));
+  } catch {
+    // Couldn't read cloud secrets — don't block the ship over env setup.
+    return;
+  }
+
+  // Required first, then optional — each tagged so the user knows what matters.
+  const missing: { name: string; required: boolean }[] = [
+    ...spec.required.filter((n) => !setNames.has(n)).map((name) => ({ name, required: true })),
+    ...spec.optional.filter((n) => !setNames.has(n)).map((name) => ({ name, required: false })),
+  ];
+  const requiredMissing = missing.filter((m) => m.required).map((m) => m.name);
+
+  if (missing.length === 0) {
+    const total = spec.required.length + spec.optional.length;
+    process.stdout.write(`  ${C.dim}env  ${total} declared secret${total === 1 ? '' : 's'} set${C.reset}\n`);
+    return;
+  }
+
+  const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
+
+  // Non-interactive or --yes: can't prompt safely. Only nag about required.
+  if (!interactive || flags.yes) {
+    if (requiredMissing.length > 0) {
+      const plural = requiredMissing.length === 1 ? '' : 's';
+      process.stdout.write(
+        `  ${status.warn(`${requiredMissing.length} required secret${plural} not set: ${requiredMissing.join(', ')}`)}\n` +
+          `  ${C.dim}Set ${requiredMissing.length === 1 ? 'it' : 'them'} with ${C.reset}${C.cyan}kortix secrets set ${requiredMissing[0]}=…${C.reset}${C.dim} or re-run ship interactively.${C.reset}\n`,
+      );
+    }
+    return;
+  }
+
+  process.stdout.write(
+    `\n  ${C.bold}env${C.reset}  ${C.dim}${missing.length} declared secret${missing.length === 1 ? '' : 's'} not set — enter ${missing.length === 1 ? 'it' : 'them'} now (blank = skip):${C.reset}\n`,
+  );
+  let setCount = 0;
+  const stillMissing: string[] = [];
+  for (const { name, required } of missing) {
+    const tag = required ? `${C.yellow}required${C.reset}` : `${C.faded}optional${C.reset}`;
+    const value = await promptSecret(`    ${name} ${C.dim}(${tag}${C.dim})${C.reset}`);
+    if (!value) {
+      if (required) stillMissing.push(name);
+      continue;
+    }
+    try {
+      await client.post(`/projects/${projectId}/secrets`, { name, value });
+      setCount += 1;
+      process.stdout.write(`    ${status.ok(`${C.bold}${name}${C.reset} set`)}\n`);
+    } catch (err) {
+      if (required) stillMissing.push(name);
+      const msg = err instanceof ApiError ? err.message : (err as Error).message;
+      process.stderr.write(`    ${status.err(`couldn't set ${name}: ${msg}`)}\n`);
+    }
+  }
+  if (setCount > 0) {
+    process.stdout.write(
+      `  ${C.dim}${setCount} secret${setCount === 1 ? '' : 's'} saved to the cloud project.${C.reset}\n`,
+    );
+  }
+  if (stillMissing.length > 0) {
+    process.stdout.write(
+      `  ${status.warn(`required still unset: ${stillMissing.join(', ')}`)} ${C.dim}— sessions start but may misbehave.${C.reset}\n`,
+    );
   }
 }
 
@@ -145,6 +305,7 @@ async function shipFirstTime(
   auth: Auth,
   hostName: string | undefined,
   flags: ShipFlags,
+  env: EnvSpec,
 ): Promise<number> {
   const name = flags.name ?? basename(process.cwd());
 
@@ -216,6 +377,8 @@ async function shipFirstTime(
   const committed = commitIfNeeded(flags);
   if (committed === 'error') return 1;
 
+  await ensureProjectEnv(client, project.project_id, env, flags);
+
   const pushed = pushCurrentBranch(repoUrl, pushToken);
   if (!pushed) return 1;
 
@@ -229,6 +392,7 @@ async function shipExisting(
   auth: Auth,
   projectId: string,
   flags: ShipFlags,
+  env: EnvSpec,
 ): Promise<number> {
   let project: ProjectSummary;
   try {
@@ -271,6 +435,8 @@ async function shipExisting(
 
   const committed = commitIfNeeded(flags);
   if (committed === 'error') return 1;
+
+  await ensureProjectEnv(client, projectId, env, flags);
 
   const pushed = pushCurrentBranch(repoUrl, pushToken);
   if (!pushed) return 1;
@@ -469,7 +635,14 @@ async function resolveShipAccount(
 
 function parseFlags(argv: string[]): ShipFlags {
   const rest = [...argv];
-  const flags: ShipFlags = { noCommit: false, yes: false, dryRun: false, help: false };
+  const flags: ShipFlags = {
+    noCommit: false,
+    noVerify: false,
+    noEnv: false,
+    yes: false,
+    dryRun: false,
+    help: false,
+  };
   flags.name = takeFlagValue(rest, ['--name']);
   flags.account = takeFlagValue(rest, ['--account']);
   flags.origin = takeFlagValue(rest, ['--origin']);
@@ -477,6 +650,8 @@ function parseFlags(argv: string[]): ShipFlags {
   flags.project = takeFlagValue(rest, ['--project']);
   flags.host = takeFlagValue(rest, ['--host']);
   flags.noCommit = takeFlagBool(rest, ['--no-commit']);
+  flags.noVerify = takeFlagBool(rest, ['--no-verify']);
+  flags.noEnv = takeFlagBool(rest, ['--no-env']);
   flags.yes = takeFlagBool(rest, ['-y', '--yes']);
   flags.dryRun = takeFlagBool(rest, ['-n', '--dry-run']);
   flags.help = takeFlagBool(rest, ['-h', '--help']);

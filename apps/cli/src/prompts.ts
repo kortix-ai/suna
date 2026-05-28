@@ -28,6 +28,42 @@ export async function prompt(label: string, defaultValue?: string): Promise<stri
 }
 
 /**
+ * Masked prompt for sensitive input (e.g. secret values). The label is
+ * printed, but keystrokes aren't echoed — nothing about the value lands in
+ * the terminal scrollback. Returns the raw value (NOT trimmed — secrets may
+ * legitimately have leading/trailing whitespace; only a trailing newline is
+ * stripped by readline itself).
+ */
+export async function promptSecret(label: string): Promise<string> {
+  ensureTTY();
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true,
+  });
+  let muted = false;
+  // Swallow keystroke echoes once the question has been written. readline
+  // calls `_writeToOutput` for both the prompt and every typed character; we
+  // let the prompt through, then mute everything after.
+  (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = function (
+    this: { output: NodeJS.WritableStream },
+    str: string,
+  ) {
+    if (!muted) this.output.write(str);
+  };
+  try {
+    const value = await new Promise<string>((resolve) => {
+      rl.question(`${label}: `, (answer) => resolve(answer));
+      muted = true; // question() writes the prompt synchronously above
+    });
+    process.stdout.write('\n'); // the muted Enter never printed a newline
+    return value;
+  } finally {
+    rl.close();
+  }
+}
+
+/**
  * Yes/no confirmation. Returns the boolean answer; treats blank input
  * as `defaultValue`. Accepts y/yes/n/no (case-insensitive).
  */
