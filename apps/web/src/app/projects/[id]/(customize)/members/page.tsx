@@ -42,6 +42,7 @@ import {
   type ProjectGroupGrant,
   type ProjectRole,
 } from '@/lib/projects-client';
+import { sortByRoleThenLabel } from './member-sort';
 import { listGroups, type AccountGroup } from '@/lib/iam-client';
 import {
   inheritedFromGroupSummary,
@@ -304,14 +305,7 @@ function ProjectAccessCard({
   // made it easy to lock someone out by misclicking.
   const [revokeTarget, setRevokeTarget] = useState<ProjectAccessMember | null>(null);
 
-  const sortedMembers = useMemo(() => {
-    const rank = { owner: 0, admin: 1, member: 2 };
-    return [...members].sort((a, b) => {
-      const roleDelta = rank[a.account_role] - rank[b.account_role];
-      if (roleDelta !== 0) return roleDelta;
-      return userLabel(a).localeCompare(userLabel(b));
-    });
-  }, [members]);
+  const sortedMembers = useMemo(() => sortByRoleThenLabel(members, userLabel), [members]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
