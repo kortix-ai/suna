@@ -19,9 +19,7 @@
 // bills any session whose last_billed_at is > 1 hour ago, so a missed close
 // hook can never silently accrue 24h+ of uncharged compute.
 
-import { eq } from 'drizzle-orm';
 import { sandboxComputeSessions } from '@kortix/db';
-import { db } from '../../shared/db';
 import {
   insertComputeSession,
   getOpenComputeSession,

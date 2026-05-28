@@ -10,7 +10,7 @@
 // Hard guard: every call no-ops on legacy accounts. New seat behaviour only
 // engages when credit_accounts.billing_model = 'per_seat'.
 
-import { eq, isNull, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { accountMembers } from '@kortix/db';
 import { db } from '../../shared/db';
 import { getStripe } from '../../shared/stripe';

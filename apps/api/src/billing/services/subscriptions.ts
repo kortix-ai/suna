@@ -8,7 +8,7 @@ import {
 } from '../repositories/credit-accounts';
 import { getCustomerByAccountId, upsertCustomer } from '../repositories/customers';
 import { BillingError, SubscriptionError } from '../../errors';
-import { getTier, isUpgrade, isDowngrade, getMonthlyCredits, resolvePriceId, getComputeDisplayPriceCents, getComputeProductId, getComputeDescription, resolvePerSeatPriceId, defaultAutoTopupForSeats, MAX_SEATS_PER_ACCOUNT } from './tiers';
+import { getTier, isUpgrade, resolvePriceId, getComputeDisplayPriceCents, getComputeProductId, getComputeDescription, resolvePerSeatPriceId, defaultAutoTopupForSeats, MAX_SEATS_PER_ACCOUNT } from './tiers';
 import { countActiveMembers, mintYoloTokensForAllMembers } from './seat-management';
 import { grantCredits, resetExpiringCredits } from './credits';
 import { isPlatformAdmin } from '../../shared/platform-roles';

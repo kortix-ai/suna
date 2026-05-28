@@ -15,7 +15,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
   getActiveYoloTokenRow,
-  insertYoloToken,
   revokeYoloToken,
 } from '../repositories/yolo-tokens';
 

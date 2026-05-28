@@ -23,7 +23,6 @@ import {
 registerGlobalMocks();
 registerCreditsMock();
 
-const PER_SEAT_PRICE_PROD = 'price_1RILb4G6l1KZGqIrhomjgDnO'; // value of `pro.monthly` in tiers.ts; reused as the per-seat placeholder
 const PER_SEAT_PRICE_PLACEHOLDER = 'price_PLACEHOLDER_PER_SEAT';
 
 let grantCreditsCalls: any[][] = [];
