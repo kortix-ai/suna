@@ -1586,6 +1586,7 @@ function TeamPlanSection({ accountState }: { accountState: AccountState | undefi
     if (!accountState) return null;
 
     const isPerSeat = accountState.billing_model === 'per_seat';
+    const isLegacy = accountState.billing_model === 'legacy';
     // New signups are seeded with billing_model='per_seat' but no subscription
     // until they complete Stripe checkout. Use subscription_id as the activation
     // gate so we still show the CTA for fresh accounts.
@@ -1599,7 +1600,15 @@ function TeamPlanSection({ accountState }: { accountState: AccountState | undefi
         );
     }
 
-    // No active subscription yet — pitch the team plan.
+    // Legacy customers with an active subscription are already paying via
+    // their grandfathered tier plan. Pitching "Subscribe to Team plan" to
+    // them is confusing and wrong — their billing is rendered elsewhere
+    // and they'd need an explicit migration flow to opt into per-seat.
+    if (isLegacy && hasActiveSubscription) {
+        return null;
+    }
+
+    // Fresh account (per_seat with no sub yet, or legacy on free tier) — pitch the team plan.
     const handleSubscribe = () => {
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
         createPerSeat.mutate({
