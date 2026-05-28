@@ -1429,8 +1429,6 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
     const isFreeTier = subscription?.tier_key === 'free' || subscription?.tier_key === 'none';
     const isCancelled = subscription?.is_cancelled || subscription?.cancel_at_period_end;
     const canPurchaseCredits = subscription?.can_purchase_credits || false;
-    const yoloUsage = accountState?.yolo_usage;
-    const yoloResetAt = yoloUsage?.window_reset_at ? new Date(yoloUsage.window_reset_at).toLocaleString() : null;
 
     return (
         <div className="p-4 sm:p-6 space-y-6 min-w-0 max-w-full overflow-x-hidden">
@@ -1465,36 +1463,6 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
 
             {/* ── Team plan (Billing v2) — only when billing is enabled on this deploy ── */}
             {isBillingEnabled() && <TeamPlanSection accountState={accountState} />}
-
-            {/* ── Kortix YOLO (shown between Credits and Top-up actions) ── */}
-            {yoloUsage && (
-                <div className="border-t border-border pt-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                        <p className="text-xs uppercase tracking-widest text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1580JsxTextKortixYolo')}</p>
-                        <a
-                            href="https://yolo.kortix.com"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-                        >{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1587JsxTextLearnMore')}<ExternalLink className="size-3" />
-                        </a>
-                    </div>
-                    <div className="text-2xl font-medium tabular-nums tracking-tight">{yoloUsage.used_percent}%</div>
-                    <p className="text-sm text-muted-foreground">
-                        {yoloUsage.window_started && yoloResetAt
-                            ? `Resets ${yoloResetAt}`
-                            : '5h window starts on first request'}
-                    </p>
-                    <p className="text-xs text-muted-foreground/70 leading-relaxed pt-1">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1597JsxTextEveryKortixSubscriptionIncludes')}{' '}
-                        <a
-                            href="https://yolo.kortix.com"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-medium text-foreground/80 underline underline-offset-2 decoration-foreground/30 hover:decoration-foreground/60"
-                        >{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1604JsxTextKortixYolo')}</a>{' '}{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1605JsxTextAnAllYouCanUseAiModelSubscription')}<span className="font-medium text-foreground/80">Fast</span> and{' '}
-                        <span className="font-medium text-foreground/80">Think</span>{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1608JsxTextInTheModelSelectorByDefaultZeroCredit')}</p>
-                </div>
-            )}
 
             {/* ── Auto top-up (primary — recommended first so users avoid this altogether) ── */}
             {canPurchaseCredits && (
