@@ -52,7 +52,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { listAccounts, type KortixAccount } from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { CreateAccountModal } from '@/components/accounts/create-account-modal';
-import { AccountSettingsModal } from '@/components/settings/account-settings-modal';
+import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 
 export type AccountSwitcherVariant = 'header' | 'sidebar';
 
@@ -72,7 +72,6 @@ export function AccountSwitcher({
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
-  const [billingOpen, setBillingOpen] = useState(false);
 
   useEffect(() => {
     if (!menuOpen) setQuery('');
@@ -281,7 +280,11 @@ export function AccountSwitcher({
           </DropdownMenuItem>
           {billingActive && (
             <DropdownMenuItem
-              onSelect={() => deferAfterClose(() => setBillingOpen(true))}
+              onSelect={() =>
+                deferAfterClose(() =>
+                  useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
+                )
+              }
               className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
             >
               <CreditCard className="size-3.5" />
@@ -331,14 +334,6 @@ export function AccountSwitcher({
           });
           router.push('/projects');
         }}
-      />
-      <AccountSettingsModal
-        open={billingOpen}
-        onOpenChange={setBillingOpen}
-        defaultTab="billing"
-        returnUrl={
-          typeof window !== 'undefined' ? window?.location?.href || '/' : '/'
-        }
       />
     </>
   );

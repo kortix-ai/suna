@@ -65,6 +65,7 @@ export function useConfigureThread(projectId: string) {
         closeCustomize();
         router.push(`/projects/${projectId}/sessions/${session.session_id}`);
       } catch (err) {
+        if ((err as any)?.code === 'concurrent_session_limit') return;
         toast.error(err instanceof Error ? err.message : 'Failed to start session');
       }
     },

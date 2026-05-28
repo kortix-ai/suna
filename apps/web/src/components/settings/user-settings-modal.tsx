@@ -55,7 +55,6 @@ import {
 } from '@/hooks/account/use-account-deletion';
 import { AccountState } from '@/lib/api/billing';
 import { useAuth } from '@/components/AuthProvider';
-import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { AutoTopupCard } from '@/components/billing/auto-topup-card';
 import { SeatManagementCard } from '@/components/billing/seat-management-card';
@@ -67,6 +66,7 @@ import {
     invalidateAccountState,
 } from '@/hooks/billing';
 import { billingApi } from '@/lib/api/billing';
+import { useBillingAccountId } from '@/stores/billing-account-context';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -88,7 +88,6 @@ import {
 } from 'lucide-react';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 
-import { cancelSandbox, reactivateSandbox } from '@/lib/platform-client';
 
 import { formatCredits } from '@kortix/shared';
 import { LanguageSwitcher } from './language-switcher';
@@ -98,7 +97,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Keyboard, CheckCircle2, HelpCircle, ShieldCheck, Volume2, EyeOff, Globe, KeyRound } from 'lucide-react';
 import CreditTransactions from '@/components/billing/credit-transactions';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
-import { activateInstanceSelection, useServerStore } from '@/stores/server-store';
 import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
 import { useSoundStore, type SoundPack, type SoundEvent } from '@/stores/sound-store';
 import { previewSound } from '@/lib/sounds';
@@ -1195,113 +1193,9 @@ function NotificationToggle({ icon: Icon, label, description, enabled, onToggle,
     );
 }
 
-// Billing Tab Component - Usage, credits, subscription management
-// ─── Instances Section ───────────────────────────────────────────────────────
-
-function InstancesSection({ accountState, onRefetch }: { accountState: any; onRefetch: () => void }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-    const instances = accountState?.instances ?? [];
-    const canAddInstances = accountState?.can_add_instances ?? false;
-    const [loading, setLoading] = useState<string | null>(null);
-    const { servers, activeServerId } = useServerStore();
-    const router = useRouter();
-    const pathname = usePathname();
-
-    const handleCancel = async (sandboxId: string) => {
-        setLoading(sandboxId);
-        try { await cancelSandbox(sandboxId); onRefetch(); }
-        catch (err) { console.error('Failed to cancel:', err); }
-        finally { setLoading(null); }
-    };
-
-    const handleReactivate = async (sandboxId: string) => {
-        setLoading(sandboxId);
-        try { await reactivateSandbox(sandboxId); onRefetch(); }
-        catch (err) { console.error('Failed to reactivate:', err); }
-        finally { setLoading(null); }
-    };
-
-    const handleSwitch = async (inst: any) => {
-        const result = await activateInstanceSelection(inst.sandbox_id, { pathname });
-        if (result) {
-            router.push(result.href);
-        }
-    };
-
-    return (
-        <div className="border-t border-border pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-                <p className="text-xs uppercase tracking-widest text-muted-foreground">Instances</p>
-                {canAddInstances && (
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() => useNewInstanceModalStore.getState().openNewInstanceModal()}
-                    >
-                        <Plus className="size-3 mr-1" />{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1251JsxTextNewKortix')}</Button>
-                )}
-            </div>
-            {instances.length === 0 ? (
-                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1256JsxTextNoInstancesYet')}</p>
-            ) : (
-                <div className="space-y-1.5">
-                    {instances.map((inst: any) => {
-                        const serverEntry = servers.find((s) => s.sandboxId === inst.external_id);
-                        const isActive = serverEntry ? activeServerId === serverEntry.id : false;
-                        const hasSub = Boolean(inst.stripe_subscription_id || inst.stripe_subscription_item_id);
-                        const isCancelling = inst.cancel_at_period_end;
-                        return (
-                            <div key={inst.sandbox_id} className={cn(
-                                'flex items-center justify-between py-2.5 px-3 rounded-2xl border transition-colors',
-                                isActive ? 'border-foreground/15 bg-foreground/[0.02]' : 'border-border',
-                            )}>
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-sm font-medium truncate">{inst.name}</span>
-                                        {isCancelling && (
-                                            <Badge variant="destructive" size="sm">Cancelling</Badge>
-                                        )}
-                                    </div>
-                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                        {inst.server_type}{inst.location ? ` · ${inst.location}` : ''}
-                                    </p>
-                                    {inst.status === 'error' && inst.error_message && (
-                                        <p className="text-xs text-destructive mt-1">{inst.error_message}</p>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-1.5 shrink-0 ml-3">
-                                    {inst.status === 'active' && !isActive && serverEntry && (
-                                        <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" onClick={() => handleSwitch(inst)}>
-                                            Switch
-                                        </Button>
-                                    )}
-                                    {inst.status === 'error' && (
-                                        <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" onClick={() => useNewInstanceModalStore.getState().openNewInstanceModal()}>
-                                            Retry
-                                        </Button>
-                                    )}
-                                    {hasSub && !isCancelling && (
-                                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => handleCancel(inst.sandbox_id)} disabled={loading === inst.sandbox_id}>
-                                            {loading === inst.sandbox_id ? '...' : 'Cancel'}
-                                        </Button>
-                                    )}
-                                    {hasSub && isCancelling && (
-                                        <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" onClick={() => handleReactivate(inst.sandbox_id)} disabled={loading === inst.sandbox_id}>
-                                            {loading === inst.sandbox_id ? '...' : 'Reactivate'}
-                                        </Button>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
-}
-
 // ─── Billing Tab ─────────────────────────────────────────────────────────────
+// (Legacy "Kortix Computer / Instances" section removed — sandboxes are now
+// ephemeral per-session compute, not billable named machines.)
 
 const CREDIT_PACKAGES: { credits: number; price: number }[] = [
     { credits: 1000, price: 10 },
@@ -1322,6 +1216,11 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
     const queryClient = useQueryClient();
 
     const billingActive = isBillingEnabled();
+    // Scope all reads + the credit-purchase mutation below to the account this
+    // BillingTab was rendered for. On /accounts/[id] this is wrapped in a
+    // BillingAccountProvider; everywhere else (admin tab, etc.) falls back to
+    // the user's primary account.
+    const billingAccountId = useBillingAccountId();
 
     // Use unified account state hook.
     // When any instance is provisioning, poll every 5s so the status
@@ -1332,8 +1231,8 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
         error: subscriptionError,
         refetch: refetchSubscription
     } = useQuery<AccountState>({
-        queryKey: accountStateKeys.state(),
-        queryFn: () => billingApi.getAccountState(false),
+        queryKey: accountStateKeys.state(billingAccountId),
+        queryFn: () => billingApi.getAccountState(false, billingAccountId),
         enabled: !!session && !authLoading,
         staleTime: 1000 * 60 * 2,
         gcTime: 1000 * 60 * 15,
@@ -1481,7 +1380,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                 amount: selectedPackage.price,
                 success_url: `${window.location.origin}/dashboard?credit_purchase=success`,
                 cancel_url: window.location.href,
-            });
+            }, billingAccountId);
             if (response.checkout_url) {
                 window.location.href = response.checkout_url;
             } else {
@@ -1657,11 +1556,6 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                 </div>
             )}
 
-            {/* ── Instances ── */}
-            {!isFreeTier && (
-                <InstancesSection accountState={accountState} onRefetch={refetchSubscription} />
-            )}
-
             {/* ── Manage ── */}
             <div className="border-t border-border pt-4">
                 <Button
@@ -1671,7 +1565,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                     onClick={handleManageSubscription}
                     disabled={createPortalSessionMutation.isPending}
                 >
-                    {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage on Stripe'}
+                    {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage billing'}
                 </Button>
             </div>
 

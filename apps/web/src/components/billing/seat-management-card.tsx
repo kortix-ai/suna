@@ -68,7 +68,7 @@ export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
 
       <p className="text-xs text-muted-foreground border-t pt-4">
         Adding a teammate adds ${seats.price_per_seat_usd}/mo and grants ${seats.price_per_seat_usd}
-        {' '}of wallet credits. Spend it on compute, LLM, or both — Stripe prorates automatically.
+        {' '}of wallet credits. Spend it on compute, LLM, or both — prorated automatically.
       </p>
     </div>
   );

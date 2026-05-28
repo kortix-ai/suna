@@ -10,9 +10,7 @@ import { useModelHydration } from '@/hooks/opencode/use-model-hydration';
 import { NewInstanceModal } from '@/components/billing/pricing/new-instance-modal';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
-import { AccountSettingsModal } from '@/components/settings/account-settings-modal';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
-import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
 import { isBillingEnabled } from '@/lib/config';
 import { SidebarLeft } from '@/components/sidebar/sidebar-left';
@@ -99,20 +97,10 @@ function GlobalUserSettingsModal() {
   );
 }
 
-/** Store-driven AccountSettingsModal — billing + transactions live here.
- *  Mounted alongside the user settings modal so any caller (WorkspaceMenu,
- *  402 error handler, session error banner) can open it from anywhere. */
-function GlobalAccountSettingsModal() {
-  const { isOpen, defaultTab, closeAccountSettings } = useAccountSettingsModalStore();
-  if (!isBillingEnabled()) return null;
-  return (
-    <AccountSettingsModal
-      open={isOpen}
-      onOpenChange={(o) => !o && closeAccountSettings()}
-      defaultTab={defaultTab}
-    />
-  );
-}
+// Account-level settings (Overview, Billing, Transactions, Members, etc.)
+// now live at /accounts/[id]. The legacy modal mount + GlobalAccountSettingsModal
+// were removed; `openAccountSettings(...)` callers navigate to the page directly
+// via the store helper.
 
 interface AppProvidersProps {
   children: React.ReactNode;
@@ -148,12 +136,7 @@ export function AppProviders({
       <SubscriptionStoreSync>
         {children}
         {showGlobalNewInstanceModal && <GlobalNewInstanceModal />}
-        {showGlobalUserSettingsModal && (
-          <>
-            <GlobalUserSettingsModal />
-            <GlobalAccountSettingsModal />
-          </>
-        )}
+        {showGlobalUserSettingsModal && <GlobalUserSettingsModal />}
         {isBillingEnabled() && <GlobalUpgradeDialog />}
       </SubscriptionStoreSync>
     </DeleteOperationEffectsWrapper>

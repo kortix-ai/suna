@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
 import { configureAutoTopup, getAutoTopupSettings, getAutoTopupSetupStatus, type AutoTopupConfig } from '@/lib/api/billing';
+import { useBillingAccountId } from '@/stores/billing-account-context';
 import { toast } from '@/lib/toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -50,21 +51,23 @@ export function AutoTopupCard({
 
   // Fail fast: these endpoints can stall on Stripe round-trips; we'd rather
   // render with defaults than spin forever.
+  const accountId = useBillingAccountId();
+
   const {
     data: fetchedConfig,
     isLoading,
     isError: settingsError,
     refetch: refetchSettings,
   } = useQuery({
-    queryKey: ['auto-topup-settings'],
-    queryFn: getAutoTopupSettings,
+    queryKey: ['auto-topup-settings', { accountId: accountId ?? null }],
+    queryFn: () => getAutoTopupSettings(accountId),
     retry: 0,
     enabled: fetchSettings,
   });
 
   const { data: setupStatus } = useQuery({
-    queryKey: ['auto-topup-setup-status'],
-    queryFn: getAutoTopupSetupStatus,
+    queryKey: ['auto-topup-setup-status', { accountId: accountId ?? null }],
+    queryFn: () => getAutoTopupSetupStatus(accountId),
     retry: 0,
     enabled: fetchSettings,
   });
@@ -116,7 +119,7 @@ export function AutoTopupCard({
     setSaving(true);
     setSaveResult(null);
     try {
-      await configureAutoTopup({ enabled, threshold: thresholdNum, amount: amountNum });
+      await configureAutoTopup({ enabled, threshold: thresholdNum, amount: amountNum }, accountId);
       queryClient.invalidateQueries({ queryKey: ['auto-topup-settings'] });
       queryClient.invalidateQueries({ queryKey: ['accountState'] });
       queryClient.invalidateQueries({ queryKey: ['auto-topup-setup-status'] });
@@ -130,7 +133,7 @@ export function AutoTopupCard({
     } finally {
       setSaving(false);
     }
-  }, [enabled, threshold, amount, setupStatus, queryClient]);
+  }, [enabled, threshold, amount, setupStatus, queryClient, accountId]);
 
   const showMissingCardWarning = enabled && setupStatus && !setupStatus.has_default_payment_method;
 

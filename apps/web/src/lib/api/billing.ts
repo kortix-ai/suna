@@ -86,6 +86,10 @@ export interface AccountState {
       can_create: boolean;
       tier_name: string;
     };
+    concurrent_sessions?: {
+      active: number;
+      limit: number;
+    };
   };
   tier: {
     name: string;
@@ -421,9 +425,18 @@ export const billingApi = {
   /**
    * Get unified account state - the single source of truth for all billing data.
    * This replaces getSubscription, getCreditBalance, and getAvailableModels.
+   *
+   * Pass `accountId` to scope the fetch to a specific account the user is a
+   * member of (e.g. on /accounts/[id] pages). Without it, the backend uses the
+   * user's first membership — fine for global surfaces like the user menu and
+   * upgrade dialog, but wrong for the per-account billing page.
    */
-  async getAccountState(skipCache = false): Promise<AccountState> {
-    const params = skipCache ? '?skip_cache=true' : '';
+  async getAccountState(skipCache = false, accountId?: string): Promise<AccountState> {
+    const search = new URLSearchParams();
+    if (skipCache) search.set('skip_cache', 'true');
+    if (accountId) search.set('account_id', accountId);
+    const query = search.toString();
+    const params = query ? `?${query}` : '';
     const response = await backendApi.get<AccountState>(`/billing/account-state${params}`, {
       showErrors: false,
     });
@@ -450,10 +463,10 @@ export const billingApi = {
     return response.data!;
   },
 
-  async createCheckoutSession(request: CreateCheckoutSessionRequest) {
+  async createCheckoutSession(request: CreateCheckoutSessionRequest, accountId?: string) {
     const response = await backendApi.post<CreateCheckoutSessionResponse>(
       '/billing/create-checkout-session',
-      request
+      accountId ? { ...request, account_id: accountId } : request
     );
     if (response.error) throw response.error;
 
@@ -476,55 +489,63 @@ export const billingApi = {
   },
 
   // Billing v2 — per-seat plan checkout. Stripe quantity = current member count.
-  async createPerSeatCheckout(args: { success_url: string; cancel_url: string; locale?: string }) {
+  async createPerSeatCheckout(
+    args: { success_url: string; cancel_url: string; locale?: string },
+    accountId?: string,
+  ) {
     const response = await backendApi.post<{
       status: 'subscription_created' | 'checkout_created';
       checkout_url?: string;
       subscription_id?: string;
       seat_count: number;
-    }>('/billing/create-per-seat-checkout', args);
+    }>('/billing/create-per-seat-checkout', accountId ? { ...args, account_id: accountId } : args);
     if (response.error) throw response.error;
     return response.data!;
   },
 
-  async createPortalSession(request: CreatePortalSessionRequest) {
+  async createPortalSession(request: CreatePortalSessionRequest, accountId?: string) {
     const response = await backendApi.post<CreatePortalSessionResponse>(
       '/billing/create-portal-session',
-      request
+      accountId ? { ...request, account_id: accountId } : request
     );
     if (response.error) throw response.error;
     return response.data!;
   },
 
-  async cancelSubscription(request?: CancelSubscriptionRequest) {
+  async cancelSubscription(request?: CancelSubscriptionRequest, accountId?: string) {
+    const body: any = request || {};
+    if (accountId) body.account_id = accountId;
     const response = await backendApi.post<CancelSubscriptionResponse>(
       '/billing/cancel-subscription',
-      request || {}
+      body,
     );
     if (response.error) throw response.error;
     return response.data!;
   },
 
-  async reactivateSubscription() {
+  async reactivateSubscription(accountId?: string) {
     const response = await backendApi.post<ReactivateSubscriptionResponse>(
-      '/billing/reactivate-subscription'
+      '/billing/reactivate-subscription',
+      accountId ? { account_id: accountId } : {},
     );
     if (response.error) throw response.error;
     return response.data!;
   },
 
-  async purchaseCredits(request: PurchaseCreditsRequest) {
+  async purchaseCredits(request: PurchaseCreditsRequest, accountId?: string) {
     const response = await backendApi.post<PurchaseCreditsResponse>(
       '/billing/purchase-credits',
-      request
+      accountId ? { ...request, account_id: accountId } : request
     );
     if (response.error) throw response.error;
     return response.data!;
   },
 
-  async getTransactions(limit = 50, offset = 0) {
+  async getTransactions(limit = 50, offset = 0, accountId?: string) {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (accountId) params.set('account_id', accountId);
     const response = await backendApi.get<{ transactions: Transaction[]; count: number }>(
-      `/billing/transactions?limit=${limit}&offset=${offset}`
+      `/billing/transactions?${params.toString()}`
     );
     if (response.error) throw response.error;
     return response.data!;
@@ -568,26 +589,28 @@ export const billingApi = {
     return response.data!;
   },
 
-  async scheduleDowngrade(request: ScheduleDowngradeRequest) {
+  async scheduleDowngrade(request: ScheduleDowngradeRequest, accountId?: string) {
     const response = await backendApi.post<ScheduleDowngradeResponse>(
       '/billing/schedule-downgrade',
-      request
+      accountId ? { ...request, account_id: accountId } : request
     );
     if (response.error) throw response.error;
     return response.data!;
   },
 
-  async cancelScheduledChange() {
+  async cancelScheduledChange(accountId?: string) {
     const response = await backendApi.post<CancelScheduledChangeResponse>(
-      '/billing/cancel-scheduled-change'
+      '/billing/cancel-scheduled-change',
+      accountId ? { account_id: accountId } : {}
     );
     if (response.error) throw response.error;
     return response.data!;
   },
 
-  async syncSubscription() {
+  async syncSubscription(accountId?: string) {
     const response = await backendApi.post<{ success: boolean; message: string }>(
-      '/billing/sync-subscription'
+      '/billing/sync-subscription',
+      accountId ? { account_id: accountId } : {}
     );
     if (response.error) throw response.error;
     return response.data!;
@@ -673,11 +696,12 @@ export interface CreateInlineCheckoutResponse {
 }
 
 export async function createInlineCheckout(
-  request: CreateInlineCheckoutRequest
+  request: CreateInlineCheckoutRequest,
+  accountId?: string,
 ): Promise<CreateInlineCheckoutResponse> {
   const response = await backendApi.post<CreateInlineCheckoutResponse>(
     '/billing/create-inline-checkout',
-    request
+    accountId ? { ...request, account_id: accountId } : request
   );
   if (response.error) throw response.error;
   return response.data!;
@@ -696,11 +720,12 @@ export interface ConfirmInlineCheckoutResponse {
 }
 
 export async function confirmInlineCheckout(
-  request: ConfirmInlineCheckoutRequest
+  request: ConfirmInlineCheckoutRequest,
+  accountId?: string,
 ): Promise<ConfirmInlineCheckoutResponse> {
   const response = await backendApi.post<ConfirmInlineCheckoutResponse>(
     '/billing/confirm-inline-checkout',
-    request
+    accountId ? { ...request, account_id: accountId } : request
   );
   if (response.error) throw response.error;
   return response.data!;
@@ -727,8 +752,9 @@ export interface AutoTopupSetupStatus {
 // with defaults than hang the Auto Top-up panel.
 const AUTO_TOPUP_TIMEOUT_MS = 8000;
 
-export async function getAutoTopupSettings(): Promise<AutoTopupConfig> {
-  const response = await backendApi.get<AutoTopupConfig>('/billing/auto-topup/settings', {
+export async function getAutoTopupSettings(accountId?: string): Promise<AutoTopupConfig> {
+  const params = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+  const response = await backendApi.get<AutoTopupConfig>(`/billing/auto-topup/settings${params}`, {
     timeout: AUTO_TOPUP_TIMEOUT_MS,
     showErrors: false,
   });
@@ -736,14 +762,17 @@ export async function getAutoTopupSettings(): Promise<AutoTopupConfig> {
   return response.data!;
 }
 
-export async function configureAutoTopup(config: AutoTopupConfig): Promise<{ success: boolean }> {
-  const response = await backendApi.post<{ success: boolean }>('/billing/auto-topup/configure', config);
+export async function configureAutoTopup(config: AutoTopupConfig, accountId?: string): Promise<{ success: boolean }> {
+  const body: any = { ...config };
+  if (accountId) body.account_id = accountId;
+  const response = await backendApi.post<{ success: boolean }>('/billing/auto-topup/configure', body);
   if (response.error) throw response.error;
   return response.data!;
 }
 
-export async function getAutoTopupSetupStatus(): Promise<AutoTopupSetupStatus> {
-  const response = await backendApi.get<AutoTopupSetupStatus>('/billing/auto-topup/setup-status', {
+export async function getAutoTopupSetupStatus(accountId?: string): Promise<AutoTopupSetupStatus> {
+  const params = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+  const response = await backendApi.get<AutoTopupSetupStatus>(`/billing/auto-topup/setup-status${params}`, {
     timeout: AUTO_TOPUP_TIMEOUT_MS,
     showErrors: false,
   });

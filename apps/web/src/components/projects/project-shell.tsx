@@ -61,6 +61,7 @@ export function ProjectShell({
       router.push(`/projects/${projectId}/sessions/${session.session_id}`);
     },
     onError: (err) => {
+      if ((err as any)?.code === 'concurrent_session_limit') return;
       toast.error(err instanceof Error ? err.message : 'Failed to start session');
     },
   });

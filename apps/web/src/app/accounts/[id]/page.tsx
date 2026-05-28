@@ -73,6 +73,9 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
+import { AccountOverviewTab } from '@/components/billing/account-overview';
+import { BillingTab, TransactionsTab } from '@/components/settings/user-settings-modal';
+import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -208,7 +211,15 @@ export default function AccountSettingsPage() {
 
   const account = accountQuery.data;
   const members = membersQuery.data ?? [];
-  const initialTab = searchParams.get('tab') === 'git' ? 'git' : 'members';
+  const VALID_TABS = ['members', 'groups', 'billing', 'transactions', 'git', 'audit', 'settings'] as const;
+  const rawTab = searchParams.get('tab');
+  // Legacy callers pass tab=overview — the limits/wallet/spend panels now
+  // live at the top of the Billing tab, so fold it.
+  const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as
+    | (typeof VALID_TABS)[number]
+    | null;
+  const initialTab =
+    tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
   const isTeam = account ? !account.personal_account : false;
 
   return (
@@ -289,14 +300,44 @@ export default function AccountSettingsPage() {
               <TabsList>
                 <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
-                {/* Git (account-level GitHub install) + Settings are
-                    admin surfaces — gate on account.write so plain
-                    Members don't see tabs they can't act on. Audit is
-                    gated on its own audit.read permission. */}
+                {/* Billing holds plan + limits + wallet + spend; Credits ledger
+                    holds the per-transaction history. Both are gated on
+                    account.write so non-admins don't see money surfaces. */}
+                {canWriteAccount && <TabsTrigger value="billing">Billing</TabsTrigger>}
+                {canWriteAccount && <TabsTrigger value="transactions">Credits ledger</TabsTrigger>}
                 {canWriteAccount && <TabsTrigger value="git">Git</TabsTrigger>}
                 {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
                 {canWriteAccount && <TabsTrigger value="settings">Settings</TabsTrigger>}
               </TabsList>
+
+              {canWriteAccount && (
+                <TabsContent value="billing" className="space-y-6">
+                  {/* Scope every billing hook nested below to this account so a
+                      multi-account user doesn't see (or mutate) their primary
+                      account by accident. */}
+                  <BillingAccountProvider accountId={account.account_id}>
+                    <AccountOverviewTab accountId={account.account_id} />
+                    <BillingTab
+                      // Stripe Billing Portal requires an absolute return_url —
+                      // a bare path 500s with "Not a valid URL". Build from origin.
+                      returnUrl={
+                        typeof window !== 'undefined'
+                          ? `${window.location.origin}/accounts/${account.account_id}?tab=billing`
+                          : `/accounts/${account.account_id}?tab=billing`
+                      }
+                      isActive={initialTab === 'billing'}
+                    />
+                  </BillingAccountProvider>
+                </TabsContent>
+              )}
+
+              {canWriteAccount && (
+                <TabsContent value="transactions" className="space-y-6">
+                  <BillingAccountProvider accountId={account.account_id}>
+                    <TransactionsTab />
+                  </BillingAccountProvider>
+                </TabsContent>
+              )}
 
               <TabsContent value="members" className="space-y-6">
                 <MembersCard

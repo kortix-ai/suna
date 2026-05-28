@@ -15,13 +15,13 @@ import {
   getProrationPreview,
   createPerSeatCheckoutSession,
 } from '../services/subscriptions';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { resolveScopedAccountId } from '../../shared/resolve-account';
 import { syncSeatQuantity } from '../services/seat-management';
 
 export const subscriptionsRouter = new Hono<AppEnv>();
 
 subscriptionsRouter.post('/create-checkout-session', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const email = c.get('userEmail');
   const body = await c.req.json();
 
@@ -43,7 +43,7 @@ subscriptionsRouter.post('/create-checkout-session', async (c) => {
 // Billing v2 — per-seat plan checkout. Quantity is derived from current
 // account_members count; Stripe handles proration on subsequent member changes.
 subscriptionsRouter.post('/create-per-seat-checkout', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const email = c.get('userEmail');
   const body = await c.req.json();
 
@@ -62,13 +62,13 @@ subscriptionsRouter.post('/create-per-seat-checkout', async (c) => {
 // webhook normally handles this on member changes; this endpoint is a manual
 // "kick" for ops / for handling cases where the webhook was dropped.
 subscriptionsRouter.post('/sync-seat-quantity', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const result = await syncSeatQuantity(accountId);
   return c.json(result);
 });
 
 subscriptionsRouter.post('/create-inline-checkout', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const email = c.get('userEmail');
   const body = await c.req.json();
 
@@ -84,7 +84,7 @@ subscriptionsRouter.post('/create-inline-checkout', async (c) => {
 });
 
 subscriptionsRouter.post('/confirm-inline-checkout', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const body = await c.req.json();
 
   const result = await confirmInlineCheckout({
@@ -97,7 +97,7 @@ subscriptionsRouter.post('/confirm-inline-checkout', async (c) => {
 });
 
 subscriptionsRouter.post('/create-portal-session', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const email = c.get('userEmail');
   const body = await c.req.json();
   const result = await createPortalSession(accountId, body.return_url, email);
@@ -105,39 +105,39 @@ subscriptionsRouter.post('/create-portal-session', async (c) => {
 });
 
 subscriptionsRouter.post('/cancel-subscription', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const body = await c.req.json().catch(() => ({}));
   const result = await cancelSubscription(accountId, body.feedback);
   return c.json(result);
 });
 
 subscriptionsRouter.post('/reactivate-subscription', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const result = await reactivateSubscription(accountId);
   return c.json(result);
 });
 
 subscriptionsRouter.post('/schedule-downgrade', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const body = await c.req.json();
   const result = await scheduleDowngrade(accountId, body.target_tier_key, body.commitment_type);
   return c.json(result);
 });
 
 subscriptionsRouter.post('/cancel-scheduled-change', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const result = await cancelScheduledChange(accountId);
   return c.json(result);
 });
 
 subscriptionsRouter.post('/sync-subscription', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const result = await syncSubscription(accountId);
   return c.json(result);
 });
 
 subscriptionsRouter.get('/proration-preview', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'query');
   const newPriceId = c.req.query('new_price_id');
   if (!newPriceId) return c.json({ error: 'new_price_id required' }, 400);
 
@@ -152,7 +152,7 @@ subscriptionsRouter.get('/checkout-session/:sessionId', async (c) => {
 });
 
 subscriptionsRouter.post('/confirm-checkout-session', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const body = await c.req.json<{ session_id?: string }>();
   if (!body.session_id) return c.json({ error: 'session_id required' }, 400);
 

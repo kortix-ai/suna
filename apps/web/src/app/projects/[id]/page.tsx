@@ -57,6 +57,9 @@ export default function ProjectIndexPage() {
         router.push(`/projects/${projectId}/sessions/${session.session_id}`);
       } catch (err) {
         setBusy(false);
+        // 429 concurrent-session-limit is handled globally in error-handler.ts —
+        // skip the local toast to avoid showing two stacked messages.
+        if ((err as any)?.code === 'concurrent_session_limit') return;
         toast.error(err instanceof Error ? err.message : 'Failed to start session');
       }
     },

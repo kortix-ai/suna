@@ -407,6 +407,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       if (isMobile) setOpenMobile(false);
     },
     onError: (err) => {
+      if ((err as any)?.code === 'concurrent_session_limit') return;
       toast.error(err instanceof Error ? err.message : 'Failed to start session');
     },
   });

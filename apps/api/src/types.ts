@@ -110,6 +110,8 @@ export interface TierConfig {
   models: string[];
   dailyCreditConfig: DailyCreditConfig | null;
   hidden: boolean;
+  /** Max concurrent project sessions allowed for accounts on this tier. */
+  concurrentSessionLimit: number;
 }
 
 export interface DailyCreditConfig {
@@ -258,6 +260,17 @@ export interface AccountStateResponse {
     period_start: string | null;
     period_end: string | null;
   } | null;
+  /**
+   * Account-level resource limits + current usage. The `concurrent_sessions`
+   * field surfaces the same cap the API enforces at session-create time
+   * (see shared/account-limits.ts).
+   */
+  limits?: {
+    concurrent_sessions: {
+      active: number;
+      limit: number;
+    };
+  };
 }
 
 export interface ScheduledChange {

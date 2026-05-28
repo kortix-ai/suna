@@ -1,5 +1,6 @@
 import { config } from '../config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
+import { getTier } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
 
 const tierCache = new Map<string, { tier: string | null; expiresAt: number }>();
@@ -54,10 +55,9 @@ export function maxConcurrentSessionsForTier(tier: string | null | undefined) {
   if (!(config as any).KORTIX_BILLING_INTERNAL_ENABLED) {
     return Number.MAX_SAFE_INTEGER;
   }
-  const freeLimit = positiveInt((config as any).KORTIX_MAX_CONCURRENT_SESSIONS_FREE, 1);
-  const paidLimit = positiveInt((config as any).KORTIX_MAX_CONCURRENT_SESSIONS_PAID, 5);
-  const multiplier = tierMultiplier(tier);
-  return multiplier > 0 ? paidLimit * multiplier : freeLimit;
+  // Tier definition is the source of truth for concurrent session caps.
+  // Fall back to free-tier cap for unknown tiers.
+  return getTier(tier ?? 'free').concurrentSessionLimit;
 }
 
 export function clearAccountLimitCache() {

@@ -1,4 +1,5 @@
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
+import { projectSessions } from '@kortix/db';
 import {
   getCreditAccount,
   getSubscriptionInfo,
@@ -19,12 +20,30 @@ import { getUsageBreakdownThisPeriod } from './usage-breakdown';
 import { getCreditSummary } from './credits';
 import { getAutoTopupSettings } from './auto-topup';
 import { isPlatformAdmin } from '../../shared/platform-roles';
+import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
+import { db } from '../../shared/db';
 import { config } from '../../config';
 import type {
   AccountStateResponse,
   ScheduledChange,
   CommitmentInfo,
 } from '../../types';
+
+const ACTIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running'] as const;
+
+async function countActiveSessions(accountId: string): Promise<number> {
+  const [row] = await db
+    .select({ activeCount: sql<number>`count(*)::int` })
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.accountId, accountId),
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+      ),
+    )
+    .limit(1);
+  return Number(row?.activeCount ?? 0);
+}
 
 async function getYoloUsage(serviceKey: string | null): Promise<AccountStateResponse['yolo_usage']> {
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
@@ -196,6 +215,12 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     usage_this_period: isPerSeatAccount(sub?.billingModel)
       ? await getUsageBreakdownThisPeriod(accountId, sub?.billingCycleAnchor ?? null).catch(() => null)
       : null,
+    limits: {
+      concurrent_sessions: {
+        active: await countActiveSessions(accountId).catch(() => 0),
+        limit: maxConcurrentSessionsForTier(tierName),
+      },
+    },
   };
 
   return state;

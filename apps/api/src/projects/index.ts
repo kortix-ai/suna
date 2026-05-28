@@ -485,7 +485,9 @@ async function enforceConcurrentSessionCap(accountId: string, userId: string, re
       'X-RateLimit-Remaining': '0',
     },
     body: {
-      error: 'concurrent session limit',
+      error: `You're at your ${limit}-session limit. Close a running session or upgrade for more.`,
+      message: `You're at your ${limit}-session limit. Close a running session or upgrade for more.`,
+      code: 'concurrent_session_limit',
       limit,
       active_sessions: activeSessions,
     },

@@ -141,6 +141,7 @@ const TIERS: Record<string, TierConfig> = {
     models: [],
     dailyCreditConfig: null,
     hidden: true,
+    concurrentSessionLimit: 50,
   },
 
   free: {
@@ -155,6 +156,7 @@ const TIERS: Record<string, TierConfig> = {
     // Hidden from new signup flows. Existing rows with tier='free' continue
     // to be honored for backwards compatibility (they remain billing_model='legacy').
     hidden: true,
+    concurrentSessionLimit: 50,
   },
 
   pro: {
@@ -167,6 +169,7 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: false,
+    concurrentSessionLimit: 200,
   },
 
   // Billing v2 — per-member seat plan. $20 × seat_count / month.
@@ -182,19 +185,20 @@ const TIERS: Record<string, TierConfig> = {
     models: ['all'],
     dailyCreditConfig: null,
     hidden: false,
+    concurrentSessionLimit: 200,
   },
 
   // ── Legacy tiers (kept for backward compat with existing DB rows) ────────
   // All hidden, resolve to their closest equivalent for display.
   // Legacy tiers: monthlyCredits = monthlyPrice (1:1 ratio, i.e. $20 plan → $20 credits → 2000 display credits)
-  tier_2_20:      { name: 'tier_2_20',      displayName: 'Plus (Legacy)',       monthlyPrice: 20,   yearlyPrice: 204,   monthlyCredits: 20,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true },
-  tier_6_50:      { name: 'tier_6_50',      displayName: 'Pro (Legacy)',        monthlyPrice: 50,   yearlyPrice: 510,   monthlyCredits: 50,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true },
-  tier_12_100:    { name: 'tier_12_100',    displayName: 'Business (Legacy)',   monthlyPrice: 100,  yearlyPrice: 1020,  monthlyCredits: 100,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true },
-  tier_25_200:    { name: 'tier_25_200',    displayName: 'Ultra (Legacy)',      monthlyPrice: 200,  yearlyPrice: 2040,  monthlyCredits: 200,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true },
-  tier_50_400:    { name: 'tier_50_400',    displayName: 'Enterprise (Legacy)', monthlyPrice: 400,  yearlyPrice: 4080,  monthlyCredits: 400,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true },
-  tier_125_800:   { name: 'tier_125_800',   displayName: 'Scale (Legacy)',      monthlyPrice: 800,  yearlyPrice: 8160,  monthlyCredits: 800,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true },
-  tier_200_1000:  { name: 'tier_200_1000',  displayName: 'Max (Legacy)',        monthlyPrice: 1000, yearlyPrice: 10200, monthlyCredits: 1000, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true },
-  tier_150_1200:  { name: 'tier_150_1200',  displayName: 'Enterprise Max (Legacy)', monthlyPrice: 1200, yearlyPrice: 12240, monthlyCredits: 1200, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true },
+  tier_2_20:      { name: 'tier_2_20',      displayName: 'Plus (Legacy)',       monthlyPrice: 20,   yearlyPrice: 204,   monthlyCredits: 20,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 200 },
+  tier_6_50:      { name: 'tier_6_50',      displayName: 'Pro (Legacy)',        monthlyPrice: 50,   yearlyPrice: 510,   monthlyCredits: 50,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 300 },
+  tier_12_100:    { name: 'tier_12_100',    displayName: 'Business (Legacy)',   monthlyPrice: 100,  yearlyPrice: 1020,  monthlyCredits: 100,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 400 },
+  tier_25_200:    { name: 'tier_25_200',    displayName: 'Ultra (Legacy)',      monthlyPrice: 200,  yearlyPrice: 2040,  monthlyCredits: 200,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 500 },
+  tier_50_400:    { name: 'tier_50_400',    displayName: 'Enterprise (Legacy)', monthlyPrice: 400,  yearlyPrice: 4080,  monthlyCredits: 400,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 750 },
+  tier_125_800:   { name: 'tier_125_800',   displayName: 'Scale (Legacy)',      monthlyPrice: 800,  yearlyPrice: 8160,  monthlyCredits: 800,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1000 },
+  tier_200_1000:  { name: 'tier_200_1000',  displayName: 'Max (Legacy)',        monthlyPrice: 1000, yearlyPrice: 10200, monthlyCredits: 1000, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1500 },
+  tier_150_1200:  { name: 'tier_150_1200',  displayName: 'Enterprise Max (Legacy)', monthlyPrice: 1200, yearlyPrice: 12240, monthlyCredits: 1200, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 2000 },
 };
 
 // ─── Stripe Price IDs ────────────────────────────────────────────────────────

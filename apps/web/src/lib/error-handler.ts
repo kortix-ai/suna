@@ -214,6 +214,29 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
     return;
   }
 
+  // Concurrent session limit — single clean toast with usage + an Open Settings
+  // action. The dedup key (status, message) suppresses any duplicate the call
+  // site might also emit with the same body.
+  if (v2Status === 429 && v2Code === 'concurrent_session_limit') {
+    const limit = typeof v2Detail?.limit === 'number' ? v2Detail.limit : undefined;
+    const active = typeof v2Detail?.active_sessions === 'number' ? v2Detail.active_sessions : undefined;
+    const title = limit !== undefined
+      ? `You're at your session limit (${active ?? limit}/${limit})`
+      : 'Session limit reached';
+    if (!shouldSuppressDuplicate(v2Status, title)) {
+      toast.warning(title, {
+        description: 'Close a running session, or upgrade your plan for more.',
+        duration: 6000,
+        action: {
+          label: 'Manage plan',
+          onClick: () =>
+            useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
+        },
+      });
+    }
+    return;
+  }
+
   if (!shouldShowError(error, context)) {
     return;
   }

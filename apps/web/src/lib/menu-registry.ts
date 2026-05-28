@@ -832,18 +832,18 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette', 'userMenu'],
     kind: 'settings',
     settingsTab: 'billing',
-    keywords: 'billing payment credit card subscription manage',
+    keywords: 'billing payment credit card subscription manage wallet tier plan limits overview spend usage',
     requiresBilling: true,
   },
   {
     id: 'account-transactions',
-    label: 'Transactions',
+    label: 'Credits ledger',
     icon: Receipt,
     group: 'account',
     showIn: ['commandPalette'],
     kind: 'settings',
     settingsTab: 'transactions',
-    keywords: 'transactions credits history purchases receipts',
+    keywords: 'credits ledger transactions history purchases receipts',
   },
   {
     id: 'account-referrals',
@@ -1030,7 +1030,7 @@ export function getInstanceTabs(): SettingsTab[] {
 export function getAccountTabs(billingEnabled: boolean): SettingsTab[] {
   const items: SettingsTab[] = [
     { id: 'billing', label: 'Billing', icon: CreditCard },
-    { id: 'transactions', label: 'Transactions', icon: Receipt },
+    { id: 'transactions', label: 'Credits ledger', icon: Receipt },
     { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
   ];
   // Referrals tab disabled for now

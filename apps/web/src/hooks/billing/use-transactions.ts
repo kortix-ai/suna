@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
 import { accountStateKeys } from './use-account-state';
+import { useBillingAccountId } from '@/stores/billing-account-context';
 import { dollarsToCredits } from '@kortix/shared';
 
 export interface CreditTransaction {
@@ -47,12 +48,19 @@ export function useTransactions(
   offset: number = 0,
   typeFilter?: string | string[]
 ) {
+  const accountId = useBillingAccountId();
   const normalizedTypeFilter = Array.isArray(typeFilter)
     ? typeFilter.join(',')
     : typeFilter;
 
   return useQuery<TransactionsResponse>({
-    queryKey: [...accountStateKeys.transactions(limit, offset), normalizedTypeFilter],
+    // Scope the cache slot by account so the BillingTab's history block
+    // doesn't leak entries across accounts on a multi-account user.
+    queryKey: [
+      ...accountStateKeys.transactions(limit, offset),
+      normalizedTypeFilter,
+      { accountId: accountId ?? null },
+    ],
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: limit.toString(),
@@ -61,6 +69,9 @@ export function useTransactions(
 
       if (normalizedTypeFilter) {
         params.append('type_filter', normalizedTypeFilter);
+      }
+      if (accountId) {
+        params.append('account_id', accountId);
       }
 
       const response = await backendApi.get(`/billing/transactions?${params.toString()}`);
@@ -83,14 +94,17 @@ export function useTransactions(
 }
 
 export function useTransactionsSummary(days: number = 30) {
+  const accountId = useBillingAccountId();
   return useQuery<TransactionsSummary>({
-    queryKey: [...accountStateKeys.transactions(), 'summary', days],
+    queryKey: [...accountStateKeys.transactions(), 'summary', days, { accountId: accountId ?? null }],
     queryFn: async () => {
-      const response = await backendApi.get(`/billing/transactions/summary?days=${days}`);
+      const params = new URLSearchParams({ days: String(days) });
+      if (accountId) params.append('account_id', accountId);
+      const response = await backendApi.get(`/billing/transactions/summary?${params.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
       }
-      
+
       const data = response.data as TransactionsSummary;
       return {
         totalCredits: dollarsToCredits(data.totalCredits),
@@ -100,4 +114,5 @@ export function useTransactionsSummary(days: number = 30) {
     },
     staleTime: 60000,
   });
-} 
+}
+

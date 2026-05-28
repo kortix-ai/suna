@@ -3,7 +3,7 @@ import type { AppEnv } from '../../types';
 import { buildAccountState, buildMinimalAccountState, buildLocalAccountState } from '../services/account-state';
 import { hasDatabase } from '../../shared/db';
 import { config } from '../../config';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { resolveScopedAccountId } from '../../shared/resolve-account';
 
 export const accountStateRouter = new Hono<AppEnv>();
 
@@ -11,7 +11,7 @@ accountStateRouter.get('/', async (c) => {
   if (!hasDatabase) {
     return c.json(buildLocalAccountState());
   }
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'query');
   try {
     const state = await buildAccountState(accountId);
     // Billing disabled — return real data but never block the user
@@ -31,7 +31,7 @@ accountStateRouter.get('/minimal', async (c) => {
   if (!hasDatabase) {
     return c.json(buildLocalAccountState());
   }
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'query');
   try {
     const state = await buildMinimalAccountState(accountId);
     if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
