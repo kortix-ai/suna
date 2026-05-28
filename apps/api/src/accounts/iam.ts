@@ -446,7 +446,20 @@ iamRouter.patch('/:accountId/iam/members/:userId/super-admin', async (c) => {
   await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
 
   const body = await readBody(c);
-  const isSuperAdmin = body.isSuperAdmin === true || body.is_super_admin === true;
+  // Accept camelCase or snake_case, but the field MUST be present and an
+  // actual boolean. The previous `=== true` coercion meant a PATCH that
+  // omitted the field (or sent a non-boolean) silently set
+  // is_super_admin=false — i.e. a malformed/partial request could quietly
+  // REVOKE super-admin. Reject those with a 400 instead of acting on them.
+  const isSuperAdmin =
+    typeof body.isSuperAdmin === 'boolean'
+      ? body.isSuperAdmin
+      : typeof body.is_super_admin === 'boolean'
+        ? body.is_super_admin
+        : undefined;
+  if (isSuperAdmin === undefined) {
+    return c.json({ error: 'isSuperAdmin (boolean) is required' }, 400);
+  }
 
   // The V1 two-person approval gate (requireApproval / NeedsApprovalError)
   // was removed with the approvals workflow in PR5c. Super-admin grants
