@@ -20,6 +20,7 @@
 // hook can never silently accrue 24h+ of uncharged compute.
 
 import { sandboxComputeSessions } from '@kortix/db';
+import { config } from '../../config';
 import {
   insertComputeSession,
   getOpenComputeSession,
@@ -66,6 +67,9 @@ export function calculateComputeCost(spec: SandboxSpec, durationSeconds: number)
  * tier model in COMPUTE_TIERS.
  */
 export async function startComputeSession(opts: StartComputeOpts): Promise<string | null> {
+  // Hard gate: self-hosted / billing-disabled deploys never meter compute, even
+  // if a credit_accounts row has billing_model='per_seat' (stale data).
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
   const account = await getCreditAccount(opts.accountId);
   if (!isPerSeatAccount(account?.billingModel)) return null;
 
@@ -148,6 +152,7 @@ async function settleComputeWindow(
  * The next start/wake will open a fresh row via startComputeSession.
  */
 export async function pauseComputeSession(sandboxId: string): Promise<void> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
   const row = await getOpenComputeSession(sandboxId);
   if (!row) return;
 
@@ -172,6 +177,7 @@ export async function resumeComputeSession(opts: StartComputeOpts): Promise<stri
  * Sandbox is being permanently removed (restart / delete). Finalize the row.
  */
 export async function endComputeSession(sandboxId: string): Promise<void> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
   const row = await getOpenComputeSession(sandboxId);
   if (!row) return;
 
@@ -189,6 +195,7 @@ export async function endComputeSession(sandboxId: string): Promise<void> {
  * missed close from accumulating uncharged compute indefinitely.
  */
 export async function tickRunningComputeCharges(): Promise<{ settled: number }> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return { settled: 0 };
   const cutoff = new Date(Date.now() - PARTIAL_BILL_INTERVAL_MS);
   const stale = await findStaleActiveSessions(cutoff);
   let settled = 0;

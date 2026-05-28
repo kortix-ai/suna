@@ -331,6 +331,9 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
         authenticateToken: (token) => attributeYoloToken(token),
         assertBillingActive,
         recordUsage: async (event) => {
+          // Always record usage_events for observability (token counts, model,
+          // request id) — useful in self-hosted for debugging even with no
+          // wallet deduction.
           const usageEventId = await recordUsageEvent({
             accountId: event.accountId,
             actorUserId: event.actorUserId,
@@ -348,6 +351,8 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
               requestId: event.requestId,
             },
           });
+          // Hard gate: never debit the wallet when billing is disabled.
+          if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
           await deductForLlmUsage({
             accountId: event.accountId,
             costUsd: event.finalCost,

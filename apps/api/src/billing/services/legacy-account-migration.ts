@@ -93,6 +93,20 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
       return defaultResult('skipped:no_subs');
     }
 
+    // Pre-flight: refuse to cancel any legacy sub until we've confirmed we can
+    // create the replacement. Otherwise a missing per-seat price ID would leave
+    // the customer with no subscription at all.
+    const seatCount = Math.min(MAX_SEATS_PER_ACCOUNT, Math.max(1, await countActiveMembers(accountId)));
+    const priceId = resolvePerSeatPriceId();
+    if (!priceId) {
+      console.error(`[lazy-migrate] refusing migration for ${accountId}: per-seat price not configured`);
+      return defaultResult('failed', 'per-seat price not configured');
+    }
+    if (!customer) {
+      console.error(`[lazy-migrate] refusing migration for ${accountId}: no Stripe customer record`);
+      return defaultResult('failed', 'no Stripe customer for account with active subs');
+    }
+
     // 2. Compute prorated remaining-period value for every active sub
     let totalProratedUsd = 0;
     const cancelledSubIds: string[] = [];
@@ -110,10 +124,8 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
     }
 
     // 3. Create the per-seat sub (quantity = active member count, capped)
-    const seatCount = Math.min(MAX_SEATS_PER_ACCOUNT, Math.max(1, await countActiveMembers(accountId)));
-    const priceId = resolvePerSeatPriceId();
     let newSubscription: Stripe.Subscription | null = null;
-    if (priceId && customer) {
+    {
       try {
         newSubscription = await stripe.subscriptions.create({
           customer: customer.id,
@@ -133,10 +145,22 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
       }
     }
 
-    // 4. Grant the prorated credit (non-expiring) — credit_ledger is the audit log
+    // 4. Grant the prorated credit (non-expiring) — credit_ledger is the audit log.
+    // Refuse to flip billing_model if the grant fails, otherwise the customer
+    // would lose their prorated credit silently.
     if (totalProratedUsd > 0) {
       const description = `Legacy migration credit (cancelled ${cancelledSubIds.length} subscription${cancelledSubIds.length === 1 ? '' : 's'})`;
-      await grantCredits(accountId, totalProratedUsd, 'legacy_migration', description, false);
+      try {
+        const granted = await grantCredits(accountId, totalProratedUsd, 'legacy_migration', description, false);
+        if (granted && typeof granted === 'object' && 'success' in granted && (granted as any).success === false) {
+          console.error(`[lazy-migrate] grantCredits returned success=false for ${accountId}: ${JSON.stringify(granted)}`);
+          return defaultResult('failed', 'credit grant returned success=false');
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[lazy-migrate] grantCredits threw for ${accountId}: ${msg}`);
+        return defaultResult('failed', `credit grant: ${msg}`);
+      }
     }
 
     // 5. Flip billing_model + record new subscription

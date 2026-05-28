@@ -6,6 +6,7 @@
  */
 
 import { getStripe } from '../../shared/stripe';
+import { config } from '../../config';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { getCustomerByAccountId } from '../repositories/customers';
 import { grantCredits } from './credits';
@@ -119,7 +120,8 @@ export async function configureAutoTopup(accountId: string, cfg: AutoTopupConfig
   await updateCreditAccount(accountId, update as any);
 
   // If enabling and balance is already at or below threshold, charge immediately.
-  if (cfg.enabled) {
+  // Gated on the billing flag — self-hosted deploys never charge.
+  if (cfg.enabled && config.KORTIX_BILLING_INTERNAL_ENABLED) {
     const balance = Number(account.balance) || 0;
     if (balance <= cfg.threshold) {
       void tryAutoTopup(accountId).catch((err) => {
@@ -157,6 +159,11 @@ export async function getAutoTopupSetupStatus(accountId: string) {
  * Safe to call fire-and-forget — never throws, logs errors.
  */
 export async function checkAndTriggerAutoTopup(accountId: string): Promise<void> {
+  // Hard gate: self-hosted / billing-disabled deploys never charge Stripe even
+  // if a credit_accounts row has autoTopupEnabled=true (stale data from a
+  // previous environment).
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
+
   const existing = inFlight.get(accountId);
   if (existing) {
     return existing;

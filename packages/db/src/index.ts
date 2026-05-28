@@ -80,6 +80,7 @@ export {
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   yoloMemberTokens,
+  stripeWebhookEventsProcessed,
   // Tunnel
   tunnelStatusEnum,
   tunnelCapabilityEnum,
