@@ -14,6 +14,7 @@ import { AccountSettingsModal } from '@/components/settings/account-settings-mod
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
+import { isBillingEnabled } from '@/lib/config';
 import { SidebarLeft } from '@/components/sidebar/sidebar-left';
 import { SidebarRight } from '@/components/sidebar/sidebar-right';
 
@@ -103,6 +104,7 @@ function GlobalUserSettingsModal() {
  *  402 error handler, session error banner) can open it from anywhere. */
 function GlobalAccountSettingsModal() {
   const { isOpen, defaultTab, closeAccountSettings } = useAccountSettingsModalStore();
+  if (!isBillingEnabled()) return null;
   return (
     <AccountSettingsModal
       open={isOpen}
@@ -152,7 +154,7 @@ export function AppProviders({
             <GlobalAccountSettingsModal />
           </>
         )}
-        <GlobalUpgradeDialog />
+        {isBillingEnabled() && <GlobalUpgradeDialog />}
       </SubscriptionStoreSync>
     </DeleteOperationEffectsWrapper>
   );

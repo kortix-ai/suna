@@ -1,4 +1,5 @@
 import { HTTPException } from 'hono/http-exception';
+import { config } from '../../config';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { isPerSeatAccount, MINIMUM_CREDIT_FOR_RUN } from './tiers';
 
@@ -19,6 +20,13 @@ export interface BillingGateBlocked {
 }
 
 export async function checkBillingActive(accountId: string): Promise<BillingGateOk | BillingGateBlocked> {
+  // Self-hosted / billing-disabled deploys treat every account as billing-active.
+  // No subscription, no credit balance, no 402 — the entire wallet pipeline is
+  // dormant on this deploy.
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+    return { ok: true };
+  }
+
   const account = await getCreditAccount(accountId);
   if (!account) {
     return {

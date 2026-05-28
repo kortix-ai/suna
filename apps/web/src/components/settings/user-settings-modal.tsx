@@ -1564,8 +1564,8 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                 </div>
             </div>
 
-            {/* ── Team plan (Billing v2) ── */}
-            <TeamPlanSection accountState={accountState} />
+            {/* ── Team plan (Billing v2) — only when billing is enabled on this deploy ── */}
+            {isBillingEnabled() && <TeamPlanSection accountState={accountState} />}
 
             {/* ── Kortix YOLO (shown between Credits and Top-up actions) ── */}
             {yoloUsage && (

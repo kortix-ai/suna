@@ -3,6 +3,7 @@ import { BillingError, isBillingError, formatBillingErrorForUI } from './api/err
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { isBillingEnabled } from '@/lib/config';
 import * as Sentry from '@sentry/nextjs';
 
 export interface ApiError extends Error {
@@ -199,6 +200,7 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
     typeof v2Detail?.balance === 'number' ? v2Detail.balance : 0;
 
   if (
+    isBillingEnabled() &&
     v2Status === 402 &&
     (v2Code === 'subscription_required' ||
       v2Code === 'insufficient_credits' ||
