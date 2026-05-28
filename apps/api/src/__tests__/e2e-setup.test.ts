@@ -132,7 +132,6 @@ describe('Billing no-DB guard', () => {
     expect(state.subscription).toBeDefined();
     expect(state.subscription.tier_key).toBe('free');
     expect(state.subscription.status).toBe('active');
-    expect(state.subscription.is_trial).toBe(false);
 
     expect(Array.isArray(state.models)).toBe(true);
 

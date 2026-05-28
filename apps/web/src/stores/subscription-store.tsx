@@ -224,8 +224,6 @@ export function useSubscriptionData() {
       })(),
       credit_balance: dollarsToCredits(state.credits?.total ?? 0),
       can_purchase_credits: state.subscription.can_purchase_credits,
-      is_trial: state.subscription.is_trial,
-      trial_status: state.subscription.trial_status,
       has_scheduled_change: state.subscription.has_scheduled_change,
       scheduled_change: state.subscription.scheduled_change,
       commitment: state.subscription.commitment,

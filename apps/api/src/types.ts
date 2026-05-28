@@ -190,9 +190,6 @@ export interface AccountStateResponse {
     subscription_id: string | null;
     current_period_end: number | null;
     cancel_at_period_end: boolean;
-    is_trial: boolean;
-    trial_status: string | null;
-    trial_ends_at: string | null;
     is_cancelled: boolean;
     cancellation_effective_date: string | null;
     has_scheduled_change: boolean;

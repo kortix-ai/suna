@@ -29,9 +29,6 @@ export interface AccountState {
     subscription_id: string | null;
     current_period_end: number | null;
     cancel_at_period_end: boolean;
-    is_trial: boolean;
-    trial_status: string | null;
-    trial_ends_at: string | null;
     is_cancelled: boolean;
     cancellation_effective_date: string | null;
     has_scheduled_change: boolean;
@@ -292,44 +289,6 @@ export interface UsageHistory {
   total_period_credits: number;
 }
 
-export interface TrialStatus {
-  has_trial: boolean;
-  trial_status?: 'none' | 'active' | 'expired' | 'converted' | 'cancelled' | 'used';
-  trial_started_at?: string;
-  trial_ends_at?: string;
-  trial_mode?: string;
-  remaining_days?: number;
-  credits_remaining?: number;
-  tier?: string;
-  can_start_trial?: boolean;
-  message?: string;
-  trial_history?: {
-    started_at?: string;
-    ended_at?: string;
-    converted_to_paid?: boolean;
-  };
-}
-
-export interface TrialStartRequest {
-  success_url: string;
-  cancel_url: string;
-}
-
-export interface TrialStartResponse {
-  checkout_url: string;
-  session_id: string;
-}
-
-export interface TrialCheckoutRequest {
-  success_url: string;
-  cancel_url: string;
-}
-
-export interface TrialCheckoutResponse {
-  checkout_url: string;
-  session_id: string;
-}
-
 export interface CheckoutSessionDetails {
   session_id: string;
   amount_total: number;           // Final amount in cents (after discounts and tax)
@@ -364,9 +323,6 @@ function getDefaultAccountState(): AccountState {
       subscription_id: null,
       current_period_end: null,
       cancel_at_period_end: false,
-      is_trial: false,
-      trial_status: null,
-      trial_ends_at: null,
       is_cancelled: false,
       cancellation_effective_date: null,
       has_scheduled_change: false,
@@ -552,35 +508,6 @@ export const billingApi = {
     return response.data!;
   },
 
-  async getTrialStatus() {
-    const response = await backendApi.get<TrialStatus>('/billing/trial/status');
-    if (response.error) throw response.error;
-    return response.data!;
-  },
-
-  async startTrial(request: TrialStartRequest) {
-    const response = await backendApi.post<TrialStartResponse>('/billing/trial/start', request);
-    if (response.error) throw response.error;
-    return response.data!;
-  },
-
-  async createTrialCheckout(request: TrialCheckoutRequest) {
-    const response = await backendApi.post<TrialCheckoutResponse>(
-      '/billing/trial/create-checkout',
-      request
-    );
-    if (response.error) throw response.error;
-    return response.data!;
-  },
-
-  async cancelTrial() {
-    const response = await backendApi.post<{ success: boolean; message: string; subscription_status: string }>(
-      '/billing/trial/cancel',
-      {}
-    );
-    if (response.error) throw response.error;
-    return response.data!;
-  },
 
   async scheduleDowngrade(request: ScheduleDowngradeRequest, accountId?: string) {
     const response = await backendApi.post<ScheduleDowngradeResponse>(
@@ -651,11 +578,6 @@ export const purchaseCredits = (request: PurchaseCreditsRequest) =>
 export const getTransactions = (limit?: number, offset?: number) => 
   billingApi.getTransactions(limit, offset);
 export const getUsageHistory = (days?: number) => billingApi.getUsageHistory(days);
-export const getTrialStatus = () => billingApi.getTrialStatus();
-export const startTrial = (request: TrialStartRequest) => billingApi.startTrial(request);
-export const createTrialCheckout = (request: TrialCheckoutRequest) => 
-  billingApi.createTrialCheckout(request);
-export const cancelTrial = () => billingApi.cancelTrial();
 export const scheduleDowngrade = (request: ScheduleDowngradeRequest) => 
   billingApi.scheduleDowngrade(request);
 export const cancelScheduledChange = () => billingApi.cancelScheduledChange();

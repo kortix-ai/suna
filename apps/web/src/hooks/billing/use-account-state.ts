@@ -42,7 +42,6 @@ export const accountStateKeys = {
     [...accountStateKeys.all, 'state', { accountId: accountId ?? null }] as const,
   usageHistory: (days?: number) => [...accountStateKeys.all, 'usage-history', { days }] as const,
   transactions: (limit?: number, offset?: number) => [...accountStateKeys.all, 'transactions', { limit, offset }] as const,
-  trial: () => [...accountStateKeys.all, 'trial'] as const,
 };
 
 // =============================================================================
@@ -428,48 +427,6 @@ export function useUsageHistory(days = 30) {
 // different cache keys.
 
 // =============================================================================
-// TRIAL HOOKS
-// =============================================================================
-
-export function useTrialStatus(options?: { enabled?: boolean }) {
-  return useQuery({
-    queryKey: accountStateKeys.trial(),
-    queryFn: () => billingApi.getTrialStatus(),
-    enabled: options?.enabled ?? true,
-    staleTime: 1000 * 60 * 5,
-  });
-}
-
-export function useStartTrial() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (request: { success_url: string; cancel_url: string }) => 
-      billingApi.startTrial(request),
-    onSuccess: (data) => {
-      invalidateAccountState(queryClient);
-      if (data.checkout_url) {
-        window.location.href = data.checkout_url;
-      }
-    },
-  });
-}
-
-export function useCancelTrial() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: () => billingApi.cancelTrial(),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient);
-      if (response.success) {
-        toast.success(response.message);
-      }
-    },
-  });
-}
-
-// =============================================================================
 // SELECTORS - Helper functions to extract specific data from account state
 // =============================================================================
 
@@ -508,9 +465,6 @@ export const accountStateSelectors = {
     if (tierKey === 'pro') return 'Pro';
     return 'Basic';
   },
-  
-  /** Check if on trial */
-  isTrial: (state: AccountState | undefined) => state?.subscription?.is_trial ?? false,
   
   /** Check if subscription is cancelled */
   isCancelled: (state: AccountState | undefined) => state?.subscription?.is_cancelled ?? false,
