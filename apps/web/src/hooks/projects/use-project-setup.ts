@@ -12,26 +12,35 @@
  * Steps are scoped to USER-DRIVEN setup — things only the user can do that
  * meaningfully change project capability. We deliberately exclude:
  *   • "Connect a repository" — every project has one before this even runs.
- *   • "Set up your agent" — starter templates ship with default agents and
- *     skills, so the count is misleading. The deeper "build your own agents"
- *     loop lives in the wizard's informational closing step instead.
  *
  * Essential steps (drive the headline progress + the auto-hide):
  *   1. Required secrets filled in   (only shown when the manifest declares any)
- *   2. Connect at least one integration
- *   3. First session run
+ *   2. Invite your team
+ *   3. Connect at least one integration
+ *   4. First session run
+ *   5. Create your own agent
+ *   6. Create a skill
  *
- * Recommended steps (listed, badged "Optional", never block completion):
- *   • Invite your team
+ * The two "create …" steps complete off the project's agent/skill counts,
+ * which ride along on the detail query we already fetch (no sandbox needed —
+ * `config.agents`/`config.skills` are parsed from the repo). The catch: every
+ * starter ships default agents and skills, so a raw count would read as "done"
+ * before the user makes anything of their own. We snapshot the starter's
+ * counts once per project (a localStorage BASELINE) and only mark the step
+ * done when the live count climbs ABOVE that baseline — i.e. the user added
+ * their own. If storage is unavailable we degrade to "not done yet" (the card
+ * stays, and is dismissible) rather than falsely ticking.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  Bot,
   KeyRound,
   Plug,
   SquarePen,
   Users,
+  Wand2,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -47,7 +56,9 @@ export type ProjectSetupStepId =
   | 'secrets'
   | 'session'
   | 'connector'
-  | 'team';
+  | 'team'
+  | 'agent'
+  | 'skill';
 
 export interface ProjectSetupStep {
   id: ProjectSetupStepId;
@@ -78,6 +89,35 @@ export interface ProjectSetupState {
 }
 
 const SHARED = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
+
+/**
+ * Per-project snapshot of how many agents/skills the project STARTED with
+ * (the starter's defaults). Captured once, the first time we see real config
+ * data, and persisted so the baseline survives reloads. The "create your own"
+ * steps complete only when the live count climbs above it.
+ */
+type SetupBaseline = { agents: number; skills: number };
+
+function baselineKey(projectId: string) {
+  return `kortix:setup-baseline:${projectId}`;
+}
+
+function readBaseline(projectId: string): SetupBaseline | null {
+  try {
+    const raw = localStorage.getItem(baselineKey(projectId));
+    return raw ? (JSON.parse(raw) as SetupBaseline) : null;
+  } catch {
+    return null; // private mode / SSR
+  }
+}
+
+function writeBaseline(projectId: string, value: SetupBaseline) {
+  try {
+    localStorage.setItem(baselineKey(projectId), JSON.stringify(value));
+  } catch {
+    /* private mode / SSR — degrade to "not done yet" */
+  }
+}
 
 export function useProjectSetup(projectId: string): ProjectSetupState {
   const enabled = !!projectId;
@@ -119,6 +159,24 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
   const isLoading =
     enabled && (detail.isLoading || secrets.isLoading || sessions.isLoading);
 
+  // Agent/skill counts ride along on the detail query (parsed from the repo —
+  // no sandbox needed). We snapshot the starter's counts the first time we see
+  // real data so "create your own" completes only when the user adds beyond it.
+  const agentCount = detail.data?.config?.agents?.length ?? 0;
+  const skillCount = detail.data?.config?.skills?.length ?? 0;
+  const [baseline, setBaseline] = useState<SetupBaseline | null>(null);
+  useEffect(() => {
+    if (!enabled || !detail.data || baseline) return;
+    const stored = readBaseline(projectId);
+    if (stored) {
+      setBaseline(stored);
+      return;
+    }
+    const fresh = { agents: agentCount, skills: skillCount };
+    writeBaseline(projectId, fresh);
+    setBaseline(fresh);
+  }, [enabled, detail.data, projectId, baseline, agentCount, skillCount]);
+
   return useMemo<ProjectSetupState>(() => {
     const base = (path: string) => `/projects/${projectId}/${path}`;
 
@@ -136,6 +194,10 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
     const connectorCount = connectors.data?.connectors.length ?? 0;
     const memberCount = access.data?.members.length ?? 0;
     const sessionCount = sessions.data?.length ?? 0;
+    // Done only once the count climbs above the starter baseline; until the
+    // baseline is captured we read "not done yet" rather than falsely ticking.
+    const agentDone = baseline ? agentCount > baseline.agents : false;
+    const skillDone = baseline ? skillCount > baseline.skills : false;
 
     const steps: ProjectSetupStep[] = [
       ...(secretsApply
@@ -154,6 +216,17 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
           ]
         : []),
       {
+        id: 'team',
+        title: 'Invite your team',
+        description: 'Bring teammates in so they can run sessions and review the work.',
+        done: memberCount > 1,
+        optional: false,
+        icon: Users,
+        href: base('members'),
+        cta: 'Invite',
+        learnHref: '/docs/concepts/accounts',
+      },
+      {
         id: 'connector',
         title: 'Connect your tools',
         description: 'Plug in apps your agent should reach — Slack, Gmail, Salesforce, anything.',
@@ -165,17 +238,6 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         learnHref: '/docs/concepts/connections',
       },
       {
-        id: 'team',
-        title: 'Invite your team',
-        description: 'Add teammates so they can run and review sessions.',
-        done: memberCount > 1,
-        optional: true,
-        icon: Users,
-        href: base('members'),
-        cta: 'Invite',
-        learnHref: '/docs/concepts/accounts',
-      },
-      {
         id: 'session',
         title: 'Run your first session',
         description: 'Kick off a session to put the project to work.',
@@ -185,6 +247,28 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         href: null,
         cta: 'Start',
         learnHref: '/docs/quickstart',
+      },
+      {
+        id: 'agent',
+        title: 'Create your own agent',
+        description: 'Shape an agent around how your team works — give it a role and tools.',
+        done: agentDone,
+        optional: false,
+        icon: Bot,
+        href: base('agents'),
+        cta: 'Create',
+        learnHref: '/docs/concepts/agents',
+      },
+      {
+        id: 'skill',
+        title: 'Add a skill',
+        description: 'Turn a workflow you repeat into a reusable shortcut your agents can use.',
+        done: skillDone,
+        optional: false,
+        icon: Wand2,
+        href: base('skills'),
+        cta: 'Add',
+        learnHref: '/docs/concepts/agents',
       },
     ];
 
@@ -208,6 +292,9 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
     connectors.data,
     access.data,
     sessions.data,
+    agentCount,
+    skillCount,
+    baseline,
     isLoading,
   ]);
 }
