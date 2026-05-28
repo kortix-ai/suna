@@ -723,7 +723,7 @@ export default function APIKeysPage() {
                           </span>
                         )}
                         {apiKey.last_used_at && (
-                          <span>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line746JsxTextLastUsed')}{formatDate(apiKey.last_used_at)}</span>
+                          <span>{tHardcodedUi.raw('componentsPagesSettingsApiKeysPage.line746JsxTextLastUsed')}{' '}{formatDate(apiKey.last_used_at)}</span>
                         )}
                       </div>
                     </div>

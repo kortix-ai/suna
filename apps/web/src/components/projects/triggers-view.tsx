@@ -428,7 +428,7 @@ function ProjectTriggersBody({
         {parseErrors.length > 0 && (
           <section className="space-y-2 rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
             <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
-              {parseErrors.length}{tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextTriggerFile')}{parseErrors.length === 1 ? '' : 's'}{tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextFailedToParse')}</p>
+              {parseErrors.length}{tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextTriggerFile')}{' '}{parseErrors.length === 1 ? '' : 's'}{tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextFailedToParse')}</p>
             <ul className="space-y-0.5 text-xs text-amber-700/80 dark:text-amber-400/80">
               {parseErrors.map((err) => (
                 <li key={err.slug}>

@@ -129,7 +129,7 @@ export function VersionSelector() {
           )}
 
           {!isLoading && !error && filtered.length === 0 && (
-            <div className="py-8 px-4 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line134JsxTextNoVersionsMatch')}{query ? `“${query}”` : ''}
+            <div className="py-8 px-4 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line134JsxTextNoVersionsMatch')}{' '}{query ? `“${query}”` : ''}
             </div>
           )}
 

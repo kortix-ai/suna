@@ -422,7 +422,7 @@ function ErrorView({
       </div>
 
       <div className="flex flex-col items-center gap-1">
-        <h1 className="text-sm font-medium text-foreground/90">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line422JsxTextCouldnAposTStart')}{label}
+        <h1 className="text-sm font-medium text-foreground/90">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line422JsxTextCouldnAposTStart')}{' '}{label}
         </h1>
         {(serverType || location) && (
           <p className="font-mono text-xs text-muted-foreground/35">

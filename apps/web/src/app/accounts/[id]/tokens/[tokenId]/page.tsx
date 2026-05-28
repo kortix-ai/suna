@@ -125,7 +125,7 @@ export default function TokenDetailPage() {
                     </Badge>
                     <span>Created {formatDate(token.created_at)}</span>
                     <span className="text-muted-foreground/40">·</span>
-                    <span>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line128JsxTextLastUsed')}{formatDate(token.last_used_at)}</span>
+                    <span>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line128JsxTextLastUsed')}{' '}{formatDate(token.last_used_at)}</span>
                   </div>
                 )}
               </div>

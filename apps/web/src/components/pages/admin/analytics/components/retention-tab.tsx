@@ -92,7 +92,7 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
         <div className="p-5 border-b flex items-center justify-between">
           <div>
             <h2 className="text-sm font-medium">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line91JsxTextRecurringUsers')}</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line93JsxTextUsersActiveIn')}{params.min_weeks_active}{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line93JsxTextDifferentWeeksOverThePast')}{params.weeks_back} weeks
+            <p className="text-xs text-muted-foreground mt-0.5">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line93JsxTextUsersActiveIn')}{' '}{params.min_weeks_active}{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsRetentionTab.line93JsxTextDifferentWeeksOverThePast')}{' '}{params.weeks_back} weeks
             </p>
           </div>
 

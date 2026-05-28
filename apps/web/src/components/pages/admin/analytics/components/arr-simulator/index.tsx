@@ -1133,7 +1133,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1133JsxTextArrGrowthSimulator')}</CardTitle>
-          <CardDescription>{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1136JsxTextAdjustParametersToModelYourPathTo')}{formatCurrency(targetARR)}{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1136JsxTextArrByJune2026')}</CardDescription>
+          <CardDescription>{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1136JsxTextAdjustParametersToModelYourPathTo')}{' '}{formatCurrency(targetARR)}{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1136JsxTextArrByJune2026')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">

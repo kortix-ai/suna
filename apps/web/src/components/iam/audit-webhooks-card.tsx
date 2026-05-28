@@ -159,7 +159,7 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                       <code className="truncate font-mono">{h.url}</code>
                       <span>·</span>
-                      <span>{tHardcodedUi.raw('componentsIamAuditWebhooksCard.line164JsxTextLastDelivered')}{relative(h.last_delivered_at)}</span>
+                      <span>{tHardcodedUi.raw('componentsIamAuditWebhooksCard.line164JsxTextLastDelivered')}{' '}{relative(h.last_delivered_at)}</span>
                     </div>
                     {h.last_error && (
                       <div className="mt-1 flex items-start gap-1.5 text-[11px] text-destructive">

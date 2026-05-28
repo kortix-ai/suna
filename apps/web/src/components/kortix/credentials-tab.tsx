@@ -182,7 +182,7 @@ function CredentialRow({
           <div className="mt-1 flex items-center gap-3 text-[10.5px] tabular-nums text-muted-foreground/50">
             <span>set {relativeTime(item.updated_at)}</span>
             {item.last_read_at
-              ? <span>{tHardcodedUi.raw('componentsKortixCredentialsTab.line182JsxTextLastRead')}{relativeTime(item.last_read_at)}</span>
+              ? <span>{tHardcodedUi.raw('componentsKortixCredentialsTab.line182JsxTextLastRead')}{' '}{relativeTime(item.last_read_at)}</span>
               : <span>{tHardcodedUi.raw('componentsKortixCredentialsTab.line183JsxTextNeverRead')}</span>}
           </div>
           {value !== null && (

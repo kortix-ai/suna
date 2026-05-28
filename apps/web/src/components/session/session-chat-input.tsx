@@ -1154,7 +1154,7 @@ function TodoChip({ sessionId }: { sessionId: string }) {
       >
         <ListTodo className="size-3.5 text-muted-foreground flex-shrink-0" />
         <span className="text-xs text-muted-foreground flex-1 min-w-0 truncate text-left">
-          {completed} of {total}{tHardcodedUi.raw('componentsSessionSessionChatInput.line1153JsxTextTasksDone')}{inProgress && (
+          {completed} of {total}{tHardcodedUi.raw('componentsSessionSessionChatInput.line1153JsxTextTasksDone')}{' '}{inProgress && (
             <span className="text-foreground/80 font-medium"> · {inProgress.content}</span>
           )}
         </span>

@@ -204,7 +204,7 @@ function DetailSheet({
                     {item.name}
                   </SheetTitle>
                   <SheetDescription className="sr-only">
-                    {kindCfg.label}{tHardcodedUi.raw('componentsPagesWorkspacePage.line204JsxTextDetailsFor')}{item.name}
+                    {kindCfg.label}{tHardcodedUi.raw('componentsPagesWorkspacePage.line204JsxTextDetailsFor')}{' '}{item.name}
                   </SheetDescription>
                   <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                     <Badge variant="secondary" className="text-xs">{kindCfg.label}</Badge>

@@ -1838,7 +1838,7 @@ export default function BrandPage() {
                             <span className="text-xs font-mono text-muted-foreground w-6">
                               {String(i + 1).padStart(2, '0')}
                             </span>
-                            <span className="text-sm text-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line2056JsxTextListItem')}{i + 1}
+                            <span className="text-sm text-foreground">{tHardcodedUi.raw('appHomeDesignSystemPage.line2056JsxTextListItem')}{' '}{i + 1}
                             </span>
                           </div>
                         ))}

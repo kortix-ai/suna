@@ -171,7 +171,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                   <div className="mt-0.5 flex items-center gap-3 text-[11px] text-muted-foreground">
                     <code className="font-mono">{t.public_prefix}</code>
                     <span>·</span>
-                    <span>{tHardcodedUi.raw('componentsIamScimCard.line179JsxTextLastUsed')}{formatRelative(t.last_used_at)}</span>
+                    <span>{tHardcodedUi.raw('componentsIamScimCard.line179JsxTextLastUsed')}{' '}{formatRelative(t.last_used_at)}</span>
                     <span>·</span>
                     <span>Created {formatRelative(t.created_at)}</span>
                   </div>

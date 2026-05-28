@@ -187,7 +187,7 @@ function OAuthConsent() {
         </div>
 
         <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('appOauthAuthorizePage.line189JsxTextThisWillAllow')}{clientName} to:
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('appOauthAuthorizePage.line189JsxTextThisWillAllow')}{' '}{clientName} to:
           </p>
           <ul className="space-y-2">
             {scopes.map((s) => (

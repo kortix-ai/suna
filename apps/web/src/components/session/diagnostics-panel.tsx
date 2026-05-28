@@ -152,7 +152,7 @@ function DiagnosticRow({
           {diagnostic.message}
         </p>
         <span className="text-xs text-muted-foreground/60 font-mono">
-          Ln {diagnostic.line + 1}{tHardcodedUi.raw('componentsSessionDiagnosticsPanel.line152JsxTextCol')}{diagnostic.column + 1}
+          Ln {diagnostic.line + 1}{tHardcodedUi.raw('componentsSessionDiagnosticsPanel.line152JsxTextCol')}{' '}{diagnostic.column + 1}
           {diagnostic.source && <span className="ml-1.5">({diagnostic.source})</span>}
         </span>
       </div>

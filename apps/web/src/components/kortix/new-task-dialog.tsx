@@ -180,7 +180,7 @@ export function NewTaskDialog({
         onDrop={handleDrop}
       >
         <DialogTitle className="sr-only">{tHardcodedUi.raw('componentsKortixNewTaskDialog.line179JsxTextNewTask')}</DialogTitle>
-        <DialogDescription className="sr-only">{tHardcodedUi.raw('componentsKortixNewTaskDialog.line181JsxTextCreateANewTask')}{projectName ? `in ${projectName}` : ''}
+        <DialogDescription className="sr-only">{tHardcodedUi.raw('componentsKortixNewTaskDialog.line181JsxTextCreateANewTask')}{' '}{projectName ? `in ${projectName}` : ''}
         </DialogDescription>
 
         {/* ── Header ─────────────────────────────────────────── */}

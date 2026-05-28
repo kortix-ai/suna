@@ -394,7 +394,7 @@ function TicketForm({
             Templates
           </Button>
         ) : (
-          <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line395JsxTextNewTicket')}{template ? ` · ${template.name}` : ''}
+          <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line395JsxTextNewTicket')}{' '}{template ? ` · ${template.name}` : ''}
           </div>
         )}
         <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/50 hover:text-foreground" onClick={onClose}>

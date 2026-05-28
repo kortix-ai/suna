@@ -53,7 +53,7 @@ export function DeploymentLogsDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ScrollText className="h-5 w-5" />{tHardcodedUi.raw('componentsDeploymentsDeploymentLogsDialog.line51JsxTextDeploymentLogs')}</DialogTitle>
-          <DialogDescription id="logs-description">{tHardcodedUi.raw('componentsDeploymentsDeploymentLogsDialog.line54JsxTextLogsFor')}{domain}
+          <DialogDescription id="logs-description">{tHardcodedUi.raw('componentsDeploymentsDeploymentLogsDialog.line54JsxTextLogsFor')}{' '}{domain}
           </DialogDescription>
         </DialogHeader>
 

@@ -130,7 +130,7 @@ export function NoInstanceState() {
           <ComputerHero
             title={tHardcodedUi.raw('componentsDashboardNoInstanceState.line128JsxAttrTitleKortixIsNowEvenBetter')}
             description={
-              <>{tHardcodedUi.raw('componentsDashboardNoInstanceState.line131JsxTextYourPlanNowIncludesADedicatedCloudComputer')}{accountState?.tier?.monthly_credits ? (
+              <>{tHardcodedUi.raw('componentsDashboardNoInstanceState.line131JsxTextYourPlanNowIncludesADedicatedCloudComputer')}{' '}{accountState?.tier?.monthly_credits ? (
                   <>
                     {' '}with{' '}
                     <span className="text-foreground font-medium">

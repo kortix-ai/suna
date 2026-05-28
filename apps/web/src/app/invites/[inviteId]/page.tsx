@@ -183,7 +183,7 @@ export default function InvitePage() {
             </div>
             <div className="text-foreground/40 mt-0.5 flex items-center gap-1 text-xs">
               <Clock className="size-3" />
-              {targetLabel}{tHardcodedUi.raw('appInvitesInviteidPage.line200JsxTextExpires')}{formatWhen(invite.expires_at, locale)}
+              {targetLabel}{tHardcodedUi.raw('appInvitesInviteidPage.line200JsxTextExpires')}{' '}{formatWhen(invite.expires_at, locale)}
             </div>
           </div>
         </div>

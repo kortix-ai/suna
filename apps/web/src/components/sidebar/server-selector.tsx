@@ -450,7 +450,7 @@ function DialogInstanceRow({
               className="rounded-full"
               onClick={(e) => { e.stopPropagation(); sandboxUpdate.update(); }}
             >
-              <ArrowDownToLine className="h-3 w-3" />{tHardcodedUi.raw('componentsSidebarServerSelector.line451JsxTextUpdateToV')}{sandboxUpdate.latestVersion}
+              <ArrowDownToLine className="h-3 w-3" />{tHardcodedUi.raw('componentsSidebarServerSelector.line451JsxTextUpdateToV')}{' '}{sandboxUpdate.latestVersion}
             </Button>
           )}
 
@@ -1075,7 +1075,7 @@ export function InstanceManagerDialog({
                     {renderShellHighlighted(sshMeta.ssh_command)}
                   </pre>
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsSidebarServerSelector.line1083JsxTextLastGenerated')}{new Date(sshMeta.updatedAt).toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsSidebarServerSelector.line1083JsxTextLastGenerated')}{' '}{new Date(sshMeta.updatedAt).toLocaleString()}</p>
                     <div className="flex items-center gap-1.5">
                       <Button
                         type="button"

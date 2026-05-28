@@ -776,7 +776,7 @@ function SidebarSections() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{tHardcodedUi.raw('componentsSidebarSidebarLeft.line777JsxTextConvertAllPreviousChats')}</AlertDialogTitle>
-            <AlertDialogDescription>{tHardcodedUi.raw('componentsSidebarSidebarLeft.line779JsxTextThisWillConvert')}{legacyData?.total ?? 0}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line779JsxTextPreviousChatsIntoSessionsTheProcessRunsIn')}</AlertDialogDescription>
+            <AlertDialogDescription>{tHardcodedUi.raw('componentsSidebarSidebarLeft.line779JsxTextThisWillConvert')}{' '}{legacyData?.total ?? 0}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line779JsxTextPreviousChatsIntoSessionsTheProcessRunsIn')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -876,7 +876,7 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
 
   return (
     <InfoBanner tone="destructive" title={tHardcodedUi.raw('componentsSidebarSidebarLeft.line878JsxAttrTitleSubscriptionCancelled')}>
-      <p className="leading-relaxed">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line880JsxTextThisInstanceWillBeDeleted')}{daysLeft !== null ? `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : `on ${dateStr}`}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line880JsxTextAllDataWillBePermanentlyRemoved')}</p>
+      <p className="leading-relaxed">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line880JsxTextThisInstanceWillBeDeleted')}{' '}{daysLeft !== null ? `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : `on ${dateStr}`}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line880JsxTextAllDataWillBePermanentlyRemoved')}</p>
       <Button
         type="button"
         disabled={reactivating}
@@ -1089,7 +1089,7 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
               Prompt
             </Button>
             {configStatus.problems.length > 1 ? (
-              <span className="text-xs text-muted-foreground">+{configStatus.problems.length - 1}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line1095JsxTextMoreSource')}{configStatus.problems.length === 2 ? '' : 's'}</span>
+              <span className="text-xs text-muted-foreground">+{configStatus.problems.length - 1}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line1095JsxTextMoreSource')}{' '}{configStatus.problems.length === 2 ? '' : 's'}</span>
             ) : null}
           </div>
 

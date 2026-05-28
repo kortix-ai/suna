@@ -239,7 +239,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
             ))}
             {history?.hasMore && (
               <div className="text-center py-1">
-                <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line240JsxTextShowingTheMostRecent')}{totalCheckpoints} checkpoints
+                <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line240JsxTextShowingTheMostRecent')}{' '}{totalCheckpoints} checkpoints
                 </span>
               </div>
             )}

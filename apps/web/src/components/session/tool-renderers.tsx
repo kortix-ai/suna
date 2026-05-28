@@ -4783,7 +4783,7 @@ function PresentationGenTool({
             <div className="flex items-center gap-2 text-xs">
               <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
-                {tHardcodedUi.raw('componentsSessionToolRenderers.line4612JsxTextCreatedSlide')}{parsed.slide_number}
+                {tHardcodedUi.raw('componentsSessionToolRenderers.line4612JsxTextCreatedSlide')}{' '}{parsed.slide_number}
                 {parsed.slide_title ? `: ${parsed.slide_title}` : ''}
               </span>
               {parsed.total_slides && (
@@ -6383,7 +6383,7 @@ function ProjectDeleteTool({ part }: ToolProps) {
   return (
     <div className="flex items-center gap-2 px-2.5 py-1 text-xs text-muted-foreground/40">
       <Trash2 className="size-3 flex-shrink-0" />
-      <span>{tHardcodedUi.raw('componentsSessionToolRenderers.line6211JsxTextWorkspaceDeleteDisabled')}{project ? ` (${project})` : ''}</span>
+      <span>{tHardcodedUi.raw('componentsSessionToolRenderers.line6211JsxTextWorkspaceDeleteDisabled')}{' '}{project ? ` (${project})` : ''}</span>
     </div>
   );
 }
@@ -6817,7 +6817,7 @@ function AgentTaskUpdateTool({ part, forceOpen }: ToolProps) {
         <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/70">
           <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
           <span className="text-foreground/80 truncate flex-1">
-            {tHardcodedUi.raw('componentsSessionToolRenderers.line6643JsxTextTaskApproved')}{taskId ? ` · ${taskId.slice(-12)}` : ''}
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line6643JsxTextTaskApproved')}{' '}{taskId ? ` · ${taskId.slice(-12)}` : ''}
           </span>
         </div>
       );

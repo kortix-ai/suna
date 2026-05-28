@@ -902,7 +902,7 @@ export function ConnectProviderContent({
               onSubmit={handleApiKeySubmit}
               className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-4"
             >
-              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line916JsxTextEnterYour')}{selectedProviderData?.name || view.providerID}{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line916JsxTextApiKey')}</p>
+              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line916JsxTextEnterYour')}{' '}{selectedProviderData?.name || view.providerID}{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line916JsxTextApiKey')}</p>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line921JsxTextApiKey')}</label>
                 <Input

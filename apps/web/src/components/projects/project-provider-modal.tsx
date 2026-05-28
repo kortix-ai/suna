@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
+  Info,
   Loader2,
   Plug,
   Plus,
@@ -866,7 +867,7 @@ function ApiKeyConnectForm({
             rel="noopener noreferrer"
             className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line827JsxTextGetCredentialsFrom')}{helpHostname}
+            <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line827JsxTextGetCredentialsFrom')}{' '}{helpHostname}
           </a>
         )}
 
@@ -876,6 +877,14 @@ function ApiKeyConnectForm({
             <span>{error}</span>
           </div>
         )}
+
+        <div className="flex items-start gap-2.5 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2.5">
+          <Info className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
+          <p className="text-xs leading-relaxed text-foreground/80">
+            A sandbox picks up new providers when it starts. To use this in a running session,
+            restart its sandbox from the session list.
+          </p>
+        </div>
 
         <Button
           type="submit"

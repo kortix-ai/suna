@@ -233,7 +233,7 @@ function EditPanel({
           {milestone.title}
         </DialogTitle>
         <DialogDescription className="text-[11.5px] text-muted-foreground/55">
-          {milestone.progress.done}/{milestone.progress.total}{tHardcodedUi.raw('componentsKortixMilestoneDialog.line234JsxTextTicketsDone')}{milestone.percent_complete}{tHardcodedUi.raw('componentsKortixMilestoneDialog.line234JsxTextComplete')}{milestone.due_at && isOpen && <>{tHardcodedUi.raw('componentsKortixMilestoneDialog.line235JsxTextDue')}{new Date(milestone.due_at).toLocaleDateString()}</>}
+          {milestone.progress.done}/{milestone.progress.total}{tHardcodedUi.raw('componentsKortixMilestoneDialog.line234JsxTextTicketsDone')}{milestone.percent_complete}{tHardcodedUi.raw('componentsKortixMilestoneDialog.line234JsxTextComplete')}{' '}{milestone.due_at && isOpen && <>{tHardcodedUi.raw('componentsKortixMilestoneDialog.line235JsxTextDue')}{' '}{new Date(milestone.due_at).toLocaleDateString()}</>}
         </DialogDescription>
       </DialogHeader>
 

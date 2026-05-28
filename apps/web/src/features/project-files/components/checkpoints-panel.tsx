@@ -275,7 +275,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
                 ))}
                 {data?.hasMore && (
                   <div className="text-center py-2">
-                    <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointsPanel.line278JsxTextShowingTheMostRecent')}{total} checkpoints
+                    <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointsPanel.line278JsxTextShowingTheMostRecent')}{' '}{total} checkpoints
                     </span>
                   </div>
                 )}

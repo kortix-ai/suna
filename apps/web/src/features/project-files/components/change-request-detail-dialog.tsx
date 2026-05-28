@@ -270,7 +270,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               preview.is_up_to_date ? (
                 <InfoBanner tone="neutral" icon={RefreshCcw} className="px-3 py-2">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line269JsxTextThisVersionIsAlreadyAtTheBaseNothing')}</InfoBanner>
               ) : preview.can_merge ? (
-                <InfoBanner tone="success" icon={Check} className="px-3 py-2">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line273JsxTextMergeableCleanly')}{preview.can_fast_forward ? ' (fast-forward)' : ' (3-way merge)'}.
+                <InfoBanner tone="success" icon={Check} className="px-3 py-2">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line273JsxTextMergeableCleanly')}{' '}{preview.can_fast_forward ? ' (fast-forward)' : ' (3-way merge)'}.
                 </InfoBanner>
               ) : (
                 <InfoBanner
@@ -278,7 +278,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                   icon={AlertTriangle}
                   className="px-3 py-2"
                   title={
-                    <>{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line283JsxTextConflictsIn')}{preview.conflicts.length} file
+                    <>{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line283JsxTextConflictsIn')}{' '}{preview.conflicts.length} file
                       {preview.conflicts.length === 1 ? '' : 's'}
                     </>
                   }

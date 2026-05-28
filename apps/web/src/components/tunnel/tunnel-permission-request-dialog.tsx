@@ -198,7 +198,7 @@ export function TunnelPermissionRequestDialog() {
 
           {pendingRequests.length > 1 && (
             <p className="text-xs text-muted-foreground">
-              +{pendingRequests.length - 1}{tHardcodedUi.raw('componentsTunnelTunnelPermissionRequestDialog.line203JsxTextMoreRequest')}{pendingRequests.length > 2 ? 's' : ''} pending
+              +{pendingRequests.length - 1}{tHardcodedUi.raw('componentsTunnelTunnelPermissionRequestDialog.line203JsxTextMoreRequest')}{' '}{pendingRequests.length > 2 ? 's' : ''} pending
             </p>
           )}
         </div>

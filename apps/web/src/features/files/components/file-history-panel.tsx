@@ -413,7 +413,7 @@ export function FileHistoryPanel() {
               {/* Load more hint */}
               {history?.hasMore && (
                 <div className="text-center py-2">
-                  <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line422JsxTextShowingFirst')}{totalCommits}{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line422JsxTextCommitsMoreAvailable')}</span>
+                  <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line422JsxTextShowingFirst')}{' '}{totalCommits}{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPanel.line422JsxTextCommitsMoreAvailable')}</span>
                 </div>
               )}
             </div>

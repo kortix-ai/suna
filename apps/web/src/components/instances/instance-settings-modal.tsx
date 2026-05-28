@@ -221,7 +221,7 @@ function ConfigDegradationPanel({
       title={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line219JsxAttrTitleConfigDegradedRuntimeStillHealthy')}
     >
       <div className="space-y-4">
-        <div>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line223JsxTextOpencodeIgnored')}{status.problems.length}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line223JsxTextInvalidConfigSource')}{status.problems.length === 1 ? '' : 's'}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line223JsxTextSoTheWorkspaceStaysOnlineFixTheSkipped')}{status.problems.length === 1 ? '' : 's'}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line224JsxTextToRestoreACleanConfigState')}</div>
+        <div>{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line223JsxTextOpencodeIgnored')}{' '}{status.problems.length}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line223JsxTextInvalidConfigSource')}{' '}{status.problems.length === 1 ? '' : 's'}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line223JsxTextSoTheWorkspaceStaysOnlineFixTheSkipped')}{' '}{status.problems.length === 1 ? '' : 's'}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line224JsxTextToRestoreACleanConfigState')}</div>
 
         <div className="space-y-3">
           {status.problems.map((problem, index) => (

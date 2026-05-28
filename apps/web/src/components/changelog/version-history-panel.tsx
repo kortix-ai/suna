@@ -282,7 +282,7 @@ export function VersionHistoryPanel({
             {updateAvailable && !isUpdating && onUpdateLatest && (
               <div className="mt-4">
                 <Button onClick={onUpdateLatest}>
-                  <ArrowDownToLine className="h-4 w-4" />{tHardcodedUi.raw('componentsChangelogVersionHistoryPanel.line282JsxTextUpdateTo')}{latestVersion?.startsWith('dev-') ? latestVersion : `v${latestVersion}`}
+                  <ArrowDownToLine className="h-4 w-4" />{tHardcodedUi.raw('componentsChangelogVersionHistoryPanel.line282JsxTextUpdateTo')}{' '}{latestVersion?.startsWith('dev-') ? latestVersion : `v${latestVersion}`}
                 </Button>
               </div>
             )}

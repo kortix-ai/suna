@@ -314,7 +314,7 @@ export function UpdateDialog({
       <AlertDialogContent className="sm:max-w-lg">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <ArrowDownToLine className="h-5 w-5 text-primary" />{tHardcodedUi.raw('componentsUpdateDialog.line320JsxTextUpdateTo')}{formatVersion(latestVersion)}
+            <ArrowDownToLine className="h-5 w-5 text-primary" />{tHardcodedUi.raw('componentsUpdateDialog.line320JsxTextUpdateTo')}{' '}{formatVersion(latestVersion)}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {currentVersion

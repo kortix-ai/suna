@@ -94,7 +94,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
           <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
             <span>Created {formatRelative(token.created_at)}</span>
             <span>·</span>
-            <span>{tHardcodedUi.raw('componentsSettingsCliTokensTab.line94JsxTextLastUsed')}{formatRelative(token.last_used_at)}</span>
+            <span>{tHardcodedUi.raw('componentsSettingsCliTokensTab.line94JsxTextLastUsed')}{' '}{formatRelative(token.last_used_at)}</span>
           </div>
         </div>
 

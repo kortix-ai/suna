@@ -704,7 +704,7 @@ function SetCredentialDialog({
     <Dialog open={open} onOpenChange={(o) => { if (!save.isPending) onOpenChange(o); }}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line701JsxTextSetCredentialFor')}{connector?.slug}</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line701JsxTextSetCredentialFor')}{' '}{connector?.slug}</DialogTitle>
           <DialogDescription>
             {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line703JsxTextStoredEncryptedAs')}<code className="font-mono">{connector?.authSecret}</code> {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line703JsxTextAndResolvedServerSideNeverInjectedIntoThe')}</DialogDescription>
         </DialogHeader>
@@ -738,7 +738,7 @@ function ConnectorToolsDialog({ connector, open, onOpenChange }: { connector: Ad
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
           <DialogTitle>{connector?.slug}</DialogTitle>
-          <DialogDescription>{connector?.actions.length ?? 0} {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line735JsxTextToolsProvider')}{connector?.provider}</DialogDescription>
+          <DialogDescription>{connector?.actions.length ?? 0} {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line735JsxTextToolsProvider')}{' '}{connector?.provider}</DialogDescription>
         </DialogHeader>
         <div className="flex max-h-[60vh] min-h-[18rem]">
           <div className="w-56 shrink-0 overflow-y-auto border-r border-border/60 py-2">
@@ -837,7 +837,7 @@ function ConnectorSharingDialog({
     <Dialog open={open} onOpenChange={(o) => { if (!save.isPending) onOpenChange(o); }}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line840JsxTextWhoCanUse')}{connector?.slug}?</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line840JsxTextWhoCanUse')}{' '}{connector?.slug}?</DialogTitle>
           <DialogDescription>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line841JsxTextControlsWhichMembersSessionsCanCallThisConnector')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 px-6 py-5">

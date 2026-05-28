@@ -699,7 +699,7 @@ function TriggersOnBadge({ triggers }: { triggers: Trigger[] }) {
                     : `POST ${t.webhook?.path || ''}`}
                 </div>
                 {t.lastRunAt && (
-                  <div className="ml-4 text-[10.5px] text-muted-foreground/55">{tHardcodedUi.raw('componentsKortixTicketBoard.line710JsxTextLastRan')}{formatRelative(t.lastRunAt)}
+                  <div className="ml-4 text-[10.5px] text-muted-foreground/55">{tHardcodedUi.raw('componentsKortixTicketBoard.line710JsxTextLastRan')}{' '}{formatRelative(t.lastRunAt)}
                   </div>
                 )}
               </li>

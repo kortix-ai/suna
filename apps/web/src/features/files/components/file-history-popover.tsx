@@ -243,7 +243,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
             ))}
             {history?.hasMore && (
               <div className="text-center py-1">
-                <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPopover.line242JsxTextShowingFirst')}{totalCommits} commits
+                <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPopover.line242JsxTextShowingFirst')}{' '}{totalCommits} commits
                 </span>
               </div>
             )}
