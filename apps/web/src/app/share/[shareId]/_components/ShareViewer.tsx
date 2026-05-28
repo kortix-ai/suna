@@ -7,6 +7,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { getEnv } from '@/lib/env-config';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { partToText } from './share-message-text';
 import {
   AlertTriangle,
   Copy,
@@ -274,7 +275,7 @@ function ShareMessageView({
   role: 'user' | 'assistant';
   parts: MessagePart[];
 }) {
-  const text = parts.map((p) => p.text || p.content?.text || '').join('\n').trim();
+  const text = parts.map(partToText).join('\n').trim();
   if (!text) return null;
 
   if (role === 'user') {
@@ -324,7 +325,7 @@ function AssistantBlock({
       <div className="flex w-full break-words">
         <div className="space-y-1.5 min-w-0 flex-1">
           {parts.map((part) => {
-            const partText = part.text || part.content?.text || '';
+            const partText = partToText(part);
             if (!partText.trim()) return null;
             return (
               <div key={part.id} className="break-words overflow-hidden">
