@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
 
   // Handle errors FIRST - before any Supabase operations that might affect session
   if (error) {
-    console.error('❌ Auth callback error:', error, errorCode, errorDescription)
+    console.error('Auth callback error:', error, errorCode, errorDescription)
 
     // Check if the error is due to expired/invalid link
     const isExpiredOrInvalid =
@@ -98,7 +98,6 @@ export async function GET(request: NextRequest) {
       if (email) expiredUrl.searchParams.set('email', email)
       if (next) expiredUrl.searchParams.set('returnUrl', next)
 
-      console.log('🔄 Redirecting to auth page with expired state')
       return NextResponse.redirect(expiredUrl)
     }
 
@@ -126,7 +125,7 @@ export async function GET(request: NextRequest) {
       const { data, error } = await supabase.auth.exchangeCodeForSession(code)
       
       if (error) {
-        console.error('❌ Error exchanging code for session:', error)
+        console.error('Error exchanging code for session:', error)
         
         // Check if the error is due to expired/invalid link
         const isExpired = 
@@ -144,7 +143,6 @@ export async function GET(request: NextRequest) {
           if (email) expiredUrl.searchParams.set('email', email)
           if (next) expiredUrl.searchParams.set('returnUrl', next)
 
-          console.log('🔄 Redirecting to auth page with expired state')
           return NextResponse.redirect(expiredUrl)
         }
         
@@ -172,7 +170,6 @@ export async function GET(request: NextRequest) {
                 referral_code: pendingReferralCode
               }
             })
-            console.log('✅ Added referral code to OAuth user:', pendingReferralCode)
             shouldClearReferralCookie = true
           } catch (error) {
             console.error('Failed to add referral code to OAuth user:', error)
@@ -189,9 +186,8 @@ export async function GET(request: NextRequest) {
                   terms_accepted_at: new Date().toISOString(),
                 },
               });
-              console.log('✅ Terms acceptance date saved to user metadata');
             } catch (updateError) {
-              console.warn('⚠️ Failed to save terms acceptance:', updateError);
+              console.warn('Failed to save terms acceptance:', updateError);
             }
           }
         }
@@ -218,14 +214,11 @@ export async function GET(request: NextRequest) {
               const hasSubscription = tierKey && tierKey !== 'none';
 
               if (!hasSubscription) {
-                console.log('No subscription detected - redirecting to /accounts');
                 finalDestination = '/accounts';
-              } else {
-                console.log('✅ Account already has subscription, proceeding normally');
               }
             }
           } catch (err) {
-            console.warn('⚠️ Could not check account state from backend:', err);
+            console.warn('Could not check account state from backend:', err);
           }
         }
       }
@@ -246,7 +239,7 @@ export async function GET(request: NextRequest) {
 
       return response
     } catch (error) {
-      console.error('❌ Unexpected error in auth callback:', error)
+      console.error('Unexpected error in auth callback:', error)
       return NextResponse.redirect(`${baseUrl}/auth?error=unexpected_error`)
     }
   }
