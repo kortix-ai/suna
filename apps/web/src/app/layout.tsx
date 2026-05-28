@@ -12,6 +12,7 @@ import { roobertMono } from './fonts/roobert-mono';
 import { Suspense, lazy } from 'react';
 import { I18nProvider } from '@/components/i18n-provider';
 import { serializeRuntimeConfigScript } from '@/lib/public-env-server';
+import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { featureFlags } from '@/lib/feature-flags';
 import { connection } from 'next/server';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
@@ -283,7 +284,9 @@ export default async function RootLayout({
           <AuthProvider>
             <I18nProvider>
               <ReactQueryProvider>
-                {children}
+                <ClientErrorBoundary>
+                  {children}
+                </ClientErrorBoundary>
                 <Toaster />
               </ReactQueryProvider>
             </I18nProvider>
