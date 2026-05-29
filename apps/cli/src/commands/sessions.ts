@@ -6,6 +6,7 @@ import {
   surfaceApiError,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { runSessionsChat } from './sessions-chat.ts';
 import { C, pad, status } from '../style.ts';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
 
@@ -19,6 +20,8 @@ Subcommands:
   new [--prompt "<text>"]           Start a new session, optionally with
                                     an initial prompt. Prints the new
                                     session id + status.
+  chat [<session-id>]               Talk to a session's agent (REPL, or
+                                    one-shot with --prompt). --new starts one.
   info <session-id>                 Show one session.
   restart <session-id>              Restart (re-provision) a session.
   rm <session-id>                   Stop + delete a session.
@@ -36,6 +39,11 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
 
   const sub = argv[0];
+  // `chat` owns its own flag parsing (incl. --prompt + a positional session
+  // id), so route it before we consume flags below.
+  if (sub === 'chat' || sub === 'talk') {
+    return runSessionsChat(argv.slice(1));
+  }
   const rest = argv.slice(1);
   let projectFlag: string | undefined;
   let promptFlag: string | undefined;
@@ -52,6 +60,7 @@ export async function runSessions(argv: string[]): Promise<number> {
 
   switch (sub) {
     case 'ls':
+    case 'list':
       return sessionsLs(ctxOpts);
     case 'new':
     case 'create':

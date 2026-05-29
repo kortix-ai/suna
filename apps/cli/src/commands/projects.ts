@@ -40,6 +40,7 @@ export async function runProjects(argv: string[]): Promise<number> {
   const rest = argv.slice(1);
   switch (sub) {
     case 'ls':
+    case 'list':
       return projectsLs();
     case 'info':
       return projectsInfo(rest[0]);

@@ -4,6 +4,7 @@ import {
   surfaceApiError,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { loadLocalManifest } from '../manifest.ts';
 import { C, pad, status } from '../style.ts';
 import type {
   ProjectSecret,
@@ -49,6 +50,7 @@ export async function runSecrets(argv: string[]): Promise<number> {
 
   switch (sub) {
     case 'ls':
+    case 'list':
       return secretsLs(ctxOpts);
     case 'set':
       return secretsSet(rest, ctxOpts);
@@ -77,13 +79,33 @@ async function secretsLs(opts: CtxOpts): Promise<number> {
     return surfaceApiError(err);
   }
 
+  // The server's required/optional come from its mirror of kortix.toml, which
+  // is eventually-consistent — right after `kortix ship` it can still be empty
+  // ("missing"), which would mislabel freshly-declared secrets as "undeclared".
+  // The local kortix.toml is authoritative + instant, so fall back to it
+  // whenever the cloud mirror isn't loaded yet.
+  const local = (() => {
+    try {
+      return loadLocalManifest();
+    } catch {
+      return null;
+    }
+  })();
+  const usingLocal = resp.manifest_status !== 'loaded' && local !== null;
+  const required = usingLocal ? local!.env.required : resp.required;
+  const optional = usingLocal ? local!.env.optional : resp.optional;
+
   const setNames = new Set(resp.items.map((s) => s.name));
-  const requiredMissing = resp.required.filter((n) => !setNames.has(n));
-  const declared = new Set([...resp.required, ...resp.optional]);
+  const requiredMissing = required.filter((n) => !setNames.has(n));
+  const declared = new Set([...required, ...optional]);
   const undeclared = resp.items.filter((s) => !declared.has(s.name));
 
   process.stdout.write('\n');
-  if (resp.manifest_status !== 'loaded') {
+  if (usingLocal) {
+    process.stdout.write(
+      `  ${C.dim}Manifest: cloud mirror ${resp.manifest_status} — showing local kortix.toml [env] spec.${C.reset}\n\n`,
+    );
+  } else if (resp.manifest_status !== 'loaded') {
     process.stdout.write(
       `  ${C.dim}Manifest: ${resp.manifest_status}${
         resp.manifest_error ? ` — ${resp.manifest_error}` : ''
@@ -91,16 +113,16 @@ async function secretsLs(opts: CtxOpts): Promise<number> {
     );
   }
 
-  if (resp.items.length === 0 && resp.required.length === 0 && resp.optional.length === 0) {
+  if (resp.items.length === 0 && required.length === 0 && optional.length === 0) {
     process.stdout.write(`  ${C.dim}No secrets set, no [env] spec in kortix.toml.${C.reset}\n\n`);
     return 0;
   }
 
   const allRows: { name: string; spec: string; set: boolean }[] = [];
-  for (const name of resp.required) {
+  for (const name of required) {
     allRows.push({ name, spec: 'required', set: setNames.has(name) });
   }
-  for (const name of resp.optional) {
+  for (const name of optional) {
     allRows.push({ name, spec: 'optional', set: setNames.has(name) });
   }
   for (const s of undeclared) {
@@ -136,7 +158,7 @@ async function secretsLs(opts: CtxOpts): Promise<number> {
     );
   }
   process.stdout.write(
-    `  ${C.dim}${resp.items.length} set · ${resp.required.length} required · ${resp.optional.length} optional${C.reset}\n\n`,
+    `  ${C.dim}${resp.items.length} set · ${required.length} required · ${optional.length} optional${C.reset}\n\n`,
   );
   return 0;
 }

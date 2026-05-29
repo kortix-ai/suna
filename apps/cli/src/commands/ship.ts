@@ -307,7 +307,7 @@ async function shipFirstTime(
   flags: ShipFlags,
   env: EnvSpec,
 ): Promise<number> {
-  const name = flags.name ?? basename(process.cwd());
+  const name = flags.name ?? manifestProjectName() ?? basename(process.cwd());
 
   // Which account owns the new project? Ask when there's a real choice.
   const accountId = await resolveShipAccount(client, auth, flags);
@@ -446,6 +446,19 @@ async function shipExisting(
 }
 
 // ── git helpers ─────────────────────────────────────────────────────────────
+
+/** The display name from kortix.toml's [project].name, if present. Lets a
+ *  first ship honor the manifest instead of defaulting to the folder name. */
+function manifestProjectName(): string | undefined {
+  try {
+    const m = loadLocalManifest();
+    const project = m?.data?.project as { name?: unknown } | undefined;
+    const name = typeof project?.name === 'string' ? project.name.trim() : '';
+    return name || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function detectOrigin(): string | null {
   const r = run('git', ['remote', 'get-url', 'origin']);
