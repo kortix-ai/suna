@@ -75,7 +75,7 @@ export function AppHeader({
           aria-label={tHardcodedUi.raw('componentsLayoutAppHeader.line72JsxAttrAriaLabelKortixHome')}
           className="mr-1 inline-flex cursor-pointer items-center rounded-md transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          <KortixLogo size={20} />
+          <KortixLogo variant="logomark" size={16} />
         </Link>
         {/* Vercel-style breadcrumb: the account is the workspace your projects
             live under, so it's the first pill (which project lives in the

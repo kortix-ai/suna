@@ -1922,7 +1922,7 @@ html[data-desktop-platform="macos"] {
    controls on desktop. macOS draws traffic lights top-left (~80px); Windows
    and Linux draw min/max/close top-right. */
 html[data-desktop-platform="macos"] .kx-app-header {
-  padding-left: 88px;
+  padding-left: 104px;
 }
 html[data-desktop="true"]:not([data-desktop-platform="macos"]) .kx-app-header {
   padding-right: 120px;
