@@ -136,6 +136,16 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
       <DialogContent
         hideCloseButton
         aria-describedby={undefined}
+        onInteractOutside={(event) => {
+          // The file preview (and any nested overlay) portals to <body>, outside
+          // this dialog's DOM, so Radix treats a click/focus on it as "outside"
+          // and would close Customize. Keep Customize open when the interaction
+          // targets such an overlay — it closes itself (X / backdrop / Esc).
+          const target = event.detail.originalEvent.target as Element | null;
+          if (target?.closest('[data-file-preview-overlay]')) {
+            event.preventDefault();
+          }
+        }}
         className={cn(
           'flex flex-col gap-0 overflow-hidden p-0',
           'h-[min(900px,calc(100dvh-1.5rem))] w-[calc(100vw-1.5rem)] max-w-[1320px] sm:max-w-[1320px]',

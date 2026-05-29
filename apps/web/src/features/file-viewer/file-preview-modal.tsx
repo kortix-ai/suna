@@ -293,11 +293,13 @@ export function FilePreviewModal({
   const node = (
     <>
       <div
+        data-file-preview-overlay=""
         className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in-0 duration-150 pointer-events-auto"
         style={{ zIndex: dialogOverlayZ(dialogDepth + 1) }}
         onClick={onClose}
       />
       <div
+        data-file-preview-overlay=""
         className="kx-fullscreen-modal fixed inset-3 sm:inset-4 flex flex-col rounded-2xl border border-border/60 bg-background shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-[0.98] duration-150 pointer-events-auto"
         style={{ zIndex: dialogContentZ(dialogDepth + 1) }}
       >
