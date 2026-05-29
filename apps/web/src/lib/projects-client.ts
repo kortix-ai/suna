@@ -965,7 +965,7 @@ export type SnapshotErrorCategory =
   | 'git'
   | 'unknown';
 
-/** A sandbox template: platform default + each `[[sandboxes]]` / UI-created entry. */
+/** A sandbox template: platform default + each `[[sandbox.templates]]` / UI-created entry. */
 export interface SandboxTemplate {
   template_id: string | null;
   slug: string;

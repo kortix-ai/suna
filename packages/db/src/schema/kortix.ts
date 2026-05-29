@@ -670,7 +670,7 @@ export const sessionSandboxes = kortixSchema.table(
  * still asks the provider directly, so cache drift is harmless.
  *
  * Sources of truth:
- *   - kortix.toml `[[sandboxes]]` entries → upserted into this table on read
+ *   - kortix.toml `[[sandbox.templates]]` entries → upserted into this table on read
  *     so TOML stays code-as-truth. The upsert keys on (project_id, slug).
  *   - UI-created templates → live here only (no TOML), marked source='ui'.
  *

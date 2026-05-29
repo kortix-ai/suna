@@ -91,7 +91,7 @@ export function ProjectHome({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Sandbox templates available for this project. The platform default is
-  // always returned; `[[sandboxes]]` entries from kortix.toml append to it.
+  // always returned; `[[sandbox.templates]]` entries from kortix.toml append to it.
   // We only show a picker when there's a choice (more than one template).
   const sandboxesQuery = useQuery({
     queryKey: ['project-sandboxes', projectId],

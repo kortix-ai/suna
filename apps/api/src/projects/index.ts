@@ -3123,7 +3123,7 @@ projectsApp.post('/:projectId/manifest/validate', async (c) => {
 });
 
 // ─── Sandbox templates ─────────────────────────────────────────────────────
-// One platform-default image, optionally extended by `[[sandboxes]]` entries
+// One platform-default image, optionally extended by `[[sandbox.templates]]` entries
 // in kortix.toml. Session boot is stateless: it computes the expected snapshot
 // name from the resolved template, asks Daytona if it exists, builds if not.
 // The append-only `project_snapshot_builds` log feeds the UI but is never
@@ -3180,7 +3180,7 @@ async function loadGitProject(loaded: { row: ProjectRow }) {
 }
 
 // GET /v1/projects/:projectId/sandboxes
-// Available templates for this project: platform default + any `[[sandboxes]]`
+// Available templates for this project: platform default + any `[[sandbox.templates]]`
 // entries from kortix.toml. Each row includes its live Daytona state so the
 // picker can show "ready" / "building" / "missing" at a glance.
 projectsApp.get('/:projectId/sandboxes', async (c) => {
@@ -3344,7 +3344,7 @@ projectsApp.post('/:projectId/snapshots/fix-with-agent', async (c) => {
     errorText.slice(0, 4000),
     '```',
     ``,
-    `The sandbox image is built from the template definition (see [[sandboxes]] in kortix.toml).`,
+    `The sandbox image is built from the template definition (see [[sandbox.templates]] in kortix.toml).`,
     ``,
     `Steps:`,
     `1. Inspect the relevant Dockerfile and the build error above.`,

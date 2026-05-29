@@ -41,7 +41,7 @@ export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
   '# syntax=docker/dockerfile:1.7',
   '# Kortix platform default sandbox base.',
   '# Sessions clone the project workspace at boot — nothing project-specific',
-  '# is baked in here. Customize via `[[sandboxes]]` in kortix.toml.',
+  '# is baked in here. Customize via `[[sandbox.templates]]` in kortix.toml.',
   'FROM ubuntu:24.04',
   '',
   'WORKDIR /workspace',
@@ -168,7 +168,7 @@ export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
 
 /**
  * A sandbox template defines one bootable image. Projects can declare multiple
- * via `[[sandboxes]]` in kortix.toml; sessions pick one by slug. The platform
+ * via `[[sandbox.templates]]` in kortix.toml; sessions pick one by slug. The platform
  * default template is always available without any config.
  */
 export interface SandboxTemplate {
@@ -214,7 +214,7 @@ export function buildDefaultSandboxTemplate(spec: SandboxSpec = {}): SandboxTemp
 }
 
 /**
- * Hardware spec for the sandbox, read from `[[sandboxes]]` entries in
+ * Hardware spec for the sandbox, read from `[[sandbox.templates]]` entries in
  * kortix.toml. Fields map onto Daytona's snapshot `Resources` (vCPU cores,
  * memory & disk in GiB). GPU is intentionally omitted. Every field is
  * optional; an unset field uses the platform default.
@@ -268,12 +268,13 @@ function extractSpecFromRow(row: Record<string, unknown>): SandboxSpec {
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 /**
- * Parse `[[sandboxes]]` from a parsed manifest. Returns the user-declared
- * templates in declaration order. The platform default is NOT included here;
- * callers always add it themselves so it can't be shadowed by a misnamed slug.
+ * Parse `[[sandbox.templates]]` from a parsed manifest. Returns the
+ * user-declared templates in declaration order. The platform default is NOT
+ * included here; callers always add it themselves so it can't be shadowed by
+ * a misnamed slug.
  *
  * The slug `default` is reserved for the platform-shared template — any
- * `[[sandboxes]]` entry that tries to claim it is dropped with a warning.
+ * `[[sandbox.templates]]` entry that tries to claim it is dropped with a warning.
  *
  * Malformed entries are skipped (logged) so a broken table can't take down
  * session boot for the rest of the project.
@@ -285,8 +286,16 @@ export function extractSandboxTemplates(
   const out: SandboxTemplate[] = [];
   const seenSlugs = new Set<string>();
 
-  // [[sandboxes]] = array of tables
-  const arr = manifestRaw.sandboxes;
+  // [[sandbox.templates]] = array of tables (parses to sandbox.templates).
+  const sandbox = manifestRaw.sandbox;
+  const nested =
+    sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)
+      ? (sandbox as Record<string, unknown>).templates
+      : undefined;
+  // Migration safety net: the pre-rename `[[sandboxes]]` form still parses at
+  // boot so an un-migrated project on main doesn't lose its templates. The
+  // validator (ship / CR-merge gate) is what enforces the new name.
+  const arr = Array.isArray(nested) ? nested : manifestRaw.sandboxes;
   if (Array.isArray(arr)) {
     for (const entry of arr) {
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
