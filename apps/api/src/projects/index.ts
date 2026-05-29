@@ -6889,6 +6889,108 @@ projectsApp.post('/:projectId/change-requests', async (c) => {
   return c.json(serializeChangeRequest(inserted), 201);
 });
 
+// POST /v1/projects/:projectId/sessions/:sessionId/commit-push
+// Commits the session sandbox's working-tree changes and pushes them to the
+// session branch — the host-driven path that lets the dashboard open a change
+// request without routing through the agent. Idempotent: a clean tree with
+// nothing left to push returns { nothing_to_do: true }.
+//
+// NOTE (2026-05-29): currently UNUSED by the UI. The shipped change-request
+// flow lets the agent commit + open the CR from a single chat prompt instead.
+// Kept (wired through to the daemon /kortix/git/commit-push route) as the
+// host-driven primitive for a possible fully-UI flow. Remove together with the
+// daemon route + web client/hook if that direction is dropped.
+projectsApp.post('/:projectId/sessions/:sessionId/commit-push', async (c) => {
+  const projectId = c.req.param('projectId');
+  const sessionId = c.req.param('sessionId');
+  const loaded = await loadProjectForUser(c, projectId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const body = await readBody(c);
+  const message = normalizeString(body.message) ?? undefined;
+
+  const [row] = await db
+    .select()
+    .from(sessionSandboxes)
+    .where(and(
+      eq(sessionSandboxes.sessionId, sessionId),
+      eq(sessionSandboxes.projectId, projectId),
+      eq(sessionSandboxes.accountId, loaded.row.accountId),
+    ))
+    .limit(1);
+  if (!row || !row.externalId) {
+    return c.json({ error: 'Session sandbox not found' }, 404);
+  }
+  if (row.status !== 'active') {
+    return c.json({ error: 'Session sandbox is not running', status: row.status }, 409);
+  }
+
+  const providerName = row.provider as SandboxProviderName;
+  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
+    return c.json({ error: 'Unsupported sandbox provider' }, 409);
+  }
+
+  // resolveEndpoint already injects the sandbox service key as a Bearer token
+  // (and the Daytona preview headers), which the daemon's /kortix/git route
+  // validates against KORTIX_TOKEN — same contract as /kortix/env.
+  let endpoint: { url: string; headers: Record<string, string> };
+  try {
+    endpoint = await getProvider(providerName).resolveEndpoint(row.externalId);
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : 'Failed to reach sandbox' },
+      502,
+    );
+  }
+
+  let daemonRes: Response;
+  try {
+    daemonRes = await fetch(`${endpoint.url.replace(/\/$/, '')}/kortix/git/commit-push`, {
+      method: 'POST',
+      headers: endpoint.headers,
+      body: JSON.stringify({ message }),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : 'Sandbox unreachable' },
+      502,
+    );
+  }
+
+  const result = (await daemonRes.json().catch(() => null)) as
+    | {
+        ok?: boolean;
+        committed?: boolean;
+        pushed?: boolean;
+        nothingToDo?: boolean;
+        branch?: string | null;
+        headSha?: string | null;
+        message?: string;
+      }
+    | null;
+
+  if (!daemonRes.ok || !result?.ok) {
+    return c.json(
+      { error: result?.message || 'Failed to save changes' },
+      daemonRes.status === 409 ? 409 : 502,
+    );
+  }
+
+  // A fresh commit just landed on the session branch and was pushed to origin.
+  // Force the next mirror read to re-fetch so the CR we open immediately after
+  // sees the new tip (the mirror is otherwise refresh-throttled).
+  invalidateProjectMirror(projectId);
+
+  return c.json({
+    committed: Boolean(result.committed),
+    pushed: Boolean(result.pushed),
+    nothing_to_do: Boolean(result.nothingToDo),
+    branch: result.branch ?? null,
+    head_sha: result.headSha ?? null,
+  });
+});
+
 // GET /v1/projects/:projectId/change-requests/:crId
 // Auto-refreshes the cached head/base SHAs against the live git tips so the
 // UI never shows stale "X commits behind" state.

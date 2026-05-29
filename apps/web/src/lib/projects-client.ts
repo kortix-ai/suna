@@ -1486,6 +1486,36 @@ export async function reopenChangeRequest(projectId: string, crId: string) {
   );
 }
 
+export interface CommitSessionResult {
+  committed: boolean;
+  pushed: boolean;
+  nothing_to_do: boolean;
+  branch: string | null;
+  head_sha: string | null;
+}
+
+/**
+ * Commit + push the session sandbox's pending changes to its branch — the
+ * host-driven step that lets the UI open a change request without asking the
+ * agent. Idempotent on the server.
+ *
+ * NOTE (2026-05-29): currently UNUSED. The shipped flow asks the agent to
+ * commit + open the change request from a chat prompt. Kept for a possible
+ * fully-UI flow (see the API endpoint /sessions/:id/commit-push).
+ */
+export async function commitSessionChanges(
+  projectId: string,
+  sessionId: string,
+  input?: { message?: string },
+) {
+  return unwrap(
+    await backendApi.post<CommitSessionResult>(
+      `/projects/${projectId}/sessions/${sessionId}/commit-push`,
+      input ?? {},
+    ),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
 // == branch_name (same UUID), so "Open session" routes to

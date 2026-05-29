@@ -9,6 +9,7 @@ import { createRefreshRouter } from './routes/refresh'
 import { createPromptRouter } from './routes/prompt'
 import { createAbortRouter } from './routes/abort'
 import { createEnvRouter } from './routes/env'
+import { createGitRouter } from './routes/git'
 import { createPortProxyRouter } from './routes/port-proxy'
 import webProxyRouter from './routes/web-proxy'
 import type { ProjectEnvStore } from './project-env'
@@ -47,6 +48,9 @@ export function buildOpencodeApp(
   const promptRouter = createPromptRouter(cfg)
   const abortRouter = createAbortRouter(cfg)
   const envRouter = projectEnv ? createEnvRouter(cfg, opencode, projectEnv) : null
+  // NOTE: /kortix/git is currently unused by the product (the agent commits +
+  // opens change requests from a chat prompt). Kept as a host-driven primitive.
+  const gitRouter = createGitRouter(cfg)
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
@@ -55,6 +59,8 @@ export function buildOpencodeApp(
   kortixRouter.route('/prompt/', promptRouter)
   kortixRouter.route('/abort', abortRouter)
   kortixRouter.route('/abort/', abortRouter)
+  kortixRouter.route('/git', gitRouter)
+  kortixRouter.route('/git/', gitRouter)
   if (envRouter) {
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)

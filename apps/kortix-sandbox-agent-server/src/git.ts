@@ -370,6 +370,91 @@ export async function readRepoInfo(target: string): Promise<RepoInfo | null> {
   }
 }
 
+export type CommitPushResult = {
+  /** A new commit was created from dirty working-tree changes. */
+  committed: boolean
+  /** New commits were pushed to origin (false when the remote was already up to date). */
+  pushed: boolean
+  /** Nothing changed: clean tree and the branch was already pushed. */
+  nothingToDo: boolean
+  branch: string | null
+  headSha: string | null
+}
+
+/**
+ * Commit the workspace's pending changes and push the session branch to
+ * origin — the host-driven equivalent of what an agent does before opening a
+ * change request, so the dashboard could open one without routing through the
+ * LLM.
+ *
+ * NOTE (2026-05-29): currently UNUSED — the shipped flow lets the agent do this
+ * from a chat prompt. Kept as the host-driven primitive for a possible
+ * fully-UI change-request flow (see routes/git.ts). Idempotent:
+ *   - dirty tree            → stage all, commit (with `message`), push
+ *   - committed-but-unpushed → push only
+ *   - clean + up to date     → no-op (`nothingToDo: true`)
+ *
+ * Auth + identity reuse the same machinery as clone/refresh: the per-boot
+ * clone token for push credentials and the configured git identity for the
+ * commit author/committer.
+ */
+export async function commitAndPushWorkingTree(
+  cfg: Config,
+  opts: { message?: string } = {},
+): Promise<CommitPushResult> {
+  const target = cfg.projectTarget
+  const before = await readRepoInfo(target)
+  if (!before) throw new Error('project repo is not materialized')
+
+  const branch = cfg.branchName || before.branch
+  if (!branch) throw new Error('no branch checked out to push')
+
+  // 1. Stage + commit anything in the working tree.
+  const status = await execGit(['-C', target, 'status', '--porcelain'])
+  if (status.code !== 0) {
+    throw new Error(`git status failed: ${status.stderr || status.stdout}`)
+  }
+  let committed = false
+  if (status.stdout.trim().length > 0) {
+    const added = await execGit(['-C', target, 'add', '-A'])
+    if (added.code !== 0) throw new Error(`git add failed: ${added.stderr || added.stdout}`)
+
+    const message = (opts.message?.trim() || 'Update from session').slice(0, 500)
+    const commit = await execGit(['-C', target, 'commit', '-m', message], {
+      env: buildGitIdentityEnv(cfg),
+    })
+    if (commit.code === 0) {
+      committed = true
+    } else if (!/nothing to commit|no changes added/i.test(`${commit.stdout} ${commit.stderr}`)) {
+      throw new Error(`git commit failed: ${commit.stderr || commit.stdout}`)
+    }
+  }
+
+  // 2. Push HEAD to the session branch on origin.
+  const cloneToken = await resolveCloneToken(cfg)
+  const authRepoUrl = cfg.repoUrl ?? before.remoteUrl ?? undefined
+  const push = await gitWithAuth(cloneToken, authRepoUrl, [
+    '-C',
+    target,
+    'push',
+    'origin',
+    `HEAD:refs/heads/${branch}`,
+  ])
+  if (push.code !== 0) {
+    throw new Error(`git push failed: ${push.stderr || push.stdout}`)
+  }
+  const remoteUpToDate = /Everything up-to-date/i.test(`${push.stdout} ${push.stderr}`)
+
+  const after = await readRepoInfo(target)
+  return {
+    committed,
+    pushed: !remoteUpToDate,
+    nothingToDo: !committed && remoteUpToDate,
+    branch,
+    headSha: after?.commit ?? before.commit,
+  }
+}
+
 export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; after: RepoInfo }> {
   const target = cfg.projectTarget
   const before = await readRepoInfo(target)

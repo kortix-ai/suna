@@ -6,6 +6,7 @@
 
 import {
   closeChangeRequest,
+  commitSessionChanges,
   getChangeRequest,
   getChangeRequestDiff,
   getChangeRequestMergePreview,
@@ -20,6 +21,7 @@ import {
   type ChangeRequestMergePreview,
   type ChangeRequestMergeResponse,
   type ChangeRequestStatus,
+  type CommitSessionResult,
   type VersionDiffPreview,
 } from '@/lib/projects-client';
 
@@ -30,6 +32,7 @@ export type {
   ChangeRequestMergePreview,
   ChangeRequestMergeResponse,
   ChangeRequestStatus,
+  CommitSessionResult,
   VersionDiffPreview,
 };
 
@@ -85,4 +88,14 @@ export async function fetchVersionDiff(
   input: { from: string; into: string },
 ) {
   return getVersionDiff(projectId, input);
+}
+
+// NOTE (2026-05-29): currently UNUSED — kept for a possible fully-UI
+// change-request flow. The shipped flow asks the agent to commit + open the CR.
+export async function commitSessionChangesRequest(
+  projectId: string,
+  sessionId: string,
+  input?: { message?: string },
+) {
+  return commitSessionChanges(projectId, sessionId, input);
 }
