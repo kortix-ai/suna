@@ -247,6 +247,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           id="email"
           name="email"
           type="email"
+          aria-label={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
           placeholder={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
           required
           autoComplete="email"
@@ -258,6 +259,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
               id="password"
               name="password"
               type="password"
+              aria-label="Password"
               placeholder="Password"
               required
               autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
@@ -268,6 +270,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
                 id="confirmPassword"
                 name="confirmPassword"
                 type="password"
+                aria-label={tHardcodedUi.raw('appAuthPage.line234JsxAttrPlaceholderConfirmPassword')}
                 placeholder={tHardcodedUi.raw('appAuthPage.line234JsxAttrPlaceholderConfirmPassword')}
                 required
                 autoComplete="new-password"
