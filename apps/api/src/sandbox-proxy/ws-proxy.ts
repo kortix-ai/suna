@@ -22,12 +22,7 @@
 // 4096 regardless of the port the client addressed.
 // ════════════════════════════════════════════════════════════════════════════
 
-import { isKortixToken, isAccountToken } from '../shared/crypto';
-import { validateSecretKey } from '../repositories/api-keys';
-import { validateAccountToken } from '../repositories/account-tokens';
-import { verifySupabaseJwt } from '../shared/jwt-verify';
-import { getSupabase } from '../shared/supabase';
-import { canAccessPreviewSandbox } from '../shared/preview-ownership';
+import { authenticatePreviewPrincipal } from './preview-auth';
 import { resolvePreviewWsUpstream } from './routes/preview';
 
 // opencode's internal port — its PTY WebSocket endpoint lives here, reachable
@@ -66,59 +61,6 @@ export function matchPreviewWsPath(
 }
 
 /**
- * Authenticate a preview WebSocket upgrade from its `?token=` query value.
- * Accepts CLI PATs, Kortix tokens, and Supabase JWTs — the same set
- * `combinedAuth` accepts — and enforces sandbox ownership. Returns the
- * resolved userId, or null when auth fails (caller responds 401).
- */
-export async function authenticatePreviewWsToken(
-  token: string | null | undefined,
-  sandboxId: string,
-): Promise<string | null> {
-  if (!token) return null;
-  try {
-    if (isAccountToken(token)) {
-      const r = await validateAccountToken(token);
-      if (!r.isValid || !r.userId) return null;
-      if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: r.userId }))) {
-        return null;
-      }
-      return r.userId;
-    }
-
-    if (isKortixToken(token)) {
-      const r = await validateSecretKey(token);
-      if (!r.isValid || !r.accountId) return null;
-      if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, accountId: r.accountId }))) {
-        return null;
-      }
-      return r.accountId;
-    }
-
-    // Supabase JWT — fast local verify, network fallback only while JWKS warms.
-    const local = await verifySupabaseJwt(token);
-    if (local.ok) {
-      if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: local.userId }))) {
-        return null;
-      }
-      return local.userId;
-    }
-    if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') return null;
-
-    const supabase = getSupabase();
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) return null;
-    if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: user.id }))) {
-      return null;
-    }
-    return user.id;
-  } catch (err) {
-    console.warn('[PREVIEW-WS] auth error:', (err as Error)?.message || err);
-    return null;
-  }
-}
-
-/**
  * Authenticate + resolve everything needed to upgrade a preview WS.
  * On success returns the `data` payload to hand to `server.upgrade`.
  * On failure returns an HTTP status + message for the caller to respond with.
@@ -134,7 +76,7 @@ export async function preparePreviewWsUpgrade(
 
   const { sandboxId, port, remainingPath } = match;
 
-  const userId = await authenticatePreviewWsToken(url.searchParams.get('token'), sandboxId);
+  const userId = await authenticatePreviewPrincipal(url.searchParams.get('token'), sandboxId);
   if (!userId) return { ok: false, status: 401, message: 'unauthorized' };
 
   // opencode PTY (and any other opencode endpoint) must reach opencode directly
