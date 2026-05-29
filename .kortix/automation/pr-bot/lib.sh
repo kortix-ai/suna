@@ -36,6 +36,9 @@ kortix_api_origin() {
 }
 
 # The session's externally-addressable sandbox id (used in proxy URLs).
+# IMPORTANT: the API's `sandbox_id` field is the SESSION id, which the preview
+# proxy does NOT recognize. The real external id lives inside `sandbox_url`
+# (`.../v1/p/<external_id>/8000`). Parse it from there; fall back to sandbox_id.
 # Cached after first lookup.
 _KORTIX_SANDBOX_ID=""
 kortix_sandbox_id() {
@@ -46,7 +49,11 @@ kortix_sandbox_id() {
     -H "Authorization: Bearer ${KORTIX_CLI_TOKEN}" \
     "${KORTIX_API_URL}/projects/${KORTIX_PROJECT_ID}/sessions/${KORTIX_SESSION_ID}") \
     || die "could not fetch session (is KORTIX_CLI_TOKEN valid?)"
-  _KORTIX_SANDBOX_ID=$(printf '%s' "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("sandbox_id",""))')
-  [ -n "$_KORTIX_SANDBOX_ID" ] || die "session has no sandbox_id yet (not booted?)"
+  _KORTIX_SANDBOX_ID=$(printf '%s' "$resp" | python3 -c '
+import json, sys, re
+d = json.load(sys.stdin)
+m = re.search(r"/v1/p/([^/]+)/", d.get("sandbox_url") or "")
+print(m.group(1) if m else (d.get("sandbox_id") or ""))')
+  [ -n "$_KORTIX_SANDBOX_ID" ] || die "session has no external sandbox id yet (not booted?)"
   printf '%s' "$_KORTIX_SANDBOX_ID"
 }
