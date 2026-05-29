@@ -50,7 +50,8 @@ export function MobileAppBanner({ shareId }: MobileAppBannerProps) {
     setIsMobile(mobile);
     setPlatform(mobilePlatform);
     if (mobile) {
-      setTimeout(() => setIsVisible(true), 500);
+      const timer = setTimeout(() => setIsVisible(true), 500);
+      return () => clearTimeout(timer);
     }
   }, []);
 

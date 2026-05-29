@@ -114,6 +114,7 @@ export function FileSearch() {
             />
             <button
               onClick={closeSearch}
+              aria-label="Close search"
               className="p-1 rounded hover:bg-muted"
             >
               <X className="h-4 w-4 text-muted-foreground" />

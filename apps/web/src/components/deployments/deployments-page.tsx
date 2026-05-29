@@ -42,7 +42,7 @@ import { DeploymentGroup } from './deployment-group';
 import { DeploymentLogsDialog } from './deployment-logs-dialog';
 import { CreateDeploymentDialog } from './create-deployment-dialog';
 import { FreestyleApiKeyDialog } from './freestyle-api-key-dialog';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // ─── Filter Tabs ────────────────────────────────────────────────────────────
 

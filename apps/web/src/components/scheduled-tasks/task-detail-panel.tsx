@@ -47,7 +47,7 @@ import {
   type SessionMode,
   type ExecutionStatus,
 } from '@/hooks/scheduled-tasks';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useSandbox } from '@/hooks/platform/use-sandbox';
 import { getSandboxUrl } from '@/lib/platform-client';

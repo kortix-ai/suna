@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { toast as sonnerToast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import { UpdateDialog } from '@/components/update-dialog';
 import {
@@ -150,7 +150,7 @@ export function InstanceUpdateDialog({
       if (!sandbox) return;
       const versionToInstall = targetVersion || latestVersion;
       if (!versionToInstall) {
-        sonnerToast.error('No target version available');
+        toast.error('No target version available');
         return;
       }
       try {

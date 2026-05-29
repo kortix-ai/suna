@@ -12,6 +12,19 @@ import type {
   AALResponse,
 } from '@/lib/api/phone-verification';
 
+/**
+ * Extract a human-readable message from an unknown thrown value. Preserves the
+ * previous `error.message` behaviour for Error instances and Supabase error
+ * objects (plain objects carrying a `message`), without using `any`.
+ */
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message?: unknown }).message ?? error);
+  }
+  return String(error);
+}
+
 // Cutoff date for new user phone verification requirement
 // Users created after this date will be required to have phone verification
 // Users created before this date are grandfathered in and not required to verify
@@ -52,9 +65,9 @@ export const supabaseMFAService = {
         qr_code: undefined, // Phone factors don't have QR codes
         secret: undefined, // Phone factors don't have secrets
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Enroll phone factor failed:', error);
-      throw new Error(`Failed to enroll phone factor: ${error.message}`);
+      throw new Error(`Failed to enroll phone factor: ${toErrorMessage(error)}`);
     }
   },
 
@@ -81,9 +94,9 @@ export const supabaseMFAService = {
         id: response.data.id,
         expires_at: response.data.expires_at ? new Date(response.data.expires_at * 1000).toISOString() : undefined,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Create SMS challenge failed:', error);
-      throw new Error(`Failed to create SMS challenge: ${error.message}`);
+      throw new Error(`Failed to create SMS challenge: ${toErrorMessage(error)}`);
     }
   },
 
@@ -108,9 +121,9 @@ export const supabaseMFAService = {
         success: true,
         message: 'SMS code verified successfully',
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Verify challenge failed:', error);
-      throw new Error(`Failed to verify SMS code: ${error.message}`);
+      throw new Error(`Failed to verify SMS code: ${toErrorMessage(error)}`);
     }
   },
 
@@ -134,9 +147,9 @@ export const supabaseMFAService = {
         success: true,
         message: 'SMS challenge created and verified successfully',
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Challenge and verify SMS failed:', error);
-      throw new Error(`Failed to challenge and verify SMS: ${error.message}`);
+      throw new Error(`Failed to challenge and verify SMS: ${toErrorMessage(error)}`);
     }
   },
 
@@ -163,9 +176,9 @@ export const supabaseMFAService = {
         id: response.data.id,
         expires_at: response.data.expires_at ? new Date(response.data.expires_at * 1000).toISOString() : undefined,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Resend SMS failed:', error);
-      throw new Error(`Failed to resend SMS: ${error.message}`);
+      throw new Error(`Failed to resend SMS: ${toErrorMessage(error)}`);
     }
   },
 
@@ -195,7 +208,7 @@ export const supabaseMFAService = {
             friendly_name: factor.friendly_name,
             factor_type: factor.factor_type,
             status: factor.status,
-            phone: (factor as any).phone, // Phone property may not be in the type definition
+            phone: (factor as { phone?: string }).phone, // Phone property may not be in the type definition
             created_at: factor.created_at,
             updated_at: factor.updated_at,
           });
@@ -203,9 +216,9 @@ export const supabaseMFAService = {
       }
 
       return { factors };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ List factors failed:', error);
-      throw new Error(`Failed to list factors: ${error.message}`);
+      throw new Error(`Failed to list factors: ${toErrorMessage(error)}`);
     }
   },
 
@@ -228,9 +241,9 @@ export const supabaseMFAService = {
         success: true,
         message: 'Phone factor unenrolled successfully',
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Unenroll factor failed:', error);
-      throw new Error(`Failed to unenroll phone factor: ${error.message}`);
+      throw new Error(`Failed to unenroll phone factor: ${toErrorMessage(error)}`);
     }
   },
 
@@ -287,8 +300,8 @@ export const supabaseMFAService = {
 
       const isNewUser = userCreatedAt && userCreatedAt >= PHONE_VERIFICATION_CUTOFF_DATE;
 
-      const factors: any[] = [];
-      const phoneFactors: any[] = [];
+      const factors: FactorInfo[] = [];
+      const phoneFactors: FactorInfo[] = [];
       let hasVerifiedPhone = false;
 
       if (user.factors) {
@@ -298,7 +311,7 @@ export const supabaseMFAService = {
             friendly_name: factor.friendly_name,
             factor_type: factor.factor_type,
             status: factor.status,
-            phone: (factor as any).phone,
+            phone: (factor as { phone?: string }).phone,
             created_at: factor.created_at,
             updated_at: factor.updated_at,
           };
@@ -353,6 +366,8 @@ export const supabaseMFAService = {
       return {
         current_level: current ?? undefined,
         next_level: nextLevel ?? undefined,
+        // Supabase types currentAuthenticationMethods as string[] | AMREntry[];
+        // `any` keeps the `.method` access valid across both arms of the union.
         current_authentication_methods: aalResponse.data?.currentAuthenticationMethods?.map((m: any) => m.method) || [],
         action_required: actionRequired,
         message: message,
@@ -363,9 +378,9 @@ export const supabaseMFAService = {
         is_verified: hasVerifiedPhone,
         factors: factors,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Get AAL failed:', error);
-      throw new Error(`Failed to get AAL: ${error.message}`);
+      throw new Error(`Failed to get AAL: ${toErrorMessage(error)}`);
     }
   },
 }; 

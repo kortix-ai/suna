@@ -30,7 +30,7 @@ import {
 } from '@/hooks/scheduled-tasks';
 import { useSandbox } from '@/hooks/platform/use-sandbox';
 import { getSandboxUrl } from '@/lib/platform-client';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ScheduleBuilder } from './schedule-builder';
 import { cn } from '@/lib/utils';
 import { featureFlags } from '@/lib/feature-flags';

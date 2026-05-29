@@ -16,7 +16,7 @@
 import { useWebNotificationStore } from '@/stores/web-notification-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { useServerStore } from '@/stores/server-store';
-import { toast as sonnerToast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { logger } from '@/lib/logger';
 import { normalizeAppPathname } from '@/lib/instance-routes';
 import { playSound } from '@/lib/sounds';
@@ -278,7 +278,7 @@ const TOAST_TYPE_MAP: Record<WebNotificationType, 'info' | 'warning' | 'error' |
 function showInAppToast(payload: WebNotificationPayload) {
   try {
     const variant = TOAST_TYPE_MAP[payload.type];
-    const toastFn = sonnerToast[variant] || sonnerToast;
+    const toastFn = toast[variant] || toast;
     toastFn(payload.title, {
       description: payload.body,
       duration: 8000,

@@ -9,7 +9,7 @@
  */
 
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -202,6 +202,8 @@ function statusBadge(app: ProjectApp): React.ReactNode {
     case 'active':
       return <Badge size="sm" variant="success">Live</Badge>;
     case 'pending':
+    case 'building':
+    case 'deploying':
       return <Badge size="sm" variant="info">Deploying</Badge>;
     case 'failed':
       return <Badge size="sm" variant="destructive">Failed</Badge>;

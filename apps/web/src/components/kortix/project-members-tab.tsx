@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast as sonnerToast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import {
   grantSandboxProjectAccess,
@@ -134,12 +134,12 @@ function ProjectMembersInner({
     mutationFn: (input: { userId: string; role: 'admin' | 'member' }) =>
       grantSandboxProjectAccess(sandbox, project.id, input.userId, input.role),
     onSuccess: () => {
-      sonnerToast.success('Added to project');
+      toast.success('Added to project');
       setPickerOpen(false);
       invalidate();
     },
     onError: (err) => {
-      sonnerToast.error(err instanceof Error ? err.message : 'Failed to add');
+      toast.error(err instanceof Error ? err.message : 'Failed to add');
     },
   });
 
@@ -147,11 +147,11 @@ function ProjectMembersInner({
     mutationFn: (userId: string) =>
       revokeSandboxProjectAccess(sandbox, project.id, userId),
     onSuccess: () => {
-      sonnerToast.success('Removed from project');
+      toast.success('Removed from project');
       invalidate();
     },
     onError: (err) => {
-      sonnerToast.error(err instanceof Error ? err.message : 'Failed to remove');
+      toast.error(err instanceof Error ? err.message : 'Failed to remove');
     },
   });
 

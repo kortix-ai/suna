@@ -115,8 +115,8 @@ shareApp.post('/',
       const result = await parseJsonResponse(resp)
       return c.json(result, resp.status as any)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return c.json({ error: 'Failed to create share link', details: msg }, 502)
+      console.error('[share] create share link failed:', err)
+      return c.json({ error: 'Failed to create share link' }, 502)
     }
   },
 )
@@ -143,8 +143,8 @@ shareApp.get('/', combinedAuth, async (c) => {
     const result = await parseJsonResponse(resp)
     return c.json(result, resp.status as any)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return c.json({ error: 'Failed to load share links', details: msg }, 502)
+    console.error('[share] load share links failed:', err)
+    return c.json({ error: 'Failed to load share links' }, 502)
   }
 })
 
@@ -176,8 +176,8 @@ shareApp.delete('/:token', combinedAuth, async (c) => {
     const result = await parseJsonResponse(resp)
     return c.json(result, resp.status as any)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return c.json({ error: 'Failed to revoke share link', details: msg }, 502)
+    console.error('[share] revoke share link failed:', err)
+    return c.json({ error: 'Failed to revoke share link' }, 502)
   }
 })
 

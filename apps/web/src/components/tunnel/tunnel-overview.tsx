@@ -34,7 +34,7 @@ import { useTunnelConnections, useDeleteTunnelConnection, type TunnelConnection 
 import { useTunnelRealtimeSync } from '@/hooks/tunnel/use-tunnel-realtime';
 import { TunnelSettingsDialog } from './tunnel-settings-dialog';
 import { TunnelPermissionRequestDialog } from './tunnel-permission-request-dialog';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // ─── Connection card ─────────────────────────────────────────────────────────
 
@@ -64,7 +64,22 @@ function ConnectionItem({
         transition={{ duration: 0.3, delay: Math.min(index * 0.03, 0.6) }}
       >
         <SpotlightCard className="bg-card border border-border/50">
-          <div onClick={onClick} className="p-4 sm:p-5 flex flex-col h-full cursor-pointer group">
+          <div
+            onClick={onClick}
+            onKeyDown={(e) => {
+              // Only act when the card itself is focused — nested action buttons
+              // (Delete / Manage) keep their own keyboard behaviour.
+              if (e.target !== e.currentTarget) return;
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label={`Manage connection ${connection.name}`}
+            className="p-4 sm:p-5 flex flex-col h-full cursor-pointer group rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
+          >
             <div className="flex items-center gap-3 mb-3">
               <div className="relative">
                 <div className="flex items-center justify-center w-9 h-9 rounded-[10px] bg-muted border border-border/50 shrink-0">

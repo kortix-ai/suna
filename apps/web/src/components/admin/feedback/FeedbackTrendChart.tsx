@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAdminFeedbackTimeSeries } from '@/hooks/admin/use-admin-feedback';
 import {
   ChartContainer,
@@ -40,15 +40,19 @@ export function FeedbackTrendChart() {
   
   const { data: timeSeries, isLoading } = useAdminFeedbackTimeSeries(days, granularity);
 
-  const chartData = timeSeries?.map(point => {
-    const neutral = (point.count || 0) - (point.positive_count || 0) - (point.negative_count || 0);
-    return {
-      date: point.period ? format(parseISO(point.period), granularity === 'month' ? 'MMM yyyy' : 'MMM d') : '',
-      positive: point.positive_count || 0,
-      neutral: Math.max(0, neutral),
-      negative: point.negative_count || 0,
-    };
-  }) || [];
+  const chartData = useMemo(
+    () =>
+      timeSeries?.map(point => {
+        const neutral = (point.count || 0) - (point.positive_count || 0) - (point.negative_count || 0);
+        return {
+          date: point.period ? format(parseISO(point.period), granularity === 'month' ? 'MMM yyyy' : 'MMM d') : '',
+          positive: point.positive_count || 0,
+          neutral: Math.max(0, neutral),
+          negative: point.negative_count || 0,
+        };
+      }) || [],
+    [timeSeries, granularity],
+  );
 
   return (
     <Card className='h-full'>

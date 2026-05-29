@@ -15,7 +15,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { AlertCircle, ChevronRight } from 'lucide-react';
 
 import {
@@ -288,9 +288,13 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
   return (
     <div className="w-full max-w-sm">
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-5 bg-foreground/[0.05] rounded-full p-1 w-fit mx-auto">
+      <div role="tablist" aria-label="Authentication mode" className="flex items-center gap-1 mb-5 bg-foreground/[0.05] rounded-full p-1 w-fit mx-auto">
         <button
           type="button"
+          role="tab"
+          id="auth-tab-signin"
+          aria-selected={mode === 'signin'}
+          aria-controls={awaitingCode ? undefined : 'auth-form-panel'}
           onClick={() => {
             setMode('signin');
             resetTransientState();
@@ -304,6 +308,10 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         >{tHardcodedUi.raw('appAuthPage.line167JsxTextSignIn')}</button>
         <button
           type="button"
+          role="tab"
+          id="auth-tab-signup"
+          aria-selected={mode === 'signup'}
+          aria-controls={awaitingCode ? undefined : 'auth-form-panel'}
           onClick={() => {
             setMode('signup');
             resetTransientState();
@@ -396,11 +404,18 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         </div>
       ) : (
       <>
-      <form onSubmit={handleSubmit} className="space-y-3">
+      <form
+        id="auth-form-panel"
+        role="tabpanel"
+        aria-labelledby={mode === 'signin' ? 'auth-tab-signin' : 'auth-tab-signup'}
+        onSubmit={handleSubmit}
+        className="space-y-3"
+      >
         <Input
           id="email"
           name="email"
           type="email"
+          aria-label={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
           placeholder={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
           required
           autoComplete="email"
@@ -412,6 +427,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
               id="password"
               name="password"
               type="password"
+              aria-label="Password"
               placeholder="Password"
               required
               autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
@@ -422,6 +438,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
                 id="confirmPassword"
                 name="confirmPassword"
                 type="password"
+                aria-label={tHardcodedUi.raw('appAuthPage.line234JsxAttrPlaceholderConfirmPassword')}
                 placeholder={tHardcodedUi.raw('appAuthPage.line234JsxAttrPlaceholderConfirmPassword')}
                 required
                 autoComplete="new-password"
@@ -505,6 +522,7 @@ function AuthContent() {
     searchParams.get('returnUrl') || searchParams.get('redirect'),
   );
   const [phase, setPhase] = useState<'lock' | 'form'>('lock');
+  const prefersReducedMotion = useReducedMotion();
 
   // After auth, leave the auth flow.
   useEffect(() => {
@@ -567,8 +585,8 @@ function AuthContent() {
                 <p className="text-foreground/25 text-xs tracking-widest uppercase">{tHardcodedUi.raw('appAuthPage.line355JsxTextClickOrPressEnterToSignIn')}</p>
               </div>
               <motion.div
-                animate={{ y: [0, 5, 0] }}
-                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                animate={prefersReducedMotion ? undefined : { y: [0, 5, 0] }}
+                transition={prefersReducedMotion ? undefined : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
               >
                 <ChevronRight className="size-3.5 text-foreground/20 rotate-90" />
               </motion.div>

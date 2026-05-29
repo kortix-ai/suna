@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { useServerStore } from '@/stores/server-store';
 import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@/lib/instance-routes';
+import { logger } from '@/lib/logger';
 import {
   safeLocalStorage,
   safeSetItem,
@@ -502,7 +503,9 @@ export const useTabStore = create<TabState>()(
             });
             return;
           }
-        } catch {}
+        } catch (err) {
+          logger.warn('[tab-store] failed to restore tab state for server', { err });
+        }
 
         // No saved state for new server — start with just the dashboard tab
         const ensured = ensureDashboardTab({}, []);

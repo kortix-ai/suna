@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast as sonnerToast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import {
   addSandboxMember,
@@ -68,7 +68,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
     mutationFn: (input: { email: string; role: 'admin' | 'member' }) =>
       addSandboxMember(sandboxId, input.email, input.role),
     onSuccess: (data, variables) => {
-      sonnerToast.success(
+      toast.success(
         data.status === 'added'
           ? `${variables.email} now has access`
           : `Invite sent to ${variables.email}`,
@@ -77,31 +77,31 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
       setInviteOpen(false);
     },
     onError: (err) => {
-      sonnerToast.error(err instanceof Error ? err.message : 'Failed to add member');
+      toast.error(err instanceof Error ? err.message : 'Failed to add member');
     },
   });
 
   const removeMutation = useMutation({
     mutationFn: (userId: string) => removeSandboxMember(sandboxId, userId),
     onSuccess: () => {
-      sonnerToast.success('Member removed');
+      toast.success('Member removed');
       queryClient.invalidateQueries({ queryKey: ['sandbox', 'members', sandboxId] });
       setRemoveTarget(null);
     },
     onError: (err) => {
-      sonnerToast.error(err instanceof Error ? err.message : 'Failed to remove member');
+      toast.error(err instanceof Error ? err.message : 'Failed to remove member');
     },
   });
 
   const revokeMutation = useMutation({
     mutationFn: (inviteId: string) => revokeSandboxInvite(sandboxId, inviteId),
     onSuccess: () => {
-      sonnerToast.success('Invite revoked');
+      toast.success('Invite revoked');
       queryClient.invalidateQueries({ queryKey: ['sandbox', 'members', sandboxId] });
       setRevokeTarget(null);
     },
     onError: (err) => {
-      sonnerToast.error(err instanceof Error ? err.message : 'Failed to revoke invite');
+      toast.error(err instanceof Error ? err.message : 'Failed to revoke invite');
     },
   });
 
@@ -109,11 +109,11 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
     mutationFn: (input: { userId: string; role: SandboxMemberRole }) =>
       updateSandboxMemberRole(sandboxId, input.userId, input.role),
     onSuccess: (_data, variables) => {
-      sonnerToast.success(`Role updated to ${variables.role}`);
+      toast.success(`Role updated to ${variables.role}`);
       queryClient.invalidateQueries({ queryKey: ['sandbox', 'members', sandboxId] });
     },
     onError: (err) => {
-      sonnerToast.error(err instanceof Error ? err.message : 'Failed to change role');
+      toast.error(err instanceof Error ? err.message : 'Failed to change role');
     },
   });
 
