@@ -14,6 +14,7 @@ export default defineConfig({
   testMatch: [
     '**/08-accounts-project-access.spec.ts',
     '**/09-admin-ops.spec.ts',
+    '**/12-sandbox-templates.spec.ts',
   ],
   timeout: 180_000,
   expect: { timeout: 30_000 },

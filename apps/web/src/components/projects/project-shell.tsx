@@ -51,6 +51,26 @@ export function ProjectShell({
     if (!authLoading && !user) router.replace('/auth');
   }, [authLoading, user, router]);
 
+  // Pre-warm DNS + TLS to the sandbox proxy domain the moment the project
+  // shell mounts. The first `/global/health` probe after a session boot
+  // would otherwise pay a full handshake (~100-400ms on a cold connection);
+  // we inject a `<link rel="preconnect">` so the browser establishes the
+  // connection in the background while the user is reading the home page.
+  useEffect(() => {
+    try {
+      const backend = (process.env.NEXT_PUBLIC_BACKEND_URL || window.location.origin).replace(/\/v1\/?$/, '');
+      const origin = new URL(backend).origin;
+      const existing = document.querySelector(`link[rel="preconnect"][href="${origin}"]`);
+      if (existing) return;
+      const link = document.createElement('link');
+      link.rel = 'preconnect';
+      link.href = origin;
+      link.crossOrigin = '';
+      document.head.appendChild(link);
+      return () => { link.remove(); };
+    } catch { /* preconnect is best-effort */ }
+  }, []);
+
   // Single canonical "new session" path used by both the sidebar button and
   // the Mod+T / Mod+J keyboard shortcuts. Lifted here so it lives above the
   // shortcut hook (which only sees the shell, not the sidebar).

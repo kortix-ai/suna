@@ -585,14 +585,6 @@ ensureSchema()
       const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
       startGrantExpirySweeper();
     }
-    // Clear snapshot builds orphaned by a previous restart so sessions don't
-    // spin on a dead `building` row for the full build deadline.
-    try {
-      const { sweepStaleSnapshotBuilds } = await import('./snapshots/builder');
-      await sweepStaleSnapshotBuilds();
-    } catch (err) {
-      console.warn('[startup] stale-snapshot sweep failed:', err);
-    }
   })
   .catch(async (err) => {
     console.error('[startup] ensureSchema failed, starting services anyway:', err);

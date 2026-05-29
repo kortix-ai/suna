@@ -111,10 +111,20 @@ import {
   type ShareSubject,
 } from '../executor/share';
 import {
-  ensureBuildForLatestCommit,
-  getProjectSandboxHealth,
-  listSnapshotsForProject,
+  deleteSandboxImage,
+  kickPreBuild,
+  listSandboxTemplates,
+  listSnapshotBuilds,
+  resolveTemplate,
+  DEFAULT_SANDBOX_SLUG,
 } from '../snapshots/builder';
+import {
+  createTemplate,
+  deleteTemplate,
+  getTemplateById,
+  updateTemplate,
+} from '../snapshots/templates';
+import { getSandboxProvider } from '../snapshots/providers';
 import { classifySnapshotError, describeSnapshotError } from '../snapshots/error-classify';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
 import { ProvisionTimeline } from '../platform/services/provision-timeline';
@@ -368,42 +378,6 @@ function serializeGitHubRepo(repo: GitHubRepo) {
     default_branch: repo.default_branch,
     description: repo.description,
   };
-}
-
-/**
- * Fire-and-forget initial snapshot build for a freshly-created project.
- *
- * Called from both project-creation paths (`POST /v1/projects` and
- * `POST /v1/projects/create-repo`) so every project gets its own
- * `kortix-snap-…` image built right away — sessions can boot from it as
- * soon as it lands. Swallows errors (logs only) because project creation
- * already succeeded; a failed initial build just means the user sees the
- * "still building" prompt on first session start.
- */
-function kickInitialSnapshotBuild(
-  project: ProjectRow,
-  accountId: string,
-  options: { gitAuthToken?: string | null } = {},
-): void {
-  void ensureBuildForLatestCommit(
-    {
-      projectId: project.projectId,
-      repoUrl: project.repoUrl,
-      defaultBranch: project.defaultBranch,
-      manifestPath: project.manifestPath,
-      gitAuthToken: options.gitAuthToken ?? null,
-    },
-    {
-      branch: project.defaultBranch,
-      accountId,
-      source: 'project-create',
-    },
-  ).catch((err) => {
-    console.warn(
-      `[projects] initial snapshot build kickoff failed for ${project.projectId}:`,
-      err,
-    );
-  });
 }
 
 function clientIp(c: Context) {
@@ -1646,6 +1620,7 @@ export async function createProjectSession(input: {
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   const agentName = normalizeString(body.agent_name ?? body.agentName) ?? 'default';
+  const sandboxSlug = normalizeString(body.sandbox_slug ?? body.sandboxSlug) ?? undefined;
   const requestedProvider = normalizeString(body.provider);
   let providerName: SandboxProviderName = config.getDefaultProvider();
   if (requestedProvider) {
@@ -1658,6 +1633,32 @@ export async function createProjectSession(input: {
   const callbackUnreachable = providerName === 'local_docker' ? null : sandboxCallbackUnreachableReason();
   if (callbackUnreachable) {
     return { error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } } };
+  }
+
+  // Validate the requested sandbox template up front so the user gets a clean
+  // 400 instead of an async session-failed if they typed a slug that doesn't
+  // exist. The platform default is always valid.
+  if (sandboxSlug && sandboxSlug !== DEFAULT_SANDBOX_SLUG) {
+    try {
+      await resolveTemplate(
+        {
+          projectId,
+          repoUrl: project.repoUrl,
+          defaultBranch: project.defaultBranch,
+          manifestPath: project.manifestPath,
+          gitAuthToken: null,
+        },
+        sandboxSlug,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        error: {
+          status: 400,
+          body: { error: message, code: 'UNKNOWN_SANDBOX_TEMPLATE' },
+        },
+      };
+    }
   }
 
   let responseHeaders: Record<string, string> | undefined;
@@ -1786,21 +1787,23 @@ export async function createProjectSession(input: {
 
       // Origin branch creation is publishing work, not readiness work. The
       // sandbox now creates the session branch locally from the base checkout
-      // immediately, so this remote push runs fully in the background.
+      // immediately, so this remote push runs fully in the background. The
+      // metadata writes that record success/failure are pure telemetry —
+      // fire-and-forget so they never block the IIFE itself.
       const branchPromise: Promise<void> = branchAlreadyCreated
         ? Promise.resolve()
         : projectWithGitAuthPromise.then((projectWithGitAuth) =>
             createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
-          ).then(async () => {
+          ).then(() => {
             tl.mark('branch-pushed');
-            await mergeSessionMetadata({
+            void mergeSessionMetadata({
               remote_branch: { status: 'ready', branch: sessionId, updated_at: new Date().toISOString() },
-            });
+            }).catch(() => {});
           });
-      branchPromise.catch(async (err) => {
+      branchPromise.catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[projects] Remote branch creation failed for session ${sessionId}:`, err);
-        await mergeSessionMetadata({
+        void mergeSessionMetadata({
           remote_branch: {
             status: 'failed',
             branch: sessionId,
@@ -1832,6 +1835,7 @@ export async function createProjectSession(input: {
         },
         resolveGitAuthToken: async () => (await gitAuthPromise).auth?.token ?? null,
         baseRef,
+        sandboxSlug,
       });
 
       // provisionSessionSandbox returns once its row is inserted; provider
@@ -1839,7 +1843,9 @@ export async function createProjectSession(input: {
       await provisionPromise;
       tl.mark('kicked');
       const sessionStartTimeline = tl.log();
-      await mergeSessionMetadata({ session_start_timeline: sessionStartTimeline }).catch(() => {});
+      // Fire-and-forget: the timeline write is pure telemetry. Awaiting it
+      // here used to add ~30-80ms of DB round-trip to every session start.
+      void mergeSessionMetadata({ session_start_timeline: sessionStartTimeline }).catch(() => {});
     } catch (err) {
       const message = (err as Error)?.message || 'Sandbox provisioning failed';
       console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
@@ -2497,11 +2503,16 @@ projectsApp.post('/', async (c) => {
     manifestPath,
   });
 
-  // Kick off the first snapshot build for this project's default branch.
-  // Fire-and-forget: snapshot builds take minutes, the API response must
-  // not wait. The dashboard's Sandbox Snapshot panel polls the row
-  // until it flips to `ready`. See apps/api/src/snapshots/builder.ts.
-  void kickInitialSnapshotBuild(row, scope.accountId, { gitAuthToken: imported.auth.token });
+  kickPreBuild(
+    {
+      projectId: row.projectId,
+      repoUrl: row.repoUrl,
+      defaultBranch: row.defaultBranch,
+      manifestPath: row.manifestPath,
+      gitAuthToken: imported.auth.token,
+    },
+    { accountId: scope.accountId, source: 'project-create' },
+  );
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 });
@@ -2629,10 +2640,17 @@ projectsApp.post('/provision', async (c) => {
     metadata: { seeded },
   });
 
-  // Seeded repos have a Dockerfile now -> kick the first snapshot build so
-  // sessions boot fast. Unseeded (CLI) repos build after the CLI's first push.
   if (seeded) {
-    void kickInitialSnapshotBuild(row, scope.accountId, { gitAuthToken: push.token });
+    kickPreBuild(
+      {
+        projectId: row.projectId,
+        repoUrl: row.repoUrl,
+        defaultBranch: row.defaultBranch,
+        manifestPath: row.manifestPath,
+        gitAuthToken: push.token,
+      },
+      { accountId: scope.accountId, source: 'project-create' },
+    );
   }
 
   return c.json(
@@ -2926,7 +2944,16 @@ projectsApp.post('/link-repository', async (c) => {
     manifestPath,
   });
 
-  void kickInitialSnapshotBuild(row, scope.accountId, { gitAuthToken: imported.auth.token });
+  kickPreBuild(
+    {
+      projectId: row.projectId,
+      repoUrl: row.repoUrl,
+      defaultBranch: row.defaultBranch,
+      manifestPath: row.manifestPath,
+      gitAuthToken: imported.auth.token,
+    },
+    { accountId: scope.accountId, source: 'project-create' },
+  );
 
   return c.json({
     project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
@@ -3049,154 +3076,459 @@ projectsApp.post('/create-repo', async (c) => {
     manifestPath: 'kortix.toml',
   });
 
-  // Kick off the first snapshot build (same fire-and-forget contract as the
-  // plain POST /v1/projects path above). The starter is already committed
-  // to the new repo, so .kortix/Dockerfile exists at this point.
-  void kickInitialSnapshotBuild(row, scope.accountId, {
-    gitAuthToken: githubAuth.auth?.token ?? (githubAuth.authSource === 'pat' ? getGitHubPatAuthContext()?.token ?? null : null),
-  });
+  kickPreBuild(
+    {
+      projectId: row.projectId,
+      repoUrl: row.repoUrl,
+      defaultBranch: row.defaultBranch,
+      manifestPath: row.manifestPath,
+      gitAuthToken: githubAuth.auth?.token ?? (githubAuth.authSource === 'pat' ? getGitHubPatAuthContext()?.token ?? null : null),
+    },
+    { accountId: scope.accountId, source: 'project-create' },
+  );
+
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 });
 
-// ─── Snapshots ─────────────────────────────────────────────────────────────
-// Per-project Daytona snapshots. The "Sandbox snapshot" panel on the project
-// settings page calls these endpoints to show build status (latest commit
-// on default branch vs commit of latest ready snapshot) and to trigger
-// manual rebuilds.
+// ─── Manifest validation ──────────────────────────────────────────────────
+// One schema, exercised in three places: the CLI (`kortix ship` pre-flight +
+// `kortix validate`), this server-side endpoint (lets dashboards / tooling
+// ask the server "is this valid?"), and the CR-merge gate.
+//
+// Body: { raw: string } (TOML text). Always returns 200 — the verdict is in
+// the body so the caller can show issues without having to handle HTTP error
+// codes. CLI use: `kortix validate` runs locally, this is for surfaces that
+// don't have the file on disk.
 
-function serializeProjectSnapshot(row: {
-  snapshotRowId: string;
-  projectId: string;
-  provider: string;
-  commitSha: string;
-  branch: string;
-  snapshotId: string | null;
-  status: string;
-  error: string | null;
-  metadata: Record<string, unknown> | null;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
+// POST /v1/projects/:projectId/manifest/validate
+projectsApp.post('/:projectId/manifest/validate', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  let body: { raw?: unknown } = {};
+  try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
+  const raw = typeof body.raw === 'string' ? body.raw : null;
+  if (!raw) {
+    return c.json({ error: 'Missing `raw` (TOML string) in body.' }, 400);
+  }
+
+  const { validateManifest } = await import('@kortix/manifest-schema');
+  const verdict = validateManifest(raw);
+  return c.json({
+    valid: verdict.valid,
+    issues: verdict.issues,
+  });
+});
+
+// ─── Sandbox templates ─────────────────────────────────────────────────────
+// One platform-default image, optionally extended by `[[sandboxes]]` entries
+// in kortix.toml. Session boot is stateless: it computes the expected snapshot
+// name from the resolved template, asks Daytona if it exists, builds if not.
+// The append-only `project_snapshot_builds` log feeds the UI but is never
+// consulted by the boot path.
+
+function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotBuilds>>[number]) {
   return {
-    snapshot_row_id: row.snapshotRowId,
-    project_id: row.projectId,
-    provider: row.provider,
-    commit_sha: row.commitSha,
-    branch: row.branch,
-    snapshot_id: row.snapshotId,
-    status: row.status,
-    error: row.error,
-    error_category: row.error
-      ? (typeof row.metadata?.errorCategory === 'string'
-          ? row.metadata.errorCategory
-          : classifySnapshotError(row.error))
-      : null,
-    metadata: row.metadata ?? {},
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
+    build_id: b.buildId,
+    slug: b.slug,
+    snapshot_name: b.snapshotName,
+    content_hash: b.contentHash,
+    status: b.status,
+    error: b.error,
+    error_category: b.errorCategory,
+    source: b.source,
+    started_at: b.startedAt.toISOString(),
+    finished_at: b.finishedAt?.toISOString() ?? null,
   };
 }
 
-function serializeSandboxHealth(
-  health: Awaited<ReturnType<typeof getProjectSandboxHealth>>,
-) {
+function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTemplates>>[number]) {
   return {
-    branch: health.branch,
-    provider: health.provider,
-    ready_count: health.readyCount,
-    bootable_count: health.bootableCount,
-    total_count: health.totalCount,
-    retention: health.retention,
-    healthy: health.healthy,
-    building: health.building,
-    first_build: health.firstBuild,
-    runtime_outdated: health.runtimeOutdated,
-    latest_ready_commit_sha: health.latestReadyCommitSha,
-    latest_status: health.latestStatus,
-    failure: health.failure
-      ? {
-          commit_sha: health.failure.commitSha,
-          error: health.failure.error,
-          category: health.failure.category,
-          fixable_by_agent: health.failure.fixableByAgent,
-          failed_at: health.failure.failedAt,
-        }
-      : null,
+    template_id: t.templateId,
+    slug: t.slug,
+    name: t.name,
+    is_default: t.isDefault,
+    source: t.source,
+    provider: t.provider,
+    has_dockerfile: t.hasDockerfile,
+    has_image: t.hasImage,
+    image: t.image,
+    dockerfile_path: t.dockerfilePath,
+    entrypoint: t.entrypoint,
+    cpu: t.cpu,
+    memory_gb: t.memoryGb,
+    disk_gb: t.diskGb,
+    snapshot_name: t.snapshotName,
+    content_hash: t.contentHash,
+    daytona_state: t.daytonaState,
+    provider_state: t.providerState,
+    ready: t.ready,
   };
 }
+
+async function loadGitProject(loaded: { row: ProjectRow }) {
+  const gitAuth = await resolveProjectGitAuth(loaded.row);
+  return {
+    projectId: loaded.row.projectId,
+    repoUrl: loaded.row.repoUrl,
+    defaultBranch: loaded.row.defaultBranch,
+    manifestPath: loaded.row.manifestPath,
+    gitAuthToken: gitAuth.auth?.token ?? null,
+  };
+}
+
+// GET /v1/projects/:projectId/sandboxes
+// Available templates for this project: platform default + any `[[sandboxes]]`
+// entries from kortix.toml. Each row includes its live Daytona state so the
+// picker can show "ready" / "building" / "missing" at a glance.
+projectsApp.get('/:projectId/sandboxes', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const project = await loadGitProject(loaded);
+  try {
+    const templates = await listSandboxTemplates(project);
+    return c.json({
+      items: templates.map(serializeTemplate),
+      default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Failed to list sandbox templates: ${message}` }, 500);
+  }
+});
 
 // GET /v1/projects/:projectId/snapshots
-// Returns the snapshot history for a project plus the latest commit SHA on
-// the project's default branch so the UI can compare it against the most
-// recent `ready` snapshot's commit and show "needs rebuild" when they
-// drift apart.
+// Templates + recent build log. Used by the Sandbox panel.
 projectsApp.get('/:projectId/snapshots', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  let rows: Awaited<ReturnType<typeof listSnapshotsForProject>> = [];
+  const project = await loadGitProject(loaded);
+  let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
+  let templatesError: string | null = null;
   try {
-    rows = await listSnapshotsForProject(projectId);
+    templates = await listSandboxTemplates(project);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: `Failed to list snapshots: ${message}` }, 500);
+    templatesError = err instanceof Error ? err.message : String(err);
   }
-
-  // Resolve the current HEAD on the default branch so the UI can detect
-  // "the latest ready snapshot is behind the branch tip". Failure here is
-  // non-fatal — we still return the snapshot history without it (e.g.
-  // GitHub App not yet installed for the account).
-  let headCommitSha: string | null = null;
-  let headResolveError: string | null = null;
-  try {
-    const gitAuth = await resolveProjectGitAuth(loaded.row);
-    headCommitSha = await resolveCommitSha(
-      {
-        projectId,
-        repoUrl: loaded.row.repoUrl,
-        defaultBranch: loaded.row.defaultBranch,
-        manifestPath: loaded.row.manifestPath,
-        gitAuthToken: gitAuth.auth?.token ?? null,
-      },
-      loaded.row.defaultBranch,
-    );
-  } catch (err) {
-    headResolveError = err instanceof Error ? err.message : String(err);
-  }
-
-  let health: Awaited<ReturnType<typeof getProjectSandboxHealth>> | null = null;
-  try {
-    health = await getProjectSandboxHealth(projectId, loaded.row.defaultBranch);
-  } catch {
-    /* non-fatal — the panel still renders from `items` */
-  }
-
+  const builds = await listSnapshotBuilds(projectId, { limit: 25 }).catch(() => []);
   return c.json({
-    items: rows.map(serializeProjectSnapshot),
-    default_branch: loaded.row.defaultBranch,
-    head_commit_sha: headCommitSha,
-    head_resolve_error: headResolveError,
-    health: health ? serializeSandboxHealth(health) : null,
+    templates: templates.map(serializeTemplate),
+    templates_error: templatesError,
+    builds: builds.map(serializeBuildSummary),
   });
 });
 
 // GET /v1/projects/:projectId/sandbox-health
-// Lightweight, DB-only sandbox health for the project sidebar alert. Skips the
-// git HEAD resolution that GET /snapshots does, so it's cheap to poll.
+// Cheap polling endpoint for the sidebar alert. Surfaces the platform default
+// template's live state + the most recent failed build (across any template).
 projectsApp.get('/:projectId/sandbox-health', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
+  const project = await loadGitProject(loaded);
+  let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
   try {
-    const health = await getProjectSandboxHealth(projectId, loaded.row.defaultBranch);
-    return c.json(serializeSandboxHealth(health));
+    templates = await listSandboxTemplates(project);
+  } catch {
+    // Repo unreachable / manifest broken — render as "no templates".
+  }
+  const primary = templates[0] ?? null;
+  const builds = await listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
+  const latest = builds[0] ?? null;
+  const latestFailure = builds.find((b) => b.status === 'failed') ?? null;
+  const isBuilding =
+    (latest && latest.status === 'building') ||
+    (primary ? ['pulling', 'building'].includes(primary.daytonaState.toLowerCase()) : false);
+
+  return c.json({
+    primary_slug: primary?.slug ?? null,
+    primary_template: primary ? serializeTemplate(primary) : null,
+    ready: primary?.ready ?? false,
+    building: isBuilding,
+    latest_build: latest ? serializeBuildSummary(latest) : null,
+    latest_failure: latestFailure ? serializeBuildSummary(latestFailure) : null,
+  });
+});
+
+// POST /v1/projects/:projectId/snapshots/rebuild
+// Force-rebuild the image for a given template slug (defaults to the platform
+// default). Deletes the existing Daytona snapshot (if any) so the next
+// ensureSandboxImage rebuilds from scratch. Returns 202.
+projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  let body: { slug?: unknown; sandbox_slug?: unknown } = {};
+  try {
+    body = (await c.req.json()) ?? {};
+  } catch {
+    /* empty body is fine */
+  }
+  const slugRaw = (typeof body.slug === 'string' && body.slug)
+    || (typeof body.sandbox_slug === 'string' && body.sandbox_slug)
+    || undefined;
+  const slug = slugRaw ? String(slugRaw).trim() : undefined;
+
+  const project = await loadGitProject(loaded);
+  try {
+    const deleted = await deleteSandboxImage(project, { slug });
+    kickPreBuild(project, {
+      slug: deleted.slug,
+      accountId: loaded.row.accountId,
+      source: 'manual',
+    });
+    return c.json(
+      {
+        status: 'started',
+        slug: deleted.slug,
+        deleted_existing: deleted.deleted,
+        snapshot_name: deleted.snapshotName,
+      },
+      202,
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: `Failed to read sandbox health: ${message}` }, 500);
+    return c.json({ error: message }, 502);
   }
+});
+
+// POST /v1/projects/:projectId/snapshots/fix-with-agent
+// Spin up a session pre-seeded with the most recent build failure so an agent
+// can diagnose + fix the Dockerfile and open a change request. Requires a
+// previous successful build to host the fix session.
+projectsApp.post('/:projectId/snapshots/fix-with-agent', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const userId = c.get('userId') as string;
+
+  const builds = await listSnapshotBuilds(projectId, { limit: 50 }).catch(() => []);
+  const failed = builds.find((b) => b.status === 'failed');
+  if (!failed) {
+    return c.json({ error: 'No failed snapshot build to fix.' }, 409);
+  }
+
+  const hostBuild = builds.find((b) => b.status === 'ready');
+  if (!hostBuild) {
+    return c.json(
+      {
+        error:
+          'No ready sandbox to run the fix in yet. Retry the build, or edit the Dockerfile manually.',
+        code: 'NO_READY_SANDBOX',
+      },
+      409,
+    );
+  }
+
+  const errorText = failed.error ?? 'Snapshot build failed';
+  const category = failed.errorCategory ?? classifySnapshotError(errorText);
+  const info = describeSnapshotError(category as ReturnType<typeof classifySnapshotError>);
+
+  const prompt = [
+    `The sandbox image build for the "${failed.slug}" template is failing, so new sessions on it can't boot. Diagnose and fix the root cause, then open a change request.`,
+    ``,
+    `Failing template: ${failed.slug}`,
+    `Error type: ${category} — ${info.title}`,
+    info.hint,
+    ``,
+    `Build error:`,
+    '```',
+    errorText.slice(0, 4000),
+    '```',
+    ``,
+    `The sandbox image is built from the template definition (see [[sandboxes]] in kortix.toml).`,
+    ``,
+    `Steps:`,
+    `1. Inspect the relevant Dockerfile and the build error above.`,
+    `2. Fix the root cause.`,
+    `3. Open a change request. Once it merges, the image rebuilds automatically.`,
+  ].join('\n');
+
+  const result = await createProjectSession({
+    project: loaded.row,
+    userId,
+    body: {
+      initial_prompt: prompt,
+      name: 'Fix sandbox build',
+      metadata: { kind: 'sandbox-build-fix', failed_slug: failed.slug },
+      sandbox_slug: hostBuild.slug,
+    },
+    request: requestAuditContext(c),
+  });
+  if (result.error) return sendSessionCreateError(c, result.error);
+
+  return c.json({ session_id: result.row!.sessionId }, 201);
+});
+
+// ─── Template CRUD ─────────────────────────────────────────────────────────
+// Full CRUD over `kortix.sandbox_templates`. Shared/platform rows are read-
+// only. Project-scoped rows can be created/edited/deleted from the dashboard.
+
+// GET /v1/projects/:projectId/sandbox-templates — same as /sandboxes; thinner
+// path for the "templates only" UI surface. We re-use the same serializer.
+projectsApp.get('/:projectId/sandbox-templates', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const project = await loadGitProject(loaded);
+  try {
+    const templates = await listSandboxTemplates(project);
+    return c.json({
+      items: templates.map(serializeTemplate),
+      default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Failed to list templates: ${message}` }, 500);
+  }
+});
+
+// POST /v1/projects/:projectId/sandbox-templates — create a custom template.
+projectsApp.post('/:projectId/sandbox-templates', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  let body: Record<string, unknown> = {};
+  try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
+
+  const slug = typeof body.slug === 'string' ? body.slug.trim() : '';
+  if (!slug || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug)) {
+    return c.json({ error: 'slug must be lowercase letters/digits/_- (1-64 chars)' }, 400);
+  }
+  if (slug === DEFAULT_SANDBOX_SLUG) {
+    return c.json({ error: 'slug "default" is reserved for the platform template' }, 409);
+  }
+
+  const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : slug;
+  const image = typeof body.image === 'string' && body.image.trim() ? body.image.trim() : undefined;
+  const dockerfilePath = typeof body.dockerfile_path === 'string' && body.dockerfile_path.trim()
+    ? body.dockerfile_path.trim()
+    : undefined;
+  if ((image && dockerfilePath) || (!image && !dockerfilePath)) {
+    return c.json({ error: 'Provide exactly one of `image` or `dockerfile_path`.' }, 400);
+  }
+  const entrypoint = typeof body.entrypoint === 'string' && body.entrypoint.trim()
+    ? body.entrypoint.trim()
+    : undefined;
+  const cpu = typeof body.cpu === 'number' ? body.cpu : undefined;
+  const memoryGb = typeof body.memory_gb === 'number' ? body.memory_gb : undefined;
+  const diskGb = typeof body.disk_gb === 'number' ? body.disk_gb : undefined;
+
+  try {
+    const row = await createTemplate({
+      projectId,
+      accountId: loaded.row.accountId,
+      slug,
+      name,
+      image,
+      dockerfilePath,
+      entrypoint,
+      cpu,
+      memoryGb,
+      diskGb,
+      source: 'ui',
+    });
+    // Kick a build in the background so the template is ready for the next session.
+    const project = await loadGitProject(loaded);
+    kickPreBuild(project, { slug: row.slug, accountId: loaded.row.accountId, source: 'manual' });
+    return c.json({ template_id: row.templateId, slug: row.slug }, 201);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.toLowerCase().includes('duplicate') || message.includes('idx_sandbox_templates_project_slug')) {
+      return c.json({ error: `A template with slug "${slug}" already exists.` }, 409);
+    }
+    return c.json({ error: message }, 400);
+  }
+});
+
+// PATCH /v1/projects/:projectId/sandbox-templates/:templateId — update fields.
+projectsApp.patch('/:projectId/sandbox-templates/:templateId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const templateId = c.req.param('templateId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  let body: Record<string, unknown> = {};
+  try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
+
+  const patch = {
+    name: typeof body.name === 'string' ? body.name.trim() : undefined,
+    image: 'image' in body ? (typeof body.image === 'string' ? body.image.trim() || null : null) : undefined,
+    dockerfilePath: 'dockerfile_path' in body
+      ? (typeof body.dockerfile_path === 'string' ? body.dockerfile_path.trim() || null : null)
+      : undefined,
+    entrypoint: 'entrypoint' in body
+      ? (typeof body.entrypoint === 'string' ? body.entrypoint.trim() || null : null)
+      : undefined,
+    cpu: 'cpu' in body ? (typeof body.cpu === 'number' ? body.cpu : null) : undefined,
+    memoryGb: 'memory_gb' in body ? (typeof body.memory_gb === 'number' ? body.memory_gb : null) : undefined,
+    diskGb: 'disk_gb' in body ? (typeof body.disk_gb === 'number' ? body.disk_gb : null) : undefined,
+  };
+
+  try {
+    const updated = await updateTemplate(templateId, patch);
+    if (!updated) return c.json({ error: 'Not found' }, 404);
+    if (updated.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
+    return c.json({ template_id: updated.templateId, slug: updated.slug });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, 400);
+  }
+});
+
+// DELETE /v1/projects/:projectId/sandbox-templates/:templateId
+projectsApp.delete('/:projectId/sandbox-templates/:templateId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const templateId = c.req.param('templateId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const row = await getTemplateById(templateId);
+  if (!row) return c.json({ error: 'Not found' }, 404);
+  if (row.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
+  if (row.isShared) return c.json({ error: 'Shared platform templates cannot be deleted.' }, 409);
+
+  try {
+    // Best-effort: clear the provider snapshot too.
+    if (row.providerSnapshotName) {
+      await getSandboxProvider(row.provider)
+        .deleteSnapshot(row.providerSnapshotName)
+        .catch(() => {});
+    }
+    await deleteTemplate(templateId);
+    return c.body(null, 204);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, 400);
+  }
+});
+
+// POST /v1/projects/:projectId/sandbox-templates/:templateId/build — trigger
+// a build (fire-and-forget). Returns 202.
+projectsApp.post('/:projectId/sandbox-templates/:templateId/build', async (c) => {
+  const projectId = c.req.param('projectId');
+  const templateId = c.req.param('templateId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const row = await getTemplateById(templateId);
+  if (!row) return c.json({ error: 'Not found' }, 404);
+  if (row.projectId !== null && row.projectId !== projectId) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+
+  const project = await loadGitProject(loaded);
+  kickPreBuild(project, { slug: row.slug, accountId: loaded.row.accountId, source: 'manual' });
+  return c.json({ status: 'started', template_id: row.templateId, slug: row.slug }, 202);
 });
 
 // ─── Project-scoped CLI tokens ─────────────────────────────────────────────
@@ -3349,127 +3681,6 @@ projectsApp.get('/:projectId/git/clone-credential', async (c) => {
     source: gitAuth.authSource,
     expires_at: null,
   });
-});
-
-// POST /v1/projects/:projectId/snapshots/rebuild
-// Manually kick off a build for the current HEAD of the project's default
-// branch. Idempotent: if a `ready` snapshot already exists for that
-// commit, returns immediately with `status: 'already-ready'`.
-projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Authorization is enforced by loadProjectForUser(... 'manage') above.
-
-  const gitAuth = await resolveProjectGitAuth(loaded.row);
-
-  const result = await ensureBuildForLatestCommit(
-    {
-      projectId,
-      repoUrl: loaded.row.repoUrl,
-      defaultBranch: loaded.row.defaultBranch,
-      manifestPath: loaded.row.manifestPath,
-      gitAuthToken: gitAuth.auth?.token ?? null,
-    },
-    {
-      branch: loaded.row.defaultBranch,
-      accountId: loaded.row.accountId,
-      source: 'manual',
-    },
-  );
-
-  if (result.status === 'failed-to-start') {
-    return c.json({ error: result.error ?? 'Failed to start build' }, 502);
-  }
-
-  return c.json({
-    status: result.status,
-    branch: loaded.row.defaultBranch,
-    commit_sha: result.commitSha ?? null,
-  });
-});
-
-// POST /v1/projects/:projectId/snapshots/fix-with-agent
-// Spin up a session pre-seeded with the latest build failure so an agent can
-// diagnose + fix the Dockerfile and open a change request. Requires at least
-// one ready snapshot to boot the fixing session in — graceful degradation lets
-// it run on the most recent healthy image while the broken tip is repaired.
-projectsApp.post('/:projectId/snapshots/fix-with-agent', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const userId = c.get('userId') as string;
-  const branch = loaded.row.defaultBranch;
-
-  let rows: Awaited<ReturnType<typeof listSnapshotsForProject>> = [];
-  try {
-    rows = await listSnapshotsForProject(projectId, { limit: 25 });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: `Failed to read snapshots: ${message}` }, 500);
-  }
-  const failed =
-    rows.find((r) => r.branch === branch && r.status === 'failed') ??
-    rows.find((r) => r.status === 'failed');
-  if (!failed) {
-    return c.json({ error: 'No failed snapshot build to fix.' }, 409);
-  }
-
-  // Need a healthy snapshot to boot the fixing session in. Without one there's
-  // nothing to run the agent on (the cold first-build-failure case) — the user
-  // must retry or fix the Dockerfile manually.
-  const health = await getProjectSandboxHealth(projectId, branch);
-  if (health.readyCount === 0) {
-    return c.json(
-      {
-        error:
-          'No ready sandbox to run the fix in yet. Retry the build, or edit the Dockerfile manually.',
-        code: 'NO_READY_SANDBOX',
-      },
-      409,
-    );
-  }
-
-  const errorText = failed.error ?? 'Snapshot build failed';
-  const category =
-    typeof failed.metadata?.errorCategory === 'string'
-      ? (failed.metadata.errorCategory as ReturnType<typeof classifySnapshotError>)
-      : classifySnapshotError(errorText);
-  const info = describeSnapshotError(category);
-
-  const prompt = [
-    `The sandbox snapshot build for this project is failing, so new sessions can't boot from a fresh image. Diagnose the root cause and fix it, then open a change request.`,
-    ``,
-    `Failing commit: ${failed.commitSha.slice(0, 8)} (branch ${failed.branch || branch})`,
-    `Error type: ${category} — ${info.title}`,
-    info.hint,
-    ``,
-    `Build error:`,
-    '```',
-    errorText.slice(0, 4000),
-    '```',
-    ``,
-    `The sandbox image is built from the project's Dockerfile (see kortix.toml [sandbox]; default \`.kortix/Dockerfile\`).`,
-    ``,
-    `Steps:`,
-    `1. Inspect the Dockerfile and the build error above.`,
-    `2. Fix the root cause.`,
-    `3. Open a change request targeting \`${branch}\`. Once it merges, the snapshot rebuilds automatically.`,
-  ].join('\n');
-
-  const result = await createProjectSession({
-    project: loaded.row,
-    userId,
-    body: {
-      initial_prompt: prompt,
-      name: 'Fix sandbox build',
-      metadata: { kind: 'sandbox-build-fix', failed_commit_sha: failed.commitSha },
-    },
-    request: requestAuditContext(c),
-  });
-  if (result.error) return sendSessionCreateError(c, result.error);
-
-  return c.json({ session_id: result.row!.sessionId }, 201);
 });
 
 // PUT /v1/projects/:projectId/git-credential
@@ -7118,6 +7329,40 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
   const customMessage = normalizeString(body.message);
   const projectForGit = await withProjectGitAuth(loaded.row);
 
+  // Manifest gate: a CR cannot merge if the would-be-merged kortix.toml
+  // doesn't validate against the canonical schema. We read the manifest from
+  // the HEAD branch (what's about to be merged). If the head doesn't have a
+  // manifest, that's fine — projects with a `.kortix/`-only layout still
+  // merge. The same validator runs in the CLI's `kortix ship` pre-flight, so
+  // CLI users see the same diagnostic locally before push.
+  try {
+    const headManifestRaw = await readRepoFile(projectForGit, MANIFEST_FILENAME, cr.headRef);
+    if (headManifestRaw && headManifestRaw.trim()) {
+      const { validateManifest } = await import('@kortix/manifest-schema');
+      const verdict = validateManifest(headManifestRaw);
+      if (!verdict.valid) {
+        return c.json(
+          {
+            error: 'Manifest validation failed — merge blocked.',
+            code: 'MANIFEST_INVALID',
+            issues: verdict.issues,
+          },
+          422,
+        );
+      }
+    }
+  } catch (err) {
+    // Manifest absent on this branch (404 in the mirror) is fine; surface
+    // anything else as a 502 so the user knows something else is broken.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/(not found|enoent|404)/i.test(msg)) {
+      return c.json(
+        { error: `Failed to read kortix.toml from head branch: ${msg}` },
+        502,
+      );
+    }
+  }
+
   let result: Awaited<ReturnType<typeof mergeBranches>>;
   try {
     result = await mergeBranches(projectForGit, cr.baseRef, cr.headRef, {
@@ -7150,21 +7395,12 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
 
   invalidateProjectMirror(projectId);
 
-  // Proactive pre-build: the merge advanced the default branch, so kick a
-  // snapshot build for the new tip now instead of waiting for the next session
-  // to pay a cold build. Fire-and-forget; the previous ready snapshot keeps
-  // serving sessions until this finishes (graceful degradation on boot).
-  void ensureBuildForLatestCommit(projectForGit, {
-    branch: cr.baseRef,
+  // Pre-build the platform default image (no-op cache hit after the first
+  // global build) so the next session can boot off cache. Best-effort.
+  kickPreBuild(projectForGit, {
     accountId: loaded.row.accountId,
     source: 'cr-merge',
-  }).catch((err) =>
-    console.warn(
-      '[change-requests] pre-build after merge failed',
-      projectId,
-      err instanceof Error ? err.message : err,
-    ),
-  );
+  });
 
   // A merged CR may have edited kortix.toml's [[connectors]]. The connector DB
   // cache (what the gateway + dashboard read) is derived from the manifest, so

@@ -1,30 +1,38 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle,
   CheckCircle2,
   Clock,
+  Container,
+  Edit3,
+  FileCode,
   Loader2,
+  Package,
+  Plus,
   RefreshCw,
   Sparkles,
+  Trash2,
   XCircle,
 } from 'lucide-react';
-import { useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { List } from '@/components/ui/list';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  buildSandboxTemplate,
+  deleteSandboxTemplate,
   listProjectSnapshots,
-  type ProjectSandboxHealth,
-  type ProjectSnapshot,
+  type ProjectSnapshotBuild,
   type ProjectSnapshotStatus,
-  type ProjectSnapshotsResponse,
+  type SandboxTemplate,
   type SnapshotErrorCategory,
 } from '@/lib/projects-client';
 import { useSandboxRecovery } from '@/components/projects/sandbox-health-alert';
+import { SandboxTemplateForm } from '@/components/projects/sandbox-template-form';
 import { cn } from '@/lib/utils';
+import { toast } from '@/lib/toast';
 
 interface SandboxSnapshotCardProps {
   projectId: string;
@@ -48,11 +56,6 @@ const STATUS_STYLE: Record<ProjectSnapshotStatus, {
     badgeClass: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20',
     icon: Loader2,
   },
-  queued: {
-    label: 'Queued',
-    badgeClass: 'bg-muted text-muted-foreground border border-border/60',
-    icon: Clock,
-  },
   failed: {
     label: 'Failed',
     badgeClass: 'bg-destructive/10 text-destructive border border-destructive/20',
@@ -70,6 +73,20 @@ const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   unknown: 'Build failed',
 };
 
+const DAYTONA_STATE_LABEL: Record<string, { label: string; tone: 'ok' | 'busy' | 'fail' | 'idle' }> = {
+  active: { label: 'Ready', tone: 'ok' },
+  pulling: { label: 'Pulling', tone: 'busy' },
+  building: { label: 'Building', tone: 'busy' },
+  removing: { label: 'Removing', tone: 'busy' },
+  error: { label: 'Error', tone: 'fail' },
+  build_failed: { label: 'Build failed', tone: 'fail' },
+  missing: { label: 'Not built yet', tone: 'idle' },
+};
+
+function describeState(state: string): { label: string; tone: 'ok' | 'busy' | 'fail' | 'idle' } {
+  return DAYTONA_STATE_LABEL[state] ?? { label: state || 'Unknown', tone: 'idle' };
+}
+
 function StatusPill({ status }: { status: ProjectSnapshotStatus }) {
   const style = STATUS_STYLE[status];
   const Icon = style.icon;
@@ -81,12 +98,34 @@ function StatusPill({ status }: { status: ProjectSnapshotStatus }) {
   );
 }
 
-function shortSha(sha: string | null | undefined): string {
-  if (!sha) return '—';
-  return sha.slice(0, 7);
+function StateBadge({ state }: { state: string }) {
+  const info = describeState(state);
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
+        info.tone === 'ok' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
+        info.tone === 'busy' && 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20',
+        info.tone === 'fail' && 'bg-destructive/10 text-destructive border border-destructive/20',
+        info.tone === 'idle' && 'bg-muted text-muted-foreground border border-border/60',
+      )}
+    >
+      {info.tone === 'busy' ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : info.tone === 'ok' ? (
+        <CheckCircle2 className="h-3 w-3" />
+      ) : info.tone === 'fail' ? (
+        <XCircle className="h-3 w-3" />
+      ) : (
+        <Clock className="h-3 w-3" />
+      )}
+      {info.label}
+    </span>
+  );
 }
 
-function formatRelative(input: string): string {
+function formatRelative(input: string | null | undefined): string {
+  if (!input) return '—';
   const then = new Date(input).getTime();
   if (!Number.isFinite(then)) return input;
   const diffMs = Date.now() - then;
@@ -100,198 +139,131 @@ function formatRelative(input: string): string {
   return new Date(input).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-// ── Health banner ──────────────────────────────────────────────────────────
-// One clear, color-coded line at the top of the panel that tells the user the
-// single thing that matters: can sessions start, and if not, what to do.
-
-type BannerTone = 'ok' | 'degraded' | 'critical' | 'building' | 'updating' | 'neutral';
-
-const BANNER_TONE: Record<BannerTone, string> = {
-  ok: 'border-emerald-500/20 bg-emerald-500/5',
-  degraded: 'border-amber-500/30 bg-amber-500/5',
-  critical: 'border-destructive/30 bg-destructive/5',
-  building: 'border-blue-500/20 bg-blue-500/5',
-  updating: 'border-blue-500/20 bg-blue-500/5',
-  neutral: 'border-border/60 bg-muted/30',
-};
-
-function bannerToneOf(health: ProjectSandboxHealth | null): BannerTone {
-  if (!health) return 'neutral';
-  if (health.failure) return health.ready_count === 0 ? 'critical' : 'degraded';
-  // A build in flight with healthy snapshots still retained = seamless update
-  // (sessions keep booting the current image). Only "first build" has nothing.
-  if (health.building) return health.first_build ? 'building' : 'updating';
-  if (health.healthy) return 'ok';
-  return 'neutral';
-}
-
-function HealthBanner({
+function TemplateRow({
   projectId,
-  health,
+  template,
   canManage,
+  onEdit,
 }: {
   projectId: string;
-  health: ProjectSandboxHealth | null;
+  template: SandboxTemplate;
   canManage: boolean;
+  onEdit: (tpl: SandboxTemplate) => void;
 }) {
-  const { retry, fixWithAgent } = useSandboxRecovery(projectId);
-  const tone = bannerToneOf(health);
-  const failure = health?.failure ?? null;
-  const canFixWithAgent = !!failure?.fixable_by_agent && (health?.ready_count ?? 0) > 0;
+  const queryClient = useQueryClient();
+  const buildMut = useMutation({
+    mutationFn: () => buildSandboxTemplate(projectId, template.template_id!),
+    onSuccess: () => {
+      toast.success(`Rebuild started for "${template.name}"`);
+      queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to start build'),
+  });
+  const deleteMut = useMutation({
+    mutationFn: () => deleteSandboxTemplate(projectId, template.template_id!),
+    onSuccess: () => {
+      toast.success(`Deleted "${template.name}"`);
+      queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
+      queryClient.invalidateQueries({ queryKey: ['project-sandboxes', projectId] });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to delete template'),
+  });
 
-  const { Icon, iconClass, title, body } = useMemo(() => {
-    switch (tone) {
-      case 'critical':
-        return {
-          Icon: XCircle,
-          iconClass: 'text-destructive',
-          title: 'Sandbox build failed — sessions can’t start',
-          body: 'No healthy snapshot remains. Fix the build to start new sessions again.',
-        };
-      case 'degraded':
-        return {
-          Icon: AlertTriangle,
-          iconClass: 'text-amber-600 dark:text-amber-400',
-          title: 'Latest build failed — running on an older snapshot',
-          body: `Sessions still boot from the last healthy snapshot (${health?.ready_count} retained). New commits won’t apply until the build succeeds.`,
-        };
-      case 'building':
-        return {
-          Icon: Loader2,
-          iconClass: 'text-blue-600 dark:text-blue-400 animate-spin',
-          title: 'Building the first sandbox…',
-          body: 'This one-time build runs the first time a project is created. Sessions can start as soon as it’s ready.',
-        };
-      case 'updating':
-        return {
-          Icon: Loader2,
-          iconClass: 'text-blue-600 dark:text-blue-400 animate-spin',
-          title: 'Updating sandbox…',
-          body: `Rebuilding for the latest ${health?.runtime_outdated ? 'runtime' : 'commit'}. Sessions keep booting from the current snapshot (${health?.ready_count} retained) until it’s ready — nothing is lost.`,
-        };
-      case 'ok':
-        return {
-          Icon: CheckCircle2,
-          iconClass: 'text-emerald-600 dark:text-emerald-400',
-          title: 'Sandbox healthy',
-          body: `${health?.ready_count} of ${health?.retention} snapshots retained as fallbacks${health && health.bootable_count < health.ready_count ? ` (${health.bootable_count} on the current runtime)` : ''}. Sessions boot from the latest.`,
-        };
-      default:
-        return {
-          Icon: Clock,
-          iconClass: 'text-muted-foreground',
-          title: 'No sandbox built yet',
-          body: 'The first snapshot builds when a session starts or you trigger a build.',
-        };
-    }
-  }, [tone, health]);
+  const Icon = template.is_default ? Container : template.has_image ? Package : FileCode;
+  const sub = template.is_default
+    ? 'Platform default · shared by every project'
+    : template.has_image
+      ? `Image: ${template.image}`
+      : `Dockerfile: ${template.dockerfile_path}`;
+  const sourceTag =
+    template.source === 'platform' ? 'platform' : template.source === 'ui' ? 'UI' : 'kortix.toml';
 
   return (
-    <div className={cn('rounded-2xl border p-4', BANNER_TONE[tone])}>
-      <div className="flex items-start gap-3">
-        <Icon className={cn('mt-0.5 h-5 w-5 shrink-0', iconClass)} />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">{title}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{body}</p>
-
-          {failure && (
-            <div className="mt-3">
-              <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-destructive/20 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-                  {CATEGORY_LABEL[failure.category] ?? failure.category}
-                </span>
-                <code className="font-mono text-xs text-muted-foreground">
-                  {shortSha(failure.commit_sha)}
-                </code>
-                <span className="text-xs text-muted-foreground">
-                  {formatRelative(failure.failed_at)}
-                </span>
-              </div>
-              <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background/70 p-2.5 text-xs text-muted-foreground">
-                {failure.error}
-              </pre>
-            </div>
-          )}
-
-          {canManage && (failure || tone === 'critical' || tone === 'degraded') && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                disabled={retry.isPending}
-                onClick={() => retry.mutate()}
-              >
-                {retry.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                Retry build
-              </Button>
-              {canFixWithAgent && (
-                <Button
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={fixWithAgent.isPending}
-                  onClick={() => fixWithAgent.mutate()}
-                >
-                  {fixWithAgent.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                  Fix with agent
-                </Button>
-              )}
-            </div>
-          )}
+    <li className="flex flex-wrap items-center gap-3 px-3 py-3 text-sm">
+      <Icon className="size-4 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="font-medium">{template.name}</span>
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+            {template.slug}
+          </code>
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">{sourceTag}</span>
+        </div>
+        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+          {sub} · {template.cpu} vCPU · {template.memory_gb} GiB · {template.disk_gb} GiB disk
         </div>
       </div>
-    </div>
+      <StateBadge state={template.daytona_state} />
+      {canManage && (
+        <div className="flex items-center gap-1">
+          {template.template_id && !template.is_default && (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="size-7 p-0"
+                onClick={() => onEdit(template)}
+                aria-label="Edit template"
+              >
+                <Edit3 className="size-3.5" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="size-7 p-0 text-destructive hover:text-destructive"
+                disabled={deleteMut.isPending}
+                onClick={() => {
+                  if (window.confirm(`Delete sandbox template "${template.name}"?`)) {
+                    deleteMut.mutate();
+                  }
+                }}
+                aria-label="Delete template"
+              >
+                {deleteMut.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+              </Button>
+            </>
+          )}
+          {template.template_id && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              disabled={buildMut.isPending}
+              onClick={() => buildMut.mutate()}
+            >
+              {buildMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Rebuild
+            </Button>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
 
 export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCardProps) {
-  const snapshotsQuery = useQuery<ProjectSnapshotsResponse>({
+  const snapshotsQuery = useQuery({
     queryKey: SNAPSHOTS_QUERY_KEY(projectId),
     queryFn: () => listProjectSnapshots(projectId),
     staleTime: 10_000,
-    // Auto-refresh while a build is in flight so the badge updates without a manual reload.
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
-      const inFlight = data.items.some((s) => s.status === 'building' || s.status === 'queued');
-      return inFlight ? 5_000 : false;
+      const builds = Array.isArray(data.builds) ? data.builds : [];
+      const templates = Array.isArray(data.templates) ? data.templates : [];
+      const anyBuilding =
+        builds.some((b) => b.status === 'building') ||
+        templates.some((t) => ['pulling', 'building'].includes((t.daytona_state || '').toLowerCase()));
+      return anyBuilding ? 5_000 : false;
     },
   });
-  const { retry } = useSandboxRecovery(projectId);
+  const { fixWithAgent } = useSandboxRecovery(projectId);
 
-  const data = snapshotsQuery.data;
-  const health = data?.health ?? null;
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<SandboxTemplate | null>(null);
 
-  const latestReady = useMemo<ProjectSnapshot | null>(() => {
-    if (!data) return null;
-    const branch = data.default_branch;
-    return data.items.find((s) => s.status === 'ready' && s.branch === branch) ?? null;
-  }, [data]);
-
-  const activeForBranch = useMemo<ProjectSnapshot | null>(() => {
-    if (!data) return null;
-    const branch = data.default_branch;
-    return (
-      data.items.find(
-        (s) => s.branch === branch && (s.status === 'building' || s.status === 'queued'),
-      ) ?? null
-    );
-  }, [data]);
-
-  const headSha = data?.head_commit_sha ?? null;
-  const branch = data?.default_branch ?? '';
-
-  // "Needs rebuild" — branch tip moved past the latest ready snapshot's commit
-  // and there isn't already a build in flight for a newer commit.
-  const needsRebuild =
-    headSha != null &&
-    latestReady != null &&
-    headSha !== latestReady.commit_sha &&
-    activeForBranch?.commit_sha !== headSha;
-
-  // ── Empty / loading / error UI ─────────────────────────────────────────
   if (snapshotsQuery.isLoading) {
-    return <Skeleton className="h-72 rounded-2xl" />;
+    return <Skeleton className="h-64 rounded-2xl" />;
   }
   if (snapshotsQuery.isError) {
     return (
@@ -301,7 +273,7 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
         </header>
         <div className="px-6 py-5">
           <p className="text-sm text-destructive">
-            Failed to load snapshot status: {(snapshotsQuery.error as Error).message}
+            Failed to load sandbox templates: {(snapshotsQuery.error as Error).message}
           </p>
           <Button variant="outline" size="sm" className="mt-3" onClick={() => snapshotsQuery.refetch()}>
             Retry
@@ -310,125 +282,129 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
       </section>
     );
   }
+  const data = snapshotsQuery.data;
   if (!data) return null;
+
+  const builds = Array.isArray(data.builds) ? data.builds : [];
+  const templates = Array.isArray(data.templates) ? data.templates : [];
+  const latestFailure = builds.find((b) => b.status === 'failed') ?? null;
+  const latestReady = builds.find((b) => b.status === 'ready') ?? null;
+  const canFixWithAgent = !!latestFailure && !!latestReady;
+
+  const openNewForm = () => {
+    setEditingTemplate(null);
+    setFormOpen(true);
+  };
+  const openEditForm = (tpl: SandboxTemplate) => {
+    setEditingTemplate(tpl);
+    setFormOpen(true);
+  };
 
   return (
     <section className="rounded-2xl border border-border/70 bg-card">
       <header className="flex items-start justify-between gap-3 border-b border-border/60 px-6 py-4">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Sandbox snapshots</h2>
+          <h2 className="text-base font-semibold text-foreground">Sandbox templates</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Every session boots from this project’s{' '}
-            <code className="font-mono">.kortix/Dockerfile</code> at the latest commit on{' '}
-            <code className="font-mono">{branch || 'main'}</code>. The {health?.retention ?? 5} most
-            recent healthy snapshots are retained as fallbacks.
+            Sessions boot from a sandbox template. The platform default is shared by every project and
+            clones your repo into <code className="font-mono">/workspace</code> at boot. Add your own
+            templates here or via <code className="font-mono">[[sandboxes]]</code> in{' '}
+            <code className="font-mono">kortix.toml</code>.
           </p>
+          {data.templates_error && (
+            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+              Couldn’t read project sandbox config: {data.templates_error}
+            </p>
+          )}
         </div>
         {canManage && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="shrink-0 gap-1.5"
-            disabled={retry.isPending}
-            onClick={() => retry.mutate()}
-          >
-            {retry.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            Rebuild
+          <Button size="sm" className="gap-1.5" onClick={openNewForm}>
+            <Plus className="size-3.5" />
+            New template
           </Button>
         )}
       </header>
 
       <div className="space-y-5 px-6 py-5">
-        {/* ── Health banner ─────────────────────────────────────────────── */}
-        <HealthBanner projectId={projectId} health={health} canManage={canManage} />
+        {templates.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
+            No templates resolved yet.
+          </p>
+        ) : (
+          <List className="rounded-2xl border border-border/60">
+            {templates.map((t) => (
+              <TemplateRow
+                key={t.template_id ?? `tpl-${t.slug}`}
+                projectId={projectId}
+                template={t}
+                canManage={canManage}
+                onEdit={openEditForm}
+              />
+            ))}
+          </List>
+        )}
 
-        {/* ── Headline status row ───────────────────────────────────────── */}
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Branch HEAD</p>
-            <div className="mt-1 flex items-center gap-2">
-              <code className="rounded bg-background px-1.5 py-0.5 font-mono text-xs">
-                {shortSha(headSha)}
-              </code>
-              {data.head_resolve_error && (
-                <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                  <AlertTriangle className="h-3 w-3" /> unresolved
+        {latestFailure && (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <XCircle className="h-4 w-4 text-destructive" />
+              <span className="text-sm font-semibold text-destructive">Latest build failed</span>
+              {latestFailure.error_category && (
+                <span className="rounded-full border border-destructive/20 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                  {CATEGORY_LABEL[latestFailure.error_category] ?? latestFailure.error_category}
                 </span>
               )}
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{latestFailure.slug}</code>
+              <span className="text-xs text-muted-foreground">
+                {formatRelative(latestFailure.finished_at ?? latestFailure.started_at)}
+              </span>
             </div>
+            {latestFailure.error && (
+              <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background/70 p-2.5 text-xs text-muted-foreground">
+                {latestFailure.error}
+              </pre>
+            )}
+            {canManage && canFixWithAgent && (
+              <Button
+                size="sm"
+                className="mt-3 gap-1.5"
+                disabled={fixWithAgent.isPending}
+                onClick={() => fixWithAgent.mutate()}
+              >
+                {fixWithAgent.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                Fix with agent
+              </Button>
+            )}
           </div>
-          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Latest ready</p>
-            <div className="mt-1 flex items-center gap-2">
-              <code className="rounded bg-background px-1.5 py-0.5 font-mono text-xs">
-                {shortSha(latestReady?.commit_sha)}
-              </code>
-              {latestReady ? (
-                <span className="text-xs text-muted-foreground">
-                  {formatRelative(latestReady.updated_at)}
-                </span>
-              ) : needsRebuild ? null : (
-                <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                  <AlertTriangle className="h-3 w-3" /> none
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">In progress</p>
-            <div className="mt-1 flex items-center gap-2">
-              {activeForBranch ? (
-                <>
-                  <code className="rounded bg-background px-1.5 py-0.5 font-mono text-xs">
-                    {shortSha(activeForBranch.commit_sha)}
-                  </code>
-                  <StatusPill status={activeForBranch.status} />
-                </>
-              ) : needsRebuild ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-                  <AlertTriangle className="h-3 w-3" /> Needs rebuild
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground">—</span>
-              )}
-            </div>
-          </div>
-        </div>
+        )}
 
-        {/* ── History list ────────────────────────────────────────────── */}
         <div>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Recent builds
           </h3>
-          {data.items.length === 0 ? (
+          {builds.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
-              No snapshot builds yet. The first build kicks off when a session starts or you click Rebuild.
+              No builds recorded yet. The platform default builds once globally; custom templates build on first use.
             </p>
           ) : (
             <List className="rounded-2xl border border-border/60">
-              {data.items.slice(0, 10).map((snap) => (
-                <li key={snap.snapshot_row_id} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
-                  <code className="font-mono text-xs">{shortSha(snap.commit_sha)}</code>
-                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-                    {snap.branch || '—'}
-                  </span>
-                  <StatusPill status={snap.status} />
-                  {snap.status === 'failed' && snap.error_category && (
-                    <span className="rounded-full border border-destructive/20 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-                      {CATEGORY_LABEL[snap.error_category] ?? snap.error_category}
-                    </span>
+              {builds.slice(0, 10).map((b: ProjectSnapshotBuild) => (
+                <li key={b.build_id} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{b.slug}</code>
+                  <StatusPill status={b.status} />
+                  {b.source && (
+                    <span className="text-xs text-muted-foreground">via {b.source}</span>
                   )}
-                  {snap.metadata?.source ? (
-                    <span className="text-xs text-muted-foreground">
-                      via {String(snap.metadata.source)}
-                    </span>
-                  ) : null}
                   <span className="ml-auto text-xs text-muted-foreground">
-                    {formatRelative(snap.updated_at)}
+                    {formatRelative(b.finished_at ?? b.started_at)}
                   </span>
-                  {snap.status === 'failed' && snap.error && (
+                  {b.status === 'failed' && b.error && (
                     <pre className="basis-full overflow-auto whitespace-pre-wrap break-words rounded-lg bg-destructive/5 p-2 text-xs text-destructive">
-                      {snap.error}
+                      {b.error}
                     </pre>
                   )}
                 </li>
@@ -437,6 +413,13 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
           )}
         </div>
       </div>
+
+      <SandboxTemplateForm
+        projectId={projectId}
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        template={editingTemplate}
+      />
     </section>
   );
 }

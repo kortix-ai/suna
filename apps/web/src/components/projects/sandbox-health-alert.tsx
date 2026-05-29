@@ -3,22 +3,10 @@
 /**
  * Project-level sandbox build health alert.
  *
- * The sandbox snapshot is the foundation of the whole product: no ready image
- * means no new session can boot. When a build fails (or the very first build is
- * still running) the user needs to know *everywhere* in the project — not buried
- * in a settings sub-tab — so this renders a prominent alert in the project
- * sidebar (expanded row + collapsed rail icon) with one-click recovery:
- *   • Retry build      — re-run the snapshot build for the branch tip.
- *   • Fix with agent    — open a session pre-seeded with the classified error so
- *                         an agent can fix the Dockerfile and open a CR.
- *
- * Severity:
- *   • critical (red)   — build failed AND no healthy snapshot remains → sessions
- *                        cannot boot. This is the product-down state.
- *   • degraded (amber) — build failed but older healthy snapshots still serve
- *                        sessions (running slightly stale code).
- *   • building (muted) — first build still running, nothing ready yet (expected,
- *                        informational — not an error).
+ * Polls `/sandbox-health` which asks Daytona for the live state of the current
+ * default-branch commit's expected image and surfaces the most recent failed
+ * build from the append-only log. Renders nothing for the steady-state
+ * (ready) case — only shows up when something needs attention.
  */
 
 import * as React from 'react';
@@ -47,12 +35,12 @@ import {
 
 export const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health', projectId];
 
-type Severity = 'critical' | 'degraded' | 'building';
+type Severity = 'critical' | 'building';
 
 function severityOf(health: ProjectSandboxHealth | null | undefined): Severity | null {
   if (!health) return null;
-  if (health.failure) return health.ready_count === 0 ? 'critical' : 'degraded';
-  if (!health.healthy && health.building) return 'building';
+  if (health.latest_failure && !health.ready) return 'critical';
+  if (health.building && !health.ready) return 'building';
   return null;
 }
 
@@ -61,11 +49,6 @@ const SEVERITY_TONE: Record<Severity, { text: string; icon: string; dot: string 
     text: 'text-destructive',
     icon: 'text-destructive',
     dot: 'bg-destructive',
-  },
-  degraded: {
-    text: 'text-amber-600 dark:text-amber-400',
-    icon: 'text-amber-600 dark:text-amber-400',
-    dot: 'bg-amber-500',
   },
   building: {
     text: 'text-muted-foreground',
@@ -76,8 +59,17 @@ const SEVERITY_TONE: Record<Severity, { text: string; icon: string; dot: string 
 
 const SEVERITY_LABEL: Record<Severity, string> = {
   critical: 'Fix sandbox build',
-  degraded: 'Sandbox build failing',
   building: 'Sandbox build running…',
+};
+
+const CATEGORY_LABEL: Record<string, string> = {
+  dockerfile: 'Dockerfile build failed',
+  git: 'Repository access failed',
+  tunnel: 'Sandbox callback unreachable',
+  provider: 'Sandbox provider error',
+  timeout: 'Build timed out',
+  runtime: 'Runtime artifact missing',
+  unknown: 'Build failed',
 };
 
 /** Shared health query — pollable, used by the alert and the settings panel. */
@@ -88,10 +80,8 @@ export function useSandboxHealth(projectId: string) {
     staleTime: 8_000,
     refetchInterval: (query) => {
       const data = query.state.data;
-      // Poll faster while something is in flight or broken; slower steady state
-      // so a freshly-introduced failure still surfaces within ~30s.
       if (!data) return 15_000;
-      if (data.building || data.failure) return 8_000;
+      if (data.building || data.latest_failure) return 8_000;
       return 30_000;
     },
     refetchOnWindowFocus: true,
@@ -109,15 +99,9 @@ export function useSandboxRecovery(projectId: string) {
   }, [queryClient, projectId]);
 
   const retry = useMutation({
-    mutationFn: () => rebuildProjectSnapshot(projectId),
-    onSuccess: (result) => {
-      const labels: Record<typeof result.status, string> = {
-        'started': 'Snapshot build started',
-        'already-building': 'A build is already in progress',
-        'already-ready': 'Latest commit is already built',
-        'failed-to-start': 'Could not start build',
-      };
-      toast.success(labels[result.status]);
+    mutationFn: (slug?: string) => rebuildProjectSnapshot(projectId, slug),
+    onSuccess: () => {
+      toast.success('Rebuild started');
       invalidate();
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to start build'),
@@ -137,16 +121,6 @@ export function useSandboxRecovery(projectId: string) {
   return { retry, fixWithAgent };
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  dockerfile: 'Dockerfile build failed',
-  git: 'Repository access failed',
-  tunnel: 'Sandbox callback unreachable',
-  provider: 'Sandbox provider error',
-  timeout: 'Build timed out',
-  runtime: 'Runtime artifact missing',
-  unknown: 'Build failed',
-};
-
 /** The popover body: what's wrong + how to recover. */
 function SandboxAlertContent({
   projectId,
@@ -159,8 +133,8 @@ function SandboxAlertContent({
 }) {
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
-  const failure = health.failure;
-  const canFixWithAgent = !!failure?.fixable_by_agent && health.ready_count > 0;
+  const failure = health.latest_failure;
+  const canFixWithAgent = !!failure && !!health.latest_build && health.latest_build.status === 'ready';
 
   return (
     <div className="w-full overflow-hidden">
@@ -172,23 +146,13 @@ function SandboxAlertContent({
             <AlertTriangle className={cn('size-4', SEVERITY_TONE[severity].icon)} />
           )}
           <span className={cn('text-sm font-semibold', SEVERITY_TONE[severity].text)}>
-            {severity === 'critical'
-              ? 'Sandbox build failed'
-              : severity === 'degraded'
-                ? 'Latest build failed'
-                : health.first_build
-                  ? 'Building first sandbox'
-                  : 'Rebuilding sandbox'}
+            {severity === 'critical' ? 'Sandbox build failed' : 'Sandbox build running'}
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
           {severity === 'critical'
-            ? 'No healthy snapshot remains, so new sessions can’t start until this is fixed.'
-            : severity === 'degraded'
-              ? `Sessions still run on the last healthy snapshot (${health.ready_count} retained). New commits won’t apply until the build succeeds.`
-              : health.first_build
-                ? 'This one-time build runs the first time a project is created. Sessions can start once it’s ready.'
-                : 'A new sandbox image is building. Sessions can start once a healthy snapshot is available.'}
+            ? 'New sessions will rebuild on the next start, but the most recent build is failing.'
+            : 'A new sandbox image is building. Sessions can start once it’s ready.'}
         </p>
       </div>
 
@@ -196,15 +160,15 @@ function SandboxAlertContent({
         <div className="border-t border-border/60 px-4 py-3">
           <div className="mb-1.5 flex items-center gap-2">
             <span className="rounded-full border border-destructive/20 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-              {CATEGORY_LABEL[failure.category] ?? failure.category}
+              {CATEGORY_LABEL[failure.error_category ?? 'unknown'] ?? failure.error_category}
             </span>
-            <code className="font-mono text-xs text-muted-foreground">
-              {failure.commit_sha.slice(0, 7)}
-            </code>
+            <code className="font-mono text-xs text-muted-foreground">{failure.slug}</code>
           </div>
-          <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/60 p-2 text-xs text-muted-foreground">
-            {failure.error}
-          </pre>
+          {failure.error && (
+            <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/60 p-2 text-xs text-muted-foreground">
+              {failure.error}
+            </pre>
+          )}
         </div>
       )}
 
@@ -214,7 +178,7 @@ function SandboxAlertContent({
           variant="outline"
           className="gap-1.5"
           disabled={retry.isPending}
-          onClick={() => retry.mutate()}
+          onClick={() => retry.mutate(failure?.slug)}
         >
           {retry.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
           Retry build
@@ -234,7 +198,7 @@ function SandboxAlertContent({
           size="sm"
           variant="ghost"
           className="ml-auto text-muted-foreground"
-          onClick={() => openCustomize('settings')}
+          onClick={() => openCustomize('sandbox')}
         >
           Details
         </Button>

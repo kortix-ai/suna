@@ -9,9 +9,18 @@ let dir: string;
 
 const BASE_STARTER_PATHS = [
   '.gitignore',
-  '.kortix/Dockerfile',
+  '.kortix/memory/MEMORY.md',
+  '.kortix/memory/conventions.md',
+  '.kortix/memory/decisions.md',
+  '.kortix/memory/integrations.md',
+  '.kortix/memory/overview.md',
   '.kortix/opencode/agents/kortix.md',
+  '.kortix/opencode/agents/memory-reflector.md',
   '.kortix/opencode/opencode.jsonc',
+  '.kortix/opencode/plugins/kortix-simple-memory.ts',
+  '.kortix/opencode/skills/agent-browser/SKILL.md',
+  '.kortix/opencode/skills/kortix-executor/SKILL.md',
+  '.kortix/opencode/skills/kortix-memory/SKILL.md',
   '.kortix/opencode/skills/kortix-system/SKILL.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md',
@@ -26,6 +35,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-system/references/opencode/rules.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/skills.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
+  '.kortix/opencode/skills/slack/SKILL.md',
   '.kortix/opencode/tools/show.ts',
   'README.md',
   'kortix.toml',
@@ -68,8 +78,10 @@ describe('applyScaffold', () => {
     expect(manifest).toContain('name = "Hello World"');
     expect(manifest).not.toContain('{{projectName}}');
 
-    // Manifest declares the .kortix/ paths explicitly — never implicit.
-    expect(manifest).toContain('dockerfile = ".kortix/Dockerfile"');
+    // Manifest declares the opencode config dir explicitly. Sandbox templates
+    // are no longer pre-seeded — the project boots from the platform default
+    // and users can add custom `[[sandboxes]]` entries on demand.
+    expect(manifest).not.toContain('[sandbox]');
     expect(manifest).toContain('config_dir = ".kortix/opencode"');
 
     // Sanity-check a couple of the other content files.

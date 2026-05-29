@@ -4,7 +4,6 @@ import { db } from '../shared/db';
 import { getProvider, type ProviderName } from '../platform/providers';
 import { invalidateProviderCache } from '../sandbox-proxy';
 import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
-import { reconcileDaytonaSnapshots } from '../snapshots/builder';
 import { pauseComputeSession, tickRunningComputeCharges } from '../billing/services/compute-metering';
 
 const DEFAULT_IDLE_TTL_MS = 60 * 60 * 1000;
@@ -250,15 +249,9 @@ export async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, branches, snapshots, computeTick] = await Promise.all([
+    const [idle, branches, computeTick] = await Promise.all([
       hibernateIdleSessionSandboxes(),
       sweepExpiredSessionBranches(),
-      // Org-wide snapshot GC: reclaim orphaned/over-budget Daytona snapshots so
-      // the global quota never strangles new builds. Best-effort.
-      reconcileDaytonaSnapshots().catch((err) => {
-        console.warn('[project-maintenance] snapshot reconcile failed:', err instanceof Error ? err.message : err);
-        return null;
-      }),
       // Billing v2 — partial-bill any active compute sessions that haven't
       // settled in > 1h, so a missed stop hook can't accrue uncharged compute.
       tickRunningComputeCharges().catch((err) => {
@@ -266,9 +259,8 @@ export async function runProjectMaintenance(): Promise<void> {
         return { settled: 0 };
       }),
     ]);
-    const snapChanged = snapshots && (snapshots.evicted || snapshots.failedCleared);
-    if (idle.stopped || idle.errors || branches.deleted || branches.errors || snapChanged || computeTick.settled) {
-      console.log('[project-maintenance] completed', { idle, branches, snapshots, computeTick });
+    if (idle.stopped || idle.errors || branches.deleted || branches.errors || computeTick.settled) {
+      console.log('[project-maintenance] completed', { idle, branches, computeTick });
     }
   } finally {
     maintenanceRunning = false;

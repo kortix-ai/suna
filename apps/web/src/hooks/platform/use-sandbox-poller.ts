@@ -109,26 +109,44 @@ async function waitForOpenCodeHealthy(
 ): Promise<boolean> {
   const url = getSandboxUrl(sandboxId);
   const timeout = 180_000; // 3 minutes — cold starts can take a while
-  const interval = 3_000;
+  // Adaptive poll: tight (250ms) at the start so we catch a ready backend
+  // within a single render tick, then ramp to 2s for the long-tail cold
+  // start without overwhelming the network. Previously a flat 3s wasted up
+  // to 3s of perceived boot time on every warm session.
+  const POLL_RAMP_MS = [250, 250, 250, 500, 500, 1_000, 1_000, 1_500, 2_000];
   const deadline = Date.now() + timeout;
+  let attempt = 0;
 
   while (Date.now() < deadline) {
     if (signal.aborted) return false;
     let res: Response;
     try {
-      res = await fetch(`${url}/global/health`, {
-        signal,
-        credentials: 'include',
-      });
+      // Per-request 2s timeout so a slow proxy doesn't stall a poll slot for
+      // the OS default (~30s). We combine with the outer abort signal so a
+      // hook unmount cancels everything.
+      const reqAbort = new AbortController();
+      const reqTimer = setTimeout(() => reqAbort.abort(), 2_000);
+      const onOuterAbort = () => reqAbort.abort();
+      signal.addEventListener('abort', onOuterAbort, { once: true });
+      try {
+        res = await fetch(`${url}/global/health`, {
+          signal: reqAbort.signal,
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.healthy === true) return true;
+        }
+      } finally {
+        clearTimeout(reqTimer);
+        signal.removeEventListener('abort', onOuterAbort);
+      }
     } catch {
-      await new Promise((r) => setTimeout(r, interval));
-      continue;
+      // network blip or per-request timeout — fall through to the sleep + retry
     }
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.healthy === true) return true;
-    }
-    await new Promise((r) => setTimeout(r, interval));
+    const delay = POLL_RAMP_MS[Math.min(attempt, POLL_RAMP_MS.length - 1)];
+    attempt += 1;
+    await new Promise((r) => setTimeout(r, delay));
   }
   return false;
 }

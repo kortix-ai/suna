@@ -1,15 +1,12 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { ProjectShell } from '@/components/projects/project-shell';
-import { ProjectHome } from '@/components/projects/project-home';
-import {
-  createProjectSession,
-  type ProjectSession,
-} from '@/lib/projects-client';
+import { ProjectHome, type ProjectHomeSendOptions } from '@/components/projects/project-home';
+import { createProjectSession } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 
 /**
@@ -19,51 +16,54 @@ import { toast } from '@/lib/toast';
  * (integrations, scheduled tasks, skills, Slack, team, agent) that tease the
  * feature and prompt setup, each docs-backed.
  *
- * Opening this page does not create a stealth session: a session is created on
- * send, then we route into it (the session view auto-sends the stashed prompt
- * once the runtime is ready).
+ * Send flow is **optimistic**: we mint the session id client-side, navigate
+ * straight into the ConnectingScreen, then POST in the background. That
+ * removes the entire session-create round-trip from perceived boot time.
+ * The session id is a real UUID; the API accepts client-provided ids via the
+ * `session_id` body field (see apps/api/src/projects/index.ts createProjectSession).
  */
 export default function ProjectIndexPage() {
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const pendingSession = useRef<Promise<ProjectSession> | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const createSession = useCallback(() => {
-    if (!pendingSession.current) {
-      pendingSession.current = createProjectSession(projectId)
-        .then((s) => {
-          queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-          return s;
-        })
-        .catch((err) => {
-          pendingSession.current = null; // allow a retry on the next attempt
-          throw err;
-        });
-    }
-    return pendingSession.current;
-  }, [projectId, queryClient]);
-
   const handleSend = useCallback(
-    async (text: string) => {
+    (text: string, options?: ProjectHomeSendOptions) => {
       if (!text.trim()) return;
       setBusy(true);
-      try {
-        const session = await createSession();
-        // ActiveSessionChat reads this and auto-sends once the sandbox is ready.
-        sessionStorage.setItem(`project_pending_prompt:${session.session_id}`, text);
-        router.push(`/projects/${projectId}/sessions/${session.session_id}`);
-      } catch (err) {
-        setBusy(false);
-        // 429 concurrent-session-limit is handled globally in error-handler.ts —
-        // skip the local toast to avoid showing two stacked messages.
-        if ((err as any)?.code === 'concurrent_session_limit') return;
-        toast.error(err instanceof Error ? err.message : 'Failed to start session');
-      }
+
+      // 1. Generate the session id locally — same RFC 4122 v4 shape the API
+      //    would have generated. We stash the pending prompt under this id
+      //    *before* navigating so ActiveSessionChat picks it up the moment
+      //    the page mounts.
+      const sessionId = crypto.randomUUID();
+      sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
+
+      // 2. Navigate FIRST — the ConnectingScreen renders against an empty
+      //    sandbox row and starts polling. From the user's perspective the
+      //    click is instant.
+      router.push(`/projects/${projectId}/sessions/${sessionId}`);
+
+      // 3. POST in the background. Errors get a toast but we leave the
+      //    navigation in place; ActiveSessionChat will surface the failure
+      //    once the sandbox poll returns 404.
+      void createProjectSession(projectId, {
+        session_id: sessionId,
+        ...(options?.sandbox_slug ? { sandbox_slug: options.sandbox_slug } : {}),
+      })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+        })
+        .catch((err) => {
+          setBusy(false);
+          // 429 concurrent-session-limit is handled globally — skip the local toast.
+          if ((err as any)?.code === 'concurrent_session_limit') return;
+          toast.error(err instanceof Error ? err.message : 'Failed to start session');
+        });
     },
-    [createSession, projectId, router],
+    [projectId, queryClient, router],
   );
 
   return (

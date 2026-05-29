@@ -950,12 +950,12 @@ export async function pipedreamFinalize(projectId: string, slug: string) {
   );
 }
 
-// ─── Sandbox snapshots ────────────────────────────────────────────────────
+// ─── Sandbox templates + snapshot build log ──────────────────────────────
 
-/** Build status of a project's Daytona snapshot row. */
-export type ProjectSnapshotStatus = 'queued' | 'building' | 'ready' | 'failed';
+/** Lifecycle status of a single build attempt. */
+export type ProjectSnapshotStatus = 'building' | 'ready' | 'failed';
 
-/** Classified reason a snapshot build failed (see apps/api/.../error-classify.ts). */
+/** Classified reason a snapshot build failed. */
 export type SnapshotErrorCategory =
   | 'dockerfile'
   | 'tunnel'
@@ -965,69 +965,75 @@ export type SnapshotErrorCategory =
   | 'git'
   | 'unknown';
 
-export interface ProjectSnapshot {
-  snapshot_row_id: string;
-  project_id: string;
+/** A sandbox template: platform default + each `[[sandboxes]]` / UI-created entry. */
+export interface SandboxTemplate {
+  template_id: string | null;
+  slug: string;
+  name: string;
+  is_default: boolean;
+  source: 'platform' | 'toml' | 'ui';
   provider: string;
-  commit_sha: string;
-  branch: string;
-  snapshot_id: string | null;
-  status: ProjectSnapshotStatus;
-  error: string | null;
-  /** Classified category when `error` is set; null otherwise. */
-  error_category: SnapshotErrorCategory | null;
-  metadata: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
+  has_dockerfile: boolean;
+  has_image: boolean;
+  image: string | null;
+  dockerfile_path: string | null;
+  entrypoint: string | null;
+  cpu: number;
+  memory_gb: number;
+  disk_gb: number;
+  snapshot_name: string;
+  content_hash: string;
+  daytona_state: string;
+  provider_state: string;
+  ready: boolean;
 }
 
-/** Project-level sandbox health summary for the sidebar alert + panel banner. */
-export interface ProjectSandboxHealth {
-  branch: string;
-  provider: string;
-  /** Retained ready snapshots (any runtime) — kept as fallbacks. */
-  ready_count: number;
-  /** Ready snapshots matching the current runtime — bootable for HEAD without a rebuild. */
-  bootable_count: number;
-  /** Total snapshot rows (any status); 0 means the project never built. */
-  total_count: number;
-  /** Configured retention target. */
-  retention: number;
-  /** ≥1 retained ready snapshot exists → a session can boot (possibly an older runtime). */
-  healthy: boolean;
-  /** A build is in flight, or a ready snapshot is rebuilding in place. */
-  building: boolean;
-  /** True only the very first time a project builds (no ready snapshot ever). */
-  first_build: boolean;
-  /** Retained ready snapshots exist but none match the current runtime — refresh pending. */
-  runtime_outdated: boolean;
-  latest_ready_commit_sha: string | null;
-  latest_status: ProjectSnapshotStatus | null;
-  /** Present when the most recent build for the branch failed. */
-  failure: {
-    commit_sha: string;
-    error: string;
-    category: SnapshotErrorCategory;
-    fixable_by_agent: boolean;
-    failed_at: string;
-  } | null;
+export interface SandboxTemplatesResponse {
+  items: SandboxTemplate[];
+  default_slug: string | null;
+}
+
+export interface ProjectSnapshotBuild {
+  build_id: string;
+  slug: string;
+  snapshot_name: string;
+  content_hash: string;
+  status: ProjectSnapshotStatus;
+  error: string | null;
+  error_category: SnapshotErrorCategory | null;
+  source: 'session-start' | 'project-create' | 'cr-merge' | 'manual' | 'background' | null;
+  started_at: string;
+  finished_at: string | null;
 }
 
 export interface ProjectSnapshotsResponse {
-  items: ProjectSnapshot[];
-  default_branch: string;
-  /** Current HEAD on the default branch. Null if the API couldn't resolve it. */
-  head_commit_sha: string | null;
-  /** Error string when head_commit_sha is null (e.g. GitHub App not installed). */
-  head_resolve_error: string | null;
-  /** Project-level health summary (null only if the API couldn't compute it). */
-  health: ProjectSandboxHealth | null;
+  templates: SandboxTemplate[];
+  templates_error: string | null;
+  builds: ProjectSnapshotBuild[];
+}
+
+export interface ProjectSandboxHealth {
+  primary_slug: string | null;
+  primary_template: SandboxTemplate | null;
+  ready: boolean;
+  building: boolean;
+  latest_build: ProjectSnapshotBuild | null;
+  latest_failure: ProjectSnapshotBuild | null;
 }
 
 export interface RebuildSnapshotResponse {
-  status: 'already-ready' | 'already-building' | 'started' | 'failed-to-start';
-  branch: string;
-  commit_sha: string | null;
+  status: 'started';
+  slug: string;
+  deleted_existing: boolean;
+  snapshot_name: string;
+}
+
+export async function listProjectSandboxes(projectId: string) {
+  return unwrap(
+    await backendApi.get<SandboxTemplatesResponse>(
+      `/projects/${projectId}/sandboxes`,
+    ),
+  );
 }
 
 export async function listProjectSnapshots(projectId: string) {
@@ -1038,7 +1044,6 @@ export async function listProjectSnapshots(projectId: string) {
   );
 }
 
-/** Lightweight, DB-only sandbox health — cheap enough to poll from the sidebar. */
 export async function getProjectSandboxHealth(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSandboxHealth>(
@@ -1047,25 +1052,84 @@ export async function getProjectSandboxHealth(projectId: string) {
   );
 }
 
-export async function rebuildProjectSnapshot(projectId: string) {
+export async function rebuildProjectSnapshot(projectId: string, slug?: string) {
   return unwrap(
     await backendApi.post<RebuildSnapshotResponse>(
       `/projects/${projectId}/snapshots/rebuild`,
+      slug ? { slug } : {},
+    ),
+  );
+}
+
+export async function fixSandboxWithAgent(projectId: string) {
+  return unwrap(
+    await backendApi.post<{ session_id: string }>(
+      `/projects/${projectId}/snapshots/fix-with-agent`,
       {},
     ),
   );
 }
 
-/**
- * Spin up a session pre-seeded with the latest snapshot build failure so an
- * agent can diagnose + fix it and open a change request. Returns the new
- * session id (navigate to it). Throws if there's no failed build, or no ready
- * snapshot to run the fix in (cold first-build failure).
- */
-export async function fixSandboxWithAgent(projectId: string) {
+// ─── Template CRUD ────────────────────────────────────────────────────────
+
+export interface CreateSandboxTemplateInput {
+  slug: string;
+  name?: string;
+  image?: string;
+  dockerfile_path?: string;
+  entrypoint?: string;
+  cpu?: number;
+  memory_gb?: number;
+  disk_gb?: number;
+}
+
+export interface UpdateSandboxTemplateInput {
+  name?: string;
+  image?: string | null;
+  dockerfile_path?: string | null;
+  entrypoint?: string | null;
+  cpu?: number | null;
+  memory_gb?: number | null;
+  disk_gb?: number | null;
+}
+
+export async function createSandboxTemplate(
+  projectId: string,
+  input: CreateSandboxTemplateInput,
+) {
   return unwrap(
-    await backendApi.post<{ session_id: string }>(
-      `/projects/${projectId}/snapshots/fix-with-agent`,
+    await backendApi.post<{ template_id: string; slug: string }>(
+      `/projects/${projectId}/sandbox-templates`,
+      input,
+    ),
+  );
+}
+
+export async function updateSandboxTemplate(
+  projectId: string,
+  templateId: string,
+  input: UpdateSandboxTemplateInput,
+) {
+  return unwrap(
+    await backendApi.patch<{ template_id: string; slug: string }>(
+      `/projects/${projectId}/sandbox-templates/${templateId}`,
+      input,
+    ),
+  );
+}
+
+export async function deleteSandboxTemplate(projectId: string, templateId: string) {
+  return unwrap(
+    await backendApi.delete<null>(
+      `/projects/${projectId}/sandbox-templates/${templateId}`,
+    ),
+  );
+}
+
+export async function buildSandboxTemplate(projectId: string, templateId: string) {
+  return unwrap(
+    await backendApi.post<{ status: 'started'; template_id: string; slug: string }>(
+      `/projects/${projectId}/sandbox-templates/${templateId}/build`,
       {},
     ),
   );
@@ -1597,7 +1661,20 @@ export async function setProjectSessionSharing(
 
 export async function createProjectSession(
   projectId: string,
-  input?: { base_ref?: string; agent_name?: string },
+  input?: {
+    base_ref?: string;
+    agent_name?: string;
+    /** Slug of the sandbox template to boot from. Defaults to "default". */
+    sandbox_slug?: string;
+    initial_prompt?: string;
+    name?: string;
+    /**
+     * Client-generated session id. The API accepts any RFC 4122 v4 UUID;
+     * we use this so the FE can navigate optimistically the moment the user
+     * clicks "send" — the page renders before the POST has even returned.
+     */
+    session_id?: string;
+  },
 ) {
   return unwrap(
     await backendApi.post<ProjectSession>(

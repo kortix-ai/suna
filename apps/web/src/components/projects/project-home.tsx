@@ -26,8 +26,11 @@ import {
   CalendarClock,
   ChevronLeft,
   ChevronRight,
+  Container,
+  FileCode,
   Loader2,
   MessageSquare,
+  Package,
   Plug,
   Sparkles,
   Users,
@@ -37,6 +40,14 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { cn } from '@/lib/utils';
@@ -44,7 +55,9 @@ import {
   getProjectDetail,
   listConnectors,
   listProjectAccess,
+  listProjectSandboxes,
   listProjectTriggers,
+  type SandboxTemplate,
 } from '@/lib/projects-client';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -52,13 +65,18 @@ import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
+export interface ProjectHomeSendOptions {
+  /** Slug of the sandbox template the new session should boot from. */
+  sandbox_slug?: string;
+}
+
 export function ProjectHome({
   projectId,
   onSend,
   busy,
 }: {
   projectId: string;
-  onSend: (text: string) => void;
+  onSend: (text: string, options?: ProjectHomeSendOptions) => void;
   busy: boolean;
 }) {
   const detail = useQuery({
@@ -69,7 +87,25 @@ export function ProjectHome({
   const name = detail.data?.project?.name ?? '';
 
   const [text, setText] = useState('');
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Sandbox templates available for this project. The platform default is
+  // always returned; `[[sandboxes]]` entries from kortix.toml append to it.
+  // We only show a picker when there's a choice (more than one template).
+  const sandboxesQuery = useQuery({
+    queryKey: ['project-sandboxes', projectId],
+    queryFn: () => listProjectSandboxes(projectId),
+    ...Q,
+  });
+  const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
+  const defaultSlug = sandboxesQuery.data?.default_slug ?? 'default';
+  const activeSlug = selectedSlug ?? defaultSlug;
+  const activeTemplate = sandboxItems.find((t) => t.slug === activeSlug) ?? null;
+  // Always show the picker (even with only the platform default) so the user
+  // can confirm which template they're booting from and see its state. Hide
+  // only while the list is still loading.
+  const showSandboxPicker = sandboxItems.length >= 1;
   // Reactive subscription scoped to THIS project — fires whether the prefill
   // was set before mount or arrives later (e.g. wizard hands one off while
   // we're already on the page).
@@ -103,7 +139,7 @@ export function ProjectHome({
   const submit = () => {
     const t = text.trim();
     if (!t || busy) return;
-    onSend(t);
+    onSend(t, { sandbox_slug: activeSlug });
   };
 
   const applySuggestion = (s: string) => {
@@ -163,14 +199,23 @@ export function ProjectHome({
                   className="relative max-h-[220px] min-h-[64px] w-full resize-none overflow-y-auto border-none bg-transparent px-0.5 pb-2 pt-4 text-base leading-relaxed outline-none placeholder:text-muted-foreground/60 sm:text-[15px]"
                 />
                 <div className="mb-2 flex items-center justify-between gap-2 pl-1">
-                  <span className="hidden items-center gap-1.5 text-xs text-muted-foreground/60 sm:flex">
-                    <Kbd>Enter</Kbd>
-                    <span>to start</span>
-                    <span className="text-muted-foreground/30">·</span>
-                    <Kbd>Shift</Kbd>
-                    <Kbd>Enter</Kbd>
-                    <span>for a new line</span>
-                  </span>
+                  <div className="flex min-w-0 items-center gap-2">
+                    {showSandboxPicker ? (
+                      <SandboxPicker
+                        items={sandboxItems}
+                        activeSlug={activeSlug}
+                        onSelect={setSelectedSlug}
+                      />
+                    ) : null}
+                    <span className="hidden items-center gap-1.5 text-xs text-muted-foreground/60 sm:flex">
+                      <Kbd>Enter</Kbd>
+                      <span>to start</span>
+                      <span className="text-muted-foreground/30">·</span>
+                      <Kbd>Shift</Kbd>
+                      <Kbd>Enter</Kbd>
+                      <span>for a new line</span>
+                    </span>
+                  </div>
                   <Button
                     size="sm"
                     onClick={submit}
@@ -317,6 +362,92 @@ interface Tile {
   /** Customize section this tile opens. */
   section: CustomizeSection;
   docs: string;
+}
+
+function SandboxPicker({
+  items,
+  activeSlug,
+  onSelect,
+}: {
+  items: SandboxTemplate[];
+  activeSlug: string;
+  onSelect: (slug: string) => void;
+}) {
+  const active = items.find((t) => t.slug === activeSlug) ?? items[0] ?? null;
+  if (!active) return null;
+  const ActiveIcon = active.is_default ? Container : active.has_image ? Package : FileCode;
+  const activeStateTone =
+    active.daytona_state === 'active'
+      ? 'bg-emerald-500'
+      : ['pulling', 'building'].includes(active.daytona_state)
+        ? 'bg-blue-500'
+        : active.daytona_state === 'missing'
+          ? 'bg-muted-foreground/40'
+          : 'bg-destructive';
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Sandbox template"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground hover:bg-muted/50"
+        >
+          <ActiveIcon className="size-3.5" />
+          <span className="max-w-[10rem] truncate">{active.name}</span>
+          <span className={cn('size-1.5 rounded-full', activeStateTone)} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-80">
+        <DropdownMenuLabel>Sandbox template</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {items.map((tpl) => {
+          const Icon = tpl.is_default ? Container : tpl.has_image ? Package : FileCode;
+          const subtitle = tpl.is_default
+            ? 'Platform default · clones workspace at boot'
+            : tpl.has_image
+              ? `Image: ${tpl.image}`
+              : `Dockerfile: ${tpl.dockerfile_path}`;
+          const stateTone =
+            tpl.daytona_state === 'active'
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : ['pulling', 'building'].includes(tpl.daytona_state)
+                ? 'text-blue-600 dark:text-blue-400'
+                : tpl.daytona_state === 'missing'
+                  ? 'text-muted-foreground'
+                  : 'text-destructive';
+          const stateLabel =
+            tpl.daytona_state === 'active'
+              ? 'Ready'
+              : ['pulling', 'building'].includes(tpl.daytona_state)
+                ? 'Building — session will wait'
+                : tpl.daytona_state === 'missing'
+                  ? 'Not built — first session will build it'
+                  : tpl.daytona_state.replace('_', ' ');
+          return (
+            <DropdownMenuItem
+              key={tpl.template_id ?? `tpl-${tpl.slug}`}
+              className="flex items-start gap-2 py-2"
+              onSelect={() => onSelect(tpl.slug)}
+            >
+              <Icon className="mt-0.5 size-4 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{tpl.name}</span>
+                  {tpl.slug === activeSlug && (
+                    <Badge variant="outline" className="h-4 px-1 text-[10px]">selected</Badge>
+                  )}
+                </div>
+                <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
+                <div className={cn('mt-0.5 text-[11px] capitalize', stateTone)}>
+                  {stateLabel}
+                </div>
+              </div>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function ProjectHomeSections({ projectId }: { projectId: string }) {
