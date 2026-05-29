@@ -182,8 +182,20 @@ one-click preview URLs with preview-url.sh, and post them as the sticky
 #   [apps.env]
 #   NEXT_PUBLIC_API_URL = "https://api.example.com"
 
+# GitHub connector — token-auth so the agent acts as a dedicated BOT identity,
+# not the person who connected. The executor authenticates every call with the
+# GITHUB_AGENT_TOKEN secret (a bot account's fine-grained PAT, bearer); the
+# gateway injects it server-side, the agent never sees it. Routes are curated in
+# .kortix/executor/github.routes.json. Set the token with:
+#   kortix secrets set GITHUB_AGENT_TOKEN=<bot fine-grained PAT>
+# (Contents R/W + Pull requests R/W on the repo, owned by the bot account.)
 [[connectors]]
 slug = "github"
 name = "GitHub"
-provider = "pipedream"
-app = "github"
+provider = "http"
+base_url = "https://api.github.com"
+spec = ".kortix/executor/github.routes.json"
+
+  [connectors.auth]
+  type = "bearer"
+  secret = "GITHUB_AGENT_TOKEN"
