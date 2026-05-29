@@ -85,17 +85,27 @@ Helper scripts live in `.kortix/automation/pr-bot/` (this session's repo):
 
 Stand up the PR branch so a reviewer can click and see it running.
 
-1. Clone + `cd "$WORKDIR"`, `pnpm install`, and start the frontend +
-   backend dev servers in the background on known ports, using the repo's
-   own dev scripts. Capture logs to files; wait until each port actually
-   answers before continuing.
-2. For each running port, mint a one-click URL:
+1. Clone + `cd "$WORKDIR"`, then **materialize the project secrets into the
+   `.env` files the app reads** — the real frontend/backend won't boot without
+   them (DB, Supabase, API keys). The platform injects every project secret as
+   an env var in this sandbox; write them to dotenv files with the helper:
+   ```sh
+   .kortix/automation/pr-bot/write-env.sh "$WORKDIR/.env"          # repo root
+   .kortix/automation/pr-bot/write-env.sh "$WORKDIR/apps/api/.env" # backend
+   .kortix/automation/pr-bot/write-env.sh "$WORKDIR/apps/web/.env" # frontend
+   ```
+   (Write to wherever the app's tooling expects its env.) If a required secret
+   is missing from the project, say so in the comment — don't fake it.
+2. `pnpm install`, then start the frontend + backend dev servers in the
+   background on known ports, using the repo's own dev scripts. Capture logs to
+   files; wait until each port actually answers before continuing.
+3. For each running port, mint a one-click URL:
    `.kortix/automation/pr-bot/preview-url.sh <port> "<label>"`
-3. Post both URLs to the PR via the GitHub connector as a sticky comment
+4. Post both URLs to the PR via the GitHub connector as a sticky comment
    (hidden marker `<!-- pr-bot:preview -->`, edit-in-place on re-runs).
    Note what runs where and that the environment is ephemeral (lives as
    long as this sandbox).
-4. If a server won't start (missing backend secrets, build break), say so
+5. If a server won't start (missing backend secrets, build break), say so
    honestly with the relevant log tail — a clear failure beats a dead
    link. Post the URLs that DO work.
 
