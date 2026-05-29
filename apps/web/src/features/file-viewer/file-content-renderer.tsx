@@ -31,7 +31,12 @@ import { CodeEditor } from '@/components/file-editors/code-editor';
 import { useDiagnosticsStore, findDiagnosticsForFile } from '@/stores/diagnostics-store';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { SANDBOX_PORTS } from '@/lib/platform-client';
-import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
+import {
+  useAuthenticatedPreviewUrl,
+  isSubdomainPreviewUrl,
+  appendPreviewToken,
+} from '@/hooks/use-authenticated-preview-url';
+import { getAuthToken } from '@/lib/auth-token';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { useHeicBlob } from '@/hooks/use-heic-url';
@@ -313,17 +318,37 @@ export function FileContentRenderer({
 
   // Poll the health endpoint until the static server responds
   const [serverHealth, setServerHealth] = useState<'checking' | 'ready' | 'unavailable'>('checking');
+  const [healthRetryNonce, setHealthRetryNonce] = useState(0);
   const healthRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!isHtmlFile || !isHtmlPreview || !htmlHealthUrl) return;
 
     let cancelled = false;
+    // Bound the retries so this surface can never spin "Starting preview
+    // server…" forever — after ~30s of failures we surface a recoverable
+    // 'unavailable' state instead of looping silently.
+    let attempts = 0;
+    const MAX_HEALTH_ATTEMPTS = 20; // 20 × 1.5s ≈ 30s
     setServerHealth('checking');
 
     async function check() {
+      attempts += 1;
       try {
-        const res = await fetch(htmlHealthUrl, { method: 'GET', credentials: 'include' });
+        // Subdomain previews (p{port}-{sandbox}.host, used in local dev) can't
+        // rely on the host-only /v1/p session cookie — it never reaches the
+        // preview subdomain. They authenticate via a one-shot ?token on the
+        // request itself, which the proxy then trusts in-memory for the whole
+        // subdomain. Without it this probe 401s forever and the iframe — gated
+        // on serverHealth==='ready' — never renders, so nothing ever carries a
+        // token and the "Starting preview server…" state deadlocks.
+        let url = htmlHealthUrl;
+        if (isSubdomainPreviewUrl(htmlHealthUrl)) {
+          const token = await getAuthToken();
+          if (cancelled) return;
+          if (token) url = appendPreviewToken(htmlHealthUrl, token);
+        }
+        const res = await fetch(url, { method: 'GET', credentials: 'include' });
         if (cancelled) return;
         if (res.ok) {
           setServerHealth('ready');
@@ -337,6 +362,10 @@ export function FileContentRenderer({
 
     function retry() {
       if (cancelled) return;
+      if (attempts >= MAX_HEALTH_ATTEMPTS) {
+        setServerHealth('unavailable');
+        return;
+      }
       setServerHealth('checking');
       healthRetryRef.current = setTimeout(check, 1500);
     }
@@ -347,7 +376,7 @@ export function FileContentRenderer({
       cancelled = true;
       if (healthRetryRef.current) clearTimeout(healthRetryRef.current);
     };
-  }, [isHtmlFile, isHtmlPreview, htmlHealthUrl]);
+  }, [isHtmlFile, isHtmlPreview, htmlHealthUrl, healthRetryNonce]);
 
   // LSP diagnostics for this file from the global diagnostics store
   // Uses suffix-matching because LSP stores absolute paths but we use relative paths
@@ -813,10 +842,22 @@ export function FileContentRenderer({
         {isHtmlFile && isHtmlPreview && (
           <>
             {/* Server still starting — spinner + polling message */}
-            {(serverHealth === 'checking' || !authenticatedPreviewUrl) && (
+            {serverHealth !== 'unavailable' && (serverHealth === 'checking' || !authenticatedPreviewUrl) && (
               <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin opacity-40" />
                 <p className="text-xs opacity-50">{tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer')}</p>
+              </div>
+            )}
+
+            {/* Preview server never responded — recoverable, offer a retry */}
+            {serverHealth === 'unavailable' && (
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground px-6 text-center">
+                <FileWarning className="h-5 w-5 opacity-40" />
+                <p className="text-xs opacity-60 max-w-xs">{"Couldn't reach the preview server. The sandbox may still be starting up."}</p>
+                <Button variant="outline" size="sm" onClick={() => setHealthRetryNonce((n) => n + 1)}>
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Retry
+                </Button>
               </div>
             )}
 

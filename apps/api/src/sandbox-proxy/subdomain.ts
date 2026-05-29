@@ -49,6 +49,7 @@ interface AuthState {
   expiresAt: number;
 }
 
+// In-memory subdomain auth gate (see validatePreviewToken / markAuthedSubdomain).
 const authedSubdomains = new Map<string, AuthState>();
 const AUTH_SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 

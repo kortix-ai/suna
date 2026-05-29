@@ -65,7 +65,7 @@ export function isSubdomainPreviewUrl(candidateUrl: string): boolean {
   }
 }
 
-function appendPreviewToken(previewUrl: string, token: string): string {
+export function appendPreviewToken(previewUrl: string, token: string): string {
   try {
     const u = new URL(previewUrl);
     u.searchParams.set('token', token);
