@@ -34,7 +34,7 @@ git fetch --quiet origin "pull/${PR_NUMBER}/head:pr-${PR_NUMBER}"
 git checkout --quiet "pr-${PR_NUMBER}"
 
 # Make the base ref available for diffing (default to the PR's base).
-BASE_REF="${PR_BASE_REF:-$(git remote show origin | sed -n 's/.*HEAD branch: //p')}"
+BASE_REF="${PR_BASE_REF:-$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/origin/||')}"
 git fetch --quiet origin "${BASE_REF}:refs/remotes/origin/${BASE_REF}" 2>/dev/null || true
 
 # Scrub the token from the stored remote so later tooling can't leak it.

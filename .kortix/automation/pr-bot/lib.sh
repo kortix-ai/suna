@@ -49,11 +49,18 @@ kortix_sandbox_id() {
     -H "Authorization: Bearer ${KORTIX_CLI_TOKEN}" \
     "${KORTIX_API_URL}/projects/${KORTIX_PROJECT_ID}/sessions/${KORTIX_SESSION_ID}") \
     || die "could not fetch session (is KORTIX_CLI_TOKEN valid?)"
-  _KORTIX_SANDBOX_ID=$(printf '%s' "$resp" | python3 -c '
-import json, sys, re
-d = json.load(sys.stdin)
-m = re.search(r"/v1/p/([^/]+)/", d.get("sandbox_url") or "")
-print(m.group(1) if m else (d.get("sandbox_id") or ""))')
+  # Extract the external sandbox id from sandbox_url (which looks like
+  # .../v1/p/<ext_id>/8000). Fall back to the session id (sandbox_id) if
+  # the URL isn't available yet. Pure bash — no python/jq dependency.
+  _KORTIX_SANDBOX_ID=$(
+    # First try: grep the external id from the sandbox_url pattern.
+    id=$(printf '%s' "$resp" | grep -oP '"sandbox_url"\s*:\s*"[^"]*/v1/p/\K[^/]+' 2>/dev/null || true)
+    if [ -z "$id" ]; then
+      # Fallback: use the sandbox_id field directly.
+      id=$(printf '%s' "$resp" | grep -oP '"sandbox_id"\s*:\s*"\K[^"]+' 2>/dev/null || true)
+    fi
+    printf '%s' "$id"
+  )
   [ -n "$_KORTIX_SANDBOX_ID" ] || die "session has no external sandbox id yet (not booted?)"
   printf '%s' "$_KORTIX_SANDBOX_ID"
 }
