@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock, Loader2, Mail, Shield, UserPlus, Users, X } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 
 import { Badge } from '@/components/ui/badge';

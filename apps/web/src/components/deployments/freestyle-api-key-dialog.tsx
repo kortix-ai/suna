@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Loader2, KeyRound, ExternalLink } from 'lucide-react';
 import { useSetSecret } from '@/hooks/secrets/use-secrets';
 import { deploymentKeys } from '@/hooks/deployments/use-deployments';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 interface FreestyleApiKeyDialogProps {
   open: boolean;

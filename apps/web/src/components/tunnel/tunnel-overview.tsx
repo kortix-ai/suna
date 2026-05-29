@@ -34,7 +34,7 @@ import { useTunnelConnections, useDeleteTunnelConnection, type TunnelConnection 
 import { useTunnelRealtimeSync } from '@/hooks/tunnel/use-tunnel-realtime';
 import { TunnelSettingsDialog } from './tunnel-settings-dialog';
 import { TunnelPermissionRequestDialog } from './tunnel-permission-request-dialog';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // ─── Connection card ─────────────────────────────────────────────────────────
 

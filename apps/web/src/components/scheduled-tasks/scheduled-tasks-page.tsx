@@ -30,7 +30,7 @@ import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { TaskConfigDialog } from './task-config-dialog';
 import { TaskDetailPanel } from './task-detail-panel';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

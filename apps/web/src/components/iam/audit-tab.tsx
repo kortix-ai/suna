@@ -11,7 +11,7 @@ import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   DropdownMenu,
   DropdownMenuContent,
