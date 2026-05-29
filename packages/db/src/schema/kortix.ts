@@ -888,6 +888,15 @@ export const legacySandboxMigrations = kortixSchema.table(
     plan: jsonb('plan').default({}).$type<Record<string, unknown>>().notNull(),
     rollback: jsonb('rollback').default({}).$type<Record<string, unknown>>().notNull(),
     error: text('error'),
+    // Durable runner state (see migration 00000000000096). `phase` is the current
+    // step the resume worker continues from; `progress` accumulates per-step
+    // artifacts (backup url, repo id, discovered opencode session ids, ...);
+    // `heartbeatAt` is the lease the resume loop uses to reclaim stalled runs.
+    phase: varchar('phase', { length: 32 }),
+    progress: jsonb('progress').default({}).$type<Record<string, unknown>>().notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
     appliedAt: timestamp('applied_at', { withTimezone: true }),
     verifiedAt: timestamp('verified_at', { withTimezone: true }),
     rolledBackAt: timestamp('rolled_back_at', { withTimezone: true }),
@@ -899,6 +908,7 @@ export const legacySandboxMigrations = kortixSchema.table(
     index('idx_legacy_sandbox_migrations_sandbox').on(table.sandboxId),
     index('idx_legacy_sandbox_migrations_status').on(table.status),
     index('idx_legacy_sandbox_migrations_account').on(table.accountId),
+    index('idx_legacy_sandbox_migrations_heartbeat').on(table.status, table.heartbeatAt),
   ],
 );
 

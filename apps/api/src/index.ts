@@ -45,6 +45,8 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
+import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
+import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
 import { scimRouter } from './scim';
@@ -372,6 +374,7 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*, /v1/billing/setup/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
+registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 
 // Executor — unified connector layer. Gateway routes (/connectors, /call) use
@@ -587,6 +590,7 @@ ensureSchema()
     // session anywhere lands on a cache hit. Idempotent + best-effort; the
     // session-boot graceful path is the lazy fallback if this is skipped.
     kickStartupPreBuild();
+    startLegacyMigrationWorker();
     // IAM V2 time-bounded grants: tick every 60s, emit one audit event
     // per row that just transitioned to expired. Engine already filters
     // expired rows out of authorize() so correctness doesn't depend on
@@ -605,6 +609,7 @@ ensureSchema()
     startProjectMaintenance();
     startProjectTriggerScheduler();
     kickStartupPreBuild();
+    startLegacyMigrationWorker();
   });
 
 // Graceful shutdown
@@ -613,6 +618,7 @@ async function shutdown(signal: string) {
   stopDrainer();
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
+  stopLegacyMigrationWorker();
   stopModelPricing();
   stopTunnelService();
   stopAccessControlCache();

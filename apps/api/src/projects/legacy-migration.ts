@@ -183,7 +183,7 @@ async function selectActiveMigration(database: Database, sandboxId: string) {
   return row ?? null;
 }
 
-async function buildPlan(
+export async function buildPlan(
   database: Database,
   legacy: LegacySandboxRow,
   repoUrlTemplate: string | undefined,

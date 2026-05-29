@@ -103,6 +103,21 @@ const envSchema = z.object({
   FREESTYLE_API_URL:           optUrl('https://api.freestyle.sh'),
   FREESTYLE_API_KEY:           optStr,
 
+  // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
+  // The new backend has no JustAVPS provider, but it must reach legacy VMs to
+  // back them up. VMs are reachable via the CF proxy at {slug}.{proxy domain};
+  // exec goes through the Daytona toolbox API on that host. JUSTAVPS_API_* are
+  // only needed to refresh an expired per-sandbox proxy token.
+  JUSTAVPS_PROXY_DOMAIN:       optStrDefault('kortix.cloud'),
+  JUSTAVPS_API_URL:            optStrDefault('http://localhost:3001'),
+  JUSTAVPS_API_KEY:            optStr,
+  // Supabase Storage bucket holding the durable per-sandbox backup bundle
+  // (workspace files + OpenCode chat-history store). Source for rehydrate.
+  LEGACY_MIGRATION_BACKUP_BUCKET: optStrDefault('legacy-migrations'),
+  // Base image written into a synthesized .kortix/Dockerfile when a migrated
+  // legacy workspace has none. TODO: set to the canonical Kortix base image.
+  LEGACY_MIGRATION_DEFAULT_IMAGE: optStrDefault('ubuntu:24.04'),
+
   // ── Channels — Slack adapter (optional) ──────────────────────────────────
   // KORTIX_CHANNELS_MODE: 'auto' (default) honors whatever Slack env is set —
   // SLACK_BOT_TOKEN → single, SLACK_CLIENT_ID+SECRET → multi, both → both.
@@ -412,6 +427,13 @@ export const config = {
   // ─── Freestyle (Deployments) ──────────────────────────────────────────────
   FREESTYLE_API_URL: env.FREESTYLE_API_URL,
   FREESTYLE_API_KEY: env.FREESTYLE_API_KEY,
+
+  // ─── Legacy migration ─────────────────────────────────────────────────────
+  JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
+  JUSTAVPS_API_URL: env.JUSTAVPS_API_URL,
+  JUSTAVPS_API_KEY: env.JUSTAVPS_API_KEY,
+  LEGACY_MIGRATION_BACKUP_BUCKET: env.LEGACY_MIGRATION_BACKUP_BUCKET,
+  LEGACY_MIGRATION_DEFAULT_IMAGE: env.LEGACY_MIGRATION_DEFAULT_IMAGE,
 
   // ─── Channels (Slack) ─────────────────────────────────────────────────────
   KORTIX_CHANNELS_MODE: env.KORTIX_CHANNELS_MODE,
