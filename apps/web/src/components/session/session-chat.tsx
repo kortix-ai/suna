@@ -4418,11 +4418,6 @@ export function SessionChat({
   );
 
   // ---- Check if any messages have tool calls ----
-  const hasToolCalls = useMemo(() => {
-    if (!messages) return false;
-    return messages.some((msg) => msg.parts?.some((p) => p.type === 'tool'));
-  }, [messages]);
-
   // ---- Restore model/agent from last user message ----
   // Seeds agent/model from the last user message ONLY if there's no per-session
   // selection yet. This handles opening a session for the first time. If the user
@@ -5943,7 +5938,6 @@ export function SessionChat({
           sessionTitle={session?.title || 'Untitled'}
           onToggleSidePanel={handleTogglePanel}
           isSidePanelOpen={isSidePanelOpen}
-          canOpenSidePanel={hasToolCalls}
           leadingAction={headerLeadingAction}
         />
       )}

@@ -617,6 +617,66 @@ export async function proxyToDaytona(
   });
 }
 
+// === WebSocket upstream resolution =============================================
+//
+// Mirrors the header-building half of `proxyToDaytona` for the WebSocket path.
+// The actual upgrade + byte-piping happens at the Bun.serve level (see
+// sandbox-proxy/ws-proxy.ts) — this only resolves the upstream WS URL and the
+// auth headers to open it with. Reuses the same caches, ownership check, and
+// signed user-context as the HTTP proxy so the security posture is identical.
+
+export async function resolvePreviewWsUpstream(opts: {
+  sandboxId: string;
+  upstreamPort: number;
+  userId: string;
+  remainingPath: string;
+  queryString: string;
+}): Promise<
+  | { ok: true; url: string; headers: Record<string, string> }
+  | { ok: false; status: number; message: string }
+> {
+  const { sandboxId, upstreamPort, userId, remainingPath, queryString } = opts;
+
+  // Ownership + active-state gate. `validateSandboxProxyAccess` throws a 403
+  // HTTPException when the user can't access the sandbox — translate to a
+  // structured failure for the WS caller instead of bubbling.
+  let serviceKey: string | null;
+  try {
+    const access = await validateSandboxProxyAccess(sandboxId, userId);
+    if (!access.ok) {
+      return { ok: false, status: access.response.status, message: 'sandbox not ready' };
+    }
+    serviceKey = access.serviceKey ?? (await resolveServiceKey(sandboxId));
+  } catch (err) {
+    if (err instanceof HTTPException) {
+      return { ok: false, status: err.status, message: err.message };
+    }
+    throw err;
+  }
+
+  const { url: previewUrl, token: previewToken } = await resolvePreviewLink(sandboxId, upstreamPort);
+  const wsBase = previewUrl
+    .replace(/\/$/, '')
+    .replace(/^http:/i, 'ws:')
+    .replace(/^https:/i, 'wss:');
+  const url = wsBase + remainingPath + queryString;
+
+  const headers: Record<string, string> = {
+    'X-Daytona-Skip-Preview-Warning': 'true',
+    'X-Daytona-Disable-CORS': 'true',
+  };
+  if (previewToken) headers['X-Daytona-Preview-Token'] = previewToken;
+  if (serviceKey) headers['Authorization'] = `Bearer ${serviceKey}`;
+  if (userId && serviceKey) {
+    const payload = await resolvePreviewUserContext(sandboxId, userId);
+    if (payload) {
+      headers[KORTIX_USER_CONTEXT_HEADER] = encodeKortixUserContext(payload, serviceKey);
+    }
+  }
+
+  return { ok: true, url, headers };
+}
+
 // === Route handler: ALL /:sandboxId/:port/* ===
 //
 // Zero-overhead proxy with auto-wake:

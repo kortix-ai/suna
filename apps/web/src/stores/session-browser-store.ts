@@ -23,8 +23,9 @@ import { persist } from 'zustand/middleware';
  */
 
 // 'actions' = tool calls · 'browser' = internal browser · 'explorer' = in-sandbox
-// file explorer + preview · 'files' = git changes for this session.
-export type SessionPanelView = 'actions' | 'browser' | 'explorer' | 'files';
+// file explorer + preview · 'terminal' = live PTY shell into the sandbox ·
+// 'files' = git changes for this session.
+export type SessionPanelView = 'actions' | 'browser' | 'explorer' | 'terminal' | 'files';
 
 interface SessionBrowserState {
   /** Active view per session. Defaults to 'actions' when unset. */
