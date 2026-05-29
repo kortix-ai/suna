@@ -119,6 +119,9 @@ export function printGetStarted({ primaryAgent, prompt }: GetStartedInput): void
   lines.push(
     boxLine(`${DIM}When you're ready, take it live:${RESET}  ${CYAN}kortix ship${RESET}`),
   );
+  lines.push(
+    boxLine(`${DIM}links your GitHub repo (1-click) + sets your env — no web UI${RESET}`),
+  );
   lines.push(boxLine(''));
   lines.push(boxBottom());
   lines.push('');
