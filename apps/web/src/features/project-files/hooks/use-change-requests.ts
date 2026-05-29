@@ -127,6 +127,13 @@ function useInvalidateAll(projectIdArg?: string) {
     qc.invalidateQueries({ queryKey: ['project-files', 'branches', projectId] });
     // The merge commit lands on the default branch — commit list goes stale.
     qc.invalidateQueries({ queryKey: ['project-files', 'commits', projectId] });
+    // Whether this version still differs from its base changes the moment a CR
+    // merges — refresh the "Alternate version of main · N changes" banner
+    // (git-status, which is otherwise sticky and never re-fetches on its own),
+    // the live version-diff preview, and the cached session row (base_ref etc.).
+    qc.invalidateQueries({ queryKey: gitStatusKeys.all });
+    qc.invalidateQueries({ queryKey: ['project-files', 'version-diff', projectId] });
+    qc.invalidateQueries({ queryKey: ['project', 'session', projectId] });
   };
 }
 

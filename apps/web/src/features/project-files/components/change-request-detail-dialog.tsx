@@ -28,7 +28,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -172,7 +171,10 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-4xl p-0 gap-0 overflow-hidden max-h-[88vh] flex flex-col">
+      <DialogContent
+        hideCloseButton
+        className="max-w-4xl p-0 gap-0 overflow-hidden max-h-[88vh] flex flex-col"
+      >
         {/* Always render a DialogTitle for a11y; visually hidden when we have
             our custom header layout to avoid double-rendering. */}
         <VisuallyHidden>
@@ -256,7 +258,10 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
           </div>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0">
+        {/* Native overflow scrolling — Radix ScrollArea's viewport doesn't
+            reliably bound its height inside this flex dialog, so the body
+            wouldn't scroll. A plain min-h-0 + overflow-y-auto flex child does. */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
           <div className="px-5 py-4 space-y-3">
             {/* Description */}
             {cr?.description && (
@@ -353,7 +358,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               <p className="rounded-2xl border border-dashed border-border/60 p-5 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line356JsxTextNoChangesDetected')}</p>
             )}
           </div>
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );
