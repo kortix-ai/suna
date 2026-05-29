@@ -13,11 +13,11 @@
  * table for UI display + "Fix with agent."
  */
 
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, lt } from 'drizzle-orm';
 import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
-import { getSandboxProvider } from './providers';
+import { getSandboxProvider, type ProviderState } from './providers';
 import {
   computeTemplateIdentity,
   listTemplatesForProject,
@@ -46,7 +46,8 @@ export type SnapshotBuildSource =
   | 'project-create'
   | 'cr-merge'
   | 'manual'
-  | 'background';
+  | 'background'
+  | 'startup';
 
 export interface EnsureSandboxImageResult {
   snapshotName: string;
@@ -103,6 +104,7 @@ export async function ensureSandboxImage(
     await recordTemplateBuilt(template.templateId, {
       snapshotName: identity.snapshotName,
       contentHash: identity.contentHash,
+      builtFromCommit: identity.builtFromCommit,
     });
     return {
       snapshotName: identity.snapshotName,
@@ -148,12 +150,46 @@ export async function ensureSandboxImage(
     }
   }
 
+  // ─── Inline build (deduped across ALL sources) ───────────────────────────
+  // A burst of triggers for the same snapshot identity — e.g. a project-create
+  // pre-build, the first session boot, and a background rebuild all landing
+  // within the same build window — must produce exactly ONE provider build and
+  // ONE build-log row. `daytona.snapshot.create` calls racing under the same
+  // name conflict, and duplicate rows are what left two "Building" entries
+  // orphaned in the UI. We dedupe in-process by target snapshot name; the
+  // cross-process case (API restart mid-build) is healed by reconcileStaleBuilds.
+  const existing = inflightBuilds.get(identity.snapshotName);
+  if (existing) return existing;
+
+  const buildPromise = runInlineBuild(project, template, identity, {
+    state,
+    accountId: opts.accountId,
+    source: opts.source ?? 'session-start',
+  }).finally(() => inflightBuilds.delete(identity.snapshotName));
+  inflightBuilds.set(identity.snapshotName, buildPromise);
+  return buildPromise;
+}
+
+type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
+
+/**
+ * Do the actual provider build for a resolved (template, identity) pair and
+ * record the result on the template row + build log. Always called behind the
+ * `inflightBuilds` dedup in `ensureSandboxImage` — never directly.
+ */
+async function runInlineBuild(
+  project: GitBackedProject,
+  template: ResolvedTemplate,
+  identity: TemplateIdentity,
+  opts: { state: ProviderState; accountId?: string; source: SnapshotBuildSource },
+): Promise<EnsureSandboxImageResult> {
+  const provider = getSandboxProvider(template.provider);
+
   // Reap a failed/dead snapshot under the same name so the rebuild starts fresh.
-  if (state === 'error' || state === 'build_failed') {
+  if (opts.state === 'error' || opts.state === 'build_failed') {
     await provider.deleteSnapshot(identity.snapshotName);
   }
 
-  const source = opts.source ?? 'session-start';
   const buildId = opts.accountId
     ? await openBuildLog({
         accountId: opts.accountId,
@@ -161,7 +197,8 @@ export async function ensureSandboxImage(
         slug: template.slug,
         snapshotName: identity.snapshotName,
         contentHash: identity.contentHash,
-        source,
+        commitSha: identity.builtFromCommit ?? '',
+        source: opts.source,
       })
     : null;
 
@@ -182,6 +219,7 @@ export async function ensureSandboxImage(
     await recordTemplateBuilt(template.templateId, {
       snapshotName: identity.snapshotName,
       contentHash: identity.contentHash,
+      builtFromCommit: identity.builtFromCommit,
     });
     return {
       snapshotName: identity.snapshotName,
@@ -197,6 +235,12 @@ export async function ensureSandboxImage(
     throw new SnapshotBuildError(message, err);
   }
 }
+
+/**
+ * In-flight inline builds, keyed by target snapshot name. Shared across every
+ * build source so concurrent triggers collapse onto one build + one log row.
+ */
+const inflightBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
 
 /**
  * Force the next session to rebuild by deleting the provider-side snapshot
@@ -247,6 +291,7 @@ export interface SandboxTemplateView {
   providerState: string;
   ready: boolean;
   provider: string;
+  builtFromCommit: string | null;
   lastBuiltAt: string | null;
   lastError: string | null;
 }
@@ -292,6 +337,7 @@ async function toView(
     providerState: state,
     ready: state === 'active',
     provider: t.provider,
+    builtFromCommit: t.builtFromCommit,
     lastBuiltAt: null,
     lastError: null,
   };
@@ -348,12 +394,75 @@ export async function listSnapshotBuilds(
   return rows.map(rowToSummary);
 }
 
+/**
+ * Builds that never reached a terminal state. The build log is closed inside
+ * the same in-process promise that runs the build, so a process restart (very
+ * common in dev) or crash mid-build orphans the row at `building` forever —
+ * which is exactly why the dashboard showed two stuck "Building" entries even
+ * though the image was actually live. This re-checks any `building` row older
+ * than the max build window against the provider and closes it: `ready` if the
+ * snapshot is active, `failed` otherwise. Idempotent and safe to run anywhere.
+ *
+ * The cutoff must exceed the longest legitimate build (Daytona build timeout +
+ * activation poll); below that we'd race a build that's genuinely still going.
+ */
+const STALE_BUILD_MS = 20 * 60 * 1000;
+const STALE_BUILD_BATCH = 50;
+
+export async function reconcileStaleBuilds(
+  opts: { projectId?: string; olderThanMs?: number } = {},
+): Promise<{ checked: number; closedReady: number; closedFailed: number }> {
+  const cutoff = new Date(Date.now() - (opts.olderThanMs ?? STALE_BUILD_MS));
+  const conds = [
+    eq(projectSnapshotBuilds.status, 'building'),
+    lt(projectSnapshotBuilds.startedAt, cutoff),
+  ];
+  if (opts.projectId) conds.push(eq(projectSnapshotBuilds.projectId, opts.projectId));
+
+  const rows = await db
+    .select()
+    .from(projectSnapshotBuilds)
+    .where(and(...conds))
+    .orderBy(desc(projectSnapshotBuilds.startedAt))
+    .limit(STALE_BUILD_BATCH);
+  if (rows.length === 0) return { checked: 0, closedReady: 0, closedFailed: 0 };
+
+  // Only Daytona today; build-log rows don't carry a provider column, so use
+  // the lone configured adapter. If it's not configured we can't know the true
+  // state, so leave the rows alone rather than mark good builds failed.
+  const provider = getSandboxProvider('daytona');
+  if (!provider.isConfigured()) return { checked: rows.length, closedReady: 0, closedFailed: 0 };
+
+  let closedReady = 0;
+  let closedFailed = 0;
+  for (const row of rows) {
+    let state: ProviderState = 'missing';
+    try {
+      state = await provider.getSnapshotState(row.snapshotName);
+    } catch {
+      state = 'missing';
+    }
+    if (state === 'active') {
+      await closeBuildLogReady(row.buildId);
+      closedReady += 1;
+    } else {
+      await closeBuildLogFailed(
+        row.buildId,
+        'Build did not finish — the API process restarted or the build timed out before it completed.',
+      );
+      closedFailed += 1;
+    }
+  }
+  return { checked: rows.length, closedReady, closedFailed };
+}
+
 async function openBuildLog(args: {
   accountId: string;
   projectId: string;
   slug: string;
   snapshotName: string;
   contentHash: string;
+  commitSha?: string;
   source: SnapshotBuildSource;
 }): Promise<string | null> {
   try {
@@ -362,7 +471,7 @@ async function openBuildLog(args: {
       .values({
         accountId: args.accountId,
         projectId: args.projectId,
-        commitSha: '',
+        commitSha: args.commitSha ?? '',
         branch: args.slug,
         snapshotName: args.snapshotName,
         contentHash: args.contentHash,
@@ -447,6 +556,115 @@ export function kickPreBuild(
   void ensureSandboxImage(project, opts).catch((err) =>
     console.warn(
       `[snapshots] pre-build failed for ${project.projectId} (slug=${opts.slug ?? 'default'}, ${opts.source}):`,
+      err instanceof Error ? err.message : err,
+    ),
+  );
+}
+
+// ─── Platform default (global, project-independent) ──────────────────────────
+
+/**
+ * The platform default image is content-addressed and shared by EVERY project,
+ * user, and session — its identity is a constant Dockerfile, independent of any
+ * repo. So its build belongs to the platform lifecycle, not the project
+ * lifecycle: we build it once per process at startup (a no-op cache hit after
+ * the first global build, or after a release bumps the runtime fingerprint),
+ * and the session-boot graceful path is the lazy fallback. project-create no
+ * longer triggers it. No build-log row is written (it's global, not project-
+ * scoped). A throwaway project shell is fine — the default path never reads it.
+ */
+const PLATFORM_PROJECT_SHELL: GitBackedProject = {
+  projectId: '',
+  repoUrl: '',
+  defaultBranch: '',
+  manifestPath: '',
+};
+
+export async function ensurePlatformDefaultImage(
+  opts: { source?: SnapshotBuildSource } = {},
+): Promise<EnsureSandboxImageResult> {
+  return ensureSandboxImage(PLATFORM_PROJECT_SHELL, {
+    slug: DEFAULT_SANDBOX_SLUG,
+    source: opts.source ?? 'startup',
+  });
+}
+
+let startupPreBuildKicked = false;
+
+/**
+ * Idempotent, fire-and-forget. Mints the platform default image once per
+ * process boot so the first session anywhere lands on a cache hit. Safe to call
+ * from multiple startup paths — only the first call does work.
+ */
+export function kickStartupPreBuild(): void {
+  if (startupPreBuildKicked) return;
+  startupPreBuildKicked = true;
+  const provider = getSandboxProvider('daytona');
+  if (!provider.isConfigured()) {
+    console.log('[snapshots] startup pre-build skipped — sandbox provider not configured');
+    return;
+  }
+  void ensurePlatformDefaultImage({ source: 'startup' })
+    .then((r) =>
+      console.log(
+        `[snapshots] startup pre-build: default image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
+      ),
+    )
+    .catch((err) =>
+      console.warn(
+        '[snapshots] startup pre-build of platform default failed:',
+        err instanceof Error ? err.message : err,
+      ),
+    );
+}
+
+// ─── Custom (toml / UI) templates — explicit rebuilds ────────────────────────
+
+/**
+ * Reconcile a project's OWN templates (never the shared default): for each
+ * custom template whose built image is stale or missing relative to its
+ * currently-computed identity, kick a pre-build. Driven by project-create and
+ * CR-merge so a Dockerfile or spec change lands a fresh image proactively
+ * instead of stalling the next session that boots the slug. Forces a TOML sync
+ * so a `[[sandbox.templates]]` edit in the just-merged commit is picked up.
+ */
+export async function reconcileProjectTemplates(
+  project: GitBackedProject,
+  opts: { accountId: string; source: SnapshotBuildSource },
+): Promise<{ checked: number; rebuilt: number }> {
+  const templates = await listTemplatesForProject(project, { forceTomlSync: true });
+  let rebuilt = 0;
+  for (const t of templates) {
+    if (t.isShared) continue; // the platform default is built globally
+    let identity: TemplateIdentity;
+    try {
+      identity = await computeTemplateIdentity(project, t);
+    } catch (err) {
+      console.warn(
+        `[snapshots] reconcile: cannot compute identity for ${project.projectId}/${t.slug}:`,
+        err instanceof Error ? err.message : err,
+      );
+      continue;
+    }
+    const current =
+      t.providerState === 'active' &&
+      t.contentHash === identity.contentHash &&
+      t.providerSnapshotName === identity.snapshotName;
+    if (current) continue;
+    kickPreBuild(project, { slug: t.slug, accountId: opts.accountId, source: opts.source });
+    rebuilt += 1;
+  }
+  return { checked: templates.length, rebuilt };
+}
+
+/** Fire-and-forget wrapper around {@link reconcileProjectTemplates}. */
+export function kickProjectTemplatePrebuilds(
+  project: GitBackedProject,
+  opts: { accountId: string; source: SnapshotBuildSource },
+): void {
+  void reconcileProjectTemplates(project, opts).catch((err) =>
+    console.warn(
+      `[snapshots] project-template reconcile failed for ${project.projectId} (${opts.source}):`,
       err instanceof Error ? err.message : err,
     ),
   );

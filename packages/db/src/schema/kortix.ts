@@ -713,6 +713,13 @@ export const sandboxTemplates = kortixSchema.table(
     // ─── Live state (cached; provider is source of truth) ──────────────────
     /** Content hash of the template inputs — the snapshot identity. */
     contentHash: text('content_hash'),
+    /**
+     * Git commit the template's Dockerfile was last built from. NULL for the
+     * platform default (constant Dockerfile) and image-only templates. Lets the
+     * UI show "built from <sha>" and lets a reconcile decide whether a merged
+     * Dockerfile change drifted the identity.
+     */
+    builtFromCommit: text('built_from_commit'),
     /** Provider-side snapshot name (e.g. `kortix-default-…`, `kortix-tpl-…`). */
     providerSnapshotName: text('provider_snapshot_name'),
     /** Last-known provider state: 'active' | 'building' | 'pulling' | 'error' | 'missing'. */

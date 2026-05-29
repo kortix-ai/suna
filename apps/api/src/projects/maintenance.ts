@@ -5,6 +5,7 @@ import { getProvider, type ProviderName } from '../platform/providers';
 import { invalidateProviderCache } from '../sandbox-proxy';
 import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
 import { pauseComputeSession, tickRunningComputeCharges } from '../billing/services/compute-metering';
+import { reconcileStaleBuilds } from '../snapshots/builder';
 
 const DEFAULT_IDLE_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
@@ -249,7 +250,7 @@ export async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, branches, computeTick] = await Promise.all([
+    const [idle, branches, computeTick, staleBuilds] = await Promise.all([
       hibernateIdleSessionSandboxes(),
       sweepExpiredSessionBranches(),
       // Billing v2 — partial-bill any active compute sessions that haven't
@@ -258,9 +259,18 @@ export async function runProjectMaintenance(): Promise<void> {
         console.warn('[project-maintenance] compute tick failed:', err instanceof Error ? err.message : err);
         return { settled: 0 };
       }),
+      // Heal snapshot build-log rows orphaned at "building" by a process
+      // restart/crash, globally across all projects.
+      reconcileStaleBuilds().catch((err) => {
+        console.warn('[project-maintenance] stale-build reconcile failed:', err instanceof Error ? err.message : err);
+        return { checked: 0, closedReady: 0, closedFailed: 0 };
+      }),
     ]);
-    if (idle.stopped || idle.errors || branches.deleted || branches.errors || computeTick.settled) {
-      console.log('[project-maintenance] completed', { idle, branches, computeTick });
+    if (
+      idle.stopped || idle.errors || branches.deleted || branches.errors ||
+      computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed
+    ) {
+      console.log('[project-maintenance] completed', { idle, branches, computeTick, staleBuilds });
     }
   } finally {
     maintenanceRunning = false;
