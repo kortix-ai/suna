@@ -294,7 +294,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           role="tab"
           id="auth-tab-signin"
           aria-selected={mode === 'signin'}
-          aria-controls="auth-form-panel"
+          aria-controls={awaitingCode ? undefined : 'auth-form-panel'}
           onClick={() => {
             setMode('signin');
             resetTransientState();
@@ -311,7 +311,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           role="tab"
           id="auth-tab-signup"
           aria-selected={mode === 'signup'}
-          aria-controls="auth-form-panel"
+          aria-controls={awaitingCode ? undefined : 'auth-form-panel'}
           onClick={() => {
             setMode('signup');
             resetTransientState();
