@@ -15,7 +15,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { AlertCircle, ChevronRight } from 'lucide-react';
 
 import {
@@ -367,6 +367,7 @@ function AuthContent() {
     searchParams.get('returnUrl') || searchParams.get('redirect'),
   );
   const [phase, setPhase] = useState<'lock' | 'form'>('lock');
+  const prefersReducedMotion = useReducedMotion();
 
   // After auth, leave the auth flow.
   useEffect(() => {
@@ -429,8 +430,8 @@ function AuthContent() {
                 <p className="text-foreground/25 text-xs tracking-widest uppercase">{tHardcodedUi.raw('appAuthPage.line355JsxTextClickOrPressEnterToSignIn')}</p>
               </div>
               <motion.div
-                animate={{ y: [0, 5, 0] }}
-                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                animate={prefersReducedMotion ? undefined : { y: [0, 5, 0] }}
+                transition={prefersReducedMotion ? undefined : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
               >
                 <ChevronRight className="size-3.5 text-foreground/20 rotate-90" />
               </motion.div>

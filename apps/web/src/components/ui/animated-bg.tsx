@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { motion, useMotionValue, useTransform } from 'framer-motion';
+import { motion, useMotionValue, useTransform, useReducedMotion } from 'framer-motion';
 import type { TargetAndTransition } from 'framer-motion';
 import { useEffect, useState, useId, useMemo } from 'react';
 
@@ -261,10 +261,15 @@ interface AnimatedBgProps {
 export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplier = 1, duration = 4.6, customArcs }: AnimatedBgProps) {
     const [mounted, setMounted] = useState(false);
     useEffect(() => setMounted(true), []);
-    
+
+    // Honour prefers-reduced-motion: these arcs run an infinite framer-motion
+    // loop (transform + blur), which a CSS media query can't stop. When the
+    // user prefers reduced motion we keep the static gradient placeholder.
+    const prefersReducedMotion = useReducedMotion();
+
     // Show a static placeholder immediately to improve FCP
     // The animated version will replace it after hydration
-    if (!mounted) {
+    if (!mounted || prefersReducedMotion) {
         return (
             <div
                 className={cn('absolute inset-0 overflow-hidden pointer-events-none', variant === 'header' ? 'z-0' : '-z-10')}
