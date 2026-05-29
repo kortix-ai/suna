@@ -1441,6 +1441,140 @@ async function registerGitHubLinkedProject(input: {
   return row;
 }
 
+/**
+ * Validate an existing GitHub repo using a caller-supplied PAT — the
+ * App-free link path. The PAT just needs read+write on the repo; we verify
+ * read here (and surface a clear error if the token can't see it or lacks
+ * push) so the user finds out at link time, not on the first session push.
+ */
+async function resolveGitHubImportWithPat(input: {
+  repoUrl: string;
+  token: string;
+  defaultBranch?: string | null;
+}): Promise<{ repo: GitHubRepo; defaultBranch: string }> {
+  const parsed = parseGitHubRepoUrl(input.repoUrl);
+  if (!parsed) throw new Error('repo_url must be a GitHub repository URL');
+  let repo: GitHubRepo;
+  try {
+    repo = await getRepo({ owner: parsed.owner, repo: parsed.repo, auth: { token: input.token } });
+  } catch (error) {
+    throw new Error(
+      `Could not access ${parsed.owner}/${parsed.repo} with the provided GitHub token — ` +
+        `check the token grants access to this repo (${(error as Error).message})`,
+    );
+  }
+  // The API returns `permissions` when the token is authenticated against the
+  // repo; a read-only token would make sessions unable to push branches.
+  const perms = (repo as unknown as { permissions?: { push?: boolean } }).permissions;
+  if (perms && perms.push === false) {
+    throw new Error(
+      `The GitHub token can read ${repo.full_name} but lacks write (push) access — ` +
+        `grant Contents: Read and write so sessions can push branches.`,
+    );
+  }
+  return { repo, defaultBranch: input.defaultBranch ?? repo.default_branch ?? 'main' };
+}
+
+/**
+ * Create (or re-point) a project backed by an existing GitHub repo via a
+ * stored PAT — no GitHub App installation required. The PAT is encrypted into
+ * `project_git_credentials` and the connection is `project_credential`, which
+ * `resolveProjectGitAuth` already knows how to use for session clone/push.
+ */
+async function registerPatLinkedProject(input: {
+  accountId: string;
+  userId: string;
+  repo: GitHubRepo;
+  token: string;
+  name?: string | null;
+  defaultBranch: string;
+  manifestPath: string;
+}): Promise<ProjectRow> {
+  const projectName = input.name ?? deriveProjectName(input.repo.full_name);
+  const now = new Date();
+  const metadata = {
+    git: {
+      url: input.repo.clone_url,
+      default_branch: input.defaultBranch,
+      provider: 'github',
+      owner: input.repo.full_name.split('/')[0] ?? null,
+      name: input.repo.name,
+      external_repo_id: String(input.repo.id),
+      auth: { method: 'project_credential' },
+    },
+    github: {
+      repo_id: String(input.repo.id),
+      full_name: input.repo.full_name,
+      html_url: input.repo.html_url,
+      private: input.repo.private,
+      auth_source: 'pat',
+    },
+  };
+
+  const [row] = await db
+    .insert(projects)
+    .values({
+      accountId: input.accountId,
+      name: projectName,
+      repoUrl: input.repo.clone_url,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath,
+      status: 'active',
+      metadata,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [projects.accountId, projects.repoUrl],
+      set: {
+        name: projectName,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath,
+        status: 'active',
+        metadata,
+        updatedAt: now,
+      },
+    })
+    .returning();
+
+  const credential = await upsertProjectGitCredential({
+    accountId: input.accountId,
+    projectId: row.projectId,
+    provider: 'github',
+    token: input.token,
+    createdBy: input.userId,
+  });
+
+  await upsertProjectGitConnection({
+    accountId: input.accountId,
+    projectId: row.projectId,
+    provider: 'github',
+    repoUrl: input.repo.clone_url,
+    repoOwner: input.repo.full_name.split('/')[0] ?? null,
+    repoName: input.repo.name,
+    externalRepoId: input.repo.id,
+    defaultBranch: input.defaultBranch,
+    authMethod: 'project_credential',
+    credentialRef: credential.credentialId,
+    visibility: input.repo.private ? 'private' : 'public',
+    status: 'connected',
+    metadata: {
+      full_name: input.repo.full_name,
+      html_url: input.repo.html_url,
+      ssh_url: input.repo.ssh_url,
+    },
+  });
+
+  await grantProjectRole({
+    accountId: input.accountId,
+    projectId: row.projectId,
+    userId: input.userId,
+    role: 'manager',
+    grantedBy: input.userId,
+  });
+
+  return row;
+}
+
 async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   const [row] = await db
@@ -2928,6 +3062,44 @@ projectsApp.post('/link-repository', async (c) => {
     : repoUrlInput;
   if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
+  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.toml';
+
+  // PAT path: link an existing repo with a caller-supplied token — no GitHub
+  // App install needed. This is the seamless `kortix ship` flow for a repo you
+  // already own (and the App-free fallback in environments where the App can't
+  // be installed). Everything downstream (`resolveProjectGitAuth` →
+  // `project_credential`) already consumes the stored PAT.
+  const githubToken = normalizeString(body.github_token ?? body.githubToken);
+  if (githubToken) {
+    let patImport: Awaited<ReturnType<typeof resolveGitHubImportWithPat>>;
+    try {
+      patImport = await resolveGitHubImportWithPat({
+        repoUrl,
+        token: githubToken,
+        defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
+      });
+    } catch (error) {
+      return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
+    }
+    const row = await registerPatLinkedProject({
+      accountId: scope.accountId,
+      userId: scope.userId,
+      repo: patImport.repo,
+      token: githubToken,
+      name: normalizeString(body.name),
+      defaultBranch: patImport.defaultBranch,
+      manifestPath,
+    });
+    kickProjectTemplatePrebuilds(
+      { projectId: row.projectId, repoUrl: row.repoUrl, defaultBranch: row.defaultBranch, manifestPath: row.manifestPath, gitAuthToken: githubToken },
+      { accountId: scope.accountId, source: 'project-create' },
+    );
+    return c.json({
+      project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+      git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
+    }, 201);
+  }
+
   let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
   try {
     imported = await resolveGitHubImport({
@@ -2946,7 +3118,6 @@ projectsApp.post('/link-repository', async (c) => {
     return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
   }
 
-  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.toml';
   const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
     userId: scope.userId,
