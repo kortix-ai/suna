@@ -43,10 +43,13 @@ agent's own instructions cover that. This skill is the **configuration
 
 <cli>
 You are running inside a Kortix session sandbox. The **`kortix` CLI**
-is on `$PATH` and pre-authenticated against this exact project — a
-project-scoped token is already injected as `$KORTIX_TOKEN` (also
-`$KORTIX_CLI_TOKEN`) with `$KORTIX_API_URL` pointed at the right host.
-You can run `kortix …` from any shell with zero setup.
+is on `$PATH` (`/usr/local/bin/kortix`) and pre-authenticated against
+this exact project — a project-scoped token is already injected as
+`$KORTIX_CLI_TOKEN`, with `$KORTIX_API_URL` pointed at the right host.
+You can run `kortix …` from any shell with zero setup. (Don't reach for
+`$KORTIX_TOKEN`: that's the sandbox *service key* for the runtime/LLM/git
+layer, and the project APIs reject it — just use the CLI, which already
+holds the right token.)
 
 **Reach for the CLI** whenever the user asks for something that touches
 Kortix cloud state — not just files in the repo. Examples:
@@ -68,10 +71,10 @@ Kortix cloud state — not just files in the repo. Examples:
 do (commits, file edits, running tests, local search). The CLI is the
 cloud-state surface; everything else is local.
 
-**Token scope reminder.** `$KORTIX_TOKEN` is project-scoped — it
-cannot enumerate other projects or hit account-level routes. Trying
-`kortix projects ls` from inside the sandbox returns 403; that's
-intentional. Use `kortix projects info` to inspect **this** project.
+**Token scope reminder.** The CLI's token (`$KORTIX_CLI_TOKEN`) is
+project-scoped — it cannot enumerate other projects or hit account-level
+routes. Trying `kortix projects ls` from inside the sandbox returns 403;
+that's intentional. Use `kortix projects info` to inspect **this** project.
 
 **Full reference:** `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
 — every command, every flag, every env var, common workflows. Load it

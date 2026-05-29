@@ -22,6 +22,27 @@ RUN bun install --frozen-lockfile
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 
+# ---- CLI Stage ----
+# The same layered snapshots bake the `kortix` admin CLI (apps/cli) so every
+# in-sandbox agent can run `kortix cr open`, `secrets`, `sessions`, … We compile
+# it to a self-contained Linux binary here, the same way as the daemon above,
+# and the runner copies it to the path the snapshot builder reads
+# (apps/cli/dist/kortix → KORTIX_SNAPSHOT_CLI_BIN_PATH).
+FROM oven/bun:${BUN_VERSION}-slim AS sandbox-cli
+
+WORKDIR /cli
+
+ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
+
+# Minimal workspace so bun resolves the two `@kortix/*` packages the CLI imports
+# to their source, then compile (inlines them + smol-toml into one binary).
+COPY apps/cli ./apps/cli
+COPY packages/manifest-schema ./packages/manifest-schema
+COPY packages/starter ./packages/starter
+RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
+    && bun install --no-save \
+    && BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash apps/cli/scripts/build.sh
+
 # ---- Deps Stage ----
 # Install with pnpm (matches lockfile), run with bun
 FROM node:22-slim AS deps
@@ -89,6 +110,7 @@ COPY supabase/migrations ./supabase/migrations
 
 # Copy runtime artifacts used by the layered snapshot builder.
 COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
+COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/agent-cli ./apps/sandbox/agent-cli
 COPY packages/executor-sdk ./packages/executor-sdk

@@ -5,7 +5,9 @@ dashboard can do — from a terminal, from a coding agent, from a session
 sandbox. It is **always available** inside a Kortix session sandbox:
 
 - the binary is on `PATH` (`/usr/local/bin/kortix`)
-- `KORTIX_TOKEN` is pre-injected as an env var, scoped to this project
+- `KORTIX_CLI_TOKEN` is pre-injected — a project-scoped token the CLI
+  authenticates with automatically (not `KORTIX_TOKEN`; see "Inside a
+  sandbox" below)
 - `KORTIX_API_URL` points at the platform you're running against
 
 So you can run `kortix sessions ls` or `kortix secrets set FOO=bar`
@@ -263,15 +265,24 @@ outright.
 The session bootstrap injects:
 
 ```
-KORTIX_TOKEN=kortix_pat_…   ← project-scoped, this project only
-KORTIX_API_URL=https://api.kortix.com
+KORTIX_CLI_TOKEN=kortix_pat_…   ← project-scoped PAT; what the CLI authenticates with
+KORTIX_TOKEN=kortix_sb_…        ← sandbox service key (runtime/clone/LLM) — NOT for the CLI
+KORTIX_API_URL=https://<host>/v1
 KORTIX_PROJECT_ID=<uuid>
 KORTIX_SESSION_ID=<uuid>
+KORTIX_BRANCH_NAME=<session-branch>
 ```
 
-The CLI reads `KORTIX_TOKEN` automatically (via `KORTIX_CLI_TOKEN` env
-var support) and uses `KORTIX_API_URL` as the host base. No config file
-needed.
+The CLI reads `KORTIX_CLI_TOKEN` (falling back to `KORTIX_EXECUTOR_TOKEN`)
+automatically and uses `KORTIX_API_URL` as the host base. No config file,
+no `kortix login` needed — `kortix …` just works.
+
+> **Don't authenticate with `KORTIX_TOKEN`.** That's the sandbox *service
+> key* (used for the LLM gateway, the tool router, and just-in-time git
+> clone credentials). The project-scoped routes the CLI calls
+> (`change-requests`, `secrets`, …) reject it with `401 Invalid or expired
+> token` — it isn't expired, it's simply the wrong token. Use the CLI; it
+> already holds the right one.
 
 ### Rotating
 
@@ -357,9 +368,10 @@ conflict story, and data model.
 
 | Variable | Purpose |
 | --- | --- |
-| `KORTIX_TOKEN` | Project-scoped CLI token (preferred name in sandboxes). |
-| `KORTIX_CLI_TOKEN` | Same — historical alias the CLI also accepts. |
-| `KORTIX_API_URL` | Override the API base URL (default: `https://api.kortix.com`). |
+| `KORTIX_CLI_TOKEN` | Project-scoped PAT the CLI authenticates with (injected in sandboxes). |
+| `KORTIX_EXECUTOR_TOKEN` | Same PAT under another name; the CLI falls back to it. |
+| `KORTIX_TOKEN` | Sandbox **service key** — runtime/clone/LLM auth. **Not** a CLI token; project routes reject it. |
+| `KORTIX_API_URL` | API base URL. In a sandbox it already includes the `/v1` mount. |
 | `KORTIX_PROJECT_ID` | Override the linked project for one command. |
 | `KORTIX_CONFIG_FILE` | Override `~/.config/kortix/config.json` location (useful for tests). |
 | `KORTIX_DASHBOARD_URL` | Override the dashboard URL the `login` flow opens (default: derived from API URL). |

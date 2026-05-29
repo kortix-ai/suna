@@ -6,13 +6,19 @@
 #   - opencode CLI                  (the supervised child process)
 #   - kortix-agent                  (compiled daemon from
 #                                    apps/kortix-sandbox-agent-server)
+#   - kortix                        (compiled admin CLI from apps/cli — the
+#                                    in-sandbox `kortix cr open`, `secrets`,
+#                                    `sessions`, … surface every agent uses)
 #
-# Two-stage build:
-#   1. `builder`  — installs the daemon's deps and runs
-#                   `bun build --compile` for the target image architecture
-#                   to produce /agent/dist/kortix-agent.
-#   2. final      — copies the binary onto a clean runtime base alongside
-#                   git + opencode.
+# Three-stage build:
+#   1. `builder`     — installs the daemon's deps and runs
+#                      `bun build --compile` for the target image architecture
+#                      to produce /agent/dist/kortix-agent.
+#   2. `cli-builder` — assembles a minimal workspace (apps/cli + the two
+#                      `@kortix/*` packages it imports) and compiles the
+#                      `kortix` CLI to a self-contained /cli/kortix binary.
+#   3. final         — copies both binaries onto a clean runtime base
+#                      alongside git + opencode.
 #
 # Build from the repo root:
 #   docker build -f apps/sandbox/Dockerfile -t kortix/kortix-sandbox:dev .
@@ -37,7 +43,34 @@ RUN case "${TARGETARCH:-}" in \
     esac \
     && bash scripts/build.sh
 
-# ─── Stage 2: runtime ───────────────────────────────────────────────────
+# ─── Stage 2: build the kortix CLI binary ───────────────────────────────
+#
+# The CLI lives in apps/cli and imports two workspace packages
+# (@kortix/manifest-schema, @kortix/starter) plus one npm dep (smol-toml).
+# `bun build --compile` inlines all of them, so the runtime image carries a
+# single self-contained binary and never needs node_modules on PATH — the
+# same shape as kortix-agent. We assemble a throwaway workspace root so bun
+# can resolve the `@kortix/*` names to their source, then compile.
+
+FROM oven/bun:1-debian AS cli-builder
+
+ARG TARGETARCH
+
+WORKDIR /cli
+COPY apps/cli ./apps/cli
+COPY packages/manifest-schema ./packages/manifest-schema
+COPY packages/starter ./packages/starter
+RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
+    && case "${TARGETARCH:-}" in \
+        amd64) export BUN_COMPILE_TARGET=bun-linux-x64 ;; \
+        arm64) export BUN_COMPILE_TARGET=bun-linux-arm64 ;; \
+        *) export BUN_COMPILE_TARGET=bun-linux-x64 ;; \
+    esac \
+    && bun install --no-save \
+    && bun build apps/cli/src/index.ts --compile --target="$BUN_COMPILE_TARGET" --outfile /cli/kortix \
+    && chmod +x /cli/kortix
+
+# ─── Stage 3: runtime ───────────────────────────────────────────────────
 
 FROM oven/bun:1-debian
 
@@ -82,13 +115,18 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage
 
 COPY --from=builder /agent/dist/kortix-agent /usr/local/bin/kortix-agent
+# The admin CLI every in-sandbox agent reaches for: `kortix cr open`,
+# `kortix secrets`, `kortix sessions`, … Pre-authenticated at runtime via the
+# project-scoped token the platform injects (KORTIX_CLI_TOKEN).
+COPY --from=cli-builder /cli/kortix /usr/local/bin/kortix
 COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
 # Keep the repo-relative layout under /opt/kortix so agent CLIs can import
 # shared workspace packages the same way they do in local tests.
 COPY apps/sandbox/agent-cli/ /opt/kortix/apps/sandbox/agent-cli/
 COPY packages/executor-sdk/ /opt/kortix/packages/executor-sdk/
-RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/agent-cli/install-shims.sh \
-    && bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli
+RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/agent-cli/install-shims.sh \
+    && bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli \
+    && kortix --version
 
 ENV KORTIX_WORKSPACE=/workspace
 WORKDIR /workspace

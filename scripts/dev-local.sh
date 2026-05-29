@@ -141,6 +141,34 @@ ensure_agent_binary() {
   fi
 }
 
+# Same idea for the `kortix` CLI binary the layered snapshot builder bakes into
+# every sandbox (apps/cli/dist/kortix → KORTIX_SNAPSHOT_CLI_BIN_PATH). Without
+# it, Daytona snapshot builds fail the required-artifact check.
+ensure_cli_binary() {
+  local dir="$ROOT_DIR/apps/cli"
+  local bin="$dir/dist/kortix"
+
+  if [[ -f "$bin" ]]; then
+    local newer
+    newer="$(find "$dir/src" "$dir/scripts" "$dir/package.json" \
+      "$ROOT_DIR/packages/manifest-schema/src" "$ROOT_DIR/packages/starter/src" \
+      -type f -newer "$bin" -print -quit 2>/dev/null || true)"
+    if [[ -z "$newer" ]]; then
+      echo "[dev] kortix CLI up to date — skipping CLI build"
+      return 0
+    fi
+    echo "[dev] kortix CLI stale — rebuilding…"
+  else
+    echo "[dev] kortix CLI missing — building…"
+  fi
+
+  if (cd "$dir" && bun run build); then
+    echo "[dev] ✅ kortix CLI (Linux x64) rebuilt — new snapshots will bake it"
+  else
+    echo "[dev] ⚠️  kortix CLI build failed — new snapshots may lack the CLI"
+  fi
+}
+
 kill_dev_ports() {
   local ports=()
   local port
@@ -253,6 +281,7 @@ PY
 fi
 
 ensure_agent_binary
+ensure_cli_binary
 ensure_dev_tunnel
 
 echo "[dev] Starting frontend..."

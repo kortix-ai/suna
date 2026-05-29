@@ -63,10 +63,13 @@ curl -sf "$API_BASE/v1/health" >/dev/null || { echo "API not reachable at $API_B
 ok "API reachable ($API_BASE)"
 
 AGENT_BIN="$REPO_ROOT/apps/kortix-sandbox-agent-server/dist/kortix-agent"
+CLI_BIN="$REPO_ROOT/apps/cli/dist/kortix"
 ENTRY_SH="$REPO_ROOT/apps/sandbox/entrypoint.sh"
 [[ -f "$AGENT_BIN" ]] || fail "missing $AGENT_BIN — run \`bun run build\` in apps/kortix-sandbox-agent-server"
+[[ -f "$CLI_BIN" ]]   || fail "missing $CLI_BIN — run \`bun run build\` in apps/cli"
 [[ -f "$ENTRY_SH" ]]  || fail "missing $ENTRY_SH"
 file "$AGENT_BIN" | grep -q "ELF.*x86-64" || fail "kortix-agent isn't a Linux x86-64 ELF (got: $(file -b "$AGENT_BIN" | head -c 80))"
+file "$CLI_BIN" | grep -q "ELF.*x86-64" || fail "kortix CLI isn't a Linux x86-64 ELF (got: $(file -b "$CLI_BIN" | head -c 80))"
 ok "build artifacts present + Linux ELF"
 
 command -v psql >/dev/null || { echo "psql not installed"; exit 2; }

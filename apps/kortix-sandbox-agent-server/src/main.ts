@@ -1,7 +1,13 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { loadConfig, resolveOpencodeConfigDir, type Config } from './config'
-import { configureGlobalGitIdentity, materializeRepo } from './git'
+import {
+  configureGitCredentialHelper,
+  configureGlobalGitIdentity,
+  configureRepoCredentialHelper,
+  materializeRepo,
+  runGitCredentialHelper,
+} from './git'
 import { logger } from './logger'
 import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady } from './opencode'
 import { startOpencodeEventLoop, type QuestionRequest } from './opencode-events'
@@ -55,34 +61,59 @@ async function main() {
       err: err instanceof Error ? err.message : String(err),
     })
   }
+  // Make `git push`/`git fetch` against the project remote authenticate
+  // transparently from any shell the agent uses — no token juggling, no
+  // askpass. Best-effort: a sandbox with no managed remote just skips it.
+  try {
+    await configureGitCredentialHelper(cfg, OPENCODE_HOME)
+  } catch (err) {
+    logger.warn('[boot] git credential helper setup failed', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
   bootMark('git-identity')
 
-  if (cfg.autoClone) {
-    try {
-      await materializeRepo(cfg)
-    } catch (err) {
-      // Keep the daemon up so /kortix/health can explain the boot failure,
-      // but do not present OpenCode as usable against an empty workspace.
-      bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
-      logger.error('[boot] repo materialization failed', err)
-    }
-  }
-  bootMark('repo-materialized')
-
+  // Repo clone and opencode spawn run in parallel. opencode does NOT touch
+  // the workspace until its first request — `opencode.start()` only spawns
+  // the binary + waits for the HTTP port to bind. The workspace is fully
+  // materialized before the first request lands (we await the clone before
+  // the readiness probe + initial-session creation).
   const opencodeConfigDir = await resolveOpencodeConfigDir(cfg)
   logger.info('[boot] resolved opencode config dir', { opencodeConfigDir })
-
   const projectEnv = createProjectEnvStore()
   const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
 
-  // Start opencode in the background. It's non-fatal if it never becomes ready:
-  // /kortix/health will report `opencode: starting` and the reverse proxy will
-  // return 503 instead of crashing the daemon. This is what lets us boot
-  // locally (where the opencode binary may be missing) for smoke tests.
+  const repoMaterializePromise: Promise<void> = cfg.autoClone
+    ? materializeRepo(cfg).catch((err) => {
+        bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+        logger.error('[boot] repo materialization failed', err)
+      })
+    : Promise.resolve()
+  const opencodeStartPromise: Promise<void> = opencode.start().catch((err) => {
+    // opencode.start() throws only on a hard spawn failure; the supervisor
+    // self-retries on transient issues. Log + continue: the proxy will 503
+    // until the supervisor reports ready.
+    logger.warn('[boot] opencode.start() rejected', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  })
+
+  // Wait for the clone to finish before we let downstream code (readiness
+  // probe, initial session creation) think the workspace is ready.
+  await repoMaterializePromise
+  bootMark('repo-materialized')
   if (bootState.repoMaterializationError) {
-    logger.warn('[boot] skipping opencode start because repo materialization failed')
+    logger.warn('[boot] skipping opencode readiness because repo materialization failed')
   } else {
-    await opencode.start()
+    // Now that the repo exists, pin the credential helper repo-locally too, so
+    // `git push` authenticates regardless of the invoking shell's HOME (the
+    // global config above only applies under HOME=<opencode home>).
+    await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((err) => {
+      logger.warn('[boot] repo-local git credential helper setup failed', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    })
+    await opencodeStartPromise
   }
   bootMark('opencode-spawned')
 
@@ -323,7 +354,18 @@ export function readPinnedOpencodeSessionId(): string | null {
   }
 }
 
-main().catch((err) => {
-  logger.error('[boot] fatal', err)
-  process.exit(1)
-})
+// Subcommand dispatch. The compiled binary is reused as a git credential
+// helper (`kortix-agent git-credential get`) — git execs it when it needs a
+// push/clone credential for the managed remote. Detect that mode before the
+// daemon boot path so we don't spin up opencode/proxy just to print a token.
+const subcommand = process.argv[2]
+if (subcommand === 'git-credential') {
+  runGitCredentialHelper(loadConfig(), process.argv[3])
+    .then((code) => process.exit(code))
+    .catch(() => process.exit(0))
+} else {
+  main().catch((err) => {
+    logger.error('[boot] fatal', err)
+    process.exit(1)
+  })
+}

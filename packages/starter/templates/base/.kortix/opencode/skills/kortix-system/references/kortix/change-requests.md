@@ -297,7 +297,9 @@ Validation rules on `POST /`:
   even after the CR is opened — the diff updates. There's no
   freeze-on-open semantic.
 - **The `KORTIX_*` env vars expected at `cr open` time:**
-  `KORTIX_TOKEN`, `KORTIX_API_URL`, `KORTIX_PROJECT_ID`,
+  `KORTIX_CLI_TOKEN` (the project-scoped PAT the CLI authenticates with —
+  **not** `KORTIX_TOKEN`, which is the sandbox service key and is rejected
+  by the CR routes), `KORTIX_API_URL`, `KORTIX_PROJECT_ID`,
   `KORTIX_BRANCH_NAME` (or `KORTIX_HEAD_REF`), `KORTIX_SESSION_ID`.
   All of these are pre-injected by the session bootstrap. If you're
   running `kortix cr open` *outside* a session (e.g. on your laptop)

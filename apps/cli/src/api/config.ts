@@ -151,12 +151,16 @@ export function deleteConfig(): void {
 
 /**
  * Resolve the active Host for the current invocation. Priority:
- *   1. KORTIX_CLI_TOKEN env var (synthetic ephemeral host, never persisted)
+ *   1. KORTIX_CLI_TOKEN env var (synthetic ephemeral host, never persisted),
+ *      falling back to KORTIX_EXECUTOR_TOKEN — both carry the project-scoped
+ *      PAT the platform injects into a session sandbox. (KORTIX_TOKEN, the
+ *      sandbox service key, is deliberately NOT used here: it does not
+ *      authenticate against the project-scoped API routes the CLI calls.)
  *   2. `--host` flag (handled at the call site via `getHost(name)`)
  *   3. The `active` host in config.json
  */
 export function activeHost(): Host | null {
-  const envToken = process.env.KORTIX_CLI_TOKEN;
+  const envToken = process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_EXECUTOR_TOKEN;
   if (envToken) {
     return {
       url: process.env.KORTIX_API_URL ?? DEFAULT_API_BASE,

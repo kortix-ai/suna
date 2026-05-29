@@ -67,10 +67,29 @@ export async function configureGlobalGitIdentity(
   logger.info('[git] configured default global identity', { home, name: cfg.gitUserName, email: cfg.gitUserEmail })
 }
 
+/**
+ * Per-(target,identity) memo so repeated boots (or test runs) skip the
+ * redundant `git config` subprocess spawns. Keying on the resolved values
+ * means a config change invalidates the memo automatically.
+ */
+const repoIdentityMemo = new Map<string, string>()
+
 async function configureRepoGitIdentity(cfg: GitIdentityConfig, target: string): Promise<void> {
+  const key = `${target}\0${cfg.gitUserName}\0${cfg.gitUserEmail}`
+  if (repoIdentityMemo.get(target) === key) return
+  // Git refuses concurrent writes to the same .git/config (lockfile), so the
+  // two values run serially. The wins here are (a) the memo, which skips both
+  // on a repeat boot, and (b) running them in `--local` not via the slower
+  // `--global` path.
   await configureGitValue(['-C', target], ['--local'], 'user.name', cfg.gitUserName)
   await configureGitValue(['-C', target], ['--local'], 'user.email', cfg.gitUserEmail)
+  repoIdentityMemo.set(target, key)
   logger.info('[git] configured default repo identity', { target, name: cfg.gitUserName, email: cfg.gitUserEmail })
+}
+
+/** Test-only: drop the memo so tests can verify the config calls fire. */
+export function __clearRepoIdentityMemoForTests(): void {
+  repoIdentityMemo.clear()
 }
 
 async function configureSafeDirectory(target: string): Promise<void> {
@@ -123,8 +142,24 @@ async function gitWithAuth(
 const CLONE_CRED_TIMEOUT_MS = 15_000
 const CLONE_CRED_ATTEMPTS = 4
 
+/**
+ * Per-process cache for the clone-credential round-trip. `materializeRepo`
+ * calls `resolveCloneToken` twice (base clone + branch checkout) on the cold
+ * path; the API token doesn't change within a single boot, so caching it
+ * avoids a second control-plane round-trip over the public internet.
+ * Memoize on the input shape (api+project+token) so re-keying invalidates.
+ */
+let cachedCloneToken: { key: string; value: string | undefined } | null = null
+
+/** Test-only: drop the cached clone token so a fresh fetch happens next call. */
+export function __clearCloneTokenCacheForTests(): void {
+  cachedCloneToken = null
+}
+
 async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
   if (!cfg.apiUrl || !cfg.projectId || !cfg.kortixToken) return undefined
+  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.kortixToken}`
+  if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
 
   const rawBase = cfg.apiUrl.replace(/\/+$/, '')
   const base = rawBase.endsWith('/v1/router')
@@ -165,7 +200,9 @@ async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
         | { auth?: { token?: string | null } | null }
         | null
       const token = body?.auth?.token?.trim()
-      return token || undefined
+      const value = token || undefined
+      cachedCloneToken = { key: cacheKey, value }
+      return value
     } catch (err) {
       lastErr = err
       const is4xx = err instanceof Error && /\((4\d\d)\)/.test(err.message)
@@ -189,6 +226,161 @@ async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
     `credential after ${CLONE_CRED_ATTEMPTS} attempts — is KORTIX_API_URL publicly ` +
     `reachable from this sandbox? (${detail})`,
   )
+}
+
+/**
+ * Configure git so that *any* push/fetch the agent runs against the project's
+ * managed remote authenticates with zero setup — the same credential the
+ * daemon mints for itself at clone time.
+ *
+ * Mechanism: a git credential helper pointed back at this very binary
+ * (`kortix-agent git-credential`). When git needs a credential for the repo
+ * host it execs the helper, which fetches a fresh push-capable token from the
+ * control plane (`/git/clone-credential`) and hands git
+ * `username=x-access-token` + `password=<token>`. Fetching on demand (rather
+ * than baking a token into `.git/config`) means a long-running session never
+ * pushes with a stale token — the exact failure mode that left an agent unable
+ * to `git push origin HEAD`.
+ *
+ * Scoped to the repo's origin host so it never fires for unrelated hosts.
+ */
+function deriveAuthHost(repoUrl: string): string | null {
+  try {
+    const parsed = new URL(repoUrl)
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null
+    return `${parsed.protocol}//${parsed.host}`
+  } catch {
+    return null
+  }
+}
+
+// The compiled daemon binary is its own credential helper. In dev (`bun run
+// src/main.ts`) execPath is `bun`, which can't re-dispatch the subcommand — but
+// credential help is only needed in the real sandbox, where execPath is the
+// baked /usr/local/bin/kortix-agent.
+function credentialHelperSpec(): string {
+  return `!'${process.execPath}' git-credential`
+}
+
+export async function configureGitCredentialHelper(
+  cfg: Config,
+  home: string,
+): Promise<void> {
+  if (!cfg.repoUrl || !cfg.projectId || !cfg.kortixToken) return
+  const host = deriveAuthHost(cfg.repoUrl)
+  if (!host) return
+
+  const env = { HOME: home }
+  // `--replace-all` keeps re-boots idempotent instead of appending duplicate
+  // helper lines (which git would chain, slowing every credential lookup).
+  const setHelper = await execGit(
+    ['config', '--global', '--replace-all', `credential.${host}.helper`, credentialHelperSpec()],
+    { env },
+  )
+  if (setHelper.code !== 0) {
+    logger.warn('[git] failed to configure credential helper', {
+      host,
+      stderr: setHelper.stderr.slice(0, 200),
+    })
+    return
+  }
+  // Pin the username so git doesn't prompt for it when the remote URL carries
+  // no userinfo (freestyle/GitHub both expect the literal `x-access-token`).
+  await execGit(
+    ['config', '--global', '--replace-all', `credential.${host}.username`, 'x-access-token'],
+    { env },
+  )
+  logger.info('[git] configured managed credential helper (global)', { host })
+}
+
+/**
+ * Configure the SAME credential helper at the repo level (`--local`). The
+ * global config only fires when git runs with HOME=<opencode home>; a shell
+ * with a different HOME (e.g. a root `bash` tool call defaulting to /root) would
+ * miss it and `git push` would fall back to a username prompt and fail.
+ * Repo-local config lives in `<repo>/.git/config` and is HOME-independent, so
+ * `git -C <repo> push` authenticates no matter who/where invokes it. Must run
+ * after the repo is materialized.
+ */
+export async function configureRepoCredentialHelper(cfg: Config, target: string): Promise<void> {
+  if (!cfg.repoUrl || !cfg.projectId || !cfg.kortixToken) return
+  if (!(await pathExists(`${target}/.git`))) return
+  const host = deriveAuthHost(cfg.repoUrl)
+  if (!host) return
+
+  const setHelper = await execGit(
+    ['-C', target, 'config', '--local', '--replace-all', `credential.${host}.helper`, credentialHelperSpec()],
+  )
+  if (setHelper.code !== 0) {
+    logger.warn('[git] failed to configure repo-local credential helper', {
+      host,
+      stderr: setHelper.stderr.slice(0, 200),
+    })
+    return
+  }
+  await execGit(
+    ['-C', target, 'config', '--local', '--replace-all', `credential.${host}.username`, 'x-access-token'],
+  )
+  logger.info('[git] configured managed credential helper (repo-local)', { host, target })
+}
+
+/**
+ * Git credential-helper entrypoint (`kortix-agent git-credential <action>`).
+ * Implements the read side of git's credential protocol: on `get` it resolves
+ * a fresh push/clone token and writes `username`/`password` to stdout. Every
+ * other action (`store`, `erase`) is a no-op — the control plane owns the
+ * credential, there's nothing local to persist or forget.
+ */
+export async function runGitCredentialHelper(
+  cfg: Config,
+  action: string | undefined,
+): Promise<number> {
+  if (action !== 'get') return 0
+  // Drain stdin (git feeds protocol=…\nhost=…\n). We don't need the contents —
+  // the token is project-scoped, not host-derived — but we must consume it so
+  // git's write side doesn't block on a full pipe.
+  await readAllStdin().catch(() => '')
+
+  const output = await resolveGitCredentialOutput(cfg)
+  if (output) process.stdout.write(output)
+  return 0
+}
+
+/**
+ * Core of the credential helper, split out so it's testable without touching
+ * process stdin/stdout: resolve a push/clone token and format git's expected
+ * `username`/`password` reply. Returns null when no credential is available
+ * (git then falls back to its other helpers / prompts).
+ */
+export async function resolveGitCredentialOutput(cfg: Config): Promise<string | null> {
+  let token: string | undefined
+  try {
+    token = await resolveCloneToken(cfg)
+  } catch (err) {
+    logger.warn('[git] credential helper could not resolve token', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+  if (!token) return null
+  return `username=x-access-token\npassword=${token}\n`
+}
+
+function readAllStdin(): Promise<string> {
+  return new Promise((resolve) => {
+    let data = ''
+    const stdin = process.stdin
+    if (stdin.isTTY) {
+      resolve('')
+      return
+    }
+    stdin.setEncoding('utf8')
+    stdin.on('data', (chunk) => (data += chunk))
+    stdin.on('end', () => resolve(data))
+    stdin.on('error', () => resolve(data))
+    // Guard against a helper invoked with no stdin attached.
+    stdin.on('close', () => resolve(data))
+  })
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -303,6 +495,10 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     await configureRepoGitIdentity(cfg, target)
     return
   } else {
+    // Clone into a tmp sibling, then `rm target + rename`. This preserves any
+    // existing content under `target` until we have a known-good clone — if
+    // the network drops mid-clone we don't wipe a workspace that's still on
+    // disk from a previous boot.
     const cloneToken = await resolveCloneToken(cfg)
     const tmpTarget = join(dirname(target), `.kortix-clone-${process.pid}-${Date.now()}`)
     await rm(tmpTarget, { recursive: true, force: true })
@@ -343,6 +539,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   }
 
   if (cfg.branchName) {
+    // resolveCloneToken is memoized — this second call is now ~free.
     const cloneToken = await resolveCloneToken(cfg)
     await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
   }

@@ -29,9 +29,11 @@ const user = readFileSync('$CONTEXT_DIR/user.Dockerfile', 'utf8');
 const layered = buildLayeredDockerfile({
   userDockerfile: user,
   opencodeVersion: '1.14.28',
-  agentBinaryPath: 'kortix-agent',
+  agentBinaryPath: 'kortix-agent.gz',
+  cliBinaryPath: 'kortix.gz',
   entrypointScriptPath: 'kortix-entrypoint',
   agentCliPath: 'kortix-agent-cli',
+  executorSdkPath: 'kortix-executor-sdk',
 });
 writeFileSync('$CONTEXT_DIR/Dockerfile', layered);
 console.log('→ Layered Dockerfile written, ' + layered.split('\n').length + ' lines');
@@ -42,11 +44,23 @@ echo "────────────────────────�
 sed -n '/Kortix runtime layer/,$p' "$CONTEXT_DIR/Dockerfile"
 echo "─────────────────────────────────────────"
 
-# 3. Stage the artifacts the layered Dockerfile expects to COPY.
-cp "$REPO_ROOT/apps/kortix-sandbox-agent-server/dist/kortix-agent" "$CONTEXT_DIR/kortix-agent" 2>/dev/null \
-  || { echo "⚠ kortix-agent binary not built — using empty stub for smoke test"; printf '#!/bin/sh\necho stub-agent\n' >"$CONTEXT_DIR/kortix-agent"; chmod +x "$CONTEXT_DIR/kortix-agent"; }
+# 3. Stage the artifacts the layered Dockerfile expects to COPY. The layer
+#    gunzips kortix-agent.gz / kortix.gz, so stage gzipped binaries (or a
+#    gzipped stub when a binary hasn't been built).
+stage_gzipped_bin() {
+  local src="$1" out="$2" stubmsg="$3"
+  if [[ -f "$src" ]]; then
+    gzip -c "$src" >"$CONTEXT_DIR/$out"
+  else
+    echo "⚠ $(basename "$src") not built — using gzipped stub for smoke test"
+    printf '#!/bin/sh\necho %s\n' "$stubmsg" | gzip -c >"$CONTEXT_DIR/$out"
+  fi
+}
+stage_gzipped_bin "$REPO_ROOT/apps/kortix-sandbox-agent-server/dist/kortix-agent" kortix-agent.gz stub-agent
+stage_gzipped_bin "$REPO_ROOT/apps/cli/dist/kortix" kortix.gz stub-kortix
 cp "$REPO_ROOT/apps/sandbox/entrypoint.sh" "$CONTEXT_DIR/kortix-entrypoint"
 cp -R "$REPO_ROOT/apps/sandbox/agent-cli" "$CONTEXT_DIR/kortix-agent-cli"
+cp -R "$REPO_ROOT/packages/executor-sdk" "$CONTEXT_DIR/kortix-executor-sdk"
 
 # 4. Build it.
 echo "→ docker build…"
