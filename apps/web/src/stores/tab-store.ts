@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { useServerStore } from '@/stores/server-store';
 import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@/lib/instance-routes';
 
@@ -157,6 +157,91 @@ interface TabState {
 
   /** Save current server-scoped tabs and restore tabs for a different server */
   swapForServer: (newServerId: string, currentServerId?: string) => void;
+}
+
+// ============================================================================
+// Resilient localStorage — tab state must never crash the app on quota limits
+// ============================================================================
+
+/** Disposable per-server tab cache; the first thing we evict under pressure. */
+const PER_SERVER_KEY = 'kortix-tabs-per-server';
+/** Cap how many servers we remember tabs for, so the cache can't grow forever. */
+const MAX_CACHED_SERVERS = 5;
+
+/**
+ * Write to localStorage without ever throwing. On a quota error we evict the
+ * (disposable) per-server cache and retry once; if it still fails we give up
+ * silently rather than crash the UI (the old behaviour: an uncaught
+ * QuotaExceededError out of the persist middleware).
+ */
+function safeSetItem(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    if (key !== PER_SERVER_KEY) {
+      try {
+        localStorage.removeItem(PER_SERVER_KEY);
+        localStorage.setItem(key, value);
+        return true;
+      } catch {
+        /* still over quota — fall through */
+      }
+    }
+    return false;
+  }
+}
+
+/** zustand persist storage that degrades gracefully instead of throwing. */
+const safeTabStorage = {
+  getItem: (name: string): string | null => {
+    try {
+      return localStorage.getItem(name);
+    } catch {
+      return null;
+    }
+  },
+  setItem: (name: string, value: string): void => {
+    safeSetItem(name, value);
+  },
+  removeItem: (name: string): void => {
+    try {
+      localStorage.removeItem(name);
+    } catch {
+      /* ignore */
+    }
+  },
+};
+
+type PerServerEntry = {
+  tabs: Record<string, Tab>;
+  tabOrder: string[];
+  activeTabId: string | null;
+  tabFocusHistory: string[];
+  _ts?: number;
+};
+
+/** Persist one server's tab state, pruning to the N most-recently-used servers. */
+function writePerServerCache(
+  serverId: string,
+  entry: Omit<PerServerEntry, '_ts'>,
+): void {
+  try {
+    const cache: Record<string, PerServerEntry> = JSON.parse(
+      localStorage.getItem(PER_SERVER_KEY) || '{}',
+    );
+    cache[serverId] = { ...entry, _ts: Date.now() };
+    const ids = Object.keys(cache);
+    if (ids.length > MAX_CACHED_SERVERS) {
+      ids
+        .sort((a, b) => (cache[a]._ts ?? 0) - (cache[b]._ts ?? 0))
+        .slice(0, ids.length - MAX_CACHED_SERVERS)
+        .forEach((id) => delete cache[id]);
+    }
+    safeSetItem(PER_SERVER_KEY, JSON.stringify(cache));
+  } catch {
+    /* ignore */
+  }
 }
 
 export const useTabStore = create<TabState>()(
@@ -433,16 +518,12 @@ export const useTabStore = create<TabState>()(
 
         // Save the entire current tab state for the old server
         if (currentServerId) {
-          try {
-            const cache = JSON.parse(localStorage.getItem('kortix-tabs-per-server') || '{}');
-            cache[currentServerId] = { tabs, tabOrder, activeTabId, tabFocusHistory };
-            localStorage.setItem('kortix-tabs-per-server', JSON.stringify(cache));
-          } catch {}
+          writePerServerCache(currentServerId, { tabs, tabOrder, activeTabId, tabFocusHistory });
         }
 
         // Restore the full tab state for the new server
         try {
-          const cache = JSON.parse(localStorage.getItem('kortix-tabs-per-server') || '{}');
+          const cache = JSON.parse(localStorage.getItem(PER_SERVER_KEY) || '{}');
           const saved = cache[newServerId];
           if (saved?.tabs && saved?.tabOrder) {
             const ensured = ensureDashboardTab(saved.tabs, saved.tabOrder);
@@ -462,11 +543,15 @@ export const useTabStore = create<TabState>()(
     }),
     {
       name: 'kortix-tabs',
+      // Never let a full quota crash the app — the storage wrapper evicts the
+      // disposable per-server cache and retries instead of throwing.
+      storage: createJSONStorage(() => safeTabStorage),
+      // `recentlyClosedTabs` holds full Tab objects (incl. metadata) and is only
+      // needed for Mod+Shift+T within a session — keep it in memory, off disk.
       partialize: (state) => ({
         tabs: state.tabs,
         tabOrder: state.tabOrder,
         activeTabId: state.activeTabId,
-        recentlyClosedTabs: state.recentlyClosedTabs,
         tabFocusHistory: state.tabFocusHistory,
       }),
       merge: (persisted, current) => {
@@ -550,14 +635,12 @@ useTabStore.subscribe((state) => {
       const serverId = useServerStore.getState().activeServerId;
       if (!serverId) return;
 
-      const cache = JSON.parse(localStorage.getItem('kortix-tabs-per-server') || '{}');
-      cache[serverId] = {
+      writePerServerCache(serverId, {
         tabs: state.tabs,
         tabOrder: state.tabOrder,
         activeTabId: state.activeTabId,
         tabFocusHistory: state.tabFocusHistory,
-      };
-      localStorage.setItem('kortix-tabs-per-server', JSON.stringify(cache));
+      });
     } catch {}
   }, 500);
 });

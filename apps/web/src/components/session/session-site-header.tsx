@@ -38,6 +38,7 @@ import {
   Share2,
   Trash2,
 } from 'lucide-react';
+import { SessionChangesIndicator } from '@/components/session/session-changes-indicator';
 import { ExportTranscriptDialog } from '@/components/session/export-transcript-dialog';
 import { CompactDialog } from '@/components/session/compact-dialog';
 import { SessionShareDialog } from '@/components/projects/session-share-dialog';
@@ -204,7 +205,10 @@ export function SessionSiteHeader({
             {/* Right: panel toggle — always available, even on an empty
                 session with no tool calls, so the side panel (Actions /
                 Browser / Files / Terminal) is always one click away. */}
-            <div className="flex items-center pointer-events-auto">
+            <div className="flex items-center gap-1.5 pointer-events-auto">
+              {/* Colored nudge — only shows when this thread has unsynced
+                  changes, so it doubles as an at-a-glance diff indicator. */}
+              <SessionChangesIndicator sessionId={sessionId} />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
