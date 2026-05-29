@@ -74,6 +74,70 @@ config_dir = ".kortix/opencode"
 # User said: {{ body.text }}
 # """
 
+# ─── PR bot ──────────────────────────────────────────────────────────────
+# Two webhook triggers driven by GitHub `pull_request` events. Point a
+# GitHub webhook (content-type application/json, "Pull requests" event,
+# secret = the GITHUB_WEBHOOK_SECRET project secret) at each URL:
+#   .../v1/webhooks/projects/<project_id>/pr-review
+#   .../v1/webhooks/projects/<project_id>/pr-preview
+# Both run the `pr-bot` agent (.kortix/opencode/agents/pr-bot.md). The bot
+# talks to GitHub through the `github` connector (see [[connectors]] below)
+# — comments, opens PRs, reads PR data via the executor, no raw token. The
+# only secret these triggers need is GITHUB_WEBHOOK_SECRET (the HMAC the
+# GitHub webhook signs with). See docs/automations/pr-bot.md for setup +
+# dogfood notes.
+
+[[triggers]]
+slug = "pr-review"
+name = "PR thermo review"
+type = "webhook"
+agent = "pr-bot"
+enabled = true
+secret_env = "GITHUB_WEBHOOK_SECRET"
+prompt = """
+A GitHub pull_request event fired. action = {{ body.action }}.
+Proceed ONLY for actions: opened, reopened, synchronize, ready_for_review.
+For any other action, do nothing and stop immediately.
+
+PR #{{ body.number }} — "{{ body.pull_request.title }}"
+repo {{ body.repository.full_name }}
+head {{ body.pull_request.head.ref }}  base {{ body.pull_request.base.ref }}
+
+Run the REVIEW flow from your pr-bot playbook. First:
+  export REPO={{ body.repository.full_name }} PR_NUMBER={{ body.number }} \\
+    PR_HEAD_REF={{ body.pull_request.head.ref }} \\
+    PR_BASE_REF={{ body.pull_request.base.ref }}
+Then check out the PR, apply the thermo-nuclear-review skill to the PR
+diff (origin/$PR_BASE_REF...HEAD), post the sticky `review` comment, and
+open a stacked fix PR only if you have concrete, behavior-preserving
+improvements.
+"""
+
+[[triggers]]
+slug = "pr-preview"
+name = "PR preview environment"
+type = "webhook"
+agent = "pr-bot"
+enabled = true
+secret_env = "GITHUB_WEBHOOK_SECRET"
+prompt = """
+A GitHub pull_request event fired. action = {{ body.action }}.
+Proceed ONLY for actions: opened, reopened, synchronize, ready_for_review.
+For any other action, do nothing and stop immediately.
+
+PR #{{ body.number }} — "{{ body.pull_request.title }}"
+repo {{ body.repository.full_name }}
+head {{ body.pull_request.head.ref }}  base {{ body.pull_request.base.ref }}
+
+Run the PREVIEW flow from your pr-bot playbook. First:
+  export REPO={{ body.repository.full_name }} PR_NUMBER={{ body.number }} \\
+    PR_HEAD_REF={{ body.pull_request.head.ref }} \\
+    PR_BASE_REF={{ body.pull_request.base.ref }}
+Then check out the PR, start the frontend + backend dev servers, mint
+one-click preview URLs with preview-url.sh, and post them as the sticky
+`preview` comment. If a server can't start, say so honestly with logs.
+"""
+
 # ─── Channels ────────────────────────────────────────────────────────────
 # Connect a chat platform (Slack today; Teams/Discord/etc. later) to this
 # project. The Slack install (bot token + signing secret) lives in this
@@ -117,3 +181,9 @@ config_dir = ".kortix/opencode"
 #
 #   [apps.env]
 #   NEXT_PUBLIC_API_URL = "https://api.example.com"
+
+[[connectors]]
+slug = "github"
+name = "GitHub"
+provider = "pipedream"
+app = "github"

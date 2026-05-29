@@ -139,6 +139,46 @@ class PipedreamProvider {
     });
     return data.ret ?? data.exports ?? data.os ?? data;
   }
+
+  /**
+   * Connect API Proxy — forward an arbitrary request to the connected app's
+   * own API. Pipedream looks up the account's stored credential and injects
+   * it, so we never touch the app secret. The target URL is URL-safe base64
+   * in the path; method + body pass straight through. Returns the upstream
+   * status + parsed body verbatim (errors included — the caller decides).
+   * Docs: https://pipedream.com/docs/connect/api-proxy
+   */
+  async proxyRequest(
+    extUserId: string,
+    accountId: string,
+    req: { method: string; url: string; body?: unknown; headers?: Record<string, string> },
+  ): Promise<{ status: number; ok: boolean; data: unknown }> {
+    const token = await this.getApiToken();
+    const url64 = Buffer.from(req.url, 'utf8').toString('base64url');
+    const qs = new URLSearchParams({ external_user_id: extUserId, account_id: accountId });
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+      'x-pd-environment': this.environment,
+    };
+    // Pass caller headers through, but never let them clobber proxy auth/env.
+    for (const [k, v] of Object.entries(req.headers ?? {})) {
+      if (!/^(authorization|x-pd-environment)$/i.test(k)) headers[k] = String(v);
+    }
+    let body: string | undefined;
+    if (req.body !== undefined && req.body !== null) {
+      body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+      headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
+    }
+    const res = await fetch(`${PD_BASE}/v1/connect/${this.projectId}/proxy/${url64}?${qs.toString()}`, {
+      method: req.method.toUpperCase(),
+      headers,
+      ...(body !== undefined ? { body } : {}),
+    });
+    const text = await res.text();
+    let data: unknown = text;
+    try { data = text ? JSON.parse(text) : null; } catch { /* keep raw text */ }
+    return { status: res.status, ok: res.ok, data };
+  }
 }
 
 let provider: PipedreamProvider | null = null;
@@ -222,6 +262,36 @@ export async function runPipedreamAction(
   try {
     const data = await getProvider().runAction(externalUserId(projectId, slug, userId), app, actionKey, args, accountId);
     return { status: 200, ok: true, data };
+  } catch (e) {
+    return { status: 502, ok: false, data: (e as Error).message };
+  }
+}
+
+/**
+ * Generic Connect-Proxy request for the `request` tool (binding kind
+ * `pipedream_proxy`). `args` carries { method, url, body?, headers? }; the
+ * upstream status flows back as the ExecResult status so the agent sees real
+ * 4xx/5xx, not a flattened 200.
+ */
+export async function runPipedreamProxy(
+  projectId: string,
+  slug: string,
+  args: Record<string, unknown>,
+  accountId: string,
+  userId: string | null = null,
+): Promise<ExecResult> {
+  const method = typeof args.method === 'string' && args.method.trim() ? args.method : 'GET';
+  const url = typeof args.url === 'string' ? args.url.trim() : '';
+  if (!url) return { status: 400, ok: false, data: '`url` (full target API URL) is required' };
+  if (!/^https?:\/\//i.test(url)) return { status: 400, ok: false, data: '`url` must be an absolute http(s) URL' };
+  try {
+    const r = await getProvider().proxyRequest(externalUserId(projectId, slug, userId), accountId, {
+      method,
+      url,
+      body: args.body,
+      headers: (args.headers && typeof args.headers === 'object' ? args.headers : undefined) as Record<string, string> | undefined,
+    });
+    return { status: r.status, ok: r.ok, data: r.data };
   } catch (e) {
     return { status: 502, ok: false, data: (e as Error).message };
   }

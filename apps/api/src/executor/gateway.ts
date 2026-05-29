@@ -86,6 +86,16 @@ export interface GatewayDeps {
     /** Effective user for the Pipedream external_user_id (null = shared). */
     userId: string | null;
   }): Promise<ExecResult>;
+  /** Pipedream Connect-Proxy execution (the generic `request` tool). */
+  executePipedreamProxy?(input: {
+    projectId: string;
+    connectorSlug: string;
+    app: string;
+    /** { method, url, body?, headers? }. */
+    args: Record<string, unknown>;
+    accountId: string;
+    userId: string | null;
+  }): Promise<ExecResult>;
   /** OFF disables ALL policy checks (legacy allow-all). Default ON. */
   enforcePolicies?: boolean;
 }
@@ -182,18 +192,34 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     let result: ExecResult;
     if (connector.provider === 'pipedream') {
       const b = action.binding;
-      if (b.kind !== 'pipedream' || !deps.executePipedream || !usable.secret) {
-        throw new Error('pipedream connector not runnable (missing binding, runner, or connected account)');
+      if (!usable.secret) {
+        throw new Error('pipedream connector has no connected account (run `kortix connectors connect`)');
       }
-      result = await deps.executePipedream({
-        projectId: input.projectId,
-        connectorSlug: input.connectorSlug,
-        app: b.app,
-        actionKey: b.actionKey,
-        args: input.args ?? {},
-        accountId: usable.secret, // the resolved binding = Pipedream account id
-        userId: connector.credentialMode === 'per_user' ? input.subject.userId : null,
-      });
+      const userId = connector.credentialMode === 'per_user' ? input.subject.userId : null;
+      if (b.kind === 'pipedream') {
+        if (!deps.executePipedream) throw new Error('pipedream action runner not wired');
+        result = await deps.executePipedream({
+          projectId: input.projectId,
+          connectorSlug: input.connectorSlug,
+          app: b.app,
+          actionKey: b.actionKey,
+          args: input.args ?? {},
+          accountId: usable.secret, // the resolved binding = Pipedream account id
+          userId,
+        });
+      } else if (b.kind === 'pipedream_proxy') {
+        if (!deps.executePipedreamProxy) throw new Error('pipedream proxy runner not wired');
+        result = await deps.executePipedreamProxy({
+          projectId: input.projectId,
+          connectorSlug: input.connectorSlug,
+          app: b.app,
+          args: input.args ?? {},
+          accountId: usable.secret,
+          userId,
+        });
+      } else {
+        throw new Error(`pipedream connector has unexpected binding kind "${b.kind}"`);
+      }
     } else {
       result = await executeCall({
         binding: action.binding,

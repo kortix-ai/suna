@@ -42,6 +42,7 @@ import {
   pipedreamConfigured,
   pipedreamConnectUrl,
   runPipedreamAction,
+  runPipedreamProxy,
   browsePipedreamApps,
   verifyWebhookSig,
 } from './pipedream';
@@ -154,6 +155,8 @@ export function makeDbGatewayDeps(): GatewayDeps {
     },
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
+    executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
+      runPipedreamProxy(projectId, connectorSlug, args, accountId, userId),
     fetchImpl: nodeFetch,
     enforcePolicies: true,
   };

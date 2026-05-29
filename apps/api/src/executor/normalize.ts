@@ -291,7 +291,41 @@ export function normalizePipedream(actions: PipedreamActionLike[], app: string):
         binding: { kind: 'pipedream', app, actionKey: a.key } as ActionBinding,
       };
     });
+  // Every Pipedream connector also gets a generic `request` tool that proxies
+  // to ANY endpoint of the app's API (Connect Proxy). This is what makes a
+  // Pipedream connector behave like an openapi/http one — the agent can reach
+  // the complete API surface, not just the curated actions above. Listed last
+  // so dedupePaths keeps a real action named `request` if one ever collides.
+  out.push(pipedreamProxyAction(app));
   return dedupePaths(out);
+}
+
+/** The synthetic catch-all `request` action backing the Connect Proxy. */
+export function pipedreamProxyAction(app: string): NormalizedAction {
+  return {
+    path: 'request',
+    name: `${app} API request`,
+    description:
+      `Make an authenticated request to ANY ${app} API endpoint via the Pipedream Connect ` +
+      `proxy (the credential is injected server-side). Use this for anything the named ` +
+      `actions don't cover. Provide the full target URL and HTTP method; include a JSON ` +
+      `body for writes. Example: method="POST", url="https://api.github.com/repos/{owner}/{repo}/issues/{n}/comments", body={"body":"..."}.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        method: { type: 'string', description: 'HTTP method: GET, POST, PUT, PATCH, or DELETE.' },
+        url: { type: 'string', description: `Absolute target API URL for ${app} (e.g. https://api.github.com/...).` },
+        body: { type: 'object', description: 'Optional JSON request body for POST/PUT/PATCH.' },
+        headers: { type: 'object', description: 'Optional extra request headers (auth is added automatically).' },
+      },
+      required: ['method', 'url'],
+    },
+    outputSchema: null,
+    // Catch-all can do anything up to and including deletes; treat as write so
+    // it's gated under risk-mode policies. Pin tighter with a connector policy.
+    risk: 'write' as Risk,
+    binding: { kind: 'pipedream_proxy', app } as ActionBinding,
+  };
 }
 
 function pdType(t: string): string {

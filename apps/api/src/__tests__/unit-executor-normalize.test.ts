@@ -176,6 +176,17 @@ describe('dispatch + namespacing', () => {
     expect(pd[0]!.path).toBe('send_email');
   });
 
+  test('every pipedream connector gets a generic `request` (Connect Proxy) tool', () => {
+    const pd = normalize({ provider: 'pipedream', app: 'github', actions: [{ key: 'github-create-issue', name: 'Create Issue' }] });
+    const request = pd.find((a) => a.path === 'request');
+    expect(request).toBeDefined();
+    expect(request!.binding).toEqual({ kind: 'pipedream_proxy', app: 'github' });
+    expect(request!.inputSchema).toMatchObject({ required: ['method', 'url'] });
+    // present even when the app exposes no curated actions at all
+    const empty = normalize({ provider: 'pipedream', app: 'github', actions: [] });
+    expect(empty.some((a) => a.path === 'request')).toBe(true);
+  });
+
   test('namespacePath prefixes the connector slug', () => {
     expect(namespacePath('stripe', 'charges.create')).toBe('stripe.charges.create');
   });
