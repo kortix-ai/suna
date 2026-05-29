@@ -625,7 +625,29 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
     };
     
     return (
-      <div className={cardClassName} onClick={() => onClick?.(data)}>
+      <div
+        className={cn(
+          cardClassName,
+          'outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50',
+        )}
+        onClick={() => onClick?.(data)}
+        onKeyDown={
+          onClick
+            ? (e) => {
+                // Only act when the card itself is focused — nested action
+                // buttons keep their own keyboard behaviour.
+                if (e.target !== e.currentTarget) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onClick(data);
+                }
+              }
+            : undefined
+        }
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        aria-label={onClick ? data.name : undefined}
+      >
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
         <div className="relative p-6 flex flex-col flex-1">
           <div className="flex items-start justify-between mb-4">
