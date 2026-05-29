@@ -525,7 +525,7 @@ function SourceChooser({
   // Picking "Shared" is only meaningful if a shared value can reach the member.
   const sharedAvailable = row.sharedConfigured && row.usableByMe;
   return (
-    <div className="flex items-center rounded-lg border border-border/60 p-0.5">
+    <div className="flex items-center rounded-2xl border border-border/60 p-0.5">
       <button
         type="button"
         disabled={busy || !sharedAvailable}

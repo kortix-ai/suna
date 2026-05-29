@@ -109,7 +109,7 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <div className="mx-auto flex max-w-3xl flex-col gap-3">
           {errors.length > 0 && (
-            <div className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs text-amber-700 dark:text-amber-400">
+            <div className="flex flex-col gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs text-amber-700 dark:text-amber-400">
               <p className="font-medium">Some entries in kortix.toml couldn&apos;t be parsed:</p>
               <ul className="list-disc pl-4">
                 {errors.map((err) => (
@@ -226,7 +226,7 @@ function AppCard({ app, busySlug, onDeploy, onStop, onLogs, onEdit, onDelete }: 
   const dep = app.latest_deployment;
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-background px-4 py-3.5">
+    <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background px-4 py-3.5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <div className="flex items-center gap-2">

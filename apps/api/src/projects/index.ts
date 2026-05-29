@@ -32,6 +32,7 @@ import {
 } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
+import { ensureOpencodeSessionPin } from './opencode-mapping';
 import { resolveAccountId } from '../shared/resolve-account';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
@@ -3123,7 +3124,7 @@ projectsApp.post('/:projectId/manifest/validate', async (c) => {
 });
 
 // ─── Sandbox templates ─────────────────────────────────────────────────────
-// One platform-default image, optionally extended by `[[sandboxes]]` entries
+// One platform-default image, optionally extended by `[[sandbox.templates]]` entries
 // in kortix.toml. Session boot is stateless: it computes the expected snapshot
 // name from the resolved template, asks Daytona if it exists, builds if not.
 // The append-only `project_snapshot_builds` log feeds the UI but is never
@@ -3180,7 +3181,7 @@ async function loadGitProject(loaded: { row: ProjectRow }) {
 }
 
 // GET /v1/projects/:projectId/sandboxes
-// Available templates for this project: platform default + any `[[sandboxes]]`
+// Available templates for this project: platform default + any `[[sandbox.templates]]`
 // entries from kortix.toml. Each row includes its live Daytona state so the
 // picker can show "ready" / "building" / "missing" at a glance.
 projectsApp.get('/:projectId/sandboxes', async (c) => {
@@ -3344,7 +3345,7 @@ projectsApp.post('/:projectId/snapshots/fix-with-agent', async (c) => {
     errorText.slice(0, 4000),
     '```',
     ``,
-    `The sandbox image is built from the template definition (see [[sandboxes]] in kortix.toml).`,
+    `The sandbox image is built from the template definition (see [[sandbox.templates]] in kortix.toml).`,
     ``,
     `Steps:`,
     `1. Inspect the relevant Dockerfile and the build error above.`,
@@ -6383,6 +6384,59 @@ projectsApp.get('/:projectId/sessions/:sessionId', async (c) => {
   }));
 });
 
+// POST /v1/projects/:projectId/sessions/:sessionId/ensure-opencode
+// Backend-owned mapping: resolve the sandbox's canonical OpenCode root id and
+// persist it to project_sessions.opencode_session_id. This is the sole
+// authoritative writer of the pin. Idempotent — repeated calls are no-ops once
+// the pin matches the live root; heals a stale/missing pin; creates a root if
+// the sandbox has none.
+projectsApp.post('/:projectId/sessions/:sessionId/ensure-opencode', async (c) => {
+  const projectId = c.req.param('projectId');
+  const sessionId = c.req.param('sessionId');
+  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+  const loaded = await loadProjectForUser(c, projectId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+
+  const [sandbox] = await db
+    .select({ externalId: sessionSandboxes.externalId })
+    .from(sessionSandboxes)
+    .where(and(
+      eq(sessionSandboxes.sessionId, sessionId),
+      eq(sessionSandboxes.projectId, projectId),
+      eq(sessionSandboxes.accountId, loaded.row.accountId),
+    ))
+    .limit(1);
+  if (!sandbox?.externalId) return c.json({ error: 'sandbox not provisioned' }, 409);
+
+  const result = await ensureOpencodeSessionPin({
+    projectId,
+    sessionId,
+    accountId: loaded.row.accountId,
+    externalId: sandbox.externalId,
+    userId: loaded.userId,
+    currentPin: visible.row.opencodeSessionId ?? null,
+  });
+
+  // Re-read so the serialized row reflects the (possibly) updated pin.
+  const [row] = await db
+    .select()
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+
+  return c.json({
+    ...serializeSession(row ?? visible.row, {
+      grants: visible.grants,
+      viewerId: loaded.userId,
+      canManageProject: visible.canManageProject,
+    }),
+    ensure: { reason: result.reason, changed: result.changed, pin: result.pin },
+  });
+});
+
 // PUT /v1/projects/:projectId/sessions/:sessionId/sharing
 // Owner or project manager sets who can see/open this session
 // (private | project | members). Mirrors connector/secret sharing.
@@ -6430,7 +6484,15 @@ projectsApp.patch('/:projectId/sessions/:sessionId', async (c) => {
     return c.json({ error: `field is server-managed: ${attemptedServerField}` }, 400);
   }
 
-  const allowedFields = ['name', 'opencode_session_id', 'opencodeSessionId', 'metadata'];
+  // opencode_session_id is SERVER-MANAGED: the backend is the sole authority
+  // for the OpenCode↔Kortix mapping (see ensure-opencode + opencode-mapping.ts).
+  // Clients must never set it, so a stale/forged client value can't drift it.
+  const opencodeManagedField = ['opencode_session_id', 'opencodeSessionId'].find((f) => hasOwn(body, f));
+  if (opencodeManagedField) {
+    return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
+  }
+
+  const allowedFields = ['name', 'metadata'];
   const unknownField = Object.keys(body).find((field) => !allowedFields.includes(field));
   if (unknownField) {
     return c.json({ error: `field is not user-editable: ${unknownField}` }, 400);
@@ -6441,9 +6503,6 @@ projectsApp.patch('/:projectId/sessions/:sessionId', async (c) => {
   const existing = visible.row;
 
   const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
-
-  const opencodeSessionId = normalizeString(body.opencode_session_id ?? body.opencodeSessionId);
-  if (opencodeSessionId) updates.opencodeSessionId = opencodeSessionId;
 
   const name = normalizeString(body.name);
   const metadata = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)

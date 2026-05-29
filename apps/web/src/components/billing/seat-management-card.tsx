@@ -21,7 +21,7 @@ export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
   const usage = accountState.usage_this_period;
 
   return (
-    <div className="rounded-lg border bg-card p-6 space-y-5">
+    <div className="rounded-2xl border bg-card p-6 space-y-5">
       <header className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="rounded-md bg-muted p-2 text-muted-foreground">
@@ -84,7 +84,7 @@ function UsageStat({
   valueUsd: number;
 }) {
   return (
-    <div className="rounded-md border bg-background p-3">
+    <div className="rounded-2xl border bg-background p-3">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {icon}
         <span>{label}</span>

@@ -301,7 +301,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 											setTab(i);
 										}}
 										className={cn(
-											"flex items-center gap-1 px-2 py-0.5 text-sm font-medium rounded-md border transition-colors duration-150 cursor-pointer whitespace-nowrap",
+											"flex items-center gap-1 px-2 py-0.5 text-sm font-medium rounded-2xl border transition-colors duration-150 cursor-pointer whitespace-nowrap",
 											tab === i
 												? "bg-background/80 text-foreground border-border/70"
 												: "text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/70",
@@ -335,7 +335,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 									setTab(questions.length);
 								}}
 							className={cn(
-								"px-2 py-0.5 text-sm font-medium rounded-md border transition-colors duration-150 cursor-pointer",
+								"px-2 py-0.5 text-sm font-medium rounded-2xl border transition-colors duration-150 cursor-pointer",
 								isConfirm
 									? "bg-background/80 text-foreground border-border/70"
 									: "text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/70",

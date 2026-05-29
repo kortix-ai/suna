@@ -41,7 +41,7 @@ export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
   '# syntax=docker/dockerfile:1.7',
   '# Kortix platform default sandbox base.',
   '# Sessions clone the project workspace at boot — nothing project-specific',
-  '# is baked in here. Customize via `[[sandboxes]]` in kortix.toml.',
+  '# is baked in here. Customize via `[[sandbox.templates]]` in kortix.toml.',
   'FROM ubuntu:24.04',
   '',
   'WORKDIR /workspace',
@@ -124,6 +124,18 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\',
     '    && bun --version',
     '',
+    // Pre-warm Bun's package cache with the OpenCode tool dependencies. The tools
+    // in .kortix/opencode/tools/ (web_search, image_search, scrape_webpage) import
+    // these, and OpenCode runs `bun install` in the cloned config dir at boot.
+    // Warming the cache at the runtime HOME path (where OpenCode runs, HOME=/opt/kortix/home)
+    // makes that boot-time install offline + fast — no per-boot download.
+    // Keep in sync with packages/starter/templates/base/.kortix/opencode/package.json.
+    'RUN mkdir -p /opt/kortix/home/.bun/install/cache /tmp/oc-deps \\',
+    '    && cd /tmp/oc-deps \\',
+    `    && printf '{"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > package.json \\`,
+    '    && BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install \\',
+    '    && rm -rf /tmp/oc-deps',
+    '',
     `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
     '    && agent-browser --version',
     'ENV AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
@@ -168,7 +180,7 @@ export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
 
 /**
  * A sandbox template defines one bootable image. Projects can declare multiple
- * via `[[sandboxes]]` in kortix.toml; sessions pick one by slug. The platform
+ * via `[[sandbox.templates]]` in kortix.toml; sessions pick one by slug. The platform
  * default template is always available without any config.
  */
 export interface SandboxTemplate {
@@ -214,7 +226,7 @@ export function buildDefaultSandboxTemplate(spec: SandboxSpec = {}): SandboxTemp
 }
 
 /**
- * Hardware spec for the sandbox, read from `[[sandboxes]]` entries in
+ * Hardware spec for the sandbox, read from `[[sandbox.templates]]` entries in
  * kortix.toml. Fields map onto Daytona's snapshot `Resources` (vCPU cores,
  * memory & disk in GiB). GPU is intentionally omitted. Every field is
  * optional; an unset field uses the platform default.
@@ -268,12 +280,13 @@ function extractSpecFromRow(row: Record<string, unknown>): SandboxSpec {
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 /**
- * Parse `[[sandboxes]]` from a parsed manifest. Returns the user-declared
- * templates in declaration order. The platform default is NOT included here;
- * callers always add it themselves so it can't be shadowed by a misnamed slug.
+ * Parse `[[sandbox.templates]]` from a parsed manifest. Returns the
+ * user-declared templates in declaration order. The platform default is NOT
+ * included here; callers always add it themselves so it can't be shadowed by
+ * a misnamed slug.
  *
  * The slug `default` is reserved for the platform-shared template — any
- * `[[sandboxes]]` entry that tries to claim it is dropped with a warning.
+ * `[[sandbox.templates]]` entry that tries to claim it is dropped with a warning.
  *
  * Malformed entries are skipped (logged) so a broken table can't take down
  * session boot for the rest of the project.
@@ -285,8 +298,16 @@ export function extractSandboxTemplates(
   const out: SandboxTemplate[] = [];
   const seenSlugs = new Set<string>();
 
-  // [[sandboxes]] = array of tables
-  const arr = manifestRaw.sandboxes;
+  // [[sandbox.templates]] = array of tables (parses to sandbox.templates).
+  const sandbox = manifestRaw.sandbox;
+  const nested =
+    sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)
+      ? (sandbox as Record<string, unknown>).templates
+      : undefined;
+  // Migration safety net: the pre-rename `[[sandboxes]]` form still parses at
+  // boot so an un-migrated project on main doesn't lose its templates. The
+  // validator (ship / CR-merge gate) is what enforces the new name.
+  const arr = Array.isArray(nested) ? nested : manifestRaw.sandboxes;
   if (Array.isArray(arr)) {
     for (const entry of arr) {
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;

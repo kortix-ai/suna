@@ -353,13 +353,13 @@ function GroupMembersCard({
                   badges={
                     overrides && badgeLabel ? (
                       <span
-                        className="rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal capitalize text-amber-700 dark:text-amber-300"
+                        className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal capitalize text-amber-700 dark:text-amber-300"
                         title="Account owners and admins always have Manager access on every project, regardless of group role."
                       >
                         {badgeLabel}
                       </span>
                     ) : meta?.accountRole === 'member' ? (
-                      <span className="rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize text-muted-foreground">
+                      <span className="rounded-2xl border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize text-muted-foreground">
                         member
                       </span>
                     ) : null
@@ -518,7 +518,7 @@ function AddGroupMembersDialog({
                     />
                     <span className="truncate text-sm">{label}</span>
                     {isMe && (
-                      <span className="ml-auto rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                      <span className="ml-auto rounded-2xl border border-border/60 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
                         you
                       </span>
                     )}
@@ -820,7 +820,7 @@ function GroupProjectGrantsCard({
                 }
                 title={g.project_name}
                 badges={
-                  <span className="rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize text-muted-foreground">
+                  <span className="rounded-2xl border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize text-muted-foreground">
                     {g.role}
                   </span>
                 }
@@ -1006,7 +1006,7 @@ function AttachToProjectDialog({
             {projectsQuery.isLoading ? (
               <Skeleton className="h-9 w-full" />
             ) : candidates.length === 0 ? (
-              <p className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+              <p className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
                 {(projectsQuery.data ?? []).length === 0
                   ? 'No projects in this account yet.'
                   : attachedProjectIds.size > 0 &&

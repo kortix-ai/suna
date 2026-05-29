@@ -955,7 +955,7 @@ function SlashCommandPopover({
               onSelect(cmd);
             }}
             className={cn(
-              'w-full flex flex-col gap-0.5 px-3 py-2 text-left transition-colors cursor-pointer border border-transparent rounded-md -mx-1',
+              'w-full flex flex-col gap-0.5 px-3 py-2 text-left transition-colors cursor-pointer border border-transparent rounded-2xl -mx-1',
               i === selectedIndex ? 'bg-muted border-border/50' : 'hover:bg-muted/50',
             )}
           >
@@ -2101,7 +2101,7 @@ export function SessionChatInput({
           {/* Staged command badge */}
           {stagedCommand && (
             <div className="flex items-center gap-2 px-4 pt-3 pb-0 min-w-0">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted/60 border border-border/50 shrink-0 max-w-full">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl bg-muted/60 border border-border/50 shrink-0 max-w-full">
                 <Terminal className="size-3 text-muted-foreground" />
                 <span className="font-mono text-xs font-medium text-foreground whitespace-nowrap max-w-[220px] sm:max-w-[320px] truncate">/{stagedCommand.name}</span>
                 <button

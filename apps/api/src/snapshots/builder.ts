@@ -112,6 +112,42 @@ export async function ensureSandboxImage(
       isDefault: !!template.isShared,
     };
   }
+
+  // ─── Graceful background rebuild (hot path only) ──────────────────────────
+  // The computed identity drifted from what we last built — typically because
+  // a runtime/CLI source change bumped the fingerprint (constant in active
+  // local dev; once per release in prod). A session must NEVER block on a full
+  // image rebuild. If the previously-built snapshot is still usable, boot off
+  // it immediately and rebuild the new identity in the background; the next
+  // session to boot after that lands picks it up via the trust-the-row fast
+  // path above. Pre-builds and explicit manual/CR builds skip this and build
+  // inline, since their whole job is to produce the new image up front.
+  if (
+    (opts.source ?? 'session-start') === 'session-start' &&
+    template.providerSnapshotName &&
+    template.providerSnapshotName !== identity.snapshotName
+  ) {
+    const lastGood = await provider.getSnapshotState(template.providerSnapshotName);
+    if (lastGood === 'active') {
+      kickBackgroundRebuild(project, {
+        slug: opts.slug,
+        accountId: opts.accountId,
+        snapshotName: identity.snapshotName,
+      });
+      console.log(
+        `[snapshots] ${template.slug}: identity drifted to ${identity.snapshotName}; ` +
+        `booting last-known-good ${template.providerSnapshotName} and rebuilding in background`,
+      );
+      return {
+        snapshotName: template.providerSnapshotName,
+        slug: template.slug,
+        contentHash: template.contentHash ?? identity.contentHash,
+        built: false,
+        isDefault: !!template.isShared,
+      };
+    }
+  }
+
   // Reap a failed/dead snapshot under the same name so the rebuild starts fresh.
   if (state === 'error' || state === 'build_failed') {
     await provider.deleteSnapshot(identity.snapshotName);
@@ -364,6 +400,40 @@ async function closeBuildLogFailed(buildId: string, message: string): Promise<vo
     .catch((err) =>
       console.warn('[snapshots] failed to close build log (failed):', err instanceof Error ? err.message : err),
     );
+}
+
+/**
+ * In-flight background rebuilds, keyed by the target snapshot name. A burst of
+ * sessions booting off the same drifted identity must kick exactly one build —
+ * concurrent `daytona.snapshot.create` calls under the same name race each
+ * other. Cleared when the build settles (success or failure).
+ */
+const inflightBackgroundBuilds = new Set<string>();
+
+/**
+ * Rebuild the drifted snapshot identity off the hot path. Deduped by target
+ * snapshot name so N concurrent session boots trigger one build. Best-effort:
+ * a failure just means the next session retries (it'll keep booting last-good
+ * until this lands).
+ */
+function kickBackgroundRebuild(
+  project: GitBackedProject,
+  opts: { slug?: string; accountId?: string; snapshotName: string },
+): void {
+  if (inflightBackgroundBuilds.has(opts.snapshotName)) return;
+  inflightBackgroundBuilds.add(opts.snapshotName);
+  void ensureSandboxImage(project, {
+    slug: opts.slug,
+    accountId: opts.accountId,
+    source: 'background',
+  })
+    .catch((err) =>
+      console.warn(
+        `[snapshots] background rebuild of ${opts.snapshotName} failed for ${project.projectId}:`,
+        err instanceof Error ? err.message : err,
+      ),
+    )
+    .finally(() => inflightBackgroundBuilds.delete(opts.snapshotName));
 }
 
 /**

@@ -654,6 +654,18 @@ export const TOOL_PRICING: Record<string, ToolPricing> = {
     perResultCost: 0,
     markupMultiplier: 1.5,
   },
+  // Moondream2 vision captioning (image_search enrichment) — cheap per-call model.
+  proxy_replicate_moondream: {
+    baseCost: 0.002,
+    perResultCost: 0,
+    markupMultiplier: 1.5,
+  },
+  // Polling a created prediction's status — billed at zero (the create call already paid).
+  proxy_replicate_poll: {
+    baseCost: 0,
+    perResultCost: 0,
+    markupMultiplier: 1,
+  },
   proxy_context7: {
     baseCost: 0.001,
     perResultCost: 0,

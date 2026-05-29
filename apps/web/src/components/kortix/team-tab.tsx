@@ -675,7 +675,7 @@ function ExecutionPicker({ value, onChange }: { value: ExecutionChoice; onChange
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
           <Zap className="h-3.5 w-3.5 text-muted-foreground/55" />
           <span className="flex-1 text-left truncate font-medium">{EXECUTION_LABELS[value]}</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
@@ -710,7 +710,7 @@ function RolePicker({ value, onChange }: { value: 'contributor' | 'orchestrator'
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
           <ShieldCheck className={cn('h-3.5 w-3.5', value === 'orchestrator' ? 'text-primary' : 'text-muted-foreground/55')} />
           <span className="flex-1 text-left truncate font-medium capitalize">{value}</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
@@ -760,7 +760,7 @@ function ModelPicker({ value, onChange }: { value: string; onChange: (v: string)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
           <Cpu className={cn('h-3.5 w-3.5 shrink-0', value ? 'text-primary' : 'text-muted-foreground/55')} />
           <span className={cn('flex-1 text-left truncate', value ? 'font-medium' : 'text-muted-foreground/60')}>{label}</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
@@ -811,7 +811,7 @@ function ColumnPicker({ columns, value, onChange }: { columns: Array<{ key: stri
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
           <Cpu className="h-3.5 w-3.5 text-muted-foreground/55" />
           <span className="flex-1 text-left truncate font-medium">{label}</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />

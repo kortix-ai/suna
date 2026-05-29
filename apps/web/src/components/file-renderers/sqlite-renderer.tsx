@@ -754,7 +754,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
           </div>
           <button
             onClick={() => window.location.reload()}
-            className="h-8 px-3 text-xs rounded-md border cursor-pointer inline-flex items-center gap-1.5 hover:bg-muted transition-colors"
+            className="h-8 px-3 text-xs rounded-2xl border cursor-pointer inline-flex items-center gap-1.5 hover:bg-muted transition-colors"
           >
             <RefreshCw className="w-3 h-3" />
             Retry
@@ -1066,7 +1066,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
                     {copied ? 'Copied' : 'Copy'}
                   </Button>
                 </div>
-                <pre className="bg-muted/50 rounded-lg p-4 text-xs font-mono text-foreground/80 overflow-x-auto whitespace-pre-wrap border select-text">
+                <pre className="bg-muted/50 rounded-2xl p-4 text-xs font-mono text-foreground/80 overflow-x-auto whitespace-pre-wrap border select-text">
                   {selectedTableInfo.sql || '-- No SQL available (system table or virtual table)'}
                 </pre>
               </div>
@@ -1191,7 +1191,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
                   onKeyDown={handleQueryKeyDown}
                   placeholder={`SELECT * FROM "${selectedTable || 'table_name'}" LIMIT 100`}
                   className={cn(
-                    'w-full h-24 px-3 py-2 rounded-md border bg-muted/30 font-mono text-xs cursor-text',
+                    'w-full h-24 px-3 py-2 rounded-2xl border bg-muted/30 font-mono text-xs cursor-text',
                     'resize-none focus:outline-none focus:ring-1 focus:ring-ring',
                     'placeholder:text-muted-foreground/30',
                   )}

@@ -12,9 +12,8 @@ import React, {
 import { createClient } from '@/lib/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { setBootstrapAuthToken, setCachedAuthToken } from '@/lib/auth-token';
-import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
+import { resetClientState } from '@/lib/utils/reset-client-state';
 // Auth tracking moved to AuthEventTracker component (handles OAuth redirects)
 
 type AuthContextType = {
@@ -67,9 +66,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (currentSession?.user?.id) {
           const prevUserId = localStorage.getItem('kortix-last-user-id');
           if (prevUserId && prevUserId !== currentSession.user.id) {
-            console.log('[Auth] Initial session: user changed, clearing stale local storage');
-            clearUserLocalStorage();
-            await clearSessionIDBCache();
+            console.log('[Auth] Initial session: user changed, clearing stale client state');
+            await resetClientState();
           }
           localStorage.setItem('kortix-last-user-id', currentSession.user.id);
         }
@@ -103,9 +101,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const prevUserId = localStorage.getItem('kortix-last-user-id');
             const newUserId = newSession?.user?.id;
             if (newUserId && prevUserId && prevUserId !== newUserId) {
-              console.log('[Auth] User changed, clearing stale local storage');
-              clearUserLocalStorage();
-              await clearSessionIDBCache();
+              console.log('[Auth] User changed, clearing stale client state');
+              await resetClientState();
             }
             if (newUserId) {
               localStorage.setItem('kortix-last-user-id', newUserId);
@@ -115,8 +112,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           case 'SIGNED_OUT':
             setBootstrapAuthToken(null);
             setCachedAuthToken(null);
-            clearUserLocalStorage();
-            await clearSessionIDBCache();
+            await resetClientState();
             localStorage.removeItem('kortix-last-user-id');
             break;
           case 'TOKEN_REFRESHED':
@@ -144,8 +140,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const signOut = useCallback(async () => {
     try {
       await supabase.auth.signOut();
-      clearUserLocalStorage();
-      await clearSessionIDBCache();
+      await resetClientState();
     } catch (error) {
       console.error('Error signing out:', error);
     }

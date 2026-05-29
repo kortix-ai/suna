@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 
 // ============================================================================
@@ -135,6 +136,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
     }),
     {
       name: 'kortix-user-preferences',
+      storage: createSafeJSONStorage(),
       partialize: (state) => ({
         preferences: state.preferences,
       }),

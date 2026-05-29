@@ -466,7 +466,7 @@ function SandboxUrlChip({
   const displayPath = detected.path !== '/' ? detected.path : '';
 
   return (
-    <div className="group/chip flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/40 bg-muted/15 hover:border-border/60 hover:bg-muted/25 transition-colors">
+    <div className="group/chip flex items-center gap-2 px-3 py-1.5 rounded-2xl border border-border/40 bg-muted/15 hover:border-border/60 hover:bg-muted/25 transition-colors">
       {/* Globe icon */}
       <Globe className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
 

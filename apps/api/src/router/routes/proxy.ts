@@ -108,6 +108,22 @@ async function handleKortixProxy(
     });
   }
 
+  // Anti-abuse: routes that expose a shared prediction endpoint (where the model is
+  // chosen by a `version` in the body, not the URL) must pin the allowed versions.
+  if (matchedRoute.allowedBodyVersions && method.toUpperCase() === 'POST') {
+    let requestedVersion: unknown;
+    try {
+      requestedVersion = JSON.parse(await c.req.raw.clone().text())?.version;
+    } catch {
+      requestedVersion = undefined;
+    }
+    if (typeof requestedVersion !== 'string' || !matchedRoute.allowedBodyVersions.includes(requestedVersion)) {
+      throw new HTTPException(403, {
+        message: `Model version not allowed for ${service.name}`,
+      });
+    }
+  }
+
   const kortixKey = service.getKortixApiKey();
   if (!kortixKey) {
     throw new HTTPException(503, {

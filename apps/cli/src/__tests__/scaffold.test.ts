@@ -80,7 +80,7 @@ describe('applyScaffold', () => {
 
     // Manifest declares the opencode config dir explicitly. Sandbox templates
     // are no longer pre-seeded — the project boots from the platform default
-    // and users can add custom `[[sandboxes]]` entries on demand.
+    // and users can add custom `[[sandbox.templates]]` entries on demand.
     expect(manifest).not.toContain('[sandbox]');
     expect(manifest).toContain('config_dir = ".kortix/opencode"');
 

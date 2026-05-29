@@ -1319,7 +1319,7 @@ function MembersCard({
                       {member.is_super_admin && (
                         <Badge
                           variant="outline"
-                          className="h-5 rounded-md border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-normal text-amber-700 dark:text-amber-300"
+                          className="h-5 rounded-2xl border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-normal text-amber-700 dark:text-amber-300"
                           title={tHardcodedUi.raw('appAccountsIdPage.line924JsxAttrTitleSuperAdminBypassesEveryIAMCheck')}
                         >
                           super
@@ -1347,7 +1347,7 @@ function MembersCard({
                       {member.has_verified_mfa && (
                         <Badge
                           variant="outline"
-                          className="h-5 rounded-md border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
+                          className="h-5 rounded-2xl border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
                           title={tHardcodedUi.raw('appAccountsIdPage.line952JsxAttrTitleMFAEnrolled')}
                         >
                           2FA
@@ -1969,7 +1969,7 @@ function BulkAddToGroupDialog({
           {groupsQuery.isLoading ? (
             <Skeleton className="h-9 w-full" />
           ) : groups.length === 0 ? (
-            <p className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+            <p className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
               No groups exist on this account yet. Create one from the Groups
               tab first.
             </p>

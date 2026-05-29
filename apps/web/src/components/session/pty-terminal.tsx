@@ -79,7 +79,29 @@ function sanitizeTerminalChunk(chunk: string): string {
     // Cursor shell integration sometimes emits OSC 697 payloads.
     // If an upstream proxy strips control bytes, only JSON remains visible.
     .replace(/\x1b]697;[^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\{"cursor":\d+\}/g, '');
+    .replace(/\{"cursor":\d+\}/g, '')
+    // Terminal capability-query *responses* that occasionally get echoed back
+    // into the output stream (e.g. when a prior client answered a query at an
+    // idle prompt): OSC color reports, DECRQM mode status, cursor-position and
+    // device-attribute reports. They render as garbage like
+    // `10;rgb:..`, `2004;2$y`, `R` — strip them so they never show.
+    .replace(/\x1b\][0-9]+;rgb:[0-9a-fA-F/]+(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\]4;[0-9]+;rgb:[0-9a-fA-F/]+(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[\??[0-9;]*\$y/g, '')
+    .replace(/\x1b\[\d+;\d+R/g, '')
+    .replace(/\x1b\[\?[0-9;]*c/g, '');
+}
+
+// Responses xterm auto-generates when something queries terminal capabilities:
+// cursor-position (CPR), mode status (DECRQM `$y`), device attributes (DA), and
+// OSC color reports. When the server replays the PTY scrollback on connect, the
+// queries embedded in it make xterm emit these — and at an idle shell prompt the
+// shell echoes them straight back as visible garbage. We drop them during the
+// brief post-connect replay window (real keystrokes are never reports).
+function isTerminalReport(data: string): boolean {
+  return /^(?:\x1b\[\d+;\d+R|\x1b\[\??[0-9;]*\$y|\x1b\[\?[0-9;]*c|\x1b\][0-9;]+(?:;rgb:[0-9a-fA-F/]+)?(?:\x07|\x1b\\))+$/.test(
+    data,
+  );
 }
 
 // ============================================================================
@@ -105,6 +127,9 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
   const reconnectAttemptsRef = useRef(0);
   const disposedRef = useRef(false);
   const hadErrorRef = useRef(false);
+  // Until this timestamp, drop capability-query responses (see isTerminalReport)
+  // so the scrollback replayed on connect doesn't echo garbage at the prompt.
+  const suppressReportsUntilRef = useRef(0);
 
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const updatePty = useUpdatePty();
@@ -188,11 +213,13 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Send user input through WebSocket
+    // Send user input through WebSocket. During the post-connect replay window
+    // we suppress xterm's auto-responses to replayed capability queries so they
+    // don't echo back as garbage (real keystrokes are never report sequences).
     term.onData((data) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(data);
-      }
+      if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+      if (Date.now() < suppressReportsUntilRef.current && isTerminalReport(data)) return;
+      wsRef.current.send(data);
     });
 
     // Handle resize — notify the PTY server
@@ -237,7 +264,6 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
 
       if (reconnectAttemptsRef.current === 0) {
         updateStatus('connecting');
-        term.writeln('\x1b[33mConnecting to terminal...\x1b[0m');
       }
 
       let wsUrl = '';
@@ -266,8 +292,11 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
         }
         console.log('[PtyTerminal] WebSocket connected');
         reconnectAttemptsRef.current = 0;
-        term.reset(); // Clear prior connection/reconnect messages
-        term.options.theme = terminalTheme; // Re-apply after reset
+        // Suppress capability-query echoes while the server replays scrollback.
+        // We deliberately do NOT reset()/clear() here — the PTY is persistent,
+        // so reconnecting should re-attach to the existing shell, not wipe it.
+        // (Color env is set when the PTY is created, not re-exported each open.)
+        suppressReportsUntilRef.current = Date.now() + 1500;
         updateStatus('connected');
 
         // Send initial terminal size so the shell renders a prompt
@@ -275,20 +304,6 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
         if (cols && rows) {
           sendResize(cols, rows);
         }
-
-        // Set up color support in the shell — env vars + aliases, then clear
-        // the setup noise so the user gets a clean, colorized prompt.
-        const init = [
-          'export TERM=xterm-256color',
-          'export COLORTERM=truecolor',
-          'export CLICOLOR=1',
-          'export LS_COLORS="di=1;34:ln=1;36:so=1;35:pi=33:ex=1;32:bd=1;33:cd=1;33:su=37;41:sg=30;43:tw=30;42:ow=34;42"',
-          'alias ls="ls --color=auto" 2>/dev/null',
-          'alias grep="grep --color=auto"',
-          'alias diff="diff --color=auto"',
-          'clear',
-        ].join(' && ');
-        ws.send(init + '\n');
       };
 
       ws.onmessage = (event) => {

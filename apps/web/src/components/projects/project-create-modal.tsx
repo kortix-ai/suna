@@ -323,7 +323,7 @@ export function ProjectCreateModal({
                 />
               </div>
 
-              <div className="flex items-start justify-between gap-4 rounded-md border border-border/60 px-3 py-3">
+              <div className="flex items-start justify-between gap-4 rounded-2xl border border-border/60 px-3 py-3">
                 <div className="min-w-0 space-y-1">
                   <Label htmlFor="gkw-skills">
                     {tHardcodedUi.raw(

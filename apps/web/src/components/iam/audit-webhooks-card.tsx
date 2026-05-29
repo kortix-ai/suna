@@ -120,7 +120,7 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
         )}
 
         {!hooksQuery.isLoading && hooks.length === 0 && (
-          <p className="rounded-md border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
+          <p className="rounded-2xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
             {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line125JsxTextNoWebhooksConfigured')}</p>
         )}
 
@@ -129,7 +129,7 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
             {hooks.map((h) => (
               <li
                 key={h.webhook_id}
-                className="rounded-md border border-border/60 px-3 py-2.5"
+                className="rounded-2xl border border-border/60 px-3 py-2.5"
               >
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
@@ -384,7 +384,7 @@ function CreateAuditWebhookDialog({
                     key={preset.label}
                     type="button"
                     onClick={() => setActionPrefix(preset.prefix)}
-                    className={`rounded-md border px-2 py-0.5 text-[11px] transition-colors ${
+                    className={`rounded-2xl border px-2 py-0.5 text-[11px] transition-colors ${
                       actionPrefix === preset.prefix
                         ? 'border-primary bg-primary/10 text-foreground'
                         : 'border-border/60 text-muted-foreground hover:bg-muted/40'

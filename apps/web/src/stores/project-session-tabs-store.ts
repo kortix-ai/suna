@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 /**
  * Per-project open-session tabs.
@@ -40,6 +41,28 @@ interface State {
    * has resolved. Cleared once the real URL catches up. Not persisted.
    */
   optimisticActiveByProject: Record<string, string | null>;
+}
+
+const STORAGE_KEY = 'kortix.project-session-tabs';
+
+/**
+ * Cap how many projects we retain tab state for. The maps below are keyed by
+ * projectId and would otherwise grow one entry per project ever opened, with no
+ * eviction. Keep the N most-recently-touched projects.
+ */
+const MAX_TRACKED_PROJECTS = 24;
+
+/**
+ * Keep only the most-recently-touched projects when persisting. Map keys follow
+ * insertion order, and every action re-spreads the touched project's entry, so
+ * the tail of the key list is the rough recency order — keeping the last N is a
+ * good-enough LRU for a soft cap whose only job is to stop unbounded growth.
+ */
+function pruneProjects<V>(map: Record<string, V>): Record<string, V> {
+  const keys = Object.keys(map);
+  if (keys.length <= MAX_TRACKED_PROJECTS) return map;
+  const kept = keys.slice(-MAX_TRACKED_PROJECTS);
+  return Object.fromEntries(kept.map((k) => [k, map[k]]));
 }
 
 interface Actions {
@@ -139,12 +162,17 @@ export const useProjectSessionTabsStore = create<State & Actions>()(
       getTabs: (projectId) => get().tabsByProject[projectId] ?? [],
     }),
     {
-      name: 'kortix.project-session-tabs',
+      name: STORAGE_KEY,
+      // Shared never-throw storage: a full origin bucket degrades to "tabs
+      // didn't persist" instead of an uncaught QuotaExceededError that used to
+      // crash the project shell on mount (the write happens in a commit-phase
+      // effect, so the throw escaped into React).
+      storage: createSafeJSONStorage(),
       // `optimisticActiveByProject` is transient; persisting it would leave a
       // stale highlight pointing at a closed tab on next page load.
       partialize: (state) => ({
-        tabsByProject: state.tabsByProject,
-        recentlyClosedByProject: state.recentlyClosedByProject,
+        tabsByProject: pruneProjects(state.tabsByProject),
+        recentlyClosedByProject: pruneProjects(state.recentlyClosedByProject),
       }),
     },
   ),

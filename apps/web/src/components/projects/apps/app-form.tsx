@@ -177,7 +177,7 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
                   : 'Lowercase letters, digits, dashes. Auto-filled from the name.'}
               </p>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5">
               <div className="flex flex-col">
                 <Label htmlFor="app-enabled" className="cursor-pointer">Enabled</Label>
                 <p className="text-xs text-muted-foreground">

@@ -51,7 +51,7 @@ const HELP = `Usage: kortix sandboxes <subcommand> [options]
 Manage the project's sandbox images — the same surface as the dashboard's
 Customize → Sandbox images. A template is a definition (image OR Dockerfile +
 resources); a build produces the actual snapshot the platform boots sessions
-from. Templates also come from \`[[sandboxes]]\` in kortix.toml.
+from. Templates also come from \`[[sandbox.templates]]\` in kortix.toml.
 
 Subcommands:
   ls                                List templates + live provider state.
@@ -101,7 +101,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  // ── Template definitions live in kortix.toml `[[sandboxes]]` (source of
+  // ── Template definitions live in kortix.toml `[[sandbox.templates]]` (source of
   //    truth). add/update/rm edit the LOCAL file — `kortix ship` applies +
   //    builds. Only build/rebuild/health/builds/fix are cloud actions. ────────
   if (sub === 'add' || sub === 'create') return sandboxAddLocal(positional[0], f);
@@ -214,7 +214,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   }
 }
 
-// ── Local kortix.toml `[[sandboxes]]` edits (source of truth) ────────────────
+// ── Local kortix.toml `[[sandbox.templates]]` edits (source of truth) ────────────────
 
 function sandboxAddLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
   if (!slug) return missing('a template slug');
@@ -224,8 +224,8 @@ function sandboxAddLocal(slug: string | undefined, f: Record<string, string | un
     return 2;
   }
   try {
-    if (arrayEntryExists('sandboxes', 'slug', slug)) {
-      process.stderr.write(`${status.err(`A [[sandboxes]] "${slug}" already exists in kortix.toml.`)}\n`);
+    if (arrayEntryExists('sandbox.templates', 'slug', slug)) {
+      process.stderr.write(`${status.err(`A [[sandbox.templates]] "${slug}" already exists in kortix.toml.`)}\n`);
       return 1;
     }
     const fields: Record<string, unknown> = { slug };
@@ -235,9 +235,9 @@ function sandboxAddLocal(slug: string | undefined, f: Record<string, string | un
     if (f.cpu) fields.cpu = Number(f.cpu);
     if (f.memory) fields.memory = Number(f.memory);
     if (f.disk) fields.disk = Number(f.disk);
-    appendArrayBlock('sandboxes', fields);
+    appendArrayBlock('sandbox.templates', fields);
     process.stdout.write(
-      `${status.ok(`Added [[sandboxes]] ${C.bold}${slug}${C.reset} to kortix.toml`)} ${C.dim}— \`kortix ship\` builds it.${C.reset}\n`,
+      `${status.ok(`Added [[sandbox.templates]] ${C.bold}${slug}${C.reset} to kortix.toml`)} ${C.dim}— \`kortix ship\` builds it.${C.reset}\n`,
     );
     return 0;
   } catch (err) {
@@ -249,8 +249,8 @@ function sandboxAddLocal(slug: string | undefined, f: Record<string, string | un
 function sandboxUpdateLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
   if (!slug) return missing('a template slug');
   try {
-    if (!arrayEntryExists('sandboxes', 'slug', slug)) {
-      process.stderr.write(`${status.err(`No [[sandboxes]] "${slug}" in kortix.toml (platform/UI templates aren't file-based).`)}\n`);
+    if (!arrayEntryExists('sandbox.templates', 'slug', slug)) {
+      process.stderr.write(`${status.err(`No [[sandbox.templates]] "${slug}" in kortix.toml (platform/UI templates aren't file-based).`)}\n`);
       return 1;
     }
     const updates: Array<[string, string | number]> = [];
@@ -261,9 +261,9 @@ function sandboxUpdateLocal(slug: string | undefined, f: Record<string, string |
     if (f.memory) updates.push(['memory', Number(f.memory)]);
     if (f.disk) updates.push(['disk', Number(f.disk)]);
     if (updates.length === 0) return missing('at least one field to update');
-    for (const [k, v] of updates) setScalarInArrayBlock('sandboxes', 'slug', slug, k, v);
+    for (const [k, v] of updates) setScalarInArrayBlock('sandbox.templates', 'slug', slug, k, v);
     process.stdout.write(
-      `${status.ok(`Updated [[sandboxes]] ${C.bold}${slug}${C.reset}`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
+      `${status.ok(`Updated [[sandbox.templates]] ${C.bold}${slug}${C.reset}`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
     );
     return 0;
   } catch (err) {
@@ -275,12 +275,12 @@ function sandboxUpdateLocal(slug: string | undefined, f: Record<string, string |
 function sandboxRmLocal(slug: string | undefined): number {
   if (!slug) return missing('a template slug');
   try {
-    if (!removeArrayBlock('sandboxes', 'slug', slug)) {
-      process.stderr.write(`${status.err(`No [[sandboxes]] "${slug}" in kortix.toml.`)}\n`);
+    if (!removeArrayBlock('sandbox.templates', 'slug', slug)) {
+      process.stderr.write(`${status.err(`No [[sandbox.templates]] "${slug}" in kortix.toml.`)}\n`);
       return 1;
     }
     process.stdout.write(
-      `${status.ok(`Removed [[sandboxes]] ${C.bold}${slug}${C.reset}`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
+      `${status.ok(`Removed [[sandbox.templates]] ${C.bold}${slug}${C.reset}`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
     );
     return 0;
   } catch (err) {

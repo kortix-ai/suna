@@ -1795,7 +1795,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                           {report.filesRead.map((file) => (
                             <span
                               key={file}
-                              className="inline-flex items-center h-6 px-2 rounded-md text-xs font-mono bg-background border border-border/70 text-foreground/75 break-all"
+                              className="inline-flex items-center h-6 px-2 rounded-2xl text-xs font-mono bg-background border border-border/70 text-foreground/75 break-all"
                             >
                               {file}
                             </span>
@@ -8103,7 +8103,7 @@ function QuestionTool({
                         <div
                           key={j}
                           className={cn(
-                            'flex items-start gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors',
+                            'flex items-start gap-2 rounded-2xl border px-2 py-1.5 text-xs transition-colors',
                             picked
                               ? 'border-primary/30 bg-primary/5'
                               : 'border-transparent opacity-50',
@@ -8144,7 +8144,7 @@ function QuestionTool({
                     {customAnswers.map((a, k) => (
                       <div
                         key={`custom-${k}`}
-                        className="flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/5 px-2 py-1.5 text-xs"
+                        className="flex items-start gap-2 rounded-2xl border border-primary/30 bg-primary/5 px-2 py-1.5 text-xs"
                       >
                         <span className={cn('mt-px flex-shrink-0', STATUS_TEXT.success)}>
                           <Check className="size-3.5" />
@@ -8156,7 +8156,7 @@ function QuestionTool({
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-primary/30 bg-primary/5 px-2 py-1.5 text-sm font-medium text-foreground">
+                  <div className="rounded-2xl border border-primary/30 bg-primary/5 px-2 py-1.5 text-sm font-medium text-foreground">
                     {ans.length > 0 ? ans.join(', ') : '—'}
                   </div>
                 )}

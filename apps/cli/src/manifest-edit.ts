@@ -26,10 +26,23 @@ function writeManifestText(text: string, cwd?: string): void {
   writeFileSync(manifestFile(cwd), text, 'utf8');
 }
 
+/**
+ * Resolve a (possibly dotted) section path to its parsed value. `triggers`
+ * returns `data.triggers`; `sandbox.templates` walks into `data.sandbox.templates`.
+ */
+function resolveSection(data: Record<string, unknown>, section: string): unknown {
+  let node: unknown = data;
+  for (const seg of section.split('.')) {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return undefined;
+    node = (node as Record<string, unknown>)[seg];
+  }
+  return node;
+}
+
 /** Does an `[[section]]` block with `field = "value"` already exist? */
 export function arrayEntryExists(section: string, field: string, value: string, cwd?: string): boolean {
   const data = parseToml(readManifestText(cwd)) as Record<string, unknown>;
-  const arr = data[section];
+  const arr = resolveSection(data, section);
   if (!Array.isArray(arr)) return false;
   return arr.some((e) => e && typeof e === 'object' && (e as Record<string, unknown>)[field] === value);
 }
@@ -42,7 +55,7 @@ export function readArrayEntry(
   cwd?: string,
 ): Record<string, unknown> | null {
   const data = parseToml(readManifestText(cwd)) as Record<string, unknown>;
-  const arr = data[section];
+  const arr = resolveSection(data, section);
   if (!Array.isArray(arr)) return null;
   return (
     (arr.find((e) => e && typeof e === 'object' && (e as Record<string, unknown>)[field] === value) as

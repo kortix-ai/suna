@@ -382,7 +382,7 @@ function StatusPills({ columns, value, onChange }: { columns: TicketColumn[]; va
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
         >
           {columnIcon(selected)}
           <span className="flex-1 text-left truncate font-medium">{selected.label}</span>
@@ -647,7 +647,7 @@ function MilestonePicker({
           setTicketMilestone.mutate({ projectId, ticketId, milestoneId: e.target.value || null })
         }
         disabled={setTicketMilestone.isPending}
-        className="w-full h-7 text-[12px] bg-transparent border border-border/50 rounded-md px-2 outline-none focus:ring-2 focus:ring-primary/20"
+        className="w-full h-7 text-[12px] bg-transparent border border-border/50 rounded-2xl px-2 outline-none focus:ring-2 focus:ring-primary/20"
       >
         <option value="">{tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line647JsxTextNone')}</option>
         {milestones.filter((m) => m.status === 'open').map((m) => (

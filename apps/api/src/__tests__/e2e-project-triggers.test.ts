@@ -239,6 +239,7 @@ mock.module('../projects/secrets', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({

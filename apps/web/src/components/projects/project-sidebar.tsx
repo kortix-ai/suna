@@ -41,6 +41,10 @@ import {
   ProjectSandboxAlertRailItem,
 } from '@/components/projects/sandbox-health-alert';
 import {
+  ProjectChangeRequestsNavItem,
+  ProjectChangeRequestsRailItem,
+} from '@/components/projects/change-requests-nav';
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -536,6 +540,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               the per-project config surfaces. */}
           <div className="mt-auto w-full space-y-0.5">
             <ProjectSandboxAlertRailItem projectId={projectId} />
+            <ProjectChangeRequestsRailItem projectId={projectId} />
             <ProjectSetupRailItem projectId={projectId} />
             <CollapsedIconButton
               icon={<SlidersHorizontal className="h-4 w-4" />}
@@ -599,6 +604,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <SidebarGroup className="py-0 mt-auto">
             <SidebarMenu>
               <ProjectSandboxAlertNavItem projectId={projectId} />
+              <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectSetupNavItem projectId={projectId} />
               <SidebarMenuItem>
                 <SidebarMenuButton

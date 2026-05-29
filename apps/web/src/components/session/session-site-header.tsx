@@ -38,6 +38,7 @@ import {
   Share2,
   Trash2,
 } from 'lucide-react';
+import { SessionChangesIndicator } from '@/components/session/session-changes-indicator';
 import { ExportTranscriptDialog } from '@/components/session/export-transcript-dialog';
 import { CompactDialog } from '@/components/session/compact-dialog';
 import { SessionShareDialog } from '@/components/projects/session-share-dialog';
@@ -55,7 +56,6 @@ interface SessionSiteHeaderProps {
   onToggleSidePanel: () => void;
   isSidePanelOpen?: boolean;
   isMobileView?: boolean;
-  canOpenSidePanel?: boolean;
   /** Optional element rendered at the leading (left) edge of the header */
   leadingAction?: React.ReactNode;
 }
@@ -66,7 +66,6 @@ export function SessionSiteHeader({
   onToggleSidePanel,
   isSidePanelOpen = false,
   isMobileView,
-  canOpenSidePanel = true,
   leadingAction,
 }: SessionSiteHeaderProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -203,35 +202,38 @@ export function SessionSiteHeader({
               </DropdownMenu>
             </div>
 
-            {/* Right: panel toggle */}
-            {canOpenSidePanel && (
-              <div className="flex items-center pointer-events-auto">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={onToggleSidePanel}
-                      className={cn(
-                        'h-8 w-8 cursor-pointer transition-colors',
-                        isSidePanelOpen
-                          ? 'text-foreground'
-                          : 'text-muted-foreground hover:text-foreground',
-                      )}
-                    >
-                      <PanelRight className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" sideOffset={4}>
-                    <p className="flex items-center gap-1.5">
-                      {isSidePanelOpen ? 'Close' : 'Open'} panel
-                      <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
-                        {tHardcodedUi.raw('componentsSessionSessionSiteHeader.line185JsxTextI')}</kbd>
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            )}
+            {/* Right: panel toggle — always available, even on an empty
+                session with no tool calls, so the side panel (Actions /
+                Browser / Files / Terminal) is always one click away. */}
+            <div className="flex items-center gap-1.5 pointer-events-auto">
+              {/* Colored nudge — only shows when this thread has unsynced
+                  changes, so it doubles as an at-a-glance diff indicator. */}
+              <SessionChangesIndicator sessionId={sessionId} />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onToggleSidePanel}
+                    className={cn(
+                      'h-8 w-8 cursor-pointer transition-colors',
+                      isSidePanelOpen
+                        ? 'text-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <PanelRight className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={4}>
+                  <p className="flex items-center gap-1.5">
+                    {isSidePanelOpen ? 'Close' : 'Open'} panel
+                    <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                      {tHardcodedUi.raw('componentsSessionSessionSiteHeader.line185JsxTextI')}</kbd>
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </div>
         </TooltipProvider>
       </div>

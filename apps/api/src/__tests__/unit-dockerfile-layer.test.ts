@@ -98,12 +98,14 @@ describe('extractSandboxTemplates', () => {
     expect(extractSandboxTemplates({})).toEqual([]);
   });
 
-  test('parses [[sandboxes]] array entries in order', () => {
+  test('parses [[sandbox.templates]] array entries in order', () => {
     const out = extractSandboxTemplates({
-      sandboxes: [
-        { slug: 'ml', dockerfile: '.kortix/Dockerfile.ml', cpu: 4, memory: 16 },
-        { slug: 'python', image: 'python:3.12-slim' },
-      ],
+      sandbox: {
+        templates: [
+          { slug: 'ml', dockerfile: '.kortix/Dockerfile.ml', cpu: 4, memory: 16 },
+          { slug: 'python', image: 'python:3.12-slim' },
+        ],
+      },
     });
     expect(out).toHaveLength(2);
     expect(out[0]).toMatchObject({ slug: 'ml', dockerfile: '.kortix/Dockerfile.ml' });
@@ -111,26 +113,36 @@ describe('extractSandboxTemplates', () => {
     expect(out[1]).toMatchObject({ slug: 'python', image: 'python:3.12-slim' });
   });
 
-  test('legacy singular [sandbox] table is no longer synced (ignored)', () => {
+  test('legacy singular [sandbox] table (no templates) is ignored', () => {
     const out = extractSandboxTemplates({
       sandbox: { dockerfile: '.kortix/Dockerfile', cpu: 2 },
     });
     expect(out).toHaveLength(0);
   });
 
-  test('rejects [[sandboxes]] entries claiming the reserved "default" slug', () => {
+  test('legacy [[sandboxes]] form still parses as a migration safety net', () => {
     const out = extractSandboxTemplates({
-      sandboxes: [
-        { slug: 'default', image: 'ubuntu:22.04' },
-        { slug: 'ml', image: 'python:3.12-slim' },
-      ],
+      sandboxes: [{ slug: 'ml', image: 'python:3.12-slim' }],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ slug: 'ml', image: 'python:3.12-slim' });
+  });
+
+  test('rejects [[sandbox.templates]] entries claiming the reserved "default" slug', () => {
+    const out = extractSandboxTemplates({
+      sandbox: {
+        templates: [
+          { slug: 'default', image: 'ubuntu:22.04' },
+          { slug: 'ml', image: 'python:3.12-slim' },
+        ],
+      },
     });
     expect(out).toHaveLength(1);
     expect(out[0].slug).toBe('ml');
   });
 
   test('rejects entries with neither dockerfile nor image OK (builder handles missing)', () => {
-    const out = extractSandboxTemplates({ sandboxes: [{ slug: 'empty', cpu: 1 }] });
+    const out = extractSandboxTemplates({ sandbox: { templates: [{ slug: 'empty', cpu: 1 }] } });
     expect(out).toHaveLength(1);
     expect(out[0].dockerfile).toBeUndefined();
     expect(out[0].image).toBeUndefined();
@@ -138,11 +150,13 @@ describe('extractSandboxTemplates', () => {
 
   test('skips entries with missing or malformed slugs', () => {
     const out = extractSandboxTemplates({
-      sandboxes: [
-        { dockerfile: 'a' }, // no slug
-        { slug: 'Bad Slug!', dockerfile: 'b' }, // invalid chars
-        { slug: 'good', dockerfile: 'c' },
-      ],
+      sandbox: {
+        templates: [
+          { dockerfile: 'a' }, // no slug
+          { slug: 'Bad Slug!', dockerfile: 'b' }, // invalid chars
+          { slug: 'good', dockerfile: 'c' },
+        ],
+      },
     });
     expect(out).toHaveLength(1);
     expect(out[0].slug).toBe('good');
