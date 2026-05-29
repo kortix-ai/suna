@@ -227,7 +227,7 @@ export function SandboxTemplateForm({
                 type="button"
                 onClick={() => setMode('image')}
                 className={cn(
-                  'flex flex-col items-start gap-1 rounded-xl border border-border/60 p-3 text-left text-sm transition-colors',
+                  'flex flex-col items-start gap-1 rounded-2xl border border-border/60 p-3 text-left text-sm transition-colors',
                   mode === 'image' && 'border-foreground/30 bg-muted/40',
                 )}
               >
@@ -243,7 +243,7 @@ export function SandboxTemplateForm({
                 type="button"
                 onClick={() => setMode('dockerfile')}
                 className={cn(
-                  'flex flex-col items-start gap-1 rounded-xl border border-border/60 p-3 text-left text-sm transition-colors',
+                  'flex flex-col items-start gap-1 rounded-2xl border border-border/60 p-3 text-left text-sm transition-colors',
                   mode === 'dockerfile' && 'border-foreground/30 bg-muted/40',
                 )}
               >

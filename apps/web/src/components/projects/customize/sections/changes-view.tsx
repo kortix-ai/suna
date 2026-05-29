@@ -217,7 +217,7 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
             return (
               <li
                 key={cr.cr_id}
-                className="group flex items-center gap-3 rounded-xl border border-border/60 bg-card px-3.5 py-3 transition-colors hover:border-foreground/20"
+                className="group flex items-center gap-3 rounded-2xl border border-border/60 bg-card px-3.5 py-3 transition-colors hover:border-foreground/20"
               >
                 <CrStatusIcon status={cr.status} />
                 <button
@@ -334,7 +334,7 @@ function VersionsTab({ projectId }: { projectId: string }) {
       {branches.map((b) => (
         <li
           key={b.name}
-          className="flex items-center gap-3 rounded-xl border border-border/60 bg-card px-3.5 py-3"
+          className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card px-3.5 py-3"
         >
           <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">

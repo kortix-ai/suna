@@ -66,7 +66,7 @@ export function ShellScopeEditor({ scope, onChange }: ShellScopeEditorProps) {
             onChange={(e) => setCommandInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCommand())}
             placeholder={tHardcodedUi.raw('componentsTunnelScopeEditorsShellScopeEditor.line65JsxAttrPlaceholderEGGitNodePython')}
-            className="flex-1 rounded-lg border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="flex-1 rounded-2xl border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           <Button variant="outline" size="sm" onClick={() => addCommand()} disabled={!commandInput.trim()}>
             <Plus className="h-3.5 w-3.5" />
@@ -97,7 +97,7 @@ export function ShellScopeEditor({ scope, onChange }: ShellScopeEditorProps) {
           value={scope.workingDir || ''}
           onChange={(e) => onChange({ ...scope, workingDir: e.target.value || undefined })}
           placeholder={tHardcodedUi.raw('componentsTunnelScopeEditorsShellScopeEditor.line96JsxAttrPlaceholderHomeUserProjectOptional')}
-          className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+          className="w-full rounded-2xl border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
         />
       </div>
 

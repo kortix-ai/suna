@@ -188,7 +188,7 @@ function StatusPageContent() {
                       className="flex items-center justify-between p-3 rounded-2xl border bg-card/30 hover:bg-card/50 transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl border bg-primary/10">
+                        <div className="p-2 rounded-2xl border bg-primary/10">
                           <item.icon className="h-4 w-4 text-primary" />
                         </div>
                         <div>

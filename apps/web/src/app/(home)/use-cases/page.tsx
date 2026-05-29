@@ -506,7 +506,7 @@ export default function UseCasesPage() {
                 <h4 className="text-sm font-semibold text-foreground mb-3">{tHardcodedUi.raw('appHomeUseCasesPage.line506JsxTextConnectsTo')}</h4>
                 <div className="flex flex-wrap items-center gap-2">
                   {breakdown.integrations.map((d) => (
-                    <span key={d} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card/60">
+                    <span key={d} className="flex items-center gap-2 px-3 py-1.5 rounded-2xl border border-border bg-card/60">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={favicon(d)} alt={d} width={16} height={16} className="size-4 rounded-sm" />
                       <span className="text-sm text-foreground">{d.replace(/\.(com|so|google\.com|app)$/, '').replace('drive.', 'Drive')}</span>

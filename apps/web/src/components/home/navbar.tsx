@@ -73,7 +73,7 @@ function PowerButton({ href, onClick, label = 'Launch Kortix' }: { href?: string
       <AnimatePresence>
         {hovered && (
           <motion.span
-            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-foreground bg-background border border-border rounded-md px-2 py-0.5 pointer-events-none z-50 shadow-sm"
+            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-foreground bg-background border border-border rounded-2xl px-2 py-0.5 pointer-events-none z-50 shadow-sm"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}

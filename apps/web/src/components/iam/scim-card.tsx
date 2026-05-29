@@ -145,7 +145,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
         )}
 
         {!tokensQuery.isLoading && tokens.length === 0 && (
-          <p className="rounded-md border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
+          <p className="rounded-2xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
             {tHardcodedUi.raw('componentsIamScimCard.line153JsxTextNoSCIMTokensYetCreateOneToConnect')}</p>
         )}
 
@@ -154,7 +154,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
             {tokens.map((t) => (
               <li
                 key={t.token_id}
-                className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2.5"
+                className="flex items-center gap-3 rounded-2xl border border-border/60 px-3 py-2.5"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">

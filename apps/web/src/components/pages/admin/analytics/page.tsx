@@ -383,7 +383,7 @@ export default function AdminAnalyticsPage() {
                                 const total = Object.values(categoryDistribution.distribution).reduce((a, b) => a + b, 0);
                                 const percent = total > 0 ? ((count / total) * 100).toFixed(0) : 0;
                                 return (
-                                  <div key={cat} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background border">
+                                  <div key={cat} className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-background border">
                                     <span className="text-sm font-medium">{cat}</span>
                                     <span className="text-xs text-muted-foreground">{count}</span>
                                     <span className="text-xs text-muted-foreground/70">({percent}%)</span>

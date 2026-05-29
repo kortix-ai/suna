@@ -875,7 +875,7 @@ export function MarkdownToolbar({
               />
             </div>
             {imageUrl && (
-              <div className="border rounded-lg p-2">
+              <div className="border rounded-2xl p-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={imageUrl}

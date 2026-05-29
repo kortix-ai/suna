@@ -106,7 +106,7 @@ function VisibleCodeBlock({ text, label, variant = 'default' }: {
   return (
     <div className="relative group cursor-pointer min-w-0 w-full" onClick={copy}>
       <pre className={cn(
-        'px-3 py-2.5 rounded-md text-xs font-mono border overflow-x-auto transition-colors leading-relaxed max-w-full whitespace-pre-wrap break-all',
+        'px-3 py-2.5 rounded-2xl text-xs font-mono border overflow-x-auto transition-colors leading-relaxed max-w-full whitespace-pre-wrap break-all',
         'bg-muted/40 border-border/50 hover:border-border',
         variant === 'green' ? 'text-emerald-400' : 'text-foreground/80',
       )}>
@@ -228,11 +228,11 @@ export function SSHResultView({ sshResult, copiedField, onCopy, onRegenerate, is
             <VisibleCodeBlock text={sshConfigCmd} label={tHardcodedUi.raw('componentsSidebarSshKeyDialog.line228JsxAttrLabelSshConfig')} variant="green" />
             <p className="text-xs text-muted-foreground leading-relaxed">
               Then{' '}
-              <kbd className="px-1 py-0.5 rounded-sm bg-muted border border-border/50 text-xs font-mono text-foreground/70">{tHardcodedUi.raw('componentsSidebarSshKeyDialog.line231JsxTextCmdShiftP')}</kbd>
+              <kbd className="px-1 py-0.5 rounded-2xl bg-muted border border-border/50 text-xs font-mono text-foreground/70">{tHardcodedUi.raw('componentsSidebarSshKeyDialog.line231JsxTextCmdShiftP')}</kbd>
               {' → '}
               <span className="text-foreground/70">{tHardcodedUi.raw('componentsSidebarSshKeyDialog.line233JsxTextRemoteSshConnectToHost')}</span>
               {' → '}
-              <code className="px-1 py-0.5 rounded-sm bg-muted border border-border/50 font-mono text-xs text-foreground/80">{sshResult.host_alias}</code>
+              <code className="px-1 py-0.5 rounded-2xl bg-muted border border-border/50 font-mono text-xs text-foreground/80">{sshResult.host_alias}</code>
             </p>
           </div>
 
@@ -392,7 +392,7 @@ export function SSHKeyDialog({ open, onOpenChange }: SSHKeyDialogProps) {
               <div className="rounded-2xl border border-border/50 p-3 space-y-2">
                 <p className="text-xs font-medium text-foreground/80">{tHardcodedUi.raw('componentsSidebarSshKeyDialog.line400JsxTextReconnectCommand')}</p>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 min-w-0 text-xs font-mono bg-muted/40 border border-border/50 rounded-md px-2.5 py-1.5 text-foreground/70 truncate select-all">
+                  <code className="flex-1 min-w-0 text-xs font-mono bg-muted/40 border border-border/50 rounded-2xl px-2.5 py-1.5 text-foreground/70 truncate select-all">
                     {sshMeta.ssh_command}
                   </code>
                   <InlineCopyButton text={sshMeta.ssh_command} label="Reconnect" />
