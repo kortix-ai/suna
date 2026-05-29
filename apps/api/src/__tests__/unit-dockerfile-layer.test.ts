@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  buildDefaultSandboxTemplate,
   buildLayeredDockerfile,
-  DEFAULT_SANDBOX_PATHS,
-  extractSandboxPaths,
-  extractSandboxSpec,
+  DEFAULT_SANDBOX_SLUG,
+  extractSandboxTemplates,
+  PLATFORM_DEFAULT_USER_DOCKERFILE,
   sandboxSpecIsEmpty,
   SANDBOX_SPEC_LIMITS,
 } from '../snapshots/dockerfile-layer';
@@ -12,10 +13,10 @@ const COMMON = {
   opencodeVersion: '1.15.10',
   agentBrowserVersion: '0.27.0',
   agentBinaryPath: 'kortix-agent.gz',
+  cliBinaryPath: 'kortix.gz',
   entrypointScriptPath: 'kortix-entrypoint',
   agentCliPath: 'kortix-agent-cli',
   executorSdkPath: 'kortix-executor-sdk',
-  workspaceArchivePath: 'kortix-workspace.tar.gz',
 };
 
 describe('buildLayeredDockerfile', () => {
@@ -26,22 +27,24 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('Kortix runtime layer (auto-injected)');
     expect(merged).toContain('opencode-ai@1.15.10');
     expect(merged).toContain('agent-browser@0.27.0');
-    expect(merged).toContain('AGENT_BROWSER_ARGS=--no-sandbox');
-    expect(merged).not.toContain('playwright');
-    expect(merged).not.toContain('kortix.com/install');
     expect(merged).toContain('COPY kortix-agent.gz /tmp/kortix-agent.gz');
     expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
+    // The admin CLI is baked alongside the daemon and verified at build time.
+    expect(merged).toContain('COPY kortix.gz /tmp/kortix.gz');
+    expect(merged).toContain('gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix');
+    expect(merged).toContain('kortix --version');
     expect(merged).toContain('COPY kortix-agent-cli/ /opt/kortix/apps/sandbox/agent-cli/');
     expect(merged).toContain('COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/');
-    expect(merged).toContain('COPY kortix-workspace.tar.gz /tmp/kortix-workspace.tar.gz');
-    expect(merged).toContain('tar -xzf /tmp/kortix-workspace.tar.gz -C /workspace');
-    expect(merged).toContain('test -d /workspace/.git');
-    expect(merged).toContain('mkdir -p /opt/kortix/home /ephemeral/kortix-master/opencode');
-    expect(merged).not.toContain('opencode serve --port 4096');
-    expect(merged).toContain(
-      'bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli',
-    );
     expect(merged).toContain('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
+  });
+
+  test('does NOT bake the project workspace into the image', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...COMMON });
+    expect(merged).not.toContain('kortix-workspace.tar.gz');
+    expect(merged).not.toContain('tar -xzf');
+    // The daemon clones at boot via KORTIX_PROJECT_AUTO_CLONE; the layer just
+    // creates an empty /workspace.
+    expect(merged).toContain('mkdir -p /workspace');
   });
 
   test('strips only the generated starter baseline apt block', () => {
@@ -67,12 +70,6 @@ WORKDIR /workspace
     expect(merged.match(/apt-get update/g)?.length).toBe(1);
   });
 
-  test('trims trailing whitespace before the seam so blank-line runs do not stack', () => {
-    const user = 'FROM scratch\n\n\n\n';
-    const merged = buildLayeredDockerfile({ userDockerfile: user, ...COMMON });
-    expect(merged).not.toMatch(/\n\n\n# ─── Kortix runtime layer/);
-  });
-
   test('result ends with a trailing newline', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...COMMON });
     expect(merged.endsWith('\n')).toBe(true);
@@ -82,105 +79,113 @@ WORKDIR /workspace
     const { agentBrowserVersion, ...withoutVersion } = COMMON;
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...withoutVersion });
     expect(merged).toContain('agent-browser@0.27.0');
-    expect(merged).not.toContain('playwright');
-  });
-});
-
-describe('extractSandboxPaths', () => {
-  test('returns defaults for a null / missing manifest', () => {
-    expect(extractSandboxPaths(null)).toEqual(DEFAULT_SANDBOX_PATHS);
-    expect(extractSandboxPaths({})).toEqual(DEFAULT_SANDBOX_PATHS);
   });
 
-  test('picks up explicit dockerfile + context', () => {
-    const paths = extractSandboxPaths({
-      sandbox: { dockerfile: 'infra/base.Dockerfile', context: 'infra' },
+  test('platform default Dockerfile composes to a valid image', () => {
+    const merged = buildLayeredDockerfile({
+      userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
+      ...COMMON,
     });
-    expect(paths).toEqual({ dockerfile: 'infra/base.Dockerfile', context: 'infra' });
-  });
-
-  test('falls back when sandbox section is malformed', () => {
-    // Array, not table
-    expect(extractSandboxPaths({ sandbox: [{ dockerfile: 'x' }] })).toEqual(DEFAULT_SANDBOX_PATHS);
-    // Scalar
-    expect(extractSandboxPaths({ sandbox: 'oops' })).toEqual(DEFAULT_SANDBOX_PATHS);
-  });
-
-  test('rejects absolute and traversal paths by falling back', () => {
-    expect(
-      extractSandboxPaths({ sandbox: { dockerfile: '/etc/Dockerfile' } }).dockerfile,
-    ).toBe(DEFAULT_SANDBOX_PATHS.dockerfile);
-    expect(
-      extractSandboxPaths({ sandbox: { dockerfile: '../escape/Dockerfile' } }).dockerfile,
-    ).toBe(DEFAULT_SANDBOX_PATHS.dockerfile);
-    expect(
-      extractSandboxPaths({ sandbox: { context: '/tmp' } }).context,
-    ).toBe(DEFAULT_SANDBOX_PATHS.context);
-  });
-
-  test('accepts context_dir as an alias for context', () => {
-    expect(
-      extractSandboxPaths({ sandbox: { context_dir: 'build' } }).context,
-    ).toBe('build');
-  });
-
-  test('empty strings fall back to defaults', () => {
-    expect(
-      extractSandboxPaths({ sandbox: { dockerfile: '', context: '' } }),
-    ).toEqual(DEFAULT_SANDBOX_PATHS);
+    expect(merged.startsWith('# syntax=docker/dockerfile:1.7')).toBe(true);
+    expect(merged).toContain('FROM ubuntu:24.04');
+    expect(merged).toContain('Kortix runtime layer (auto-injected)');
   });
 });
 
-describe('extractSandboxSpec', () => {
-  test('returns an empty spec for a null / missing / specless manifest', () => {
-    expect(extractSandboxSpec(null)).toEqual({});
-    expect(extractSandboxSpec({})).toEqual({});
-    expect(extractSandboxSpec({ sandbox: { dockerfile: '.kortix/Dockerfile' } })).toEqual({});
+describe('extractSandboxTemplates', () => {
+  test('returns an empty list for null / missing / specless manifest', () => {
+    expect(extractSandboxTemplates(null)).toEqual([]);
+    expect(extractSandboxTemplates({})).toEqual([]);
   });
 
-  test('picks up cpu / memory / disk / gpu', () => {
-    expect(
-      extractSandboxSpec({ sandbox: { cpu: 4, memory: 8, disk: 50, gpu: 1 } }),
-    ).toEqual({ cpu: 4, memory: 8, disk: 50, gpu: 1 });
+  test('parses [[sandboxes]] array entries in order', () => {
+    const out = extractSandboxTemplates({
+      sandboxes: [
+        { slug: 'ml', dockerfile: '.kortix/Dockerfile.ml', cpu: 4, memory: 16 },
+        { slug: 'python', image: 'python:3.12-slim' },
+      ],
+    });
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({ slug: 'ml', dockerfile: '.kortix/Dockerfile.ml' });
+    expect(out[0].spec).toEqual({ cpu: 4, memory: 16 });
+    expect(out[1]).toMatchObject({ slug: 'python', image: 'python:3.12-slim' });
   });
 
-  test('partial specs only carry the fields that are set', () => {
-    expect(extractSandboxSpec({ sandbox: { cpu: 2 } })).toEqual({ cpu: 2 });
-    expect(extractSandboxSpec({ sandbox: { memory: 16 } })).toEqual({ memory: 16 });
+  test('legacy singular [sandbox] table is no longer synced (ignored)', () => {
+    const out = extractSandboxTemplates({
+      sandbox: { dockerfile: '.kortix/Dockerfile', cpu: 2 },
+    });
+    expect(out).toHaveLength(0);
   });
 
-  test('accepts friendly aliases (cpus / memory_gb / mem / disk_gb)', () => {
-    expect(extractSandboxSpec({ sandbox: { cpus: 8 } })).toEqual({ cpu: 8 });
-    expect(extractSandboxSpec({ sandbox: { memory_gb: 32 } })).toEqual({ memory: 32 });
-    expect(extractSandboxSpec({ sandbox: { mem: 4 } })).toEqual({ memory: 4 });
-    expect(extractSandboxSpec({ sandbox: { disk_gb: 100 } })).toEqual({ disk: 100 });
-    // Canonical key wins over its alias when both are present.
-    expect(extractSandboxSpec({ sandbox: { cpu: 2, cpus: 8 } })).toEqual({ cpu: 2 });
+  test('rejects [[sandboxes]] entries claiming the reserved "default" slug', () => {
+    const out = extractSandboxTemplates({
+      sandboxes: [
+        { slug: 'default', image: 'ubuntu:22.04' },
+        { slug: 'ml', image: 'python:3.12-slim' },
+      ],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].slug).toBe('ml');
   });
 
-  test('coerces numeric strings and rounds fractional values', () => {
-    expect(extractSandboxSpec({ sandbox: { cpu: '4', memory: '8' } })).toEqual({ cpu: 4, memory: 8 });
-    expect(extractSandboxSpec({ sandbox: { cpu: 2.6 } })).toEqual({ cpu: 3 });
+  test('rejects entries with neither dockerfile nor image OK (builder handles missing)', () => {
+    const out = extractSandboxTemplates({ sandboxes: [{ slug: 'empty', cpu: 1 }] });
+    expect(out).toHaveLength(1);
+    expect(out[0].dockerfile).toBeUndefined();
+    expect(out[0].image).toBeUndefined();
   });
 
-  test('drops non-positive / non-numeric values (→ provider default)', () => {
-    expect(extractSandboxSpec({ sandbox: { cpu: 0, memory: -4 } })).toEqual({});
-    expect(extractSandboxSpec({ sandbox: { cpu: 'lots', disk: NaN } })).toEqual({});
-    expect(extractSandboxSpec({ sandbox: { gpu: 0 } })).toEqual({});
+  test('skips entries with missing or malformed slugs', () => {
+    const out = extractSandboxTemplates({
+      sandboxes: [
+        { dockerfile: 'a' }, // no slug
+        { slug: 'Bad Slug!', dockerfile: 'b' }, // invalid chars
+        { slug: 'good', dockerfile: 'c' },
+      ],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].slug).toBe('good');
   });
 
-  test('clamps values above the ceiling rather than rejecting them', () => {
-    expect(extractSandboxSpec({ sandbox: { cpu: 9999 } })).toEqual({
+  test('deduplicates by slug (first wins)', () => {
+    const out = extractSandboxTemplates({
+      sandboxes: [
+        { slug: 'ml', dockerfile: 'a' },
+        { slug: 'ml', image: 'python:3.12-slim' },
+      ],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].dockerfile).toBe('a');
+  });
+
+  test('clamps over-spec resources rather than rejecting them', () => {
+    const out = extractSandboxTemplates({
+      sandboxes: [{ slug: 'huge', dockerfile: 'a', cpu: 9999, memory: 99999 }],
+    });
+    expect(out[0].spec).toEqual({
       cpu: SANDBOX_SPEC_LIMITS.cpu.max,
-    });
-    expect(extractSandboxSpec({ sandbox: { memory: 10000 } })).toEqual({
       memory: SANDBOX_SPEC_LIMITS.memory.max,
     });
   });
 
-  test('falls back when the sandbox section is malformed', () => {
-    expect(extractSandboxSpec({ sandbox: [{ cpu: 4 }] })).toEqual({});
-    expect(extractSandboxSpec({ sandbox: 'oops' })).toEqual({});
+  test('rejects absolute and traversal Dockerfile paths', () => {
+    const out = extractSandboxTemplates({
+      sandboxes: [
+        { slug: 'a', dockerfile: '/etc/Dockerfile' },
+        { slug: 'b', dockerfile: '../escape/Dockerfile' },
+      ],
+    });
+    expect(out[0].dockerfile).toBe(undefined);
+    expect(out[1].dockerfile).toBe(undefined);
+  });
+});
+
+describe('buildDefaultSandboxTemplate', () => {
+  test('isDefault=true, slug="default"', () => {
+    const tpl = buildDefaultSandboxTemplate();
+    expect(tpl.isDefault).toBe(true);
+    expect(tpl.slug).toBe(DEFAULT_SANDBOX_SLUG);
   });
 });
 
@@ -188,6 +193,7 @@ describe('sandboxSpecIsEmpty', () => {
   test('true only when no field is set', () => {
     expect(sandboxSpecIsEmpty({})).toBe(true);
     expect(sandboxSpecIsEmpty({ cpu: 1 })).toBe(false);
-    expect(sandboxSpecIsEmpty({ gpu: 1 })).toBe(false);
+    expect(sandboxSpecIsEmpty({ memory: 2 })).toBe(false);
+    expect(sandboxSpecIsEmpty({ disk: 10 })).toBe(false);
   });
 });
