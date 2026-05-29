@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}}</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #09090b;
+    --surface: #18181b;
+    --border: #27272a;
+    --text: #e4e4e7;
+    --text-dim: #71717a;
+    --accent: #3b82f6;
+    --accent-dim: rgba(59, 130, 246, 0.12);
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    color: var(--text);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .viewer {
+    display: flex;
+    flex-direction: column;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  /* ── Stage ── */
+  .stage {
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /*
+    The wrapper is sized to the ACTUAL displayed pixel size (not 1920x1080).
+    JS sets --sw and --sh to the real rendered width/height.
+    Inside, the 1920x1080 iframe is scaled down via transform.
+  */
+  .slide-frame-wrapper {
+    position: relative;
+    overflow: hidden;
+    border-radius: 6px;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.06),
+      0 8px 40px rgba(0,0,0,0.5),
+      0 30px 80px rgba(0,0,0,0.4);
+  }
+
+  .slide-frame {
+    width: 1920px;
+    height: 1080px;
+    border: none;
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+    transform-origin: 0 0;
+    visibility: hidden;
+  }
+
+  .slide-frame.active { visibility: visible; }
+
+  /* ── Navigation overlays ── */
+  .nav-zone {
+    position: absolute;
+    top: 0; height: 100%;
+    width: 12%;
+    min-width: 60px;
+    display: flex;
+    align-items: center;
+    z-index: 10;
+    opacity: 0;
+    transition: opacity 0.2s;
+    cursor: pointer;
+  }
+
+  .stage:hover .nav-zone { opacity: 1; }
+
+  .nav-zone--prev { left: 0; justify-content: flex-start; padding-left: 20px; }
+  .nav-zone--next { right: 0; justify-content: flex-end; padding-right: 20px; }
+
+  .nav-btn {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.1);
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+    color: rgba(255,255,255,0.8);
+  }
+
+  .nav-btn:hover { background: rgba(0,0,0,0.7); color: #fff; transform: scale(1.1); }
+
+  .nav-btn svg {
+    width: 20px; height: 20px;
+    fill: none; stroke: currentColor; stroke-width: 2.5;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  .nav-zone.disabled { pointer-events: none; }
+  .nav-zone.disabled .nav-btn { opacity: 0.15; }
+
+  /* ── Bottom bar ── */
+  .bottom-bar {
+    height: 48px; min-height: 48px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    z-index: 20;
+    gap: 12px;
+  }
+
+  .bottom-section {
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  .bottom-section.left { flex: 1; min-width: 0; }
+  .bottom-section.center { flex: 0 0 auto; }
+  .bottom-section.right { flex: 1; min-width: 0; justify-content: flex-end; }
+
+  .slide-counter {
+    font-size: 13px; font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .slide-counter .dim { color: var(--text-dim); font-weight: 400; }
+
+  .slide-title-display {
+    font-size: 12px; color: var(--text-dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0;
+  }
+
+  .pres-title {
+    font-size: 12px; font-weight: 500; color: var(--text-dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0;
+  }
+
+  .sep { color: var(--border); font-size: 14px; }
+
+  /* ── Toolbar buttons ── */
+  .tb {
+    width: 32px; height: 32px;
+    border-radius: 6px; border: none;
+    background: transparent; color: var(--text-dim);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.12s; flex-shrink: 0;
+  }
+
+  .tb:hover { background: rgba(255,255,255,0.07); color: var(--text); }
+  .tb.active { background: var(--accent-dim); color: var(--accent); }
+
+  .tb svg {
+    width: 16px; height: 16px;
+    fill: none; stroke: currentColor; stroke-width: 2;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  /* ── Progress bar ── */
+  .progress-track {
+    position: absolute; bottom: 48px; left: 0; right: 0;
+    height: 3px; background: rgba(255,255,255,0.04);
+    z-index: 15; cursor: pointer;
+    transition: height 0.15s;
+  }
+
+  .progress-fill {
+    height: 100%; background: var(--accent);
+    transition: width 0.25s ease; border-radius: 0 1px 1px 0;
+  }
+
+  .progress-track:hover { height: 6px; }
+
+  /* ── Thumbnail strip ── */
+  .thumb-strip {
+    position: absolute; bottom: 52px; left: 0; right: 0;
+    background: rgba(9,9,11,0.96);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    padding: 14px 16px;
+    display: flex; gap: 10px;
+    overflow-x: auto; overflow-y: hidden;
+    z-index: 25;
+    transform: translateY(calc(100% + 52px)); opacity: 0;
+    transition: transform 0.25s ease, opacity 0.2s ease;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.08) transparent;
+  }
+
+  .thumb-strip.open { transform: translateY(0); opacity: 1; }
+
+  .thumb-strip::-webkit-scrollbar { height: 3px; }
+  .thumb-strip::-webkit-scrollbar-track { background: transparent; }
+  .thumb-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+  .thumb {
+    flex: 0 0 auto; width: 160px; height: 90px;
+    border-radius: 4px; overflow: hidden;
+    border: 2px solid transparent;
+    cursor: pointer; position: relative; background: #000;
+    transition: border-color 0.12s, transform 0.12s, box-shadow 0.12s;
+  }
+
+  .thumb:hover { border-color: rgba(255,255,255,0.2); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .thumb.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 4px 16px rgba(59,130,246,0.2); }
+
+  .thumb iframe {
+    width: 1920px; height: 1080px; border: none;
+    transform: scale(calc(160 / 1920)); transform-origin: top left;
+    pointer-events: none;
+  }
+
+  .thumb-num {
+    position: absolute; top: 4px; left: 4px;
+    width: 20px; height: 20px; border-radius: 4px;
+    background: rgba(0,0,0,0.7);
+    font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.7);
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .thumb.active .thumb-num { background: var(--accent); color: #fff; }
+
+  /* ── Help overlay ── */
+  .overlay-bg {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6); z-index: 99;
+    display: none;
+  }
+  .overlay-bg.open { display: block; }
+
+  .hints {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px 32px;
+    z-index: 100; display: none; min-width: 300px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  }
+
+  .hints.open { display: block; }
+
+  .hints h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+
+  .hint-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
+  .hint-keys { display: flex; gap: 4px; }
+
+  .hint-key {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 26px; height: 24px; padding: 0 6px;
+    border-radius: 5px; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    font-size: 11px; font-weight: 600; color: var(--text);
+  }
+
+  .hint-label { font-size: 13px; color: var(--text-dim); margin-left: 20px; }
+
+  /* ── Fullscreen ── */
+  .viewer.fullscreen .bottom-bar { height: 0; min-height: 0; overflow: hidden; border: none; padding: 0; }
+  .viewer.fullscreen .progress-track { bottom: 0; opacity: 0; transition: opacity 0.2s; }
+  .viewer.fullscreen:hover .progress-track { opacity: 1; }
+  .viewer.fullscreen .thumb-strip { bottom: 4px; }
+
+  /* ── Slide transition ── */
+  .slide-frame { transition: visibility 0s 0.15s, opacity 0.15s ease; opacity: 0; }
+  .slide-frame.active { transition: visibility 0s 0s, opacity 0.2s ease; opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="viewer" id="viewer">
+  <div class="stage" id="stage">
+    <div class="slide-frame-wrapper" id="wrapper"></div>
+
+    <div class="nav-zone nav-zone--prev" id="navPrev" onclick="prev()">
+      <div class="nav-btn"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></div>
+    </div>
+    <div class="nav-zone nav-zone--next" id="navNext" onclick="next()">
+      <div class="nav-btn"><svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg></div>
+    </div>
+  </div>
+
+  <div class="progress-track" id="progressTrack" onclick="onProgressClick(event)">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+
+  <div class="thumb-strip" id="thumbStrip"></div>
+
+  <div class="bottom-bar" id="bottomBar">
+    <div class="bottom-section left">
+      <span class="pres-title" id="presTitle"></span>
+      <span class="sep">|</span>
+      <span class="slide-title-display" id="slideTitle"></span>
+    </div>
+    <div class="bottom-section center">
+      <button class="tb" onclick="prev()" title="Previous (←)">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <span class="slide-counter" id="counter"></span>
+      <button class="tb" onclick="next()" title="Next (→)">
+        <svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg>
+      </button>
+    </div>
+    <div class="bottom-section right">
+      <button class="tb" id="btnThumbs" onclick="toggleThumbs()" title="Thumbnails (T)">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </button>
+      <button class="tb" id="btnFS" onclick="toggleFullscreen()" title="Fullscreen (F)">
+        <svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+      </button>
+      <button class="tb" onclick="toggleHelp()" title="Help (?)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay-bg" id="overlayBg" onclick="toggleHelp()"></div>
+<div class="hints" id="hints">
+  <h3>Keyboard Shortcuts</h3>
+  <div class="hint-row"><div class="hint-keys"><span class="hint-key">&rarr;</span><span class="hint-key">Space</span></div><span class="hint-label">Next slide</span></div>
+  <div class="hint-row"><div class="hint-keys"><span class="hint-key">&larr;</span></div><span class="hint-label">Previous slide</span></div>
+  <div class="hint-row"><div class="hint-keys"><span class="hint-key">Home</span></div><span class="hint-label">First slide</span></div>
+  <div class="hint-row"><div class="hint-keys"><span class="hint-key">End</span></div><span class="hint-label">Last slide</span></div>
+  <div class="hint-row"><div class="hint-keys"><span class="hint-key">F</span></div><span class="hint-label">Fullscreen</span></div>
+  <div class="hint-row"><div class="hint-keys"><span class="hint-key">T</span></div><span class="hint-label">Thumbnails</span></div>
+  <div class="hint-row"><div class="hint-keys"><span class="hint-key">Esc</span></div><span class="hint-label">Exit / close</span></div>
+  <div class="hint-row"><div class="hint-keys"><span class="hint-key">?</span></div><span class="hint-label">This help</span></div>
+</div>
+
+<script>
+const PRESENTATION = {{PRESENTATION_DATA}};
+const SLIDES = PRESENTATION.slides;
+const TOTAL = SLIDES.length;
+const SW = 1920;
+const SH = 1080;
+const RATIO = SW / SH;
+
+let current = 0;
+let thumbsOpen = false;
+let helpOpen = false;
+let iframes = [];
+
+const $ = (id) => document.getElementById(id);
+const wrapper = $('wrapper');
+const stage = $('stage');
+const counter = $('counter');
+const slideTitle = $('slideTitle');
+const presTitle = $('presTitle');
+const progressFill = $('progressFill');
+const navPrev = $('navPrev');
+const navNext = $('navNext');
+const thumbStrip = $('thumbStrip');
+const btnThumbs = $('btnThumbs');
+const hints = $('hints');
+const overlayBg = $('overlayBg');
+const viewer = $('viewer');
+
+function init() {
+  presTitle.textContent = PRESENTATION.title || 'Presentation';
+  document.title = PRESENTATION.title || 'Presentation';
+
+  SLIDES.forEach(function(slide, i) {
+    var iframe = document.createElement('iframe');
+    iframe.className = 'slide-frame';
+    iframe.src = slide.filename;
+    iframe.setAttribute('loading', i < 2 ? 'eager' : 'lazy');
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+    wrapper.appendChild(iframe);
+    iframes.push(iframe);
+
+    var thumb = document.createElement('div');
+    thumb.className = 'thumb';
+    thumb.onclick = function() { goTo(i); };
+
+    var tIframe = document.createElement('iframe');
+    tIframe.src = slide.filename;
+    tIframe.setAttribute('loading', 'lazy');
+    tIframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+    tIframe.setAttribute('tabindex', '-1');
+    thumb.appendChild(tIframe);
+
+    var num = document.createElement('div');
+    num.className = 'thumb-num';
+    num.textContent = i + 1;
+    thumb.appendChild(num);
+
+    thumbStrip.appendChild(thumb);
+  });
+
+  goTo(0);
+  rescale();
+  window.addEventListener('resize', rescale);
+}
+
+function rescale() {
+  var isFS = viewer.classList.contains('fullscreen');
+  var barH = isFS ? 0 : 48;
+  var progressH = 3;
+
+  var stageRect = stage.getBoundingClientRect();
+  var availW = stageRect.width;
+  var availH = stageRect.height;
+
+  if (availW <= 0 || availH <= 0) {
+    availW = window.innerWidth;
+    availH = window.innerHeight - barH - progressH;
+  }
+
+  var pad = Math.min(availW, availH) * 0.03;
+  var innerW = availW - pad * 2;
+  var innerH = availH - pad * 2;
+
+  var scale;
+  if (innerW / innerH > RATIO) {
+    scale = innerH / SH;
+  } else {
+    scale = innerW / SW;
+  }
+
+  var displayW = Math.round(SW * scale);
+  var displayH = Math.round(SH * scale);
+
+  wrapper.style.width = displayW + 'px';
+  wrapper.style.height = displayH + 'px';
+
+  iframes.forEach(function(f) {
+    f.style.transform = 'scale(' + scale + ')';
+  });
+}
+
+function goTo(index) {
+  if (index < 0 || index >= TOTAL) return;
+  current = index;
+
+  iframes.forEach(function(f, i) {
+    f.classList.toggle('active', i === current);
+  });
+
+  for (var offset = -1; offset <= 2; offset++) {
+    var idx = current + offset;
+    if (idx >= 0 && idx < TOTAL && iframes[idx].getAttribute('loading') === 'lazy') {
+      iframes[idx].removeAttribute('loading');
+      iframes[idx].src = SLIDES[idx].filename;
+    }
+  }
+
+  counter.innerHTML = (current + 1) + ' <span class="dim">/ ' + TOTAL + '</span>';
+  slideTitle.textContent = SLIDES[current].title || '';
+  progressFill.style.width = ((current + 1) / TOTAL * 100).toFixed(1) + '%';
+
+  navPrev.classList.toggle('disabled', current === 0);
+  navNext.classList.toggle('disabled', current === TOTAL - 1);
+
+  var thumbs = thumbStrip.querySelectorAll('.thumb');
+  thumbs.forEach(function(t, i) { t.classList.toggle('active', i === current); });
+
+  if (thumbsOpen && thumbs[current]) {
+    thumbs[current].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+}
+
+function next() { goTo(current + 1); }
+function prev() { goTo(current - 1); }
+
+function toggleThumbs() {
+  thumbsOpen = !thumbsOpen;
+  thumbStrip.classList.toggle('open', thumbsOpen);
+  btnThumbs.classList.toggle('active', thumbsOpen);
+  if (thumbsOpen) {
+    var thumbs = thumbStrip.querySelectorAll('.thumb');
+    if (thumbs[current]) thumbs[current].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(function(){});
+  } else {
+    document.exitFullscreen().catch(function(){});
+  }
+}
+
+document.addEventListener('fullscreenchange', function() {
+  viewer.classList.toggle('fullscreen', !!document.fullscreenElement);
+  requestAnimationFrame(rescale);
+});
+
+function toggleHelp() {
+  helpOpen = !helpOpen;
+  hints.classList.toggle('open', helpOpen);
+  overlayBg.classList.toggle('open', helpOpen);
+}
+
+function onProgressClick(e) {
+  var rect = e.currentTarget.getBoundingClientRect();
+  var pct = (e.clientX - rect.left) / rect.width;
+  goTo(Math.min(Math.floor(pct * TOTAL), TOTAL - 1));
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  switch (e.key) {
+    case 'ArrowRight': case ' ': case 'ArrowDown':
+      e.preventDefault(); next(); break;
+    case 'ArrowLeft': case 'ArrowUp':
+      e.preventDefault(); prev(); break;
+    case 'Home':
+      e.preventDefault(); goTo(0); break;
+    case 'End':
+      e.preventDefault(); goTo(TOTAL - 1); break;
+    case 'f': case 'F':
+      e.preventDefault(); toggleFullscreen(); break;
+    case 't': case 'T':
+      e.preventDefault(); toggleThumbs(); break;
+    case 'Escape':
+      if (helpOpen) { toggleHelp(); e.preventDefault(); }
+      else if (thumbsOpen) { toggleThumbs(); e.preventDefault(); }
+      break;
+    case '?':
+      e.preventDefault(); toggleHelp(); break;
+  }
+});
+
+var touchX = 0, touchY = 0;
+stage.addEventListener('touchstart', function(e) {
+  touchX = e.touches[0].clientX; touchY = e.touches[0].clientY;
+}, { passive: true });
+stage.addEventListener('touchend', function(e) {
+  var dx = e.changedTouches[0].clientX - touchX;
+  var dy = e.changedTouches[0].clientY - touchY;
+  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+    dx < 0 ? next() : prev();
+  }
+}, { passive: true });
+
+init();
+</script>
+</body>
+</html>
