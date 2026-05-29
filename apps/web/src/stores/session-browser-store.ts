@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 /**
  * Per-session state for the right-side panel hosted by `session-layout.tsx`.
@@ -49,6 +50,7 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
     }),
     {
       name: 'kortix-session-browser',
+      storage: createSafeJSONStorage(),
       partialize: (state) => ({ viewBySession: state.viewBySession }),
     },
   ),

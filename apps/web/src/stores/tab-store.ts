@@ -4,6 +4,11 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { useServerStore } from '@/stores/server-store';
 import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@/lib/instance-routes';
+import {
+  safeLocalStorage,
+  safeSetItem,
+  registerDisposableKey,
+} from '@/lib/storage/managed-storage';
 
 // ============================================================================
 // Types
@@ -168,50 +173,13 @@ const PER_SERVER_KEY = 'kortix-tabs-per-server';
 /** Cap how many servers we remember tabs for, so the cache can't grow forever. */
 const MAX_CACHED_SERVERS = 5;
 
-/**
- * Write to localStorage without ever throwing. On a quota error we evict the
- * (disposable) per-server cache and retry once; if it still fails we give up
- * silently rather than crash the UI (the old behaviour: an uncaught
- * QuotaExceededError out of the persist middleware).
- */
-function safeSetItem(key: string, value: string): boolean {
-  try {
-    localStorage.setItem(key, value);
-    return true;
-  } catch {
-    if (key !== PER_SERVER_KEY) {
-      try {
-        localStorage.removeItem(PER_SERVER_KEY);
-        localStorage.setItem(key, value);
-        return true;
-      } catch {
-        /* still over quota — fall through */
-      }
-    }
-    return false;
-  }
-}
+// Writes go through the shared never-throw layer, so a quota crunch reclaims
+// space across the WHOLE origin (the big offenders are the per-sandbox opencode
+// caches) before giving up — not just this store's own per-server blob. Register
+// that blob as a last-resort disposable so cross-store reclaim can still drop it.
+registerDisposableKey(PER_SERVER_KEY);
 
-/** zustand persist storage that degrades gracefully instead of throwing. */
-const safeTabStorage = {
-  getItem: (name: string): string | null => {
-    try {
-      return localStorage.getItem(name);
-    } catch {
-      return null;
-    }
-  },
-  setItem: (name: string, value: string): void => {
-    safeSetItem(name, value);
-  },
-  removeItem: (name: string): void => {
-    try {
-      localStorage.removeItem(name);
-    } catch {
-      /* ignore */
-    }
-  },
-};
+const safeTabStorage = safeLocalStorage;
 
 type PerServerEntry = {
   tabs: Record<string, Tab>;

@@ -15,6 +15,7 @@ import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
 import { isBillingEnabled } from '@/lib/config';
 import { SidebarLeft } from '@/components/sidebar/sidebar-left';
 import { SidebarRight } from '@/components/sidebar/sidebar-right';
+import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
 
 /**
  * Left sidebar slot — lives inside SidebarProvider so it can read the
@@ -130,6 +131,13 @@ export function AppProviders({
   showGlobalUserSettingsModal = false,
 }: AppProvidersProps) {
   useModelHydration(showRightSidebar);
+
+  // One-time sweep on app load: reclaim localStorage left over from older builds
+  // that never evicted their per-sandbox caches. Ongoing growth is bounded by
+  // each cache's prune-on-write; this just heals existing bloat up front.
+  React.useEffect(() => {
+    pruneAllRegisteredCaches();
+  }, []);
 
   const content = (
     <DeleteOperationEffectsWrapper>

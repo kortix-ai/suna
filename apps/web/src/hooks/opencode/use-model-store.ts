@@ -15,6 +15,7 @@
 
 import { useMemo, useCallback, useSyncExternalStore } from 'react';
 import type { FlatModel } from '@/components/session/session-chat-input';
+import { safeSetItem } from '@/lib/storage/managed-storage';
 
 // ============================================================================
 // Types
@@ -59,6 +60,24 @@ interface ModelStore {
 
 const STORE_KEY = 'opencode-model-store-v1';
 
+/**
+ * Cap the per-session maps (`sessionModel`, `sessionAgentName`). They're keyed
+ * by durable session UUIDs, so without a cap they'd accumulate one entry per
+ * session the user ever opens — a slow but real localStorage leak. Keep the
+ * most-recently-touched N (map key order is a good-enough recency proxy).
+ */
+const MAX_SESSION_ENTRIES = 200;
+
+function capSessionMap<V>(
+  map: Record<string, V> | undefined,
+): Record<string, V> | undefined {
+  if (!map) return map;
+  const keys = Object.keys(map);
+  if (keys.length <= MAX_SESSION_ENTRIES) return map;
+  const kept = keys.slice(-MAX_SESSION_ENTRIES);
+  return Object.fromEntries(kept.map((k) => [k, map[k]])) as Record<string, V>;
+}
+
 function loadStore(): ModelStore {
   if (typeof window === 'undefined') {
     return { user: [], recent: [], variant: {} };
@@ -80,12 +99,15 @@ function getStore(): ModelStore {
 }
 
 function setStore(next: ModelStore) {
+  next = {
+    ...next,
+    sessionModel: capSessionMap(next.sessionModel),
+    sessionAgentName: capSessionMap(next.sessionAgentName),
+  };
   _store = next;
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
+  // Shared never-throw write — degrades gracefully and reclaims quota from
+  // disposable caches instead of throwing if the bucket is full.
+  safeSetItem(STORE_KEY, JSON.stringify(next));
   for (const fn of _listeners) fn();
 }
 

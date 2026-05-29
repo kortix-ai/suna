@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 import { authenticatedFetch, getSupabaseAccessToken } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
@@ -646,6 +647,7 @@ export const useServerStore = create<ServerStore>()(
     }),
     {
       name: 'opencode-servers-v6', // v6: sandbox URLs derived at runtime, never persisted
+      storage: createSafeJSONStorage(),
       partialize: (state) => ({
         servers: state.servers.filter((s) => !isManagedEntry(s)),
         activeServerId: state.activeServerId,

@@ -7,6 +7,7 @@ import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useServerStore } from '@/stores/server-store';
+import { ScopedCache } from '@/lib/storage/managed-storage';
 import type {
   Session,
   Message,
@@ -160,30 +161,40 @@ function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }): 
 // localStorage placeholder caches are per-sandbox too — scope by active server
 // id so re-opening a warm session paints its OWN last data, never the previous
 // sandbox's. Scoping lives in the helpers so every call site inherits it.
-function getLSCache<T>(key: string, scope?: string): T | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    const raw = localStorage.getItem(`${key}:${scope ?? activeServerKey()}`);
-    if (!raw) return undefined;
-    return JSON.parse(raw) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function setLSCache(key: string, value: unknown, scope?: string): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(`${key}:${scope ?? activeServerKey()}`, JSON.stringify(value));
-  } catch {
-    // Storage full or unavailable
-  }
-}
-
+//
+// These are backed by ScopedCache, which caps each family to its N
+// most-recently-used scopes. That cap is the whole point: the default scope is
+// the EPHEMERAL per-sandbox server id, so without a cap every new session would
+// leak a fresh `kortix_cache_*:<serverId>` blob forever and eventually blow the
+// localStorage quota (which then crashes whatever store writes next). The cache
+// is disposable — a miss just refetches — so small caps are safe.
 const LS_SESSIONS = 'kortix_cache_sessions';
 const LS_AGENTS = 'kortix_cache_agents';
 const LS_COMMANDS = 'kortix_cache_commands';
 const LS_PROVIDERS = 'kortix_cache_providers';
+
+// Session/command lists are keyed per ephemeral sandbox — keep only the few
+// most-recent sandboxes warm. Agents are keyed per directory (+ global), which
+// is a small, stable space, so it gets more headroom. Providers are global.
+const sessionsCache = new ScopedCache<Session[]>(LS_SESSIONS, 4);
+const agentsCache = new ScopedCache<Agent[]>(LS_AGENTS, 8);
+const commandsCache = new ScopedCache<Command[]>(LS_COMMANDS, 4);
+const providersCache = new ScopedCache<ProviderListResponse>(LS_PROVIDERS, 2);
+
+const cacheByFamily: Record<string, ScopedCache<any>> = {
+  [LS_SESSIONS]: sessionsCache,
+  [LS_AGENTS]: agentsCache,
+  [LS_COMMANDS]: commandsCache,
+  [LS_PROVIDERS]: providersCache,
+};
+
+function getLSCache<T>(family: string, scope?: string): T | undefined {
+  return cacheByFamily[family]?.get(scope ?? activeServerKey()) as T | undefined;
+}
+
+function setLSCache(family: string, value: unknown, scope?: string): void {
+  cacheByFamily[family]?.set(scope ?? activeServerKey(), value);
+}
 
 /**
  * Stable cache scope for data that does NOT vary per sandbox. The default
