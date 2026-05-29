@@ -21,9 +21,11 @@ TTL="${PREVIEW_TTL:-7d}"
 ORIGIN="$(kortix_api_origin)"
 SANDBOX="$(kortix_sandbox_id)"
 
-# Token for the proxy layer: KORTIX_TOKEN is the sandbox service key and is
-# accepted by the preview proxy (authenticatePreviewPrincipal).
-SHARE_TOKEN="${KORTIX_TOKEN:-${KORTIX_CLI_TOKEN:-}}"
+# /v1/p/share gates on canAccessPreviewSandbox(userId/accountId) — so it needs a
+# USER/PROJECT principal, NOT the sandbox service key. KORTIX_CLI_TOKEN (the
+# project PAT) resolves to the owning account; KORTIX_TOKEN (sandbox key) is
+# rejected here. Use the CLI token first (this was the "share unavailable" bug).
+SHARE_TOKEN="${KORTIX_CLI_TOKEN:-${KORTIX_TOKEN:-}}"
 
 share() {
   [ -n "$SHARE_TOKEN" ] || return 1
