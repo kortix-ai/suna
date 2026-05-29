@@ -1,112 +1,114 @@
-[
-  {
-    "name": "issues.createComment",
-    "method": "POST",
-    "path": "/repos/{owner}/{repo}/issues/{issue_number}/comments",
-    "description": "Create a comment on an issue or pull request (PRs are issues for this endpoint). Use for posting a review or preview comment.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "owner": { "type": "string", "x-in": "path" },
-        "repo": { "type": "string", "x-in": "path" },
-        "issue_number": { "type": "number", "x-in": "path", "description": "The PR or issue number." },
-        "body": { "type": "object", "description": "Request body, e.g. { \"body\": \"<markdown comment>\" }." }
-      },
-      "required": ["owner", "repo", "issue_number", "body"]
+{
+  "routes": [
+    {
+      "name": "issues.createComment",
+      "method": "POST",
+      "path": "/repos/{owner}/{repo}/issues/{issue_number}/comments",
+      "description": "Create a comment on an issue or pull request (PRs are issues for this endpoint). Use for posting a review or preview comment.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string", "x-in": "path" },
+          "repo": { "type": "string", "x-in": "path" },
+          "issue_number": { "type": "number", "x-in": "path", "description": "The PR or issue number." },
+          "body": { "type": "object", "description": "Request body, e.g. { \"body\": \"<markdown comment>\" }." }
+        },
+        "required": ["owner", "repo", "issue_number", "body"]
+      }
+    },
+    {
+      "name": "issues.listComments",
+      "method": "GET",
+      "path": "/repos/{owner}/{repo}/issues/{issue_number}/comments",
+      "description": "List comments on a PR/issue — use to find a prior sticky comment to edit instead of duplicating.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string", "x-in": "path" },
+          "repo": { "type": "string", "x-in": "path" },
+          "issue_number": { "type": "number", "x-in": "path" },
+          "per_page": { "type": "number", "x-in": "query" }
+        },
+        "required": ["owner", "repo", "issue_number"]
+      }
+    },
+    {
+      "name": "issues.updateComment",
+      "method": "PATCH",
+      "path": "/repos/{owner}/{repo}/issues/comments/{comment_id}",
+      "description": "Edit an existing comment in place (idempotent sticky comments on re-runs).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string", "x-in": "path" },
+          "repo": { "type": "string", "x-in": "path" },
+          "comment_id": { "type": "number", "x-in": "path" },
+          "body": { "type": "object", "description": "{ \"body\": \"<markdown>\" }" }
+        },
+        "required": ["owner", "repo", "comment_id", "body"]
+      }
+    },
+    {
+      "name": "pulls.get",
+      "method": "GET",
+      "path": "/repos/{owner}/{repo}/pulls/{pull_number}",
+      "description": "Get a pull request's metadata (head/base refs, title, state).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string", "x-in": "path" },
+          "repo": { "type": "string", "x-in": "path" },
+          "pull_number": { "type": "number", "x-in": "path" }
+        },
+        "required": ["owner", "repo", "pull_number"]
+      }
+    },
+    {
+      "name": "pulls.listFiles",
+      "method": "GET",
+      "path": "/repos/{owner}/{repo}/pulls/{pull_number}/files",
+      "description": "List the files changed in a PR (the diff surface to review).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string", "x-in": "path" },
+          "repo": { "type": "string", "x-in": "path" },
+          "pull_number": { "type": "number", "x-in": "path" },
+          "per_page": { "type": "number", "x-in": "query" }
+        },
+        "required": ["owner", "repo", "pull_number"]
+      }
+    },
+    {
+      "name": "pulls.createReview",
+      "method": "POST",
+      "path": "/repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+      "description": "Post a formal PR review (APPROVE / REQUEST_CHANGES / COMMENT) as the agent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string", "x-in": "path" },
+          "repo": { "type": "string", "x-in": "path" },
+          "pull_number": { "type": "number", "x-in": "path" },
+          "body": { "type": "object", "description": "{ \"body\": \"<markdown>\", \"event\": \"COMMENT|APPROVE|REQUEST_CHANGES\" }" }
+        },
+        "required": ["owner", "repo", "pull_number", "body"]
+      }
+    },
+    {
+      "name": "pulls.create",
+      "method": "POST",
+      "path": "/repos/{owner}/{repo}/pulls",
+      "description": "Open a pull request (e.g. the stacked thermo-review fix PR).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string", "x-in": "path" },
+          "repo": { "type": "string", "x-in": "path" },
+          "body": { "type": "object", "description": "{ \"title\", \"head\", \"base\", \"body\" }" }
+        },
+        "required": ["owner", "repo", "body"]
+      }
     }
-  },
-  {
-    "name": "issues.listComments",
-    "method": "GET",
-    "path": "/repos/{owner}/{repo}/issues/{issue_number}/comments",
-    "description": "List comments on a PR/issue — use to find a prior sticky comment to edit instead of duplicating.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "owner": { "type": "string", "x-in": "path" },
-        "repo": { "type": "string", "x-in": "path" },
-        "issue_number": { "type": "number", "x-in": "path" },
-        "per_page": { "type": "number", "x-in": "query" }
-      },
-      "required": ["owner", "repo", "issue_number"]
-    }
-  },
-  {
-    "name": "issues.updateComment",
-    "method": "PATCH",
-    "path": "/repos/{owner}/{repo}/issues/comments/{comment_id}",
-    "description": "Edit an existing comment in place (idempotent sticky comments on re-runs).",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "owner": { "type": "string", "x-in": "path" },
-        "repo": { "type": "string", "x-in": "path" },
-        "comment_id": { "type": "number", "x-in": "path" },
-        "body": { "type": "object", "description": "{ \"body\": \"<markdown>\" }" }
-      },
-      "required": ["owner", "repo", "comment_id", "body"]
-    }
-  },
-  {
-    "name": "pulls.get",
-    "method": "GET",
-    "path": "/repos/{owner}/{repo}/pulls/{pull_number}",
-    "description": "Get a pull request's metadata (head/base refs, title, state).",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "owner": { "type": "string", "x-in": "path" },
-        "repo": { "type": "string", "x-in": "path" },
-        "pull_number": { "type": "number", "x-in": "path" }
-      },
-      "required": ["owner", "repo", "pull_number"]
-    }
-  },
-  {
-    "name": "pulls.listFiles",
-    "method": "GET",
-    "path": "/repos/{owner}/{repo}/pulls/{pull_number}/files",
-    "description": "List the files changed in a PR (the diff surface to review).",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "owner": { "type": "string", "x-in": "path" },
-        "repo": { "type": "string", "x-in": "path" },
-        "pull_number": { "type": "number", "x-in": "path" },
-        "per_page": { "type": "number", "x-in": "query" }
-      },
-      "required": ["owner", "repo", "pull_number"]
-    }
-  },
-  {
-    "name": "pulls.createReview",
-    "method": "POST",
-    "path": "/repos/{owner}/{repo}/pulls/{pull_number}/reviews",
-    "description": "Post a formal PR review (APPROVE / REQUEST_CHANGES / COMMENT) as the agent.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "owner": { "type": "string", "x-in": "path" },
-        "repo": { "type": "string", "x-in": "path" },
-        "pull_number": { "type": "number", "x-in": "path" },
-        "body": { "type": "object", "description": "{ \"body\": \"<markdown>\", \"event\": \"COMMENT|APPROVE|REQUEST_CHANGES\" }" }
-      },
-      "required": ["owner", "repo", "pull_number", "body"]
-    }
-  },
-  {
-    "name": "pulls.create",
-    "method": "POST",
-    "path": "/repos/{owner}/{repo}/pulls",
-    "description": "Open a pull request (e.g. the stacked thermo-review fix PR).",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "owner": { "type": "string", "x-in": "path" },
-        "repo": { "type": "string", "x-in": "path" },
-        "body": { "type": "object", "description": "{ \"title\", \"head\", \"base\", \"body\" }" }
-      },
-      "required": ["owner", "repo", "body"]
-    }
-  }
-]
+  ]
+}
