@@ -53,8 +53,7 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
-import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
+import { resetClientState } from '@/lib/utils/reset-client-state';
 import { transitionFromElement } from '@/lib/view-transition';
 import { themeOptions, type SettingsTabId } from '@/lib/menu-registry';
 import { SupportDialog } from '@/components/layout/support-dialog';
@@ -140,8 +139,9 @@ export function UserMenu({
     deferAfterClose(async () => {
       const supabase = createClient();
       await supabase.auth.signOut();
-      clearUserLocalStorage();
-      await clearSessionIDBCache();
+      // Wipe the React Query cache + persisted account/sandbox state so the
+      // next account that logs in this browser starts clean (no stale data).
+      await resetClientState();
       router.push('/auth');
     });
 

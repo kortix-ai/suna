@@ -211,7 +211,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
         icon: Sparkles,
         title: 'Want a hand getting started?',
         description:
-          "I'm Marko, founder of Kortix. Book a 30-minute call and I'll set up your company's AI command center with you — end-to-end. Or skip ahead and I'll walk you through it.",
+          "I'm Marko, founder of Kortix. Book a 20-minute call and I'll help set up your company's AI command center with you.",
         done: founderBooked,
         primaryCta: 'Book a call with Marko',
         primaryAction: () => setCalOpen(true),

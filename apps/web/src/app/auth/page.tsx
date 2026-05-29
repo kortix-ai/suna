@@ -23,6 +23,7 @@ import {
   signInWithPassword,
   signUp as signUpWithMagicLink,
   signUpWithPassword,
+  verifyOtp,
 } from './actions';
 import { useAuth } from '@/components/AuthProvider';
 import { Input } from '@/components/ui/input';
@@ -95,6 +96,21 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
   const [pending, setPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  // After a magic-link email is sent, the same email also carries a 6-digit
+  // code. We keep the sent-to address around so the user can paste the code
+  // directly (links sometimes break across mail clients / new tabs).
+  const [sentEmail, setSentEmail] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
+
+  const awaitingCode = method === 'magic' && !!sentEmail;
+
+  const resetTransientState = () => {
+    setErrorMessage(null);
+    setInfo(null);
+    setSentEmail(null);
+    setCode('');
+  };
 
   const enabledProviders = useMemo(() => {
     const raw = getEnv().AUTH_PROVIDERS || '';
@@ -143,6 +159,8 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
 
       if (result && method === 'magic' && (result as any).success) {
         setInfo((result as any).message || 'Check your email for a magic link');
+        setSentEmail((result as any).email || (formData.get('email') as string));
+        setCode('');
         return;
       }
 
@@ -179,6 +197,94 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
     }
   };
 
+  const handleVerifyCode = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!sentEmail || code.length !== 6) return;
+    setErrorMessage(null);
+    setVerifying(true);
+
+    const formData = new FormData();
+    formData.set('email', sentEmail);
+    formData.set('token', code);
+    formData.set('returnUrl', returnUrl);
+
+    try {
+      const result = await verifyOtp(null, formData);
+
+      if (result && (!('success' in result) || !(result as any).success)) {
+        const msg = (result as any).message || 'Invalid or expired code';
+        setErrorMessage(msg);
+        toast.error(msg);
+        return;
+      }
+
+      // Establish the session on the CLIENT immediately so useAuth() sees the
+      // user synchronously and the redirect is instant — without this the
+      // client waits for a background refresh and bounces back to /auth.
+      const tokens = result as { accessToken?: string | null; refreshToken?: string | null };
+      if (tokens.accessToken && tokens.refreshToken) {
+        try {
+          const supabase = createBrowserSupabaseClient();
+          await supabase.auth.setSession({
+            access_token: tokens.accessToken,
+            refresh_token: tokens.refreshToken,
+          });
+          setBootstrapAuthToken(tokens.accessToken);
+          invalidateTokenCache();
+        } catch {
+          // Server cookies still carry the session; fall through to redirect.
+        }
+      }
+
+      const dest = (result as any)?.redirectTo || returnUrl;
+      router.push(dest);
+      router.refresh();
+    } catch (err: any) {
+      if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
+      const msg = err?.message || 'An unexpected error occurred';
+      setErrorMessage(msg);
+      toast.error(msg);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!sentEmail || pending) return;
+    setErrorMessage(null);
+    setInfo(null);
+    setPending(true);
+
+    const formData = new FormData();
+    formData.set('email', sentEmail);
+    formData.set('returnUrl', returnUrl);
+    formData.set('origin', window.location.origin);
+    if (mode === 'signup') formData.set('acceptedTerms', 'true');
+
+    try {
+      const result =
+        mode === 'signup'
+          ? await signUpWithMagicLink(null, formData)
+          : await signInWithMagicLink(null, formData);
+
+      if (result && (result as any).success) {
+        setInfo((result as any).message || 'Check your email for a new link and code');
+        setCode('');
+      } else if (result && 'message' in result) {
+        const msg = (result as any).message as string;
+        setErrorMessage(msg);
+        toast.error(msg);
+      }
+    } catch (err: any) {
+      if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
+      const msg = err?.message || 'An unexpected error occurred';
+      setErrorMessage(msg);
+      toast.error(msg);
+    } finally {
+      setPending(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-sm">
       {/* Tabs */}
@@ -187,8 +293,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           type="button"
           onClick={() => {
             setMode('signin');
-            setErrorMessage(null);
-            setInfo(null);
+            resetTransientState();
           }}
           className={cn(
             'px-5 py-1.5 rounded-full text-sm font-medium transition-colors',
@@ -201,8 +306,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           type="button"
           onClick={() => {
             setMode('signup');
-            setErrorMessage(null);
-            setInfo(null);
+            resetTransientState();
           }}
           className={cn(
             'px-5 py-1.5 rounded-full text-sm font-medium transition-colors',
@@ -221,7 +325,9 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         </h1>
         <p className="text-sm text-foreground/40 mt-0.5">
           {method === 'magic'
-            ? 'We will email you a secure sign-in link'
+            ? awaitingCode
+              ? 'Click the link in your email, or enter the code below'
+              : 'We will email you a secure sign-in link'
             : mode === 'signup'
               ? 'Email and password is all you need'
               : 'Your AI Computer'}
@@ -242,6 +348,54 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         </div>
       )}
 
+      {awaitingCode ? (
+        <div className="space-y-3">
+          <form onSubmit={handleVerifyCode} className="space-y-3">
+            <Input
+              id="otp"
+              name="token"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]*"
+              maxLength={6}
+              placeholder="000000"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="text-center text-lg font-mono tracking-[0.4em]"
+              autoFocus
+              required
+            />
+            <Button
+              type="submit"
+              size="lg"
+              disabled={verifying || code.length !== 6}
+              className="w-full text-sm"
+            >
+              {verifying ? 'Verifying…' : 'Verify code'}
+            </Button>
+          </form>
+
+          <div className="flex items-center justify-center gap-3 text-xs text-foreground/40">
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={pending}
+              className="hover:text-foreground/70 underline-offset-4 hover:underline disabled:opacity-50"
+            >
+              {pending ? 'Resending…' : 'Resend email'}
+            </button>
+            <span className="text-foreground/20">·</span>
+            <button
+              type="button"
+              onClick={resetTransientState}
+              className="hover:text-foreground/70 underline-offset-4 hover:underline"
+            >
+              Use a different email
+            </button>
+          </div>
+        </div>
+      ) : (
+      <>
       <form onSubmit={handleSubmit} className="space-y-3">
         <Input
           id="email"
@@ -303,8 +457,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             type="button"
             onClick={() => {
               setMethod(method === 'magic' ? 'password' : 'magic');
-              setErrorMessage(null);
-              setInfo(null);
+              resetTransientState();
             }}
             className="text-xs text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
           >
@@ -334,6 +487,8 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             className="text-xs text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
           >{tHardcodedUi.raw('appAuthPage.line277JsxTextForgotYourPassword')}</Link>
         </div>
+      )}
+      </>
       )}
     </div>
   );
