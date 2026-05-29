@@ -320,6 +320,12 @@ export function FileContentRenderer({
   const [serverHealth, setServerHealth] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [healthRetryNonce, setHealthRetryNonce] = useState(0);
   const healthRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear the transient "saved" flash timer if we unmount before it fires.
+  useEffect(() => () => {
+    if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!isHtmlFile || !isHtmlPreview || !htmlHealthUrl) return;
@@ -456,7 +462,8 @@ export function FileContentRenderer({
       await refetch();
       setHasUnsavedChanges(false);
       setSaveFlash(true);
-      setTimeout(() => setSaveFlash(false), 2000);
+      if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
+      saveFlashTimerRef.current = setTimeout(() => setSaveFlash(false), 2000);
       onSaved?.();
       toast.success('File saved');
     } catch (err) {
