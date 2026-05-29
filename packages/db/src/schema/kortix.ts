@@ -64,13 +64,6 @@ export const projectSessionStatusEnum = kortixSchema.enum('project_session_statu
   'completed',
 ]);
 
-export const projectSnapshotStatusEnum = kortixSchema.enum('project_snapshot_status', [
-  'queued',
-  'building',
-  'ready',
-  'failed',
-]);
-
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',
@@ -665,31 +658,115 @@ export const sessionSandboxes = kortixSchema.table(
   ],
 );
 
-export const projectRuntimeSnapshots = kortixSchema.table(
-  'project_runtime_snapshots',
+/**
+ * Sandbox templates — the durable identity for "a kind of sandbox a session
+ * can boot from." One row per template; the platform default is a shared row
+ * (project_id NULL, is_shared=true) reused by every project. Per-project
+ * custom templates have project_id set.
+ *
+ * Templates are provider-agnostic: the `provider` column points at which
+ * backend will build the image (`daytona` today; future adapters slot in).
+ * `provider_state` is a cache of the live registry state for the UI — boot
+ * still asks the provider directly, so cache drift is harmless.
+ *
+ * Sources of truth:
+ *   - kortix.toml `[[sandboxes]]` entries → upserted into this table on read
+ *     so TOML stays code-as-truth. The upsert keys on (project_id, slug).
+ *   - UI-created templates → live here only (no TOML), marked source='ui'.
+ *
+ * Built-image identity is content-addressed via `content_hash` (same scheme
+ * as before); `provider_snapshot_name` is what the provider stores it under.
+ */
+export const sandboxTemplates = kortixSchema.table(
+  'sandbox_templates',
   {
-    snapshotRowId: uuid('snapshot_row_id').defaultRandom().primaryKey(),
+    templateId: uuid('template_id').defaultRandom().primaryKey(),
+    /**
+     * Owning project. NULL for the platform-shared default(s), which any
+     * project may boot a session from.
+     */
+    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** Unique per project (or globally for shared templates). User-visible. */
+    slug: text('slug').notNull(),
+    name: text('name').notNull(),
+    /** True iff this is a globally shared template (the platform default). */
+    isShared: boolean('is_shared').default(false).notNull(),
+    /** Where the template came from: 'platform' | 'toml' | 'ui'. */
+    source: text('source').default('toml').notNull(),
+    /** 'daytona' (others to follow). */
+    provider: text('provider').default('daytona').notNull(),
+
+    // ─── Image definition (exactly one of image / dockerfilePath) ──────────
+    /** Public Docker image reference (e.g. python:3.12-slim). */
+    image: text('image'),
+    /** Repo-relative path to a Dockerfile. Mutually exclusive with `image`. */
+    dockerfilePath: text('dockerfile_path'),
+    /** Optional entrypoint override. */
+    entrypoint: text('entrypoint'),
+
+    // ─── Resources ─────────────────────────────────────────────────────────
+    cpu: integer('cpu'),
+    memoryGb: integer('memory_gb'),
+    diskGb: integer('disk_gb'),
+
+    // ─── Live state (cached; provider is source of truth) ──────────────────
+    /** Content hash of the template inputs — the snapshot identity. */
+    contentHash: text('content_hash'),
+    /** Provider-side snapshot name (e.g. `kortix-default-…`, `kortix-tpl-…`). */
+    providerSnapshotName: text('provider_snapshot_name'),
+    /** Last-known provider state: 'active' | 'building' | 'pulling' | 'error' | 'missing'. */
+    providerState: text('provider_state').default('missing').notNull(),
+    /** Last successful build's finishedAt. */
+    lastBuiltAt: timestamp('last_built_at', { withTimezone: true }),
+    /** Last error message (capped). */
+    lastError: text('last_error'),
+
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_sandbox_templates_project').on(table.projectId),
+    index('idx_sandbox_templates_shared').on(table.isShared),
+    uniqueIndex('idx_sandbox_templates_project_slug').on(table.projectId, table.slug),
+  ],
+);
+
+/**
+ * Append-only log of every snapshot build attempt. NOT consulted on session
+ * boot — boot is stateless (asks Daytona directly via the content-addressed
+ * name). The log exists for UI: build history, the failure error string used
+ * by "Fix with agent", and proactive pre-builds tracked by the dashboard.
+ *
+ * Status transitions: 'building' → 'ready' | 'failed'. Never updated after a
+ * terminal state. Drift with Daytona is harmless because nothing reads it on
+ * the hot path.
+ */
+export const projectSnapshotBuilds = kortixSchema.table(
+  'project_snapshot_builds',
+  {
+    buildId: uuid('build_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
     commitSha: text('commit_sha').notNull(),
     branch: text('branch').default('').notNull(),
-    snapshotId: text('snapshot_id'),
-    status: projectSnapshotStatusEnum('status').default('queued').notNull(),
+    snapshotName: text('snapshot_name').notNull(),
+    contentHash: text('content_hash').notNull(),
+    status: text('status').notNull(), // 'building' | 'ready' | 'failed'
     error: text('error'),
+    errorCategory: text('error_category'),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
   },
   (table) => [
-    index('idx_project_runtime_snapshots_project').on(table.projectId),
-    index('idx_project_runtime_snapshots_status').on(table.status),
-    index('idx_project_runtime_snapshots_branch_ready').on(table.projectId, table.branch, table.status, table.createdAt),
-    uniqueIndex('idx_project_runtime_snapshots_commit_provider').on(table.projectId, table.commitSha, table.provider),
+    index('idx_project_snapshot_builds_project_recent').on(table.projectId, table.startedAt.desc()),
+    index('idx_project_snapshot_builds_status').on(table.projectId, table.status, table.startedAt.desc()),
   ],
 );
 
@@ -1101,7 +1178,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   members: many(projectMembers),
   secrets: many(projectSecrets),
   sessions: many(projectSessions),
-  runtimeSnapshots: many(projectRuntimeSnapshots),
 }));
 
 export const projectGitConnectionsRelations = relations(projectGitConnections, ({ one }) => ({
@@ -1155,17 +1231,6 @@ export const projectSessionsRelations = relations(projectSessions, ({ one }) => 
   }),
 }));
 
-export const projectRuntimeSnapshotsRelations = relations(projectRuntimeSnapshots, ({ one }) => ({
-  account: one(accounts, {
-    fields: [projectRuntimeSnapshots.accountId],
-    references: [accounts.accountId],
-  }),
-  project: one(projects, {
-    fields: [projectRuntimeSnapshots.projectId],
-    references: [projects.projectId],
-  }),
-}));
-
 export const sandboxMembersRelations = relations(sandboxMembers, ({ one }) => ({
   sandbox: one(sandboxes, {
     fields: [sandboxMembers.sandboxId],
@@ -1202,7 +1267,6 @@ export const accountsRelations = relations(accounts, ({ many }) => ({
   projectMembers: many(projectMembers),
   projects: many(projects),
   projectSessions: many(projectSessions),
-  projectRuntimeSnapshots: many(projectRuntimeSnapshots),
   sandboxes: many(sandboxes),
   groups: many(accountGroups),
 }));

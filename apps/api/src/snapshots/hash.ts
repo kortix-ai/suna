@@ -103,7 +103,6 @@ function serializeSpec(spec?: SandboxSpec): string {
   if (spec.cpu !== undefined) parts.push(`cpu:${spec.cpu}`);
   if (spec.memory !== undefined) parts.push(`memory:${spec.memory}`);
   if (spec.disk !== undefined) parts.push(`disk:${spec.disk}`);
-  if (spec.gpu !== undefined) parts.push(`gpu:${spec.gpu}`);
   return parts.join(',');
 }
 

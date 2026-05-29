@@ -21,7 +21,7 @@ import {
   accountMembers,
   accountTokens,
   projects,
-  projectRuntimeSnapshots,
+  projectSnapshotBuilds,
   sessionSandboxes,
 } from '@kortix/db';
 import { db } from '../src/shared/db';
@@ -65,11 +65,11 @@ async function main() {
   let projectId = process.env.PROJECT_ID || '';
   if (!projectId) {
     const ready = await db
-      .select({ projectId: projectRuntimeSnapshots.projectId })
-      .from(projectRuntimeSnapshots)
-      .innerJoin(projects, eq(projects.projectId, projectRuntimeSnapshots.projectId))
-      .where(and(eq(projectRuntimeSnapshots.status, 'ready'), eq(projects.accountId, owner.accountId)))
-      .orderBy(desc(projectRuntimeSnapshots.createdAt))
+      .select({ projectId: projectSnapshotBuilds.projectId })
+      .from(projectSnapshotBuilds)
+      .innerJoin(projects, eq(projects.projectId, projectSnapshotBuilds.projectId))
+      .where(and(eq(projectSnapshotBuilds.status, 'ready'), eq(projects.accountId, owner.accountId)))
+      .orderBy(desc(projectSnapshotBuilds.startedAt))
       .limit(1);
     projectId = ready[0]?.projectId || '';
   }

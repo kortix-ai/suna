@@ -1,4 +1,4 @@
-import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, projects, projectGitConnections, projectGitCredentials, projectMembers, projectSecrets, projectSessions, projectRuntimeSnapshots, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatInstalls, chatThreads } from './schema/kortix';
+import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, projects, projectGitConnections, projectGitCredentials, projectMembers, projectSecrets, projectSessions, projectSnapshotBuilds, sandboxTemplates, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatInstalls, chatThreads } from './schema/kortix';
 import { apiKeys, accountUser } from './schema/public';
 
 // Select types (what you get back from queries)
@@ -26,8 +26,10 @@ export type ProjectSecret = typeof projectSecrets.$inferSelect;
 export type NewProjectSecret = typeof projectSecrets.$inferInsert;
 export type ProjectSession = typeof projectSessions.$inferSelect;
 export type NewProjectSession = typeof projectSessions.$inferInsert;
-export type ProjectRuntimeSnapshot = typeof projectRuntimeSnapshots.$inferSelect;
-export type NewProjectRuntimeSnapshot = typeof projectRuntimeSnapshots.$inferInsert;
+export type ProjectSnapshotBuild = typeof projectSnapshotBuilds.$inferSelect;
+export type NewProjectSnapshotBuild = typeof projectSnapshotBuilds.$inferInsert;
+export type SandboxTemplate = typeof sandboxTemplates.$inferSelect;
+export type NewSandboxTemplate = typeof sandboxTemplates.$inferInsert;
 export type SessionSandbox = typeof sessionSandboxes.$inferSelect;
 export type NewSessionSandbox = typeof sessionSandboxes.$inferInsert;
 export type LegacySandboxMigration = typeof legacySandboxMigrations.$inferSelect;

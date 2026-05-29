@@ -30,11 +30,11 @@ import {
   SANDBOX_INIT_MAX_ATTEMPTS,
 } from './sandbox-init-state';
 import {
-  ensureBuildForLatestCommit,
-  getLatestReadySnapshot,
-  getReadySnapshotForCommit,
-  getSnapshotForCommit,
-  invalidateSnapshotIfMissingOnProvider,
+  ensureSandboxImage,
+  deleteSandboxImage,
+  resolveTemplate,
+  DEFAULT_SANDBOX_SLUG,
+  type EnsureSandboxImageResult,
 } from '../../snapshots/builder';
 import { config } from '../../config';
 import { ProvisionTimeline } from './provision-timeline';
@@ -44,7 +44,6 @@ import { resolveYoloTokenForMember } from '../../billing/services/yolo-tokens';
 import { getCreditAccount } from '../../billing/repositories/credit-accounts';
 import { isPerSeatAccount } from '../../billing/services/tiers';
 import { readManifest } from '../../projects/triggers';
-import { extractSandboxSpec } from '../../snapshots/dockerfile-layer';
 
 // Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
 // Mirrors a sensible Daytona default (1 vCPU / 2 GB / 10 GB).
@@ -55,18 +54,17 @@ async function openComputeSessionForSandbox(
   accountId: string,
   project: GitBackedProject,
   userId: string | null | undefined,
+  sandboxSlug: string | undefined,
 ): Promise<void> {
   let spec = { ...DEFAULT_METERING_SPEC };
   try {
-    const manifest = await readManifest(project);
-    const declared = extractSandboxSpec(manifest?.raw ?? null);
-    if (declared.cpu !== undefined) spec.cpuCores = declared.cpu;
-    if (declared.memory !== undefined) spec.memoryGb = declared.memory;
-    if (declared.disk !== undefined) spec.diskGb = declared.disk;
-    if (declared.gpu !== undefined) spec.gpuCount = declared.gpu;
+    const tpl = await resolveTemplate(project, sandboxSlug);
+    if (tpl.cpu !== undefined) spec.cpuCores = tpl.cpu;
+    if (tpl.memoryGb !== undefined) spec.memoryGb = tpl.memoryGb;
+    if (tpl.diskGb !== undefined) spec.diskGb = tpl.diskGb;
   } catch {
-    // Manifest read failed (repo unreachable, parse error, etc.). Fall back
-    // to defaults so metering still records the session.
+    // Template resolution failed (repo unreachable, parse error, etc.). Fall
+    // back to defaults so metering still records the session.
   }
   await startComputeSession({
     sandboxId,
@@ -77,132 +75,20 @@ async function openComputeSessionForSandbox(
   });
 }
 
-const DEFAULT_SNAPSHOT_READY_WAIT_MS = 10 * 60 * 1000;
-const DEFAULT_SNAPSHOT_READY_POLL_MS = 5 * 1000;
-/**
- * How long to prefer the *exact* tip commit's image before degrading to the
- * most recent healthy snapshot. With proactive pre-build the tip is usually
- * already ready, so this only matters when a session starts seconds after a
- * push: we give the fresh build a brief head start, then fall back so the
- * session never blocks on a cold build.
- */
-const DEFAULT_SNAPSHOT_DEGRADE_GRACE_MS = 45 * 1000;
-
 export interface ProvisionSessionSandboxResult {
   row: typeof sessionSandboxes.$inferSelect;
   created: boolean;
 }
 
-function snapshotReadyWaitMs(): number {
-  const raw = Number(process.env.KORTIX_SESSION_SNAPSHOT_READY_WAIT_MS);
-  return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_SNAPSHOT_READY_WAIT_MS;
-}
-
-function snapshotReadyPollMs(waitMs: number): number {
-  const raw = Number(process.env.KORTIX_SESSION_SNAPSHOT_READY_POLL_MS);
-  const configured = Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_SNAPSHOT_READY_POLL_MS;
-  return Math.max(50, Math.min(configured, Math.max(waitMs, 50)));
-}
-
-function snapshotDegradeGraceMs(waitMs: number): number {
-  const raw = Number(process.env.KORTIX_SESSION_SNAPSHOT_DEGRADE_GRACE_MS);
-  const configured = Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_SNAPSHOT_DEGRADE_GRACE_MS;
-  // Grace can never exceed the overall wait budget.
-  return Math.min(configured, waitMs);
-}
-
 /**
- * Resolve the snapshot a session should boot from, with graceful degradation:
- *
- *   1. Prefer the exact tip commit's image when it's ready.
- *   2. If the tip build has *failed*, immediately degrade to the most recent
- *      healthy snapshot; a broken newest commit must not take the project
- *      down when older images are still good.
- *   3. While the tip is still building, give it a short grace window, then
- *      degrade to the latest healthy snapshot rather than block the session.
- *   4. Only return null (session fails with "still building") when there is
- *      genuinely *no* healthy snapshot to fall back to: the true cold-start
- *      first-build case, where there's nothing else to boot.
- *
- * There is NO env/base-image fallback here: degradation only ever picks
- * another *ready project snapshot*.
- */
-async function waitForLatestReadySnapshot(
-  projectId: string,
-  branch: string,
-  providerName: ProviderName,
-  commitSha?: string,
-): Promise<NonNullable<Awaited<ReturnType<typeof getLatestReadySnapshot>>> | null> {
-  const waitMs = snapshotReadyWaitMs();
-  const start = Date.now();
-  const deadline = start + waitMs;
-  const maxPollMs = snapshotReadyPollMs(waitMs);
-  const graceMs = snapshotDegradeGraceMs(waitMs);
-
-  let attempt = 0;
-  for (;;) {
-    if (commitSha) {
-      const readyForCommit = await getReadySnapshotForCommit(projectId, commitSha, providerName);
-      if (readyForCommit?.snapshotId) return readyForCommit;
-    }
-    // The freshest healthy snapshot we could degrade to. (When the tip commit
-    // is ready we already returned above, so this is an older image here.)
-    const fallback = await getLatestReadySnapshot(projectId, branch, providerName);
-
-    if (commitSha) {
-      const attempted = await getSnapshotForCommit(projectId, commitSha, providerName);
-      if (attempted?.status === 'failed') {
-        // Newest commit can't build — degrade to a healthy image if we have one.
-        if (fallback?.snapshotId) return fallback;
-        throw new Error(
-          attempted.error
-            ? `Project sandbox build failed: ${attempted.error}`
-            : `Project sandbox build failed for commit ${commitSha.slice(0, 8)}`,
-        );
-      }
-      // Tip still building/queued/absent: prefer it during the grace window,
-      // then degrade to the latest healthy snapshot instead of blocking.
-      if (fallback?.snapshotId && Date.now() - start >= graceMs) return fallback;
-    } else if (fallback?.snapshotId) {
-      // No specific commit requested — any healthy snapshot is fine immediately.
-      return fallback;
-    }
-
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) {
-      // Out of time: degrade to any healthy snapshot before giving up entirely.
-      if (fallback?.snapshotId) return fallback;
-      return null;
-    }
-    // Ramp the poll: a content-hash cache hit becomes ready in ~3-5s, so start
-    // tight (500ms) and back off to the configured max instead of waiting a
-    // flat 5s step and adding dead time to the common warm path.
-    const rampMs = Math.min(maxPollMs, 500 * 2 ** Math.min(attempt, 4));
-    attempt++;
-    await new Promise((resolve) => setTimeout(resolve, Math.min(rampMs, remaining)));
-  }
-}
-
-/**
- * Detects the DB↔provider divergence where our row says the snapshot is ready
- * but the provider's create() call comes back saying it doesn't have one. Seen
- * with Daytona returning 400/404 ("Snapshot ... not found. Did you add it
- * through the Daytona Dashboard?") after a row was marked ready but the
- * underlying image was purged / never finished server-side. Triggering this
- * marks the row failed so the next session start rebuilds from scratch.
+ * Daytona occasionally drops an image between when we resolved it and when we
+ * tried to boot from it — `snapshot.get` says active, then `sandbox.create`
+ * says missing. Detect that one specific race so we can rebuild and retry once.
  */
 function isSnapshotMissingOnProvider(error: unknown): boolean {
   const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
   if (!message.includes('snapshot')) return false;
-  if (message.includes('not found')) return true;
-  if (message.includes('does not exist')) return true;
-  return false;
-}
-
-function stringMetadataValue(metadata: unknown, key: string): string | null {
-  if (!metadata || typeof metadata !== 'object') return null;
-  const value = (metadata as Record<string, unknown>)[key];
-  return typeof value === 'string' ? value : null;
+  return message.includes('not found') || message.includes('does not exist');
 }
 
 export async function provisionSessionSandbox(opts: {
@@ -221,19 +107,19 @@ export async function provisionSessionSandbox(opts: {
    */
   extraEnvVars?: Record<string, string>;
   /**
-   * Project + ref the session boots against. Required: every session
-   * sandbox boots from the project's own per-project snapshot
-   * (`kortix-snap-…`). There is no shared platform-wide fallback — if
-   * no `ready` snapshot exists yet for the project's default branch,
-   * the session fails with a clear "still building" error. See
-   * apps/api/src/snapshots/builder.ts.
-   *
-   * `baseRef` is used to pick the *branch* whose latest ready snapshot
-   * we boot from; when omitted, defaults to `gitProject.defaultBranch`.
+   * Project + ref the session boots against. The boot path resolves the
+   * commit SHA for `baseRef` and asks the snapshot builder for the matching
+   * Daytona image — building inline if it doesn't exist yet. When `baseRef`
+   * is omitted, defaults to `gitProject.defaultBranch`.
    */
   gitProject: GitBackedProject;
   resolveGitAuthToken?: () => Promise<string | null>;
   baseRef?: string;
+  /**
+   * Slug of the sandbox template to boot from. Resolves against the project's
+   * `[[sandboxes]]` entries. Empty/undefined → platform default.
+   */
+  sandboxSlug?: string;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
   // Resolution order:
@@ -244,73 +130,100 @@ export async function provisionSessionSandbox(opts: {
   const provider = getProvider(providerName);
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
-  const [sandbox] = await db
-    .insert(sessionSandboxes)
-    .values({
-      sandboxId,
-      sessionId: sandboxId,
+  const slug = (opts.sandboxSlug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
+  // Resolve the project + a fresh git auth token (the snapshot builder may need
+  // it to read the repo's Dockerfile when building a custom template).
+  const resolveGitProject = async (): Promise<GitBackedProject> => {
+    if (!opts.resolveGitAuthToken) return opts.gitProject;
+    const token = await opts.resolveGitAuthToken();
+    return { ...opts.gitProject, gitAuthToken: token };
+  };
+
+  // Kick image resolution off NOW, in parallel with the token round-trip below.
+  // The snapshot identity + provider cache-check depend only on the repo
+  // contents — never on the freshly-minted session tokens — so there is no
+  // reason to wait for the tokens before asking the provider whether the image
+  // already exists. On the warm path this overlaps the ~200ms token round-trip
+  // with the ~100-300ms cache-check, taking the smaller off the critical path.
+  type FirstImage = EnsureSandboxImageResult & { gitProject: GitBackedProject };
+  let firstImagePromise: Promise<FirstImage> | null = (async () => {
+    const gitProject = await resolveGitProject();
+    const image = await ensureSandboxImage(gitProject, {
+      slug,
       accountId,
-      projectId,
-      provider: providerName,
-      externalId: null,
-      status: 'provisioning',
-      baseUrl: null,
-      config: {},
-      metadata: {
-        // Session sandboxes are immutable per-session, so no autoUpdate
-        // policy is recorded — the legacy auto-update loop is gone.
-        ...(opts.metadata ?? {}),
-        initStatus: 'pending',
-        initAttempts: 0,
-        initMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
-        healthStatus: 'unknown',
-      },
-    })
-    .returning();
-  tl.mark('sandbox-row');
+      source: 'session-start',
+    });
+    return { ...image, gitProject };
+  })();
+  // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
+  // when it awaits the promise.
+  firstImagePromise.catch(() => {});
 
-  const sandboxKey = await createApiKey({
-    sandboxId: sandbox.sandboxId,
-    accountId,
-    title: 'Sandbox Token',
-    type: 'sandbox',
-  });
-
-  // Executor token — acts AS the launching user, scoped to this project, so the
-  // Executor gateway enforces that user's connector sharing/policies. Resolved
-  // server-side; the sandbox never holds any third-party credential.
-  let executorToken: string | null = null;
-  try {
-    const tok = await createAccountToken({
+  // Sandbox-row insert + tokens + credit lookup all run in parallel. None of
+  // them depend on the others — `sandboxId` is known up front, so even the
+  // sandbox API key can be minted before the row lands. Previously serial
+  // (~100ms each on a warm DB), now ~one round-trip total.
+  const sandboxName = `session-${sandboxId.slice(0, 8)}`;
+  const [sandboxRows, sandboxKey, executorToken, llmApiKey] = await Promise.all([
+    db
+      .insert(sessionSandboxes)
+      .values({
+        sandboxId,
+        sessionId: sandboxId,
+        accountId,
+        projectId,
+        provider: providerName,
+        externalId: null,
+        status: 'provisioning',
+        baseUrl: null,
+        config: {},
+        metadata: {
+          ...(opts.metadata ?? {}),
+          initStatus: 'pending',
+          initAttempts: 0,
+          initMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
+          healthStatus: 'unknown',
+        },
+      })
+      .returning(),
+    createApiKey({
+      sandboxId,
+      accountId,
+      title: 'Sandbox Token',
+      type: 'sandbox',
+    }),
+    createAccountToken({
       accountId,
       userId,
       projectId,
       name: `Executor Session ${sandboxId.slice(0, 8)}`,
-    });
-    executorToken = tok.secretKey;
-  } catch (err) {
-    console.warn(`[session-sandbox] failed to mint executor token for ${projectId}:`, err);
-  }
-  tl.mark('tokens');
-
-  const sandboxName = `session-${sandboxId.slice(0, 8)}`;
-
-  let llmApiKey: string | null = null;
-  try {
-    const account = await getCreditAccount(accountId);
-    const hasActiveSub =
-      !!account?.stripeSubscriptionId &&
-      account.stripeSubscriptionStatus !== 'canceled' &&
-      account.stripeSubscriptionStatus !== 'unpaid';
-    if (isPerSeatAccount(account?.billingModel) && hasActiveSub && userId) {
-      llmApiKey = await resolveYoloTokenForMember(userId, accountId);
-    }
-  } catch (err) {
-    console.warn(
-      `[session-sandbox] failed to resolve LLM gateway token for ${userId}@${accountId}:`,
-      err instanceof Error ? err.message : String(err),
-    );
-  }
+    })
+      .then((tok) => tok.secretKey)
+      .catch((err) => {
+        console.warn(`[session-sandbox] failed to mint executor token for ${projectId}:`, err);
+        return null as string | null;
+      }),
+    getCreditAccount(accountId)
+      .then(async (account) => {
+        const hasActiveSub =
+          !!account?.stripeSubscriptionId &&
+          account.stripeSubscriptionStatus !== 'canceled' &&
+          account.stripeSubscriptionStatus !== 'unpaid';
+        if (isPerSeatAccount(account?.billingModel) && hasActiveSub && userId) {
+          return resolveYoloTokenForMember(userId, accountId);
+        }
+        return null as string | null;
+      })
+      .catch((err) => {
+        console.warn(
+          `[session-sandbox] failed to resolve LLM gateway token for ${userId}@${accountId}:`,
+          err instanceof Error ? err.message : String(err),
+        );
+        return null as string | null;
+      }),
+  ]);
+  const [sandbox] = sandboxRows;
+  tl.mark('row+tokens');
 
   const llmBaseUrl = `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/llm`;
 
@@ -323,7 +236,15 @@ export async function provisionSessionSandbox(opts: {
     envVars: {
       ...(opts.extraEnvVars ?? {}),
       KORTIX_TOKEN: sandboxKey.secretKey,
-      ...(executorToken ? { KORTIX_EXECUTOR_TOKEN: executorToken } : {}),
+      // The project-scoped PAT does double duty: it backs the executor MCP
+      // gateway AND the in-sandbox `kortix` CLI. KORTIX_TOKEN (the sandbox
+      // service key) is rejected by the project-scoped routes the CLI hits
+      // (change-requests, secrets, …) — only this account token authenticates
+      // there. Inject it under KORTIX_CLI_TOKEN so `kortix …` is pre-authed
+      // with zero setup; see apps/cli/src/api/config.ts (activeHost()).
+      ...(executorToken
+        ? { KORTIX_EXECUTOR_TOKEN: executorToken, KORTIX_CLI_TOKEN: executorToken }
+        : {}),
       ...(llmApiKey
         ? {
             KORTIX_LLM_API_KEY: llmApiKey,
@@ -339,109 +260,45 @@ export async function provisionSessionSandbox(opts: {
   // and the dashboard's ConnectingScreen handles the long tail.
   void (async () => {
     let bgExternalId: string | null = null;
-    let latest: Awaited<ReturnType<typeof getLatestReadySnapshot>> = null;
-    // Auto-heal flag: on the first sandbox.create failure caused by a stale
-    // snapshot row pointing at a Daytona image that's gone, we invalidate the
-    // row and retry the whole provisioning once. Without this, the FIRST
-    // session to hit a stale row surfaces an ugly "Snapshot ... not found"
-    // error to the user — see [[project_snapshot_simplified_2026_05_28]].
+    // Single retry hook: if Daytona's sandbox.create races a snapshot deletion
+    // and reports "not found", we rebuild and retry once. More than once means
+    // something is genuinely broken — surface the error.
     let healedStaleSnapshot = false;
+    let imageInfo: { snapshotName: string; slug: string; contentHash: string; isDefault: boolean } | null = null;
     provisioning: while (true) {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
-      let gitProject = opts.gitProject;
-      latest = await getLatestReadySnapshot(opts.gitProject.projectId, branch, providerName);
-      let build: Awaited<ReturnType<typeof ensureBuildForLatestCommit>> | null = null;
 
-      if (latest?.snapshotId) {
-        tl.mark('snapshot-ready:cached');
-        const freshnessProject = opts.resolveGitAuthToken
-          ? opts.resolveGitAuthToken().then((token) => ({ ...opts.gitProject, gitAuthToken: token }))
-          : Promise.resolve(opts.gitProject);
-        void freshnessProject
-          .then((project) =>
-            ensureBuildForLatestCommit(project, {
-              branch,
-              accountId,
-              provider: providerName,
-              source: 'session-start',
-            }),
-          )
-          .catch((err) =>
-            console.warn(
-              `[session-sandbox] background tip snapshot check failed for ${opts.gitProject.projectId}:`,
-              err,
-            ),
-          );
-      } else if (opts.resolveGitAuthToken) {
-        const token = await opts.resolveGitAuthToken();
-        gitProject = { ...opts.gitProject, gitAuthToken: token };
-      }
-
-      // Snapshot resolution policy:
-      //   1. Ask the builder for the current tip of the requested ref. If
-      //      that commit is already ready, boot it immediately. If another
-      //      ref built the same commit, this still works because we resolve
-      //      by commit/provider instead of branch/provider only.
-      //   2. If the current tip is building or was just queued, keep this
-      //      provisioning worker alive until that commit has a ready image.
-      //   3. Only use latest-ready-by-branch as a compatibility fallback
-      //      when the builder cannot return a commit SHA. We do not boot an
-      //      older branch image while a newer current-tip build is pending.
-      //
-      // There is NO shared DAYTONA_SNAPSHOT fallback — every sandbox boots
-      // from its project's own image.
-      if (!latest?.snapshotId) {
-        build = await ensureBuildForLatestCommit(gitProject, {
-          branch,
+      // Stateless image resolution: ask Daytona if it has the image; build if not.
+      // No DB lookup, no degraded fallback — the snapshot is either there or we
+      // build it inline. The build log captures the attempt for the dashboard;
+      // it is never read on this path. The first attempt consumes the promise we
+      // kicked off in parallel with the token round-trip; heal-retries re-resolve
+      // from scratch (the prior snapshot was just deleted).
+      let image: EnsureSandboxImageResult;
+      if (firstImagePromise) {
+        image = await firstImagePromise;
+        firstImagePromise = null;
+      } else {
+        const gitProject = await resolveGitProject();
+        image = await ensureSandboxImage(gitProject, {
+          slug,
           accountId,
-          provider: providerName,
           source: 'session-start',
         });
-        if (build.status === 'failed-to-start') {
-          throw new Error(`Project sandbox build failed to start: ${build.error ?? 'unknown error'}`);
-        }
-        tl.mark(`ensure-build:${build.status}`);
-
-        latest = build.commitSha
-          ? await getReadySnapshotForCommit(opts.gitProject.projectId, build.commitSha, providerName)
-          : null;
-
-        if (!latest?.snapshotId && build.commitSha) {
-          latest = await waitForLatestReadySnapshot(
-            opts.gitProject.projectId,
-            branch,
-            providerName,
-            build.commitSha,
-          );
-        } else if (!build.commitSha) {
-          latest = await waitForLatestReadySnapshot(
-            opts.gitProject.projectId,
-            branch,
-            providerName,
-          );
-        }
       }
-
-      if (!latest?.snapshotId) {
-        throw new Error(
-          `Project sandbox is still building. ` +
-          `This is a one-time setup that runs the first time a project is created (or after every failed build is retried). ` +
-          `Please retry in ~1 minute.`,
-        );
-      }
-      // Degraded boot: the tip commit's image wasn't usable (failed or still
-      // building past the grace window), so we booted the most recent healthy
-      // snapshot instead. Recorded so the UI can show "running an older
-      // snapshot" rather than silently serving stale code.
-      const headCommitSha = build?.commitSha ?? null;
-      const bootedDegraded = !!(headCommitSha && latest.commitSha !== headCommitSha);
-      tl.mark('snapshot-ready');
-      providerCreateInput.snapshot = latest.snapshotId;
+      imageInfo = {
+        snapshotName: image.snapshotName,
+        slug: image.slug,
+        contentHash: image.contentHash,
+        isDefault: image.isDefault,
+      };
+      tl.mark(image.built ? 'image-built' : 'image-cached');
+      providerCreateInput.snapshot = image.snapshotName;
       console.log(
-        `[session-sandbox] Booting ${sandbox.sandboxId} from ${latest.snapshotId} ` +
-        `(commit ${latest.commitSha.slice(0, 8)}, branch ${branch}` +
-        `${bootedDegraded ? `, DEGRADED - tip ${headCommitSha?.slice(0, 8)} not ready` : ''})`,
+        `[session-sandbox] Booting ${sandbox.sandboxId} from ${image.snapshotName} ` +
+        `(template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}, ` +
+        `branch ${branch}, ${image.built ? 'fresh build' : 'cache hit'})`,
       );
 
       const firstStage = provider.provisioning.stages[0];
@@ -508,7 +365,7 @@ export async function provisionSessionSandbox(opts: {
           })
           .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
         tl.mark('row-stopped-before-active');
-        tl.log({ provider: providerName, degraded: bootedDegraded, attempts, stoppedBeforeActive: true });
+        tl.log({ provider: providerName, attempts, stoppedBeforeActive: true });
         return;
       }
 
@@ -527,16 +384,12 @@ export async function provisionSessionSandbox(opts: {
             daytonaSandboxId: result.externalId,
             runtimeArtifact: {
               artifactType: providerName === 'daytona' ? 'daytona_snapshot' : 'unknown',
-              providerArtifactRef: latest.snapshotId,
-              snapshotRowId: latest.snapshotRowId,
-              contentHash: stringMetadataValue(latest.metadata, 'contentHash'),
-              shortHash: stringMetadataValue(latest.metadata, 'shortHash'),
-              runtimeFingerprint: stringMetadataValue(latest.metadata, 'runtimeFingerprint'),
-              commitSha: latest.commitSha,
+              providerArtifactRef: imageInfo!.snapshotName,
+              contentHash: imageInfo!.contentHash,
+              sandboxSlug: imageInfo!.slug,
+              isPlatformDefault: imageInfo!.isDefault,
               branch,
               provider: providerName,
-              degraded: bootedDegraded,
-              headCommitSha,
             },
           },
           attempts,
@@ -573,11 +426,11 @@ export async function provisionSessionSandbox(opts: {
         .catch(() => {});
 
       tl.mark('row-active');
-      tl.log({ provider: providerName, degraded: bootedDegraded, attempts });
+      tl.log({ provider: providerName, attempts });
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
       // Spec is resolved from the project manifest with provider-default fallbacks.
-      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId).catch(
+      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId, imageInfo?.slug).catch(
         (err) =>
           console.warn(
             `[session-sandbox] failed to open compute metering for ${sandbox.sandboxId}:`,
@@ -586,27 +439,19 @@ export async function provisionSessionSandbox(opts: {
       );
       break provisioning;
     } catch (bgErr) {
-      // Auto-heal: a stale `ready` row pointed at a Daytona image that's gone.
-      // Mark the row failed, clean up the partial provider resource, then retry
-      // the whole provisioning. The retry's `getLatestReadySnapshot` will skip
-      // the now-failed row and either pick a different ready snapshot or fall
-      // through to `ensureBuildForLatestCommit` + wait for a fresh build.
-      // Capped at 1 heal per session start so a real broken-build doesn't loop.
-      if (
-        isSnapshotMissingOnProvider(bgErr) &&
-        latest?.snapshotRowId &&
-        !healedStaleSnapshot
-      ) {
+      // Daytona dropped the image between resolve and create. Force a rebuild
+      // (delete the snapshot so the next ensureSandboxImage call rebuilds it)
+      // and retry once. Capped at one heal per session start.
+      if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
-        await invalidateSnapshotIfMissingOnProvider(
-          latest.snapshotRowId,
-          latest.snapshotId,
-          providerName,
-          `${providerName}.sandbox.create reported snapshot ${latest.snapshotId ?? '<unknown>'} missing`,
+        await deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug }).catch((err) =>
+          console.warn(
+            `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,
+            err,
+          ),
         );
         console.warn(
-          `[session-sandbox] auto-healing stale snapshot row ${latest.snapshotRowId} ` +
-          `(${latest.snapshotId}) for session ${sandbox.sandboxId} — retrying`,
+          `[session-sandbox] healing missing image ${imageInfo.snapshotName} for ${sandbox.sandboxId} — retrying`,
         );
         if (bgExternalId) {
           await provider.remove(bgExternalId).catch((cleanupErr) =>
@@ -614,12 +459,27 @@ export async function provisionSessionSandbox(opts: {
           );
           bgExternalId = null;
         }
-        latest = null;
+        imageInfo = null;
         continue provisioning;
       }
 
-      console.error(`[session-sandbox] Background provisioning failed for ${sandbox.sandboxId}:`, bgErr);
       const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);
+      // Provider-capacity errors (Daytona "No available runners", rate limits)
+      // are transient outages, not session failures. Log them as a warning so
+      // they don't read as code bugs in the console, and present a friendly
+      // message to the user instead of the SDK stack trace.
+      const isCapacity = /no available runner|no runners available|out of capacity|capacity exceeded|rate ?limit|too many requests/i.test(bgMessage);
+      const userMessage = isCapacity
+        ? 'The sandbox provider is at capacity right now. Try again in a minute.'
+        : `Provisioning failed via ${providerName}.`;
+      if (isCapacity) {
+        console.warn(
+          `[session-sandbox] provider at capacity for ${sandbox.sandboxId} after retries — bouncing session:`,
+          bgMessage.slice(0, 200),
+        );
+      } else {
+        console.error(`[session-sandbox] Background provisioning failed for ${sandbox.sandboxId}:`, bgErr);
+      }
 
       if (bgExternalId) {
         try {
@@ -641,15 +501,16 @@ export async function provisionSessionSandbox(opts: {
                 SANDBOX_INIT_MAX_ATTEMPTS,
                 false,
               ),
-              errorMessage: `Provisioning failed via ${providerName}.`,
+              errorMessage: userMessage,
               lastProvisioningError: bgMessage.slice(0, 500),
+              ...(isCapacity ? { failureCategory: 'provider-capacity' as const } : {}),
             },
             updatedAt: new Date(),
           })
           .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
         await db
           .update(projectSessions)
-          .set({ status: 'failed', error: bgMessage.slice(0, 500), updatedAt: new Date() })
+          .set({ status: 'failed', error: userMessage, updatedAt: new Date() })
           .where(eq(projectSessions.sessionId, sandbox.sandboxId))
           .catch(() => {});
       } catch (markErr) {
