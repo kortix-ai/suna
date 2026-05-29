@@ -26,7 +26,15 @@ export interface AppBuild {
   out_dir: string | null;
 }
 
-export type DeploymentStatus = 'pending' | 'active' | 'failed' | 'stopped';
+// Mirrors the `deployment_status` DB enum. `pending`/`building`/`deploying`
+// are in-progress; `active`/`failed`/`stopped` are terminal.
+export type DeploymentStatus =
+  | 'pending'
+  | 'building'
+  | 'deploying'
+  | 'active'
+  | 'failed'
+  | 'stopped';
 
 export interface ProjectAppDeploymentRow {
   deployment_id: string;
