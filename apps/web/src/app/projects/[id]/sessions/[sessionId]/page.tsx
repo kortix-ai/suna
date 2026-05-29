@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
@@ -15,11 +15,9 @@ import { ProjectShell } from '@/components/projects/project-shell';
 import { Button } from '@/components/ui/button';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
 import {
-  getProjectSession,
   getProjectSessionSandbox,
   restartProjectSession,
   syncOpencodeSessionData,
-  updateProjectSession,
   wakeProjectSession,
 } from '@/lib/projects-client';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
@@ -31,9 +29,9 @@ import {
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { switchToSessionSandboxAsync, useServerStore } from '@/stores/server-store';
 import {
-  useCreateOpenCodeSession,
-  useOpenCodeSessions,
-} from '@/hooks/opencode/use-opencode-sessions';
+  clearCanonicalCreateGuard,
+  useCanonicalOpenCodeSession,
+} from '@/hooks/opencode/use-canonical-opencode-session';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 
 /**
@@ -249,22 +247,28 @@ function ActiveSessionChat({
     (s) => s.status === 'connected' && s.healthy === true,
   );
   const runtimeBootError = useSandboxConnectionStore((s) => s.runtimeError);
-  const sessionsQuery = useOpenCodeSessions();
-  const createMutation = useCreateOpenCodeSession();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const createdRef = useRef(false);
-  const projectSessionQuery = useQuery({
-    queryKey: ['project-session', projectId, sessionId],
-    queryFn: () => getProjectSession(projectId, sessionId),
-    enabled: !!projectId && !!sessionId,
-    staleTime: 10_000,
-  });
+
+  // Canonical OpenCode-session ↔ Kortix-session mapping: honors the persisted
+  // pin while it still exists, deterministically adopts the oldest root when it
+  // doesn't, creates at most one root per sandbox, and self-heals the pin. See
+  // use-canonical-opencode-session.ts for the full invariant.
+  const {
+    rootSessionId,
+    sessions: opencodeSessions,
+    isLoading: sessionsLoading,
+    listed: sessionsListed,
+    error: runtimeError,
+  } = useCanonicalOpenCodeSession({ projectId, sessionId });
+
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId, sessionId),
     onSuccess: () => {
-      createdRef.current = false;
+      // Restart tears down the runtime: re-enable the one-shot create for the
+      // (new) sandbox and drop the now-stale OpenCode caches.
+      clearCanonicalCreateGuard();
       queryClient.removeQueries({ queryKey: ['opencode'] });
       queryClient.invalidateQueries({
         queryKey: ['project', 'session-sandbox', projectId, sessionId],
@@ -273,54 +277,21 @@ function ActiveSessionChat({
     },
   });
 
-  // Once OpenCode is reachable and we've confirmed there are zero sessions,
-  // kick off a single create — guarded so React-strict-mode + refocus
-  // re-renders never race two creates.
-  useEffect(() => {
-    if (!runtimeReady) return;
-    if (sessionsQuery.isLoading) return;
-    if (sessionsQuery.isError) return;
-    if (createdRef.current) return;
-    const sessions = sessionsQuery.data ?? [];
-    if (sessions.length > 0) return;
-    createdRef.current = true;
-    createMutation.mutate({ directory: '/workspace' });
-  }, [
-    runtimeReady,
-    sessionsQuery.isLoading,
-    sessionsQuery.isError,
-    sessionsQuery.data,
-    createMutation,
-  ]);
-
-  const opencodeSessions = useMemo(
-    () => sessionsQuery.data ?? [],
-    [sessionsQuery.data],
-  );
-  const rootOpenCodeSessionId = projectSessionQuery.data?.opencode_session_id ?? null;
+  // Explicit ?oc= navigation targets a specific (often sub-) session and
+  // overrides the canonical root; otherwise we render the pinned/healed root.
   const selectedOpenCodeSessionId = searchParams.get('oc');
   const selectedSession = selectedOpenCodeSessionId
     ? opencodeSessions.find((session) => session.id === selectedOpenCodeSessionId)
     : null;
-  const rootSession = rootOpenCodeSessionId
-    ? opencodeSessions.find((session) => session.id === rootOpenCodeSessionId)
-    : null;
-  const firstRootSession =
-    opencodeSessions.find((session) => !session.parentID) ?? opencodeSessions[0] ?? null;
-  const chatSessionId =
-    selectedSession?.id ??
-    rootSession?.id ??
-    createMutation.data?.id ??
-    firstRootSession?.id ??
-    null;
+  const chatSessionId = selectedSession?.id ?? rootSessionId ?? null;
 
   // ── Readiness benchmarking marks ───────────────────────────────────────
   useEffect(() => {
     if (runtimeReady) sessionMark(sessionId, 'runtime-ready');
   }, [runtimeReady, sessionId]);
   useEffect(() => {
-    if (sessionsQuery.data) sessionMark(sessionId, 'opencode-listed');
-  }, [sessionsQuery.data, sessionId]);
+    if (sessionsListed) sessionMark(sessionId, 'opencode-listed');
+  }, [sessionsListed, sessionId]);
   useEffect(() => {
     if (!chatSessionId) return;
     sessionMark(sessionId, 'chat-ready');
@@ -331,22 +302,9 @@ function ActiveSessionChat({
   }, [chatSessionId, sessionId, projectId, queryClient]);
 
   useEffect(() => {
-    if (!chatSessionId) return;
-    if (rootOpenCodeSessionId) return;
-    const session = opencodeSessions.find((candidate) => candidate.id === chatSessionId);
-    if (session?.parentID) return;
-    void updateProjectSession(projectId, sessionId, {
-      opencode_session_id: chatSessionId,
-    }).then((updated) => {
-      queryClient.setQueryData(['project-session', projectId, sessionId], updated);
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-    }).catch(() => {});
-  }, [chatSessionId, projectId, sessionId, rootOpenCodeSessionId, opencodeSessions, queryClient]);
-
-  useEffect(() => {
     if (!selectedOpenCodeSessionId) return;
     if (selectedSession) return;
-    if (sessionsQuery.isLoading) return;
+    if (sessionsLoading) return;
     const params = new URLSearchParams(searchParams.toString());
     params.delete('oc');
     const query = params.toString();
@@ -359,7 +317,7 @@ function ActiveSessionChat({
   }, [
     selectedOpenCodeSessionId,
     selectedSession,
-    sessionsQuery.isLoading,
+    sessionsLoading,
     searchParams,
     router,
     projectId,
@@ -371,7 +329,7 @@ function ActiveSessionChat({
   // project sidebar and session list render sub-sessions without guessing.
   // Must run BEFORE any conditional return — otherwise the runtimeError branch
   // below would skip this hook and trigger "rendered fewer hooks than expected".
-  const activeSession = (sessionsQuery.data ?? []).find((s) => s.id === chatSessionId);
+  const activeSession = opencodeSessions.find((s) => s.id === chatSessionId);
   const activeTitle = activeSession?.title || null;
   useEffect(() => {
     if (opencodeSessions.length === 0) return;
@@ -411,7 +369,6 @@ function ActiveSessionChat({
     sessionStorage.removeItem(key);
   }, [chatSessionId, sessionId]);
 
-  const runtimeError = sessionsQuery.error ?? createMutation.error;
   if (!runtimeReady && runtimeBootError) {
     return (
       <InlineSessionError
