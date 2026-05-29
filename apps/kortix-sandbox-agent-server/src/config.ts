@@ -163,8 +163,12 @@ async function readOpencodeConfigDirFromManifest(
   } catch {
     return fallback
   }
-  // Match the `[opencode]` table body up to the next `[section]` line.
-  const sectionMatch = body.match(/^\[opencode\]\s*$([\s\S]*?)(?=^\s*\[|\Z)/m)
+  // Match the `[opencode]` table body up to the next `[section]` line or the
+  // end of the file. `\Z` is NOT a valid JS anchor (it matches a literal `Z`),
+  // so use `(?![\s\S])` for end-of-string — otherwise an `[opencode]` table
+  // that's the LAST section in the manifest never matches and silently falls
+  // back to the default config dir.
+  const sectionMatch = body.match(/^\[opencode\]\s*$([\s\S]*?)(?=^\s*\[|(?![\s\S]))/m)
   const sectionBody = sectionMatch?.[1]
   if (!sectionBody) return fallback
   const keyMatch = sectionBody.match(/^\s*config_dir\s*=\s*['"]([^'"]+)['"]/m)

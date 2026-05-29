@@ -73,35 +73,38 @@ async function main() {
   }
   bootMark('git-identity')
 
-  // Repo clone and opencode spawn run in parallel. opencode does NOT touch
-  // the workspace until its first request — `opencode.start()` only spawns
-  // the binary + waits for the HTTP port to bind. The workspace is fully
-  // materialized before the first request lands (we await the clone before
-  // the readiness probe + initial-session creation).
-  const opencodeConfigDir = await resolveOpencodeConfigDir(cfg)
-  logger.info('[boot] resolved opencode config dir', { opencodeConfigDir })
+  // The opencode config dir lives INSIDE the repo (`<workspace>/.kortix/
+  // opencode`), so the repo MUST be materialized before we can resolve which
+  // config dir opencode should launch with. Resolving before the clone always
+  // missed the project's opencode.jsonc and silently fell back to the baked
+  // default dir — so the session ran with NO custom agents/plugins/commands
+  // and not even the project's `default_agent`. Clone first, then resolve.
+  //
+  // opencode is spawned AFTER the clone (not in parallel): OPENCODE_CONFIG_DIR
+  // is fixed at spawn time, so the dir has to be known up front. The clone is
+  // the boot long-pole; the opencode spawn (binary launch + port bind) is fast
+  // and opencode doesn't touch the workspace until its first request anyway.
   const projectEnv = createProjectEnvStore()
-  const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
-
   const repoMaterializePromise: Promise<void> = cfg.autoClone
     ? materializeRepo(cfg).catch((err) => {
         bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
         logger.error('[boot] repo materialization failed', err)
       })
     : Promise.resolve()
-  const opencodeStartPromise: Promise<void> = opencode.start().catch((err) => {
-    // opencode.start() throws only on a hard spawn failure; the supervisor
-    // self-retries on transient issues. Log + continue: the proxy will 503
-    // until the supervisor reports ready.
-    logger.warn('[boot] opencode.start() rejected', {
-      err: err instanceof Error ? err.message : String(err),
-    })
-  })
 
-  // Wait for the clone to finish before we let downstream code (readiness
-  // probe, initial session creation) think the workspace is ready.
+  // Wait for the clone to finish before we let downstream code (config-dir
+  // resolution, readiness probe, initial session creation) think the workspace
+  // is ready.
   await repoMaterializePromise
   bootMark('repo-materialized')
+
+  const opencodeConfigDir = await resolveOpencodeConfigDir(cfg)
+  logger.info('[boot] resolved opencode config dir', {
+    opencodeConfigDir,
+    usingProjectConfig: opencodeConfigDir !== cfg.defaultOpencodeConfigDir,
+  })
+  const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
+
   if (bootState.repoMaterializationError) {
     logger.warn('[boot] skipping opencode readiness because repo materialization failed')
   } else {
@@ -113,7 +116,14 @@ async function main() {
         err: err instanceof Error ? err.message : String(err),
       })
     })
-    await opencodeStartPromise
+    await opencode.start().catch((err) => {
+      // opencode.start() throws only on a hard spawn failure; the supervisor
+      // self-retries on transient issues. Log + continue: the proxy will 503
+      // until the supervisor reports ready.
+      logger.warn('[boot] opencode.start() rejected', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    })
   }
   bootMark('opencode-spawned')
 
