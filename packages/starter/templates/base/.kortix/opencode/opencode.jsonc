@@ -8,5 +8,9 @@
   // Kortix sessions are already sandboxed (isolated VM, ephemeral branch),
   // so the agent has full access by default. Tighten per-tool here if you
   // want a stricter policy. Docs: https://opencode.ai/docs/permissions/
-  "permission": "allow"
+  "permission": "allow",
+  // Local plugins. Tools in `tools/` and plugins in `plugins/` are auto-discovered;
+  // this array loads additional plugins by path. The PTY plugin adds pty_spawn /
+  // pty_write / pty_read / pty_list / pty_kill for long-running & interactive shells.
+  "plugin": ["./pty/pty-tools.ts"]
 }

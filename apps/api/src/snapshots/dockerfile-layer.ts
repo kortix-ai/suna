@@ -124,6 +124,18 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\',
     '    && bun --version',
     '',
+    // Pre-warm Bun's package cache with the OpenCode tool dependencies. The tools
+    // in .kortix/opencode/tools/ (web_search, image_search, scrape_webpage) import
+    // these, and OpenCode runs `bun install` in the cloned config dir at boot.
+    // Warming the cache at the runtime HOME path (where OpenCode runs, HOME=/opt/kortix/home)
+    // makes that boot-time install offline + fast — no per-boot download.
+    // Keep in sync with packages/starter/templates/base/.kortix/opencode/package.json.
+    'RUN mkdir -p /opt/kortix/home/.bun/install/cache /tmp/oc-deps \\',
+    '    && cd /tmp/oc-deps \\',
+    `    && printf '{"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > package.json \\`,
+    '    && BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install \\',
+    '    && rm -rf /tmp/oc-deps',
+    '',
     `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
     '    && agent-browser --version',
     'ENV AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',

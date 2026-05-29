@@ -1,0 +1,38 @@
+Reads output from a PTY session's buffer.
+
+The PTY maintains a rolling buffer of output lines. Use offset and limit to paginate through the output, similar to reading a file.
+
+Usage:
+- `id`: The PTY session ID (from pty_spawn or pty_list)
+- `offset`: Line number to start reading from (0-based, defaults to 0)
+- `limit`: Number of lines to read (defaults to 500)
+- `pattern`: Regex pattern to filter lines (optional)
+- `ignoreCase`: Case-insensitive pattern matching (default: false)
+
+Returns:
+- Numbered lines of output (similar to cat -n format)
+- Total line count in the buffer
+- Indicator if more lines are available
+
+The buffer stores up to PTY_MAX_BUFFER_LINES (default: 50000) lines. Older lines are discarded when the limit is reached.
+
+Pattern Filtering:
+- When `pattern` is set, lines are FILTERED FIRST using the regex, then offset/limit apply to the MATCHES
+- Original line numbers are preserved so you can see where matches occurred in the buffer
+- Supports full regex syntax (e.g., "error", "ERROR|WARN", "failed.*connection", etc.)
+- If the pattern is invalid, an error message is returned explaining the issue
+- If no lines match the pattern, a clear message indicates zero matches
+
+Tips:
+- To see the latest output, use a high offset or omit offset to read from the start
+- To tail recent output, calculate offset as (totalLines - N) where N is how many recent lines you want
+- Lines longer than 2000 characters are truncated
+- Empty output may mean the process hasn't produced output yet
+
+Examples:
+- Read first 100 lines: offset=0, limit=100
+- Read lines 500-600: offset=500, limit=100
+- Read all available: omit both parameters
+- Find errors: pattern="error", ignoreCase=true
+- Find specific log levels: pattern="ERROR|WARN|FATAL"
+- First 10 matches only: pattern="error", limit=10
