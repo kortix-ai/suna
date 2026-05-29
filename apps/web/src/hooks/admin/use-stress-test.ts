@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { getEnv } from '@/lib/env-config';
 
@@ -95,6 +95,12 @@ export function useStressTest() {
   });
   
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Abort any in-flight run when the panel unmounts so the streaming fetch and
+  // its reader stop instead of running (and setting state) after navigation.
+  useEffect(() => {
+    return () => abortControllerRef.current?.abort();
+  }, []);
 
   const runStressTest = useCallback(async (config: StressTestConfig) => {
     // Reset state
