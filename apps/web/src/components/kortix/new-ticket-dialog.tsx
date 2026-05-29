@@ -126,6 +126,10 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
 
   const submit = () => {
     if (!title.trim()) return;
+    // Guard at the source: the submit button is disabled while pending, but the
+    // keyboard paths (Cmd/Ctrl+Enter, Enter) call this directly — without this
+    // check, mashing the shortcut fires create.mutate repeatedly → duplicates.
+    if (create.isPending) return;
     create.mutate(
       {
         project_id: projectId,
