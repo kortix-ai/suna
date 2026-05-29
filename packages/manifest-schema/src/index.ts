@@ -445,10 +445,26 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
           : typeof entry.schedule === 'string'
             ? entry.schedule.trim()
             : '';
-      if (!cron) {
+      // A one-off ("run once") schedule carries `run_at` (ISO-8601 instant)
+      // instead of a recurring `cron` expression — exactly one must be set.
+      const runAt =
+        typeof entry.run_at === 'string'
+          ? entry.run_at.trim()
+          : typeof entry.runAt === 'string'
+            ? entry.runAt.trim()
+            : '';
+      if (runAt) {
+        if (Number.isNaN(Date.parse(runAt))) {
+          issues.push({
+            path: `${where}.run_at`,
+            message: 'run_at must be an ISO-8601 datetime (e.g. 2026-06-01T09:00:00Z).',
+            severity: 'error',
+          });
+        }
+      } else if (!cron) {
         issues.push({
           path: `${where}.cron`,
-          message: 'cron triggers must declare a `cron` expression.',
+          message: 'cron triggers must declare a `cron` expression or a one-off `run_at`.',
           severity: 'error',
         });
       }

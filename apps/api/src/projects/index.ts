@@ -12,6 +12,7 @@ import { Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
+  accounts,
   accountGithubInstallations,
   accountGithubInstallationStates,
   accountGroups,
@@ -33,6 +34,7 @@ import {
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
 import { ensureOpencodeSessionPin } from './opencode-mapping';
+import { sendAccountInviteEmail, buildInviteUrl } from '../accounts/email';
 import { resolveAccountId } from '../shared/resolve-account';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
@@ -114,8 +116,10 @@ import {
 import {
   deleteSandboxImage,
   kickPreBuild,
+  kickProjectTemplatePrebuilds,
   listSandboxTemplates,
   listSnapshotBuilds,
+  reconcileStaleBuilds,
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
 } from '../snapshots/builder';
@@ -2149,6 +2153,14 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
 }
 
 function isGitCronSpecDue(spec: GitTriggerSpec, lastFiredAt: Date | null, now: Date): boolean {
+  // One-off ("run once") schedules: fire exactly once at/after `runAt`. The
+  // last_fired_at stamp written on the first fire keeps it dormant forever
+  // after — no cron, no self-disable needed.
+  if (spec.runAt) {
+    if (lastFiredAt) return false;
+    const at = Date.parse(spec.runAt);
+    return !Number.isNaN(at) && at <= now.getTime();
+  }
   if (!spec.cron) return false;
   try {
     const baseline = lastFiredAt ?? new Date(0);
@@ -2296,7 +2308,7 @@ async function runGitTriggerSweep(now: Date, accumulator: {
 
       const payload = {
         cron: {
-          schedule: spec.cron,
+          schedule: spec.cron ?? spec.runAt,
           timezone: spec.timezone,
           fired_at: now.toISOString(),
           last_fired_at: lastFired?.toISOString() ?? null,
@@ -2504,7 +2516,7 @@ projectsApp.post('/', async (c) => {
     manifestPath,
   });
 
-  kickPreBuild(
+  kickProjectTemplatePrebuilds(
     {
       projectId: row.projectId,
       repoUrl: row.repoUrl,
@@ -2642,7 +2654,7 @@ projectsApp.post('/provision', async (c) => {
   });
 
   if (seeded) {
-    kickPreBuild(
+    kickProjectTemplatePrebuilds(
       {
         projectId: row.projectId,
         repoUrl: row.repoUrl,
@@ -2945,7 +2957,7 @@ projectsApp.post('/link-repository', async (c) => {
     manifestPath,
   });
 
-  kickPreBuild(
+  kickProjectTemplatePrebuilds(
     {
       projectId: row.projectId,
       repoUrl: row.repoUrl,
@@ -3077,7 +3089,7 @@ projectsApp.post('/create-repo', async (c) => {
     manifestPath: 'kortix.toml',
   });
 
-  kickPreBuild(
+  kickProjectTemplatePrebuilds(
     {
       projectId: row.projectId,
       repoUrl: row.repoUrl,
@@ -3163,6 +3175,7 @@ function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTemplates>>[n
     disk_gb: t.diskGb,
     snapshot_name: t.snapshotName,
     content_hash: t.contentHash,
+    built_from_commit: t.builtFromCommit,
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
@@ -3217,6 +3230,9 @@ projectsApp.get('/:projectId/snapshots', async (c) => {
   } catch (err) {
     templatesError = err instanceof Error ? err.message : String(err);
   }
+  // Heal any build rows orphaned at "building" by a process restart/crash
+  // before reading them, so the dashboard never shows a permanent "Building".
+  await reconcileStaleBuilds({ projectId }).catch(() => {});
   const builds = await listSnapshotBuilds(projectId, { limit: 25 }).catch(() => []);
   return c.json({
     templates: templates.map(serializeTemplate),
@@ -4159,6 +4175,7 @@ async function loadTriggersForResponse(projectId: string, project: ProjectRow) {
       agent: spec.agent,
       enabled: spec.enabled,
       cron: spec.cron,
+      run_at: spec.runAt,
       timezone: spec.timezone,
       secret_env: spec.secretEnv,
       prompt_template: spec.promptTemplate,
@@ -4180,6 +4197,7 @@ interface TriggerDraft {
   enabled: boolean;
   promptTemplate: string;
   cron: string | null;
+  runAt: string | null;
   timezone: string;
   secretEnv: string | null;
 }
@@ -4209,8 +4227,29 @@ function parseTriggerDraft(
   const enabled = normalizeBoolean((body as any).enabled) ?? true;
 
   if (type === 'cron') {
+    const timezone = normalizeString((body as any).timezone) ?? 'UTC';
+    // One-off ("run once") schedules carry `run_at` instead of `cron`.
+    const runAtRaw = normalizeString((body as any).run_at ?? (body as any).runAt);
+    if (runAtRaw) {
+      const parsed = Date.parse(runAtRaw);
+      if (Number.isNaN(parsed)) {
+        return { error: `run_at must be an ISO-8601 datetime (got "${runAtRaw}")` };
+      }
+      return {
+        slug,
+        name,
+        type: 'cron',
+        agent,
+        enabled,
+        promptTemplate,
+        cron: null,
+        runAt: new Date(parsed).toISOString(),
+        timezone,
+        secretEnv: null,
+      };
+    }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
-    if (!cron) return { error: 'cron triggers must declare a `cron` expression' };
+    if (!cron) return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
     return {
       slug,
       name,
@@ -4219,7 +4258,8 @@ function parseTriggerDraft(
       enabled,
       promptTemplate,
       cron,
-      timezone: normalizeString((body as any).timezone) ?? 'UTC',
+      runAt: null,
+      timezone,
       secretEnv: null,
     };
   }
@@ -4237,6 +4277,7 @@ function parseTriggerDraft(
     enabled,
     promptTemplate,
     cron: null,
+    runAt: null,
     timezone: 'UTC',
     secretEnv,
   };
@@ -4290,6 +4331,7 @@ function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
     enabled: draft.enabled,
     promptTemplate: draft.promptTemplate,
     cron: draft.cron,
+    runAt: draft.runAt,
     timezone: draft.timezone,
     secretEnv: draft.secretEnv,
   };
@@ -5804,16 +5846,40 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
         .returning({ inviteId: accountInvitations.inviteId });
       return created.inviteId;
     });
+
+    // Fire the invite email — same transport + template as account-level
+    // invites, framed around this project. Best-effort: the invitation row
+    // already exists, so on skip/failure we still return the invite_url for
+    // the inviter to share the link manually (mirrors the account route).
+    const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
+    const [accountRow] = await db
+      .select({ name: accounts.name })
+      .from(accounts)
+      .where(eq(accounts.accountId, loaded.row.accountId))
+      .limit(1);
+    const delivery = await sendAccountInviteEmail({
+      email,
+      accountName: accountRow?.name ?? 'Kortix',
+      inviterEmail: callerEmail,
+      inviteId,
+      role,
+      projectName: loaded.row.name,
+    });
+    const emailSent = delivery.ok === true;
+
     return c.json(
       {
         status: 'invited',
         email,
         invite_id: inviteId,
         project_role: role,
-        message:
-          'No Kortix account for that email yet — an invitation has been sent. They’ll land on this project as ' +
-          role +
-          ' when they sign up.',
+        invite_url: buildInviteUrl(inviteId),
+        email_sent: emailSent,
+        email_skip_reason:
+          delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
+        message: emailSent
+          ? `No Kortix account for that email yet — an invitation email has been sent. They'll land on this project as ${role} when they sign up.`
+          : `No Kortix account for that email yet — invitation created. Share the invite link with them; they'll land on this project as ${role} when they sign up.`,
       },
       201,
     );
@@ -5975,6 +6041,71 @@ projectsApp.delete('/:projectId/access/pending-invites/:inviteId', async (c) => 
     .where(eq(accountInvitations.inviteId, inviteId));
 
   return c.json({ ok: true, invitation_cancelled: false });
+});
+
+// POST /v1/projects/:projectId/access/pending-invites/:inviteId/resend
+// Re-sends the project invite email and refreshes the invitation's 14-day
+// expiry. Mirrors the account-level resend, but re-frames the email around
+// this project and reads the role from the bootstrap grant for this project.
+projectsApp.post('/:projectId/access/pending-invites/:inviteId/resend', async (c) => {
+  const projectId = c.req.param('projectId');
+  const inviteId = c.req.param('inviteId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+
+  const [invite] = await db
+    .select({
+      inviteId: accountInvitations.inviteId,
+      accountId: accountInvitations.accountId,
+      email: accountInvitations.email,
+      acceptedAt: accountInvitations.acceptedAt,
+      bootstrapGrants: accountInvitations.bootstrapGrants,
+    })
+    .from(accountInvitations)
+    .where(eq(accountInvitations.inviteId, inviteId))
+    .limit(1);
+
+  if (!invite || invite.accountId !== loaded.row.accountId) {
+    return c.json({ error: 'Invitation not found' }, 404);
+  }
+  if (invite.acceptedAt) {
+    return c.json({ error: 'Invitation has already been accepted' }, 409);
+  }
+  const grant = (invite.bootstrapGrants ?? []).find((g) => g.project_id === projectId);
+  if (!grant) {
+    return c.json({ error: 'Invitation does not target this project' }, 404);
+  }
+
+  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  await db
+    .update(accountInvitations)
+    .set({ expiresAt })
+    .where(eq(accountInvitations.inviteId, inviteId));
+
+  const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
+  const [accountRow] = await db
+    .select({ name: accounts.name })
+    .from(accounts)
+    .where(eq(accounts.accountId, loaded.row.accountId))
+    .limit(1);
+  const delivery = await sendAccountInviteEmail({
+    email: invite.email,
+    accountName: accountRow?.name ?? 'Kortix',
+    inviterEmail: callerEmail,
+    inviteId: invite.inviteId,
+    role: grant.role,
+    projectName: loaded.row.name,
+  });
+
+  return c.json({
+    ok: true,
+    expires_at: expiresAt.toISOString(),
+    invite_url: buildInviteUrl(invite.inviteId),
+    email_sent: delivery.ok === true,
+    email_skip_reason:
+      delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
+  });
 });
 
 projectsApp.put('/:projectId/access/:userId', async (c) => {
@@ -7454,9 +7585,12 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
 
   invalidateProjectMirror(projectId);
 
-  // Pre-build the platform default image (no-op cache hit after the first
-  // global build) so the next session can boot off cache. Best-effort.
-  kickPreBuild(projectForGit, {
+  // A merged CR may have edited a `[[sandbox.templates]]` Dockerfile or spec.
+  // Reconcile this project's own templates and pre-build any whose identity
+  // drifted, so the next session boots off cache instead of a cold build. The
+  // platform default is global (built at startup), so it's deliberately not
+  // touched here. Best-effort, never blocks the merge response.
+  kickProjectTemplatePrebuilds(projectForGit, {
     accountId: loaded.row.accountId,
     source: 'cr-merge',
   });

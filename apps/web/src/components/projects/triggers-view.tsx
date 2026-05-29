@@ -154,14 +154,23 @@ function describeCron(expr: string): string {
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
 
+function describeRunAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'Runs once';
+  return `Runs once on ${d.toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  })}`;
+}
+
 function getTriggerName(t: ProjectTrigger): string {
   if (t.name?.trim()) return t.name.trim();
+  if (t.type === 'cron' && t.run_at) return describeRunAt(t.run_at);
   if (t.type === 'cron' && t.cron) return describeCron(t.cron);
   return t.type === 'webhook' ? 'Webhook trigger' : 'Cron trigger';
 }
 
 function getTriggerSubtitle(t: ProjectTrigger): string {
-  if (t.type === 'cron') return t.timezone;
+  if (t.type === 'cron') return t.run_at ? 'One-off' : t.timezone;
   return t.secret_env ? `Signed via ${t.secret_env}` : 'Unsigned';
 }
 
@@ -701,6 +710,25 @@ function SectionHeader({
 }
 
 function CronSection({ trigger }: { trigger: ProjectTrigger }) {
+  // One-off schedules carry an absolute instant instead of a cron expression.
+  if (trigger.run_at) {
+    const d = new Date(trigger.run_at);
+    const valid = !Number.isNaN(d.getTime());
+    return (
+      <section className="space-y-2">
+        <SectionHeader title="Schedule" icon={Timer} />
+        <div className="space-y-1.5 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
+          <div className="text-sm font-medium text-foreground">
+            {valid ? describeRunAt(trigger.run_at) : 'Runs once'}
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>One-off · fires a single time</span>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   const expr = trigger.cron ?? '';
   const tz = trigger.timezone;
 
@@ -946,6 +974,9 @@ function CreateTriggerDialog({
   // Source
   const [sourceType, setSourceType] = useState<TriggerKind>(forcedType ?? 'cron');
   const [cronExpr, setCronExpr] = useState('0 0 9 * * *');
+  // Non-null ⇒ a one-off ("run once") schedule at this ISO instant. The
+  // ScheduleBuilder owns the toggle between recurring (cron) and once (runAt).
+  const [runAt, setRunAt] = useState<string | null>(null);
   const [timezone, setTimezone] = useState('UTC');
   const [webhookSecret, setWebhookSecret] = useState('');
 
@@ -962,6 +993,7 @@ function CreateTriggerDialog({
       setStep('source');
       setSourceType(forcedType ?? 'cron');
       setCronExpr('0 0 9 * * *');
+      setRunAt(null);
       setTimezone('UTC');
       setWebhookSecret('');
       setName('');
@@ -976,7 +1008,14 @@ function CreateTriggerDialog({
       const trimmedPrompt = prompt.trim();
       const trimmedName = name.trim();
       if (!trimmedName) throw new Error('Name is required');
-      if (sourceType === 'cron' && !cronExpr.trim()) throw new Error('Cron expression is required');
+      if (sourceType === 'cron') {
+        if (runAt) {
+          if (Number.isNaN(Date.parse(runAt))) throw new Error('Pick a valid date and time');
+          if (Date.parse(runAt) <= Date.now()) throw new Error('Pick a time in the future');
+        } else if (!cronExpr.trim()) {
+          throw new Error('Cron expression is required');
+        }
+      }
       if (sourceType === 'webhook' && !webhookSecret.trim()) throw new Error('Webhook secret is required');
       if (!trimmedPrompt) throw new Error('Prompt is required');
 
@@ -1000,7 +1039,9 @@ function CreateTriggerDialog({
         prompt_template: trimmedPrompt,
         agent: agentName.trim() || 'default',
         ...(sourceType === 'cron'
-          ? { cron: cronExpr.trim(), timezone: timezone.trim() || 'UTC' }
+          ? runAt
+            ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
+            : { cron: cronExpr.trim(), timezone: timezone.trim() || 'UTC' }
           : { secret_env: secretEnv }),
       });
     },
@@ -1013,7 +1054,9 @@ function CreateTriggerDialog({
       toast.success('Trigger created', {
         description:
           sourceType === 'cron'
-            ? `Running on ${describeCron(cronExpr.trim())}`
+            ? runAt
+              ? `Runs once on ${new Date(runAt).toLocaleString()}`
+              : `Running on ${describeCron(cronExpr.trim())}`
             : 'Webhook URL ready in the detail panel',
       });
       if (created) onCreated(created.slug);
@@ -1032,7 +1075,7 @@ function slugifyName(input: string): string {
 
   const isValid = (): boolean => {
     if (!name.trim()) return false;
-    if (sourceType === 'cron' && !cronExpr.trim()) return false;
+    if (sourceType === 'cron' && !runAt && !cronExpr.trim()) return false;
     if (sourceType === 'webhook' && !webhookSecret.trim()) return false;
     if (!prompt.trim()) return false;
     return true;
@@ -1106,7 +1149,13 @@ function slugifyName(input: string): string {
                   <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">
                     Schedule
                   </div>
-                  <ScheduleBuilder value={cronExpr} onChange={setCronExpr} />
+                  <ScheduleBuilder
+                    value={cronExpr}
+                    onChange={setCronExpr}
+                    allowOnce
+                    runAt={runAt}
+                    onRunAtChange={setRunAt}
+                  />
                 </div>
               )}
 
@@ -1190,8 +1239,8 @@ function slugifyName(input: string): string {
           )}
         </div>
 
-        {/* ── Footer ─────────────────────────────────────────────── */}
-        <div className="mt-2 flex shrink-0 items-center justify-between gap-3 border-t pt-4">
+        {/* ── Footer — no divider; spacing alone separates it from the body. */}
+        <div className="mt-5 flex shrink-0 items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             {step !== 'source' && (
               <Button
@@ -1211,7 +1260,7 @@ function slugifyName(input: string): string {
                 <ArrowLeft className="mr-1 h-4 w-4" /> Back
               </Button>
             )}
-            {step === 'source' && sourceType === 'cron' && (
+            {step === 'source' && sourceType === 'cron' && !runAt && (
               <Select value={timezone} onValueChange={setTimezone}>
                 <SelectTrigger
                   className="h-8 w-auto cursor-pointer gap-1.5 rounded-full border-border/50 bg-transparent px-3 text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground"
