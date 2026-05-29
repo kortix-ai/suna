@@ -1255,7 +1255,7 @@
       "line703JsxTextLogoAssetsColorPaletteTypographyMotionTokensComponent": "Logo assets, color palette, typography, motion tokens, component library, and usage rules for building Kortix. The complete reference for designers and engineers.",
       "line714JsxTextOklchColors": "OKLCH Colors",
       "line715JsxTextRadixPrimitives": "Radix Primitives",
-      "line728JsxTextTwoFormsTheSymbolAndTheWordmarkEach": "Two forms — the symbol and the wordmark. Each in black and white.",
+      "line728JsxTextTwoFormsTheSymbolAndTheWordmarkEach": "Two forms — the symbol on its own, and the full logo. Each in black and white.",
       "line737JsxTextTheSymbolIsDerivedFromTheLetterK": "The symbol is derived from the letter K — connectivity and intelligence abstracted into a geometric mark. Use it as a favicon, app icon, or whenever the full wordmark isn",
       "line739JsxTextTPracticalNeverStretchRotateOrRecolorIt": "t practical. Never stretch, rotate, or recolor it.",
       "line751JsxTextBlackAndWhiteIsTheFoundationEachUi": "Black and white is the foundation. Each UI theme pairs the neutral base with exactly one accent color. The OKLCH color space ensures perceptual uniformity across all themes.",
@@ -3790,7 +3790,7 @@
     },
     "componentsHomeNavbar": {
       "line221JsxTextDownloadSymbol": "Download symbol",
-      "line239JsxTextDownloadWordmark": "Download wordmark",
+      "line239JsxTextDownloadWordmark": "Download logo",
       "line259JsxTextDesignSystem": "Design system",
       "line301JsxTextRequestDemo": "Request demo",
       "line312JsxTextGetStarted": "Get started",

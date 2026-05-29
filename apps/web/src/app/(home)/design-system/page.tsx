@@ -228,19 +228,19 @@ const LOGO_ASSETS: LogoAsset[] = [
     dark: true,
   },
   {
-    id: 'wordmark-black',
-    label: 'Wordmark',
+    id: 'logo-black',
+    label: 'Logo',
     variant: 'Black',
-    svgSrc: '/brandkit/Logo/Wordmark/SVG/Wordmark Black.svg',
-    pngSrc: '/brandkit/Logo/Wordmark/PNG/Wordmark Black.png',
+    svgSrc: '/brandkit/Logo/Logomark/SVG/Logomark Black.svg',
+    pngSrc: '/brandkit/Logo/Logomark/PNG/Logomark Black.png',
     dark: false,
   },
   {
-    id: 'wordmark-white',
-    label: 'Wordmark',
+    id: 'logo-white',
+    label: 'Logo',
     variant: 'White',
-    svgSrc: '/brandkit/Logo/Wordmark/SVG/Wordmark White.svg',
-    pngSrc: '/brandkit/Logo/Wordmark/PNG/Wordmark White.png',
+    svgSrc: '/brandkit/Logo/Logomark/SVG/Logomark White.svg',
+    pngSrc: '/brandkit/Logo/Logomark/PNG/Logomark White.png',
     dark: true,
   },
 ];
@@ -385,7 +385,7 @@ function Hex({ value }: { value: string }) {
 }
 
 function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
-  const isWordmark = asset.label === 'Wordmark';
+  const isWide = asset.label !== 'Symbol';
   const downloadHref = fmt === 'png' ? asset.pngSrc : asset.svgSrc;
   const downloadName = `kortix-${asset.label.toLowerCase()}-${asset.variant.toLowerCase()}.${fmt}`;
 
@@ -394,7 +394,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
       <div
         className={cn(
           'aspect-[3/2] rounded-lg flex items-center justify-center transition-colors relative overflow-hidden',
-          isWordmark ? 'px-6 py-8' : 'p-10',
+          isWide ? 'px-6 py-8' : 'p-10',
           asset.dark
             ? 'bg-neutral-950 ring-1 ring-white/[0.06]'
             : 'bg-white ring-1 ring-black/[0.06]'
@@ -406,7 +406,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
           alt={`Kortix ${asset.label} ${asset.variant}`}
           className={cn(
             'object-contain',
-            isWordmark
+            isWide
               ? 'max-h-8 md:max-h-10 w-full'
               : 'max-h-10 md:max-h-12 w-auto'
           )}
