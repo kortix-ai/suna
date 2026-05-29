@@ -169,7 +169,7 @@ export function ProjectSwitcher({
       <SidebarMenuButton
         size="lg"
         className={cn(
-          'group/trigger relative h-auto gap-2 rounded-lg border border-transparent bg-transparent px-1.5 py-1',
+          'group/trigger relative h-auto gap-2 rounded-2xl border border-transparent bg-transparent px-1.5 py-1',
           'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
           'group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!px-0',
         )}

@@ -109,7 +109,7 @@ export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditor
             onChange={(e) => setPathInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPath())}
             placeholder="/home/user/projects"
-            className="flex-1 rounded-lg border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="flex-1 rounded-2xl border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           <Button variant="outline" size="sm" onClick={addPath} disabled={!pathInput.trim()}>
             <Plus className="h-3.5 w-3.5" />
@@ -145,7 +145,7 @@ export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditor
                 onChange={(e) => setExcludeInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addExclude())}
                 placeholder={tHardcodedUi.raw('componentsTunnelScopeEditorsFilesystemScopeEditor.line146JsxAttrPlaceholderNodeModules')}
-                className="flex-1 rounded-lg border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="flex-1 rounded-2xl border bg-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
               <Button variant="outline" size="sm" onClick={addExclude} disabled={!excludeInput.trim()}>
                 <Plus className="h-3.5 w-3.5" />

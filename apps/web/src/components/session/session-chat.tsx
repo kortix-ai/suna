@@ -3621,7 +3621,7 @@ function SessionTurn({
                   return (
                     <div key={part.id} className="flex items-center gap-2 py-2.5">
                       <div className="flex-1 h-px bg-border" />
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/80 border border-border/60">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl bg-muted/80 border border-border/60">
                         <Layers className="size-3 text-muted-foreground" />
                         <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                           Compaction
@@ -6080,7 +6080,7 @@ export function SessionChat({
                   <div className="space-y-3 mt-12">
                     <div className="flex items-center gap-3 py-4 my-3">
                       <div className="flex-1 h-px bg-border" />
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/80 border border-border/60">
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted/80 border border-border/60">
                         <Layers className="size-3.5 text-muted-foreground" />
                         <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                           Compaction
@@ -6130,7 +6130,7 @@ export function SessionChat({
                       {hasCompaction && (
                         <div className="flex items-center gap-3 py-4 my-3">
                           <div className="flex-1 h-px bg-border" />
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/80 border border-border/60">
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted/80 border border-border/60">
                             <Layers className="size-3.5 text-muted-foreground" />
                             <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                               Compaction

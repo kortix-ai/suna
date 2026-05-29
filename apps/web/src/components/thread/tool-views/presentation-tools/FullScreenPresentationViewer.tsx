@@ -450,7 +450,7 @@ export function FullScreenPresentationViewer({
       <div className="flex-shrink-0 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
-            <div className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
+            <div className="relative p-2 rounded-2xl border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
               <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             

@@ -492,7 +492,7 @@ function FieldsEditor({ projectId }: { projectId: string }) {
                 value={d.options.join(', ')}
                 onChange={(e) => patchAt(i, { options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
                 placeholder={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line494JsxAttrPlaceholderOptionsCommaSeparatedEGP0P1P2')}
-                className="mt-2 h-7 w-full text-[11.5px] bg-muted/20 border border-border/30 rounded-lg px-2.5 outline-none focus:ring-2 focus:ring-primary/20"
+                className="mt-2 h-7 w-full text-[11.5px] bg-muted/20 border border-border/30 rounded-2xl px-2.5 outline-none focus:ring-2 focus:ring-primary/20"
               />
             )}
           </div>

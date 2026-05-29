@@ -585,7 +585,7 @@ export function FileExplorerPage() {
                   if (e.key === 'Escape') { setIsCreatingFolder(false); setNewFolderName(''); }
                 }}
                 onBlur={handleCreateFolder}
-                className="flex-1 text-sm bg-transparent border border-border rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
+                className="flex-1 text-sm bg-transparent border border-border rounded-2xl px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
                 placeholder={tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line603JsxAttrPlaceholderFolderName')}
               />
             </div>
@@ -603,7 +603,7 @@ export function FileExplorerPage() {
                   if (e.key === 'Escape') { setIsCreatingFile(false); setNewFileName(''); }
                 }}
                 onBlur={handleCreateFile}
-                className="flex-1 text-sm bg-transparent border border-border rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
+                className="flex-1 text-sm bg-transparent border border-border rounded-2xl px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
                 placeholder={tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line621JsxAttrPlaceholderFileName')}
               />
             </div>

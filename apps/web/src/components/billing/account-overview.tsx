@@ -56,7 +56,7 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
   return (
     <div className="space-y-4">
       {/* Plan + wallet + status — compact three-up */}
-      <section className="rounded-lg border bg-card p-5">
+      <section className="rounded-2xl border bg-card p-5">
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Plan">
             <div className="flex items-center gap-2">
@@ -87,7 +87,7 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
 
       {/* Spend this period */}
       {usage && (
-        <section className="rounded-lg border bg-card p-5">
+        <section className="rounded-2xl border bg-card p-5">
           <div className="mb-4 flex items-baseline justify-between">
             <h4 className="text-sm font-semibold">Spend this period</h4>
             <span className="text-xs text-muted-foreground tabular-nums">
@@ -113,7 +113,7 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
 
       {/* Limits */}
       {limits.length > 0 && (
-        <section className="rounded-lg border bg-card p-5">
+        <section className="rounded-2xl border bg-card p-5">
           <h4 className="mb-4 text-sm font-semibold">Limits</h4>
           <div className="space-y-3">
             {limits.map((row) => {
@@ -218,7 +218,7 @@ function StatCard({
   sublabel?: string;
 }) {
   return (
-    <div className="rounded-md border bg-background p-3">
+    <div className="rounded-2xl border bg-background p-3">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {icon}
         <span>{label}</span>

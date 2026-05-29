@@ -187,7 +187,7 @@ export function SessionFilesVersionBanner({
           </p>
 
           {hasChanges && (
-            <div className="max-h-48 space-y-0.5 overflow-auto rounded-lg border border-border/40 bg-background/50 p-1">
+            <div className="max-h-48 space-y-0.5 overflow-auto rounded-2xl border border-border/40 bg-background/50 p-1">
               {changedFiles.map((file) => {
                 const badge = STATUS_BADGE[file.status] ?? STATUS_BADGE.modified;
                 const name = file.path.split('/').pop() || file.path;

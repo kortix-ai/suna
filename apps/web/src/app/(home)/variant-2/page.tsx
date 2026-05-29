@@ -123,7 +123,7 @@ export default function Variant2Home() {
                 <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-medium">{tHardcodedUi.raw('appHomeVariant2Page.line124JsxTextOrSelfHost')}</span>
                 <button
                   onClick={handleCopy}
-                  className="group flex items-center justify-between w-full max-w-sm h-10 px-4 rounded-lg bg-foreground/[0.03] border border-foreground/[0.08] hover:bg-foreground/[0.06] hover:border-foreground/[0.12] transition-colors cursor-pointer backdrop-blur-md"
+                  className="group flex items-center justify-between w-full max-w-sm h-10 px-4 rounded-2xl bg-foreground/[0.03] border border-foreground/[0.08] hover:bg-foreground/[0.06] hover:border-foreground/[0.12] transition-colors cursor-pointer backdrop-blur-md"
                 >
                   <div className="flex items-center gap-3 overflow-hidden">
                     <span className="font-mono text-xs text-muted-foreground select-none">$</span>
@@ -433,7 +433,7 @@ export default function Variant2Home() {
               </div>
               <button
                 onClick={handleCopy}
-                className="group inline-flex items-center gap-2.5 h-9 px-4 rounded-lg bg-foreground/[0.03] border border-foreground/[0.08] hover:bg-foreground/[0.06] hover:border-foreground/[0.12] transition-colors cursor-pointer"
+                className="group inline-flex items-center gap-2.5 h-9 px-4 rounded-2xl bg-foreground/[0.03] border border-foreground/[0.08] hover:bg-foreground/[0.06] hover:border-foreground/[0.12] transition-colors cursor-pointer"
               >
                 <span className="font-mono text-xs text-muted-foreground select-none">$</span>
                 <code className="text-xs font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
