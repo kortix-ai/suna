@@ -1,95 +1,138 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
 import { useState } from 'react';
+import { SystemFaultView } from '@/components/common/system-fault';
 
 type CrashMode = 'reference' | 'type' | 'custom' | 'long' | 'nostack';
 
-function triggerCrash(mode: CrashMode): never {
-  switch (mode) {
-    case 'reference': {
-      // @ts-expect-error — intentional ReferenceError
-      return y + 1;
-    }
-    case 'type': {
-      const obj: { foo?: { bar: string } } = {};
-      // @ts-expect-error — intentional TypeError
-      return obj.foo.bar;
-    }
-    case 'long': {
-      throw new Error(
+const PRESETS: Array<{ key: CrashMode; label: string; make: () => Error }> = [
+  {
+    key: 'custom',
+    label: "Cannot access 'y' before initialization",
+    make: () => {
+      const err = new Error("Cannot access 'y' before initialization");
+      (err as Error & { digest?: string }).digest = 'debug-digest-0000';
+      return err;
+    },
+  },
+  {
+    key: 'reference',
+    label: 'ReferenceError (undeclared var)',
+    make: () => new ReferenceError('y is not defined'),
+  },
+  {
+    key: 'type',
+    label: 'TypeError (undefined property)',
+    make: () => new TypeError("Cannot read properties of undefined (reading 'bar')"),
+  },
+  {
+    key: 'long',
+    label: 'Very long message',
+    make: () =>
+      new Error(
         'A very long synthetic error message used to verify truncation and wrapping behavior in the global error boundary. '.repeat(
           6,
         ),
-      );
-    }
-    case 'nostack': {
+      ),
+  },
+  {
+    key: 'nostack',
+    label: 'Error with empty stack',
+    make: () => {
       const err = new Error('Error with cleared stack');
       err.stack = '';
-      throw err;
-    }
-    case 'custom':
-    default: {
-      const err = new Error("Cannot access 'y' before initialization");
-      (err as Error & { digest?: string }).digest = 'debug-digest-0000';
-      throw err;
-    }
-  }
+      return err;
+    },
+  },
+];
+
+function triggerRealCrash(mode: CrashMode): never {
+  const preset = PRESETS.find((p) => p.key === mode) ?? PRESETS[0];
+  throw preset.make();
 }
 
 export default function DebugErrorPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [mode, setMode] = useState<CrashMode | null>(null);
+  const [mode, setMode] = useState<CrashMode>('custom');
+  const [crash, setCrash] = useState<CrashMode | null>(null);
 
-  if (mode) {
-    triggerCrash(mode);
+  // Throw on render so the real `global-error` boundary catches it (prod-like).
+  if (crash) {
+    triggerRealCrash(crash);
   }
 
-  const buttons: Array<{ key: CrashMode; label: string }> = [
-    { key: 'custom', label: "Throw: Cannot access 'y' before initialization" },
-    { key: 'reference', label: 'Throw: ReferenceError (undeclared var)' },
-    { key: 'type', label: 'Throw: TypeError (undefined property)' },
-    { key: 'long', label: 'Throw: very long message' },
-    { key: 'nostack', label: 'Throw: Error with empty stack' },
-  ];
+  const previewError = (PRESETS.find((p) => p.key === mode) ?? PRESETS[0]).make();
 
   return (
-    <div
-      style={{
-        minHeight: '100dvh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-        fontFamily:
-          'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
-      }}
-    >
-      <div style={{ maxWidth: 520, width: '100%' }}>
-        <h1 style={{ fontSize: 20, marginBottom: 8 }}>{tHardcodedUi.raw('appDebugErrorPage.line67JsxTextGlobalErrorBoundaryPreview')}</h1>
-        <p style={{ fontSize: 13, opacity: 0.7, lineHeight: 1.6, marginTop: 0 }}>{tHardcodedUi.raw('appDebugErrorPage.line69JsxTextClickAButtonToTriggerARenderTime')}<code> app/global-error.tsx</code>{tHardcodedUi.raw('appDebugErrorPage.line70JsxTextIn')}<code>{tHardcodedUi.raw('appDebugErrorPage.line70JsxTextNextDev')}</code>{tHardcodedUi.raw('appDebugErrorPage.line70JsxTextTheNextJsDevOverlayAppearsFirstDismiss')}<b>×</b>{tHardcodedUi.raw('appDebugErrorPage.line71JsxTextToSeeTheRealBoundaryUnderneath')}</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
-          {buttons.map((b) => (
-            <button
-              key={b.key}
-              type="button"
-              onClick={() => setMode(b.key)}
-              style={{
-                padding: '10px 14px',
-                borderRadius: 10,
-                border: '1px solid rgba(127,127,127,0.3)',
-                background: 'transparent',
-                color: 'inherit',
-                fontSize: 13,
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              {b.label}
-            </button>
-          ))}
+    <div style={{ position: 'relative', minHeight: '100dvh' }}>
+      {/* Live preview of the System fault view — renders inline, no real crash,
+          no Sentry capture, so it shows even under the Next dev overlay. */}
+      <SystemFaultView key={mode} error={previewError} report={false} />
+
+      {/* Floating control panel to switch variants / trigger the real boundary. */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 12,
+          left: 12,
+          zIndex: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          maxWidth: 260,
+          padding: 12,
+          borderRadius: 12,
+          border: '1px solid rgba(255,255,255,0.12)',
+          background: 'rgba(20,20,20,0.92)',
+          backdropFilter: 'blur(8px)',
+          color: '#e5e5e5',
+          fontFamily:
+            'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
+          fontSize: 12,
+        }}
+      >
+        <div style={{ fontSize: 10, opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Preview variant
+        </div>
+        {PRESETS.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            onClick={() => setMode(p.key)}
+            style={{
+              padding: '7px 10px',
+              borderRadius: 8,
+              border: '1px solid rgba(255,255,255,0.14)',
+              background: mode === p.key ? 'rgba(255,255,255,0.92)' : 'transparent',
+              color: mode === p.key ? '#111' : 'inherit',
+              fontSize: 11,
+              textAlign: 'left',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setCrash(mode)}
+          style={{
+            marginTop: 4,
+            padding: '8px 10px',
+            borderRadius: 8,
+            border: '1px solid rgba(255,80,80,0.4)',
+            background: 'rgba(255,60,60,0.12)',
+            color: '#ff8a8a',
+            fontSize: 11,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          ⚠ Throw for real (hit the boundary)
+        </button>
+        <div style={{ fontSize: 9.5, opacity: 0.4, lineHeight: 1.5, marginTop: 2 }}>
+          In <code>next dev</code> the Next overlay appears first — dismiss it
+          with <b>×</b> to see the real boundary underneath. In prod it shows directly.
         </div>
       </div>
     </div>
