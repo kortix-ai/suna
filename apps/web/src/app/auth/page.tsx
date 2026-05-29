@@ -182,9 +182,13 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
   return (
     <div className="w-full max-w-sm">
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-5 bg-foreground/[0.05] rounded-full p-1 w-fit mx-auto">
+      <div role="tablist" aria-label="Authentication mode" className="flex items-center gap-1 mb-5 bg-foreground/[0.05] rounded-full p-1 w-fit mx-auto">
         <button
           type="button"
+          role="tab"
+          id="auth-tab-signin"
+          aria-selected={mode === 'signin'}
+          aria-controls="auth-form-panel"
           onClick={() => {
             setMode('signin');
             setErrorMessage(null);
@@ -199,6 +203,10 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         >{tHardcodedUi.raw('appAuthPage.line167JsxTextSignIn')}</button>
         <button
           type="button"
+          role="tab"
+          id="auth-tab-signup"
+          aria-selected={mode === 'signup'}
+          aria-controls="auth-form-panel"
           onClick={() => {
             setMode('signup');
             setErrorMessage(null);
@@ -242,7 +250,13 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-3">
+      <form
+        id="auth-form-panel"
+        role="tabpanel"
+        aria-labelledby={mode === 'signin' ? 'auth-tab-signin' : 'auth-tab-signup'}
+        onSubmit={handleSubmit}
+        className="space-y-3"
+      >
         <Input
           id="email"
           name="email"

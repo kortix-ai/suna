@@ -315,6 +315,7 @@ export function FilePreviewModal({
           onClick={onPrev}
           className="absolute left-3 top-1/2 -translate-y-1/2 z-20 h-9 w-9 rounded-full bg-background/95 backdrop-blur border border-border/60 shadow-sm hover:bg-background flex items-center justify-center transition-all opacity-70 hover:opacity-100"
           title="Previous file"
+          aria-label="Previous file"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -324,6 +325,7 @@ export function FilePreviewModal({
           onClick={onNext}
           className="absolute right-3 top-1/2 -translate-y-1/2 z-20 h-9 w-9 rounded-full bg-background/95 backdrop-blur border border-border/60 shadow-sm hover:bg-background flex items-center justify-center transition-all opacity-70 hover:opacity-100"
           title="Next file"
+          aria-label="Next file"
         >
           <ChevronRight className="h-4 w-4" />
         </button>
