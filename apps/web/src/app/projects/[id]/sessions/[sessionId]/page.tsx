@@ -29,7 +29,7 @@ import {
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { switchToSessionSandboxAsync, useServerStore } from '@/stores/server-store';
 import {
-  clearCanonicalCreateGuard,
+  clearOpencodeEnsureGuard,
   useCanonicalOpenCodeSession,
 } from '@/hooks/opencode/use-canonical-opencode-session';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
@@ -266,9 +266,9 @@ function ActiveSessionChat({
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId, sessionId),
     onSuccess: () => {
-      // Restart tears down the runtime: re-enable the one-shot create for the
+      // Restart tears down the runtime: re-enable the one-shot ensure for the
       // (new) sandbox and drop the now-stale OpenCode caches.
-      clearCanonicalCreateGuard();
+      clearOpencodeEnsureGuard();
       queryClient.removeQueries({ queryKey: ['opencode'] });
       queryClient.invalidateQueries({
         queryKey: ['project', 'session-sandbox', projectId, sessionId],

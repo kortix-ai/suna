@@ -1700,8 +1700,6 @@ export async function updateProjectSession(
   sessionId: string,
   input: {
     name?: string;
-    opencode_session_id?: string;
-    opencodeSessionId?: string;
     metadata?: Record<string, unknown>;
   },
 ) {
@@ -1710,6 +1708,27 @@ export async function updateProjectSession(
       `/projects/${projectId}/sessions/${sessionId}`,
       input,
     ),
+  );
+}
+
+/**
+ * Backend-owned OpenCode↔Kortix mapping. The API resolves the sandbox's
+ * canonical OpenCode root id and persists it to opencode_session_id (creating
+ * one if the sandbox has none, healing a stale pin). Idempotent. The returned
+ * session row carries the authoritative `opencode_session_id`, plus an
+ * `ensure` summary of what happened. Clients must NOT set the pin themselves.
+ */
+export async function ensureOpencodeSession(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.post<
+      ProjectSession & {
+        ensure?: {
+          reason: 'unchanged' | 'healed' | 'created' | 'not_ready' | 'unreachable';
+          changed: boolean;
+          pin: string | null;
+        };
+      }
+    >(`/projects/${projectId}/sessions/${sessionId}/ensure-opencode`, {}),
   );
 }
 
