@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, Loader2, Mail, Shield, UserPlus, Users, X } from 'lucide-react';
+import { Clock, Loader2, Mail, RefreshCw, Shield, UserPlus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 
@@ -31,6 +31,7 @@ import {
   isInviteSent,
   listPendingProjectInvites,
   listProjectAccess,
+  resendPendingProjectInvite,
   revokePendingProjectInvite,
   revokeProjectAccess,
   updateProjectAccess,
@@ -64,6 +65,13 @@ const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
 
 function userLabel(member: Pick<ProjectAccessMember, 'email' | 'user_id'>) {
   return member.email || member.user_id;
+}
+
+function copyInviteLink(url: string) {
+  navigator.clipboard
+    .writeText(url)
+    .then(() => toast.success('Invite link copied'))
+    .catch(() => toast.error('Could not copy link'));
 }
 
 function formatDate(input: string | null | undefined) {
@@ -155,9 +163,21 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
       // org-level invitation carrying the project grant — the user
       // won't show up in the access list until they accept.
       if (isInviteSent(result)) {
-        toast.success(
-          `Invitation sent to ${result.email}. They'll land on this project as ${result.project_role} when they sign up.`,
-        );
+        if (result.email_sent) {
+          toast.success(
+            `Invitation sent to ${result.email}. They'll land on this project as ${result.project_role} when they sign up.`,
+          );
+        } else {
+          // Email delivery was skipped (e.g. Mailtrap not configured) or
+          // failed. Surface the link so the inviter can share it manually.
+          toast.warning(
+            `Invitation created for ${result.email} — email skipped. Share the invite link manually.`,
+            {
+              action: { label: 'Copy link', onClick: () => copyInviteLink(result.invite_url) },
+              duration: 10_000,
+            },
+          );
+        }
         // Make the new pending row visible immediately — without this
         // the page looked unchanged after invite, which was the exact
         // confusion that prompted this card to exist.
@@ -578,6 +598,26 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
     onError: (err: Error) => toast.error(err.message || 'Failed to revoke invitation'),
   });
 
+  const resendMutation = useMutation({
+    mutationFn: (inviteId: string) => resendPendingProjectInvite(projectId, inviteId),
+    onMutate: (inviteId) => markPending(inviteId),
+    onSettled: (_data, _error, inviteId) => clearPending(inviteId),
+    onSuccess: (result) => {
+      if (result.email_sent) {
+        toast.success('Invite email sent');
+      } else {
+        // Mailtrap not configured (or delivery failed) — hand the admin the
+        // link so they can share it manually.
+        toast.warning('Email skipped — copy the invite link to share manually', {
+          action: { label: 'Copy link', onClick: () => copyInviteLink(result.invite_url) },
+          duration: 8_000,
+        });
+      }
+      queryClient.invalidateQueries({ queryKey });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to resend invitation'),
+  });
+
   const pending = invitesQuery.data?.pending ?? [];
 
   // Hide the entire card when empty — no point adding visual noise.
@@ -640,17 +680,30 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
                   busy ? (
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                   ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setRevokeTarget({ inviteId: invite.invite_id, email: invite.email })}
-                      title="Cancel this invitation"
-                      className="gap-1.5"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Revoke
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => resendMutation.mutate(invite.invite_id)}
+                        title="Resend the invitation email and extend the link"
+                        className="gap-1.5"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Resend
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setRevokeTarget({ inviteId: invite.invite_id, email: invite.email })}
+                        title="Cancel this invitation"
+                        className="gap-1.5"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Revoke
+                      </Button>
+                    </div>
                   )
                 }
               />
@@ -671,8 +724,8 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
           <span>
             The invitation for <strong>{revokeTarget.email}</strong> will
             be cancelled. If they were only invited to this project,
-            the whole invitation is removed. To resend later you'd need
-            to invite them again.
+            the whole invitation is removed and you'd need to invite them
+            again to restore it.
           </span>
         ) : null
       }

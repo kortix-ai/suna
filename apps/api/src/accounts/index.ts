@@ -13,18 +13,9 @@ import {
   listAccountTokens,
   revokeAccountToken,
 } from '../repositories/account-tokens';
-import { sendAccountInviteEmail } from './email';
-import { config } from '../config';
+import { sendAccountInviteEmail, buildInviteUrl } from './email';
 import { authorize, ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { onMemberAdded, onMemberRemoved } from '../billing/services/seat-management';
-
-// Public, share-anywhere invite URL. Matches the link generated inside the
-// email template (apps/api/src/accounts/email.ts), so an invite copied here
-// works exactly like one received via email.
-function buildInviteUrl(inviteId: string): string {
-  const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
-  return `${base}/invites/${inviteId}`;
-}
 
 function defaultAccountName(email: string | null | undefined): string {
   const normalized = email?.trim();
