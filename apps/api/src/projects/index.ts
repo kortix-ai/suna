@@ -1656,6 +1656,23 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
   };
 }
 
+// Env names a project secret must NEVER inject into a sandbox — they belong to
+// the sandbox's own runtime (the OS, the daemon, opencode). A secret named e.g.
+// `PORT` (trivially pushed via `kortix env push --from a-server.env`) would
+// override the runtime and break every session. Anything `KORTIX_*`/`OPENCODE_*`
+// is platform-owned and set explicitly below.
+const RESERVED_SANDBOX_ENV_NAMES = new Set([
+  'PORT', 'PATH', 'HOME', 'PWD', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME',
+  'TERM', 'TMPDIR', 'NODE_ENV', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
+]);
+function isReservedSandboxEnvName(name: string): boolean {
+  return (
+    RESERVED_SANDBOX_ENV_NAMES.has(name) ||
+    name.startsWith('KORTIX_') ||
+    name.startsWith('OPENCODE_')
+  );
+}
+
 async function buildSessionSandboxEnvVars(input: {
   accountId: string;
   projectId: string;
@@ -1677,6 +1694,17 @@ async function buildSessionSandboxEnvVars(input: {
   // The Slack signing secret only verifies inbound webhooks (an apps/api job).
   // The in-sandbox agent never needs it — keep it out of the sandbox env.
   delete runtimeSecrets.env.SLACK_SIGNING_SECRET;
+  // Guardrail: drop any project secret whose name would clobber the sandbox's
+  // own runtime env (PORT/PATH/KORTIX_*/…). Without this, one stray secret
+  // silently breaks every session — and `kortix env push` of a server .env
+  // makes that a one-command footgun.
+  const droppedReserved = Object.keys(runtimeSecrets.env).filter(isReservedSandboxEnvName);
+  for (const name of droppedReserved) delete runtimeSecrets.env[name];
+  if (droppedReserved.length > 0) {
+    console.warn(
+      `[session ${input.sessionId}] ignored ${droppedReserved.length} project secret(s) with reserved env names: ${droppedReserved.join(', ')}`,
+    );
+  }
   return {
     ...runtimeSecrets.env,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
