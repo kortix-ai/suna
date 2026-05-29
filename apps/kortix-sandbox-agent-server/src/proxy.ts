@@ -11,6 +11,7 @@ import { createAbortRouter } from './routes/abort'
 import { createEnvRouter } from './routes/env'
 import { createGitRouter } from './routes/git'
 import { createPortProxyRouter } from './routes/port-proxy'
+import { createFilesRouter } from './routes/files'
 import webProxyRouter from './routes/web-proxy'
 import type { ProjectEnvStore } from './project-env'
 import {
@@ -106,6 +107,13 @@ export function buildOpencodeApp(
   // /web-proxy/{scheme}/{host}/{path} — forward proxy that rewrites HTML/CSS
   // so external sites embed cleanly inside the internal browser iframe.
   app.route('/web-proxy', webProxyRouter)
+
+  // /file/* WRITE routes — upload / delete / mkdir / rename. OpenCode only
+  // serves READ file endpoints, so these must be handled by the daemon
+  // (the catch-all below would otherwise forward them to OpenCode → 404).
+  // Only the write methods/paths are registered; GET /file and
+  // GET /file/content still fall through to the OpenCode reverse proxy.
+  app.route('/file', createFilesRouter(cfg))
 
   // Reverse-proxy catch-all → OpenCode. Stream both directions so SSE works.
   // If opencode hasn't bound its port yet (state !== 'ok') we 503 instead of

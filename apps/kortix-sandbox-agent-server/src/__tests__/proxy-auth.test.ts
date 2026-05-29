@@ -14,13 +14,13 @@ import { createHmac } from 'crypto'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
 import { loadConfig, type Config } from '../config'
 import type { Opencode } from '../opencode'
 import { buildOpencodeApp } from '../proxy'
 import { createProjectEnvStore, mergeProjectEnv } from '../project-env'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { buildGitAuthArgs, configureGlobalGitIdentity, materializeRepo } from '../git'
+import { buildGitAuthArgs, configureGlobalGitIdentity, materializeRepo, __clearCloneTokenCacheForTests, __clearRepoIdentityMemoForTests } from '../git'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
@@ -107,6 +107,13 @@ function gitOutput(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv
 }
 
 describe('daemon proxy auth gate', () => {
+  beforeEach(() => {
+    // Process-global caches reset between tests so each one observes its
+    // own fetch call count + git-config side effects.
+    __clearCloneTokenCacheForTests()
+    __clearRepoIdentityMemoForTests()
+  })
+
   it('uses KORTIX_TOKEN as the only sandbox auth token', () => {
     const cfg = loadConfig({
       KORTIX_TOKEN: TEST_TOKEN,
@@ -167,9 +174,16 @@ describe('daemon proxy auth gate', () => {
         defaultBranch: 'main',
       }))
 
-      expect(requests).toHaveLength(1)
-      expect(requests[0]!.url).toBe('http://api.local/v1/projects/project-123/git/clone-credential')
-      expect((requests[0]!.init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${TEST_TOKEN}`)
+      // Filter to the clone-credential endpoint — other fetches (env loads,
+      // health probes from supervisors that may have been spawned in earlier
+      // tests in the same process) are unrelated noise.
+      const credRequests = requests.filter((r) => r.url.includes('/git/clone-credential'))
+      expect(credRequests).toHaveLength(1)
+      expect(credRequests[0]!.url).toBe('http://api.local/v1/projects/project-123/git/clone-credential')
+      // Assert auth on the credential request itself — not requests[0], which
+      // can be unrelated background-fetch noise (health probes from a daemon
+      // supervisor booted by another test in the same process).
+      expect((credRequests[0]!.init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${TEST_TOKEN}`)
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('v1\n')
       expect(gitOutput(['-C', target, 'config', 'user.name'])).toBe('Kortix Agent')
       expect(gitOutput(['-C', target, 'config', 'user.email'])).toBe('agent@kortix.ai')
@@ -219,7 +233,9 @@ describe('daemon proxy auth gate', () => {
         branchName: 'session-branch',
       }))
 
-      expect(requests).toHaveLength(0)
+      // Baked checkout means no clone-credential fetch should happen.
+      const credRequests = requests.filter((r) => r.url.includes('/git/clone-credential'))
+      expect(credRequests).toHaveLength(0)
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('v1\n')
       expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-branch')
       expect(gitOutput(['-C', target, 'remote', 'get-url', 'origin'])).toBe(remote)
