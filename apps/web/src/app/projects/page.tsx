@@ -209,7 +209,9 @@ export default function ProjectsPage() {
     if (!q) return items;
     return items.filter((project) =>
       [project.name, project.repo_url, project.default_branch]
-        .some((value) => value.toLowerCase().includes(q)),
+        // repo_url / default_branch can be null for repo-less projects;
+        // optional chaining short-circuits the whole chain to undefined.
+        .some((value) => value?.toLowerCase().includes(q)),
     );
   }, [projectsQuery.data, query]);
 
