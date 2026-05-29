@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
 import Link from 'next/link';
 import { Streamdown, defaultRemarkPlugins, defaultRehypePlugins } from 'streamdown';
 type PluggableList = any[];
@@ -13,7 +13,6 @@ import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { MermaidRenderer } from '@/components/ui/mermaid-renderer';
 import { isMermaidCode } from '@/lib/mermaid-utils';
 import { autoLinkUrls } from '@kortix/shared';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -22,6 +21,16 @@ import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { toast } from '@/lib/toast';
+
+// Mermaid rendering is comparatively heavy (the renderer pulls Dialog/Button
+// chrome and lazily imports the multi-hundred-KB `mermaid` package on first
+// render). Most markdown never contains a diagram, so load the renderer
+// component lazily — it only enters the bundle once a ```mermaid block exists.
+const MermaidRenderer = lazy(() =>
+  import('@/components/ui/mermaid-renderer').then((mod) => ({
+    default: mod.MermaidRenderer,
+  })),
+);
 
 // ---------------------------------------------------------------------------
 // LaTeX / KaTeX support: custom remark + rehype plugin overrides
@@ -934,7 +943,11 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
       if (isBlock) {
         // Mermaid diagrams — render their own card chrome
         if (isMermaidCode(language, code)) {
-          return <MermaidRenderer chart={code} className="my-5" />;
+          return (
+            <Suspense fallback={null}>
+              <MermaidRenderer chart={code} className="my-5" />
+            </Suspense>
+          );
         }
 
         // KaTeX/LaTeX code blocks — render as math, also self-contained
