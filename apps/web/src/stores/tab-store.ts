@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useServerStore } from '@/stores/server-store';
 import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@/lib/instance-routes';
+import { logger } from '@/lib/logger';
 
 // ============================================================================
 // Types
@@ -437,7 +438,9 @@ export const useTabStore = create<TabState>()(
             const cache = JSON.parse(localStorage.getItem('kortix-tabs-per-server') || '{}');
             cache[currentServerId] = { tabs, tabOrder, activeTabId, tabFocusHistory };
             localStorage.setItem('kortix-tabs-per-server', JSON.stringify(cache));
-          } catch {}
+          } catch (err) {
+            logger.warn('[tab-store] failed to persist tab state for previous server', { err });
+          }
         }
 
         // Restore the full tab state for the new server
@@ -453,7 +456,9 @@ export const useTabStore = create<TabState>()(
             });
             return;
           }
-        } catch {}
+        } catch (err) {
+          logger.warn('[tab-store] failed to restore tab state for server', { err });
+        }
 
         // No saved state for new server — start with just the dashboard tab
         const ensured = ensureDashboardTab({}, []);
@@ -558,6 +563,8 @@ useTabStore.subscribe((state) => {
         tabFocusHistory: state.tabFocusHistory,
       };
       localStorage.setItem('kortix-tabs-per-server', JSON.stringify(cache));
-    } catch {}
+    } catch (err) {
+      logger.warn('[tab-store] failed to sync per-server tab cache', { err });
+    }
   }, 500);
 });
