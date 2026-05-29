@@ -150,27 +150,15 @@ mock.module('../projects/git', () => ({
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
 }));
 
-mock.module('../snapshots/builder', () => ({
-  ensureBuildForLatestCommit: async () => ({ status: 'started', commitSha: 'a'.repeat(40) }),
-  getLatestReadySnapshot: async () => null,
-  getProjectSandboxHealth: async () => ({
-    branch: 'main',
-    provider: 'daytona',
-    readyCount: 0,
-    bootableCount: 0,
-    totalCount: 0,
-    retention: 3,
-    healthy: false,
-    building: false,
-    firstBuild: true,
-    runtimeOutdated: false,
-    latestReadyCommitSha: null,
-    latestStatus: null,
-    failure: null,
-  }),
-  listSnapshotsForProject: async () => [],
-  buildSnapshotForCommit: async () => ({ daytonaName: '', commitSha: '', contentHash: '', built: false }),
-  pruneOldSnapshots: async () => ({ deletedRows: 0, deletedDaytonaSnapshots: 0 }),
+mock.module("../snapshots/builder", () => ({
+  ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
+  listSnapshotBuilds: async () => [],
+  listSandboxTemplates: async () => [],
+  resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
+  kickPreBuild: () => {},
+  resolveCommitSha: async () => "a".repeat(40),
+  DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
@@ -217,8 +205,25 @@ mock.module('../platform/services/session-sandbox', () => ({
   },
 }));
 
+// Session create runs the billing gate. Return a billing-active account so the
+// contract holds regardless of whether KORTIX_BILLING_INTERNAL_ENABLED is set
+// in the run environment (the gate is a no-op when billing is disabled).
+mock.module('../billing/repositories/credit-accounts', () => ({
+  getSubscriptionInfo: async () => ({ tier: 'pro' }),
+  getCreditAccount: async () => ({
+    accountId: ACCOUNT_ID,
+    balance: 1_000_000,
+    billingModel: 'credits',
+    stripeSubscriptionId: 'sub_test',
+    stripeSubscriptionStatus: 'active',
+  }),
+  getCreditBalance: async () => ({ balance: 1_000_000, granted: 1_000_000, used: 0 }),
+  updateCreditAccount: async () => {},
+}));
+
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
+  resolveScopedAccountId: async () => ACCOUNT_ID,
 }));
 
 mockIamEngineAllowAll();
@@ -912,7 +917,7 @@ describe('project session API contract', () => {
     expect(res.status).toBe(429);
     expect(res.headers.get('X-RateLimit-Remaining')).toBe('0');
     expect(await res.json()).toMatchObject({
-      error: 'concurrent session limit',
+      code: 'concurrent_session_limit',
       limit: 1,
       active_sessions: 1,
     });

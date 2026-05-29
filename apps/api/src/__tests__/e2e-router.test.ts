@@ -231,7 +231,7 @@ describe('Router: health', () => {
     expect(body.status).toBe('ok');
     expect(body.service).toBe('kortix-router');
     expect(body.timestamp).toBeDefined();
-    expect(body.env).toBeDefined();
+    expect(body.billing_enabled).toBeDefined();
   });
 });
 

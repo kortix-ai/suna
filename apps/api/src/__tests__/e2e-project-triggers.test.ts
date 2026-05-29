@@ -123,14 +123,24 @@ mock.module('../projects/git', () => ({
   getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
+  commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
+  deleteRemoteSessionBranch: async () => undefined,
+  diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
+  getFileAtRef: async () => null,
+  getMergeBase: async () => 'a'.repeat(40),
+  resolveTreeOid: async () => 'b'.repeat(40),
+  materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
-mock.module('../snapshots/builder', () => ({
-  ensureBuildForLatestCommit: async () => ({ status: 'started', commitSha: 'a'.repeat(40) }),
-  getLatestReadySnapshot: async () => null,
-  listSnapshotsForProject: async () => [],
-  buildSnapshotForCommit: async () => ({ daytonaName: '', commitSha: '', contentHash: '', built: false }),
-  pruneOldSnapshots: async () => ({ deletedRows: 0, deletedDaytonaSnapshots: 0 }),
+mock.module("../snapshots/builder", () => ({
+  ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
+  listSnapshotBuilds: async () => [],
+  listSandboxTemplates: async () => [],
+  resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
+  kickPreBuild: () => {},
+  resolveCommitSha: async () => "a".repeat(40),
+  DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
@@ -200,7 +210,18 @@ mock.module('../shared/supabase', () => ({
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
-  getSubscriptionInfo: async () => ({ tier: 'free' }),
+  getSubscriptionInfo: async () => ({ tier: 'pro' }),
+  // Trigger fire spawns a real session, which runs the billing gate. Return a
+  // billing-active account (live sub + ample balance) so the gate passes.
+  getCreditAccount: async () => ({
+    accountId: ACCOUNT_ID,
+    balance: 1_000_000,
+    billingModel: 'credits',
+    stripeSubscriptionId: 'sub_test',
+    stripeSubscriptionStatus: 'active',
+  }),
+  getCreditBalance: async () => ({ balance: 1_000_000, granted: 1_000_000, used: 0 }),
+  updateCreditAccount: async () => {},
 }));
 
 // Stub secrets so webhook tests can resolve the trigger's signing secret.
@@ -212,6 +233,7 @@ mock.module('../projects/secrets', () => ({
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
   listProjectSecrets: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
+  listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   getProjectSecretValue: async (_projectId: string, name: string) =>
     secretValues.get(name) ?? null,
 }));

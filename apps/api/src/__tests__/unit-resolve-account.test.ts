@@ -54,6 +54,15 @@ const fakeDb = {
 
 mock.module('drizzle-orm', () => ({
   eq: (column: string, value: unknown) => ({ column, value }),
+  ne: (column: string, value: unknown) => ({ op: 'ne', column, value }),
+  and: (...parts: unknown[]) => ({ op: 'and', parts }),
+  or: (...parts: unknown[]) => ({ op: 'or', parts }),
+  isNull: (column: string) => ({ op: 'isNull', column }),
+  inArray: (column: string, values: unknown[]) => ({ op: 'inArray', column, values }),
+  gte: (column: string, value: unknown) => ({ op: 'gte', column, value }),
+  lte: (column: string, value: unknown) => ({ op: 'lte', column, value }),
+  desc: (column: string) => ({ op: 'desc', column }),
+  sql: (...args: unknown[]) => ({ op: 'sql', args }),
 }));
 
 mock.module('@kortix/db', () => ({

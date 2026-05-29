@@ -222,7 +222,10 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
   return invite;
 }
 
-mock.module('../iam/engine', () => {
+// `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
+// from `../iam` via `./dispatcher` (the V1 `./engine` was retired), so the role
+// gate must be mocked on the dispatcher.
+mock.module('../iam/dispatcher', () => {
   // Mirror the legacy account-role gate against the test's mocked member rows so
   // owner/admin pass writes, plain members get reads only, non-members are denied.
   const decide = (userId: string, action: string): boolean => {
@@ -619,7 +622,11 @@ describe('accounts API contract', () => {
 
     const accepted = await app.request(`/v1/account-invites/${INVITE_ID}/accept`, { method: 'POST' });
     expect(accepted.status).toBe(200);
-    expect(await accepted.json()).toEqual({ account_id: ACCOUNT_ID, account_role: 'member' });
+    expect(await accepted.json()).toEqual({
+      account_id: ACCOUNT_ID,
+      account_role: 'member',
+      bootstrap_grants_applied: [],
+    });
     expect(membership(INVITEE_ID, ACCOUNT_ID)?.accountRole).toBe('member');
     expect(inviteRows[0]?.acceptedAt).toBeInstanceOf(Date);
 

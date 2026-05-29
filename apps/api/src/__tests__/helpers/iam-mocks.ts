@@ -19,9 +19,14 @@ export function mockIamMembershipSyncNoop(): void {
 }
 
 /** Bypass the IAM engine, allowing every action. Use only in suites that are
- *  NOT testing authz denial — those keep a role-aware engine mock. */
+ *  NOT testing authz denial — those keep a role-aware engine mock.
+ *
+ *  `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
+ *  from `../iam` via `./dispatcher` (the V1 engine + flag-routing were retired),
+ *  so the mock MUST target the dispatcher — mocking the old `./engine` is a
+ *  dead no-op and lets the real V2 engine hit unmocked account-group tables. */
 export function mockIamEngineAllowAll(): void {
-  mock.module('../../iam/engine', () => ({
+  mock.module('../../iam/dispatcher', () => ({
     authorize: async () => ({ allowed: true }),
     assertAuthorized: async () => {},
     listAccessibleResources: async () => ({ mode: 'all', ids: [] }),

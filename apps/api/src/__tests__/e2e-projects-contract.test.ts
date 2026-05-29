@@ -275,9 +275,16 @@ function grantProjectRole(values: any, set?: Partial<ProjectMemberRow>) {
   return row;
 }
 
-mock.module('../iam/engine', () => {
-  // Mirror the legacy role gate against the test's mocked membership rows so
-  // viewer/non-member denial is still exercised after the IAM-engine switch.
+// `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
+// from `../iam` via `./dispatcher` (the V1 `./engine` was retired), so the role
+// gate must be mocked on the dispatcher. Mirror the legacy role gate against
+// the test's mocked membership rows so viewer/non-member denial is still
+// exercised after the IAM-engine switch.
+mock.module('../iam/dispatcher', () => {
+  const isManager = (userId: string): boolean => {
+    const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
+    return am?.accountRole === 'owner' || am?.accountRole === 'admin';
+  };
   const decide = (userId: string, action: string): boolean => {
     const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     if (!am) return false;
@@ -293,7 +300,19 @@ mock.module('../iam/engine', () => {
     assertAuthorized: async (userId: string, _a: unknown, action: string) => {
       if (!decide(userId, action)) throw new HTTPException(403, { message: 'Forbidden' });
     },
-    listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
+    // Account managers see every project ('all'); members see only the projects
+    // they hold an explicit grant on ('allow_only'); outsiders see none.
+    listAccessibleResources: async (userId: string) => {
+      const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
+      if (!am) return { mode: 'none', allowed: new Set<string>() };
+      if (isManager(userId)) return { mode: 'all', allowed: new Set<string>() };
+      const allowed = new Set(
+        projectMemberRows.filter((r) => r.userId === userId).map((r) => r.projectId),
+      );
+      return allowed.size === 0
+        ? { mode: 'none', allowed }
+        : { mode: 'allow_only', allowed };
+    },
   };
 });
 
@@ -349,14 +368,24 @@ mock.module('../projects/git', () => ({
   getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
+  commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
+  deleteRemoteSessionBranch: async () => undefined,
+  diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
+  getFileAtRef: async () => null,
+  getMergeBase: async () => 'a'.repeat(40),
+  resolveTreeOid: async () => 'b'.repeat(40),
+  materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
-mock.module('../snapshots/builder', () => ({
-  ensureBuildForLatestCommit: async () => ({ status: 'started', commitSha: 'a'.repeat(40) }),
-  getLatestReadySnapshot: async () => null,
-  listSnapshotsForProject: async () => [],
-  buildSnapshotForCommit: async () => ({ daytonaName: '', commitSha: '', contentHash: '', built: false }),
-  pruneOldSnapshots: async () => ({ deletedRows: 0, deletedDaytonaSnapshots: 0 }),
+mock.module("../snapshots/builder", () => ({
+  ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
+  listSnapshotBuilds: async () => [],
+  listSandboxTemplates: async () => [],
+  resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
+  kickPreBuild: () => {},
+  resolveCommitSha: async () => "a".repeat(40),
+  DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
@@ -418,6 +447,9 @@ mock.module('../shared/supabase', () => ({
 
 mock.module('../billing/repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => ({ tier: 'free' }),
+  getCreditAccount: async () => null,
+  getCreditBalance: async () => ({ balance: 0, granted: 0, used: 0 }),
+  updateCreditAccount: async () => {},
 }));
 
 mock.module('../shared/db', () => ({
@@ -426,6 +458,11 @@ mock.module('../shared/db', () => ({
       from: (table: unknown) => ({
         where: (condition: unknown) => queryResult(selectRows(table, fields, condition)),
         orderBy: async () => selectRows(table, fields, undefined),
+        // Joins are keyed off the FROM table; the test models no group grants
+        // (projectGroupGrants/accountGroups) so the joined result is empty.
+        innerJoin: () => ({
+          where: (condition: unknown) => queryResult(selectRows(table, fields, condition)),
+        }),
       }),
     }),
     insert: (table: unknown) => ({

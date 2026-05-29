@@ -84,19 +84,21 @@ mock.module('../shared/db', () => {
         );
         const isMembershipQuery = fieldKeys.includes('accountRole');
 
+        const rowsFor = (): any[] => {
+          if (isSandboxQuery) return mockDbSandbox ? [mockDbSandbox] : [];
+          if (isMembershipQuery) return mockDbMembership ? [mockDbMembership] : [];
+          // Fallback: empty (unknown query, e.g. accountGroupMembers in
+          // resolveShareSubject — the test models no group memberships).
+          return [];
+        };
         return {
           from: (table: any) => ({
+            // `.where(...)` is both awaitable (resolveShareSubject awaits it
+            // directly, expecting an array) and chainable via `.limit(n)`.
             where: (condition: any) => ({
-              limit: (n: number) => {
-                if (isSandboxQuery) {
-                  return Promise.resolve(mockDbSandbox ? [mockDbSandbox] : []);
-                }
-                if (isMembershipQuery) {
-                  return Promise.resolve(mockDbMembership ? [mockDbMembership] : []);
-                }
-                // Fallback: return empty (unknown query)
-                return Promise.resolve([]);
-              },
+              limit: (n: number) => Promise.resolve(rowsFor().slice(0, n)),
+              then: (resolve: (rows: any[]) => unknown, reject?: (reason: unknown) => unknown) =>
+                Promise.resolve(rowsFor()).then(resolve, reject),
             }),
           }),
         };
@@ -148,16 +150,20 @@ mock.module('../config', () => ({
   },
 }));
 
-mock.module('../projects/secrets', () => ({
-  listProjectSecretsSnapshot: async (projectId: string) => ({
+mock.module('../projects/secrets', () => {
+  const snapshot = (projectId: string) => ({
     env: {
       OPENROUTER_API_KEY: 'sk-live',
       SENTRY_DSN: 'https://example.test/1',
     },
     names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
     revision: `rev-${projectId}`,
-  }),
-}));
+  });
+  return {
+    listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
+    listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
+  };
+});
 
 // Override global fetch for proxy requests
 const originalFetch = globalThis.fetch;

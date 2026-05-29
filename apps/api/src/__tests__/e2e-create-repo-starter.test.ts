@@ -20,12 +20,24 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 // `getStarterFiles()` walks it and returns the files sorted by path
 // (case-insensitive, via localeCompare). This list is the contract:
 // "every project ships with these, in this order."
+// The minimal starter == the shared `templates/base` tree (no general-knowledge
+// -worker skill pack). Ordered by `path.localeCompare` to match getStarterFiles'
+// stable sort. Regenerate from `packages/starter/templates/base` when the base
+// scaffold changes.
 const BASE_STARTER_PATHS = [
   '.gitignore',
-  '.kortix/Dockerfile',
+  '.kortix/memory/conventions.md',
+  '.kortix/memory/decisions.md',
+  '.kortix/memory/integrations.md',
+  '.kortix/memory/MEMORY.md',
+  '.kortix/memory/overview.md',
   '.kortix/opencode/agents/kortix.md',
+  '.kortix/opencode/agents/memory-reflector.md',
   '.kortix/opencode/opencode.jsonc',
+  '.kortix/opencode/plugins/kortix-simple-memory.ts',
+  '.kortix/opencode/skills/agent-browser/SKILL.md',
   '.kortix/opencode/skills/kortix-executor/SKILL.md',
+  '.kortix/opencode/skills/kortix-memory/SKILL.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md',
@@ -40,6 +52,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-system/references/opencode/skills.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
   '.kortix/opencode/skills/kortix-system/SKILL.md',
+  '.kortix/opencode/skills/slack/SKILL.md',
   '.kortix/opencode/tools/show.ts',
   'kortix.toml',
   'README.md',
@@ -121,17 +134,25 @@ mock.module('../projects/git', () => ({
   getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
+  commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
+  deleteRemoteSessionBranch: async () => undefined,
+  diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
+  getFileAtRef: async () => null,
+  getMergeBase: async () => 'a'.repeat(40),
 }));
 
 // snapshots/builder imports from projects/git — once mocked, builder.ts
 // resolves cleanly. We stub the helpers projects/index calls so the
 // fire-and-forget snapshot kickoff in the create paths is a no-op here.
-mock.module('../snapshots/builder', () => ({
-  ensureBuildForLatestCommit: async () => ({ status: 'started', commitSha: 'a'.repeat(40) }),
-  getLatestReadySnapshot: async () => null,
-  listSnapshotsForProject: async () => [],
-  buildSnapshotForCommit: async () => ({ daytonaName: '', commitSha: '', contentHash: '', built: false }),
-  pruneOldSnapshots: async () => ({ deletedRows: 0, deletedDaytonaSnapshots: 0 }),
+mock.module("../snapshots/builder", () => ({
+  ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
+  listSnapshotBuilds: async () => [],
+  listSandboxTemplates: async () => [],
+  resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
+  kickPreBuild: () => {},
+  resolveCommitSha: async () => "a".repeat(40),
+  DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
@@ -219,7 +240,16 @@ mock.module('../shared/supabase', () => ({
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
-  getSubscriptionInfo: async () => ({ tier: 'free' }),
+  getSubscriptionInfo: async () => ({ tier: 'pro' }),
+  // Billing-active account so any session spawned during the flow clears the gate.
+  getCreditAccount: async () => ({
+    balance: 1_000_000,
+    billingModel: 'credits',
+    stripeSubscriptionId: 'sub_test',
+    stripeSubscriptionStatus: 'active',
+  }),
+  getCreditBalance: async () => ({ balance: 1_000_000, granted: 1_000_000, used: 0 }),
+  updateCreditAccount: async () => {},
 }));
 
 async function selectRowsForTable(table: unknown) {
