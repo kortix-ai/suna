@@ -16,6 +16,7 @@
   "dependencies": {
     "@daytonaio/sdk": "^0.143.0",
     "@kortix/db": "workspace:*",
+    "@kortix/manifest-schema": "workspace:*",
     "@kortix/shared": "workspace:*",
     "@kortix/starter": "workspace:*",
     "@logtail/node": "^0.5.8",

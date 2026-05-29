@@ -53,12 +53,12 @@ describe('lintManifest', () => {
 
   test('errors when [env] required is not an array', () => {
     const issues = lintToml(`kortix_version = 1\n[env]\nrequired = "NOPE"\n`);
-    expect(issues.errors.some((e) => e.includes('required must be an array'))).toBe(true);
+    expect(issues.errors.some((e) => /env\.required.*array/i.test(e))).toBe(true);
   });
 
   test('errors on an invalid env var name', () => {
     const issues = lintToml(`kortix_version = 1\n[env]\nrequired = ["1bad"]\n`);
-    expect(issues.errors.some((e) => e.includes('not a valid env var name'))).toBe(true);
+    expect(issues.errors.some((e) => /not a valid env-var name/i.test(e))).toBe(true);
   });
 
   test('accepts a valid cron trigger', () => {
@@ -80,9 +80,9 @@ describe('lintManifest', () => {
       type = "weekly"
       prompt = ""
     `);
-    expect(issues.errors.some((e) => e.includes('missing a slug'))).toBe(true);
-    expect(issues.errors.some((e) => e.includes('type must be'))).toBe(true);
-    expect(issues.errors.some((e) => e.includes('prompt is required'))).toBe(true);
+    expect(issues.errors.some((e) => /slug is required/i.test(e))).toBe(true);
+    expect(issues.errors.some((e) => /type must be one of/i.test(e))).toBe(true);
+    expect(issues.errors.some((e) => /prompt is required/i.test(e))).toBe(true);
   });
 
   test('flags duplicate trigger slugs', () => {
