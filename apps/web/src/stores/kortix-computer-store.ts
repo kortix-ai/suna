@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { HIDE_BROWSER_TAB } from '@/components/thread/utils';
 import { useFilesStore } from '@/features/files';
-import { openTabAndNavigate } from '@/stores/tab-store';
+import { useFilePreviewStore } from '@/stores/file-preview-store';
 
 export type ViewType = 'tools' | 'files' | 'browser' | 'desktop' | 'terminal' | 'changes';
 
@@ -104,17 +104,9 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
       
       openFileInComputer: (filePath: string, _filePathList?: string[], targetLine?: number) => {
-        // Open the file as a new tab (same as clicking a file in the explorer)
-        const fileName = filePath.split('/').pop() || filePath;
-        const tabId = `file:${filePath}`;
-        openTabAndNavigate({
-          id: tabId,
-          title: fileName,
-          type: 'file',
-          href: `/files/${encodeURIComponent(filePath)}`,
-          // Store targetLine in tab metadata so the file viewer can scroll to it
-          ...(targetLine ? { metadata: { targetLine } } : {}),
-        });
+        // Open the file in the global preview dialog (same as clicking a file
+        // in the explorer / a path in chat).
+        useFilePreviewStore.getState().openPreview(filePath, targetLine);
       },
       
       openFileBrowser: () => {

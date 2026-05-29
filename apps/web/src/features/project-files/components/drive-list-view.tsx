@@ -16,7 +16,6 @@ import {
   Scissors,
   ClipboardCopy,
   RefreshCw,
-  ExternalLink,
   ArrowUp,
   ArrowDown,
   FolderOpen,
@@ -48,7 +47,6 @@ interface ListRowProps {
   onCopy?: (node: FileNode) => void;
   onCut?: (node: FileNode) => void;
   onDropMove?: (sourcePath: string, targetDirPath: string) => void;
-  onOpenInTab?: (node: FileNode) => void;
   isDownloadingItem?: boolean;
   gitStatus?: GitStatusType;
   isCut?: boolean;
@@ -65,7 +63,6 @@ function ListRow({
   onCopy,
   onCut,
   onDropMove,
-  onOpenInTab,
   isDownloadingItem,
   isCut,
 }: ListRowProps) {
@@ -252,10 +249,6 @@ function ListRow({
         <ContextMenuItem onClick={onClick}>
           {isDir ? 'Open folder' : 'Preview'}
         </ContextMenuItem>
-        {!isDir && onOpenInTab && (
-          <ContextMenuItem onClick={() => onOpenInTab(node)}>
-            <ExternalLink className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line255JsxTextOpenInTab')}</ContextMenuItem>
-        )}
         {onDownload && (
           <ContextMenuItem onClick={() => onDownload(node)} disabled={isDownloadingItem}>
             {isDownloadingItem ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -316,7 +309,6 @@ interface DriveListViewProps {
   onCopy: (node: FileNode) => void;
   onCut: (node: FileNode) => void;
   onDropMove: (sourcePath: string, targetDirPath: string) => void;
-  onOpenInTab: (node: FileNode) => void;
   gitStatusMap: Map<string, GitStatusType>;
   clipboardPath?: string;
   clipboardOperation?: string;
@@ -346,7 +338,6 @@ export function DriveListView({
   onCopy: rawOnCopy,
   onCut: rawOnCut,
   onDropMove: rawOnDropMove,
-  onOpenInTab,
   gitStatusMap,
   clipboardPath,
   clipboardOperation,
@@ -489,7 +480,6 @@ export function DriveListView({
           onHistory={onHistory}
           onCopy={onCopy}
           onCut={onCut}
-          onOpenInTab={onOpenInTab}
           gitStatus={gitStatusMap.get(node.path)}
           isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
         />

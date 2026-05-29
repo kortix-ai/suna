@@ -235,8 +235,6 @@ export function FileExplorerPage() {
     openFileWithList(node.path, allFiles, Math.max(0, index));
   }, [fileItems, openFileWithList]);
 
-  // No tab system on /projects/* — alias to preview.
-  const handleOpenInTab = handlePreviewFile;
 
   const handleDownload = useCallback(async (node: FileNode) => {
     if (!projectId || !projectRef) return;
@@ -687,7 +685,6 @@ export function FileExplorerPage() {
                 onCopy={handleCopy}
                 onCut={handleCut}
                 onDropMove={handleDropMove}
-                onOpenInTab={handleOpenInTab}
                 gitStatusMap={gitStatusMap}
                 clipboardPath={clipboard?.path}
                 clipboardOperation={clipboard?.operation}
@@ -710,7 +707,6 @@ export function FileExplorerPage() {
                 onCopy={handleCopy}
                 onCut={handleCut}
                 onDropMove={handleDropMove}
-                onOpenInTab={handleOpenInTab}
                 gitStatusMap={gitStatusMap}
                 clipboardPath={clipboard?.path}
                 clipboardOperation={clipboard?.operation}

@@ -1422,22 +1422,14 @@ function DiagnosticsDisplay({
   diagnostics: Diagnostic[];
   filePath?: string;
 }) {
-  const { enabled: navigationEnabled, openTab } = useToolNavigation();
+  const { enabled: navigationEnabled } = useToolNavigation();
 
   if (diagnostics.length === 0) return null;
 
   const handleClick = (d: Diagnostic) => {
-    if (!filePath) return;
+    if (!filePath || !navigationEnabled) return;
     const targetLine = d.range.start.line + 1; // 1-indexed
-    const tabId = `file:${filePath}`;
-    const fileName = filePath.split('/').pop() || filePath;
-    openTab({
-      id: tabId,
-      title: fileName,
-      type: 'file',
-      href: `/files/${encodeURIComponent(filePath)}`,
-      metadata: { targetLine },
-    });
+    useFilePreviewStore.getState().openPreview(filePath, targetLine);
   };
 
   return (
@@ -4927,7 +4919,7 @@ function useShowOpenInTab(props: {
   title: string;
 }) {
   const { type, url, path, title } = props;
-  const { openTab, openExternal } = useToolNavigation();
+  const { enabled, openTab, openExternal } = useToolNavigation();
   const proxy = useProxyUrl(url);
   const hasLocalhostUrl = !!parseLocalhostUrl(url) && !isAppRouteUrl(url);
   const safeExternalUrl = safeHttpUrl(url);
@@ -4981,16 +4973,11 @@ function useShowOpenInTab(props: {
       openExternal(safeExternalUrl);
       return;
     }
-    if (path) {
-      const fileName = path.split('/').pop() || path;
-      openTab({
-        id: `file:${path}`,
-        title: fileName,
-        type: 'file',
-        href: `/files/${encodeURIComponent(path)}`,
-      });
+    if (path && enabled) {
+      useFilePreviewStore.getState().openPreview(path);
     }
   }, [
+    enabled,
     hasLocalhostUrl,
     htmlStaticProxy,
     htmlStaticUrl,

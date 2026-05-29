@@ -44,7 +44,6 @@ import {
 import { downloadFile } from '../api/opencode-files';
 import { useDirectoryDownload } from '../hooks/use-directory-download';
 import { useServerStore } from '@/stores/server-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
 import type { FileNode } from '../types';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
@@ -67,20 +66,10 @@ import { DRAG_MIME } from './file-tree-item';
  * | Main area (grid or list view)                      |
  * +---------------------------------------------------+
  * 
- * File preview opens as a full-screen modal overlay.
+ * Opening a file (single- or double-click, context menu) always opens the
+ * full-screen preview modal overlay.
  */
-export function FileExplorerPage({
-  fileOpenMode = 'tab',
-}: {
-  /**
-   * What "opening" a file does (double-click / context-menu "Open in new tab").
-   * - `'tab'` (default): open a workspace file tab — used by the /files page.
-   * - `'preview'`: open the in-place preview modal — used inside the session
-   *   side panel, which has no workspace tab bar to host a file tab.
-   * Single-click always previews regardless of mode.
-   */
-  fileOpenMode?: 'tab' | 'preview';
-} = {}) {
+export function FileExplorerPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -269,33 +258,8 @@ export function FileExplorerPage({
     openFileWithList(node.path, allFiles, Math.max(0, index));
   }, [fileItems, openFileWithList]);
 
-  const handleOpenFile = useCallback((node: FileNode) => {
-    // In preview mode (side panel) there is no workspace tab bar — fall back to
-    // the in-place preview modal instead of opening a /files tab.
-    if (fileOpenMode === 'preview') {
-      handlePreviewFile(node);
-      return;
-    }
-    openTabAndNavigate({
-      id: `file:${node.path}`,
-      title: node.name,
-      type: 'file',
-      href: `/files/${encodeURIComponent(node.path)}`,
-    });
-  }, [fileOpenMode, handlePreviewFile]);
-
-  const handleOpenInTab = useCallback((node: FileNode) => {
-    if (fileOpenMode === 'preview') {
-      handlePreviewFile(node);
-      return;
-    }
-    openTabAndNavigate({
-      id: `file:${node.path}`,
-      title: node.name,
-      type: 'file',
-      href: `/files/${encodeURIComponent(node.path)}`,
-    });
-  }, [fileOpenMode, handlePreviewFile]);
+  // Opening a file always shows the in-place preview modal.
+  const handleOpenFile = handlePreviewFile;
 
   const handleDownload = useCallback(async (node: FileNode) => {
     try {
@@ -713,7 +677,6 @@ export function FileExplorerPage({
                 onCopy={handleCopy}
                 onCut={handleCut}
                 onDropMove={handleDropMove}
-                onOpenInTab={handleOpenInTab}
                 gitStatusMap={gitStatusMap}
                 clipboardPath={clipboard?.path}
                 clipboardOperation={clipboard?.operation}
@@ -735,7 +698,6 @@ export function FileExplorerPage({
                 onCopy={handleCopy}
                 onCut={handleCut}
                 onDropMove={handleDropMove}
-                onOpenInTab={handleOpenInTab}
                 gitStatusMap={gitStatusMap}
                 clipboardPath={clipboard?.path}
                 clipboardOperation={clipboard?.operation}

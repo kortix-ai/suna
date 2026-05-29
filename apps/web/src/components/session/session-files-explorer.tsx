@@ -21,9 +21,7 @@ import { SessionFilesVersionBanner } from '@/components/session/session-files-ve
  * Wrapped in its own FilesStoreProvider so each session tab keeps independent
  * navigation/view state and never fights the global /files page or other open
  * sessions. The banner lives inside that provider too, so clicking a changed
- * file opens it in the same preview modal the explorer uses. File opens use the
- * in-place preview modal (`fileOpenMode="preview"`) because the side panel has
- * no workspace tab bar to host a file tab.
+ * file opens it in the same preview modal the explorer uses.
  */
 export function SessionFilesExplorer({
   chatSessionId,
@@ -35,7 +33,7 @@ export function SessionFilesExplorer({
       <div className="flex h-full flex-col">
         <SessionFilesVersionBanner chatSessionId={chatSessionId} />
         <div className="min-h-0 flex-1">
-          <FileExplorerPage fileOpenMode="preview" />
+          <FileExplorerPage />
         </div>
       </div>
     </FilesStoreProvider>

@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, FileX, Maximize2, Minimize2 } from 'lucide-react';
+import { FileX, Maximize2, Minimize2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,6 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
 import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
 import { useOcFileOpen } from '@/components/session/use-oc-file-open';
 
@@ -23,7 +22,6 @@ import { useOcFileOpen } from '@/components/session/use-oc-file-open';
  * Renders as a modal overlay so the user stays on their current page.
  * Provides:
  *   - Full file preview via FileContentRenderer (handles all file types)
- *   - "Open in new tab" button to open the file as a proper tab
  *   - Fullscreen toggle
  *   - Click outside / X / Escape to close
  */
@@ -60,20 +58,6 @@ export function FilePreviewDialog() {
     },
     [closePreview],
   );
-
-  const handleOpenInTab = useCallback(() => {
-    if (!filePath) return;
-    const name = filePath.split('/').pop() || filePath;
-    openTabAndNavigate({
-      id: `file:${filePath}`,
-      title: name,
-      type: 'file',
-      href: `/files/${encodeURIComponent(filePath)}`,
-    });
-    // Close the preview after opening in tab
-    setIsFullscreen(false);
-    closePreview();
-  }, [filePath, closePreview]);
 
   if (!isOpen || !filePath) return null;
 
@@ -121,15 +105,6 @@ export function FilePreviewDialog() {
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-muted-foreground hover:text-foreground"
-              onClick={handleOpenInTab}
-              title={tHardcodedUi.raw('componentsCommonFilePreviewDialog.line122JsxAttrTitleOpenInNewTab')}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={() => handleOpenChange(false)}
               title="Close"
             >
@@ -163,13 +138,6 @@ export function FilePreviewDialog() {
                       <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsCommonFilePreviewDialog.line165JsxTextCannotPreview')}<span className="font-mono text-foreground">{path}</span>
                       </p>
                       <p className="text-xs text-muted-foreground/60">{error}</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleOpenInTab}
-                        className="mt-2"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" />{tHardcodedUi.raw('componentsCommonFilePreviewDialog.line175JsxTextOpenInTabInstead')}</Button>
                     </>
                   )}
                 </div>

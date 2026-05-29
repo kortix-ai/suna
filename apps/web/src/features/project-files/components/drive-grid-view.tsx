@@ -17,7 +17,6 @@ import {
   Scissors,
   ClipboardCopy,
   RefreshCw,
-  ExternalLink,
   Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -47,7 +46,6 @@ interface DriveGridItemProps {
   onCopy?: (node: FileNode) => void;
   onCut?: (node: FileNode) => void;
   onDropMove?: (sourcePath: string, targetDirPath: string) => void;
-  onOpenInTab?: (node: FileNode) => void;
   isDownloadingItem?: boolean;
   gitStatus?: GitStatusType;
   isCut?: boolean;
@@ -261,7 +259,6 @@ function FileCard({
   onHistory,
   onCopy,
   onCut,
-  onOpenInTab,
   isCut,
 }: DriveGridItemProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -386,10 +383,6 @@ function FileCard({
         <ContextMenuItem onClick={onClick}>
           Preview
         </ContextMenuItem>
-        {onOpenInTab && (
-          <ContextMenuItem onClick={() => onOpenInTab(node)}>
-            <ExternalLink className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveGridView.line390JsxTextOpenInTab')}</ContextMenuItem>
-        )}
         {onDownload && (
           <ContextMenuItem onClick={() => onDownload(node)}>
             <Download className="mr-2 h-4 w-4" />
@@ -456,7 +449,6 @@ interface DriveGridViewProps {
   onCopy: (node: FileNode) => void;
   onCut: (node: FileNode) => void;
   onDropMove: (sourcePath: string, targetDirPath: string) => void;
-  onOpenInTab: (node: FileNode) => void;
   gitStatusMap: Map<string, GitStatusType>;
   clipboardPath?: string;
   clipboardOperation?: string;
@@ -480,7 +472,6 @@ export function DriveGridView({
   onCopy: rawOnCopy,
   onCut: rawOnCut,
   onDropMove: rawOnDropMove,
-  onOpenInTab,
   gitStatusMap,
   clipboardPath,
   clipboardOperation,
@@ -583,7 +574,6 @@ export function DriveGridView({
                 onHistory={onHistory}
                 onCopy={onCopy}
                 onCut={onCut}
-                onOpenInTab={onOpenInTab}
                 gitStatus={gitStatusMap.get(node.path)}
                 isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
               />

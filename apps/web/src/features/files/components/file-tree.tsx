@@ -21,7 +21,6 @@ import {
   Clipboard,
   CircleAlert,
   AlertTriangle,
-  ExternalLink,
   Home,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -63,7 +62,6 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDiagnosticsStore, buildDiagnosticCountsMap } from '@/stores/diagnostics-store';
 import { toast } from '@/lib/toast';
-import { openTabAndNavigate } from '@/stores/tab-store';
 
 // ─── Recursive tree node ────────────────────────────────────────────────────
 
@@ -332,17 +330,6 @@ function TreeNode({
             <ChevronRight className="mr-2 h-4 w-4" />
             {isDir ? 'Open folder' : 'Open file'}
           </ContextMenuItem>
-          {!isDir && (
-            <ContextMenuItem onClick={() => {
-              openTabAndNavigate({
-                id: `file:${node.path}`,
-                title: node.name,
-                type: 'file',
-                href: `/files/${encodeURIComponent(node.path)}`,
-              });
-            }}>
-              <ExternalLink className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsFileTree.line342JsxTextOpenInNewTab')}</ContextMenuItem>
-          )}
           {!isDir && (
             <ContextMenuItem onClick={() => downloadFile(node.path, node.name)}>
               <Download className="mr-2 h-4 w-4" />
