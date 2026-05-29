@@ -48,6 +48,9 @@ const nextConfig = (): NextConfig => ({
       'date-fns',
       '@tanstack/react-query',
       'react-icons',
+      'cmdk',
+      'next-intl',
+      '@icons-pack/react-simple-icons',
     ],
   },
 
