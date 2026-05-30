@@ -11,7 +11,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
-import { toast as sonnerToast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { useFileContent, useInvalidateFileContent } from '@/features/files/hooks/use-file-content';
@@ -89,7 +89,7 @@ export function ProjectAbout({ project }: ProjectAboutProps) {
       invalidateContent(contextPath);
       setEditing(false);
     } catch (err) {
-      sonnerToast.error(
+      toast.error(
         err instanceof Error ? `Save failed: ${err.message}` : 'Save failed',
       );
     } finally {

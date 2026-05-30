@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { IconAdd, IconLoader, IconRemove } from '@/components/ui/kortix-icons';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import {
   useCreateProjectApp,

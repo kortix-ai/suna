@@ -30,7 +30,7 @@ import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { TaskConfigDialog } from './task-config-dialog';
 import { TaskDetailPanel } from './task-detail-panel';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -134,7 +134,22 @@ const TaskListItem = ({
         isSelected ? "bg-primary/[0.06]" : "bg-card"
       )}
     >
-      <div onClick={onClick} className="flex items-center justify-between p-5">
+      <div
+        onClick={onClick}
+        onKeyDown={(e) => {
+          // Only act when the row itself is focused — the nested Delete button
+          // keeps its own keyboard behaviour.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-label={`Open trigger ${trigger.name}`}
+        className="flex items-center justify-between p-5 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
+      >
         <div className="flex items-center gap-4 flex-1 min-w-0">
             <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-card border border-border/50 shrink-0">
               {trigger.type === 'cron' ? <Timer className="h-5 w-5 text-foreground" /> : <Webhook className="h-5 w-5 text-foreground" />}

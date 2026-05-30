@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { toast as sonnerToast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { downloadDirectory } from '../api/opencode-files';
 import { useProjectContext } from '../context';
 
@@ -22,19 +22,19 @@ export function useDirectoryDownload() {
   const downloadDir = useCallback(
     async (dirPath: string, dirName: string) => {
       if (!projectId || !ref) {
-        sonnerToast.error('Project not ready');
+        toast.error('Project not ready');
         return;
       }
       if (activeRef.current.has(dirPath)) return;
       activeRef.current.add(dirPath);
       rerender();
 
-      const toastId = sonnerToast.loading(`Downloading ${dirName}…`, { duration: Infinity });
+      const toastId = toast.loading(`Downloading ${dirName}…`, { duration: Infinity });
       try {
         await downloadDirectory(projectId, ref, dirPath, dirName);
-        sonnerToast.success(`Downloaded ${dirName}.zip`, { id: toastId, duration: 3000 });
+        toast.success(`Downloaded ${dirName}.zip`, { id: toastId, duration: 3000 });
       } catch (err) {
-        sonnerToast.error(
+        toast.error(
           `Failed to download ${dirName}: ${err instanceof Error ? err.message : 'Unknown error'}`,
           { id: toastId, duration: 5000 },
         );

@@ -17,6 +17,16 @@ import { toast } from '@/lib/toast';
 import { FileContentRenderer, getLanguageFromExt } from './file-content-renderer';
 import { FileSourceProvider, type FileSource } from './file-source';
 
+/** Tabbable elements used by the focus trap below. */
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'textarea:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
 /** The slice of a feature's files store the preview modal reads. */
 export interface FilePreviewState {
   selectedFilePath: string | null;
@@ -88,6 +98,9 @@ export function FilePreviewModal({
   const [markdownPreview, setMarkdownPreview] = useState(true);
   const isMarkdownFile = getLanguageFromExt(fileName) === 'markdown';
 
+  // The dialog surface — focus target for the trap and the focus-on-open below.
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+
   // Reset transient view state when the file changes.
   useEffect(() => {
     setHistoryPath(null);
@@ -99,6 +112,37 @@ export function FilePreviewModal({
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Focus trap: keep Tab cycling within the dialog. Only acts when focus is
+      // already inside our surface, so when nested under the Customize Radix
+      // dialog (whose own FocusScope owns focus) we don't hijack its Tab order.
+      if (e.key === 'Tab') {
+        const surface = surfaceRef.current;
+        if (surface && surface.contains(document.activeElement)) {
+          const focusables = Array.from(
+            surface.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+          ).filter(
+            (el) => el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0,
+          );
+          if (focusables.length === 0) {
+            e.preventDefault();
+            surface.focus();
+          } else {
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            const active = document.activeElement as HTMLElement | null;
+            if (e.shiftKey) {
+              if (active === first || active === surface) {
+                e.preventDefault();
+                last.focus();
+              }
+            } else if (active === last || active === surface) {
+              e.preventDefault();
+              first.focus();
+            }
+          }
+        }
+        return;
+      }
       const target = e.target as HTMLElement;
       if (
         target &&
@@ -127,6 +171,21 @@ export function FilePreviewModal({
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [isOpen, onClose, onNext, onPrev, hasNext, hasPrev, historyPath]);
+
+  // Move focus into the dialog on open and restore it to the triggering element
+  // on close. Standalone (session Files tab) this completes the focus trap;
+  // nested under the Customize Radix dialog, Radix's FocusScope may keep focus —
+  // we make a single, non-looping attempt and don't fight it (no regression).
+  useEffect(() => {
+    if (!isOpen) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    surfaceRef.current?.focus();
+    return () => {
+      if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+        previouslyFocused.focus();
+      }
+    };
+  }, [isOpen]);
 
   // Lock body scroll while open.
   useEffect(() => {
@@ -256,6 +315,7 @@ export function FilePreviewModal({
           onClick={onPrev}
           className="absolute left-3 top-1/2 -translate-y-1/2 z-20 h-9 w-9 rounded-full bg-background/95 backdrop-blur border border-border/60 shadow-sm hover:bg-background flex items-center justify-center transition-all opacity-70 hover:opacity-100"
           title="Previous file"
+          aria-label="Previous file"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -265,6 +325,7 @@ export function FilePreviewModal({
           onClick={onNext}
           className="absolute right-3 top-1/2 -translate-y-1/2 z-20 h-9 w-9 rounded-full bg-background/95 backdrop-blur border border-border/60 shadow-sm hover:bg-background flex items-center justify-center transition-all opacity-70 hover:opacity-100"
           title="Next file"
+          aria-label="Next file"
         >
           <ChevronRight className="h-4 w-4" />
         </button>
@@ -293,12 +354,19 @@ export function FilePreviewModal({
   const node = (
     <>
       <div
+        data-file-preview-overlay=""
         className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in-0 duration-150 pointer-events-auto"
         style={{ zIndex: dialogOverlayZ(dialogDepth + 1) }}
         onClick={onClose}
       />
       <div
-        className="kx-fullscreen-modal fixed inset-3 sm:inset-4 flex flex-col rounded-2xl border border-border/60 bg-background shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-[0.98] duration-150 pointer-events-auto"
+        ref={surfaceRef}
+        data-file-preview-overlay=""
+        role="dialog"
+        aria-modal="true"
+        aria-label={`File preview${fileName ? `: ${fileName}` : ''}`}
+        tabIndex={-1}
+        className="kx-fullscreen-modal fixed inset-3 sm:inset-4 flex flex-col rounded-2xl border border-border/60 bg-background shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-[0.98] duration-150 pointer-events-auto outline-none"
         style={{ zIndex: dialogContentZ(dialogDepth + 1) }}
       >
         <div className="flex items-center gap-2 px-3 h-12 border-b border-border/40 shrink-0 bg-background/95 backdrop-blur-sm">

@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { GitBranch, GitPullRequest, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

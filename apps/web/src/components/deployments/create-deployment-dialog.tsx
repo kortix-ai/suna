@@ -38,7 +38,7 @@ import { useCreateDeployment, type Deployment, type DeploymentSource, type Creat
 import { useFileList } from '@/features/files/hooks/use-file-list';
 import { listFiles, readFile } from '@/features/files/api/opencode-files';
 import type { FileNode } from '@/features/files/types';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 function generateSubdomain(): string {
   const adjectives = ['swift', 'bright', 'cool', 'fast', 'neat', 'bold', 'calm', 'keen', 'warm', 'wise'];

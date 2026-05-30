@@ -6,14 +6,32 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AdminFeedbackTable } from '@/components/admin/admin-feedback-table';
 import {
   FeedbackStatsCards,
-  FeedbackTrendChart,
-  RatingDistributionChart,
-  SentimentPieChart,
   CriticalFeedbackList,
   LLMAnalysisPanel,
 } from '@/components/admin/feedback';
 import { BarChart3, MessageSquare, Sparkles } from 'lucide-react';
 import { LegacyBanner } from '@/components/admin/legacy-banner';
+import dynamic from 'next/dynamic';
+
+// The three recharts charts are the only recharts consumers on this page; load
+// them lazily so recharts stays out of the feedback page chunk.
+const chartLoading = () => (
+  <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
+    Loading chart…
+  </div>
+);
+const FeedbackTrendChart = dynamic(
+  () => import('@/components/admin/feedback/FeedbackTrendChart').then((m) => m.FeedbackTrendChart),
+  { ssr: false, loading: chartLoading },
+);
+const RatingDistributionChart = dynamic(
+  () => import('@/components/admin/feedback/RatingDistributionChart').then((m) => m.RatingDistributionChart),
+  { ssr: false, loading: chartLoading },
+);
+const SentimentPieChart = dynamic(
+  () => import('@/components/admin/feedback/SentimentPieChart').then((m) => m.SentimentPieChart),
+  { ssr: false, loading: chartLoading },
+);
 
 export default function AdminFeedbackPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');

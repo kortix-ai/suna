@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from './github';
+import { validateRef, validateSha } from './git-ref';
 
 const execFileAsync = promisify(execFile);
 
@@ -203,8 +204,8 @@ function normalizeTreePath(input?: string | null) {
 }
 
 export async function listRepoFiles(project: GitBackedProject, ref?: string, path?: string | null): Promise<ProjectFileEntry[]> {
+  const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
-  const treeRef = ref || project.defaultBranch;
   const treePath = normalizeTreePath(path);
   const args = ['ls-tree', '-r', treeRef, '--'];
   if (treePath) args.push(treePath);
@@ -270,8 +271,8 @@ export async function grepRepoFiles(
 ): Promise<RepoGrepMatch[]> {
   const q = pattern.trim();
   if (!q) return [];
+  const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
-  const treeRef = ref || project.defaultBranch;
   const result = await runGitCapture(
     ['grep', '-n', '-I', '-i', '-F', '-m', '10', '-e', q, treeRef],
     repoPath,
@@ -299,8 +300,8 @@ export async function grepRepoFiles(
 export async function readRepoFile(project: GitBackedProject, filePath: string, ref?: string) {
   const normalized = normalizeTreePath(filePath);
   if (!normalized) throw new Error('File path is required');
+  const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
-  const treeRef = ref || project.defaultBranch;
   const result = await runGit(['show', `${treeRef}:${normalized}`], repoPath, false);
   return result.stdout;
 }
@@ -311,8 +312,8 @@ export async function readRepoFile(project: GitBackedProject, filePath: string, 
  * when the default branch moves underneath it.
  */
 export async function resolveCommitSha(project: GitBackedProject, ref?: string): Promise<string> {
+  const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
-  const treeRef = ref || project.defaultBranch;
   const result = await runGit(['rev-parse', '--verify', `${treeRef}^{commit}`], repoPath, false);
   const sha = result.stdout.trim();
   if (!/^[0-9a-f]{40}$/.test(sha)) {
@@ -333,6 +334,7 @@ export async function resolveTreeOid(
   ref: string,
   contextPath?: string | null,
 ): Promise<string> {
+  validateRef(ref);
   const repoPath = await refreshMirror(project);
   const normalized = normalizeTreePath(contextPath);
   if (!normalized) {
@@ -368,6 +370,7 @@ export async function materializeRepoContext(
   ref: string,
   contextPath?: string | null,
 ): Promise<string> {
+  validateRef(ref);
   const repoPath = await refreshMirror(project);
   const normalized = normalizeTreePath(contextPath);
   const treeish = normalized ? `${ref}:${normalized}` : ref;
@@ -465,8 +468,8 @@ export async function archiveRepoSubtree(
   ref: string | undefined,
   path?: string | null,
 ): Promise<ReadableStream<Uint8Array>> {
+  const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
-  const treeRef = ref || project.defaultBranch;
   const normalized = path ? normalizeTreePath(path) : null;
   const treeish = normalized ? `${treeRef}:${normalized}` : treeRef;
 
@@ -1026,20 +1029,6 @@ function decodeStatusChar(code: string): GitCommitFile['status'] {
     default:
       return 'modified';
   }
-}
-
-function validateRef(ref: string): string {
-  if (!ref) throw new Error('Ref is required');
-  // git refs forbid: spaces, "..", "@{", "\\", control chars. Be conservative.
-  if (!/^[A-Za-z0-9._\-\/]+$/.test(ref) || ref.includes('..') || ref.startsWith('-')) {
-    throw new Error('Invalid ref');
-  }
-  return ref;
-}
-
-function validateSha(sha: string): string {
-  if (!sha || !/^[0-9a-fA-F]{4,64}$/.test(sha)) throw new Error('Invalid commit hash');
-  return sha;
 }
 
 export async function listBranches(project: GitBackedProject): Promise<GitBranchInfo[]> {

@@ -28,6 +28,9 @@ import {
 
 export type ProjectOnboardingStatus = 'pending' | 'completed';
 
+/** Shape of the cached `project-detail` query data. */
+type ProjectDetailData = Awaited<ReturnType<typeof getProjectDetail>>;
+
 interface ProjectMetadataMaybe {
   onboarding_completed_at?: string | null;
   [key: string]: unknown;
@@ -66,7 +69,7 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
   const applyOptimistic = useCallback(
     (completed: boolean) => {
       const key = ['project-detail', projectId] as const;
-      queryClient.setQueryData(key, (prev: typeof detail.data) => {
+      queryClient.setQueryData(key, (prev: ProjectDetailData | undefined) => {
         if (!prev?.project) return prev;
         const meta = { ...(prev.project.metadata ?? {}) } as ProjectMetadataMaybe;
         if (completed) {
@@ -80,13 +83,36 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
         };
       });
     },
-    [projectId, queryClient, detail.data],
+    [projectId, queryClient],
+  );
+
+  // Snapshot the cache before the optimistic write so onError restores the
+  // exact prior value — applying the *opposite* optimistic update would clobber
+  // a pre-existing onboarding_completed_at (e.g. an already-completed project).
+  const snapshotThenApply = useCallback(
+    async (completed: boolean) => {
+      const key = ['project-detail', projectId] as const;
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<ProjectDetailData>(key);
+      applyOptimistic(completed);
+      return { previous };
+    },
+    [projectId, queryClient, applyOptimistic],
+  );
+
+  const restorePrevious = useCallback(
+    (context: { previous: ProjectDetailData | undefined } | undefined) => {
+      if (context && context.previous !== undefined) {
+        queryClient.setQueryData(['project-detail', projectId], context.previous);
+      }
+    },
+    [projectId, queryClient],
   );
 
   const completeMutation = useMutation({
     mutationFn: () => setProjectOnboardingComplete(projectId, true),
-    onMutate: () => applyOptimistic(true),
-    onError: () => applyOptimistic(false),
+    onMutate: () => snapshotThenApply(true),
+    onError: (_err, _vars, context) => restorePrevious(context),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
     },
@@ -94,8 +120,8 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
 
   const resetMutation = useMutation({
     mutationFn: () => setProjectOnboardingComplete(projectId, false),
-    onMutate: () => applyOptimistic(false),
-    onError: () => applyOptimistic(true),
+    onMutate: () => snapshotThenApply(false),
+    onError: (_err, _vars, context) => restorePrevious(context),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
     },

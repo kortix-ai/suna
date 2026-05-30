@@ -1,5 +1,6 @@
 'use client';
 
+import { lazy, Suspense } from 'react';
 import { useTranslations } from 'next-intl';
 
 /**
@@ -24,8 +25,15 @@ import { ArrowLeftRight } from 'lucide-react';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { UserMenu } from '@/components/layout/user-menu';
 import { AccountSwitcher } from '@/components/layout/account-switcher';
-import { CommandPalette } from '@/components/command-palette';
 import { cn } from '@/lib/utils';
+
+// Lazy so the command palette (and its dependency graph) only loads once a
+// header page is actually on screen, mirroring project-shell/layout-content.
+const CommandPalette = lazy(() =>
+  import('@/components/command-palette').then((mod) => ({
+    default: mod.CommandPalette,
+  })),
+);
 
 export function AppHeader({
   user,
@@ -106,7 +114,9 @@ export function AppHeader({
       </div>
     </header>
     {/* Cmd+K — available on every header page, not just the project shell. */}
-    <CommandPalette />
+    <Suspense fallback={null}>
+      <CommandPalette />
+    </Suspense>
     </>
   );
 }

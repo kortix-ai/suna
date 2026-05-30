@@ -8,7 +8,6 @@ interface DocumentModalState {
 export const useDocumentModalStore = create<DocumentModalState>((set) => ({
   isOpen: false,
   setIsOpen: (isOpen) => {
-    console.log('Document modal store - setting isOpen to:', isOpen);
     set({ isOpen });
   },
 })); 

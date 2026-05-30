@@ -248,7 +248,11 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
                       onValueChange={(v) => updateRule(rule.id, { action: v as PolicyAction })}
                     >
                       <SelectTrigger
-                        className={cn('h-8 w-[8.5rem]', ACTION_META[rule.action].tint)}
+                        // The value shows label + description (e.g. "Ask first ·
+                        // Pause for human approval"). Size to content with a
+                        // floor so it never clips, and shrink-0 so the flex row
+                        // can't squeeze it back into a truncation.
+                        className={cn('h-8 w-auto min-w-[16rem] shrink-0', ACTION_META[rule.action].tint)}
                         aria-label={`Rule ${idx + 1} action`}
                       >
                         <SelectValue />

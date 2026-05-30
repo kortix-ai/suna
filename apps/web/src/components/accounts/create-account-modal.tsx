@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { FormEvent, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Loader2, Plus } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import { Button } from '@/components/ui/button';
 import {

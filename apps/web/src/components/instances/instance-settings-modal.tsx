@@ -24,7 +24,6 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import { toast as sonnerToast } from 'sonner';
 
 import {
   getSandboxUrl,
@@ -462,12 +461,12 @@ export function InstanceSettingsModal({
     mutationFn: (nextName: string) => renameSandbox(sandbox!.sandbox_id, nextName),
     onSuccess: () => {
       setIsEditingName(false);
-      sonnerToast.success('Instance renamed');
+      toast.success('Instance renamed');
       queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] });
       queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'detail'] });
     },
     onError: (err) => {
-      sonnerToast.error(err instanceof Error ? err.message : 'Failed to rename');
+      toast.error(err instanceof Error ? err.message : 'Failed to rename');
     },
   });
 
@@ -613,12 +612,12 @@ export function InstanceSettingsModal({
       };
     },
     onSuccess: ({ taskId, project }) => {
-      sonnerToast.success('Fix task started', {
+      toast.success('Fix task started', {
         description: `Task ${taskId} is running in ${project.name || project.path}.`,
       });
     },
     onError: (error) => {
-      sonnerToast.error(error instanceof Error ? error.message : 'Failed to start fix task');
+      toast.error(error instanceof Error ? error.message : 'Failed to start fix task');
     },
   });
 
@@ -671,22 +670,22 @@ export function InstanceSettingsModal({
   const restartMutation = useMutation({
     mutationFn: () => restartSandbox(sandbox!.sandbox_id),
     onSuccess: () => {
-      sonnerToast.success('Workload restart initiated');
+      toast.success('Workload restart initiated');
       queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] });
     },
     onError: (error) => {
-      sonnerToast.error(error instanceof Error ? error.message : 'Failed to restart workload');
+      toast.error(error instanceof Error ? error.message : 'Failed to restart workload');
     },
   });
 
   const stopMutation = useMutation({
     mutationFn: () => stopSandbox(sandbox!.sandbox_id),
     onSuccess: () => {
-      sonnerToast.success('Host stopped');
+      toast.success('Host stopped');
       queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] });
     },
     onError: (error) => {
-      sonnerToast.error(error instanceof Error ? error.message : 'Failed to stop host');
+      toast.error(error instanceof Error ? error.message : 'Failed to stop host');
     },
   });
 
@@ -715,12 +714,12 @@ export function InstanceSettingsModal({
         { sandboxId: sandbox.sandbox_id, action },
         {
           onSuccess: () => {
-            sonnerToast.success(`${action === 'reboot' ? 'Host restart' : action === 'start' ? 'Host start' : 'Host stop'} initiated`);
+            toast.success(`${action === 'reboot' ? 'Host restart' : action === 'start' ? 'Host start' : 'Host stop'} initiated`);
             queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] });
             adminDetailQuery.refetch();
           },
           onError: (error) => {
-            sonnerToast.error(error instanceof Error ? error.message : `Failed to ${action} host`);
+            toast.error(error instanceof Error ? error.message : `Failed to ${action} host`);
           },
         },
       );
@@ -741,12 +740,12 @@ export function InstanceSettingsModal({
       { sandboxId: sandbox.sandbox_id, action, serviceId },
       {
         onSuccess: () => {
-          sonnerToast.success(actionSuccessMessage(action, serviceId));
+          toast.success(actionSuccessMessage(action, serviceId));
           void adminHealthQuery.refetch();
           void adminDetailQuery.refetch();
         },
         onError: (error) => {
-          sonnerToast.error(error instanceof Error ? error.message : `Failed to run ${action}`);
+          toast.error(error instanceof Error ? error.message : `Failed to run ${action}`);
         },
       },
     );
@@ -756,11 +755,11 @@ export function InstanceSettingsModal({
     mutationFn: () => setupSSH(sandbox!.sandbox_id),
     onSuccess: (result) => {
       setSetupResult(result);
-      sonnerToast.success('SSH key generated');
+      toast.success('SSH key generated');
       sshQuery.refetch();
     },
     onError: (error) => {
-      sonnerToast.error(error instanceof Error ? error.message : 'Failed to set up SSH');
+      toast.error(error instanceof Error ? error.message : 'Failed to set up SSH');
     },
   });
 
@@ -769,9 +768,9 @@ export function InstanceSettingsModal({
     try {
       await backups.create.mutateAsync(backupDescription || undefined);
       setBackupDescription('');
-      sonnerToast.success('Backup started');
+      toast.success('Backup started');
     } catch (error) {
-      sonnerToast.error(error instanceof Error ? error.message : 'Failed to create backup');
+      toast.error(error instanceof Error ? error.message : 'Failed to create backup');
     }
   }
 
@@ -779,10 +778,10 @@ export function InstanceSettingsModal({
     if (!restoreTarget) return;
     try {
       await backups.restore.mutateAsync(restoreTarget);
-      sonnerToast.success('Restore initiated');
+      toast.success('Restore initiated');
       setRestoreTarget(null);
     } catch (error) {
-      sonnerToast.error(error instanceof Error ? error.message : 'Failed to restore backup');
+      toast.error(error instanceof Error ? error.message : 'Failed to restore backup');
     }
   }
 
@@ -790,10 +789,10 @@ export function InstanceSettingsModal({
     if (!deleteTarget) return;
     try {
       await backups.remove.mutateAsync(deleteTarget);
-      sonnerToast.success('Backup deleted');
+      toast.success('Backup deleted');
       setDeleteTarget(null);
     } catch (error) {
-      sonnerToast.error(error instanceof Error ? error.message : 'Failed to delete backup');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete backup');
     }
   }
 
@@ -858,11 +857,11 @@ export function InstanceSettingsModal({
     if (!configFixPrompt) return;
     try {
       await navigator.clipboard.writeText(configFixPrompt);
-      sonnerToast.success('Fix prompt copied', {
+      toast.success('Fix prompt copied', {
         description: 'Share it with the agent or paste it into a task to repair the skipped source.',
       });
     } catch (error) {
-      sonnerToast.error(error instanceof Error ? error.message : 'Failed to copy fix prompt');
+      toast.error(error instanceof Error ? error.message : 'Failed to copy fix prompt');
     }
   }
 
