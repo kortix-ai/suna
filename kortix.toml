@@ -27,7 +27,7 @@ optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 # Hardware is clamped to this Daytona account's ceiling: 6 vCPU / 12 GiB /
 # 40 GiB. cpu = cores; memory/disk in GiB.
 [sandbox]
-# default = "dev"
+default = "dev"
 
 # Full dev box: node + pnpm + bun + Docker + Supabase CLI, sized to run the
 # whole local stack (`supabase start` + API + web) in-sandbox like a human
