@@ -35,23 +35,38 @@ CREATE INDEX IF NOT EXISTS idx_chat_installs_workspace
 CREATE INDEX IF NOT EXISTS idx_chat_installs_project
   ON kortix.chat_installs (project_id);
 
--- Existing chat_channel_bindings rows were keyed (platform, workspace_id) by the
--- old single-project OAuth callback — they are workspace↔project memberships,
--- not channel bindings. Migrate them into chat_installs.
-INSERT INTO kortix.chat_installs (platform, workspace_id, project_id, connected_at)
-  SELECT platform, workspace_id, project_id, installed_at
-  FROM kortix.chat_channel_bindings
-ON CONFLICT DO NOTHING;
-
 -- ── chat_channel_bindings → per-channel routing ──────────────────────────────
 -- Now keyed by (platform, workspace_id, channel_id). project_id becomes
 -- nullable: a NULL row means a project picker has been posted in that channel
 -- and is awaiting a click.
 DROP INDEX IF EXISTS kortix.idx_chat_channel_bindings_workspace;
 
--- Old rows are migrated into chat_installs above; clear them so the table can
--- be repurposed cleanly (it now means per-channel, not per-workspace).
-DELETE FROM kortix.chat_channel_bindings;
+-- ONE-TIME data migration of the OLD (workspace-keyed) rows. Runs ONLY while
+-- the table is still in its pre-migration shape (no channel_id column yet).
+-- The schema runner re-executes every migration file on each boot, so without
+-- this guard the unconditional DELETE below would wipe live per-channel
+-- routing rows on every restart. Guarding on the column's absence makes the
+-- destructive step idempotent (it never runs again once the column exists).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'kortix'
+      AND table_name = 'chat_channel_bindings'
+      AND column_name = 'channel_id'
+  ) THEN
+    -- Existing rows were keyed (platform, workspace_id) by the old single-project
+    -- OAuth callback — they are workspace↔project memberships, not channel
+    -- bindings. Migrate them into chat_installs, then clear the table so it can
+    -- be repurposed cleanly (it now means per-channel, not per-workspace).
+    INSERT INTO kortix.chat_installs (platform, workspace_id, project_id, connected_at)
+      SELECT platform, workspace_id, project_id, installed_at
+      FROM kortix.chat_channel_bindings
+    ON CONFLICT DO NOTHING;
+
+    DELETE FROM kortix.chat_channel_bindings;
+  END IF;
+END $$;
 
 ALTER TABLE kortix.chat_channel_bindings
   ADD COLUMN IF NOT EXISTS channel_id   varchar(128),

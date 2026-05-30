@@ -6,9 +6,13 @@
  *   2. `drizzle-kit push` (tables, indexes, enums — Drizzle-native)
  *   3. Run post-push migrations (table grants, atomic credit functions)
  *
- * SQL migrations live in supabase/migrations/ as individual files.
- * Each file contains a single statement so both `supabase db reset`
- * and this runner can execute them without prepared-statement issues.
+ * SQL migrations live in supabase/migrations/ as individual files. Each file
+ * may contain many statements; this runner sends each file as one
+ * postgres.js `db.unsafe()` call (simple-query protocol = a single implicit
+ * transaction), so any statement failing rolls back that whole file. Files
+ * MUST therefore be individually idempotent (IF NOT EXISTS / guarded DO
+ * blocks / ON CONFLICT) because the runner re-executes every file on each
+ * boot. Errors are logged and swallowed (boot continues).
  *
  * In production (INTERNAL_KORTIX_ENV=prod), schema is managed by external
  * migration pipelines, so this is a no-op.
