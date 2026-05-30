@@ -120,6 +120,14 @@ export async function provisionSessionSandbox(opts: {
    * `[[sandbox.templates]]` entries. Empty/undefined → platform default.
    */
   sandboxSlug?: string;
+  /**
+   * Runs after the provider sandbox is created but BEFORE the row is flipped to
+   * `active`. Used by legacy migration to restore the original opencode store
+   * into the sandbox before the frontend's `ensure-opencode` pin runs (which
+   * would otherwise re-pin to a fresh session). Best-effort: a throw is logged
+   * and provisioning still completes to `active`.
+   */
+  beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
   // Resolution order:
@@ -367,6 +375,18 @@ export async function provisionSessionSandbox(opts: {
         tl.mark('row-stopped-before-active');
         tl.log({ provider: providerName, attempts, stoppedBeforeActive: true });
         return;
+      }
+
+      // Pre-active hook (legacy migration chat restore). Runs while the row is
+      // still 'provisioning' so the frontend hasn't started ensure-opencode yet.
+      // Best-effort: never block the session opening on it.
+      if (opts.beforeActive) {
+        try {
+          await opts.beforeActive(result.externalId);
+          tl.mark('before-active-hook');
+        } catch (err) {
+          console.warn(`[session-sandbox] beforeActive hook failed for ${sandbox.sandboxId}:`, err);
+        }
       }
 
       // Async providers leave the row at 'provisioning' so the dashboard

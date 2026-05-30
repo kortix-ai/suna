@@ -7032,6 +7032,11 @@ async function kickProvisionOnOpen(
   await db.update(projectSessions)
     .set({ status: 'provisioning', error: null, updatedAt: new Date() })
     .where(eq(projectSessions.sessionId, sessionId));
+  // Migrated session — restore its original chat as part of provisioning, before
+  // the sandbox goes 'active' (so the frontend's ensure-opencode pin survives).
+  const legacySandboxId = (loaded.row as { metadata?: { legacy_migration?: { source_sandbox_id?: unknown } } })
+    .metadata?.legacy_migration?.source_sandbox_id;
+
   void (async () => {
     try {
       const extraEnvVars = await buildSessionSandboxEnvVars({
@@ -7059,16 +7064,10 @@ async function kickProvisionOnOpen(
           gitAuthToken: gitAuth.auth?.token ?? null,
         },
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
+        beforeActive: typeof legacySandboxId === 'string'
+          ? (externalId) => rehydrateSessionChat({ sessionId, legacySandboxId, newExternalId: externalId })
+          : undefined,
       });
-
-      // Migrated session — restore its original chat once the sandbox is up.
-      const legacySandboxId = (loaded.row as { metadata?: { legacy_migration?: { source_sandbox_id?: unknown } } })
-        .metadata?.legacy_migration?.source_sandbox_id;
-      if (typeof legacySandboxId === 'string') {
-        void rehydrateSessionChat({ sessionId, legacySandboxId }).catch((err) =>
-          console.error(`[projects] provision-on-open: rehydrate failed for ${sessionId}:`, err),
-        );
-      }
     } catch (err) {
       const message = (err as Error)?.message || 'Sandbox provisioning failed';
       console.error(`[projects] provision-on-open failed for ${sessionId}:`, err);

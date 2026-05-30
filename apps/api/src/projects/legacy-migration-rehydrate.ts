@@ -1,140 +1,103 @@
 /**
- * Restore a migrated session's chat history into its freshly-booted sandbox.
+ * Restore a migrated session's chat into its sandbox DURING provisioning, before
+ * the sandbox is marked active.
  *
- * Migrated sessions boot a clean OpenCode store, so the original conversation
- * (stored in the legacy machine's opencode.db) isn't there. This pulls the
- * legacy opencode store from the (still-running) legacy VM and writes it into
- * the new sandbox's OpenCode store, then bounces opencode so it serves the
- * original sessions — the project_session's opencode_session_id then resolves to
- * the real transcript.
+ * Why before-active: the frontend, once it sees `active`, calls `ensure-opencode`
+ * (opencode-mapping.ts) — the authoritative writer of opencode_session_id. It
+ * lists the sandbox's opencode sessions and keeps the migrated pin only if that
+ * session is already present; otherwise it re-pins to a fresh session. So the
+ * legacy store must be loaded before `active`, or we lose the race and the chat.
  *
- * Transfer is VM -> backend -> new sandbox (Daytona SDK); no external storage
- * needed. In production the source would be the durable backup bundle instead of
- * the live VM.
+ * Source is the live legacy VM (durable JustAVPS host) — we pull its opencode
+ * store, re-key project_id to this workspace's opencode projectID (opencode
+ * scopes its session list by project), ship a single checkpointed db, and bounce
+ * opencode so it serves the original conversations.
  */
 import { Database } from 'bun:sqlite';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { and, eq, isNotNull } from 'drizzle-orm';
-import { legacySandboxMigrations, sandboxes, sessionSandboxes } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { sandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { getDaytona } from '../shared/daytona';
 import { logger as appLogger } from '../lib/logger';
 import { RESOLVE_WS_OC_SH, execOnLegacyVm, resolveLegacyVmEndpoint } from './legacy-vm-access';
 
-// Where the NEW sandbox's OpenCode keeps its store (OPENCODE_HOME in the
-// sandbox agent server = /opt/kortix/home).
 const NEW_OPENCODE_STORE = '/opt/kortix/home/.local/share/opencode';
 
 function sq(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+type DaytonaSandbox = Awaited<ReturnType<ReturnType<typeof getDaytona>['get']>>;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Create a session for the workspace and return its projectID — doubles as an
+ * opencode-readiness probe (succeeds only once opencode is serving). The
+ * throwaway session is discarded when we overwrite the db.
+ */
+async function waitForOpencodeProjectId(sandbox: DaytonaSandbox, timeoutMs: number): Promise<string | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await sandbox.process.executeCommand(
+        'cd /opt/kortix/home 2>/dev/null; P=$(cat /var/run/kortix/opencode-port 2>/dev/null || echo 4096); ' +
+          'curl -s -X POST "http://127.0.0.1:$P/session?directory=/workspace" 2>/dev/null',
+        undefined, undefined, 30,
+      );
+      const out = (res as { result?: string }).result ?? '';
+      const start = out.indexOf('{');
+      if (start >= 0) {
+        const obj = JSON.parse(out.slice(start)) as { projectID?: string };
+        if (obj.projectID) return obj.projectID;
+      }
+    } catch { /* opencode not up yet */ }
+    await sleep(3000);
+  }
+  return null;
+}
+
 export interface RehydrateInput {
   sessionId: string;
   legacySandboxId: string;
-  /** New sandbox's provider external id; looked up from session_sandboxes if omitted. */
-  newExternalId?: string;
+  newExternalId: string;
 }
 
 export async function rehydrateSessionChat(input: RehydrateInput): Promise<void> {
-  const { sessionId, legacySandboxId } = input;
+  const { sessionId, legacySandboxId, newExternalId } = input;
+  const sandbox = await getDaytona().get(newExternalId);
 
-  // 1. Resolve the new sandbox — wait for it to finish booting (provisioning is
-  //    async). Up to ~4 min for a first-time build.
-  let externalId = input.newExternalId ?? null;
-  if (!externalId) {
-    const deadline = Date.now() + 240_000;
-    while (Date.now() < deadline) {
-      const [row] = await db
-        .select({ status: sessionSandboxes.status, ext: sessionSandboxes.externalId })
-        .from(sessionSandboxes)
-        .where(eq(sessionSandboxes.sessionId, sessionId))
-        .limit(1);
-      if (row?.status === 'active' && row.ext) { externalId = row.ext; break; }
-      if (row?.status === 'error') {
-        appLogger.warn('[rehydrate] new sandbox errored, skipping', { sessionId });
-        return;
-      }
-      await new Promise((r) => setTimeout(r, 3000));
-    }
-    if (!externalId) {
-      appLogger.warn('[rehydrate] new sandbox did not become active in time', { sessionId });
-      return;
-    }
+  // 1. Wait for opencode to be serving + learn this workspace's projectID.
+  const newProjectId = await waitForOpencodeProjectId(sandbox, 180_000);
+  if (!newProjectId) {
+    appLogger.warn('[rehydrate] opencode never became ready; skipping', { sessionId, newExternalId });
+    return;
   }
 
-  // 2. Pull the legacy OpenCode store (opencode.db + WAL) from the legacy VM.
-  // Prefer the archive captured at migration time (self-contained: no live VM,
-  // no JustAVPS key). Fall back to pulling from the live VM only if it's absent.
-  let b64: string | null = null;
-  const [mig] = await db
-    .select({ archive: legacySandboxMigrations.opencodeArchive })
-    .from(legacySandboxMigrations)
-    .where(and(
-      eq(legacySandboxMigrations.sandboxId, legacySandboxId),
-      isNotNull(legacySandboxMigrations.opencodeArchive),
-    ))
-    .limit(1);
-  if (mig?.archive) {
-    b64 = mig.archive;
-    appLogger.info('[rehydrate] using archived opencode store from DB', { sessionId, legacySandboxId });
-  } else {
-    const [legacy] = await db.select().from(sandboxes).where(eq(sandboxes.sandboxId, legacySandboxId)).limit(1);
-    if (!legacy) {
-      appLogger.warn('[rehydrate] no archive and legacy sandbox row missing', { legacySandboxId });
-      return;
-    }
-    const endpoint = await resolveLegacyVmEndpoint(legacy);
-    const pullScript = [
-      RESOLVE_WS_OC_SH,
-      '[ -z "$OC" ] && exit 0',
-      'cd "$OC" && tar czf - opencode.db opencode.db-wal opencode.db-shm 2>/dev/null | base64 | tr -d "\\n"',
-    ].join('\n');
-    const pulled = await execOnLegacyVm(endpoint, `bash -c ${sq(pullScript)}`, 180);
-    b64 = pulled.stdout.trim() || null;
+  // 2. Pull the legacy OpenCode store from the live legacy VM.
+  const [legacy] = await db.select().from(sandboxes).where(eq(sandboxes.sandboxId, legacySandboxId)).limit(1);
+  if (!legacy) {
+    appLogger.warn('[rehydrate] legacy sandbox row missing', { legacySandboxId });
+    return;
   }
+  const endpoint = await resolveLegacyVmEndpoint(legacy);
+  const pullScript = [
+    RESOLVE_WS_OC_SH,
+    '[ -z "$OC" ] && exit 0',
+    'cd "$OC" && tar czf - opencode.db opencode.db-wal opencode.db-shm 2>/dev/null | base64 | tr -d "\\n"',
+  ].join('\n');
+  const pulled = await execOnLegacyVm(endpoint, `bash -c ${sq(pullScript)}`, 180);
+  const b64 = pulled.stdout.trim();
   if (!b64) {
     appLogger.warn('[rehydrate] legacy opencode store empty / not found', { legacySandboxId });
     return;
   }
 
-  const sandbox = await getDaytona().get(externalId);
-
-  // 3. Determine the NEW workspace's opencode projectID. OpenCode scopes its
-  //    session list by projectID (a hash of the workspace's git identity), and
-  //    the Freestyle-cloned workspace hashes differently than the legacy machine
-  //    did. Without re-keying, the restored sessions exist but are invisible to
-  //    the current project. Read it from opencode's own session list.
-  // POST (create) a session for the workspace — its projectID IS the current
-  // project's id. GET /session can't be used: after a prior restore it returns
-  // only legacy-projectID sessions (filtered out), or nothing. The throwaway
-  // session is discarded when we overwrite the db below.
-  const sessRes = await sandbox.process.executeCommand(
-    "cd /opt/kortix/home 2>/dev/null; PORT=$(cat /var/run/kortix/opencode-port 2>/dev/null || echo 4096); curl -s -X POST \"http://127.0.0.1:$PORT/session?directory=/workspace\" 2>/dev/null",
-    undefined, undefined, 30,
-  );
-  const sessOut = (sessRes as { result?: string; artifacts?: { stdout?: string } }).result
-    ?? (sessRes as { artifacts?: { stdout?: string } }).artifacts?.stdout ?? '';
-  // The sandbox's cwd can be deleted (getcwd errors leak onto stdout) — extract
-  // the JSON object rather than parsing the whole blob.
-  let newProjectId: string | null = null;
-  const jsonStart = sessOut.indexOf('{');
-  if (jsonStart >= 0) {
-    try {
-      const obj = JSON.parse(sessOut.slice(jsonStart)) as { projectID?: string };
-      newProjectId = obj.projectID ?? null;
-    } catch { /* fall through */ }
-  }
-  appLogger.info('[rehydrate] resolved new projectID', { sessionId, newProjectId, raw: sessOut.slice(0, 120) });
-  if (!newProjectId) {
-    appLogger.warn('[rehydrate] could not read new opencode projectID; sessions may not surface', { sessionId });
-  }
-
-  // 4. Rewrite the legacy store locally: point every session at the new
-  //    projectID and checkpoint the WAL into the db so we can ship a single
-  //    self-contained file.
+  // 3. Locally re-key every session to this workspace's projectID and checkpoint
+  //    the WAL into the db so we ship one self-contained file.
   const workDir = mkdtempSync(join(tmpdir(), 'kortix-rehydrate-'));
   let dbBuf: Buffer;
   try {
@@ -143,11 +106,9 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
     if (untar.exitCode !== 0) throw new Error(`unpack failed: ${new TextDecoder().decode(untar.stderr)}`);
     const local = new Database(join(workDir, 'opencode.db'));
     try {
-      if (newProjectId) {
-        local.exec('PRAGMA foreign_keys=OFF');
-        local.prepare('UPDATE project SET id = ?').run(newProjectId);
-        local.prepare('UPDATE session SET project_id = ?').run(newProjectId);
-      }
+      local.exec('PRAGMA foreign_keys=OFF');
+      local.prepare('UPDATE project SET id = ?').run(newProjectId);
+      local.prepare('UPDATE session SET project_id = ?').run(newProjectId);
       local.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       local.close();
@@ -157,22 +118,25 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
     rmSync(workDir, { recursive: true, force: true });
   }
 
-  // 5. Ship the rewritten db; drop the stale WAL/shm so opencode reads ours;
-  //    bounce opencode (supervisor respawns `opencode serve`; daemon is separate).
+  // 4. Ship the db, drop stale WAL/shm, bounce opencode (supervisor respawns
+  //    `opencode serve`; the daemon is a separate process).
   await sandbox.fs.uploadFile(dbBuf, '/tmp/opencode.db');
-  const restore = [
-    `mkdir -p ${NEW_OPENCODE_STORE}`,
-    `rm -f ${NEW_OPENCODE_STORE}/opencode.db-wal ${NEW_OPENCODE_STORE}/opencode.db-shm`,
-    `mv /tmp/opencode.db ${NEW_OPENCODE_STORE}/opencode.db`,
-    `chown -R --reference=/opt/kortix/home ${NEW_OPENCODE_STORE} 2>/dev/null || true`,
-    "pkill -f 'opencode serve' || true",
-  ].join('; ');
-  await sandbox.process.executeCommand(restore, undefined, undefined, 120);
+  await sandbox.process.executeCommand(
+    [
+      `mkdir -p ${NEW_OPENCODE_STORE}`,
+      `rm -f ${NEW_OPENCODE_STORE}/opencode.db-wal ${NEW_OPENCODE_STORE}/opencode.db-shm`,
+      `mv /tmp/opencode.db ${NEW_OPENCODE_STORE}/opencode.db`,
+      `chown -R --reference=/opt/kortix/home ${NEW_OPENCODE_STORE} 2>/dev/null || true`,
+      "pkill -f 'opencode serve' || true",
+    ].join('; '),
+    undefined, undefined, 120,
+  );
 
-  appLogger.info('[rehydrate] restored opencode store + re-keyed projectID + bounced opencode', {
-    sessionId,
-    externalId,
-    newProjectId,
-    bytes: dbBuf.length,
+  // 5. Wait for opencode to come back up so it's serving the restored sessions
+  //    before we let the caller mark the sandbox active.
+  await waitForOpencodeProjectId(sandbox, 120_000);
+
+  appLogger.info('[rehydrate] restored legacy chats before active', {
+    sessionId, newExternalId, newProjectId, bytes: dbBuf.length,
   });
 }
