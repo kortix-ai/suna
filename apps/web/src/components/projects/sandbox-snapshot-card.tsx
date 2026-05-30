@@ -308,7 +308,7 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
           <p className="mt-0.5 text-xs text-muted-foreground">
             Sessions boot from a sandbox template. The platform default is shared by every project and
             clones your repo into <code className="font-mono">/workspace</code> at boot. Add your own
-            templates here or via <code className="font-mono">[[sandboxes]]</code> in{' '}
+            templates here or via <code className="font-mono">[[sandbox.templates]]</code> in{' '}
             <code className="font-mono">kortix.toml</code>.
           </p>
           {data.templates_error && (
@@ -345,7 +345,7 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
         )}
 
         {latestFailure && (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+          <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
               <XCircle className="h-4 w-4 text-destructive" />
               <span className="text-sm font-semibold text-destructive">Latest build failed</span>

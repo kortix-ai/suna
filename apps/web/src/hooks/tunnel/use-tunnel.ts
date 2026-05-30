@@ -112,6 +112,7 @@ export function useTunnelConnections() {
     },
     staleTime: 2_000,
     refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
     refetchOnMount: 'always',
     refetchOnWindowFocus: 'always',
   });
@@ -131,6 +132,7 @@ export function useTunnelConnection(tunnelId: string) {
     enabled: !!tunnelId,
     staleTime: 2_000,
     refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
     refetchOnMount: 'always',
     refetchOnWindowFocus: 'always',
   });
@@ -248,6 +250,7 @@ export function useTunnelPermissionRequests() {
     },
     staleTime: 5_000,
     refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
   });
 }
 

@@ -13,7 +13,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
@@ -209,7 +209,9 @@ export default function ProjectsPage() {
     if (!q) return items;
     return items.filter((project) =>
       [project.name, project.repo_url, project.default_branch]
-        .some((value) => value.toLowerCase().includes(q)),
+        // repo_url / default_branch can be null for repo-less projects;
+        // optional chaining short-circuits the whole chain to undefined.
+        .some((value) => value?.toLowerCase().includes(q)),
     );
   }, [projectsQuery.data, query]);
 

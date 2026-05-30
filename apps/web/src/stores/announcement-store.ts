@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 export interface AnnouncementData {
   component: string;
@@ -68,6 +69,7 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
     }),
     {
       name: 'announcement-store-v2',
+      storage: createSafeJSONStorage(),
       partialize: (state) => ({ dismissedAnnouncements: state.dismissedAnnouncements }),
     }
   )

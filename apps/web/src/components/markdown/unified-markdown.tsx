@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
 import Link from 'next/link';
 import { Streamdown, defaultRemarkPlugins, defaultRehypePlugins } from 'streamdown';
 type PluggableList = any[];
@@ -13,7 +13,6 @@ import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { MermaidRenderer } from '@/components/ui/mermaid-renderer';
 import { isMermaidCode } from '@/lib/mermaid-utils';
 import { autoLinkUrls } from '@kortix/shared';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -22,6 +21,16 @@ import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { toast } from '@/lib/toast';
+
+// Mermaid rendering is comparatively heavy (the renderer pulls Dialog/Button
+// chrome and lazily imports the multi-hundred-KB `mermaid` package on first
+// render). Most markdown never contains a diagram, so load the renderer
+// component lazily — it only enters the bundle once a ```mermaid block exists.
+const MermaidRenderer = lazy(() =>
+  import('@/components/ui/mermaid-renderer').then((mod) => ({
+    default: mod.MermaidRenderer,
+  })),
+);
 
 // ---------------------------------------------------------------------------
 // LaTeX / KaTeX support: custom remark + rehype plugin overrides
@@ -86,7 +95,7 @@ const katexSanitizeSchema = {
 // By running sanitize first, KaTeX output is generated *after* sanitization
 // and is preserved intact. This matches the approach in newer streamdown
 // versions (see chunk-ZKROPTWQ order: raw → sanitize → katex → harden).
-const customRehypePlugins: PluggableList = (() => {
+function buildRehypePlugins(includeRaw: boolean): PluggableList {
   const byKey: Record<string, PluggableList[number]> = {};
   for (const [key, plugin] of Object.entries(defaultRehypePlugins)) {
     if (key === 'sanitize' && Array.isArray(plugin)) {
@@ -98,12 +107,23 @@ const customRehypePlugins: PluggableList = (() => {
   // Correct order: raw → sanitize → katex → harden
   const ordered: PluggableList[number][] = [];
   for (const key of ['raw', 'sanitize', 'katex', 'harden']) {
+    if (key === 'raw' && !includeRaw) { delete byKey[key]; continue; }
     if (byKey[key]) { ordered.push(byKey[key]); delete byKey[key]; }
   }
   // Append any unknown future plugins
   for (const plugin of Object.values(byKey)) ordered.push(plugin);
-  return ordered;
-})() as PluggableList;
+  return ordered as PluggableList;
+}
+
+const customRehypePlugins: PluggableList = buildRehypePlugins(true);
+
+// Variant without `rehype-raw`: raw HTML/SVG embedded in the source is rendered
+// as escaped text instead of live DOM. Used by file/source viewers where raw
+// `<svg><path/></svg>` would otherwise be parsed into elements that Streamdown's
+// block-splitting can detach from their `<svg>` parent — React then renders the
+// stray `<path>` in the HTML namespace and warns
+// ("The tag <path> is unrecognized in this browser").
+const customRehypePluginsNoRaw: PluggableList = buildRehypePlugins(false);
 
 // Helper to check if a URL is internal (same origin)
 function isInternalUrl(href: string | undefined): boolean {
@@ -763,6 +783,13 @@ export interface UnifiedMarkdownProps {
   content: string;
   className?: string;
   isStreaming?: boolean; // Enable streaming animation for incomplete markdown
+  /**
+   * Allow raw HTML (and inline SVG) embedded in the Markdown to be parsed into
+   * live DOM. Defaults to `true`. Set to `false` for file/source viewers so that
+   * embedded markup is shown as escaped text rather than broken,
+   * namespace-less DOM (avoids React's "<path> is unrecognized" warning).
+   */
+  allowHtml?: boolean;
 }
 
 /**
@@ -781,6 +808,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   content,
   className,
   isStreaming = false,
+  allowHtml = true,
 }) => {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // Resolve the active sandbox server so we can proxy localhost URLs
@@ -934,7 +962,11 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
       if (isBlock) {
         // Mermaid diagrams — render their own card chrome
         if (isMermaidCode(language, code)) {
-          return <MermaidRenderer chart={code} className="my-5" />;
+          return (
+            <Suspense fallback={null}>
+              <MermaidRenderer chart={code} className="my-5" />
+            </Suspense>
+          );
         }
 
         // KaTeX/LaTeX code blocks — render as math, also self-contained
@@ -1131,7 +1163,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
         mode="static"
         components={components}
         remarkPlugins={customRemarkPlugins}
-        rehypePlugins={customRehypePlugins}
+        rehypePlugins={allowHtml ? customRehypePlugins : customRehypePluginsNoRaw}
       >
         {finalContent}
       </Streamdown>

@@ -160,11 +160,14 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const gapToTarget = targetARR - (finalMonth?.arr || 0);
   const progressPercent = Math.min(100, ((finalMonth?.arr || 0) / targetARR) * 100);
 
-  // Prepare chart data with negative churned for bar chart (goal data)
-  const chartData = projections.map(p => ({
-    ...p,
-    negativeChurned: -p.churned,
-  }));
+  // Prepare chart data with negative churned for bar chart (goal data).
+  // Derived purely from the memoized `projections`, so memoize it too —
+  // otherwise every keystroke in the input fields rebuilds this array and
+  // forces the recharts bar chart to re-render.
+  const chartData = useMemo(
+    () => projections.map(p => ({ ...p, negativeChurned: -p.churned })),
+    [projections],
+  );
 
   // Date range for fetching signups (Dec 15, 2025 to Jun 15, 2026)
   const signupsDateFrom = '2025-12-15';

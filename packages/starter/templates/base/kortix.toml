@@ -13,20 +13,20 @@ description = "A Kortix project."
 required = []
 optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 
-# ─── Sandboxes ───────────────────────────────────────────────────────────
+# ─── Sandbox templates ───────────────────────────────────────────────────
 # Sessions boot from a sandbox image. The platform's default image (Ubuntu +
 # the Kortix runtime layer) is always available — sessions clone your repo
 # into /workspace at boot, so no per-project build is needed by default.
 #
-# Define `[[sandboxes]]` entries below if you want named custom images for
-# this project. Each entry can point at either a Dockerfile in the repo
+# Define `[[sandbox.templates]]` entries below if you want named custom images
+# for this project. Each entry can point at either a Dockerfile in the repo
 # (`dockerfile = "…"`) or a public Docker image (`image = "…"`). Pick one or
 # the other. The Kortix runtime layer is always added on top.
 #
 # Hardware: cpu = cores, memory = GiB, disk = GiB. All optional.
 #
 # Example — custom Dockerfile:
-# [[sandboxes]]
+# [[sandbox.templates]]
 # slug = "ml"
 # name = "ML Development"
 # dockerfile = ".kortix/Dockerfile.ml"
@@ -35,7 +35,7 @@ optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 # disk = 50
 #
 # Example — public Docker image:
-# [[sandboxes]]
+# [[sandbox.templates]]
 # slug = "python"
 # name = "Python 3.12"
 # image = "python:3.12-slim"

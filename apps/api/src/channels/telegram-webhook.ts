@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../shared/db';
@@ -16,7 +17,13 @@ telegramWebhookApp.post('/:projectId', async (c) => {
   if (!expected) return c.json({ error: 'Not configured' }, 404);
 
   const presented = c.req.header('x-telegram-bot-api-secret-token') ?? '';
-  if (presented !== expected) return c.json({ error: 'Invalid secret' }, 401);
+  // Constant-time compare (matches Slack/GitHub webhook verification) so the
+  // secret can't be recovered via response-timing differences.
+  const presentedBuf = Buffer.from(presented);
+  const expectedBuf = Buffer.from(expected);
+  if (presentedBuf.length !== expectedBuf.length || !timingSafeEqual(presentedBuf, expectedBuf)) {
+    return c.json({ error: 'Invalid secret' }, 401);
+  }
 
   let update: TelegramUpdate;
   try {

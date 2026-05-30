@@ -47,11 +47,17 @@ function GitHubSetup() {
   useEffect(() => {
     if (isLoading || !user) return;
 
+    // Tracked so the post-success/uninstall redirect doesn't fire router.replace
+    // after the component unmounts (e.g. the user navigates within the 900ms).
+    let redirectTimer: number | undefined;
+
     if (setupAction === 'uninstall') {
       setState('done');
       setMessage('GitHub App removed');
-      window.setTimeout(() => router.replace('/projects'), 900);
-      return;
+      redirectTimer = window.setTimeout(() => router.replace('/projects'), 900);
+      return () => {
+        if (redirectTimer) clearTimeout(redirectTimer);
+      };
     }
 
     if (!installState || !installationId) {
@@ -73,7 +79,7 @@ function GitHubSetup() {
             ? `Connected ${status.owner_login}`
             : 'GitHub connected',
         );
-        window.setTimeout(
+        redirectTimer = window.setTimeout(
           () => router.replace(consumeGitHubSetupReturn() ?? '/projects?new=1'),
           900,
         );
@@ -86,6 +92,7 @@ function GitHubSetup() {
 
     return () => {
       cancelled = true;
+      if (redirectTimer) clearTimeout(redirectTimer);
     };
   }, [installState, installationId, isLoading, router, setupAction, user]);
 

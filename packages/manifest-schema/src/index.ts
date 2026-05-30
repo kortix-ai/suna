@@ -102,8 +102,8 @@ export function validateManifest(
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
   validateOpenCode(parsed.opencode, 'opencode', issues);
-  validateSandboxes(parsed.sandboxes, 'sandboxes', issues);
-  rejectLegacySandbox(parsed.sandbox, 'sandbox', issues);
+  validateSandbox(parsed.sandbox, 'sandbox', issues);
+  rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues);
   validateConnectors(parsed.connectors, 'connectors', issues);
   validateChannels(parsed.channels, 'channels', issues);
@@ -238,7 +238,42 @@ function validateOpenCode(
   expectRelativePathOrAbsent(node.config_dir, `${path}.config_dir`, issues);
 }
 
-function validateSandboxes(
+/**
+ * Validate the `[sandbox]` namespace. The image definitions live under
+ * `[[sandbox.templates]]` (array of tables). The `[sandbox]` table itself
+ * carries no direct image keys — those belonged to the removed singular
+ * `[sandbox]` table, so any that linger are flagged as legacy.
+ */
+function validateSandbox(
+  node: unknown,
+  path: string,
+  issues: ManifestIssue[],
+): void {
+  if (node == null) return;
+  if (!isTable(node)) {
+    issues.push({
+      path,
+      message: '`[sandbox]` must be a table holding `[[sandbox.templates]]` entries.',
+      severity: 'error',
+    });
+    return;
+  }
+  // Legacy singular `[sandbox]` shape: image/build keys set directly on the
+  // table instead of inside a `[[sandbox.templates]]` entry. Reject with a
+  // migration hint rather than silently ignoring them.
+  const LEGACY_SANDBOX_KEYS = ['image', 'dockerfile', 'slug', 'cpu', 'memory', 'disk', 'entrypoint', 'context', 'context_dir', 'gpu'];
+  const stray = LEGACY_SANDBOX_KEYS.filter((k) => node[k] !== undefined);
+  if (stray.length > 0) {
+    issues.push({
+      path,
+      message: `The singular \`[sandbox]\` table is no longer supported. Define each image under \`[[sandbox.templates]]\` (array of tables) with a named slug, and remove the \`${stray.join('`, `')}\` key${stray.length === 1 ? '' : 's'} from \`[sandbox]\`.`,
+      severity: 'error',
+    });
+  }
+  validateSandboxTemplates(node.templates, `${path}.templates`, issues);
+}
+
+function validateSandboxTemplates(
   node: unknown,
   path: string,
   issues: ManifestIssue[],
@@ -247,7 +282,7 @@ function validateSandboxes(
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message: '`sandboxes` must be an array of tables — use `[[sandboxes]]`, not `[sandboxes]`.',
+      message: '`sandbox.templates` must be an array of tables — use `[[sandbox.templates]]`, not `[sandbox.templates]`.',
       severity: 'error',
     });
     return;
@@ -333,7 +368,7 @@ function validateSandboxes(
   });
 }
 
-function rejectLegacySandbox(
+function rejectLegacySandboxes(
   node: unknown,
   path: string,
   issues: ManifestIssue[],
@@ -342,7 +377,7 @@ function rejectLegacySandbox(
   issues.push({
     path,
     message:
-      'The singular `[sandbox]` table is no longer supported. Move your config into `[[sandboxes]]` with a named slug (any slug except "default") and delete the `[sandbox]` block.',
+      '`[[sandboxes]]` has been renamed to `[[sandbox.templates]]`. The fields are unchanged — rename each `[[sandboxes]]` header to `[[sandbox.templates]]` and remove the old block.',
     severity: 'error',
   });
 }

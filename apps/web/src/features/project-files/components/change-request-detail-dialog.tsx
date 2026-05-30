@@ -19,7 +19,7 @@ import {
   RotateCcw,
   X,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -31,6 +31,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { UnifiedMarkdown } from '@/components/markdown';
 import { DiffRenderer } from './diff-renderer';
 import {
   useChangeRequest,
@@ -263,11 +264,12 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             wouldn't scroll. A plain min-h-0 + overflow-y-auto flex child does. */}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
           <div className="px-5 py-4 space-y-3">
-            {/* Description */}
+            {/* Description — authored by the agent as markdown (headings,
+                lists, code, links), so render it as such rather than raw text. */}
             {cr?.description && (
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                {cr.description}
-              </p>
+              <div className="text-sm text-muted-foreground">
+                <UnifiedMarkdown content={cr.description} />
+              </div>
             )}
 
             {/* Merge state banner */}

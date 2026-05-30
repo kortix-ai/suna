@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 /**
  * Per-session state for the right-side panel hosted by `session-layout.tsx`.
@@ -23,8 +24,9 @@ import { persist } from 'zustand/middleware';
  */
 
 // 'actions' = tool calls · 'browser' = internal browser · 'explorer' = in-sandbox
-// file explorer + preview · 'files' = git changes for this session.
-export type SessionPanelView = 'actions' | 'browser' | 'explorer' | 'files';
+// file explorer + preview · 'terminal' = live PTY shell into the sandbox ·
+// 'files' = git changes for this session.
+export type SessionPanelView = 'actions' | 'browser' | 'explorer' | 'terminal' | 'files';
 
 interface SessionBrowserState {
   /** Active view per session. Defaults to 'actions' when unset. */
@@ -48,6 +50,7 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
     }),
     {
       name: 'kortix-session-browser',
+      storage: createSafeJSONStorage(),
       partialize: (state) => ({ viewBySession: state.viewBySession }),
     },
   ),

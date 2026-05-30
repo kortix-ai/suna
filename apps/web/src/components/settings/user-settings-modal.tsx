@@ -1591,7 +1591,7 @@ function TeamPlanSection({ accountState }: { accountState: AccountState | undefi
                 <p className="text-xs uppercase tracking-widest text-muted-foreground">Team plan</p>
                 <p className="text-xs text-muted-foreground/60">$20 / teammate / month</p>
             </div>
-            <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div className="rounded-2xl border bg-card p-4 space-y-3">
                 <div>
                     <h3 className="text-sm font-semibold">Activate your seat</h3>
                     <p className="text-sm text-muted-foreground mt-1">

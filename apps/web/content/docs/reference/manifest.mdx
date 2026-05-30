@@ -23,9 +23,12 @@ description = "What this project is."
 required = ["DATABASE_URL"]
 optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "WEBHOOK_SLACK_SECRET"]
 
-[sandbox]
-dockerfile = ".kortix/Dockerfile"   # repo-relative
-context = "."                       # build context
+[[sandbox.templates]]
+slug = "ml"                         # unique per project
+name = "ML Development"
+dockerfile = ".kortix/Dockerfile.ml"   # repo-relative; or `image = "python:3.12-slim"`
+cpu = 4
+memory = 16
 
 [opencode]
 config_dir = ".kortix/opencode"
@@ -69,7 +72,7 @@ kortix_version = 1
 | Surface           | What it reads                                            |
 | ----------------- | ------------------------------------------------------- |
 | Trigger sweep     | `[[triggers]]`                                          |
-| Sandbox builder   | `[sandbox]`                                             |
+| Sandbox builder   | `[[sandbox.templates]]`                                 |
 | Sandbox runtime   | `[opencode]` (where to launch opencode with its config) |
 | Session bootstrap | `[env]` (advisory — surfaced to dashboard, not enforced)|
 | Connector sync    | `[[connectors]]`                                        |
@@ -105,34 +108,46 @@ Manifest name validation is permissive — items match `^[A-Z_][A-Z0-9_]*$` (no 
 
 The `KORTIX_*` prefix is reserved at the Secrets Manager surface, not at parse time: listing `KORTIX_FOO` in `[env]` parses fine but can never have a value. Don't. Full contract: [Secrets](/docs/reference/secrets).
 
-## `[sandbox]`
+## `[[sandbox.templates]]`
 
-Points at the Dockerfile that becomes the base for session sandboxes; the Kortix runtime layer (opencode CLI, agent daemon, entrypoint) is layered on top automatically. Optional — omitting the table or any key falls back to defaults. This is also where you size the sandbox hardware.
+Array of tables. Each entry is one named, bootable sandbox image; the Kortix runtime layer (opencode CLI, agent daemon, entrypoint) is layered on top of it automatically. Optional — with no entries, every session boots the always-available platform default image. Declare as many templates as you like; a session picks one by `slug`. This is also where you size the sandbox hardware.
+
+The schema mirrors the runtime provider (Daytona): an image comes either from a **Dockerfile in your repo** or a **public Docker image reference**, and the resource spec maps onto the provider's `cpu` / `memory` / `disk`.
 
 ```toml
-[sandbox]
-dockerfile = ".kortix/Dockerfile"
-context    = "."
-cpu        = 2     # vCPU cores
-memory     = 4     # GiB
-disk       = 20    # GiB
-gpu        = 0     # GPU units (0 = none)
+# From a repo Dockerfile
+[[sandbox.templates]]
+slug       = "ml"                       # unique per project; not "default" (reserved)
+name       = "ML Development"           # optional display label
+dockerfile = ".kortix/Dockerfile.ml"   # repo-relative
+cpu        = 4                          # vCPU cores
+memory     = 16                         # GiB
+disk       = 50                         # GiB
+
+# From a public image
+[[sandbox.templates]]
+slug  = "python"
+name  = "Python 3.12"
+image = "python:3.12-slim"              # must be tag- or digest-pinned
+cpu   = 2
+memory = 4
 ```
 
-| Field        | Type   | Default              | Notes                                       |
-| ------------ | ------ | -------------------- | ------------------------------------------- |
-| `dockerfile` | string | `.kortix/Dockerfile` | Repo-relative.                              |
-| `context`    | string | `.`                  | Build context, repo-relative. Alias: `context_dir`. |
-| `cpu`        | int    | provider default     | vCPU cores. Alias: `cpus`.                  |
-| `memory`     | int    | provider default     | RAM in GiB. Aliases: `memory_gb`, `mem`.    |
-| `disk`       | int    | provider default     | Disk in GiB. Alias: `disk_gb`.              |
-| `gpu`        | int    | provider default (none) | GPU units (requires GPU capacity on the runtime). |
+| Field        | Type   | Default          | Notes                                                                 |
+| ------------ | ------ | ---------------- | --------------------------------------------------------------------- |
+| `slug`       | string | —                | **Required.** Unique per project. `default` is reserved.              |
+| `name`       | string | slug             | Display label shown in the dashboard picker.                          |
+| `dockerfile` | string | —                | Repo-relative path. **Mutually exclusive** with `image`.              |
+| `image`      | string | —                | Public Docker image, tag- or digest-pinned (no bare `latest`). **Mutually exclusive** with `dockerfile`. |
+| `cpu`        | int    | provider default | vCPU cores.                                                           |
+| `memory`     | int    | provider default | RAM in GiB.                                                           |
+| `disk`       | int    | provider default | Disk in GiB.                                                          |
 
-Both paths must be repo-relative. Absolute paths and `..` traversal are silently ignored — the validator falls back to the default without an error. A custom path that "isn't being read" usually hits this. See [Sandbox image](/docs/reference/sandbox-image) for what the layer injects and what your Dockerfile can do.
+Exactly one of `image` or `dockerfile` is required per entry. A Dockerfile path must be repo-relative — absolute paths and `..` traversal are rejected. GPUs are not supported in this version. See [Sandbox image](/docs/reference/sandbox-image) for what the runtime layer injects and what your Dockerfile can do.
 
 ### Hardware spec
 
-`cpu` / `memory` / `disk` / `gpu` size the sandbox. Each is independent and optional — leave one out and the runtime provider's default applies. Values are coerced to whole numbers; a non-positive or non-numeric value falls back to the default, and a value above the platform ceiling (cpu 32, memory 128 GiB, disk 500 GiB, gpu 8) is clamped down rather than rejected.
+`cpu` / `memory` / `disk` size the sandbox. Each is independent and optional — leave one out and the runtime provider's default applies. Values are coerced to whole numbers; a value below 1 falls back to the default, and a value above the platform ceiling (cpu 32, memory 128 GiB, disk 500 GiB) is clamped down rather than rejected.
 
 <Callout type="info" title="A spec change rebuilds the snapshot">
 The spec is baked into the project's snapshot at build time — sandboxes inherit their resources from the snapshot, so there's no per-session override. Changing any spec field is part of the snapshot's content hash, so it triggers one rebuild; the new size takes effect on the **next** session, the same way a Dockerfile edit does. Projects that don't declare a spec are unaffected — their snapshot hash is unchanged.
@@ -149,7 +164,7 @@ config_dir = ".kortix/opencode"
 
 | Field        | Type   | Default            | Notes                                                  |
 | ------------ | ------ | ------------------ | ------------------------------------------------------ |
-| `config_dir` | string | `.kortix/opencode` | Repo-relative dir. Same silent-fallback behavior as `[sandbox]` paths. |
+| `config_dir` | string | `.kortix/opencode` | Repo-relative dir. Same silent-fallback behavior as `[[sandbox.templates]]` paths. |
 
 That directory holds agents, skills, slash commands, tools, plugins, and `opencode.jsonc` — the layout opencode reads by convention. Kortix doesn't read those files; opencode does. See [Kortix vs OpenCode config](/docs/reference/config-boundary) and [opencode.ai/docs](https://opencode.ai/docs/).
 

@@ -228,19 +228,19 @@ const LOGO_ASSETS: LogoAsset[] = [
     dark: true,
   },
   {
-    id: 'wordmark-black',
-    label: 'Wordmark',
+    id: 'logo-black',
+    label: 'Logo',
     variant: 'Black',
-    svgSrc: '/brandkit/Logo/Wordmark/SVG/Wordmark Black.svg',
-    pngSrc: '/brandkit/Logo/Wordmark/PNG/Wordmark Black.png',
+    svgSrc: '/brandkit/Logo/Logomark/SVG/Logomark Black.svg',
+    pngSrc: '/brandkit/Logo/Logomark/PNG/Logomark Black.png',
     dark: false,
   },
   {
-    id: 'wordmark-white',
-    label: 'Wordmark',
+    id: 'logo-white',
+    label: 'Logo',
     variant: 'White',
-    svgSrc: '/brandkit/Logo/Wordmark/SVG/Wordmark White.svg',
-    pngSrc: '/brandkit/Logo/Wordmark/PNG/Wordmark White.png',
+    svgSrc: '/brandkit/Logo/Logomark/SVG/Logomark White.svg',
+    pngSrc: '/brandkit/Logo/Logomark/PNG/Logomark White.png',
     dark: true,
   },
 ];
@@ -385,7 +385,7 @@ function Hex({ value }: { value: string }) {
 }
 
 function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
-  const isWordmark = asset.label === 'Wordmark';
+  const isWide = asset.label !== 'Symbol';
   const downloadHref = fmt === 'png' ? asset.pngSrc : asset.svgSrc;
   const downloadName = `kortix-${asset.label.toLowerCase()}-${asset.variant.toLowerCase()}.${fmt}`;
 
@@ -394,7 +394,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
       <div
         className={cn(
           'aspect-[3/2] rounded-lg flex items-center justify-center transition-colors relative overflow-hidden',
-          isWordmark ? 'px-6 py-8' : 'p-10',
+          isWide ? 'px-6 py-8' : 'p-10',
           asset.dark
             ? 'bg-neutral-950 ring-1 ring-white/[0.06]'
             : 'bg-white ring-1 ring-black/[0.06]'
@@ -406,7 +406,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
           alt={`Kortix ${asset.label} ${asset.variant}`}
           className={cn(
             'object-contain',
-            isWordmark
+            isWide
               ? 'max-h-8 md:max-h-10 w-full'
               : 'max-h-10 md:max-h-12 w-auto'
           )}
@@ -472,7 +472,7 @@ function DemoContainer({
   return (
     <div
       className={cn(
-        'rounded-xl ring-1 ring-border/50 bg-card/30 p-6',
+        'rounded-2xl ring-1 ring-border/50 bg-card/30 p-6',
         className
       )}
     >
@@ -1572,10 +1572,10 @@ export default function BrandPage() {
                           </Button>
                         </CollapsibleTrigger>
                       </div>
-                      <div className="rounded-md border border-border/50 px-4 py-2 mt-2 text-sm">{tHardcodedUi.raw('appHomeDesignSystemPage.line1751JsxTextKortixDesignSystem')}</div>
+                      <div className="rounded-2xl border border-border/50 px-4 py-2 mt-2 text-sm">{tHardcodedUi.raw('appHomeDesignSystemPage.line1751JsxTextKortixDesignSystem')}</div>
                       <CollapsibleContent className="mt-2 space-y-2">
-                        <div className="rounded-md border border-border/50 px-4 py-2 text-sm">{tHardcodedUi.raw('appHomeDesignSystemPage.line1755JsxTextKortixComponents')}</div>
-                        <div className="rounded-md border border-border/50 px-4 py-2 text-sm">{tHardcodedUi.raw('appHomeDesignSystemPage.line1758JsxTextKortixTokens')}</div>
+                        <div className="rounded-2xl border border-border/50 px-4 py-2 text-sm">{tHardcodedUi.raw('appHomeDesignSystemPage.line1755JsxTextKortixComponents')}</div>
+                        <div className="rounded-2xl border border-border/50 px-4 py-2 text-sm">{tHardcodedUi.raw('appHomeDesignSystemPage.line1758JsxTextKortixTokens')}</div>
                       </CollapsibleContent>
                     </Collapsible>
                   </DemoContainer>
@@ -1828,7 +1828,7 @@ export default function BrandPage() {
                   <ComponentLabel>{tHardcodedUi.raw('appHomeDesignSystemPage.line2040JsxTextScrollArea')}</ComponentLabel>
                   <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2042JsxTextCustomScrollableContainerWithStyledScrollbar')}</ComponentDesc>
                   <DemoContainer>
-                    <ScrollArea className="h-48 w-full rounded-md border border-border/50 p-4">
+                    <ScrollArea className="h-48 w-full rounded-2xl border border-border/50 p-4">
                       <div className="space-y-2">
                         {Array.from({ length: 20 }, (_, i) => (
                           <div
@@ -1973,7 +1973,7 @@ export default function BrandPage() {
                   <code className="text-xs font-mono">full</code>.
                 </ComponentDesc>
                 <DemoContainer>
-                  <div className="rounded-lg border border-dashed border-border/60 py-10 text-center text-xs text-muted-foreground">
+                  <div className="rounded-2xl border border-dashed border-border/60 py-10 text-center text-xs text-muted-foreground">
                     <code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2223JsxTextLtPageshellWidthQuotDefaultQuotGtLt')}</code>
                     <div className="mt-1 opacity-60">{tHardcodedUi.raw('appHomeDesignSystemPage.line2224JsxTextMaxW1000pxPx6LgPx10')}</div>
                   </div>

@@ -316,8 +316,9 @@ setupApp.get('/setup-status', async (c) => {
       .limit(1);
     const complete = !!account?.setupCompleteAt;
     return c.json({ complete, completedAt: account?.setupCompleteAt?.toISOString() ?? null });
-  } catch (e: any) {
-    return c.json({ complete: false, completedAt: null, error: e?.message || String(e) }, 500);
+  } catch (e) {
+    console.error('[setup] setup-complete-status failed:', e);
+    return c.json({ complete: false, completedAt: null, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
 
@@ -337,8 +338,9 @@ setupApp.post('/setup-complete', async (c) => {
       .set({ setupCompleteAt: new Date(), setupWizardStep: 0, updatedAt: new Date() })
       .where(eq(accounts.accountId, accountId));
     return c.json({ ok: true });
-  } catch (e: any) {
-    return c.json({ ok: false, error: e?.message || String(e) }, 500);
+  } catch (e) {
+    console.error('[setup] setup-complete failed:', e);
+    return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
 
@@ -364,8 +366,9 @@ setupApp.get('/setup-wizard-step', async (c) => {
       return c.json({ step: 0 });
     }
     return c.json({ step: account?.setupWizardStep ?? 0 });
-  } catch (e: any) {
-    return c.json({ step: 0, error: e?.message || String(e) }, 500);
+  } catch (e) {
+    console.error('[setup] setup-wizard-step (get) failed:', e);
+    return c.json({ step: 0, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
 
@@ -388,7 +391,8 @@ setupApp.post('/setup-wizard-step', async (c) => {
       .set({ setupWizardStep: step, updatedAt: new Date() })
       .where(eq(accounts.accountId, accountId));
     return c.json({ ok: true });
-  } catch (e: any) {
-    return c.json({ ok: false, error: e?.message || String(e) }, 500);
+  } catch (e) {
+    console.error('[setup] setup-wizard-step (set) failed:', e);
+    return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });

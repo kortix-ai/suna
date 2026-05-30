@@ -91,7 +91,7 @@ export interface ResolvedTemplate {
  * plus this project's own templates. Order: platform default first, then
  * project templates by creation order.
  *
- * Side effect: TOML-declared `[[sandboxes]]` entries are upserted into the DB
+ * Side effect: TOML-declared `[[sandbox.templates]]` entries are upserted into the DB
  * here, so the canonical list lives in the DB after a single read.
  */
 /**
@@ -152,7 +152,7 @@ export async function listTemplatesForProject(
   }
 
   // Project-scoped rows SHADOW shared rows with the same slug. So if a project
-  // defines its own `[sandbox]` (legacy) or `[[sandboxes]]` entry with slug
+  // defines its own `[[sandbox.templates]]` entry with slug
   // "default", that wins over the platform default. Otherwise the platform's
   // shared row is the project's default.
   const projectSlugs = new Set(rows.filter((r) => !r.isShared).map((r) => r.slug));
@@ -489,7 +489,7 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
 }
 
 /**
- * Upsert `[[sandboxes]]` entries from the project's kortix.toml into the DB.
+ * Upsert `[[sandbox.templates]]` entries from the project's kortix.toml into the DB.
  * Best-effort: a broken manifest never blocks the boot path.
  */
 async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<void> {

@@ -44,8 +44,24 @@ import { AdminUserTable } from '@/components/admin/admin-user-table';
 import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
 import { useAdminUserList, useRefreshUserData, type UserSummary } from '@/hooks/admin/use-admin-users';
 
-import { UserEmailLink, MetricCard, ThreadBrowser, RetentionTab, ARRSimulator } from './components';
+import { UserEmailLink, MetricCard, ThreadBrowser, RetentionTab } from './components';
 import { LegacyBanner } from '@/components/admin/legacy-banner';
+import dynamic from 'next/dynamic';
+
+// Heavy recharts surface — the only recharts consumer in this page and ~2.5k
+// lines — that mounts only on the non-default "ARR Simulator" tab. Load it
+// lazily so recharts and this component stay out of the analytics page chunk.
+const ARRSimulator = dynamic(
+  () => import('./components/arr-simulator').then((mod) => mod.ARRSimulator),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Loading simulator…
+      </div>
+    ),
+  },
+);
 
 // Get current date in Berlin timezone
 function getBerlinToday(): Date {
@@ -383,7 +399,7 @@ export default function AdminAnalyticsPage() {
                                 const total = Object.values(categoryDistribution.distribution).reduce((a, b) => a + b, 0);
                                 const percent = total > 0 ? ((count / total) * 100).toFixed(0) : 0;
                                 return (
-                                  <div key={cat} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background border">
+                                  <div key={cat} className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-background border">
                                     <span className="text-sm font-medium">{cat}</span>
                                     <span className="text-xs text-muted-foreground">{count}</span>
                                     <span className="text-xs text-muted-foreground/70">({percent}%)</span>

@@ -73,7 +73,7 @@ function PowerButton({ href, onClick, label = 'Launch Kortix' }: { href?: string
       <AnimatePresence>
         {hovered && (
           <motion.span
-            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-foreground bg-background border border-border rounded-md px-2 py-0.5 pointer-events-none z-50 shadow-sm"
+            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-foreground bg-background border border-border rounded-2xl px-2 py-0.5 pointer-events-none z-50 shadow-sm"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
@@ -237,10 +237,10 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 <Type className="size-3.5 shrink-0" />{tHardcodedUi.raw('componentsHomeNavbar.line239JsxTextDownloadWordmark')}</ContextMenuSubTrigger>
               <ContextMenuSubContent className="w-40">
                 {[
-                  { label: 'Black · SVG', href: '/brandkit/Logo/Wordmark/SVG/Wordmark Black.svg', file: 'kortix-wordmark-black.svg' },
-                  { label: 'Black · PNG', href: '/brandkit/Logo/Wordmark/PNG/Wordmark Black.png', file: 'kortix-wordmark-black.png' },
-                  { label: 'White · SVG', href: '/brandkit/Logo/Wordmark/SVG/Wordmark White.svg', file: 'kortix-wordmark-white.svg' },
-                  { label: 'White · PNG', href: '/brandkit/Logo/Wordmark/PNG/Wordmark White.png', file: 'kortix-wordmark-white.png' },
+                  { label: 'Black · SVG', href: '/brandkit/Logo/Logomark/SVG/Logomark Black.svg', file: 'kortix-logo-black.svg' },
+                  { label: 'Black · PNG', href: '/brandkit/Logo/Logomark/PNG/Logomark Black.png', file: 'kortix-logo-black.png' },
+                  { label: 'White · SVG', href: '/brandkit/Logo/Logomark/SVG/Logomark White.svg', file: 'kortix-logo-white.svg' },
+                  { label: 'White · PNG', href: '/brandkit/Logo/Logomark/PNG/Logomark White.png', file: 'kortix-logo-white.png' },
                 ].map((d) => (
                   <ContextMenuItem key={d.file} onClick={() => { const a = document.createElement('a'); a.href = d.href; a.download = d.file; a.click(); }} className="text-sm cursor-pointer">
                     {d.label}

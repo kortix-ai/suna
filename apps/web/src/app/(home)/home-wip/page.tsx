@@ -113,7 +113,7 @@ function IntegrationPill({
   name: string;
 }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card/60 hover:bg-muted/50 transition-colors">
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl border border-border bg-card/60 hover:bg-muted/50 transition-colors">
       {domain ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img

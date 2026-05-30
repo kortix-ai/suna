@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import * as ResizablePrimitive from 'react-resizable-panels';
 import { PreviewTabContent } from '@/components/tabs/preview-tab-content';
 import { useIsMobile } from '@/hooks/utils';
@@ -27,10 +27,8 @@ import {
   type SessionPanelView,
 } from '@/stores/session-browser-store';
 import { SessionFilesExplorer } from '@/components/session/session-files-explorer';
-import {
-  SessionActionsPanel,
-  collectToolParts,
-} from '@/components/session/session-actions-panel';
+import { SessionTerminalPanel } from '@/components/session/session-terminal-panel';
+import { SessionActionsPanel } from '@/components/session/session-actions-panel';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { X } from 'lucide-react';
 
@@ -75,11 +73,6 @@ export const SessionLayout = memo(function SessionLayout({
     }
   }, [isActiveTab, sessionId, setActiveSession]);
 
-  const hasToolCalls = useMemo(
-    () => collectToolParts(messages).length > 0,
-    [messages],
-  );
-
   // Right-side panel view — actions (tool calls) or internal browser.
   // Per-session, so each session remembers which view the user prefers.
   const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId] ?? 'actions');
@@ -90,6 +83,7 @@ export const SessionLayout = memo(function SessionLayout({
   const setPanelView = useSessionBrowserStore((s) => s.setView);
   const showBrowser = panelView === 'browser';
   const showExplorer = panelView === 'explorer';
+  const showTerminal = panelView === 'terminal';
 
   useEffect(() => {
     if (shouldOpenPanel && !isSidePanelOpen) {
@@ -110,13 +104,11 @@ export const SessionLayout = memo(function SessionLayout({
   const panelGroupRef = useRef<HTMLDivElement>(null);
   const prevExpandedRef = useRef(isExpanded);
 
-  // Side panel is visible when the user has explicitly opened it AND there's
-  // something to show. The "something to show" rule used to be just "we have
-  // tool calls"; with the browser view it also includes "browser is the
-  // active view" — so the user can pop the panel open just to use the
-  // internal browser even before the agent has run any tools.
-  const shouldShowPanel =
-    isSidePanelOpen && (hasToolCalls || showBrowser || showExplorer);
+  // Side panel is visible whenever the user has opened it — full stop. The
+  // panel hosts Actions / Browser / Files / Terminal, all of which are useful
+  // even on an empty session with no tool calls (the Actions view shows its
+  // own empty state), so opening is gated purely on the user's intent.
+  const shouldShowPanel = isSidePanelOpen;
 
   // ⌘I / Ctrl+I toggles the side panel open/closed.
   //
@@ -237,15 +229,38 @@ export const SessionLayout = memo(function SessionLayout({
     />
   );
 
+  // The terminal is a long-lived shell: once opened it stays MOUNTED (just
+  // hidden) when the user switches tabs or closes the panel, so its WebSocket
+  // never tears down and reconnects. Reconnecting would replay the scrollback
+  // and re-run setup — i.e. the terminal would appear to "reset" on every open.
+  const [terminalActivated, setTerminalActivated] = useState(false);
+  useEffect(() => {
+    if (showTerminal) setTerminalActivated(true);
+  }, [showTerminal]);
+
   // The active side-panel body. "Actions" renders through the canonical
   // ToolPartRenderer (via SessionActionsPanel) — the same handlers the chat
-  // uses — so there is exactly one tool-rendering implementation.
-  const panelBody = showBrowser ? (
+  // uses — so there is exactly one tool-rendering implementation. The terminal
+  // is layered on top and toggled with `hidden` (display:none) rather than
+  // unmounted, keeping its connection alive across view switches.
+  const nonTerminalBody = showBrowser ? (
     <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
   ) : showExplorer ? (
     <SessionFilesExplorer chatSessionId={sessionId} />
   ) : (
     <SessionActionsPanel sessionId={sessionId} messages={messages} />
+  );
+  const panelBody = (
+    <div className="relative h-full w-full">
+      {terminalActivated && (
+        <div className={cn('absolute inset-0', !showTerminal && 'hidden')}>
+          <SessionTerminalPanel hidden={!showTerminal} />
+        </div>
+      )}
+      <div className={cn('absolute inset-0', showTerminal && 'hidden')}>
+        {nonTerminalBody}
+      </div>
+    </div>
   );
 
   // Mobile
@@ -368,6 +383,11 @@ function PanelHeaderSwitcher({
           active={view === 'explorer'}
           onClick={() => onChangeView('explorer')}
           label="Files"
+        />
+        <PanelTabButton
+          active={view === 'terminal'}
+          onClick={() => onChangeView('terminal')}
+          label="Terminal"
         />
       </div>
       <Tooltip>

@@ -1,5 +1,6 @@
 'use client';
 
+import { lazy, Suspense } from 'react';
 import { useTranslations } from 'next-intl';
 
 /**
@@ -24,8 +25,15 @@ import { ArrowLeftRight } from 'lucide-react';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { UserMenu } from '@/components/layout/user-menu';
 import { AccountSwitcher } from '@/components/layout/account-switcher';
-import { CommandPalette } from '@/components/command-palette';
 import { cn } from '@/lib/utils';
+
+// Lazy so the command palette (and its dependency graph) only loads once a
+// header page is actually on screen, mirroring project-shell/layout-content.
+const CommandPalette = lazy(() =>
+  import('@/components/command-palette').then((mod) => ({
+    default: mod.CommandPalette,
+  })),
+);
 
 export function AppHeader({
   user,
@@ -75,7 +83,7 @@ export function AppHeader({
           aria-label={tHardcodedUi.raw('componentsLayoutAppHeader.line72JsxAttrAriaLabelKortixHome')}
           className="mr-1 inline-flex cursor-pointer items-center rounded-md transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          <KortixLogo size={20} />
+          <KortixLogo variant="logomark" size={16} />
         </Link>
         {/* Vercel-style breadcrumb: the account is the workspace your projects
             live under, so it's the first pill (which project lives in the
@@ -106,7 +114,9 @@ export function AppHeader({
       </div>
     </header>
     {/* Cmd+K — available on every header page, not just the project shell. */}
-    <CommandPalette />
+    <Suspense fallback={null}>
+      <CommandPalette />
+    </Suspense>
     </>
   );
 }

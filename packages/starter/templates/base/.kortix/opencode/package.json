@@ -1,0 +1,10 @@
+{
+  "name": "kortix-opencode-config",
+  "private": true,
+  "//": "Dependencies for the custom tools in tools/. OpenCode runs `bun install` here at startup so tools can import them. The sandbox image pre-warms Bun's cache with these so the boot-time install is offline and fast.",
+  "dependencies": {
+    "@mendable/firecrawl-js": "^4.25.1",
+    "@tavily/core": "^0.7.3",
+    "replicate": "^1.4.0"
+  }
+}

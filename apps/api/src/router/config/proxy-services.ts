@@ -17,6 +17,14 @@ export interface AllowedRoute {
   prefixMatch?: boolean;
   /** Override billing tool name for this specific route (for per-model billing) */
   billingToolName?: string;
+  /**
+   * Anti-abuse gate for shared prediction endpoints (e.g. Replicate's `/predictions`,
+   * which can run ANY model via a `version` in the body). When set, the request body's
+   * `version` field must be one of these values or the proxy rejects with 403 — this
+   * keeps a versioned-community-model route locked to a specific model even though the
+   * model isn't encoded in the URL path.
+   */
+  allowedBodyVersions?: string[];
 }
 
 // === Proxy Service Configuration ===
@@ -101,7 +109,8 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
       getKortixApiKey: () => config.REPLICATE_API_TOKEN,
       keyInjection: { type: 'header', headerName: 'Authorization', prefix: 'Token ' },
       allowedRoutes: [
-        // Allowed models — locked to specific models, each with own billing
+        // Allowed models — locked to specific models, each with own billing.
+        // (Official-model form: `replicate.run("owner/name")` → /v1/models/.../predictions.)
         {
           path: '/v1/models/google/nano-banana/predictions',
           methods: ['POST'],
@@ -111,6 +120,28 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
           path: '/v1/models/openai/gpt-image-1.5/predictions',
           methods: ['POST'],
           billingToolName: 'proxy_replicate_gpt_image',
+        },
+        // Moondream2 vision captioning — used by the sandbox `image_search` tool to
+        // enrich image results with descriptions. The Replicate SDK runs a *versioned*
+        // community model via `POST /predictions` (with `version` in the body), so the
+        // model isn't in the URL path — `allowedBodyVersions` locks this route to the
+        // one Moondream2 version the tool pins, preventing arbitrary-model abuse.
+        {
+          path: '/predictions',
+          methods: ['POST'],
+          billingToolName: 'proxy_replicate_moondream',
+          allowedBodyVersions: [
+            '72ccb656353c348c1385df54b237eeb7bfa874bf11486cf0b9473e691b662d31',
+          ],
+        },
+        // Polling for a created prediction's result (`GET /predictions/{id}`). Cheap and
+        // gated by the create step above (you can only poll predictions you created with
+        // Kortix's key), so it's billed at zero.
+        {
+          path: '/predictions',
+          methods: ['GET'],
+          prefixMatch: true,
+          billingToolName: 'proxy_replicate_poll',
         },
       ],
       billingToolName: 'proxy_replicate',

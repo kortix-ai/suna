@@ -232,7 +232,7 @@ export function CanvasToolView({
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
             <div className={cn(
-              "relative p-2 rounded-lg border flex-shrink-0",
+              "relative p-2 rounded-2xl border flex-shrink-0",
               actionInfo.bgColor,
               actionInfo.borderColor
             )}>

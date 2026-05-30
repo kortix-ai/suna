@@ -14,7 +14,7 @@ import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, KeyRound, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -161,14 +161,14 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
 
           <div className="space-y-3">
             {previewQuery.isLoading && (
-              <div className="rounded-md border border-border/60 px-3 py-3">
+              <div className="rounded-2xl border border-border/60 px-3 py-3">
                 <Skeleton className="h-4 w-3/4" />
                 <Skeleton className="mt-2 h-3 w-1/2" />
               </div>
             )}
 
             {previewQuery.data && previewQuery.data.will_lock_out_account && (
-              <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">
+              <div className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <p>
                   {tHardcodedUi.raw('componentsIamMfaRequiredCard.line185JsxTextNobodyWouldRetainAccessPromoteASuperAdmin')}</p>
@@ -176,7 +176,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
             )}
 
             {previewQuery.data && !previewQuery.data.will_lock_out_account && (
-              <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+              <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
                 <span className="font-medium text-foreground">
                   {previewQuery.data.members_with_mfa}
                 </span>{' '}
@@ -188,7 +188,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
             )}
 
             {partitionedLosers.lockouts.length > 0 && (
-              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-xs">
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-xs">
                 <p className="mb-2 font-medium text-amber-700 dark:text-amber-400">
                   {partitionedLosers.lockouts.length}{' '}
                   {partitionedLosers.lockouts.length === 1 ? 'member' : 'members'} {tHardcodedUi.raw('componentsIamMfaRequiredCard.line208JsxTextWillBeLockedOutUntilTheyEnrolMFA')}</p>
@@ -209,7 +209,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
             )}
 
             {partitionedLosers.exemptAdmins.length > 0 && (
-              <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-3 text-xs">
+              <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-3 text-xs">
                 <p className="mb-2 flex items-center gap-1.5 text-muted-foreground">
                   <Badge variant="outline" size="sm" className="text-[9px]">
                     exempt

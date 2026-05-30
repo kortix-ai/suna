@@ -7,6 +7,7 @@ import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useServerStore } from '@/stores/server-store';
+import { ScopedCache } from '@/lib/storage/managed-storage';
 import type {
   Session,
   Message,
@@ -160,30 +161,52 @@ function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }): 
 // localStorage placeholder caches are per-sandbox too — scope by active server
 // id so re-opening a warm session paints its OWN last data, never the previous
 // sandbox's. Scoping lives in the helpers so every call site inherits it.
-function getLSCache<T>(key: string): T | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    const raw = localStorage.getItem(`${key}:${activeServerKey()}`);
-    if (!raw) return undefined;
-    return JSON.parse(raw) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function setLSCache(key: string, value: unknown): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(`${key}:${activeServerKey()}`, JSON.stringify(value));
-  } catch {
-    // Storage full or unavailable
-  }
-}
-
+//
+// These are backed by ScopedCache, which caps each family to its N
+// most-recently-used scopes. That cap is the whole point: the default scope is
+// the EPHEMERAL per-sandbox server id, so without a cap every new session would
+// leak a fresh `kortix_cache_*:<serverId>` blob forever and eventually blow the
+// localStorage quota (which then crashes whatever store writes next). The cache
+// is disposable — a miss just refetches — so small caps are safe.
 const LS_SESSIONS = 'kortix_cache_sessions';
 const LS_AGENTS = 'kortix_cache_agents';
 const LS_COMMANDS = 'kortix_cache_commands';
 const LS_PROVIDERS = 'kortix_cache_providers';
+
+// Session/command lists are keyed per ephemeral sandbox — keep only the few
+// most-recent sandboxes warm. Agents are keyed per directory (+ global), which
+// is a small, stable space, so it gets more headroom. Providers are global.
+const sessionsCache = new ScopedCache<Session[]>(LS_SESSIONS, 4);
+const agentsCache = new ScopedCache<Agent[]>(LS_AGENTS, 8);
+const commandsCache = new ScopedCache<Command[]>(LS_COMMANDS, 4);
+const providersCache = new ScopedCache<ProviderListResponse>(LS_PROVIDERS, 2);
+
+const cacheByFamily: Record<string, ScopedCache<any>> = {
+  [LS_SESSIONS]: sessionsCache,
+  [LS_AGENTS]: agentsCache,
+  [LS_COMMANDS]: commandsCache,
+  [LS_PROVIDERS]: providersCache,
+};
+
+function getLSCache<T>(family: string, scope?: string): T | undefined {
+  return cacheByFamily[family]?.get(scope ?? activeServerKey()) as T | undefined;
+}
+
+function setLSCache(family: string, value: unknown, scope?: string): void {
+  cacheByFamily[family]?.set(scope ?? activeServerKey(), value);
+}
+
+/**
+ * Stable cache scope for data that does NOT vary per sandbox. The default
+ * scope is the ephemeral per-sandbox server id, which is correct for
+ * session-specific data (session lists collide across sandboxes) but wrong for
+ * platform/project-level data like the model list and the agent roster: those
+ * are identical across every sandbox, yet a per-server key guarantees a cache
+ * MISS on every brand-new session (new sandbox → new server id → never seen).
+ * Keying them here instead lets a fresh session paint its pickers from cache on
+ * the first frame, before the sandbox is even up — killing the visible pop-in.
+ */
+const CACHE_SCOPE_GLOBAL = 'global';
 
 export function useOpenCodeRuntimeReady() {
   return useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
@@ -589,11 +612,17 @@ export function useOpenCodeAgents(options?: { directory?: string }) {
       const result = await client.app.agents(directory ? { directory } : undefined);
       const data = unwrap(result);
       const agents: Agent[] = Array.isArray(data) ? data : Object.values(data as Record<string, Agent>);
-      if (!directory) setLSCache(LS_AGENTS, agents);
+      // Agents are defined in the project repo (.kortix/opencode/agents), so the
+      // roster is stable across every session that shares a working directory.
+      // Cache under a directory-scoped (or global) STABLE key — not the
+      // ephemeral per-sandbox server id — so a new session's picker paints from
+      // cache instead of waiting on sandbox boot + the in-box /app/agents call.
+      // (Previously the directory case cached nothing at all → guaranteed pop-in.)
+      setLSCache(LS_AGENTS, agents, directory ? `dir:${directory}` : CACHE_SCOPE_GLOBAL);
       return agents;
     },
-    // Per-directory results aren't cached to LS — only the global list is.
-    placeholderData: directory ? undefined : () => getLSCache<Agent[]>(LS_AGENTS),
+    placeholderData: () =>
+      getLSCache<Agent[]>(LS_AGENTS, directory ? `dir:${directory}` : CACHE_SCOPE_GLOBAL),
     enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
@@ -969,10 +998,13 @@ export function useOpenCodeProviders() {
       const client = getClient();
       const result = await client.provider.list();
       const providers = unwrap(result);
-      setLSCache(LS_PROVIDERS, providers);
+      // Models are identical across every sandbox of every project (they come
+      // from the platform's opencode provider config), so cache them under the
+      // stable global scope — never the ephemeral per-sandbox server id.
+      setLSCache(LS_PROVIDERS, providers, CACHE_SCOPE_GLOBAL);
       return providers;
     },
-    placeholderData: () => getLSCache<ProviderListResponse>(LS_PROVIDERS),
+    placeholderData: () => getLSCache<ProviderListResponse>(LS_PROVIDERS, CACHE_SCOPE_GLOBAL),
     enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,

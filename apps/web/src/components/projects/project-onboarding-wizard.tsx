@@ -25,7 +25,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -211,7 +211,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
         icon: Sparkles,
         title: 'Want a hand getting started?',
         description:
-          "I'm Marko, founder of Kortix. Book a 30-minute call and I'll set up your company's AI command center with you — end-to-end. Or skip ahead and I'll walk you through it.",
+          "I'm Marko, founder of Kortix. Book a 20-minute call and I'll help set up your company's AI command center with you.",
         done: founderBooked,
         primaryCta: 'Book a call with Marko',
         primaryAction: () => setCalOpen(true),
@@ -567,7 +567,7 @@ function StepCard({
                 type="button"
                 onClick={() => onPickStarterPrompt(p)}
                 className={cn(
-                  'group relative flex cursor-pointer items-start gap-3 rounded-xl border bg-card/60 p-3 text-left',
+                  'group relative flex cursor-pointer items-start gap-3 rounded-2xl border bg-card/60 p-3 text-left',
                   'transition-all duration-150',
                   'hover:border-foreground/25 hover:bg-card hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.18)]',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
@@ -653,7 +653,7 @@ function BusinessAppLogos({ onPick }: { onPick: () => void }) {
           title={app.name}
           aria-label={`Connect ${app.name}`}
           className={cn(
-            'group flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-card/60 px-2 py-3',
+            'group flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border border-border/60 bg-card/60 px-2 py-3',
             'transition-all duration-150',
             'hover:border-foreground/25 hover:bg-card hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.18)]',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',

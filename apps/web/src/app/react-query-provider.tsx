@@ -4,13 +4,13 @@ import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { handleApiError } from '@/lib/error-handler';
+import { registerQueryClient } from '@/lib/query-client-singleton';
 
 import { isBillingError } from '@/lib/api/errors';
 
 export function ReactQueryProvider({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
+  const [queryClient] = useState(() => {
+    const client = new QueryClient({
         defaultOptions: {
           queries: {
             // Default staleTime increased from 20s to 5min. Most data is kept
@@ -61,8 +61,12 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
             },
           },
         },
-      }),
-  );
+      });
+    // Expose the instance so auth-driven resets (logout, cross-account
+    // sign-in) can clear the cache from outside the React Query context.
+    registerQueryClient(client);
+    return client;
+  });
 
   return (
     <QueryClientProvider client={queryClient}>

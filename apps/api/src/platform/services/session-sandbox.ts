@@ -117,7 +117,7 @@ export async function provisionSessionSandbox(opts: {
   baseRef?: string;
   /**
    * Slug of the sandbox template to boot from. Resolves against the project's
-   * `[[sandboxes]]` entries. Empty/undefined → platform default.
+   * `[[sandbox.templates]]` entries. Empty/undefined → platform default.
    */
   sandboxSlug?: string;
 }): Promise<ProvisionSessionSandboxResult> {

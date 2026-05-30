@@ -20,10 +20,14 @@ import {
   stopProjectApp,
   updateProjectApp,
   type CreateOrUpdateProjectAppInput,
+  type DeploymentStatus,
   type ListProjectAppsResponse,
 } from '@/lib/projects-apps-client';
 
 const PROJECT_APPS_KEY = (projectId: string) => ['project-apps', projectId] as const;
+
+// Non-terminal deployment states — keep polling while any app sits in one.
+const IN_PROGRESS_STATUSES = new Set<DeploymentStatus>(['pending', 'building', 'deploying']);
 
 export function projectAppsQueryKey(projectId: string) {
   return PROJECT_APPS_KEY(projectId);
@@ -38,10 +42,11 @@ export function useProjectApps(projectId: string | undefined) {
     // status badges don't stall on a `pending` row for minutes.
     refetchInterval: (query) => {
       const data = query.state.data as ListProjectAppsResponse | undefined;
-      const anyPending = data?.apps.some(
-        (a) => a.latest_deployment?.status === 'pending',
-      );
-      return anyPending ? 4000 : false;
+      const anyInProgress = data?.apps.some((a) => {
+        const status = a.latest_deployment?.status;
+        return status != null && IN_PROGRESS_STATUSES.has(status);
+      });
+      return anyInProgress ? 4000 : false;
     },
   });
 }

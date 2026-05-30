@@ -4,6 +4,7 @@ import { Component } from 'react';
 import type { ErrorInfo } from 'react';
 import * as Sentry from '@sentry/nextjs';
 import { Button } from '@/components/ui/button';
+import { ErrorDetails } from './error-details';
 
 // `children` is typed via the global `React.ReactNode` (not the named import)
 // so it matches the layout's children type — the app pins @types/react@18 but
@@ -11,15 +12,16 @@ import { Button } from '@/components/ui/button';
 // pattern used by ReactQueryProvider.
 export type ErrorBoundaryFallback = (props: { error: Error; reset: () => void }) => React.ReactNode;
 
-function DefaultAppFallback({ reset }: { reset: () => void }) {
+function DefaultAppFallback({ error, reset }: { error: Error; reset: () => void }) {
   return (
-    <div className="flex min-h-[60vh] w-full flex-col items-center justify-center gap-4 p-6 text-center">
+    <div className="flex h-full min-h-[60vh] w-full flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
       <div className="space-y-1.5">
         <h2 className="text-lg font-medium text-foreground">Something went wrong</h2>
         <p className="max-w-md text-sm text-muted-foreground">
           This part of the app hit an unexpected error. Try again, or reload the page if it keeps happening.
         </p>
       </div>
+      <ErrorDetails error={error} />
       <div className="flex gap-2">
         <Button variant="outline" onClick={reset}>
           Try again
@@ -92,6 +94,7 @@ export function ClientErrorBoundary({
   silent?: boolean;
 }) {
   const render: ErrorBoundaryFallback =
-    fallback ?? (silent ? () => null : (props) => <DefaultAppFallback reset={props.reset} />);
+    fallback ??
+    (silent ? () => null : (props) => <DefaultAppFallback error={props.error} reset={props.reset} />);
   return <ErrorBoundaryInner render={render}>{children}</ErrorBoundaryInner>;
 }

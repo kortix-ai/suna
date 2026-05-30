@@ -1000,7 +1000,7 @@ function ChatGptSubscriptionConnect({
         </div>
       </div>
       {(authInstructions || authUrl) && (
-        <div className="mt-3 rounded-xl border border-border/50 bg-background/70 p-3">
+        <div className="mt-3 rounded-2xl border border-border/50 bg-background/70 p-3">
           <div className="text-xs font-medium text-foreground">Complete authorization</div>
           {authUrl && (
             <Button
@@ -1017,12 +1017,12 @@ function ChatGptSubscriptionConnect({
           {deviceCode ? (
             <div className="mt-3">
               <div className="text-xs text-muted-foreground">Enter this code on the auth page:</div>
-              <div className="mt-1 w-fit rounded-lg border border-border/60 bg-muted px-3 py-2 font-mono text-lg font-semibold tracking-normal text-foreground">
+              <div className="mt-1 w-fit rounded-2xl border border-border/60 bg-muted px-3 py-2 font-mono text-lg font-semibold tracking-normal text-foreground">
                 {deviceCode}
               </div>
             </div>
           ) : authInstructions ? (
-            <pre className="mt-3 whitespace-pre-wrap rounded-lg border border-border/60 bg-muted p-3 text-xs text-muted-foreground">
+            <pre className="mt-3 whitespace-pre-wrap rounded-2xl border border-border/60 bg-muted p-3 text-xs text-muted-foreground">
               {authInstructions}
             </pre>
           ) : null}

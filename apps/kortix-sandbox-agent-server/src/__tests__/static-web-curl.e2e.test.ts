@@ -89,6 +89,24 @@ describe('static web server live curl e2e', () => {
     expect(res.body).toContain('<h1>hello</h1>')
   })
 
+  it('injects a root-anchored <base> for subdomain previews (bare http origin)', async () => {
+    // Subdomain previews (p{port}-{sandbox}.host) serve at the host ROOT, so the
+    // proxy sends X-Forwarded-Prefix as just the origin — no /v1/p/<id>/<port>
+    // path segment. It must also honour http (local dev), not assume https, or
+    // the browser loads relative assets over TLS against an http listener and
+    // fails with ERR_SSL_PROTOCOL_ERROR. This is the exact prefix the fixed
+    // subdomain proxy now produces.
+    const prefix = 'http://p3211-sbx-123.localhost:8008'
+    const res = await curl(`${base}/open?path=${encodeURIComponent(indexPath)}`, [
+      '-H',
+      `X-Forwarded-Prefix: ${prefix}`,
+    ])
+    expect(res.status).toBe(200)
+    // Root-anchored: relative style.css resolves to {origin}/abs/<dir>/style.css,
+    // which routes straight back to this server through the same subdomain.
+    expect(res.body).toContain(`<base href="${prefix}/abs${siteDir}/">`)
+  })
+
   it('serves assets via /abs with the right content-type', async () => {
     const res = await curl(`${base}/abs${siteDir}/style.css`)
     expect(res.status).toBe(200)

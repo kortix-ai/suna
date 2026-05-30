@@ -3621,7 +3621,7 @@ function SessionTurn({
                   return (
                     <div key={part.id} className="flex items-center gap-2 py-2.5">
                       <div className="flex-1 h-px bg-border" />
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/80 border border-border/60">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl bg-muted/80 border border-border/60">
                         <Layers className="size-3 text-muted-foreground" />
                         <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                           Compaction
@@ -4418,11 +4418,6 @@ export function SessionChat({
   );
 
   // ---- Check if any messages have tool calls ----
-  const hasToolCalls = useMemo(() => {
-    if (!messages) return false;
-    return messages.some((msg) => msg.parts?.some((p) => p.type === 'tool'));
-  }, [messages]);
-
   // ---- Restore model/agent from last user message ----
   // Seeds agent/model from the last user message ONLY if there's no per-session
   // selection yet. This handles opening a session for the first time. If the user
@@ -5943,7 +5938,6 @@ export function SessionChat({
           sessionTitle={session?.title || 'Untitled'}
           onToggleSidePanel={handleTogglePanel}
           isSidePanelOpen={isSidePanelOpen}
-          canOpenSidePanel={hasToolCalls}
           leadingAction={headerLeadingAction}
         />
       )}
@@ -6080,7 +6074,7 @@ export function SessionChat({
                   <div className="space-y-3 mt-12">
                     <div className="flex items-center gap-3 py-4 my-3">
                       <div className="flex-1 h-px bg-border" />
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/80 border border-border/60">
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted/80 border border-border/60">
                         <Layers className="size-3.5 text-muted-foreground" />
                         <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                           Compaction
@@ -6130,7 +6124,7 @@ export function SessionChat({
                       {hasCompaction && (
                         <div className="flex items-center gap-3 py-4 my-3">
                           <div className="flex-1 h-px bg-border" />
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/80 border border-border/60">
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted/80 border border-border/60">
                             <Layers className="size-3.5 text-muted-foreground" />
                             <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                               Compaction

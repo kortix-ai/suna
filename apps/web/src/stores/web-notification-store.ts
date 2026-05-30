@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 // ============================================================================
 // Types
@@ -122,6 +123,7 @@ export const useWebNotificationStore = create<WebNotificationState>()(
     }),
     {
       name: 'kortix-web-notifications',
+      storage: createSafeJSONStorage(),
       partialize: (state) => ({
         preferences: state.preferences,
         promptDismissed: state.promptDismissed,

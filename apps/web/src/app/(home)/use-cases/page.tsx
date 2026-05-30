@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Search, ArrowRight, Play, Check, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -205,8 +206,13 @@ function AgentCard({ agent, industry, onOpen }: { agent: Agent; industry: string
   return (
     <button onClick={onOpen} className="group text-left rounded-2xl border border-border bg-card/40 overflow-hidden hover:border-foreground/30 hover:shadow-lg transition-all cursor-pointer">
       <div className="relative aspect-video overflow-hidden bg-muted/30">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={posterFor(industry + agent.name)} alt={agent.name} className="absolute inset-0 w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-[1.04]" />
+        <Image
+          src={posterFor(industry + agent.name)}
+          alt={agent.name}
+          fill
+          sizes="(max-width: 768px) 100vw, 33vw"
+          className="object-cover object-top transition-transform duration-700 group-hover:scale-[1.04]"
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
         <div className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-sm text-xs font-mono uppercase tracking-wider text-white/90">
           <Play className="size-2.5 fill-current" /> Preview
@@ -414,8 +420,13 @@ export default function UseCasesPage() {
                 />
               ) : (
                 <button onClick={() => setPlaying(true)} className="group absolute inset-0 w-full h-full cursor-pointer">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={posterFor(selected.industry + selected.name)} alt={selected.name} className="absolute inset-0 w-full h-full object-cover object-top" />
+                  <Image
+                    src={posterFor(selected.industry + selected.name)}
+                    alt={selected.name}
+                    fill
+                    sizes="(max-width: 1024px) 100vw, 800px"
+                    className="object-cover object-top"
+                  />
                   <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition-colors" />
                   <span className="absolute inset-0 flex items-center justify-center">
                     <span className="flex items-center justify-center size-16 rounded-full bg-white/95 text-black shadow-2xl transition-transform group-hover:scale-110">
@@ -506,7 +517,7 @@ export default function UseCasesPage() {
                 <h4 className="text-sm font-semibold text-foreground mb-3">{tHardcodedUi.raw('appHomeUseCasesPage.line506JsxTextConnectsTo')}</h4>
                 <div className="flex flex-wrap items-center gap-2">
                   {breakdown.integrations.map((d) => (
-                    <span key={d} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card/60">
+                    <span key={d} className="flex items-center gap-2 px-3 py-1.5 rounded-2xl border border-border bg-card/60">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={favicon(d)} alt={d} width={16} height={16} className="size-4 rounded-sm" />
                       <span className="text-sm text-foreground">{d.replace(/\.(com|so|google\.com|app)$/, '').replace('drive.', 'Drive')}</span>

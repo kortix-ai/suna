@@ -94,11 +94,11 @@ describe('validateManifest — [env]', () => {
   });
 });
 
-describe('validateManifest — [[sandboxes]]', () => {
+describe('validateManifest — [[sandbox.templates]]', () => {
   test('valid image-based template passes', () => {
     const { valid, issues } = summarize(`
 kortix_version = 1
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "py"
 name = "Python"
 image = "python:3.12-slim"
@@ -113,97 +113,97 @@ disk = 20
   test('rejects entries with both image AND dockerfile', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "bad"
 image = "python:3.12-slim"
 dockerfile = ".kortix/Dockerfile.x"
 `);
-    expect(errorPaths).toContain('sandboxes[0]');
+    expect(errorPaths).toContain('sandbox.templates[0]');
   });
 
   test('rejects entries with neither image nor dockerfile', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "empty"
 `);
-    expect(errorPaths).toContain('sandboxes[0]');
+    expect(errorPaths).toContain('sandbox.templates[0]');
   });
 
   test('rejects "default" as a reserved slug', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "${RESERVED_SANDBOX_SLUG}"
 image = "ubuntu:22.04"
 `);
-    expect(errorPaths).toContain('sandboxes[0].slug');
+    expect(errorPaths).toContain('sandbox.templates[0].slug');
   });
 
   test('rejects "latest" image tag with a warning (does not block)', () => {
     const { valid, warningPaths } = summarize(`
 kortix_version = 1
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "ml"
 image = "python:latest"
 `);
     expect(valid).toBe(true);
-    expect(warningPaths).toContain('sandboxes[0].image');
+    expect(warningPaths).toContain('sandbox.templates[0].image');
   });
 
   test('rejects image without a tag or digest', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "x"
 image = "ubuntu"
 `);
-    expect(errorPaths).toContain('sandboxes[0].image');
+    expect(errorPaths).toContain('sandbox.templates[0].image');
   });
 
   test('rejects bad slug format', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "Bad Slug!"
 image = "ubuntu:22.04"
 `);
-    expect(errorPaths).toContain('sandboxes[0].slug');
+    expect(errorPaths).toContain('sandbox.templates[0].slug');
   });
 
   test('rejects duplicate slugs', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "ml"
 image = "python:3.12-slim"
 
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "ml"
 image = "python:3.11-slim"
 `);
-    expect(errorPaths).toContain('sandboxes[1].slug');
+    expect(errorPaths).toContain('sandbox.templates[1].slug');
   });
 
   test('rejects out-of-bounds cpu', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "tiny"
 image = "alpine:3.20"
 cpu = 0
 `);
-    expect(errorPaths).toContain('sandboxes[0].cpu');
+    expect(errorPaths).toContain('sandbox.templates[0].cpu');
   });
 
   test('rejects relative-path-escape Dockerfiles', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "esc"
 dockerfile = "../etc/Dockerfile"
 `);
-    expect(errorPaths).toContain('sandboxes[0].dockerfile');
+    expect(errorPaths).toContain('sandbox.templates[0].dockerfile');
   });
 
   test('rejects legacy singular [sandbox] table', () => {
@@ -216,17 +216,28 @@ dockerfile = ".kortix/Dockerfile"
     expect(errorPaths).toContain('sandbox');
   });
 
+  test('rejects the renamed legacy [[sandboxes]] form with a migration error', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version = 1
+[[sandboxes]]
+slug = "ml"
+image = "python:3.12-slim"
+`);
+    expect(valid).toBe(false);
+    expect(errorPaths).toContain('sandboxes');
+  });
+
   test('warns on gpu key (not supported)', () => {
     const { warningPaths, valid } = summarize(`
 kortix_version = 1
 
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "gpu"
 image = "nvidia/cuda:12.2.0-base-ubuntu22.04"
 gpu = 1
 `);
     expect(valid).toBe(true);
-    expect(warningPaths).toContain('sandboxes[0].gpu');
+    expect(warningPaths).toContain('sandbox.templates[0].gpu');
   });
 });
 
@@ -333,12 +344,12 @@ slug = "site"
 describe('formatIssues', () => {
   test('renders both errors and warnings in a stable shape', () => {
     const { issues } = validateManifest(`
-[[sandboxes]]
+[[sandbox.templates]]
 slug = "default"
 image = "ubuntu:22.04"
 `);
     const text = formatIssues(issues, { color: false });
-    expect(text).toContain('error sandboxes[0].slug');
+    expect(text).toContain('error sandbox.templates[0].slug');
     expect(text).toContain('kortix_version');
   });
 });

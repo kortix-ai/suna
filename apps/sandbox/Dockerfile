@@ -97,6 +97,18 @@ RUN npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \
     && opencode --version
 
+# Pre-warm Bun's package cache with the OpenCode tool dependencies. The tools in
+# .kortix/opencode/tools/ (web_search, image_search, scrape_webpage) import these,
+# and OpenCode runs `bun install` in the cloned config dir at boot. Warming the
+# cache at the runtime HOME path (HOME=/opt/kortix/home) makes that boot-time
+# install offline + fast — no per-boot download.
+# Keep in sync with packages/starter/templates/base/.kortix/opencode/package.json.
+RUN mkdir -p /opt/kortix/home/.bun/install/cache /tmp/oc-deps \
+    && cd /tmp/oc-deps \
+    && printf '{"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > package.json \
+    && BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install \
+    && rm -rf /tmp/oc-deps
+
 # agent-browser (Vercel agent-browser): browser-automation CLI for the agent.
 # Chrome for Testing (what `agent-browser install` fetches) has no linux-arm64
 # build, so we source Chromium from Playwright instead — it ships both

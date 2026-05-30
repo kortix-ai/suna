@@ -10,6 +10,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 interface VersionStore {
   selectedByProject: Record<string, string | undefined>;
@@ -28,7 +29,7 @@ export const useVersionStore = create<VersionStore>()(
           return { selectedByProject: next };
         }),
     }),
-    { name: 'kortix-project-version-selection' },
+    { name: 'kortix-project-version-selection', storage: createSafeJSONStorage() },
   ),
 );
 

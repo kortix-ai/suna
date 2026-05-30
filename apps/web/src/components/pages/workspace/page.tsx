@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -585,7 +585,7 @@ export default function WorkspacePage() {
               <select
                 value={kindFilter}
                 onChange={(e) => { setKindFilter(e.target.value as KindFilter); setScopeFilter('all'); }}
-                className="lg:hidden h-9 rounded-lg border border-input bg-card px-3 text-sm cursor-pointer"
+                className="lg:hidden h-9 rounded-2xl border border-input bg-card px-3 text-sm cursor-pointer"
               >
                 {kindTabs.map((tab) => (
                   <option key={tab.value} value={tab.value}>{tab.label} ({kindCounts[tab.value]})</option>

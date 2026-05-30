@@ -9,7 +9,7 @@
  *     a TTL. All subsequent requests on the subdomain are trusted — this
  *     side-steps third-party cookie restrictions inside iframes and lets
  *     sub-resources, redirects, WS upgrades flow through unchanged.
- *   - HTTP forwarding goes through `proxyToDaytona` so we reuse the same
+ *   - HTTP forwarding goes through `forwardToSandbox` so we reuse the same
  *     path resolution (Daytona's getPreviewLink(port)) that the path-based
  *     `/v1/p/:sandboxId/:port` route uses.
  *
@@ -18,12 +18,8 @@
  * fan-out was removed earlier in this refactor. WS plumbing is a follow-up.
  */
 
-import { canAccessPreviewSandbox } from '../shared/preview-ownership';
-import { isKortixToken } from '../shared/crypto';
-import { validateSecretKey } from '../repositories/api-keys';
-import { verifySupabaseJwt } from '../shared/jwt-verify';
-import { getSupabase } from '../shared/supabase';
-import { proxyToDaytona } from './routes/preview';
+import { authenticatePreviewPrincipal, extractPreviewToken } from './preview-auth';
+import { forwardToSandbox } from './routes/preview';
 
 // ── Subdomain parsing ───────────────────────────────────────────────────────
 
@@ -41,7 +37,7 @@ export function parsePreviewSubdomain(host: string): { port: number; sandboxId: 
 //
 // Once a subdomain is authenticated, all subsequent requests on it pass
 // through without further auth. We remember the validated userId so that
-// downstream `proxyToDaytona` can sign X-Kortix-User-Context with the right
+// downstream `forwardToSandbox` can sign X-Kortix-User-Context with the right
 // identity (the agent-server's auth gate verifies that header).
 
 interface AuthState {
@@ -49,7 +45,7 @@ interface AuthState {
   expiresAt: number;
 }
 
-// In-memory subdomain auth gate (see validatePreviewToken / markAuthedSubdomain).
+// In-memory subdomain auth gate (see authenticatePreviewPrincipal / markAuthedSubdomain).
 const authedSubdomains = new Map<string, AuthState>();
 const AUTH_SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
@@ -83,68 +79,8 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000);
 
-// ── Token validation ────────────────────────────────────────────────────────
-
-/**
- * Validate the provided token and return the userId if it's allowed to access
- * `sandboxId`. Returns null on any failure.
- */
-async function validatePreviewToken(
-  token: string,
-  sandboxId: string,
-): Promise<string | null> {
-  // Kortix API tokens (kortix_xxx) — lookup, then ACL.
-  if (isKortixToken(token)) {
-    const result = await validateSecretKey(token);
-    if (!result.isValid || !result.accountId) return null;
-    const ok = await canAccessPreviewSandbox({
-      previewSandboxId: sandboxId,
-      accountId: result.accountId,
-    });
-    return ok ? result.accountId : null;
-  }
-
-  // Supabase JWT — fast local verify first, fall back to network on
-  // missing-keys situations.
-  const local = await verifySupabaseJwt(token);
-  if (local.ok) {
-    const ok = await canAccessPreviewSandbox({
-      previewSandboxId: sandboxId,
-      userId: local.userId,
-    });
-    return ok ? local.userId : null;
-  }
-  if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') {
-    return null;
-  }
-  try {
-    const supabase = getSupabase();
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) return null;
-    const ok = await canAccessPreviewSandbox({
-      previewSandboxId: sandboxId,
-      userId: user.id,
-    });
-    return ok ? user.id : null;
-  } catch {
-    return null;
-  }
-}
-
-function extractCandidateToken(req: Request, url: URL): string | null {
-  const authHeader = req.headers.get('Authorization');
-  if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
-  const ktHeader = req.headers.get('X-Kortix-Token');
-  if (ktHeader) return ktHeader;
-  const qp = url.searchParams.get('token');
-  if (qp) return qp;
-  // Cookie fallback — accept if the frontend's /v1/p/auth cookie made it
-  // through (rare on cross-subdomain but cheap to check).
-  const cookieHeader = req.headers.get('Cookie') || '';
-  const m = cookieHeader.match(/(?:^|;\s*)__preview_session=([^;]+)/);
-  if (m) return decodeURIComponent(m[1]);
-  return null;
-}
+// Token validation + extraction live in ./preview-auth, shared with the
+// WebSocket edge so every entry point accepts the same credentials.
 
 // ── Request handler ─────────────────────────────────────────────────────────
 
@@ -184,8 +120,8 @@ export async function handleSubdomainRequest(
 
   // Not authed yet — try to validate from token in headers or query.
   if (!authed) {
-    const token = extractCandidateToken(req, url);
-    const validatedUserId = token ? await validatePreviewToken(token, sandboxId) : null;
+    const token = extractPreviewToken(req, url);
+    const validatedUserId = await authenticatePreviewPrincipal(token, sandboxId);
     if (!validatedUserId) {
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
@@ -203,7 +139,7 @@ export async function handleSubdomainRequest(
     authed = { userId: validatedUserId, expiresAt: Date.now() + AUTH_SESSION_TTL_MS };
   }
 
-  // Body (read once, before retries inside proxyToDaytona).
+  // Body (read once, before retries inside forwardToSandbox).
   let body: ArrayBuffer | undefined;
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     body = await req.arrayBuffer();
@@ -216,14 +152,22 @@ export async function handleSubdomainRequest(
   const forwardSearch = forwardSearchParams.toString();
   const queryString = forwardSearch ? `?${forwardSearch}` : '';
 
-  // Hand off to the existing forwarder. It handles provider dispatch,
+  // Public origin the browser used to reach this subdomain. Prefer the proxy's
+  // X-Forwarded-Proto (set by a TLS-terminating LB in prod) and fall back to the
+  // scheme Bun actually saw (http in local dev) — never hardcode https, or the
+  // injected static-web <base> tag points at https against an http listener and
+  // every relative asset fails with ERR_SSL_PROTOCOL_ERROR.
+  const proto = req.headers.get('x-forwarded-proto') || url.protocol.replace(':', '');
+  const publicOrigin = `${proto}://${host}`;
+
+  // Hand off to the shared forwarder. It handles ownership, service-key auth,
   // X-Kortix-User-Context signing, auto-wake retries, etc.
   //
   // remainingPath is the FULL pathname here — the subdomain itself encodes
   // the (sandboxId, port) target, so the rest of the URL is what the
   // proxied app expects to see.
   try {
-    return await proxyToDaytona(
+    return await forwardToSandbox(
       sandboxId,
       port,
       authed.userId,
@@ -236,6 +180,9 @@ export async function handleSubdomainRequest(
       // Subdomain previews serve at the host root, so redirects stay
       // root-relative (no /v1/p/<sandbox>/<port> prefix).
       '',
+      // …and X-Forwarded-Prefix is just the origin — relative assets resolve to
+      // p{port}-{sandbox}.host/abs/... which routes straight back here.
+      publicOrigin,
     );
   } catch (err) {
     console.error(

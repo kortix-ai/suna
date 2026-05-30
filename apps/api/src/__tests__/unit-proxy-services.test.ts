@@ -149,6 +149,22 @@ describe('matchAllowedRoute', () => {
       );
       expect(result).toBeNull();
     });
+
+    test('matches versioned prediction create (moondream2) with body-version gate', () => {
+      const result = matchAllowedRoute('POST', '/predictions', replicateRoutes);
+      expect(result).not.toBeNull();
+      expect(result!.billingToolName).toBe('proxy_replicate_moondream');
+      // The handler enforces these against the request body's `version`.
+      expect(result!.allowedBodyVersions).toContain(
+        '72ccb656353c348c1385df54b237eeb7bfa874bf11486cf0b9473e691b662d31',
+      );
+    });
+
+    test('matches prediction polling (GET /predictions/{id}) billed at zero', () => {
+      const result = matchAllowedRoute('GET', '/predictions/abc123', replicateRoutes);
+      expect(result).not.toBeNull();
+      expect(result!.billingToolName).toBe('proxy_replicate_poll');
+    });
   });
 
   describe('context7 routes', () => {

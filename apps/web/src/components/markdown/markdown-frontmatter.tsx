@@ -104,7 +104,7 @@ export function MarkdownWithFrontmatter({
   return (
     <div className={className}>
       {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-      <UnifiedMarkdown content={body} />
+      <UnifiedMarkdown content={body} allowHtml={false} />
     </div>
   );
 }

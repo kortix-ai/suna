@@ -160,18 +160,19 @@ async function main() {
 
     // ── 1b. POST /manifest/validate — schema validator ──────────────────
     log(`POST /projects/${projectId.slice(0, 8)}/manifest/validate…`);
-    const goodToml = `kortix_version = 1\n[project]\nname = "x"\n[[sandboxes]]\nslug = "ml"\nimage = "python:3.12-slim"\n`;
+    const goodToml = `kortix_version = 1\n[project]\nname = "x"\n[[sandbox.templates]]\nslug = "ml"\nimage = "python:3.12-slim"\n`;
     const okValidate = await api('POST', `/projects/${projectId}/manifest/validate`, token, { raw: goodToml });
     assert(okValidate.status === 200, 'POST /manifest/validate (good) → 200');
     assert(okValidate.json.valid === true, 'good manifest reports valid:true');
 
-    const badToml = `kortix_version = 1\n[[sandboxes]]\nslug = "default"\nimage = "ubuntu:latest"\n\n[sandbox]\ndockerfile = ".kortix/Dockerfile"\n`;
+    // A reserved slug under the new namespace, plus a stray legacy [sandbox] key.
+    const badToml = `kortix_version = 1\n[sandbox]\ndockerfile = ".kortix/Dockerfile"\n[[sandbox.templates]]\nslug = "default"\nimage = "ubuntu:latest"\n`;
     const failValidate = await api('POST', `/projects/${projectId}/manifest/validate`, token, { raw: badToml });
     assert(failValidate.status === 200, 'POST /manifest/validate (bad) → 200');
     assert(failValidate.json.valid === false, 'bad manifest reports valid:false');
     const issuePaths = (failValidate.json.issues ?? []).map((i: any) => i.path);
-    assert(issuePaths.includes('sandboxes[0].slug'), 'reports reserved slug');
-    assert(issuePaths.includes('sandbox'), 'reports legacy [sandbox] table');
+    assert(issuePaths.includes('sandbox.templates[0].slug'), 'reports reserved slug');
+    assert(issuePaths.includes('sandbox'), 'reports stray legacy [sandbox] key');
 
     const noBody = await api('POST', `/projects/${projectId}/manifest/validate`, token, {});
     assert(noBody.status === 400, 'POST /manifest/validate (no body) → 400');

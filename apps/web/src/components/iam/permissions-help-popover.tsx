@@ -92,7 +92,7 @@ export function PermissionsHelpPopover({
           </p>
         </section>
 
-        <section className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5">
+        <section className="space-y-1 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-2.5">
           <h3 className="text-xs font-semibold text-amber-700 dark:text-amber-300">
             Override rule
           </h3>

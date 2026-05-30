@@ -153,11 +153,11 @@ function DiffSummaryBar({
   }, [diffs]);
 
   return (
-    <div className="flex items-center gap-3 px-5 py-3 pr-12 border-b border-border/40 bg-muted/20">
-      <span className="text-xs text-muted-foreground">
+    <div className="flex w-full items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-2.5 pr-12">
+      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
         {diffs.length} {diffs.length === 1 ? 'file' : 'files'} changed
       </span>
-      <div className="flex items-center gap-2 ml-auto text-xs">
+      <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs">
         {totals.added > 0 && (
           <span className={cn('flex items-center gap-1', STATUS_TEXT.success)}>
             <FilePlus2 className="size-3" /> {totals.added}

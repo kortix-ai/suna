@@ -1,27 +1,29 @@
 'use client';
 
 import { FileExplorerPage, FilesStoreProvider } from '@/features/files';
-import { SessionFilesVersionBanner } from '@/components/session/session-files-version-banner';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import {
+  SessionVersionHeader,
+  type SessionPanelMode,
+} from '@/components/session/session-version-header';
+import { SessionDiffViewer } from '@/components/session/session-diff-viewer';
 
 /**
- * Session side-panel "Files" tab.
+ * Session side-panel "Files" surface.
  *
- * Renders the exact same Google-Drive-style explorer the /files page uses
- * (`features/files` → FileExplorerPage), pointed at the active session sandbox.
- * Reusing that one component means the session tab shows *all* sandbox files —
- * grid/list, breadcrumbs, sort, the show-dotfiles toggle, search, preview and
- * download — identical to /files, instead of a bespoke cut-down list.
+ * An elegant version header frames the screen as a standalone copy of the
+ * project's main version, with two plain tabs:
+ *   • All files (default) — the full Google-Drive-style explorer the /files
+ *                page uses ({@link FileExplorerPage}), pointed at the sandbox.
+ *   • Changes (secondary) — the real per-file diff viewer
+ *                ({@link SessionDiffViewer}), the same diff UI used elsewhere.
  *
- * Above the explorer sits the version banner: it frames the screen as a
- * standalone, parallel version of the project's main branch, lists the diff,
- * and offers the one way to persist it — open a change request. This makes the
- * Files screen the single place to both browse the version and act on its git
- * state (the separate "Changes" tab is folded in here).
+ * The sub-mode is addressable through the shared panel-view store (the `files`
+ * view value means "Changes"), so the header chip's "View changes" lands the
+ * user straight on the diff while the default stays All files.
  *
  * Wrapped in its own FilesStoreProvider so each session tab keeps independent
- * navigation/view state and never fights the global /files page or other open
- * sessions. The banner lives inside that provider too, so clicking a changed
- * file opens it in the same preview modal the explorer uses.
+ * navigation/view state.
  */
 export function SessionFilesExplorer({
   chatSessionId,
@@ -30,12 +32,37 @@ export function SessionFilesExplorer({
 } = {}) {
   return (
     <FilesStoreProvider>
-      <div className="flex h-full flex-col">
-        <SessionFilesVersionBanner chatSessionId={chatSessionId} />
-        <div className="min-h-0 flex-1">
-          <FileExplorerPage />
-        </div>
-      </div>
+      <SessionFilesExplorerInner chatSessionId={chatSessionId} />
     </FilesStoreProvider>
+  );
+}
+
+function SessionFilesExplorerInner({ chatSessionId }: { chatSessionId?: string }) {
+  const rawView = useSessionBrowserStore((s) =>
+    chatSessionId ? s.viewBySession[chatSessionId] : undefined,
+  );
+  const setView = useSessionBrowserStore((s) => s.setView);
+
+  // The `files` panel-view value == Changes; anything else on this surface ==
+  // All files. Default (the `explorer` value) is All files.
+  const mode: SessionPanelMode = rawView === 'files' ? 'changes' : 'files';
+  const onModeChange = (next: SessionPanelMode) => {
+    if (!chatSessionId) return;
+    setView(chatSessionId, next === 'changes' ? 'files' : 'explorer');
+  };
+
+  const showDiff = mode === 'changes' && !!chatSessionId;
+
+  return (
+    <div className="flex h-full flex-col">
+      <SessionVersionHeader
+        chatSessionId={chatSessionId}
+        mode={mode}
+        onModeChange={onModeChange}
+      />
+      <div className="min-h-0 flex-1">
+        {showDiff ? <SessionDiffViewer sessionId={chatSessionId!} /> : <FileExplorerPage />}
+      </div>
+    </div>
   );
 }

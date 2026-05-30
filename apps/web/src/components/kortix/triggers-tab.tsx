@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Timer, Webhook, Clock, CheckCircle2, Trash2, MessageSquare, Terminal, Globe, Calendar, Ticket as TicketIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useTickets, type Ticket } from '@/hooks/kortix/use-kortix-tickets';
 
 // ─── Helpers (same as ScheduledTasksPage) ───────────────────────────────────

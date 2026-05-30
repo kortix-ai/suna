@@ -530,5 +530,11 @@ export async function verifyOtp(prevState: any, formData: FormData) {
     authEvent,
     authMethod: 'email_otp',
     redirectTo: finalDestination,
+    // Hand the session back so the client can establish it synchronously
+    // (supabase.auth.setSession) before navigating. Without this the client
+    // only picks up the session on a later background token refresh, which
+    // bounces the user back to /auth for ~15s until the session lands.
+    accessToken: data.session?.access_token ?? null,
+    refreshToken: data.session?.refresh_token ?? null,
   };
 }

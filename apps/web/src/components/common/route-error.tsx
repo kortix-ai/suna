@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import * as Sentry from '@sentry/nextjs';
+import { ErrorDetails } from './error-details';
 
 /**
  * Shared fallback for Next.js route-segment `error.tsx` boundaries. Reports the
@@ -25,11 +26,12 @@ export function RouteErrorFallback({
   }, [error]);
 
   return (
-    <div className="flex min-h-[60vh] w-full flex-col items-center justify-center gap-4 p-6 text-center">
+    <div className="flex h-full min-h-[60vh] w-full flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
       <div className="space-y-1.5">
         <h2 className="text-lg font-medium text-foreground">{title}</h2>
         <p className="max-w-md text-sm text-muted-foreground">{description}</p>
       </div>
+      <ErrorDetails error={error} />
       <div className="flex gap-2">
         <Button variant="outline" onClick={reset}>
           Try again

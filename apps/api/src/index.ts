@@ -622,6 +622,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // Handled at the Bun.serve level so the proxied app sees itself at root `/`
 // (Hono can't match on the Host header). See `sandbox-proxy/subdomain.ts`.
 import { handleSubdomainRequest, parsePreviewSubdomain } from './sandbox-proxy/subdomain';
+import { matchPreviewWsPath, preparePreviewWsUpgrade, previewWsHandlers } from './sandbox-proxy/ws-proxy';
 
 export default {
   port: config.PORT,
@@ -698,6 +699,33 @@ export default {
       if (success) return undefined;
     }
 
+    // ── Preview WebSocket proxy ─────────────────────────────────────────
+    // Path-based preview upgrades (`/v1/p/{sandboxId}/{port}/...`) — today the
+    // xterm PTY terminal. Authenticate via the `?token=` query param (browsers
+    // can't set WS headers), resolve the sandbox upstream, then upgrade and
+    // pipe bytes. See sandbox-proxy/ws-proxy.ts.
+    if (isWsUpgrade && matchPreviewWsPath(url.pathname)) {
+      if (!schemaReady) {
+        return new Response(JSON.stringify({ error: 'Service starting up, try again shortly' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
+        });
+      }
+      const prep = await preparePreviewWsUpgrade(url);
+      if (!prep.ok) {
+        return new Response(JSON.stringify({ error: prep.message }), {
+          status: prep.status,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const success = server.upgrade(req, { data: prep.data });
+      if (success) return undefined;
+      return new Response(JSON.stringify({ error: 'WebSocket upgrade failed' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     return app.fetch(req, server);
   },
 
@@ -711,7 +739,11 @@ export default {
         tunnelWsHandlers.onOpen(ws.data.tunnelId, ws as any);
         return;
       }
-      // No non-tunnel WS upgrades are accepted in the Daytona-only build.
+      if (ws.data?.type === 'preview-ws') {
+        previewWsHandlers.open(ws as any);
+        return;
+      }
+      // No other WS upgrades are accepted.
       try { ws.close(1011, 'unsupported websocket upgrade'); } catch {}
     },
 
@@ -720,11 +752,19 @@ export default {
         tunnelWsHandlers.onMessage(ws.data.tunnelId, message);
         return;
       }
+      if (ws.data?.type === 'preview-ws') {
+        previewWsHandlers.message(ws as any, message);
+        return;
+      }
     },
 
     close(ws: { data: any }) {
       if (ws.data?.type === 'tunnel-agent') {
         tunnelWsHandlers.onClose(ws.data.tunnelId);
+        return;
+      }
+      if (ws.data?.type === 'preview-ws') {
+        previewWsHandlers.close(ws as any);
         return;
       }
     },

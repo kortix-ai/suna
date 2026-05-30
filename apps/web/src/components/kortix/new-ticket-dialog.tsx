@@ -126,6 +126,10 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
 
   const submit = () => {
     if (!title.trim()) return;
+    // Guard at the source: the submit button is disabled while pending, but the
+    // keyboard paths (Cmd/Ctrl+Enter, Enter) call this directly — without this
+    // check, mashing the shortcut fires create.mutate repeatedly → duplicates.
+    if (create.isPending) return;
     create.mutate(
       {
         project_id: projectId,
@@ -448,7 +452,7 @@ function TicketForm({
               <select
                 value={milestoneId}
                 onChange={(e) => onMilestoneChange(e.target.value)}
-                className="w-full h-7 text-[12px] bg-transparent border border-border/50 rounded-md px-2 outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full h-7 text-[12px] bg-transparent border border-border/50 rounded-2xl px-2 outline-none focus:ring-2 focus:ring-primary/20"
               >
                 <option value="">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line451JsxTextNone')}</option>
                 {milestones.map((m) => (
@@ -600,7 +604,7 @@ function StatusPicker({ columns, value, onChange }: { columns: TicketColumn[]; v
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
           aria-label={`Status: ${selected.label}`}
         >
           {columnIcon(selected, false)}
