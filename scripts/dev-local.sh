@@ -288,11 +288,19 @@ ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
 SCHEDULER_ENABLED=false
 EOF
+  # NEXT_PUBLIC_BACKEND_URL is RELATIVE (/v1) so the browser hits the SAME
+  # origin it's served from (whichever preview proxy — Daytona or Kortix
+  # subdomain) and Next's built-in rewrite (next.config.ts: /v1/* ->
+  # http://localhost:8008/v1/*) proxies it to the in-sandbox API. That makes a
+  # single preview URL function as a full proxy (frontend + API), no CORS, no
+  # exposed backend port, no token in client env. BACKEND_URL stays absolute for
+  # server-side (SSR) fetches, which talk to the in-sandbox API directly.
   cat > "$ROOT_DIR/apps/web/.env" <<EOF
 NEXT_PUBLIC_ENV_MODE=local
 NEXT_PUBLIC_SUPABASE_URL=${SB_API_URL}
 NEXT_PUBLIC_SUPABASE_ANON_KEY=${SB_ANON_KEY}
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8008/v1
+NEXT_PUBLIC_BACKEND_URL=/v1
+BACKEND_URL=http://localhost:8008/v1
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_URL=http://localhost:3000
 EOF
