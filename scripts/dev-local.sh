@@ -252,9 +252,12 @@ run_sandbox_dev() {
     for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
   fi
 
-  # Local Supabase (Postgres + auth + REST + storage).
+  # Local Supabase (Postgres + auth + REST + storage). Stop first for a clean
+  # slate — a partial/leftover start holds ports (e.g. 54324) and makes the
+  # next `supabase start` fail with "address already in use".
   if ! (cd "$SUPABASE_DIR" && supabase status >/dev/null 2>&1); then
     echo "[dev] supabase start…"
+    (cd "$SUPABASE_DIR" && supabase stop --no-backup >/dev/null 2>&1 || true)
     (cd "$SUPABASE_DIR" && supabase start)
   fi
   # Deterministic local dev credentials from the running stack.
