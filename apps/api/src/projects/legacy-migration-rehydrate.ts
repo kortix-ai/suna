@@ -16,8 +16,8 @@ import { Database } from 'bun:sqlite';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { eq } from 'drizzle-orm';
-import { sandboxes, sessionSandboxes } from '@kortix/db';
+import { and, eq, isNotNull } from 'drizzle-orm';
+import { legacySandboxMigrations, sandboxes, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { getDaytona } from '../shared/daytona';
 import { logger as appLogger } from '../lib/logger';
@@ -66,19 +66,35 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
   }
 
   // 2. Pull the legacy OpenCode store (opencode.db + WAL) from the legacy VM.
-  const [legacy] = await db.select().from(sandboxes).where(eq(sandboxes.sandboxId, legacySandboxId)).limit(1);
-  if (!legacy) {
-    appLogger.warn('[rehydrate] legacy sandbox row missing', { legacySandboxId });
-    return;
+  // Prefer the archive captured at migration time (self-contained: no live VM,
+  // no JustAVPS key). Fall back to pulling from the live VM only if it's absent.
+  let b64: string | null = null;
+  const [mig] = await db
+    .select({ archive: legacySandboxMigrations.opencodeArchive })
+    .from(legacySandboxMigrations)
+    .where(and(
+      eq(legacySandboxMigrations.sandboxId, legacySandboxId),
+      isNotNull(legacySandboxMigrations.opencodeArchive),
+    ))
+    .limit(1);
+  if (mig?.archive) {
+    b64 = mig.archive;
+    appLogger.info('[rehydrate] using archived opencode store from DB', { sessionId, legacySandboxId });
+  } else {
+    const [legacy] = await db.select().from(sandboxes).where(eq(sandboxes.sandboxId, legacySandboxId)).limit(1);
+    if (!legacy) {
+      appLogger.warn('[rehydrate] no archive and legacy sandbox row missing', { legacySandboxId });
+      return;
+    }
+    const endpoint = await resolveLegacyVmEndpoint(legacy);
+    const pullScript = [
+      RESOLVE_WS_OC_SH,
+      '[ -z "$OC" ] && exit 0',
+      'cd "$OC" && tar czf - opencode.db opencode.db-wal opencode.db-shm 2>/dev/null | base64 | tr -d "\\n"',
+    ].join('\n');
+    const pulled = await execOnLegacyVm(endpoint, `bash -c ${sq(pullScript)}`, 180);
+    b64 = pulled.stdout.trim() || null;
   }
-  const endpoint = await resolveLegacyVmEndpoint(legacy);
-  const pullScript = [
-    RESOLVE_WS_OC_SH,
-    '[ -z "$OC" ] && exit 0',
-    'cd "$OC" && tar czf - opencode.db opencode.db-wal opencode.db-shm 2>/dev/null | base64 | tr -d "\\n"',
-  ].join('\n');
-  const pulled = await execOnLegacyVm(endpoint, `bash -c ${sq(pullScript)}`, 180);
-  const b64 = pulled.stdout.trim();
   if (!b64) {
     appLogger.warn('[rehydrate] legacy opencode store empty / not found', { legacySandboxId });
     return;

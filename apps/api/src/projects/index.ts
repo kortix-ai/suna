@@ -7101,11 +7101,17 @@ projectsApp.get('/:projectId/sessions/:sessionId/sandbox', async (c) => {
     ))
     .limit(1);
 
-  if (!row) {
-    // Dormant session (migrated) — kick provisioning on first open; the UI polls
-    // this endpoint, so this is the natural trigger. The status flip to
-    // 'provisioning' guards against re-kicking on subsequent 404 polls.
-    if (sandboxVisible.row.status === 'stopped') {
+  // (Re)provision on open when there's no usable sandbox: a dormant migrated
+  // session (no row), or a dead one whose Daytona sandbox was idle-GC'd /
+  // errored (row in error/stopped/archived). The UI polls this endpoint, so it's
+  // the natural trigger. The project_session 'provisioning' flag (set by
+  // kickProvisionOnOpen) guards against re-kicking on subsequent 404 polls.
+  const usable = row && (row.status === 'provisioning' || row.status === 'active');
+  if (!usable) {
+    if (sandboxVisible.row.status !== 'provisioning') {
+      if (row) {
+        await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sessionId)).catch(() => {});
+      }
       await kickProvisionOnOpen(loaded, sandboxVisible.row, projectId, sessionId);
     }
     return c.json({ error: 'Not found' }, 404);

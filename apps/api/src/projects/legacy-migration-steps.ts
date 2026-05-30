@@ -80,7 +80,7 @@ export interface LegacyOpencodeSession { id: string; title: string }
  * toolbox as base64 and read it locally with bun:sqlite. Returns top-level,
  * non-archived sessions newest-first.
  */
-async function enumerateOpencodeSessions(ctx: MigrationContext): Promise<LegacyOpencodeSession[]> {
+async function enumerateOpencodeSessions(ctx: MigrationContext): Promise<{ sessions: LegacyOpencodeSession[]; archiveB64: string | null }> {
   const endpoint = await resolveLegacyVmEndpoint(ctx.legacy);
   const script = [
     RESOLVE_WS_OC_SH,
@@ -91,7 +91,7 @@ async function enumerateOpencodeSessions(ctx: MigrationContext): Promise<LegacyO
   const b64 = out.stdout.trim();
   if (!b64) {
     ctx.log('extract: no opencode.db on machine — nothing to enumerate');
-    return [];
+    return { sessions: [], archiveB64: null };
   }
   const dir = mkdtempSync(join(tmpdir(), 'kortix-oc-'));
   try {
@@ -103,7 +103,7 @@ async function enumerateOpencodeSessions(ctx: MigrationContext): Promise<LegacyO
       const rows = db.query(
         "select id, coalesce(nullif(title,''), slug, id) as title from session where parent_id is null and time_archived is null order by time_updated desc",
       ).all() as Array<{ id: string; title: string }>;
-      return rows.map((r) => ({ id: r.id, title: String(r.title).slice(0, 200) }));
+      return { sessions: rows.map((r) => ({ id: r.id, title: String(r.title).slice(0, 200) })), archiveB64: b64 };
     } finally {
       db.close();
     }
@@ -168,11 +168,17 @@ export async function extractStep(ctx: MigrationContext): Promise<void> {
   }
 
   // Enumerate OpenCode conversations from opencode.db so the db phase can create
-  // one project_session per real chat. Empty list → a single default session.
+  // one project_session per real chat. Also stash the store archive on the row so
+  // on-open rehydrate restores chats from our DB (no live VM / key needed).
   if (!Array.isArray(ctx.progress.opencode_sessions)) {
-    const sessions = await enumerateOpencodeSessions(ctx);
+    const { sessions, archiveB64 } = await enumerateOpencodeSessions(ctx);
+    if (archiveB64) {
+      await ctx.database.update(legacySandboxMigrations)
+        .set({ opencodeArchive: archiveB64, updatedAt: new Date() })
+        .where(eq(legacySandboxMigrations.migrationId, ctx.migrationId));
+    }
     await ctx.checkpoint({ opencode_sessions: sessions });
-    ctx.log('extract: enumerated opencode sessions', { count: sessions.length });
+    ctx.log('extract: enumerated opencode sessions', { count: sessions.length, archived: Boolean(archiveB64) });
   }
 }
 
