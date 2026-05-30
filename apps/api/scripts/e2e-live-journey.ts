@@ -225,7 +225,8 @@ async function main() {
     }
 
     phase("9c. Project connectors / change-requests / git (read)");
-    expectStatus("GET connectors", await api("GET", `/v1/projects/${projectId}/connectors`, A.token), 200);
+    // Connector list (admin view) lives under the executor app, not /v1/projects.
+    expectStatus("GET connectors (executor)", await api("GET", `/v1/executor/projects/${projectId}/connectors`, A.token), 200);
     expectNo5xx("GET change-requests", await api("GET", `/v1/projects/${projectId}/change-requests`, A.token));
     expectNo5xx("GET git/branches", await api("GET", `/v1/projects/${projectId}/git/branches`, A.token));
 
