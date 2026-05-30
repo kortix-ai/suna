@@ -26,14 +26,22 @@ RUN apt-get update \
         postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Node 22 + pnpm (via corepack) ─────────────────────────────────────────
-# Node 22 matches CI (.github node-version: 22); pnpm is pinned to the repo's
-# packageManager (pnpm@8.11.0) — pnpm@latest needs Node ≥22.13 and would break.
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
+# ── Node 22 + pnpm (standalone tarball, NOT apt) ───────────────────────────
+# Node 22 matches CI (.github node-version: 22). Install the official tarball
+# into /usr/local — NOT via apt/NodeSource — because the Kortix runtime layer
+# is appended on top and runs `apt-get install nodejs npm`; a NodeSource
+# `nodejs` (which bundles npm) Conflicts with the distro `npm` package → "held
+# broken packages" and the snapshot build fails. The tarball leaves apt's
+# nodejs/npm untouched (layer installs the distro ones into /usr/bin) while our
+# /usr/local/bin/node (22) wins on PATH. pnpm is pinned to the repo's
+# packageManager (pnpm@8.11.0); pnpm@latest needs Node ≥22.13 and would break.
+RUN NODE_TARBALL="$(curl -fsSL https://nodejs.org/dist/latest-v22.x/ \
+        | grep -oE 'node-v22[0-9.]*-linux-x64\.tar\.xz' | head -1)" \
+    && curl -fsSL "https://nodejs.org/dist/latest-v22.x/${NODE_TARBALL}" \
+        | tar -xJ -C /usr/local --strip-components=1 \
     && corepack enable \
     && corepack prepare pnpm@8.11.0 --activate \
-    && rm -rf /var/lib/apt/lists/*
+    && node -v && pnpm -v
 
 # ── Bun (the API runs on Bun) ──────────────────────────────────────────────
 RUN curl -fsSL https://bun.sh/install | bash \
