@@ -16,7 +16,7 @@
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH=/usr/local/bin:/root/.bun/bin:$PATH
+ENV PATH=/usr/local/bin:/opt/supabase:/root/.bun/bin:$PATH
 
 # ── Base toolchain ────────────────────────────────────────────────────────
 RUN apt-get update \
@@ -26,11 +26,13 @@ RUN apt-get update \
         postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Node 20 + pnpm (via corepack) ─────────────────────────────────────────
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+# ── Node 22 + pnpm (via corepack) ─────────────────────────────────────────
+# Node 22 matches CI (.github node-version: 22); pnpm is pinned to the repo's
+# packageManager (pnpm@8.11.0) — pnpm@latest needs Node ≥22.13 and would break.
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && corepack enable \
-    && corepack prepare pnpm@latest --activate \
+    && corepack prepare pnpm@8.11.0 --activate \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Bun (the API runs on Bun) ──────────────────────────────────────────────
@@ -51,11 +53,14 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Supabase CLI ───────────────────────────────────────────────────────────
+# Extract the WHOLE release tarball into /opt/supabase and put it on PATH.
+# The tarball's `supabase` is a shim that forwards to a sibling `supabase-go`
+# binary, so you must keep them together — extracting only `supabase` (or
+# moving it alone) breaks `supabase start` with "supabase-go not found".
 RUN ARCH="$(dpkg --print-architecture)" \
+    && mkdir -p /opt/supabase \
     && curl -fsSL "https://github.com/supabase/cli/releases/latest/download/supabase_linux_${ARCH}.tar.gz" \
-        -o /tmp/supabase.tar.gz \
-    && tar -xzf /tmp/supabase.tar.gz -C /usr/local/bin supabase \
-    && rm /tmp/supabase.tar.gz \
+        | tar -xz -C /opt/supabase \
     && supabase --version
 
 # ── dockerd bootstrap helper ───────────────────────────────────────────────

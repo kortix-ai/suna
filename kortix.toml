@@ -25,7 +25,7 @@ optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 # to build, fit the disk cap, and boot the stack.
 #
 # Hardware is clamped to this Daytona account's ceiling: 6 vCPU / 12 GiB /
-# 20 GiB. cpu = cores; memory/disk in GiB.
+# 40 GiB. cpu = cores; memory/disk in GiB.
 [sandbox]
 # default = "dev"
 
@@ -38,7 +38,7 @@ name = "Full dev box (suna stack)"
 dockerfile = ".kortix/Dockerfile"
 cpu = 6
 memory = 12
-disk = 20
+disk = 40
 
 # OpenCode runtime config dir. The agent daemon launches opencode with
 # OPENCODE_CONFIG_DIR pointed here, so agents/skills/commands/tools live

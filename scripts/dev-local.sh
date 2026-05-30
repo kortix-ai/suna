@@ -233,7 +233,89 @@ cleanup() {
   exit "$exit_code"
 }
 
+# ── Sandbox mode ───────────────────────────────────────────────────────────
+# When `pnpm dev` runs INSIDE a Kortix sandbox (the runtime layer lives at
+# /opt/kortix), bring the whole stack up self-contained — Supabase + API + web
+# — and skip the laptop-only steps (cloudflared tunnel + daemon/CLI snapshot
+# bake). The frontend is built once and served (`build` + `start`): `next dev`
+# compiles every route on demand and OOMs on a big app, whereas build+start has
+# a flat, light runtime and is prod-accurate. The agent just runs `pnpm dev`.
+run_sandbox_dev() {
+  echo "[dev] Kortix sandbox detected → full local stack (Supabase + API + web), self-contained."
+  export PATH="/opt/supabase:/usr/local/bin:$PATH"
+  export KORTIX_LOCAL_DEV=1 ENV_MODE=local
+
+  # Docker daemon — Supabase runs as containers. Start it if boot didn't.
+  if ! docker info >/dev/null 2>&1; then
+    echo "[dev] starting dockerd…"
+    (dockerd >/var/log/dockerd.log 2>&1 &)
+    for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+  fi
+
+  # Local Supabase (Postgres + auth + REST + storage).
+  if ! (cd "$SUPABASE_DIR" && supabase status >/dev/null 2>&1); then
+    echo "[dev] supabase start…"
+    (cd "$SUPABASE_DIR" && supabase start)
+  fi
+  # Deterministic local dev credentials from the running stack.
+  eval "$(cd "$SUPABASE_DIR" && supabase status -o env 2>/dev/null | sed 's/^/export SB_/')"
+
+  # Materialize the per-app .env files. The local Supabase trio comes from the
+  # running stack; infra/LLM secrets come from the project secrets the platform
+  # injected into this sandbox's env (set them in the Kortix dashboard). Reserved
+  # names (PORT/KORTIX_*) are never injected, so the runtime-local ones are set
+  # explicitly here.
+  cat > "$ROOT_DIR/apps/api/.env" <<EOF
+ENV_MODE=local
+INTERNAL_KORTIX_ENV=dev
+PORT=8008
+KORTIX_URL=http://localhost:8008
+KORTIX_SKIP_ENSURE_SCHEMA=1
+ALLOWED_SANDBOX_PROVIDERS=daytona
+DATABASE_URL=${SB_DB_URL}
+SUPABASE_URL=${SB_API_URL}
+SUPABASE_SERVICE_ROLE_KEY=${SB_SERVICE_ROLE_KEY}
+DAYTONA_API_KEY=${DAYTONA_API_KEY:-}
+DAYTONA_SERVER_URL=${DAYTONA_SERVER_URL:-}
+DAYTONA_TARGET=${DAYTONA_TARGET:-us}
+TUNNEL_SIGNING_SECRET=${TUNNEL_SIGNING_SECRET:-dev-local-tunnel-signing-secret-32chars}
+API_KEY_SECRET=${API_KEY_SECRET:-dev-local-api-key-secret-please-32chars}
+OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+OPENAI_API_KEY=${OPENAI_API_KEY:-}
+SCHEDULER_ENABLED=false
+EOF
+  cat > "$ROOT_DIR/apps/web/.env" <<EOF
+NEXT_PUBLIC_ENV_MODE=local
+NEXT_PUBLIC_SUPABASE_URL=${SB_API_URL}
+NEXT_PUBLIC_SUPABASE_ANON_KEY=${SB_ANON_KEY}
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8008/v1
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_URL=http://localhost:3000
+EOF
+
+  kill_dev_ports 3000 8008 "${PORT:-8008}"
+
+  echo "[dev] Building frontend (pnpm build)…"
+  if pnpm --filter Kortix-Computer-Frontend build; then
+    echo "[dev] Frontend built — serving (pnpm start) on :3000"
+    pnpm --filter Kortix-Computer-Frontend start &
+    FRONTEND_PID=$!
+  else
+    echo "[dev] ⚠️  Frontend build failed — continuing with API only"
+  fi
+
+  echo "[dev] Starting API (dev) on :8008"
+  cd "$ROOT_DIR"
+  KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev
+}
+
 trap cleanup EXIT INT TERM
+
+if [[ -d /opt/kortix || -n "${KORTIX_SESSION_ID:-}" ]]; then
+  run_sandbox_dev
+  exit $?
+fi
 
 load_local_env
 kill_dev_ports 3000 8008 "${PORT:-8008}"
