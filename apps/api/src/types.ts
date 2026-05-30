@@ -190,9 +190,6 @@ export interface AccountStateResponse {
     subscription_id: string | null;
     current_period_end: number | null;
     cancel_at_period_end: boolean;
-    is_trial: boolean;
-    trial_status: string | null;
-    trial_ends_at: string | null;
     is_cancelled: boolean;
     cancellation_effective_date: string | null;
     has_scheduled_change: boolean;
@@ -226,13 +223,6 @@ export interface AccountStateResponse {
     stripe_subscription_item_id: string | null;
     created_at: string;
   }>;
-  yolo_usage?: {
-    used_percent: number;
-    used_percent_precise: number;
-    window_started: boolean;
-    window_reset_in: number;
-    window_reset_at: string;
-  } | null;
   can_add_instances: boolean;
   /** True when a legacy paid user has no active machine and can claim one. */
   can_claim_computer?: boolean;

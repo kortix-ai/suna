@@ -1,5 +1,7 @@
 import Stripe from 'stripe';
+import { stripeWebhookEventsProcessed } from '@kortix/db';
 import { getStripe } from '../../shared/stripe';
+import { db } from '../../shared/db';
 import { config } from '../../config';
 import { WebhookError } from '../../errors';
 import {
@@ -32,10 +34,6 @@ import { resolveAccountId } from '../../shared/resolve-account';
 // ─── Stripe Webhook Processing ──────────────────────────────────────────────
 
 // Simple in-memory dedup for Stripe webhook events.
-// Stripe CLI + configured endpoints can deliver the same event twice.
-const processedEvents = new Set<string>();
-const DEDUP_MAX = 500;
-
 export async function processStripeWebhook(rawBody: string, signature: string) {
   const stripe = getStripe();
 
@@ -46,15 +44,18 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
     throw new WebhookError(`Signature verification failed: ${(err as Error).message}`);
   }
 
-  // Deduplicate: skip if we already processed this exact event
-  if (processedEvents.has(event.id)) {
+  // DB-backed dedup: insert a marker row keyed by event.id. ON CONFLICT DO
+  // NOTHING + RETURNING tells us whether we won the race. Survives restarts,
+  // works across replicas. Stripe re-deliveries (CLI replay, retried delivery,
+  // out-of-order retries) cannot double-apply state changes after this point.
+  const inserted = await db
+    .insert(stripeWebhookEventsProcessed)
+    .values({ eventId: event.id, eventType: event.type })
+    .onConflictDoNothing({ target: stripeWebhookEventsProcessed.eventId })
+    .returning({ eventId: stripeWebhookEventsProcessed.eventId });
+  if (inserted.length === 0) {
     console.log(`[Webhook] Skipping duplicate ${event.type} (${event.id})`);
-    return;
-  }
-  processedEvents.add(event.id);
-  if (processedEvents.size > DEDUP_MAX) {
-    const first = processedEvents.values().next().value;
-    if (first) processedEvents.delete(first);
+    return { received: true, event_type: event.type, deduped: true };
   }
 
   console.log(`[Webhook] Processing ${event.type} (${event.id})`);

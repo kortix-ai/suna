@@ -1,6 +1,5 @@
 'use server';
 
-import { createTrialCheckout } from '@/lib/api/billing';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { createClient } from '@/lib/supabase/server';
 import { getServerPublicEnv } from '@/lib/public-env-server';

@@ -132,6 +132,7 @@ import {
 import { getSandboxProvider } from '../snapshots/providers';
 import { classifySnapshotError, describeSnapshotError } from '../snapshots/error-classify';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
+import { rehydrateSessionChat } from './legacy-migration-rehydrate';
 import { ProvisionTimeline } from '../platform/services/provision-timeline';
 import { getProvider } from '../platform/providers';
 import { config, type SandboxProviderName } from '../config';
@@ -7015,6 +7016,68 @@ projectsApp.post('/sync-opencode-sessions', syncOpencodeSessionsHandler);
 // Decoupled from the legacy /instances sandbox table: no billing fields, no
 // team-membership coupling. Returns 404 while the row is being inserted —
 // the frontend polls.
+// Provision a sandbox for a dormant session (e.g. a migrated legacy session) on
+// first open. Fire-and-forget; flips the session to 'provisioning' first so the
+// status guard at the call sites prevents re-kicking on every poll.
+async function kickProvisionOnOpen(
+  loaded: { row: { accountId: string; repoUrl: string; defaultBranch: string; manifestPath: string }; userId: string },
+  session: { sandboxProvider: string; baseRef: string | null; agentName: string | null },
+  projectId: string,
+  sessionId: string,
+): Promise<void> {
+  const providerName = session.sandboxProvider as SandboxProviderName;
+  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
+  if (sandboxCallbackUnreachableReason()) return;
+  const gitAuth = await resolveProjectGitAuth(loaded.row as ProjectRow);
+  await db.update(projectSessions)
+    .set({ status: 'provisioning', error: null, updatedAt: new Date() })
+    .where(eq(projectSessions.sessionId, sessionId));
+  // Migrated session — restore its original chat as part of provisioning, before
+  // the sandbox goes 'active' (so the frontend's ensure-opencode pin survives).
+  const legacySandboxId = (loaded.row as { metadata?: { legacy_migration?: { source_sandbox_id?: unknown } } })
+    .metadata?.legacy_migration?.source_sandbox_id;
+
+  void (async () => {
+    try {
+      const extraEnvVars = await buildSessionSandboxEnvVars({
+        accountId: loaded.row.accountId,
+        projectId,
+        sessionId,
+        userId: loaded.userId,
+        repoUrl: loaded.row.repoUrl,
+        baseRef: session.baseRef ?? loaded.row.defaultBranch,
+        agentName: session.agentName ?? 'default',
+      });
+      await provisionSessionSandbox({
+        sandboxId: sessionId,
+        accountId: loaded.row.accountId,
+        projectId,
+        userId: loaded.userId,
+        provider: providerName,
+        metadata: { session_id: sessionId, project_id: projectId, opened_at: new Date().toISOString() },
+        extraEnvVars,
+        gitProject: {
+          projectId,
+          repoUrl: loaded.row.repoUrl,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
+          gitAuthToken: gitAuth.auth?.token ?? null,
+        },
+        baseRef: session.baseRef ?? loaded.row.defaultBranch,
+        beforeActive: typeof legacySandboxId === 'string'
+          ? (externalId) => rehydrateSessionChat({ sessionId, legacySandboxId, newExternalId: externalId })
+          : undefined,
+      });
+    } catch (err) {
+      const message = (err as Error)?.message || 'Sandbox provisioning failed';
+      console.error(`[projects] provision-on-open failed for ${sessionId}:`, err);
+      await db.update(projectSessions)
+        .set({ status: 'failed', error: message, updatedAt: new Date() })
+        .where(eq(projectSessions.sessionId, sessionId)).catch(() => {});
+    }
+  })();
+}
+
 projectsApp.get('/:projectId/sessions/:sessionId/sandbox', async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
@@ -7024,7 +7087,8 @@ projectsApp.get('/:projectId/sessions/:sessionId/sandbox', async (c) => {
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   // Only members who can see the session may reach its sandbox.
-  if (!(await loadVisibleSession(loaded, sessionId))) return c.json({ error: 'Not found' }, 404);
+  const sandboxVisible = await loadVisibleSession(loaded, sessionId);
+  if (!sandboxVisible) return c.json({ error: 'Not found' }, 404);
 
   const [row] = await db
     .select()
@@ -7036,7 +7100,21 @@ projectsApp.get('/:projectId/sessions/:sessionId/sandbox', async (c) => {
     ))
     .limit(1);
 
-  if (!row) return c.json({ error: 'Not found' }, 404);
+  // (Re)provision on open when there's no usable sandbox: a dormant migrated
+  // session (no row), or a dead one whose Daytona sandbox was idle-GC'd /
+  // errored (row in error/stopped/archived). The UI polls this endpoint, so it's
+  // the natural trigger. The project_session 'provisioning' flag (set by
+  // kickProvisionOnOpen) guards against re-kicking on subsequent 404 polls.
+  const usable = row && (row.status === 'provisioning' || row.status === 'active');
+  if (!usable) {
+    if (sandboxVisible.row.status !== 'provisioning') {
+      if (row) {
+        await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sessionId)).catch(() => {});
+      }
+      await kickProvisionOnOpen(loaded, sandboxVisible.row, projectId, sessionId);
+    }
+    return c.json({ error: 'Not found' }, 404);
+  }
 
   return c.json({
     sandbox_id: row.sandboxId,
@@ -7144,7 +7222,8 @@ projectsApp.post('/:projectId/sessions/:sessionId/wake', async (c) => {
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(await loadVisibleSession(loaded, sessionId))) return c.json({ error: 'Not found' }, 404);
+  const wakeVisible = await loadVisibleSession(loaded, sessionId);
+  if (!wakeVisible) return c.json({ error: 'Not found' }, 404);
 
   // Billing v2 — same gate as session create. An unsubscribed account can
   // own a stopped sandbox (e.g. they cancelled their sub after creating it),
@@ -7172,7 +7251,18 @@ projectsApp.post('/:projectId/sessions/:sessionId/wake', async (c) => {
       eq(sessionSandboxes.accountId, loaded.row.accountId),
     ))
     .limit(1);
-  if (!row || !row.externalId) return c.json({ status: 'unknown' });
+
+  // Dormant session with no sandbox yet (e.g. a migrated legacy session) —
+  // provision one on open (same trigger as GET /sandbox).
+  if (!row) {
+    if (wakeVisible.row.status === 'stopped') {
+      await kickProvisionOnOpen(loaded, wakeVisible.row, projectId, sessionId);
+      return c.json({ status: 'provisioning' });
+    }
+    return c.json({ status: 'unknown' });
+  }
+
+  if (!row.externalId) return c.json({ status: 'unknown' });
 
   const providerName = row.provider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {

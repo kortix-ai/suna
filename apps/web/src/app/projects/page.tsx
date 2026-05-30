@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   FolderPlus,
+  HardDriveDownload,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -18,7 +19,9 @@ import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { ProjectCreateModal } from '@/components/projects/project-create-modal';
+import { LegacyMigrationDialog } from '@/components/projects/legacy-migration-dialog';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
+import { useLegacyMachines } from '@/hooks/legacy/use-legacy-machine-migration';
 import {
   archiveProject,
   listAccounts,
@@ -190,6 +193,12 @@ export default function ProjectsPage() {
   const canCreateProjects =
     activeAccount?.account_role === 'owner' || activeAccount?.account_role === 'admin';
 
+  // Surface a "Migrate machines" entry point only for users who actually have
+  // legacy machines on this account; everyone else never sees the clutter.
+  const [migrateOpen, setMigrateOpen] = useState(false);
+  const legacyMachinesQuery = useLegacyMachines({ enabled: !!user });
+  const hasLegacyMachines = (legacyMachinesQuery.data?.sandboxes?.length ?? 0) > 0;
+
   const archiveMutation = useMutation({
     mutationFn: archiveProject,
     onMutate: (projectId) => setArchivingId(projectId),
@@ -246,6 +255,17 @@ export default function ProjectsPage() {
                   className="h-9 pl-9 text-sm"
                 />
               </div>
+              {hasLegacyMachines && (
+                <Button
+                  onClick={() => setMigrateOpen(true)}
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1.5"
+                >
+                  <HardDriveDownload className="h-4 w-4" />
+                  Migrate machines
+                </Button>
+              )}
               <Button
                 onClick={() => setModalOpen(true)}
                 disabled={!activeAccountId || !canCreateProjects}
@@ -329,6 +349,8 @@ export default function ProjectsPage() {
         onOpenChange={setModalOpen}
         accountId={activeAccountId}
       />
+
+      <LegacyMigrationDialog open={migrateOpen} onOpenChange={setMigrateOpen} />
 
       <PersonalOnboardingWelcome />
     </div>

@@ -146,13 +146,25 @@ export function createChatCompletionsRoute(
 
     (async () => {
       const reader = upstream.body!.getReader();
+      // Once the downstream client disconnects, writer.write() throws. Stop
+      // trying to write (so we don't crash) but KEEP reading the upstream so
+      // we get OpenRouter's final usage chunk (which arrives at the end of the
+      // stream). Without this, an aborted stream charges $0 even though the
+      // tokens were generated and billed to us by OpenRouter.
+      let downstreamAlive = true;
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           if (value) {
             sseBuffer += decoder.decode(value, { stream: true });
-            await writer.write(value);
+            if (downstreamAlive) {
+              try {
+                await writer.write(value);
+              } catch {
+                downstreamAlive = false;
+              }
+            }
           }
         }
       } catch (err) {

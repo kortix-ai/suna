@@ -5,11 +5,12 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { useCreatePerSeatCheckout } from '@/hooks/billing';
+import { useAccountState, useCreatePerSeatCheckout } from '@/hooks/billing';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ArrowRight, Check, Loader2 } from 'lucide-react';
@@ -49,6 +50,13 @@ export function GlobalUpgradeDialog() {
   const { isOpen, reason, message, balance, closeUpgradeDialog } = useUpgradeDialogStore();
   const createPerSeat = useCreatePerSeatCheckout();
   const openAccountSettings = useAccountSettingsModalStore((s) => s.openAccountSettings);
+  const { data: accountState } = useAccountState();
+
+  // Legacy customers don't get pitched per-seat checkout from the upgrade
+  // dialog. Their billing is the legacy tier model; the right CTA is top up
+  // their wallet (or open billing settings). Auto-migration is a separate
+  // flow they have to opt into explicitly.
+  const isLegacy = accountState?.billing_model === 'legacy';
 
   const handleSubscribe = () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -75,6 +83,30 @@ export function GlobalUpgradeDialog() {
       ? `Your wallet is at $${balance.toFixed(2)}. Top up or enable auto-refill to keep going.`
       : message ||
         'LLM compute and AI Computers for your team. $20 per user, every month.');
+
+  if (isLegacy) {
+    return (
+      <Dialog open={isOpen} onOpenChange={(open) => !open && closeUpgradeDialog()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-center text-xl">Out of credits</DialogTitle>
+            <DialogDescription className="text-center">
+              {message ||
+                `Your wallet is at $${balance.toFixed(2)}. Top up or enable auto-refill to keep going.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col-reverse sm:flex-col-reverse gap-2 sm:gap-2">
+            <Button variant="ghost" onClick={closeUpgradeDialog}>
+              Not now
+            </Button>
+            <Button onClick={handleManageBilling} className="w-full sm:w-full">
+              Manage billing <ArrowRight className="size-4" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeUpgradeDialog()}>
