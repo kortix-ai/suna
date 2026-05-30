@@ -1,1 +1,0 @@
-../../../.kortix/opencode/skills/kortix-system/SKILL.md

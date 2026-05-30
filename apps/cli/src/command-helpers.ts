@@ -1,4 +1,4 @@
-import { loadAuth, loadAuthForHost } from './api/auth.ts';
+import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectId } from './project-link.ts';
 import { C, status } from './style.ts';
@@ -25,7 +25,7 @@ interface ProjectContextOpts {
  */
 export function resolveProjectContext(
   optsOrProjectArg?: ProjectContextOpts | string,
-): { client: ApiClient; projectId: string } | null {
+): { client: ApiClient; projectId: string; auth: Auth } | null {
   const opts: ProjectContextOpts =
     typeof optsOrProjectArg === 'string'
       ? { projectArg: optsOrProjectArg }
@@ -59,7 +59,7 @@ export function resolveProjectContext(
     );
     return null;
   }
-  return { client: clientFromAuth(auth), projectId };
+  return { client: clientFromAuth(auth), projectId, auth };
 }
 
 /** Print an HTTP error in a consistent style + return exit code 1. */

@@ -44,6 +44,7 @@ import {
   stopProjectTriggerScheduler,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
+import { kickStartupPreBuild } from './snapshots/builder';
 import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
 import { scimRouter } from './scim';
@@ -577,6 +578,10 @@ ensureSchema()
     startTunnelService();
     startProjectMaintenance();
     startProjectTriggerScheduler();
+    // Mint the global platform-default sandbox image once per boot so the first
+    // session anywhere lands on a cache hit. Idempotent + best-effort; the
+    // session-boot graceful path is the lazy fallback if this is skipped.
+    kickStartupPreBuild();
     // IAM V2 time-bounded grants: tick every 60s, emit one audit event
     // per row that just transitioned to expired. Engine already filters
     // expired rows out of authorize() so correctness doesn't depend on
@@ -594,6 +599,7 @@ ensureSchema()
     startTunnelService();
     startProjectMaintenance();
     startProjectTriggerScheduler();
+    kickStartupPreBuild();
   });
 
 // Graceful shutdown

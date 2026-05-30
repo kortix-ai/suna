@@ -125,6 +125,31 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
  * if the project doesn't have an opencode.jsonc — that's what keeps a freshly
  * provisioned sandbox bootable before a project has been cloned.
  */
+/**
+ * Read `[sandbox] on_boot` from the project's kortix.toml — a shell command the
+ * daemon runs (backgrounded) once the repo is materialized and opencode is up,
+ * so a session can auto-start its dev stack (e.g. `on_boot = "pnpm dev"`).
+ * Returns null when unset. Parsed with the same regex approach as
+ * resolveOpencodeConfigDir (no TOML dep in the daemon).
+ */
+export async function resolveSandboxOnBoot(cfg: Config): Promise<string | null> {
+  const fs = await import('node:fs/promises')
+  let body: string
+  try {
+    body = await fs.readFile(`${cfg.projectTarget}/kortix.toml`, 'utf8')
+  } catch {
+    return null
+  }
+  // The `[sandbox]` table body runs up to the next `[section]` (e.g.
+  // `[[sandbox.templates]]`) or end of file.
+  const sectionMatch = body.match(/^\[sandbox\]\s*$([\s\S]*?)(?=^\s*\[|(?![\s\S]))/m)
+  const sectionBody = sectionMatch?.[1]
+  if (!sectionBody) return null
+  const keyMatch = sectionBody.match(/^\s*on_boot\s*=\s*['"]([^'"]+)['"]/m)
+  const cmd = keyMatch?.[1]?.trim()
+  return cmd && cmd.length > 0 ? cmd : null
+}
+
 export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
   const fs = await import('node:fs/promises')
   const manifestPath = `${cfg.projectTarget}/kortix.toml`
@@ -163,8 +188,12 @@ async function readOpencodeConfigDirFromManifest(
   } catch {
     return fallback
   }
-  // Match the `[opencode]` table body up to the next `[section]` line.
-  const sectionMatch = body.match(/^\[opencode\]\s*$([\s\S]*?)(?=^\s*\[|\Z)/m)
+  // Match the `[opencode]` table body up to the next `[section]` line or the
+  // end of the file. `\Z` is NOT a valid JS anchor (it matches a literal `Z`),
+  // so use `(?![\s\S])` for end-of-string — otherwise an `[opencode]` table
+  // that's the LAST section in the manifest never matches and silently falls
+  // back to the default config dir.
+  const sectionMatch = body.match(/^\[opencode\]\s*$([\s\S]*?)(?=^\s*\[|(?![\s\S]))/m)
   const sectionBody = sectionMatch?.[1]
   if (!sectionBody) return fallback
   const keyMatch = sectionBody.match(/^\s*config_dir\s*=\s*['"]([^'"]+)['"]/m)

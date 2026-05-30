@@ -32,7 +32,12 @@ export type ActionBinding =
   | { kind: 'graphql'; operation: 'query' | 'mutation'; field: string }
   | { kind: 'mcp'; tool: string }
   | { kind: 'http'; method: string; path: string }
-  | { kind: 'pipedream'; app: string; actionKey: string };
+  | { kind: 'pipedream'; app: string; actionKey: string }
+  // Generic Connect-Proxy request: hit ANY endpoint of a Pipedream-connected
+  // app's API. Pipedream injects the user's credential server-side, so this
+  // makes a pipedream connector behave like an openapi/http one — the agent
+  // supplies method + full URL + body and reaches the whole API surface.
+  | { kind: 'pipedream_proxy'; app: string };
 
 /** A Pipedream component/action (from the Connect API listActions). */
 export interface PipedreamActionLike {

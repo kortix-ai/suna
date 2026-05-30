@@ -15,18 +15,25 @@ Every session boots inside a Docker container, built in two parts: **your Docker
 └─────────────────────────────────────────┘
 ```
 
-Referenced from `kortix.toml`:
+Referenced from `kortix.toml` as a named template under `[[sandbox.templates]]`:
 
 ```toml
-[sandbox]
-dockerfile = ".kortix/Dockerfile"
+[[sandbox.templates]]
+slug       = "dev"             # any slug except the reserved "default"
+name       = "Dev box"         # optional label
+dockerfile = ".kortix/Dockerfile"   # OR image = "python:3.12-slim"
 context    = "."
 cpu        = 2     # optional — vCPU cores
 memory     = 4     # optional — GiB
 disk       = 20    # optional — GiB
+
+# Make a template the project-wide default so every session (UI, triggers,
+# channels) boots it without passing a slug. Omit → the platform default.
+[sandbox]
+default = "dev"
 ```
 
-Both paths must be repo-relative. Absolute paths and `..` traversal are rejected (the validator falls back to the default). Field details: [kortix.toml](/docs/reference/manifest#sandbox).
+Each entry sets exactly one of `dockerfile` or `image`. Paths must be repo-relative — absolute paths and `..` traversal are rejected. The singular `[sandbox]` table with image/build keys on it directly is **legacy and rejected**; image definitions live under `[[sandbox.templates]]`, and `[sandbox]` itself only carries `default`. Field details: [kortix.toml](/docs/reference/manifest#sandbox).
 
 ## What the Kortix layer injects
 
@@ -87,10 +94,12 @@ WORKDIR /workspace
 
 ## Hardware spec
 
-`cpu`, `memory`, `disk`, and `gpu` in `[sandbox]` size the box your sessions run on. All four are optional; an omitted field takes the runtime provider's default. `cpu` is vCPU cores, `memory` and `disk` are GiB, `gpu` is GPU units (`0` / omitted = none).
+`cpu`, `memory`, `disk`, and `gpu` on a `[[sandbox.templates]]` entry size the box your sessions run on. All four are optional; an omitted field takes the runtime provider's default. `cpu` is vCPU cores, `memory` and `disk` are GiB, `gpu` is GPU units (`0` / omitted = none).
 
 ```toml
-[sandbox]
+[[sandbox.templates]]
+slug   = "big"
+image  = "ubuntu:24.04"
 cpu    = 4
 memory = 8
 disk   = 50

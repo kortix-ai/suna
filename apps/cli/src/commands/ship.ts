@@ -7,7 +7,7 @@ import { ApiError, clientFromAuth, type ApiClient } from '../api/client.ts';
 import { isKortixProject, loadLink, saveLink, resolveProjectId } from '../project-link.ts';
 import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
-import { promptSecret } from '../prompts.ts';
+import { prompt, confirm, promptSecret } from '../prompts.ts';
 import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
 import { C, status } from '../style.ts';
 import type {
@@ -41,9 +41,13 @@ Branches:
   Ship pushes whatever branch you're on to the matching remote branch — on
   \`main\` it pushes main; checked out on a \`feature\` branch, it pushes feature.
 
-Where it pushes (origin is inferred, never asked):
-  * Existing \`origin\` remote (e.g. your own GitHub repo) → pushes there with
-    your own git credentials. Bring-your-own works continuously, same as below.
+Where it backs the project (origin is inferred, never asked):
+  * Existing GitHub \`origin\` (e.g. github.com/you/repo) → links it directly,
+    GitHub-backed. If the Kortix GitHub App isn't installed yet, ship prints a
+    one-click install link (same as the web UI import); or pass
+    --github-token <PAT> to link without the app. Sessions clone/push the real
+    repo, so \`git push\` stays synced.
+  * Other existing \`origin\` remote                       → registered + pushed.
   * No \`origin\` remote                                    → creates a managed
     Kortix git repo (hosted on Freestyle) and pushes to it. No GitHub needed.
 
@@ -57,6 +61,8 @@ Options:
   --origin <value>     Override origin choice:
                          freestyle    force a managed Kortix repo
                          <git-url>    register + push to this remote
+  --github-token <pat> Link a GitHub origin with this token instead of the
+                       GitHub App (App-free import; needs repo Contents R/W).
   -m, --message <msg>  Commit message for the sync (default: "kortix: ship").
   --no-commit          Don't commit. Fail if the working tree is dirty.
   --no-verify          Skip the kortix.toml validation (compile) check.
@@ -72,6 +78,7 @@ interface ShipFlags {
   name?: string;
   account?: string;
   origin?: string;
+  githubToken?: string;
   message?: string;
   noCommit: boolean;
   noVerify: boolean;
@@ -299,6 +306,67 @@ async function ensureProjectEnv(
   }
 }
 
+function isGitHubUrl(url: string): boolean {
+  return /(^https?:\/\/github\.com\/)|(^git@github\.com:)/i.test(url);
+}
+
+interface LinkRepoResponse {
+  project: ProjectSummary;
+}
+
+/**
+ * Link an existing GitHub repo to a new cloud project — the same import the
+ * web UI does, from your terminal. Default path is the one-click GitHub App
+ * install (no secret to manage): if the app isn't installed yet, we print the
+ * install link, you authorize, and we retry. `--github-token <PAT>` skips the
+ * app entirely (the App-free fallback — handy where the app can't be installed,
+ * e.g. local dev whose callback points at prod).
+ */
+async function linkGitHubBackedProject(
+  client: ApiClient,
+  opts: { repoUrl: string; name: string; accountId: string; githubToken?: string; yes: boolean },
+): Promise<ProjectSummary> {
+  const body = (token?: string) => ({
+    repo_url: opts.repoUrl,
+    name: opts.name,
+    account_id: opts.accountId,
+    ...(token ? { github_token: token } : {}),
+  });
+
+  // PAT path: one shot, no app needed.
+  if (opts.githubToken) {
+    const res = await client.post<LinkRepoResponse>('/link-repository', body(opts.githubToken));
+    return res.project;
+  }
+
+  // App path: retry around the one-click install.
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      const res = await client.post<LinkRepoResponse>('/link-repository', body());
+      return res.project;
+    } catch (err) {
+      const installUrl =
+        err instanceof ApiError && err.status === 409
+          ? ((err.body as { install_url?: string } | null)?.install_url ?? null)
+          : null;
+      if (!installUrl) throw err;
+
+      process.stdout.write(
+        `\n  ${status.warn('Kortix GitHub App not installed for this repo yet.')}\n` +
+          `  ${C.dim}One-click install (authorize access to your repo):${C.reset}\n` +
+          `  ${C.cyan}${installUrl}${C.reset}\n\n` +
+          `  ${C.dim}Or skip the app with a token: ${C.reset}${C.cyan}kortix ship --github-token <PAT>${C.reset}\n\n`,
+      );
+      if (opts.yes) {
+        throw new Error('GitHub App install required — re-run without -y after installing, or pass --github-token <PAT>.');
+      }
+      const again = await confirm('Installed it? Retry the link', true);
+      if (!again) throw new Error('Aborted — install the Kortix GitHub App (or use --github-token) then run `kortix ship` again.');
+    }
+  }
+  throw new Error('GitHub App still not detected after several tries — install it, or use --github-token <PAT>.');
+}
+
 // ── First ship: create the cloud project, wire the remote, push ─────────────
 async function shipFirstTime(
   client: ApiClient,
@@ -326,21 +394,23 @@ async function shipFirstTime(
   let pushToken: string | null = null;
 
   if (byoUrl) {
+    const github = isGitHubUrl(byoUrl);
     process.stdout.write(
       `\n  ${C.bold}kortix ship${C.reset}  ${C.dim}new project → your git${C.reset}\n` +
-        `  ${C.dim}origin  ${C.reset}${byoUrl}\n\n`,
+        `  ${C.dim}origin  ${C.reset}${byoUrl}${github ? `  ${C.faded}(GitHub)${C.reset}` : ''}\n\n`,
     );
     if (flags.dryRun) {
-      process.stdout.write(
-        `  ${C.dim}[dry-run] would: POST /projects {repo_url:"${byoUrl}", name:"${name}"} + push${C.reset}\n\n`,
-      );
+      const how = github
+        ? `link ${byoUrl} via GitHub App${flags.githubToken ? ' token' : ' (1-click install if needed)'}`
+        : `POST /projects {repo_url:"${byoUrl}"}`;
+      process.stdout.write(`  ${C.dim}[dry-run] would: ${how} + push${C.reset}\n\n`);
       return 0;
     }
-    project = await client.post<ProjectSummary>('/projects', {
-      repo_url: byoUrl,
-      name,
-      account_id: accountId,
-    });
+    // GitHub origin → the seamless import (one-click App install, or --github-token).
+    // Non-GitHub remote → the generic project link.
+    project = github
+      ? await linkGitHubBackedProject(client, { repoUrl: byoUrl, name, accountId, githubToken: flags.githubToken, yes: flags.yes })
+      : await client.post<ProjectSummary>('/projects', { repo_url: byoUrl, name, account_id: accountId });
     repoUrl = project.repo_url;
     // Only touch the remote when the user named one explicitly — an existing
     // `origin` is left exactly as-is so their credential setup keeps working.
@@ -659,6 +729,7 @@ function parseFlags(argv: string[]): ShipFlags {
   flags.name = takeFlagValue(rest, ['--name']);
   flags.account = takeFlagValue(rest, ['--account']);
   flags.origin = takeFlagValue(rest, ['--origin']);
+  flags.githubToken = takeFlagValue(rest, ['--github-token']);
   flags.message = takeFlagValue(rest, ['--message', '-m']);
   flags.project = takeFlagValue(rest, ['--project']);
   flags.host = takeFlagValue(rest, ['--host']);

@@ -23,6 +23,9 @@ Subcommands:
   chat [<session-id>]               Talk to a session's agent (REPL, or
                                     one-shot with --prompt). --new starts one.
   info <session-id>                 Show one session.
+  preview <session-id> [port]       Print a clickable preview URL for a port
+                                    in the session's sandbox (default 3000).
+                                    Root-served (assets work). --port also works.
   restart <session-id>              Restart (re-provision) a session.
   rm <session-id>                   Stop + delete a session.
   open <session-id>                 Open the dashboard URL for a session.
@@ -48,10 +51,12 @@ export async function runSessions(argv: string[]): Promise<number> {
   let projectFlag: string | undefined;
   let promptFlag: string | undefined;
   let hostFlag: string | undefined;
+  let portFlag: string | undefined;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     promptFlag = takeFlagValue(rest, ['--prompt', '-p']);
+    portFlag = takeFlagValue(rest, ['--port']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -68,6 +73,9 @@ export async function runSessions(argv: string[]): Promise<number> {
     case 'info':
     case 'show':
       return sessionsInfo(rest[0], ctxOpts);
+    case 'preview':
+    case 'url':
+      return sessionsPreview(rest[0], portFlag ?? rest[1], ctxOpts);
     case 'restart':
       return sessionsRestart(rest[0], ctxOpts);
     case 'rm':
@@ -228,6 +236,58 @@ async function sessionsInfo(sessionId: string | undefined, opts: CtxOpts): Promi
   }
   process.stdout.write(`  ${C.dim}created    ${C.reset}${formatRelative(s.created_at)}\n`);
   process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(s.updated_at)}\n\n`);
+  return 0;
+}
+
+async function sessionsPreview(
+  sessionId: string | undefined,
+  portArg: string | undefined,
+  opts: CtxOpts,
+): Promise<number> {
+  if (!sessionId) {
+    process.stderr.write(`${status.err('Pass a session id.')}\n`);
+    return 2;
+  }
+  const port = Number(portArg ?? '3000');
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    process.stderr.write(`${status.err(`Invalid port "${portArg}".`)}\n`);
+    return 2;
+  }
+  const ctx = resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  let s: ProjectSession;
+  try {
+    s = await ctx.client.get<ProjectSession>(
+      `/projects/${ctx.projectId}/sessions/${sessionId}`,
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (!s.sandbox_url) {
+    process.stderr.write(
+      `${status.err(`Session has no sandbox yet (status: ${s.status}). Try again once it's active.`)}\n`,
+    );
+    return 1;
+  }
+  // The sandbox's external id is the segment after /v1/p/ in the daemon URL.
+  const m = s.sandbox_url.match(/\/v1\/p\/([^/]+)\//);
+  if (!m) {
+    process.stderr.write(`${status.err(`Could not parse sandbox id from ${s.sandbox_url}`)}\n`);
+    return 1;
+  }
+  const ext = m[1];
+  const base = new URL(ctx.auth.api_base);
+  // Kortix subdomain preview: served at root (so SPA/Next assets resolve), the
+  // `?token` authorizes the subdomain (in-memory TTL) and sets a cookie for
+  // subsequent asset requests. `*.localhost` resolves to 127.0.0.1 in browsers.
+  const scheme = base.protocol.replace(':', '');
+  const url = `${scheme}://p${port}-${ext}.${base.host}/?token=${encodeURIComponent(ctx.auth.token)}`;
+
+  process.stdout.write(`\n  ${C.dim}port    ${C.reset}${port}\n`);
+  process.stdout.write(`  ${C.dim}sandbox ${C.reset}${ext}\n`);
+  process.stdout.write(`  ${C.dim}preview ${C.reset}${C.cyan}${url}${C.reset}\n\n`);
   return 0;
 }
 

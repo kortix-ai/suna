@@ -72,6 +72,62 @@ Pull the latest deploy logs and summarize regressions.
     expect(specs[0]!.promptTemplate).toContain('Pull the latest deploy logs');
   });
 
+  test('parses a one-off cron trigger with run_at (no cron)', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "launch-blast"
+type = "cron"
+run_at = "2099-01-01T09:00:00Z"
+prompt = "Send the launch announcement."
+`));
+    const { specs, errors } = extractTriggers(parsed);
+    expect(errors).toEqual([]);
+    expect(specs[0]).toMatchObject({
+      slug: 'launch-blast',
+      type: 'cron',
+      cron: null,
+      runAt: '2099-01-01T09:00:00.000Z',
+      secretEnv: null,
+    });
+  });
+
+  test('a one-off run_at round-trips through serialize (run_at, no cron)', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "once"
+type = "cron"
+run_at = "2099-01-01T09:00:00Z"
+prompt = "x"
+`));
+    const out = serializeManifest(parsed);
+    expect(out).toContain('run_at');
+  });
+
+  test('an invalid run_at is rejected with a clear error', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "bad-once"
+type = "cron"
+run_at = "not-a-date"
+prompt = "x"
+`));
+    const { errors } = extractTriggers(parsed);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.error).toMatch(/run_at must be an ISO-8601 datetime/);
+  });
+
+  test('a cron trigger with neither cron nor run_at is rejected', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "empty"
+type = "cron"
+prompt = "x"
+`));
+    const { errors } = extractTriggers(parsed);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.error).toMatch(/expression or a one-off/);
+  });
+
   test('parses a webhook trigger with secret_env reference', () => {
     const parsed = parseManifestString(manifestWith(`
 [[triggers]]

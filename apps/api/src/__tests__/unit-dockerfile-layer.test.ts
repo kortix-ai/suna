@@ -3,6 +3,7 @@ import {
   buildDefaultSandboxTemplate,
   buildLayeredDockerfile,
   DEFAULT_SANDBOX_SLUG,
+  extractSandboxDefault,
   extractSandboxTemplates,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   sandboxSpecIsEmpty,
@@ -89,6 +90,29 @@ WORKDIR /workspace
     expect(merged.startsWith('# syntax=docker/dockerfile:1.7')).toBe(true);
     expect(merged).toContain('FROM ubuntu:24.04');
     expect(merged).toContain('Kortix runtime layer (auto-injected)');
+  });
+});
+
+describe('extractSandboxDefault', () => {
+  test('returns null when unset / no sandbox table', () => {
+    expect(extractSandboxDefault(null)).toBeNull();
+    expect(extractSandboxDefault({})).toBeNull();
+    expect(extractSandboxDefault({ sandbox: {} })).toBeNull();
+  });
+
+  test('returns the configured default slug', () => {
+    expect(extractSandboxDefault({ sandbox: { default: 'dev' } })).toBe('dev');
+    expect(extractSandboxDefault({ sandbox: { default: '  dev  ' } })).toBe('dev');
+  });
+
+  test('treats the reserved "default" as no override (null)', () => {
+    expect(extractSandboxDefault({ sandbox: { default: DEFAULT_SANDBOX_SLUG } })).toBeNull();
+  });
+
+  test('ignores non-string / invalid-slug values', () => {
+    expect(extractSandboxDefault({ sandbox: { default: 42 } })).toBeNull();
+    expect(extractSandboxDefault({ sandbox: { default: 'Not A Slug!' } })).toBeNull();
+    expect(extractSandboxDefault({ sandbox: ['array', 'not', 'table'] })).toBeNull();
   });
 });
 

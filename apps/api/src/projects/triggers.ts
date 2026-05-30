@@ -70,8 +70,14 @@ export interface GitTriggerSpec {
   enabled: boolean;
   /** Mustache-style prompt template — the body sent to the agent on each fire. */
   promptTemplate: string;
-  /** For type=cron only. 6-field croner expression. */
+  /** For type=cron only. 6-field croner expression. Null for one-off (`runAt`) schedules. */
   cron: string | null;
+  /**
+   * For type=cron only. ISO-8601 instant for a one-off ("run once") schedule.
+   * Mutually exclusive with `cron`: when set, the trigger fires exactly once
+   * at/after this instant and then stays dormant (guarded by last_fired_at).
+   */
+  runAt: string | null;
   /** For type=cron only. IANA timezone. Defaults to UTC. */
   timezone: string;
   /**
@@ -248,7 +254,11 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     enabled: spec.enabled,
   };
   if (spec.type === 'cron') {
-    entry.cron = spec.cron ?? '';
+    if (spec.runAt) {
+      entry.run_at = spec.runAt;
+    } else {
+      entry.cron = spec.cron ?? '';
+    }
     entry.timezone = spec.timezone;
   } else if (spec.secretEnv) {
     entry.secret_env = spec.secretEnv;
@@ -309,10 +319,40 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
       : typeof row.schedule === 'string'
         ? row.schedule.trim()
         : '';
-    if (!cron) return err(slug, 'cron triggers must declare a `cron` expression');
+    const runAtRaw = typeof row.run_at === 'string'
+      ? row.run_at.trim()
+      : typeof row.runAt === 'string'
+        ? row.runAt.trim()
+        : '';
     const timezone = typeof row.timezone === 'string' && row.timezone.trim()
       ? row.timezone.trim()
       : 'UTC';
+
+    // A one-off ("run once") schedule carries `run_at` instead of `cron`.
+    if (runAtRaw) {
+      const parsed = Date.parse(runAtRaw);
+      if (Number.isNaN(parsed)) {
+        return err(slug, `run_at must be an ISO-8601 datetime (got "${runAtRaw}")`);
+      }
+      return {
+        ok: true,
+        spec: {
+          slug,
+          path,
+          name,
+          type: 'cron',
+          agent,
+          enabled,
+          promptTemplate: prompt,
+          cron: null,
+          runAt: new Date(parsed).toISOString(),
+          timezone,
+          secretEnv: null,
+        },
+      };
+    }
+
+    if (!cron) return err(slug, 'cron triggers must declare a `cron` expression or a one-off `run_at`');
     return {
       ok: true,
       spec: {
@@ -324,6 +364,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
         enabled,
         promptTemplate: prompt,
         cron,
+        runAt: null,
         timezone,
         secretEnv: null,
       },
@@ -353,6 +394,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
       enabled,
       promptTemplate: prompt,
       cron: null,
+      runAt: null,
       timezone: 'UTC',
       secretEnv,
     },

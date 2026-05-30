@@ -1,0 +1,101 @@
+% Minimal IMRaD Scientific Paper Template
+% Usage: Copy this to paper/{slug}/main.tex and adapt
+%
+% Document class options:
+%   \documentclass[11pt,a4paper]{article}          -- default, any venue
+%   \documentclass[conference]{IEEEtran}           -- IEEE conferences
+%   \documentclass[sigconf]{acmart}                -- ACM conferences
+%   \documentclass{llncs}                          -- Springer LNCS
+%
+% To switch venue: replace the documentclass line and adjust package imports.
+% Most of this template works unchanged across venues.
+
+\documentclass[11pt,a4paper]{article}
+
+% === Core Packages ===
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}                    % Better fonts
+\usepackage[margin=1in]{geometry}       % Margins (remove for venue templates)
+\usepackage{microtype}                  % Better typography
+
+% === Math ===
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{mathtools}                  % Extensions to amsmath
+
+% === Figures & Tables ===
+\usepackage{graphicx}
+\usepackage{booktabs}                   % Professional tables (\toprule, \midrule, \bottomrule)
+\usepackage{subcaption}                 % Subfigures
+\usepackage{float}                      % Better float control
+
+% === Algorithms ===
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+% === Code Listings (optional) ===
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, breaklines=true, frame=single}
+
+% === References & Hyperlinks ===
+\usepackage[numbers]{natbib}            % Citations: \citep{}, \citet{}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+\usepackage{cleveref}                   % Smart references: \cref{fig:x} -> "Figure 1"
+
+% === Convenience Macros ===
+\newcommand{\figref}[1]{\cref{#1}}
+\newcommand{\tabref}[1]{\cref{#1}}
+\newcommand{\eqnref}[1]{\cref{#1}}
+\newcommand{\secref}[1]{\cref{#1}}
+\newcommand{\algref}[1]{\cref{#1}}
+
+% === Paper-Specific Macros (define your own here) ===
+% \newcommand{\methodname}{MethodName}
+% \newcommand{\loss}{\mathcal{L}}
+% \newcommand{\R}{\mathbb{R}}
+
+% === Graphics Path ===
+\graphicspath{{figures/}}
+
+% === Title Block ===
+\title{Paper Title Here}
+\author{
+    First Author\thanks{Affiliation, email@example.com} \and
+    Second Author\thanks{Affiliation, email@example.com}
+}
+\date{}  % Leave empty for submission; set for preprints
+
+\begin{document}
+
+\maketitle
+
+% === Abstract ===
+\input{sections/abstract}
+
+% === Main Sections ===
+\input{sections/introduction}
+\input{sections/related-work}
+\input{sections/methods}
+\input{sections/results}
+\input{sections/discussion}
+\input{sections/conclusion}
+
+% === Acknowledgments (optional) ===
+% \section*{Acknowledgments}
+% We thank...
+
+% === Bibliography ===
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+% === Appendix (optional) ===
+% \appendix
+% \input{sections/appendix}
+
+\end{document}

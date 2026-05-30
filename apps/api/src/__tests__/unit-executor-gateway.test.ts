@@ -188,6 +188,27 @@ describe('handleCall — pipedream path', () => {
     expect(captured).toMatchObject({ app: 'gmail', actionKey: 'gmail-send-email', accountId: 'apn_abc123' });
   });
 
+  test('routes a pipedream_proxy `request` binding to executePipedreamProxy (Connect Proxy)', async () => {
+    const REQUEST: GatewayAction = {
+      path: 'gmail.request',
+      relPath: 'request',
+      inputSchema: { type: 'object', properties: { method: {}, url: {} }, required: ['method', 'url'] },
+      risk: 'write',
+      binding: { kind: 'pipedream_proxy', app: 'gmail' },
+    };
+    const { deps, fetchCalls } = makeDeps({ connector: PD, action: REQUEST, secret: 'apn_abc123' });
+    let captured: any = null;
+    deps.executePipedreamProxy = async (input) => { captured = input; return { status: 201, ok: true, data: { id: 1 } }; };
+    const res = await handleCall(deps, {
+      ...baseInput, connectorSlug: 'gmail', actionPath: 'request',
+      args: { method: 'POST', url: 'https://gmail.googleapis.com/x', body: { a: 1 } },
+    });
+    expect(res).toEqual({ status: 'ok', data: { id: 1 }, risk: 'write' });
+    expect(fetchCalls).toHaveLength(0); // proxy path, not the HTTP builder
+    expect(captured).toMatchObject({ app: 'gmail', accountId: 'apn_abc123' });
+    expect(captured.args).toMatchObject({ method: 'POST', url: 'https://gmail.googleapis.com/x' });
+  });
+
   test('denied (needs_auth) when this member has not connected', async () => {
     const { deps } = makeDeps({ connector: PD, action: SEND, secret: null });
     expect(await handleCall(deps, { ...baseInput, connectorSlug: 'gmail', actionPath: 'send_email' })).toEqual({ status: 'denied', reason: 'needs_auth' });

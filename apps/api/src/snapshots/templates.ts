@@ -12,7 +12,7 @@
  */
 
 import { and, eq, isNull, or } from 'drizzle-orm';
-import { sandboxTemplates } from '@kortix/db';
+import { sandboxTemplates, projects } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { readManifest } from '../projects/triggers';
@@ -21,6 +21,7 @@ import { SANDBOX_VERSION } from '../config';
 import {
   buildDefaultSandboxTemplate,
   DEFAULT_SANDBOX_SLUG,
+  extractSandboxDefault,
   extractSandboxTemplates,
   normalizeUserDockerfileForSnapshot,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
@@ -84,6 +85,8 @@ export interface ResolvedTemplate {
   providerState: string;
   providerSnapshotName: string | null;
   contentHash: string | null;
+  /** Git commit the last successful build read the Dockerfile from. */
+  builtFromCommit: string | null;
 }
 
 /**
@@ -186,18 +189,28 @@ export async function resolveTemplateBySlug(
   // never shadow it: the shared row is always the answer. Resolve it from the DB
   // directly and skip the git fetch entirely.
   if (target === DEFAULT_SANDBOX_SLUG) {
-    const [shared] = await db
-      .select()
-      .from(sandboxTemplates)
-      .where(and(eq(sandboxTemplates.slug, DEFAULT_SANDBOX_SLUG), eq(sandboxTemplates.isShared, true)))
-      .limit(1);
-    return shared ? rowToResolved(shared) : synthesizedDefault();
+    return resolveDefaultTemplate();
   }
 
   const items = await listTemplatesForProject(project);
   const match = items.find((t) => t.slug === target);
   if (match) return match;
   throw new Error(`No sandbox template with slug "${target}" in this project.`);
+}
+
+/**
+ * Resolve the platform-shared default template — project-independent. The
+ * default's identity is a constant (PLATFORM_DEFAULT_USER_DOCKERFILE), so it
+ * needs no project, no manifest, and no git fetch. Used by the session-boot
+ * fast path and the startup pre-build that mints the global default image.
+ */
+export async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
+  const [shared] = await db
+    .select()
+    .from(sandboxTemplates)
+    .where(and(eq(sandboxTemplates.slug, DEFAULT_SANDBOX_SLUG), eq(sandboxTemplates.isShared, true)))
+    .limit(1);
+  return shared ? rowToResolved(shared) : synthesizedDefault();
 }
 
 /**
@@ -365,9 +378,11 @@ export async function computeTemplateIdentity(
   shortHash: string;
   runtimeFingerprint: string;
   userDockerfile: string;
+  /** Commit the Dockerfile was read from; null for default/image templates. */
+  builtFromCommit: string | null;
 }> {
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
-  const userDockerfile = await resolveUserDockerfile(project, template);
+  const { dockerfile: userDockerfile, commit } = await resolveUserDockerfile(project, template);
   const hash = computeSnapshotHash({
     dockerfile: userDockerfile,
     contextTreeOid: template.isShared ? 'platform-default' : `template:${template.slug}`,
@@ -381,14 +396,15 @@ export async function computeTemplateIdentity(
     shortHash: hash.shortHash,
     runtimeFingerprint,
     userDockerfile,
+    builtFromCommit: commit,
   };
 }
 
 export async function resolveUserDockerfile(
   project: GitBackedProject,
   template: ResolvedTemplate,
-): Promise<string> {
-  if (template.isShared) return PLATFORM_DEFAULT_USER_DOCKERFILE;
+): Promise<{ dockerfile: string; commit: string | null }> {
+  if (template.isShared) return { dockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE, commit: null };
   if (template.dockerfilePath) {
     const commitSha = await resolveCommitSha(project, project.defaultBranch);
     const bytes = await readRepoFile(project, template.dockerfilePath, commitSha);
@@ -396,10 +412,10 @@ export async function resolveUserDockerfile(
     if (!normalized.trim()) {
       throw new Error(`Sandbox template "${template.slug}": Dockerfile ${template.dockerfilePath} is empty`);
     }
-    return normalized;
+    return { dockerfile: normalized, commit: commitSha };
   }
   if (template.image) {
-    return `FROM ${template.image}\n`;
+    return { dockerfile: `FROM ${template.image}\n`, commit: null };
   }
   throw new Error(`Sandbox template "${template.slug}" has neither image nor dockerfilePath`);
 }
@@ -410,7 +426,7 @@ export async function resolveUserDockerfile(
  */
 export async function recordTemplateBuilt(
   templateId: string | null,
-  args: { snapshotName: string; contentHash: string },
+  args: { snapshotName: string; contentHash: string; builtFromCommit?: string | null },
 ): Promise<void> {
   if (!templateId) return;
   await db
@@ -418,6 +434,7 @@ export async function recordTemplateBuilt(
     .set({
       providerSnapshotName: args.snapshotName,
       contentHash: args.contentHash,
+      builtFromCommit: args.builtFromCommit ?? null,
       providerState: 'active',
       lastBuiltAt: new Date(),
       lastError: null,
@@ -464,6 +481,7 @@ function synthesizedDefault(): ResolvedTemplate {
     providerState: 'missing',
     providerSnapshotName: null,
     contentHash: null,
+    builtFromCommit: null,
   };
 }
 
@@ -485,6 +503,7 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
     providerState: row.providerState ?? 'missing',
     providerSnapshotName: row.providerSnapshotName,
     contentHash: row.contentHash,
+    builtFromCommit: row.builtFromCommit ?? null,
   };
 }
 
@@ -528,6 +547,30 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
             updatedAt: new Date(),
           },
         });
+    }
+
+    // Persist `[sandbox] default` → projects.metadata.default_sandbox_slug, so
+    // session boot can cheaply pick the project's default template without a
+    // git fetch. Only honor a default that names a template we just synced
+    // (else it would point at nothing); clear it otherwise.
+    const wantedDefault = extractSandboxDefault(parsed?.raw ?? null);
+    const validDefault =
+      wantedDefault && tomlTemplates.some((t) => t.slug === wantedDefault) ? wantedDefault : null;
+    const [projectRow] = await db
+      .select({ metadata: projects.metadata })
+      .from(projects)
+      .where(eq(projects.projectId, project.projectId))
+      .limit(1);
+    const meta = (projectRow?.metadata ?? {}) as Record<string, unknown>;
+    const current = typeof meta.default_sandbox_slug === 'string' ? meta.default_sandbox_slug : null;
+    if (current !== validDefault) {
+      const nextMeta = { ...meta };
+      if (validDefault) nextMeta.default_sandbox_slug = validDefault;
+      else delete nextMeta.default_sandbox_slug;
+      await db
+        .update(projects)
+        .set({ metadata: nextMeta, updatedAt: new Date() })
+        .where(eq(projects.projectId, project.projectId));
     }
   } catch (err) {
     console.warn(

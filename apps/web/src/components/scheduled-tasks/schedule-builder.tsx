@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, Clock } from 'lucide-react';
+import { ChevronDown, Clock, CalendarClock } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +34,16 @@ interface ScheduleBuilderProps {
   onChange: (cronExpr: string) => void;
   compact?: boolean;
   disabled?: boolean;
+  /**
+   * Opt-in: show a "Once" tab for a one-off schedule that fires a single
+   * time at an exact instant. When the parent doesn't pass `onRunAtChange`,
+   * the builder stays cron-only (backward compatible).
+   */
+  allowOnce?: boolean;
+  /** Current one-off instant (ISO-8601). Null/undefined ⇒ recurring mode. */
+  runAt?: string | null;
+  /** Fired when the one-off instant changes. `null` ⇒ switched back to recurring. */
+  onRunAtChange?: (iso: string | null) => void;
 }
 
 // ─── Cron ↔ State ───────────────────────────────────────────────────────────
@@ -128,6 +138,46 @@ function describeSchedule(s: ScheduleState): string {
   }
 }
 
+// ─── One-off (run-once) helpers ───────────────────────────────────────────
+// A one-off schedule is an exact instant, not a cron expression. We round-trip
+// through the browser-local `datetime-local` input value, treating the picked
+// wall-clock time as the user's own local time → an absolute ISO instant.
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/** ISO instant → `YYYY-MM-DDTHH:mm` for a <input type="datetime-local">. */
+function isoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** `datetime-local` value (local wall clock) → absolute ISO instant. */
+function localInputToIso(v: string): string | null {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** A sensible default for a fresh one-off: the next top-of-hour. */
+function defaultRunAtIso(): string {
+  const d = new Date();
+  d.setHours(d.getHours() + 1, 0, 0, 0);
+  return d.toISOString();
+}
+
+function describeRunAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'Pick a date and time';
+  const when = d.toLocaleString(undefined, {
+    weekday: 'short', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+  return d.getTime() <= Date.now() ? `${when} · in the past` : `Runs once on ${when}`;
+}
+
 function ordSuffix(n: number): string {
   if (n >= 11 && n <= 13) return 'th';
   switch (n % 10) {
@@ -163,12 +213,23 @@ const MINUTE_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderProps) {
+export function ScheduleBuilder({ value, onChange, disabled, allowOnce, runAt, onRunAtChange }: ScheduleBuilderProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [state, setState] = useState<ScheduleState>(() => cronToState(value) ?? DEFAULT_STATE);
   const [showCron, setShowCron] = useState(false);
   const [rawCron, setRawCron] = useState(value);
   const [isCustom, setIsCustom] = useState(() => cronToState(value) === null);
+
+  // One-off mode is driven entirely by the parent: we're in it iff the parent
+  // gave us a `runAt`. Switching tabs just toggles that value back and forth.
+  const onceMode = Boolean(allowOnce && onRunAtChange && runAt != null);
+  const selectRecurring = (freq: Frequency) => {
+    onRunAtChange?.(null);
+    update({ frequency: freq });
+  };
+  const selectOnce = () => {
+    onRunAtChange?.(runAt ?? defaultRunAtIso());
+  };
 
   useEffect(() => {
     const parsed = cronToState(value);
@@ -205,9 +266,9 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
 
   const needsTime = state.frequency !== 'minutes';
 
-  // ── Custom cron fallback ──
+  // ── Custom cron fallback ── (one-off mode wins; cron value is irrelevant there)
 
-  if (isCustom) {
+  if (isCustom && !onceMode) {
     return (
       <div className="rounded-2xl border border-border bg-muted/20 p-4 space-y-3">
         <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line210JsxTextCustomCronExpression')}</p>
@@ -240,18 +301,49 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
         {FREQUENCY_TABS.map(({ value: freq, label }) => (
           <FilterBarItem
             key={freq}
-            onClick={() => update({ frequency: freq })}
+            onClick={() => selectRecurring(freq)}
             disabled={disabled}
-            data-state={state.frequency === freq ? 'active' : 'inactive'}
+            data-state={!onceMode && state.frequency === freq ? 'active' : 'inactive'}
             className="flex-1"
           >
             {label}
           </FilterBarItem>
         ))}
+        {allowOnce && onRunAtChange && (
+          <FilterBarItem
+            onClick={selectOnce}
+            disabled={disabled}
+            data-state={onceMode ? 'active' : 'inactive'}
+            className="flex-1"
+          >
+            Once
+          </FilterBarItem>
+        )}
       </FilterBar>
+
+      {/* One-off picker — a single exact instant, not a recurring rule. */}
+      {onceMode && (
+        <div className="space-y-2 px-1 pt-0.5">
+          <div className="flex items-center gap-2">
+            <CalendarClock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <Input
+              type="datetime-local"
+              value={runAt ? isoToLocalInput(runAt) : ''}
+              min={isoToLocalInput(new Date().toISOString())}
+              onChange={(e) => onRunAtChange?.(localInputToIso(e.target.value))}
+              className="h-8 w-auto text-sm"
+              disabled={disabled}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground/60">
+            {runAt ? describeRunAt(runAt) : 'Pick a date and time'}
+          </p>
+        </div>
+      )}
 
       {/* Controls — flat layout, no extra card chrome. The frequency pills
           above already group these visually. */}
+      {!onceMode && (
       <div className="space-y-2 px-1 pt-0.5">
         {/* Interval row — minutes & hourly */}
         {(state.frequency === 'minutes' || state.frequency === 'hourly') && (
@@ -392,8 +484,10 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
           {describeSchedule(state)}
         </p>
       </div>
+      )}
 
-      {/* Cron expression toggle */}
+      {/* Cron expression toggle — hidden for one-off schedules (no cron). */}
+      {!onceMode && (
       <div>
         <Button
           type="button"
@@ -417,6 +511,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

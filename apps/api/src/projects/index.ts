@@ -12,6 +12,7 @@ import { Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
+  accounts,
   accountGithubInstallations,
   accountGithubInstallationStates,
   accountGroups,
@@ -33,6 +34,7 @@ import {
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
 import { ensureOpencodeSessionPin } from './opencode-mapping';
+import { sendAccountInviteEmail, buildInviteUrl } from '../accounts/email';
 import { resolveAccountId } from '../shared/resolve-account';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
@@ -114,8 +116,10 @@ import {
 import {
   deleteSandboxImage,
   kickPreBuild,
+  kickProjectTemplatePrebuilds,
   listSandboxTemplates,
   listSnapshotBuilds,
+  reconcileStaleBuilds,
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
 } from '../snapshots/builder';
@@ -1437,6 +1441,140 @@ async function registerGitHubLinkedProject(input: {
   return row;
 }
 
+/**
+ * Validate an existing GitHub repo using a caller-supplied PAT — the
+ * App-free link path. The PAT just needs read+write on the repo; we verify
+ * read here (and surface a clear error if the token can't see it or lacks
+ * push) so the user finds out at link time, not on the first session push.
+ */
+async function resolveGitHubImportWithPat(input: {
+  repoUrl: string;
+  token: string;
+  defaultBranch?: string | null;
+}): Promise<{ repo: GitHubRepo; defaultBranch: string }> {
+  const parsed = parseGitHubRepoUrl(input.repoUrl);
+  if (!parsed) throw new Error('repo_url must be a GitHub repository URL');
+  let repo: GitHubRepo;
+  try {
+    repo = await getRepo({ owner: parsed.owner, repo: parsed.repo, auth: { token: input.token } });
+  } catch (error) {
+    throw new Error(
+      `Could not access ${parsed.owner}/${parsed.repo} with the provided GitHub token — ` +
+        `check the token grants access to this repo (${(error as Error).message})`,
+    );
+  }
+  // The API returns `permissions` when the token is authenticated against the
+  // repo; a read-only token would make sessions unable to push branches.
+  const perms = (repo as unknown as { permissions?: { push?: boolean } }).permissions;
+  if (perms && perms.push === false) {
+    throw new Error(
+      `The GitHub token can read ${repo.full_name} but lacks write (push) access — ` +
+        `grant Contents: Read and write so sessions can push branches.`,
+    );
+  }
+  return { repo, defaultBranch: input.defaultBranch ?? repo.default_branch ?? 'main' };
+}
+
+/**
+ * Create (or re-point) a project backed by an existing GitHub repo via a
+ * stored PAT — no GitHub App installation required. The PAT is encrypted into
+ * `project_git_credentials` and the connection is `project_credential`, which
+ * `resolveProjectGitAuth` already knows how to use for session clone/push.
+ */
+async function registerPatLinkedProject(input: {
+  accountId: string;
+  userId: string;
+  repo: GitHubRepo;
+  token: string;
+  name?: string | null;
+  defaultBranch: string;
+  manifestPath: string;
+}): Promise<ProjectRow> {
+  const projectName = input.name ?? deriveProjectName(input.repo.full_name);
+  const now = new Date();
+  const metadata = {
+    git: {
+      url: input.repo.clone_url,
+      default_branch: input.defaultBranch,
+      provider: 'github',
+      owner: input.repo.full_name.split('/')[0] ?? null,
+      name: input.repo.name,
+      external_repo_id: String(input.repo.id),
+      auth: { method: 'project_credential' },
+    },
+    github: {
+      repo_id: String(input.repo.id),
+      full_name: input.repo.full_name,
+      html_url: input.repo.html_url,
+      private: input.repo.private,
+      auth_source: 'pat',
+    },
+  };
+
+  const [row] = await db
+    .insert(projects)
+    .values({
+      accountId: input.accountId,
+      name: projectName,
+      repoUrl: input.repo.clone_url,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath,
+      status: 'active',
+      metadata,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [projects.accountId, projects.repoUrl],
+      set: {
+        name: projectName,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath,
+        status: 'active',
+        metadata,
+        updatedAt: now,
+      },
+    })
+    .returning();
+
+  const credential = await upsertProjectGitCredential({
+    accountId: input.accountId,
+    projectId: row.projectId,
+    provider: 'github',
+    token: input.token,
+    createdBy: input.userId,
+  });
+
+  await upsertProjectGitConnection({
+    accountId: input.accountId,
+    projectId: row.projectId,
+    provider: 'github',
+    repoUrl: input.repo.clone_url,
+    repoOwner: input.repo.full_name.split('/')[0] ?? null,
+    repoName: input.repo.name,
+    externalRepoId: input.repo.id,
+    defaultBranch: input.defaultBranch,
+    authMethod: 'project_credential',
+    credentialRef: credential.credentialId,
+    visibility: input.repo.private ? 'private' : 'public',
+    status: 'connected',
+    metadata: {
+      full_name: input.repo.full_name,
+      html_url: input.repo.html_url,
+      ssh_url: input.repo.ssh_url,
+    },
+  });
+
+  await grantProjectRole({
+    accountId: input.accountId,
+    projectId: row.projectId,
+    userId: input.userId,
+    role: 'manager',
+    grantedBy: input.userId,
+  });
+
+  return row;
+}
+
 async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   const [row] = await db
@@ -1518,6 +1656,23 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
   };
 }
 
+// Env names a project secret must NEVER inject into a sandbox — they belong to
+// the sandbox's own runtime (the OS, the daemon, opencode). A secret named e.g.
+// `PORT` (trivially pushed via `kortix env push --from a-server.env`) would
+// override the runtime and break every session. Anything `KORTIX_*`/`OPENCODE_*`
+// is platform-owned and set explicitly below.
+const RESERVED_SANDBOX_ENV_NAMES = new Set([
+  'PORT', 'PATH', 'HOME', 'PWD', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME',
+  'TERM', 'TMPDIR', 'NODE_ENV', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
+]);
+function isReservedSandboxEnvName(name: string): boolean {
+  return (
+    RESERVED_SANDBOX_ENV_NAMES.has(name) ||
+    name.startsWith('KORTIX_') ||
+    name.startsWith('OPENCODE_')
+  );
+}
+
 async function buildSessionSandboxEnvVars(input: {
   accountId: string;
   projectId: string;
@@ -1539,6 +1694,17 @@ async function buildSessionSandboxEnvVars(input: {
   // The Slack signing secret only verifies inbound webhooks (an apps/api job).
   // The in-sandbox agent never needs it — keep it out of the sandbox env.
   delete runtimeSecrets.env.SLACK_SIGNING_SECRET;
+  // Guardrail: drop any project secret whose name would clobber the sandbox's
+  // own runtime env (PORT/PATH/KORTIX_*/…). Without this, one stray secret
+  // silently breaks every session — and `kortix env push` of a server .env
+  // makes that a one-command footgun.
+  const droppedReserved = Object.keys(runtimeSecrets.env).filter(isReservedSandboxEnvName);
+  for (const name of droppedReserved) delete runtimeSecrets.env[name];
+  if (droppedReserved.length > 0) {
+    console.warn(
+      `[session ${input.sessionId}] ignored ${droppedReserved.length} project secret(s) with reserved env names: ${droppedReserved.join(', ')}`,
+    );
+  }
   return {
     ...runtimeSecrets.env,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
@@ -1621,7 +1787,15 @@ export async function createProjectSession(input: {
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   const agentName = normalizeString(body.agent_name ?? body.agentName) ?? 'default';
-  const sandboxSlug = normalizeString(body.sandbox_slug ?? body.sandboxSlug) ?? undefined;
+  // Explicit request wins; otherwise fall back to the project's default sandbox
+  // template (`[sandbox] default` in kortix.toml, synced to project metadata),
+  // so EVERY session — UI, triggers, channels — inherits the project's chosen
+  // box without each caller passing `sandbox_slug`. Unset → platform default.
+  const projectDefaultSandboxSlug = normalizeString(
+    (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
+  );
+  const sandboxSlug =
+    normalizeString(body.sandbox_slug ?? body.sandboxSlug) ?? projectDefaultSandboxSlug ?? undefined;
   const requestedProvider = normalizeString(body.provider);
   let providerName: SandboxProviderName = config.getDefaultProvider();
   if (requestedProvider) {
@@ -2149,6 +2323,14 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
 }
 
 function isGitCronSpecDue(spec: GitTriggerSpec, lastFiredAt: Date | null, now: Date): boolean {
+  // One-off ("run once") schedules: fire exactly once at/after `runAt`. The
+  // last_fired_at stamp written on the first fire keeps it dormant forever
+  // after — no cron, no self-disable needed.
+  if (spec.runAt) {
+    if (lastFiredAt) return false;
+    const at = Date.parse(spec.runAt);
+    return !Number.isNaN(at) && at <= now.getTime();
+  }
   if (!spec.cron) return false;
   try {
     const baseline = lastFiredAt ?? new Date(0);
@@ -2296,7 +2478,7 @@ async function runGitTriggerSweep(now: Date, accumulator: {
 
       const payload = {
         cron: {
-          schedule: spec.cron,
+          schedule: spec.cron ?? spec.runAt,
           timezone: spec.timezone,
           fired_at: now.toISOString(),
           last_fired_at: lastFired?.toISOString() ?? null,
@@ -2504,7 +2686,7 @@ projectsApp.post('/', async (c) => {
     manifestPath,
   });
 
-  kickPreBuild(
+  kickProjectTemplatePrebuilds(
     {
       projectId: row.projectId,
       repoUrl: row.repoUrl,
@@ -2642,7 +2824,7 @@ projectsApp.post('/provision', async (c) => {
   });
 
   if (seeded) {
-    kickPreBuild(
+    kickProjectTemplatePrebuilds(
       {
         projectId: row.projectId,
         repoUrl: row.repoUrl,
@@ -2916,6 +3098,44 @@ projectsApp.post('/link-repository', async (c) => {
     : repoUrlInput;
   if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
+  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.toml';
+
+  // PAT path: link an existing repo with a caller-supplied token — no GitHub
+  // App install needed. This is the seamless `kortix ship` flow for a repo you
+  // already own (and the App-free fallback in environments where the App can't
+  // be installed). Everything downstream (`resolveProjectGitAuth` →
+  // `project_credential`) already consumes the stored PAT.
+  const githubToken = normalizeString(body.github_token ?? body.githubToken);
+  if (githubToken) {
+    let patImport: Awaited<ReturnType<typeof resolveGitHubImportWithPat>>;
+    try {
+      patImport = await resolveGitHubImportWithPat({
+        repoUrl,
+        token: githubToken,
+        defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
+      });
+    } catch (error) {
+      return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
+    }
+    const row = await registerPatLinkedProject({
+      accountId: scope.accountId,
+      userId: scope.userId,
+      repo: patImport.repo,
+      token: githubToken,
+      name: normalizeString(body.name),
+      defaultBranch: patImport.defaultBranch,
+      manifestPath,
+    });
+    kickProjectTemplatePrebuilds(
+      { projectId: row.projectId, repoUrl: row.repoUrl, defaultBranch: row.defaultBranch, manifestPath: row.manifestPath, gitAuthToken: githubToken },
+      { accountId: scope.accountId, source: 'project-create' },
+    );
+    return c.json({
+      project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+      git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
+    }, 201);
+  }
+
   let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
   try {
     imported = await resolveGitHubImport({
@@ -2934,7 +3154,6 @@ projectsApp.post('/link-repository', async (c) => {
     return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
   }
 
-  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.toml';
   const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
     userId: scope.userId,
@@ -2945,7 +3164,7 @@ projectsApp.post('/link-repository', async (c) => {
     manifestPath,
   });
 
-  kickPreBuild(
+  kickProjectTemplatePrebuilds(
     {
       projectId: row.projectId,
       repoUrl: row.repoUrl,
@@ -3077,7 +3296,7 @@ projectsApp.post('/create-repo', async (c) => {
     manifestPath: 'kortix.toml',
   });
 
-  kickPreBuild(
+  kickProjectTemplatePrebuilds(
     {
       projectId: row.projectId,
       repoUrl: row.repoUrl,
@@ -3163,6 +3382,7 @@ function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTemplates>>[n
     disk_gb: t.diskGb,
     snapshot_name: t.snapshotName,
     content_hash: t.contentHash,
+    built_from_commit: t.builtFromCommit,
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
@@ -3217,6 +3437,9 @@ projectsApp.get('/:projectId/snapshots', async (c) => {
   } catch (err) {
     templatesError = err instanceof Error ? err.message : String(err);
   }
+  // Heal any build rows orphaned at "building" by a process restart/crash
+  // before reading them, so the dashboard never shows a permanent "Building".
+  await reconcileStaleBuilds({ projectId }).catch(() => {});
   const builds = await listSnapshotBuilds(projectId, { limit: 25 }).catch(() => []);
   return c.json({
     templates: templates.map(serializeTemplate),
@@ -4159,6 +4382,7 @@ async function loadTriggersForResponse(projectId: string, project: ProjectRow) {
       agent: spec.agent,
       enabled: spec.enabled,
       cron: spec.cron,
+      run_at: spec.runAt,
       timezone: spec.timezone,
       secret_env: spec.secretEnv,
       prompt_template: spec.promptTemplate,
@@ -4180,6 +4404,7 @@ interface TriggerDraft {
   enabled: boolean;
   promptTemplate: string;
   cron: string | null;
+  runAt: string | null;
   timezone: string;
   secretEnv: string | null;
 }
@@ -4209,8 +4434,29 @@ function parseTriggerDraft(
   const enabled = normalizeBoolean((body as any).enabled) ?? true;
 
   if (type === 'cron') {
+    const timezone = normalizeString((body as any).timezone) ?? 'UTC';
+    // One-off ("run once") schedules carry `run_at` instead of `cron`.
+    const runAtRaw = normalizeString((body as any).run_at ?? (body as any).runAt);
+    if (runAtRaw) {
+      const parsed = Date.parse(runAtRaw);
+      if (Number.isNaN(parsed)) {
+        return { error: `run_at must be an ISO-8601 datetime (got "${runAtRaw}")` };
+      }
+      return {
+        slug,
+        name,
+        type: 'cron',
+        agent,
+        enabled,
+        promptTemplate,
+        cron: null,
+        runAt: new Date(parsed).toISOString(),
+        timezone,
+        secretEnv: null,
+      };
+    }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
-    if (!cron) return { error: 'cron triggers must declare a `cron` expression' };
+    if (!cron) return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
     return {
       slug,
       name,
@@ -4219,7 +4465,8 @@ function parseTriggerDraft(
       enabled,
       promptTemplate,
       cron,
-      timezone: normalizeString((body as any).timezone) ?? 'UTC',
+      runAt: null,
+      timezone,
       secretEnv: null,
     };
   }
@@ -4237,6 +4484,7 @@ function parseTriggerDraft(
     enabled,
     promptTemplate,
     cron: null,
+    runAt: null,
     timezone: 'UTC',
     secretEnv,
   };
@@ -4290,6 +4538,7 @@ function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
     enabled: draft.enabled,
     promptTemplate: draft.promptTemplate,
     cron: draft.cron,
+    runAt: draft.runAt,
     timezone: draft.timezone,
     secretEnv: draft.secretEnv,
   };
@@ -5804,16 +6053,40 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
         .returning({ inviteId: accountInvitations.inviteId });
       return created.inviteId;
     });
+
+    // Fire the invite email — same transport + template as account-level
+    // invites, framed around this project. Best-effort: the invitation row
+    // already exists, so on skip/failure we still return the invite_url for
+    // the inviter to share the link manually (mirrors the account route).
+    const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
+    const [accountRow] = await db
+      .select({ name: accounts.name })
+      .from(accounts)
+      .where(eq(accounts.accountId, loaded.row.accountId))
+      .limit(1);
+    const delivery = await sendAccountInviteEmail({
+      email,
+      accountName: accountRow?.name ?? 'Kortix',
+      inviterEmail: callerEmail,
+      inviteId,
+      role,
+      projectName: loaded.row.name,
+    });
+    const emailSent = delivery.ok === true;
+
     return c.json(
       {
         status: 'invited',
         email,
         invite_id: inviteId,
         project_role: role,
-        message:
-          'No Kortix account for that email yet — an invitation has been sent. They’ll land on this project as ' +
-          role +
-          ' when they sign up.',
+        invite_url: buildInviteUrl(inviteId),
+        email_sent: emailSent,
+        email_skip_reason:
+          delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
+        message: emailSent
+          ? `No Kortix account for that email yet — an invitation email has been sent. They'll land on this project as ${role} when they sign up.`
+          : `No Kortix account for that email yet — invitation created. Share the invite link with them; they'll land on this project as ${role} when they sign up.`,
       },
       201,
     );
@@ -5975,6 +6248,71 @@ projectsApp.delete('/:projectId/access/pending-invites/:inviteId', async (c) => 
     .where(eq(accountInvitations.inviteId, inviteId));
 
   return c.json({ ok: true, invitation_cancelled: false });
+});
+
+// POST /v1/projects/:projectId/access/pending-invites/:inviteId/resend
+// Re-sends the project invite email and refreshes the invitation's 14-day
+// expiry. Mirrors the account-level resend, but re-frames the email around
+// this project and reads the role from the bootstrap grant for this project.
+projectsApp.post('/:projectId/access/pending-invites/:inviteId/resend', async (c) => {
+  const projectId = c.req.param('projectId');
+  const inviteId = c.req.param('inviteId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+
+  const [invite] = await db
+    .select({
+      inviteId: accountInvitations.inviteId,
+      accountId: accountInvitations.accountId,
+      email: accountInvitations.email,
+      acceptedAt: accountInvitations.acceptedAt,
+      bootstrapGrants: accountInvitations.bootstrapGrants,
+    })
+    .from(accountInvitations)
+    .where(eq(accountInvitations.inviteId, inviteId))
+    .limit(1);
+
+  if (!invite || invite.accountId !== loaded.row.accountId) {
+    return c.json({ error: 'Invitation not found' }, 404);
+  }
+  if (invite.acceptedAt) {
+    return c.json({ error: 'Invitation has already been accepted' }, 409);
+  }
+  const grant = (invite.bootstrapGrants ?? []).find((g) => g.project_id === projectId);
+  if (!grant) {
+    return c.json({ error: 'Invitation does not target this project' }, 404);
+  }
+
+  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  await db
+    .update(accountInvitations)
+    .set({ expiresAt })
+    .where(eq(accountInvitations.inviteId, inviteId));
+
+  const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
+  const [accountRow] = await db
+    .select({ name: accounts.name })
+    .from(accounts)
+    .where(eq(accounts.accountId, loaded.row.accountId))
+    .limit(1);
+  const delivery = await sendAccountInviteEmail({
+    email: invite.email,
+    accountName: accountRow?.name ?? 'Kortix',
+    inviterEmail: callerEmail,
+    inviteId: invite.inviteId,
+    role: grant.role,
+    projectName: loaded.row.name,
+  });
+
+  return c.json({
+    ok: true,
+    expires_at: expiresAt.toISOString(),
+    invite_url: buildInviteUrl(invite.inviteId),
+    email_sent: delivery.ok === true,
+    email_skip_reason:
+      delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
+  });
 });
 
 projectsApp.put('/:projectId/access/:userId', async (c) => {
@@ -7454,9 +7792,12 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
 
   invalidateProjectMirror(projectId);
 
-  // Pre-build the platform default image (no-op cache hit after the first
-  // global build) so the next session can boot off cache. Best-effort.
-  kickPreBuild(projectForGit, {
+  // A merged CR may have edited a `[[sandbox.templates]]` Dockerfile or spec.
+  // Reconcile this project's own templates and pre-build any whose identity
+  // drifted, so the next session boots off cache instead of a cold build. The
+  // platform default is global (built at startup), so it's deliberately not
+  // touched here. Best-effort, never blocks the merge response.
+  kickProjectTemplatePrebuilds(projectForGit, {
     accountId: loaded.row.accountId,
     source: 'cr-merge',
   });

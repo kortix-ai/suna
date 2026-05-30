@@ -123,18 +123,33 @@ async function send(opts: {
   }
 }
 
-function frontendBase(): string {
-  return config.FRONTEND_URL || 'https://app.kortix.com';
+// Public, share-anywhere invite URL. The same link is embedded in the invite
+// email and returned by every invite API route, so a copied link behaves
+// exactly like one received via email. Single source of truth for both the
+// account- and project-level invite flows.
+export function buildInviteUrl(inviteId: string): string {
+  const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  return `${base}/invites/${inviteId}`;
 }
 
+// Sends the invite email for both account-level invites (join the team) and
+// project-level invites (collaborate on a specific project). The two flows
+// share one transport + template; pass `projectName` to frame the copy around
+// a project instead of the whole account. Both create an `account_invitations`
+// row redeemed at the same /invites/:id link.
 export async function sendAccountInviteEmail(opts: {
   email: string;
   accountName: string;
   inviterEmail: string | null;
   inviteId: string;
-  role?: 'admin' | 'member';
+  // Display label for the role chip (account: admin|member, project:
+  // manager|editor|viewer). Rendered verbatim (uppercased).
+  role?: string;
+  // When set, the invite is framed as joining this project rather than the
+  // whole account/team (project-level /access/invite flow).
+  projectName?: string | null;
 }): Promise<EmailDeliveryResult> {
-  const url = `${frontendBase()}/invites/${opts.inviteId}`;
+  const url = buildInviteUrl(opts.inviteId);
 
   const inviterLine = opts.inviterEmail
     ? `<span style="${S.strong}">${escapeHtml(opts.inviterEmail)}</span> invited you`
@@ -146,28 +161,41 @@ export async function sendAccountInviteEmail(opts: {
       )}</span></div>`
     : '';
 
+  const target = opts.projectName
+    ? `the <span style="${S.strong}">${escapeHtml(opts.projectName)}</span> project`
+    : `the <span style="${S.strong}">${escapeHtml(opts.accountName)}</span> team`;
+
+  const signupTail = opts.projectName
+    ? 'the project will appear in your account automatically.'
+    : 'the team will appear in your accounts list automatically.';
+
   const body = `
     <p style="${S.p}">
-      ${inviterLine} to join the
-      <span style="${S.strong}">${escapeHtml(opts.accountName)}</span> team on Kortix.
+      ${inviterLine} to join ${target} on Kortix.
     </p>
     ${roleChip}
     <a href="${escapeHtml(url)}" style="${S.btn}">Review invite</a>
     <p style="${S.smallNote}">
       Don't have a Kortix account yet? You'll be prompted to sign up first —
-      the team will appear in your accounts list automatically.
+      ${signupTail}
     </p>
   `;
 
+  const subjectTarget = opts.projectName
+    ? `collaborate on "${opts.projectName}"`
+    : `join "${opts.accountName}"`;
+
   const html = renderEmail({
     kicker: "You're invited",
-    title: `Join ${opts.accountName} on Kortix`,
+    title: opts.projectName
+      ? `Join ${opts.projectName} on Kortix`
+      : `Join ${opts.accountName} on Kortix`,
     body,
   });
 
   return send({
     to: opts.email,
-    subject: `You're invited to join "${opts.accountName}" on Kortix`,
+    subject: `You're invited to ${subjectTarget} on Kortix`,
     html,
     category: 'account-invite',
   });

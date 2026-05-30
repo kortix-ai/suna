@@ -271,6 +271,34 @@ function validateSandbox(
     });
   }
   validateSandboxTemplates(node.templates, `${path}.templates`, issues);
+
+  // `default` selects which template EVERY session in the project boots
+  // (UI, triggers, channels) without passing `sandbox_slug`. It must name a
+  // template defined above, or the reserved "default" (the platform image).
+  if (node.default !== undefined) {
+    const want = typeof node.default === 'string' ? node.default.trim() : '';
+    if (!want) {
+      issues.push({
+        path: `${path}.default`,
+        message: '`default` must be a non-empty template slug.',
+        severity: 'error',
+      });
+    } else if (want !== RESERVED_SANDBOX_SLUG) {
+      const slugs = Array.isArray(node.templates)
+        ? node.templates
+            .filter(isTable)
+            .map((t) => (typeof (t as Record<string, unknown>).slug === 'string' ? ((t as Record<string, unknown>).slug as string).trim() : ''))
+            .filter(Boolean)
+        : [];
+      if (!slugs.includes(want)) {
+        issues.push({
+          path: `${path}.default`,
+          message: `\`default\` = "${want}" does not match any \`[[sandbox.templates]]\` slug (or the reserved "${RESERVED_SANDBOX_SLUG}").`,
+          severity: 'error',
+        });
+      }
+    }
+  }
 }
 
 function validateSandboxTemplates(
@@ -445,10 +473,26 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
           : typeof entry.schedule === 'string'
             ? entry.schedule.trim()
             : '';
-      if (!cron) {
+      // A one-off ("run once") schedule carries `run_at` (ISO-8601 instant)
+      // instead of a recurring `cron` expression — exactly one must be set.
+      const runAt =
+        typeof entry.run_at === 'string'
+          ? entry.run_at.trim()
+          : typeof entry.runAt === 'string'
+            ? entry.runAt.trim()
+            : '';
+      if (runAt) {
+        if (Number.isNaN(Date.parse(runAt))) {
+          issues.push({
+            path: `${where}.run_at`,
+            message: 'run_at must be an ISO-8601 datetime (e.g. 2026-06-01T09:00:00Z).',
+            severity: 'error',
+          });
+        }
+      } else if (!cron) {
         issues.push({
           path: `${where}.cron`,
-          message: 'cron triggers must declare a `cron` expression.',
+          message: 'cron triggers must declare a `cron` expression or a one-off `run_at`.',
           severity: 'error',
         });
       }

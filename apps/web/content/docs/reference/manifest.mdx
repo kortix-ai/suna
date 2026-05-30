@@ -145,6 +145,21 @@ memory = 4
 
 Exactly one of `image` or `dockerfile` is required per entry. A Dockerfile path must be repo-relative — absolute paths and `..` traversal are rejected. GPUs are not supported in this version. See [Sandbox image](/docs/reference/sandbox-image) for what the runtime layer injects and what your Dockerfile can do.
 
+### `[sandbox] default` — the project-wide default template
+
+By default every session boots the platform default image; a session opts into a template by passing its `slug`. Set `default` on the `[sandbox]` table to make one of your templates the project-wide default instead — then **every** session (the dashboard's "new session", triggers, channels) boots it without specifying a slug.
+
+```toml
+[[sandbox.templates]]
+slug = "dev"
+dockerfile = ".kortix/Dockerfile"
+
+[sandbox]
+default = "dev"          # or "default" for the platform image (the implicit default)
+```
+
+`default` must name a template defined in this manifest (or the reserved `"default"`). It's the only key allowed on the `[sandbox]` table itself — image/build keys there are the removed legacy singular shape and are rejected.
+
 ### Hardware spec
 
 `cpu` / `memory` / `disk` size the sandbox. Each is independent and optional — leave one out and the runtime provider's default applies. Values are coerced to whole numbers; a value below 1 falls back to the default, and a value above the platform ceiling (cpu 32, memory 128 GiB, disk 500 GiB) is clamped down rather than rejected.

@@ -527,6 +527,11 @@ export type InviteProjectMemberResult =
       invite_id: string;
       project_role: ProjectRole;
       message: string;
+      /** Public invite link — share manually when email delivery is skipped. */
+      invite_url: string;
+      /** false = invite email skipped (e.g. Mailtrap unconfigured) or failed. */
+      email_sent: boolean;
+      email_skip_reason: string | null;
     };
 
 export function isInviteSent(
@@ -579,6 +584,22 @@ export async function revokePendingProjectInvite(projectId: string, inviteId: st
   return unwrap(
     await backendApi.delete<{ ok: boolean; invitation_cancelled: boolean }>(
       `/projects/${projectId}/access/pending-invites/${inviteId}`,
+    ),
+  );
+}
+
+export interface ResendProjectInviteResult {
+  ok: boolean;
+  expires_at: string;
+  invite_url: string;
+  email_sent: boolean;
+  email_skip_reason: string | null;
+}
+
+export async function resendPendingProjectInvite(projectId: string, inviteId: string) {
+  return unwrap(
+    await backendApi.post<ResendProjectInviteResult>(
+      `/projects/${projectId}/access/pending-invites/${inviteId}/resend`,
     ),
   );
 }
@@ -983,6 +1004,7 @@ export interface SandboxTemplate {
   disk_gb: number;
   snapshot_name: string;
   content_hash: string;
+  built_from_commit: string | null;
   daytona_state: string;
   provider_state: string;
   ready: boolean;
@@ -1001,7 +1023,7 @@ export interface ProjectSnapshotBuild {
   status: ProjectSnapshotStatus;
   error: string | null;
   error_category: SnapshotErrorCategory | null;
-  source: 'session-start' | 'project-create' | 'cr-merge' | 'manual' | 'background' | null;
+  source: 'session-start' | 'project-create' | 'cr-merge' | 'manual' | 'background' | 'startup' | null;
   started_at: string;
   finished_at: string | null;
 }
@@ -1813,6 +1835,8 @@ export interface ProjectTrigger {
   agent: string;
   enabled: boolean;
   cron: string | null;
+  /** ISO-8601 instant for a one-off ("run once") schedule; null for recurring/webhook. */
+  run_at: string | null;
   timezone: string;
   /** project_secrets key holding the webhook HMAC secret. */
   secret_env: string | null;
@@ -1848,8 +1872,10 @@ export interface CreateProjectTriggerInput {
   /** Defaults to 'default'. */
   agent?: string;
   enabled?: boolean;
-  /** For type='cron'. 6-field croner expression. */
+  /** For type='cron'. 6-field croner expression. Omit when using `run_at`. */
   cron?: string;
+  /** For type='cron'. ISO-8601 instant for a one-off run. Mutually exclusive with `cron`. */
+  run_at?: string;
   /** For type='cron'. IANA timezone. Defaults to 'UTC'. */
   timezone?: string;
   /** For type='webhook'. Name of a project_secrets entry. */
