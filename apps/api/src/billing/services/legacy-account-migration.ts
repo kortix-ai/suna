@@ -47,7 +47,7 @@ function lockKey(accountId: string): bigint {
 }
 
 interface MigrationResult {
-  status: 'migrated' | 'skipped:already_per_seat' | 'skipped:yearly_commitment' | 'skipped:no_subs' | 'failed';
+  status: 'migrated' | 'skipped:already_per_seat' | 'skipped:yearly_commitment' | 'skipped:no_subs' | 'skipped:no_legacy_machine' | 'failed';
   proratedCreditUsd: number;
   cancelledSubIds: string[];
   newSubscriptionId: string | null;
@@ -68,6 +68,14 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
     if (ends > new Date()) {
       return defaultResult('skipped:yearly_commitment', `Commitment active until ${ends.toISOString()}`);
     }
+  }
+
+  // Only customers who actually own a legacy machine (a kortix.sandboxes
+  // instance) are migrated to seat-based billing. A legacy-billing account with
+  // no machine is left untouched — we never cancel a subscription for someone
+  // who has no legacy instance to move off of.
+  if (!(await accountHasLegacyMachine(accountId))) {
+    return defaultResult('skipped:no_legacy_machine');
   }
 
   return await withAdvisoryLock(accountId, async () => {
@@ -202,6 +210,15 @@ function computeProratedRemaining(sub: Stripe.Subscription, nowSeconds: number):
   const quantity = item?.quantity ?? 1;
   const periodUsd = (unitAmount * quantity) / 100;
   return round2(periodUsd * (remainingSeconds / totalSeconds));
+}
+
+async function accountHasLegacyMachine(accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: sandboxes.sandboxId })
+    .from(sandboxes)
+    .where(eq(sandboxes.accountId, accountId))
+    .limit(1);
+  return Boolean(row);
 }
 
 async function stopSurplusSandboxes(
