@@ -1,46 +1,45 @@
 #!/usr/bin/env bash
-# Mint a one-click preview URL for a port running inside THIS session's
-# sandbox, and print it on stdout. The reviewer opens the URL and the
-# Kortix proxy forwards to the sandbox port (the dev server must already
-# be listening on that port).
+# Mint a public, root-served preview URL for a port in THIS sandbox and print
+# it on stdout — the standard way the PR-bot links a running preview.
+#
+# Uses Daytona's port preview-url API: GET {server}/sandbox/{id}/ports/{port}/
+# preview-url → { url, token }. We append the token as ?DAYTONA_SANDBOX_AUTH_KEY
+# so the link is browser-clickable AND served at the origin root (so SPA/Next
+# assets resolve — the Kortix path proxy `/v1/p/{id}/{port}` would break them).
+#
+# The sandbox already carries its own Daytona context in env
+# (DAYTONA_SANDBOX_ID / DAYTONA_SERVER_URL / DAYTONA_API_KEY), so no Kortix
+# token juggling is needed.
 #
 # Usage:  preview-url.sh <port> [label]
-#   port    the port your dev server listens on inside the sandbox
-#   label   optional human label stored with the share link
-#
-# Prefers a short-lived shared link (POST /v1/p/share) so the URL carries
-# its own ?token and a teammate can open it without logging in. Falls back
-# to the bare deterministic proxy URL (which requires the opener to be
-# authenticated) if the share endpoint is unavailable.
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+set -euo pipefail
 
 PORT="${1:?usage: preview-url.sh <port> [label]}"
-LABEL="${2:-preview :$PORT}"
-TTL="${PREVIEW_TTL:-7d}"
 
-ORIGIN="$(kortix_api_origin)"
-SANDBOX="$(kortix_sandbox_id)"
-
-# /v1/p/share gates on canAccessPreviewSandbox(userId/accountId) — so it needs a
-# USER/PROJECT principal, NOT the sandbox service key. KORTIX_CLI_TOKEN (the
-# project PAT) resolves to the owning account; KORTIX_TOKEN (sandbox key) is
-# rejected here. Use the CLI token first (this was the "share unavailable" bug).
-SHARE_TOKEN="${KORTIX_CLI_TOKEN:-${KORTIX_TOKEN:-}}"
-
-share() {
-  [ -n "$SHARE_TOKEN" ] || return 1
-  curl -fsS -m 15 -X POST \
-    -H "Authorization: Bearer ${SHARE_TOKEN}" \
-    -H 'Content-Type: application/json' \
-    -d "{\"sandbox_id\":\"${SANDBOX}\",\"port\":${PORT},\"ttl\":\"${TTL}\",\"label\":$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$LABEL")}" \
-    "${KORTIX_API_URL}/p/share" 2>/dev/null \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("url",""))' 2>/dev/null
-}
-
-URL="$(share || true)"
-if [ -z "$URL" ]; then
-  log "share endpoint unavailable — emitting bare proxy URL (opener must be authed)"
-  URL="${ORIGIN}/v1/p/${SANDBOX}/${PORT}"
+SBID="${DAYTONA_SANDBOX_ID:-}"
+DURL="${DAYTONA_SERVER_URL:-}"
+DKEY="${DAYTONA_API_KEY:-}"
+if [ -z "$SBID" ] || [ -z "$DURL" ] || [ -z "$DKEY" ]; then
+  echo "preview-url: missing DAYTONA_SANDBOX_ID / DAYTONA_SERVER_URL / DAYTONA_API_KEY in env" >&2
+  exit 1
 fi
 
-printf '%s\n' "$URL"
+resp="$(curl -fsS -m 20 "${DURL%/}/sandbox/${SBID}/ports/${PORT}/preview-url" \
+  -H "Authorization: Bearer ${DKEY}" 2>/dev/null)" || {
+  echo "preview-url: Daytona preview-url request failed for port ${PORT}" >&2
+  exit 1
+}
+
+url="$(printf '%s' "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("url",""))' 2>/dev/null)"
+token="$(printf '%s' "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)"
+
+if [ -z "$url" ]; then
+  echo "preview-url: Daytona returned no url for port ${PORT} (is the port open?)" >&2
+  exit 1
+fi
+
+if [ -n "$token" ]; then
+  printf '%s/?DAYTONA_SANDBOX_AUTH_KEY=%s\n' "${url%/}" "$token"
+else
+  printf '%s\n' "$url"
+fi

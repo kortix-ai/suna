@@ -1,6 +1,7 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync } from 'node:fs'
+import { spawn } from 'node:child_process'
 import { dirname } from 'node:path'
-import { loadConfig, resolveOpencodeConfigDir, type Config } from './config'
+import { loadConfig, resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from './config'
 import {
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
@@ -136,6 +137,33 @@ async function main() {
   })
 
   if (bootState.repoMaterializationError) return
+
+  // Project-declared boot command (`[sandbox] on_boot` in kortix.toml), e.g.
+  // `pnpm dev` — run it backgrounded once the repo is materialized + the proxy
+  // is up, so a session auto-starts its dev stack with zero manual steps. Best
+  // effort: a failure here never affects the agent runtime. Output → a log file
+  // the agent/user can tail.
+  void resolveSandboxOnBoot(cfg)
+    .then((onBoot) => {
+      if (!onBoot) return
+      const logPath = '/var/log/kortix-on-boot.log'
+      logger.info('[boot] running [sandbox] on_boot command', { onBoot, logPath })
+      try {
+        mkdirSync(dirname(logPath), { recursive: true })
+      } catch {}
+      const out = openSync(logPath, 'a')
+      const child = spawn('bash', ['-lc', onBoot], {
+        cwd: cfg.projectTarget,
+        env: process.env,
+        detached: true,
+        stdio: ['ignore', out, out],
+      })
+      child.on('error', (err) =>
+        logger.warn('[boot] on_boot command failed to spawn', { err: (err as Error).message }),
+      )
+      child.unref()
+    })
+    .catch((err) => logger.warn('[boot] on_boot resolution failed', { err: (err as Error).message }))
 
   void (async () => {
     if (bootState.initialOpenCodeSessionRequired) {
