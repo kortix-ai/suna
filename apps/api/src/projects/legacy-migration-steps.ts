@@ -214,9 +214,28 @@ export async function repoStep(ctx: MigrationContext): Promise<void> {
 // ── push ───────────────────────────────────────────────────────────────────--
 // Publish the workspace to the Freestyle repo by running git FROM THE VM (the
 // files + git + network are already there; no need to move bytes through the
-// backend). Synthesizes kortix.toml / .gitignore / .kortix/Dockerfile if the
-// legacy workspace lacked them so the migrated project can build new sessions.
+// backend). The repo IS the project's durable file home — the new sandbox clones
+// it into /workspace on boot, so everything the user should keep must land here:
+// their files, their custom agents/skills/commands (.opencode), and their project
+// config (.kortix). The chat-history store (.local/share/opencode) is preserved
+// separately (captured at migration, rehydrated on open) and is excluded here.
+//
+// Source path: the REAL workspace is the nested-docker volume ($WS from
+// RESOLVE_WS_OC_SH), not the host /workspace (which is empty on JustAVPS).
+// Synthesizes kortix.toml if absent so migrated projects can build new sessions.
 // Idempotent on progress.pushed.
+//
+// Excludes (caches/secrets/state — regenerable or shipped elsewhere) are applied
+// via .git/info/exclude (local, never committed) AND a committed .gitignore (so
+// future sessions in the new project don't re-add the junk).
+const PUSH_EXCLUDES = [
+  // Caches / regenerable
+  'node_modules', '.cache', '.npm', '.npm-global', '.bun', '.cargo', '.rustup',
+  '.pnpm-store', '.local', '.config', '.mozilla', '.browser-profile',
+  '.cursor-server', '.vscode-server', '.dbus', '.XDG', '__pycache__', '.venv', 'venv',
+  // Secrets / credentials (never push to git)
+  '.ssh', '.gnupg', 'ssl', '.secrets', '.kortix/secrets', '*.pem', '*.key', '*.log',
+];
 export async function pushStep(ctx: MigrationContext): Promise<void> {
   if (ctx.progress.pushed === true) {
     ctx.log('push: already pushed, skipping');
@@ -234,28 +253,44 @@ export async function pushStep(ctx: MigrationContext): Promise<void> {
   // persisting/reusing across retries.
   const token = await mintIdentityToken(identity);
   const authedUrl = freestyleAuthedGitUrl(repoId, token);
+  const excludeLine = PUSH_EXCLUDES.map(sq).join(' ');
 
   const script = [
     'set -euo pipefail',
-    'WS="${KORTIX_WORKSPACE:-/workspace}"',
+    // Resolve $WS to the nested-docker volume that actually holds the user's
+    // files, agents/skills and config (host /workspace is empty on JustAVPS).
+    RESOLVE_WS_OC_SH,
     'cd "$WS"',
+    // The toolbox exec env has no $HOME; give git a writable one for its global
+    // config. The volume is owned by the nested container's uid but git runs as
+    // root, so allow it or git bails on "dubious ownership".
+    'export HOME="$(mktemp -d)"',
+    `git config --global --add safe.directory ${sq('*')}`,
     // Minimal manifest with NO [sandbox] section — a freshly migrated project
     // has no project-specific template row, so session boot resolves the shared
     // platform-default template (correct base image + agent). We deliberately do
     // NOT synthesize a Dockerfile: guessing a base produces a broken sandbox.
     `[ -f kortix.toml ] || printf '%s\\n' ${sq('[project]')} ${sq(`name = "${ctx.plan.project_name.replace(/"/g, "'")}"`)} ${sq('description = "Migrated from a legacy Kortix sandbox."')} > kortix.toml`,
-    `[ -f .gitignore ] || printf '%s\\n' node_modules .git .kortix/secrets .local '*.log' > .gitignore`,
-    'git init -q 2>/dev/null || true',
-    `git checkout -B ${sq(defaultBranch)} 2>/dev/null || true`,
+    `printf '%s\\n' ${excludeLine} > .gitignore`,
+    // Clean import: drop any legacy git metadata so this workspace becomes the
+    // repo's initial commit (the VM is archived after migration).
+    'rm -rf .git',
+    'git init -q',
+    // Local excludes (never committed) guarantee caches/secrets/the chat store
+    // stay out of the import even if a stray tracked copy existed.
+    `printf '%s\\n' ${excludeLine} > .git/info/exclude`,
+    `git checkout -qB ${sq(defaultBranch)}`,
     'git add -A',
-    `git -c user.email=migrations@kortix.com -c user.name=Kortix commit -q -m ${sq('Import legacy workspace')} || true`,
+    `git -c user.email=migrations@kortix.com -c user.name=Kortix commit -q --allow-empty -m ${sq('Import legacy workspace')}`,
     `git push --force ${sq(authedUrl)} HEAD:${sq(defaultBranch)}`,
-    'echo OK',
+    // Report what we shipped so the migration log shows the file set landed.
+    'echo "PUSH_OK files=$(git ls-files | wc -l) bytes=$(git ls-files -z | du -ch --files0-from=- 2>/dev/null | tail -1 | cut -f1)"',
   ].join('\n');
 
   const endpoint = await resolveLegacyVmEndpoint(ctx.legacy);
   ctx.log('push: pushing workspace to Freestyle', { repoId });
-  await execOnLegacyVmOrThrow(endpoint, `bash -c ${sq(script)}`, 600);
+  const out = await execOnLegacyVmOrThrow(endpoint, `bash -c ${sq(script)}`, 900);
+  ctx.log('push: done', { summary: out.trim().split('\n').pop() });
   await ctx.checkpoint({ pushed: true });
 }
 
