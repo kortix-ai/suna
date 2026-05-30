@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PresentationSlideCard } from './PresentationSlideCard';
@@ -45,6 +46,7 @@ export function PresentationSlidePreview({
   className = '',
   initialSlide,
 }: PresentationSlidePreviewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { openPresentation } = usePresentationViewerStore();
   const { subdomainOpts } = useSandboxProxy();
   const [metadata, setMetadata] = useState<PresentationMetadata | null>(null);
@@ -119,9 +121,9 @@ export function PresentationSlidePreview({
   // Show loading state
   if (isLoading) {
     return (
-      <div className={cn('flex flex-col items-center justify-center p-8 bg-muted/30 rounded-lg border', className)}>
+      <div className={cn('flex flex-col items-center justify-center p-8 bg-muted/30 rounded-2xl border', className)}>
         <KortixLoader customSize={24} className="mb-2" />
-        <span className="text-sm text-muted-foreground">Loading presentation...</span>
+        <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationslidepreview.line124JsxTextLoadingPresentation')}</span>
         {retryCount > 0 && (
           <span className="text-xs text-muted-foreground/70 mt-1">
             Attempt {retryCount + 1}
@@ -134,7 +136,7 @@ export function PresentationSlidePreview({
   // Show error state with retry button
   if (error || !metadata) {
     return (
-      <div className={cn('flex flex-col items-center justify-center p-8 bg-muted/30 rounded-lg border', className)}>
+      <div className={cn('flex flex-col items-center justify-center p-8 bg-muted/30 rounded-2xl border', className)}>
         <Presentation className="h-10 w-10 text-muted-foreground/50 mb-3" />
         <p className="text-sm text-muted-foreground mb-3">
           {error || 'Presentation not found'}

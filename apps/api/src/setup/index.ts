@@ -9,18 +9,19 @@
 
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
 import { execSync } from 'child_process';
 import { config } from '../config';
-import { ALL_SANDBOX_ENV_KEYS, buildProviderKeySchema } from '../providers/registry';
 import { supabaseAuth } from '../middleware/auth';
 import { eq, sql } from 'drizzle-orm';
 import { accounts } from '@kortix/db';
 import { db, hasDatabase } from '../shared/db';
 import { resolveAccountId } from '../shared/resolve-account';
 import { getSupabase } from '../shared/supabase';
-import { checkLocalSandboxHealth, type LocalSandboxHealthCheck } from '../platform/services/local-sandbox-health';
+/** Shape mirrors the legacy LocalSandboxHealthCheck (now removed) so the
+ *  frontend health UI keeps reading the same `{ok, error?}` per check. */
+type HealthCheck = { ok: boolean; error?: string };
 
 export const setupApp = new Hono<AppEnv>();
 
@@ -57,10 +58,9 @@ function findRepoRoot(): string | null {
   for (const dir of candidates) {
     const hasFrontend = existsSync(resolve(dir, 'apps/web'));
     const hasApi = existsSync(resolve(dir, 'apps/api'));
-    const hasSandboxCompose = existsSync(resolve(dir, 'core/docker/docker-compose.yml'));
     const hasComposeScripts = existsSync(resolve(dir, 'scripts/compose/docker-compose.yml'));
 
-    if ((hasFrontend && hasApi) || hasSandboxCompose || hasComposeScripts) {
+    if ((hasFrontend && hasApi) || hasComposeScripts) {
       return dir;
     }
   }
@@ -128,83 +128,6 @@ async function fetchMasterJson<T>(path: string, init: RequestInit = {}, timeoutM
   throw lastErr instanceof Error ? lastErr : new Error('Failed to reach sandbox master');
 }
 
-async function getSandboxEnv(): Promise<Record<string, string>> {
-  try {
-    return await fetchMasterJson<Record<string, string>>('/env');
-  } catch {
-    return {};
-  }
-}
-
-async function setSandboxEnv(keys: Record<string, string>): Promise<void> {
-  await fetchMasterJson('/env', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ keys }),
-  }, 15000);
-}
-
-function parseEnvFile(path: string): Record<string, string> {
-  if (!existsSync(path)) return {};
-  const lines = readFileSync(path, 'utf-8').split('\n');
-  const env: Record<string, string> = {};
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) continue;
-    const idx = line.indexOf('=');
-    if (idx === -1) continue;
-    const key = line.slice(0, idx).trim();
-    let val = line.slice(idx + 1).trim();
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'")))
-      val = val.slice(1, -1);
-    env[key] = val;
-  }
-  return env;
-}
-
-function maskKey(val: string): string {
-  if (!val || val.length < 8) return val ? '****' : '';
-  return val.slice(0, 4) + '...' + val.slice(-4);
-}
-
-function writeEnvFile(path: string, data: Record<string, string>): void {
-  const existing = existsSync(path) ? readFileSync(path, 'utf-8') : '';
-  const lines = existing.split('\n');
-  const written = new Set<string>();
-  const out: string[] = [];
-
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) {
-      out.push(raw);
-      continue;
-    }
-    const idx = line.indexOf('=');
-    if (idx === -1) { out.push(raw); continue; }
-    const key = line.slice(0, idx).trim();
-    if (key in data) {
-      out.push(`${key}=${data[key]}`);
-      written.add(key);
-    } else {
-      out.push(raw);
-    }
-  }
-
-  for (const [key, val] of Object.entries(data)) {
-    if (!written.has(key)) {
-      out.push(`${key}=${val}`);
-    }
-  }
-
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, out.join('\n') + '\n');
-}
-
-// Use the shared provider registry instead of local constants.
-
-// Keys to check for onboarding status (not part of the UI schema)
-const SYSTEM_KEYS = ['ONBOARDING_COMPLETE'];
-
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
 /**
@@ -246,26 +169,22 @@ setupApp.get('/install-status', async (c) => {
  * Public (no auth) — the installer wizard calls this to know which sandbox
  * providers are enabled so it can branch the setup flow accordingly.
  *
- * Response: { providers: string[], default: string }
- *   e.g. { providers: ["local_docker"], default: "local_docker" }
- *   e.g. { providers: ["daytona", "local_docker"], default: "daytona" }
+ * Response: { providers: string[], default: string, capabilities: ... }
+ *   e.g. { providers: ["daytona"], default: "daytona", capabilities: {...} }
  */
 setupApp.get('/sandbox-providers', async (c) => {
-  const available: string[] = [];
-  if (config.isLocalDockerEnabled()) available.push('local_docker');
-  if (config.isDaytonaEnabled()) available.push('daytona');
-  if (config.isJustAVPSEnabled()) available.push('justavps');
+  const available = config.ALLOWED_SANDBOX_PROVIDERS.filter((name) =>
+    config.isProviderEnabled(name),
+  );
 
   // Provider capabilities — tells the frontend how to handle provisioning UI
   const capabilities: Record<string, { async: boolean; events: boolean; polling: boolean }> = {
-    local_docker: { async: false, events: false, polling: false },
     daytona: { async: false, events: false, polling: false },
-    justavps: { async: true, events: true, polling: false },
   };
 
   return c.json({
     providers: available,
-    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'local_docker'),
+    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'daytona'),
     capabilities: Object.fromEntries(available.map((p) => [p, capabilities[p] || { async: false, events: false, polling: false }])),
   });
 });
@@ -295,27 +214,7 @@ setupApp.post('/bootstrap-owner', async (c) => {
     }
     const firstUser = listed.data?.users?.[0];
     if (firstUser) {
-      if ((firstUser.email || '').toLowerCase() === email) {
-        const updateExisting = await supabase.auth.admin.updateUserById(firstUser.id, {
-          password,
-          email_confirm: true,
-        });
-        if (updateExisting.error) {
-          return c.json({ success: false, error: updateExisting.error.message || 'Could not refresh owner credentials' }, 500);
-        }
-        try {
-          const accountId = await resolveAccountId(firstUser.id);
-          await db
-            .update(accounts)
-            .set({ setupCompleteAt: null, setupWizardStep: 2, updatedAt: new Date() })
-            .where(eq(accounts.accountId, accountId));
-          await setSandboxEnv({ ONBOARDING_COMPLETE: 'false', ONBOARDING_SESSION_ID: '', ONBOARDING_COMMAND_FIRED: 'false' }).catch(() => {});
-        } catch {
-          // best effort reset
-        }
-        return c.json({ success: true, created: false, message: 'Owner already exists for this email', credentials_reset: true });
-      }
-      return c.json({ success: false, error: `Owner already exists (${firstUser.email})` }, 409);
+      return c.json({ success: false, error: 'Owner already exists' }, 409);
     }
 
     const { data, error } = await supabase.auth.admin.createUser({
@@ -337,7 +236,6 @@ setupApp.post('/bootstrap-owner', async (c) => {
           .update(accounts)
           .set({ setupCompleteAt: null, setupWizardStep: 2, updatedAt: new Date() })
           .where(eq(accounts.accountId, accountId));
-        await setSandboxEnv({ ONBOARDING_COMPLETE: 'false', ONBOARDING_SESSION_ID: '', ONBOARDING_COMMAND_FIRED: 'false' }).catch(() => {});
       } catch {
         // best effort
       }
@@ -357,7 +255,6 @@ setupApp.post('/bootstrap-owner', async (c) => {
 setupApp.get('/status', async (c) => {
   const root = getProjectRoot();
   const envExists = existsSync(resolve(root, '.env'));
-  const sandboxEnvExists = existsSync(resolve(root, 'core/docker/.env'));
 
   let dockerRunning = false;
   try {
@@ -366,156 +263,13 @@ setupApp.get('/status', async (c) => {
   } catch {}
 
   return c.json({
-    envMode: config.ENV_MODE,
+    billingEnabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     dockerRunning,
     envExists,
-    sandboxEnvExists,
+    // The old sandbox-secrets file is gone.
+    sandboxEnvExists: false,
     projectRoot: root,
   });
-});
-
-/**
- * GET /v1/setup/env
- * Read current .env values (masked)
- */
-setupApp.get('/env', async (c) => {
-  const repoRoot = findRepoRoot();
-
-  // Repo/dev mode: reads and writes actual .env files in the repo.
-  if (repoRoot) {
-    const rootEnv = parseEnvFile(resolve(repoRoot, '.env'));
-    const sandboxEnv = parseEnvFile(resolve(repoRoot, 'core/docker/.env'));
-
-    const masked: Record<string, string> = {};
-    const configured: Record<string, boolean> = {};
-
-    const providerSchema = buildProviderKeySchema();
-    for (const group of Object.values(providerSchema)) {
-      for (const k of group.keys) {
-        const val = rootEnv[k.key] || sandboxEnv[k.key] || '';
-        masked[k.key] = maskKey(val);
-        configured[k.key] = !!val;
-      }
-    }
-
-    for (const key of SYSTEM_KEYS) {
-      const val = rootEnv[key] || sandboxEnv[key] || '';
-      configured[key] = val === 'true';
-    }
-
-    return c.json({ masked, configured });
-  }
-
-  // Installed/local Docker mode: proxy to sandbox secret store.
-  const env = await getSandboxEnv();
-  const masked: Record<string, string> = {};
-  const configured: Record<string, boolean> = {};
-
-    const providerSchema = buildProviderKeySchema();
-    for (const group of Object.values(providerSchema)) {
-    for (const k of group.keys) {
-      const val = env[k.key] || '';
-      masked[k.key] = maskKey(val);
-      configured[k.key] = !!val;
-    }
-  }
-
-  for (const key of SYSTEM_KEYS) {
-    const val = env[key] || '';
-    configured[key] = val === 'true';
-  }
-
-  return c.json({ masked, configured });
-});
-
-/**
- * POST /v1/setup/env
- * Save/update API keys
- */
-setupApp.post('/env', async (c) => {
-  const body = await c.req.json();
-  const keys = body?.keys;
-  if (!keys || typeof keys !== 'object') {
-    return c.json({ error: 'Invalid keys' }, 400);
-  }
-
-  const repoRoot = findRepoRoot();
-
-  // Installed/local Docker mode: persist keys in the sandbox secret store.
-    // Tools pick up new values instantly via s6 env dir (no restart needed).
-  if (!repoRoot) {
-    const clean: Record<string, string> = {};
-    for (const [k, v] of Object.entries(keys)) {
-      if (typeof v !== 'string') continue;
-      const trimmed = v.trim();
-      if (!trimmed) continue;
-      clean[k] = trimmed;
-    }
-
-    try {
-      await setSandboxEnv(clean);
-      return c.json({ ok: true });
-    } catch (e: any) {
-      return c.json(
-        { ok: false, error: 'Failed to save configuration', details: e?.message || String(e) },
-        500,
-      );
-    }
-  }
-
-  // Repo/dev mode: write keys into repo .env + core/docker/.env and generate per-service env files.
-  const root = repoRoot;
-  const rootData: Record<string, string> = {};
-  const sandboxData: Record<string, string> = {};
-
-  for (const [key, val] of Object.entries(keys)) {
-    if (typeof val !== 'string') continue;
-    rootData[key] = val;
-    if (ALL_SANDBOX_ENV_KEYS.has(key)) {
-      sandboxData[key] = val;
-    }
-  }
-
-  // Ensure root .env exists
-  const rootEnvPath = resolve(root, '.env');
-  if (!existsSync(rootEnvPath)) {
-    const examplePath = resolve(root, '.env.example');
-    if (existsSync(examplePath)) {
-      writeFileSync(rootEnvPath, readFileSync(examplePath, 'utf-8'));
-    } else {
-      writeFileSync(rootEnvPath, '# Kortix Environment Configuration\nENV_MODE=local\n');
-    }
-  }
-
-  rootData.ENV_MODE = 'local';
-  rootData.ALLOWED_SANDBOX_PROVIDERS = 'local_docker';
-  writeEnvFile(rootEnvPath, rootData);
-
-  // Sandbox .env
-  const sandboxEnvPath = resolve(root, 'core/docker/.env');
-  mkdirSync(dirname(sandboxEnvPath), { recursive: true });
-  if (!existsSync(sandboxEnvPath)) {
-    const examplePath = resolve(root, 'core/docker/.env.example');
-    if (existsSync(examplePath)) {
-      writeFileSync(sandboxEnvPath, readFileSync(examplePath, 'utf-8'));
-    } else {
-      writeFileSync(sandboxEnvPath, '# Kortix Sandbox Environment\nENV_MODE=local\n');
-    }
-  }
-  sandboxData.ENV_MODE = 'local';
-  sandboxData.SANDBOX_ID = config.SANDBOX_CONTAINER_NAME;
-  sandboxData.PROJECT_ID = 'local';
-  sandboxData.KORTIX_API_URL = 'http://kortix-api:8008';
-  writeEnvFile(sandboxEnvPath, sandboxData);
-
-  // Run setup-env.sh
-  try {
-    execSync('bash scripts/setup-env.sh', { cwd: root, stdio: 'pipe', timeout: 15000 });
-  } catch (e: any) {
-    console.error('[setup] setup-env.sh failed:', e.message);
-  }
-
-  return c.json({ ok: true });
 });
 
 /**
@@ -523,33 +277,17 @@ setupApp.post('/env', async (c) => {
  * Health check of all local services
  */
 setupApp.get('/health', async (c) => {
-  const repoRoot = findRepoRoot();
-  const checks: Record<string, LocalSandboxHealthCheck> = {};
-
-  // Check API (self)
+  const checks: Record<string, HealthCheck> = {};
+  // The API itself answered — by definition this check passes.
   checks.api = { ok: true };
-
-  // Installed/local Docker mode: check sandbox by HTTP (no docker CLI in image)
-  if (!repoRoot) {
-    try {
-      const health = await fetchMasterJson<{ status: string; runtimeReady?: boolean }>('/kortix/health', {}, 5000);
-      checks.sandbox = { ok: true };
-      checks.docker = { ok: true };
-      if (health.status === 'starting' || health.runtimeReady === false) {
-        checks.sandbox = { ok: false, error: 'Sandbox reachable but runtime is still starting' };
-      }
-    } catch (e: any) {
-      const msg = e?.message || String(e);
-      checks.sandbox = { ok: false, error: msg };
-      checks.docker = { ok: false, error: msg };
-    }
-    return c.json(checks);
-  }
-
-  const localChecks = checkLocalSandboxHealth();
-  checks.docker = localChecks.docker;
-  checks.sandbox = localChecks.sandbox;
-
+  // Daytona is the only provider — surface its config status so the
+  // setup wizard / health page can tell the operator they need to set
+  // DAYTONA_API_KEY. We don't ping Daytona here on purpose: that's a
+  // latency-sensitive UI call and Daytona's auth-check endpoint is
+  // their billing concern, not ours.
+  checks.daytona = config.DAYTONA_API_KEY
+    ? { ok: true }
+    : { ok: false, error: 'DAYTONA_API_KEY not configured' };
   return c.json(checks);
 });
 
@@ -578,8 +316,9 @@ setupApp.get('/setup-status', async (c) => {
       .limit(1);
     const complete = !!account?.setupCompleteAt;
     return c.json({ complete, completedAt: account?.setupCompleteAt?.toISOString() ?? null });
-  } catch (e: any) {
-    return c.json({ complete: false, completedAt: null, error: e?.message || String(e) }, 500);
+  } catch (e) {
+    console.error('[setup] setup-complete-status failed:', e);
+    return c.json({ complete: false, completedAt: null, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
 
@@ -599,8 +338,9 @@ setupApp.post('/setup-complete', async (c) => {
       .set({ setupCompleteAt: new Date(), setupWizardStep: 0, updatedAt: new Date() })
       .where(eq(accounts.accountId, accountId));
     return c.json({ ok: true });
-  } catch (e: any) {
-    return c.json({ ok: false, error: e?.message || String(e) }, 500);
+  } catch (e) {
+    console.error('[setup] setup-complete failed:', e);
+    return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
 
@@ -626,8 +366,9 @@ setupApp.get('/setup-wizard-step', async (c) => {
       return c.json({ step: 0 });
     }
     return c.json({ step: account?.setupWizardStep ?? 0 });
-  } catch (e: any) {
-    return c.json({ step: 0, error: e?.message || String(e) }, 500);
+  } catch (e) {
+    console.error('[setup] setup-wizard-step (get) failed:', e);
+    return c.json({ step: 0, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
 
@@ -650,7 +391,8 @@ setupApp.post('/setup-wizard-step', async (c) => {
       .set({ setupWizardStep: step, updatedAt: new Date() })
       .where(eq(accounts.accountId, accountId));
     return c.json({ ok: true });
-  } catch (e: any) {
-    return c.json({ ok: false, error: e?.message || String(e) }, 500);
+  } catch (e) {
+    console.error('[setup] setup-wizard-step (set) failed:', e);
+    return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });

@@ -1,6 +1,10 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -15,22 +19,36 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  PanelRightClose,
-  PanelRightOpen,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  PanelRight,
   FileDown,
   MoreHorizontal,
-  GitCompareArrows,
   Layers,
-  CircleAlert,
+  Loader2,
+  RotateCcw,
+  Share2,
+  Trash2,
 } from 'lucide-react';
+import { SessionChangesIndicator } from '@/components/session/session-changes-indicator';
 import { ExportTranscriptDialog } from '@/components/session/export-transcript-dialog';
-import { DiffDialog } from '@/components/session/diff-dialog';
 import { CompactDialog } from '@/components/session/compact-dialog';
-
-
-import { DiagnosticsDialog } from '@/components/session/diagnostics-panel';
-// Worktree indicator — disabled for now
-// import { useOpenCodeSession, useOpenCodeCurrentProject } from '@/hooks/opencode/use-opencode-sessions';
+import { SessionShareDialog } from '@/components/projects/session-share-dialog';
+import {
+  deleteProjectSession,
+  listProjectSessions,
+  restartProjectSession,
+} from '@/lib/projects-client';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 
 interface SessionSiteHeaderProps {
   sessionId: string;
@@ -38,7 +56,6 @@ interface SessionSiteHeaderProps {
   onToggleSidePanel: () => void;
   isSidePanelOpen?: boolean;
   isMobileView?: boolean;
-  canOpenSidePanel?: boolean;
   /** Optional element rendered at the leading (left) edge of the header */
   leadingAction?: React.ReactNode;
 }
@@ -49,32 +66,66 @@ export function SessionSiteHeader({
   onToggleSidePanel,
   isSidePanelOpen = false,
   isMobileView,
-  canOpenSidePanel = true,
   leadingAction,
 }: SessionSiteHeaderProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const router = useRouter();
+  const pathname = usePathname();
+  const queryClient = useQueryClient();
   const [exportOpen, setExportOpen] = useState(false);
-  const [diffOpen, setDiffOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
-  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // Lifecycle actions (Share / Restart / Delete) operate on the project-level
+  // session, which is only addressable on the `/projects/:id/sessions/:id` route.
+  const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
+  const projectId = projectRoute?.[1];
+  const projectSessionId = projectRoute?.[2];
+  const isProjectSession = !!projectId && !!projectSessionId;
 
-  // Worktree detection — disabled for now
-  const worktreeInfo = null;
+  const { data: projectSessions } = useQuery({
+    queryKey: ['project-sessions', projectId],
+    queryFn: () => listProjectSessions(projectId!),
+    enabled: isProjectSession,
+    staleTime: 10_000,
+  });
+  const projectSession =
+    projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
+  const canShare = !!projectSession && projectSession.can_manage_sharing !== false;
+
+  const restartMutation = useMutation({
+    mutationFn: () => restartProjectSession(projectId!, projectSessionId!),
+    onSuccess: () => {
+      toast.success('Restarting session…');
+      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to restart session');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteProjectSession(projectId!, projectSessionId!),
+    onSuccess: () => {
+      toast.success('Session deleted');
+      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      router.push(`/projects/${projectId}`);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete session');
+    },
+  });
 
   return (
     <>
-      {/* Floating actions in top-right corner */}
+      {/* Floating actions overlaying the top edge of the session */}
       <div className="absolute top-0 right-0 left-0 z-20 pointer-events-none">
-        <div className="flex items-center justify-between px-3 sm:px-4 pt-2">
-          {/* Left: leading action */}
-          <div className="flex items-center gap-1 pointer-events-auto">
-            {leadingAction}
-          </div>
-
-          {/* Right: actions */}
-          <div className="flex items-center gap-0.5 pointer-events-auto">
-            <TooltipProvider delayDuration={300}>
-              {/* Worktree indicator — disabled for now */}
+        <TooltipProvider delayDuration={300}>
+          <div className="flex items-center justify-between px-3 sm:px-4 pt-2">
+            {/* Left: leading action + overflow menu */}
+            <div className="flex items-center gap-0.5 pointer-events-auto">
+              {leadingAction}
 
               {/* More actions dropdown */}
               <DropdownMenu>
@@ -91,73 +142,100 @@ export function SessionSiteHeader({
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" sideOffset={4}>
-                    <p>More actions</p>
+                    <p>{tHardcodedUi.raw('componentsSessionSessionSiteHeader.line105JsxTextMoreActions')}</p>
                   </TooltipContent>
                 </Tooltip>
 
-                <DropdownMenuContent align="end" className="w-52">
-                  <DropdownMenuItem onClick={() => setDiagnosticsOpen(true)}>
-                    <CircleAlert className="mr-2 h-4 w-4" />
-                    Diagnostics
-                  </DropdownMenuItem>
-
-                  {/* View Changes */}
-                  <DropdownMenuItem onClick={() => setDiffOpen(true)}>
-                    <GitCompareArrows className="mr-2 h-4 w-4" />
-                    View changes
-                  </DropdownMenuItem>
+                <DropdownMenuContent align="start" className="w-52">
+                  {/* Lifecycle actions — parity with the session list */}
+                  {isProjectSession && (
+                    <>
+                      {canShare && (
+                        <DropdownMenuItem
+                          className="cursor-pointer"
+                          onClick={() => setShareOpen(true)}
+                        >
+                          <Share2 className="h-4 w-4" />
+                          Share…
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        disabled={restartMutation.isPending}
+                        onClick={() => restartMutation.mutate()}
+                      >
+                        {restartMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-4 w-4" />
+                        )}
+                        Restart
+                      </DropdownMenuItem>
+                    </>
+                  )}
 
                   {/* Export transcript */}
-                  <DropdownMenuItem onClick={() => setExportOpen(true)}>
-                    <FileDown className="mr-2 h-4 w-4" />
-                    Export transcript
-                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer"
+                    onClick={() => setExportOpen(true)}
+                  >
+                    <FileDown className="h-4 w-4" />{tHardcodedUi.raw('componentsSessionSessionSiteHeader.line124JsxTextExportTranscript')}</DropdownMenuItem>
 
                   {/* Compact session */}
-                  <DropdownMenuItem onClick={() => setCompactOpen(true)}>
-                    <Layers className="mr-2 h-4 w-4" />
-                    Compact session
-                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer"
+                    onClick={() => setCompactOpen(true)}
+                  >
+                    <Layers className="h-4 w-4" />{tHardcodedUi.raw('componentsSessionSessionSiteHeader.line130JsxTextCompactSession')}</DropdownMenuItem>
+
+                  {/* Delete */}
+                  {isProjectSession && (
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
+            </div>
 
-              {/* Share button — temporarily hidden until share architecture is resolved */}
-              {/* <SharePopover sessionId={sessionId}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="px-2.5 cursor-pointer gap-1.5"
-                >
-                  <Upload className="h-4 w-4" />
-                  <span className="hidden sm:inline text-sm">Share</span>
-                </Button>
-              </SharePopover> */}
-
-              {/* Panel toggle */}
-              {canOpenSidePanel && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={onToggleSidePanel}
-                      className="h-8 w-8 cursor-pointer text-muted-foreground hover:text-foreground"
-                    >
-                      {isSidePanelOpen ? (
-                        <PanelRightClose className="h-4 w-4" />
-                      ) : (
-                        <PanelRightOpen className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" sideOffset={4}>
-                    <p>{isSidePanelOpen ? 'Close' : 'Open'} Actions</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </TooltipProvider>
+            {/* Right: panel toggle — always available, even on an empty
+                session with no tool calls, so the side panel (Actions /
+                Browser / Files / Terminal) is always one click away. */}
+            <div className="flex items-center gap-1.5 pointer-events-auto">
+              {/* Colored nudge — only shows when this thread has unsynced
+                  changes, so it doubles as an at-a-glance diff indicator. */}
+              <SessionChangesIndicator sessionId={sessionId} />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onToggleSidePanel}
+                    className={cn(
+                      'h-8 w-8 cursor-pointer transition-colors',
+                      isSidePanelOpen
+                        ? 'text-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <PanelRight className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={4}>
+                  <p className="flex items-center gap-1.5">
+                    {isSidePanelOpen ? 'Close' : 'Open'} panel
+                    <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                      {tHardcodedUi.raw('componentsSessionSessionSiteHeader.line185JsxTextI')}</kbd>
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </div>
-        </div>
+        </TooltipProvider>
       </div>
 
       {/* Dialogs */}
@@ -166,20 +244,47 @@ export function SessionSiteHeader({
         open={exportOpen}
         onOpenChange={setExportOpen}
       />
-      <DiffDialog
-        sessionId={sessionId}
-        open={diffOpen}
-        onOpenChange={setDiffOpen}
-      />
       <CompactDialog
         sessionId={sessionId}
         open={compactOpen}
         onOpenChange={setCompactOpen}
       />
-      <DiagnosticsDialog
-        open={diagnosticsOpen}
-        onOpenChange={setDiagnosticsOpen}
-      />
+      {isProjectSession && (
+        <>
+          <SessionShareDialog
+            projectId={projectId!}
+            session={projectSession}
+            open={shareOpen}
+            onOpenChange={setShareOpen}
+            onSaved={() =>
+              queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] })
+            }
+          />
+          <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete session?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently destroy the branch and sandbox for{' '}
+                  <span className="font-medium text-foreground">{sessionTitle}</span>. This
+                  action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    deleteMutation.mutate();
+                    setDeleteOpen(false);
+                  }}
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
     </>
   );
 }

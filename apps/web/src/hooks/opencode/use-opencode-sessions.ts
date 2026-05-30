@@ -2,9 +2,12 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '@/lib/opencode-sdk';
+import { isOpenCodeConfigInvalidError } from '@/lib/opencode-errors';
 import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useServerStore } from '@/stores/server-store';
+import { ScopedCache } from '@/lib/storage/managed-storage';
 import type {
   Session,
   Message,
@@ -87,22 +90,47 @@ export interface ToolListItem {
 // Query Keys
 // ============================================================================
 
+/**
+ * Active sandbox/server id, used to scope per-sandbox caches.
+ *
+ * Each project session is its OWN sandbox (session_id == sandbox_id), but the
+ * OpenCode SDK client + caches are global. Without scoping, switching from
+ * session A to B would show A's data under B — which is why the code used to
+ * NUKE the entire opencode cache on every switch. That nuke is exactly what
+ * made returning to an already-open session "reload".
+ *
+ * By appending the server id to per-sandbox cache keys, every sandbox's data
+ * coexists in the cache, so returning to a warm session is instant and we no
+ * longer need to tear anything down. Appended at the END so existing prefix
+ * matches (e.g. invalidate `['opencode','sessions']`) still hit.
+ *
+ * `session(id)` / `messages(id)` stay global: opencode session ids are unique
+ * per sandbox, so they never collide across sandboxes.
+ */
+function activeServerKey(): string {
+  try {
+    return useServerStore.getState().activeServerId ?? 'none';
+  } catch {
+    return 'none';
+  }
+}
+
 export const opencodeKeys = {
   all: ['opencode'] as const,
-  sessions: () => ['opencode', 'sessions'] as const,
+  sessions: (serverId?: string) => ['opencode', 'sessions', serverId ?? activeServerKey()] as const,
   session: (id: string) => ['opencode', 'session', id] as const,
   messages: (sessionId: string) => ['opencode', 'session', sessionId, 'messages'] as const,
-  agents: () => ['opencode', 'agents'] as const,
-  toolIds: () => ['opencode', 'tool-ids'] as const,
-  tools: (providerID: string, modelID: string) => ['opencode', 'tools', providerID, modelID] as const,
-  skills: () => ['opencode', 'skills'] as const,
-  projects: () => ['opencode', 'projects'] as const,
-  currentProject: () => ['opencode', 'project', 'current'] as const,
-  commands: () => ['opencode', 'commands'] as const,
-  providers: () => ['opencode', 'providers'] as const,
-  pathInfo: () => ['opencode', 'path-info'] as const,
-  mcpStatus: () => ['opencode', 'mcp-status'] as const,
-  worktrees: () => ['opencode', 'worktrees'] as const,
+  agents: () => ['opencode', 'agents', activeServerKey()] as const,
+  toolIds: () => ['opencode', 'tool-ids', activeServerKey()] as const,
+  tools: (providerID: string, modelID: string) => ['opencode', 'tools', providerID, modelID, activeServerKey()] as const,
+  skills: () => ['opencode', 'skills', activeServerKey()] as const,
+  projects: () => ['opencode', 'projects', activeServerKey()] as const,
+  currentProject: () => ['opencode', 'project', 'current', activeServerKey()] as const,
+  commands: () => ['opencode', 'commands', activeServerKey()] as const,
+  providers: () => ['opencode', 'providers', activeServerKey()] as const,
+  pathInfo: () => ['opencode', 'path-info', activeServerKey()] as const,
+  mcpStatus: () => ['opencode', 'mcp-status', activeServerKey()] as const,
+  worktrees: () => ['opencode', 'worktrees', activeServerKey()] as const,
 };
 
 // ============================================================================
@@ -130,39 +158,68 @@ function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }): 
 // Session Hooks
 // ============================================================================
 
-function getLSCache<T>(key: string): T | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return undefined;
-    return JSON.parse(raw) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function setLSCache(key: string, value: unknown): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Storage full or unavailable
-  }
-}
-
+// localStorage placeholder caches are per-sandbox too — scope by active server
+// id so re-opening a warm session paints its OWN last data, never the previous
+// sandbox's. Scoping lives in the helpers so every call site inherits it.
+//
+// These are backed by ScopedCache, which caps each family to its N
+// most-recently-used scopes. That cap is the whole point: the default scope is
+// the EPHEMERAL per-sandbox server id, so without a cap every new session would
+// leak a fresh `kortix_cache_*:<serverId>` blob forever and eventually blow the
+// localStorage quota (which then crashes whatever store writes next). The cache
+// is disposable — a miss just refetches — so small caps are safe.
 const LS_SESSIONS = 'kortix_cache_sessions';
 const LS_AGENTS = 'kortix_cache_agents';
 const LS_COMMANDS = 'kortix_cache_commands';
 const LS_PROVIDERS = 'kortix_cache_providers';
 
-function useOpenCodeRuntimeReady() {
+// Session/command lists are keyed per ephemeral sandbox — keep only the few
+// most-recent sandboxes warm. Agents are keyed per directory (+ global), which
+// is a small, stable space, so it gets more headroom. Providers are global.
+const sessionsCache = new ScopedCache<Session[]>(LS_SESSIONS, 4);
+const agentsCache = new ScopedCache<Agent[]>(LS_AGENTS, 8);
+const commandsCache = new ScopedCache<Command[]>(LS_COMMANDS, 4);
+const providersCache = new ScopedCache<ProviderListResponse>(LS_PROVIDERS, 2);
+
+const cacheByFamily: Record<string, ScopedCache<any>> = {
+  [LS_SESSIONS]: sessionsCache,
+  [LS_AGENTS]: agentsCache,
+  [LS_COMMANDS]: commandsCache,
+  [LS_PROVIDERS]: providersCache,
+};
+
+function getLSCache<T>(family: string, scope?: string): T | undefined {
+  return cacheByFamily[family]?.get(scope ?? activeServerKey()) as T | undefined;
+}
+
+function setLSCache(family: string, value: unknown, scope?: string): void {
+  cacheByFamily[family]?.set(scope ?? activeServerKey(), value);
+}
+
+/**
+ * Stable cache scope for data that does NOT vary per sandbox. The default
+ * scope is the ephemeral per-sandbox server id, which is correct for
+ * session-specific data (session lists collide across sandboxes) but wrong for
+ * platform/project-level data like the model list and the agent roster: those
+ * are identical across every sandbox, yet a per-server key guarantees a cache
+ * MISS on every brand-new session (new sandbox → new server id → never seen).
+ * Keying them here instead lets a fresh session paint its pickers from cache on
+ * the first frame, before the sandbox is even up — killing the visible pop-in.
+ */
+const CACHE_SCOPE_GLOBAL = 'global';
+
+export function useOpenCodeRuntimeReady() {
   return useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
 }
 
 export function useOpenCodeSessions() {
   const runtimeReady = useOpenCodeRuntimeReady();
+  // Subscribe to the active server so the query key recomputes the instant the
+  // sandbox switches — returning to a warm session hits its cached list rather
+  // than refetching from scratch.
+  const serverId = useServerStore((s) => s.activeServerId) ?? undefined;
   return useQuery<Session[]>({
-    queryKey: opencodeKeys.sessions(),
+    queryKey: opencodeKeys.sessions(serverId),
     queryFn: async () => {
       const client = getClient();
       const result = await client.session.list({ limit: 10000 });
@@ -176,7 +233,8 @@ export function useOpenCodeSessions() {
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
-    retry: 3,
+    retry: (failureCount, error) =>
+      !isOpenCodeConfigInvalidError(error) && failureCount < 3,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
   });
 }
@@ -193,6 +251,12 @@ export function useOpenCodeSession(sessionId: string) {
     },
     enabled: runtimeReady && !!sessionId,
     staleTime: Infinity,
+    // Retry transient failures (sandbox still warming, brief network blip) so a
+    // single failed lookup doesn't settle as "not found" and flash the
+    // not-accessible error. The query stays in its loading state across retries.
+    retry: (failureCount, error) =>
+      !isOpenCodeConfigInvalidError(error) && failureCount < 3,
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
     placeholderData: () => {
       const sessions = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
       return sessions?.find((s) => s.id === sessionId);
@@ -205,13 +269,28 @@ export function useCreateOpenCodeSession() {
 
   return useMutation({
     mutationFn: async (options: { directory?: string; title?: string } | void) => {
-      const client = getClient();
       const opts = options || {};
-      const result = await client.session.create({
-        directory: opts.directory,
-        title: opts.title,
-      });
-      return unwrap(result);
+      // Opencode-inside-sandbox can be still booting when this fires (auto-
+      // create on session page mount). The sandbox proxy returns 503 with
+      // "opencode not ready" until the binary binds its port. Retry that
+      // specific transient inline — anything else propagates immediately.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const client = getClient();
+          const result = await client.session.create({
+            directory: opts.directory,
+            title: opts.title,
+          });
+          return unwrap(result);
+        } catch (e) {
+          const msg = (e as { message?: string })?.message ?? '';
+          if (attempt < 6 && /opencode not ready/i.test(msg)) {
+            await new Promise((r) => setTimeout(r, Math.min(500 * 2 ** attempt, 4_000)));
+            continue;
+          }
+          throw e;
+        }
+      }
     },
     onSuccess: (newSession) => {
       // Surgically insert into cache — SSE session.created will also fire
@@ -533,11 +612,17 @@ export function useOpenCodeAgents(options?: { directory?: string }) {
       const result = await client.app.agents(directory ? { directory } : undefined);
       const data = unwrap(result);
       const agents: Agent[] = Array.isArray(data) ? data : Object.values(data as Record<string, Agent>);
-      if (!directory) setLSCache(LS_AGENTS, agents);
+      // Agents are defined in the project repo (.kortix/opencode/agents), so the
+      // roster is stable across every session that shares a working directory.
+      // Cache under a directory-scoped (or global) STABLE key — not the
+      // ephemeral per-sandbox server id — so a new session's picker paints from
+      // cache instead of waiting on sandbox boot + the in-box /app/agents call.
+      // (Previously the directory case cached nothing at all → guaranteed pop-in.)
+      setLSCache(LS_AGENTS, agents, directory ? `dir:${directory}` : CACHE_SCOPE_GLOBAL);
       return agents;
     },
-    // Per-directory results aren't cached to LS — only the global list is.
-    placeholderData: directory ? undefined : () => getLSCache<Agent[]>(LS_AGENTS),
+    placeholderData: () =>
+      getLSCache<Agent[]>(LS_AGENTS, directory ? `dir:${directory}` : CACHE_SCOPE_GLOBAL),
     enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
@@ -913,10 +998,13 @@ export function useOpenCodeProviders() {
       const client = getClient();
       const result = await client.provider.list();
       const providers = unwrap(result);
-      setLSCache(LS_PROVIDERS, providers);
+      // Models are identical across every sandbox of every project (they come
+      // from the platform's opencode provider config), so cache them under the
+      // stable global scope — never the ephemeral per-sandbox server id.
+      setLSCache(LS_PROVIDERS, providers, CACHE_SCOPE_GLOBAL);
       return providers;
     },
-    placeholderData: () => getLSCache<ProviderListResponse>(LS_PROVIDERS),
+    placeholderData: () => getLSCache<ProviderListResponse>(LS_PROVIDERS, CACHE_SCOPE_GLOBAL),
     enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,

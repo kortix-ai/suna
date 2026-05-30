@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -103,6 +105,7 @@ export function MarkdownToolbar({
   hasChanges = false,
   sandboxId,
 }: MarkdownToolbarProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isExporting, setIsExporting] = useState(false);
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
   const [imageUrl, setImageUrl] = useState('');
@@ -294,7 +297,7 @@ export function MarkdownToolbar({
       <TooltipContent side="bottom" className="flex items-center gap-2">
         <span>{tooltip}</span>
         {shortcut && (
-          <kbd className="px-1.5 py-0.5 text-[10px] bg-muted rounded font-mono">
+          <kbd className="px-1.5 py-0.5 text-xs bg-muted rounded font-mono">
             {shortcut}
           </kbd>
         )}
@@ -446,6 +449,7 @@ export function MarkdownToolbar({
 
 
   const SaveButton = () => {
+    const tHardcodedUi = useTranslations('hardcodedUi');
     if (!onSave) return null;
 
     switch (saveState) {
@@ -487,7 +491,7 @@ export function MarkdownToolbar({
             </TooltipTrigger>
             <TooltipContent side="bottom">
               {hasChanges ? (
-                <>Save changes <kbd className="ml-1.5 px-1 py-0.5 text-[10px] bg-muted rounded font-mono">⌘S</kbd></>
+                <>{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line490JsxTextSaveChanges')}<kbd className="ml-1.5 px-1 py-0.5 text-xs bg-muted rounded font-mono">{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line490JsxTextS')}</kbd></>
               ) : (
                 'No changes to save'
               )}
@@ -516,9 +520,7 @@ export function MarkdownToolbar({
                     <RotateCcw className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  Discard changes
-                </TooltipContent>
+                <TooltipContent side="bottom">{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line520JsxTextDiscardChanges')}</TooltipContent>
               </Tooltip>
             )}
           </div>
@@ -549,14 +551,14 @@ export function MarkdownToolbar({
               disabled={!canUndo}
               icon={Undo}
               tooltip="Undo"
-              shortcut="⌘Z"
+              shortcut={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line552JsxAttrShortcutZ')}
             />
             <ToolbarButton
               onClick={() => editor.chain().focus().redo().run()}
               disabled={!canRedo}
               icon={Redo}
               tooltip="Redo"
-              shortcut="⌘⇧Z"
+              shortcut={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line559JsxAttrShortcutZ')}
             />
           </div>
           <Separator orientation="vertical" className="h-6 mx-1 shrink-0" />
@@ -580,17 +582,11 @@ export function MarkdownToolbar({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
-                <Heading1 className="mr-2 h-4 w-4" />
-                Heading 1
-              </DropdownMenuItem>
+                <Heading1 className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line584JsxTextHeading1')}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
-                <Heading2 className="mr-2 h-4 w-4" />
-                Heading 2
-              </DropdownMenuItem>
+                <Heading2 className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line588JsxTextHeading2')}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
-                <Heading3 className="mr-2 h-4 w-4" />
-                Heading 3
-              </DropdownMenuItem>
+                <Heading3 className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line592JsxTextHeading3')}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <Separator orientation="vertical" className="h-6 mx-1 shrink-0" />
@@ -604,21 +600,21 @@ export function MarkdownToolbar({
           isActive={isBold}
           icon={Bold}
           tooltip="Bold"
-          shortcut="⌘B"
+          shortcut={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line607JsxAttrShortcutB')}
         />
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleItalic().run()}
           isActive={isItalic}
           icon={Italic}
           tooltip="Italic"
-          shortcut="⌘I"
+          shortcut={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line614JsxAttrShortcutI')}
         />
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleUnderline().run()}
           isActive={isUnderline}
           icon={UnderlineIcon}
           tooltip="Underline"
-          shortcut="⌘U"
+          shortcut={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line621JsxAttrShortcutU')}
         />
         {!isBubbleMenu && (
           <>
@@ -632,7 +628,7 @@ export function MarkdownToolbar({
               onClick={() => editor.chain().focus().toggleCode().run()}
               isActive={isCode}
               icon={Code}
-              tooltip="Inline Code"
+              tooltip={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line635JsxAttrTooltipInlineCode')}
             />
           </>
         )}
@@ -647,19 +643,19 @@ export function MarkdownToolbar({
               onClick={() => editor.chain().focus().toggleBulletList().run()}
               isActive={isBulletList}
               icon={List}
-              tooltip="Bullet List"
+              tooltip={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line650JsxAttrTooltipBulletList')}
             />
             <ToolbarButton
               onClick={() => editor.chain().focus().toggleOrderedList().run()}
               isActive={isOrderedList}
               icon={ListOrdered}
-              tooltip="Numbered List"
+              tooltip={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line656JsxAttrTooltipNumberedList')}
             />
             <ToolbarButton
               onClick={() => editor.chain().focus().toggleTaskList().run()}
               isActive={isTaskList}
               icon={ListTodo}
-              tooltip="Task List"
+              tooltip={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line662JsxAttrTooltipTaskList')}
             />
           </div>
         </>
@@ -680,7 +676,7 @@ export function MarkdownToolbar({
               onClick={() => editor.chain().focus().toggleCodeBlock().run()}
               isActive={isCodeBlock}
               icon={Code}
-              tooltip="Code Block"
+              tooltip={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line683JsxAttrTooltipCodeBlock')}
             />
             <ToolbarButton
               onClick={() => editor.chain().focus().setHorizontalRule().run()}
@@ -701,7 +697,7 @@ export function MarkdownToolbar({
               isActive={isLink}
               icon={LinkIcon}
               tooltip="Link"
-              shortcut="⌘K"
+              shortcut={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line704JsxAttrShortcutK')}
             />
             <ToolbarButton onClick={openImageDialog} icon={ImageIcon} tooltip="Image" />
             <ToolbarButton onClick={insertTable} icon={TableIcon} tooltip="Table" />
@@ -714,7 +710,7 @@ export function MarkdownToolbar({
         <>
           <Separator orientation="vertical" className="h-6 mx-1 shrink-0" />
           <div className="flex items-center gap-0.5 shrink-0 bg-muted/50 rounded-md px-1 py-0.5">
-            <span className="text-[10px] text-muted-foreground font-medium px-1">Table</span>
+            <span className="text-xs text-muted-foreground font-medium px-1">Table</span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-7 px-1.5 gap-1">
@@ -724,18 +720,12 @@ export function MarkdownToolbar({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-40">
                 <DropdownMenuItem onClick={addRowBefore}>
-                  <ArrowUp className="mr-2 h-4 w-4" />
-                  Add row above
-                </DropdownMenuItem>
+                  <ArrowUp className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line728JsxTextAddRowAbove')}</DropdownMenuItem>
                 <DropdownMenuItem onClick={addRowAfter}>
-                  <ArrowDown className="mr-2 h-4 w-4" />
-                  Add row below
-                </DropdownMenuItem>
+                  <ArrowDown className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line732JsxTextAddRowBelow')}</DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={deleteRow} className="text-destructive focus:text-destructive hover:text-destructive hover:bg-destructive/10">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete row
-                </DropdownMenuItem>
+                  <Trash2 className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line737JsxTextDeleteRow')}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             <DropdownMenu>
@@ -747,18 +737,12 @@ export function MarkdownToolbar({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-40">
                 <DropdownMenuItem onClick={addColumnBefore}>
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Add column left
-                </DropdownMenuItem>
+                  <ArrowLeft className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line751JsxTextAddColumnLeft')}</DropdownMenuItem>
                 <DropdownMenuItem onClick={addColumnAfter}>
-                  <ArrowRight className="mr-2 h-4 w-4" />
-                  Add column right
-                </DropdownMenuItem>
+                  <ArrowRight className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line755JsxTextAddColumnRight')}</DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={deleteColumn} className="text-destructive focus:text-destructive hover:text-destructive hover:bg-destructive/10">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete column
-                </DropdownMenuItem>
+                  <Trash2 className="mr-2 h-4 w-4" />{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line760JsxTextDeleteColumn')}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             <Tooltip>
@@ -772,7 +756,7 @@ export function MarkdownToolbar({
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Delete table</TooltipContent>
+              <TooltipContent side="bottom">{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line775JsxTextDeleteTable')}</TooltipContent>
             </Tooltip>
           </div>
         </>
@@ -826,14 +810,14 @@ export function MarkdownToolbar({
     <Dialog open={isImageDialogOpen} onOpenChange={setIsImageDialogOpen}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Insert Image</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line829JsxTextInsertImage')}</DialogTitle>
         </DialogHeader>
         <Tabs defaultValue="url" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="upload" className="gap-1.5 opacity-50 cursor-not-allowed" disabled>
               <Upload className="h-4 w-4" />
               Upload
-              <span className="text-[10px] ml-1">(Soon)</span>
+              <span className="text-xs ml-1">(Soon)</span>
             </TabsTrigger>
             <TabsTrigger value="url" className="gap-1.5">
               <Link2 className="h-4 w-4" />
@@ -843,7 +827,7 @@ export function MarkdownToolbar({
           <TabsContent value="upload" className="space-y-4 pt-4">
             <div
               className={cn(
-                "border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors",
+                "border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-colors",
                 "hover:border-primary hover:bg-muted/50",
                 imagePreview && "border-primary bg-muted/50"
               )}
@@ -852,7 +836,7 @@ export function MarkdownToolbar({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept={tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line855JsxAttrAcceptImage')}
                 className="hidden"
                 onChange={handleImageFileSelect}
               />
@@ -864,26 +848,22 @@ export function MarkdownToolbar({
                     alt="Preview"
                     className="max-h-40 mx-auto rounded-lg object-contain"
                   />
-                  <p className="text-sm text-muted-foreground">Click to change image</p>
-                  <p className="text-xs text-emerald-600 dark:text-green-400">
-                    Will be uploaded to workspace
-                  </p>
+                  <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line867JsxTextClickToChangeImage')}</p>
+                  <p className="text-xs text-emerald-600 dark:text-green-400">{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line869JsxTextWillBeUploadedToWorkspace')}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
-                  <p className="text-sm font-medium">Click to upload an image</p>
-                  <p className="text-xs text-muted-foreground">PNG, JPG, GIF up to 50MB</p>
-                  <p className="text-xs text-emerald-600 dark:text-green-400">
-                    Image will be uploaded to workspace
-                  </p>
+                  <p className="text-sm font-medium">{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line875JsxTextClickToUploadAnImage')}</p>
+                  <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line876JsxTextPngJpgGifUpTo50mb')}</p>
+                  <p className="text-xs text-emerald-600 dark:text-green-400">{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line878JsxTextImageWillBeUploadedToWorkspace')}</p>
                 </div>
               )}
             </div>
           </TabsContent>
           <TabsContent value="url" className="space-y-4 pt-4">
             <div className="space-y-2">
-              <Label htmlFor="image-url">Image URL</Label>
+              <Label htmlFor="image-url">{tHardcodedUi.raw('componentsFileEditorsMarkdownToolbar.line886JsxTextImageUrl')}</Label>
               <Input type="text"
                 id="image-url"
                 placeholder="https://example.com/image.png"
@@ -895,7 +875,7 @@ export function MarkdownToolbar({
               />
             </div>
             {imageUrl && (
-              <div className="border rounded-lg p-2">
+              <div className="border rounded-2xl p-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={imageUrl}

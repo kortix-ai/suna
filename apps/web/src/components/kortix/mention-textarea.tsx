@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Textarea with @-mention autocomplete.
  *
@@ -236,6 +238,7 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
     { value, onChange, agents, userHandle, userAvatarUrl, onKeyDown, className, ...textareaProps },
     forwardedRef,
   ) {
+    const tHardcodedUi = useTranslations('hardcodedUi');
     const innerRef = useRef<HTMLTextAreaElement>(null);
     useImperativeHandle(forwardedRef, () => innerRef.current!);
 
@@ -409,12 +412,10 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
         {open && (
           <div
             role="listbox"
-            className="absolute left-0 top-full mt-1 min-w-[220px] max-w-[280px] rounded-xl border border-border/60 bg-card shadow-xl z-[10001] overflow-hidden py-1"
+            className="absolute left-0 top-full mt-1 min-w-[220px] max-w-[280px] rounded-2xl border border-border/60 bg-card shadow-xl z-[10001] overflow-hidden py-1"
             onMouseDown={(e) => e.preventDefault()}
           >
-            <div className="px-3 py-1.5 text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
-              Tag team member
-            </div>
+            <div className="px-3 py-1.5 text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixMentionTextarea.line416JsxTextTagTeamMember')}</div>
             {candidates.map((c, i) => {
               const slug = candidateSlug(c);
               const active = i === selectedIdx;
@@ -449,9 +450,7 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
                 </button>
               );
             })}
-            <div className="px-3 py-1.5 text-[10px] text-muted-foreground/40 border-t border-border/30 mt-1">
-              ↑↓ to navigate · ↵ to insert · esc to dismiss
-            </div>
+            <div className="px-3 py-1.5 text-[10px] text-muted-foreground/40 border-t border-border/30 mt-1">{tHardcodedUi.raw('componentsKortixMentionTextarea.line453JsxTextToNavigateToInsertEscToDismiss')}</div>
           </div>
         )}
       </div>

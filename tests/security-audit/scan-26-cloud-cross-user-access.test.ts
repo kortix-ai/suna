@@ -114,28 +114,6 @@ describe('Cloud Scan: Cross-User Access & Billing Protection', () => {
     });
   });
 
-  describe('Integration operations require auth', () => {
-    test('GET connections — 401', async () => {
-      const r = await probe('GET', '/v1/integrations/connections');
-      expect(r.status).toBe(401);
-    });
-
-    test('GET apps — 401', async () => {
-      const r = await probe('GET', '/v1/integrations/apps');
-      expect(r.status).toBe(401);
-    });
-
-    test('POST connect-token — 401', async () => {
-      const r = await probe('POST', '/v1/integrations/connect-token');
-      expect(r.status).toBe(401);
-    });
-
-    test('POST connections/save — 401', async () => {
-      const r = await probe('POST', '/v1/integrations/connections/save');
-      expect(r.status).toBe(401);
-    });
-  });
-
   describe('API key management requires auth', () => {
     test('GET api-keys — 401', async () => {
       const r = await probe('GET', '/v1/platform/api-keys');
@@ -149,16 +127,6 @@ describe('Cloud Scan: Cross-User Access & Billing Protection', () => {
   });
 
   describe('Secret/provider/queue/tunnel require auth', () => {
-    test('GET secrets — 401', async () => {
-      const r = await probe('GET', '/v1/secrets');
-      expect(r.status).toBe(401);
-    });
-
-    test('GET providers — 401', async () => {
-      const r = await probe('GET', '/v1/providers');
-      expect(r.status).toBe(401);
-    });
-
     test('GET queue — 401', async () => {
       const r = await probe('GET', '/v1/queue/all');
       expect(r.status).toBe(401);

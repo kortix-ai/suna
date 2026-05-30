@@ -24,7 +24,7 @@ const buttonVariants = cva(
         subtle:
           "bg-primary/10 text-primary hover:bg-primary/15",
         sidebar:
-          "font-medium text-sidebar-foreground hover:bg-sidebar-accent/80 flex items-center justify-start gap-3 w-full transition-colors duration-150",
+          "text-sidebar-foreground hover:bg-sidebar-accent/80 flex items-center justify-start gap-2.5 w-full transition-colors duration-150 font-normal !h-8 !text-sm !px-2.5 !py-1.5 [&_svg]:!size-3.5",
         // Muted ghost — neutral background on hover
         muted:
           "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -41,9 +41,9 @@ const buttonVariants = cva(
         lg: "h-11 px-6 text-sm rounded-full [&_svg:not([class*='size-'])]:size-4 has-[>svg]:px-4",
         icon: "size-9 rounded-full [&_svg:not([class*='size-'])]:size-4",
         // Compact toolbar actions
-        toolbar: "h-7 gap-1.5 px-2.5 text-[0.6875rem] rounded-full [&_svg:not([class*='size-'])]:size-3.5",
+        toolbar: "h-7 gap-1.5 px-2.5 text-xs rounded-full [&_svg:not([class*='size-'])]:size-3.5",
         // Micro buttons for inline/compact contexts
-        xs: "h-6 gap-1 px-2 text-[0.625rem] rounded-full [&_svg:not([class*='size-'])]:size-3",
+        xs: "h-6 gap-1 px-2 text-xs rounded-full [&_svg:not([class*='size-'])]:size-3",
         // Small icon button (toolbar density)
         "icon-sm": "size-7 rounded-full [&_svg:not([class*='size-'])]:size-3.5",
         // Tiny icon button (inline density)

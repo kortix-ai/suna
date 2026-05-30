@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   ChevronRight,
@@ -90,6 +92,7 @@ function getNameSelectionEnd(name: string, isDirectory: boolean): number {
 export { DRAG_MIME };
 
 export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, onHistory, onCopy, onCut, onDropMove, siblingNames, gitStatus, isCut, diagnosticCounts, isDownloadingItem }: FileTreeItemProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const hasContextMenu = onDownload || onRename || onDelete || onHistory || onCopy || onCut;
 
   const [isRenaming, setIsRenaming] = useState(false);
@@ -200,7 +203,7 @@ export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, on
   const content = isRenaming ? (
     <div
       className={cn(
-        'flex items-center gap-2 w-full px-3 py-1.5 text-sm rounded-md',
+        'flex items-center gap-2 w-full px-3 py-1.5 text-sm rounded-lg',
         node.ignored && 'opacity-50',
       )}
     >
@@ -220,14 +223,12 @@ export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, on
             else cancelRename();
           }}
           className={cn(
-            'w-full text-sm bg-transparent border rounded px-1.5 py-0.5 outline-none selection:bg-primary/15 selection:text-foreground',
-            nameConflict ? 'border-red-500/60' : 'border-primary',
+            'w-full h-7 text-sm bg-card border rounded-2xl px-3 outline-none focus:ring-2 focus:ring-primary/50 selection:bg-primary/15 selection:text-foreground',
+            nameConflict && 'border-destructive focus:ring-destructive/30',
           )}
         />
         {nameConflict && (
-          <p className="text-xs text-red-400">
-            A file or folder with that name already exists
-          </p>
+          <p className="text-xs text-destructive">{tHardcodedUi.raw('featuresFilesComponentsFileTreeItem.line229JsxTextAFileOrFolderWithThatNameAlready')}</p>
         )}
       </div>
     </div>
@@ -242,7 +243,7 @@ export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, on
       onDrop={handleDrop}
       onClick={onClick}
       className={cn(
-        'flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left rounded-md transition-colors cursor-pointer',
+        'flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left rounded-lg transition-colors cursor-pointer',
         'hover:bg-muted/80',
         node.ignored && 'opacity-50',
         isCut && 'opacity-40',
@@ -262,7 +263,7 @@ export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, on
       {(gitStatus || (diagnosticCounts && (diagnosticCounts.errors > 0 || diagnosticCounts.warnings > 0))) && (
         <span className="inline-flex items-center gap-1.5 shrink-0">
           {diagnosticCounts && diagnosticCounts.errors > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-red-500">
+            <span className="inline-flex items-center gap-0.5 text-destructive">
               <CircleAlert className="h-3 w-3" />
               <span className="text-xs font-semibold leading-none">{diagnosticCounts.errors}</span>
             </span>
@@ -318,9 +319,7 @@ export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, on
 
         {node.type === 'file' && onHistory && (
           <ContextMenuItem onClick={() => onHistory(node)}>
-            <History className="mr-2 h-4 w-4" />
-            View History
-          </ContextMenuItem>
+            <History className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsFileTreeItem.line322JsxTextViewHistory')}</ContextMenuItem>
         )}
 
         <ContextMenuSeparator />
@@ -348,9 +347,7 @@ export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, on
             navigator.clipboard.writeText(node.path);
           }}
         >
-          <Copy className="mr-2 h-4 w-4" />
-          Copy path
-        </ContextMenuItem>
+          <Copy className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsFileTreeItem.line352JsxTextCopyPath')}</ContextMenuItem>
 
         {onRename && (
           <>

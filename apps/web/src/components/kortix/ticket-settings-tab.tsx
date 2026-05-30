@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Ticket Settings tab — Columns, Custom Fields, Templates.
  *
@@ -57,6 +59,7 @@ import { COLUMN_ICONS, COLUMN_ICON_KEYS, defaultColumnIcon } from '@/components/
 type Panel = 'columns' | 'fields' | 'templates';
 
 export function TicketSettingsTab({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [panel, setPanel] = useState<Panel>('columns');
   return (
     <div className="h-full overflow-y-auto animate-in fade-in-0 duration-300 fill-mode-both">
@@ -64,7 +67,7 @@ export function TicketSettingsTab({ projectId }: { projectId: string }) {
 
         <nav className="flex items-center gap-1 -ml-2">
           <NavTab active={panel === 'columns'} onClick={() => setPanel('columns')} icon={<ColumnsIcon className="h-3.5 w-3.5" />} label="Columns" />
-          <NavTab active={panel === 'fields'} onClick={() => setPanel('fields')} icon={<SlidersHorizontal className="h-3.5 w-3.5" />} label="Custom fields" />
+          <NavTab active={panel === 'fields'} onClick={() => setPanel('fields')} icon={<SlidersHorizontal className="h-3.5 w-3.5" />} label={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line67JsxAttrLabelCustomFields')} />
           <NavTab active={panel === 'templates'} onClick={() => setPanel('templates')} icon={<FileStack className="h-3.5 w-3.5" />} label="Templates" />
         </nav>
 
@@ -123,6 +126,7 @@ interface ColumnDraft {
 }
 
 function ColumnsEditor({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: columnsData } = useColumns(projectId);
   const { data: agentsData } = useProjectAgents(projectId);
   const agents = useMemo(() => agentsData ?? [], [agentsData]);
@@ -189,21 +193,19 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
       <SectionHead
         icon={<ColumnsIcon className="h-3.5 w-3.5 text-muted-foreground/45" />}
         label="Flow"
-        description="The linear sequence tickets move through. Order matters — new tickets land in the first column. Click a column's icon to change it."
+        description={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line192JsxAttrDescriptionTheLinearSequenceTicketsMoveThroughOrderMatters')}
         action={
           <Button
             variant="ghost" size="sm" className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
             onClick={addFlowColumn}
           >
-            <Plus className="h-3 w-3" />
-            Add column
-          </Button>
+            <Plus className="h-3 w-3" />{tHardcodedUi.raw('componentsKortixTicketSettingsTab.line199JsxTextAddColumn')}</Button>
         }
       />
 
-      <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+      <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
         {flowRows.length === 0 && (
-          <div className="py-8 text-center text-[12px] text-muted-foreground/50">No flow columns yet.</div>
+          <div className="py-8 text-center text-[12px] text-muted-foreground/50">{tHardcodedUi.raw('componentsKortixTicketSettingsTab.line206JsxTextNoFlowColumnsYet')}</div>
         )}
         {flowRows.map(({ d, idx }, displayI) => (
           <ColumnRow
@@ -226,22 +228,19 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
         <SectionHead
           icon={<Pause className="h-3.5 w-3.5 text-muted-foreground/45" />}
           label="Off-flow"
-          description="Side-channel columns (e.g. blocked, on hold). Reachable from any flow column but don't participate in the linear sequence — skip-column and gate-column guards ignore them."
+          description={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line229JsxAttrDescriptionSideChannelColumnsEGBlockedOnHold')}
           action={
             <Button
               variant="ghost" size="sm" className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
               onClick={addOffFlowColumn}
             >
-              <Plus className="h-3 w-3" />
-              Add side-channel
-            </Button>
+              <Plus className="h-3 w-3" />{tHardcodedUi.raw('componentsKortixTicketSettingsTab.line236JsxTextAddSideChannel')}</Button>
           }
         />
 
-        <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+        <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
           {offFlowRows.length === 0 && (
-            <div className="py-6 text-center text-[11.5px] text-muted-foreground/45">
-              None. Tickets that stall waiting on external input can sit in a flow column, or you can add a side-channel like <code className="font-mono text-[10.5px] px-1 py-0.5 rounded bg-muted/30">blocked</code>.
+            <div className="py-6 text-center text-[11.5px] text-muted-foreground/45">{tHardcodedUi.raw('componentsKortixTicketSettingsTab.line244JsxTextNoneTicketsThatStallWaitingOnExternalInput')}<code className="font-mono text-[10.5px] px-1 py-0.5 rounded bg-muted/30">blocked</code>.
             </div>
           )}
           {offFlowRows.map(({ d, idx }) => (
@@ -275,6 +274,7 @@ function ColumnRow({
   canMoveUp?: boolean; canMoveDown?: boolean;
   onMoveUp?: () => void; onMoveDown?: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isOffFlow = d.is_off_flow;
   return (
     <div className="flex items-center gap-2 px-3 py-2.5">
@@ -300,9 +300,9 @@ function ColumnRow({
           ? { default_assignee_type: null, default_assignee_id: null }
           : { default_assignee_type: 'agent', default_assignee_id: v })}
       >
-        <SelectTrigger size="sm" className="h-6 text-[11px] w-[130px]"><SelectValue placeholder="Default…" /></SelectTrigger>
+        <SelectTrigger size="sm" className="h-6 text-[11px] w-[130px]"><SelectValue placeholder={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line303JsxAttrPlaceholderDefault')} /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="_none">No default</SelectItem>
+          <SelectItem value="_none">{tHardcodedUi.raw('componentsKortixTicketSettingsTab.line305JsxTextNoDefault')}</SelectItem>
           {agents.map((a) => <SelectItem key={a.id} value={a.id}>@{a.slug}</SelectItem>)}
         </SelectContent>
       </Select>
@@ -313,13 +313,13 @@ function ColumnRow({
               variant="ghost" size="sm"
               className={cn('h-6 w-6 p-0 hover:text-foreground', canMoveUp ? 'text-muted-foreground/40' : 'text-muted-foreground/15 pointer-events-none')}
               onClick={onMoveUp}
-              title="Move up"
+              title={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line316JsxAttrTitleMoveUp')}
             ><ArrowUp className="h-3 w-3" /></Button>
             <Button
               variant="ghost" size="sm"
               className={cn('h-6 w-6 p-0 hover:text-foreground', canMoveDown ? 'text-muted-foreground/40' : 'text-muted-foreground/15 pointer-events-none')}
               onClick={onMoveDown}
-              title="Move down"
+              title={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line322JsxAttrTitleMoveDown')}
             ><ArrowDown className="h-3 w-3" /></Button>
           </>
         )}
@@ -335,7 +335,7 @@ function ColumnRow({
           variant="ghost" size="sm"
           className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-destructive"
           onClick={onDelete}
-          title="Delete column"
+          title={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line338JsxAttrTitleDeleteColumn')}
         ><Trash2 className="h-3 w-3" /></Button>
       </div>
     </div>
@@ -369,6 +369,7 @@ function toColumnKey(c: TicketColumn) {
 }
 
 function ColumnIconPicker({ iconKey, onChange }: { iconKey: string; onChange: (k: string) => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const entry = COLUMN_ICONS[iconKey] ?? COLUMN_ICONS.backlog;
   const Ic = entry.Icon;
   return (
@@ -377,14 +378,14 @@ function ColumnIconPicker({ iconKey, onChange }: { iconKey: string; onChange: (k
         <button
           type="button"
           className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 hover:bg-muted/40 transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-          title="Change icon"
-          aria-label="Change column icon"
+          title={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line380JsxAttrTitleChangeIcon')}
+          aria-label={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line381JsxAttrAriaLabelChangeColumnIcon')}
         >
           <Ic className={cn('h-4 w-4', entry.tint)} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[220px] z-[10000]">
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Column icon</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixTicketSettingsTab.line387JsxTextColumnIcon')}</DropdownMenuLabel>
         <div className="grid grid-cols-4 gap-1 p-1.5">
           {COLUMN_ICON_KEYS.map((k) => {
             const c = COLUMN_ICONS[k];
@@ -423,6 +424,7 @@ interface FieldDraft {
 }
 
 function FieldsEditor({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: fieldsData } = useFields(projectId);
   const replace = useReplaceFields();
   const [drafts, setDrafts] = useState<FieldDraft[]>([]);
@@ -443,23 +445,21 @@ function FieldsEditor({ projectId }: { projectId: string }) {
     <section>
       <SectionHead
         icon={<SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground/45" />}
-        label="Custom fields"
-        description="Per-project fields shown on every ticket. Type controls the editor — text, number, date, or a select with predefined options."
+        label={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line446JsxAttrLabelCustomFields')}
+        description={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line447JsxAttrDescriptionPerProjectFieldsShownOnEveryTicketType')}
         action={
           <Button
             variant="ghost" size="sm"
             className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
             onClick={add}
           >
-            <Plus className="h-3 w-3" />
-            Add field
-          </Button>
+            <Plus className="h-3 w-3" />{tHardcodedUi.raw('componentsKortixTicketSettingsTab.line455JsxTextAddField')}</Button>
         }
       />
 
-      <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+      <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
         {drafts.length === 0 && (
-          <div className="py-8 text-center text-[12px] text-muted-foreground/50">No custom fields yet.</div>
+          <div className="py-8 text-center text-[12px] text-muted-foreground/50">{tHardcodedUi.raw('componentsKortixTicketSettingsTab.line462JsxTextNoCustomFieldsYet')}</div>
         )}
         {drafts.map((d, i) => (
           <div key={i} className="px-3 py-3">
@@ -491,8 +491,8 @@ function FieldsEditor({ projectId }: { projectId: string }) {
               <input
                 value={d.options.join(', ')}
                 onChange={(e) => patchAt(i, { options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
-                placeholder="Options, comma-separated — e.g. P0, P1, P2, P3"
-                className="mt-2 h-7 w-full text-[11.5px] bg-muted/20 border border-border/30 rounded-lg px-2.5 outline-none focus:ring-2 focus:ring-primary/20"
+                placeholder={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line494JsxAttrPlaceholderOptionsCommaSeparatedEGP0P1P2')}
+                className="mt-2 h-7 w-full text-[11.5px] bg-muted/20 border border-border/30 rounded-2xl px-2.5 outline-none focus:ring-2 focus:ring-primary/20"
               />
             )}
           </div>
@@ -517,6 +517,7 @@ function toFieldDraft(f: ProjectField): FieldDraft {
 interface TemplateDraft { name: string; body_md: string }
 
 function TemplatesEditor({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: templatesData } = useTemplates(projectId);
   const replace = useReplaceTemplates();
   const [drafts, setDrafts] = useState<TemplateDraft[]>([]);
@@ -547,23 +548,21 @@ function TemplatesEditor({ projectId }: { projectId: string }) {
     <section>
       <SectionHead
         icon={<FileStack className="h-3.5 w-3.5 text-muted-foreground/45" />}
-        label="Ticket templates"
-        description="Markdown templates shown in the New-ticket picker. Acceptance criteria lives in the body — no hardcoded verification field."
+        label={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line550JsxAttrLabelTicketTemplates')}
+        description={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line551JsxAttrDescriptionMarkdownTemplatesShownInTheNewTicketPicker')}
         action={
           <Button
             variant="ghost" size="sm"
             className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
             onClick={add}
           >
-            <Plus className="h-3 w-3" />
-            Add template
-          </Button>
+            <Plus className="h-3 w-3" />{tHardcodedUi.raw('componentsKortixTicketSettingsTab.line559JsxTextAddTemplate')}</Button>
         }
       />
 
-      <div className="rounded-xl border border-border/40 overflow-hidden bg-card">
+      <div className="rounded-2xl border border-border/40 overflow-hidden bg-card">
         {drafts.length === 0 ? (
-          <div className="py-8 text-center text-[12px] text-muted-foreground/50">No templates yet.</div>
+          <div className="py-8 text-center text-[12px] text-muted-foreground/50">{tHardcodedUi.raw('componentsKortixTicketSettingsTab.line566JsxTextNoTemplatesYet')}</div>
         ) : (
           <div className="flex min-h-[320px]">
             <div className="w-48 border-r border-border/30 divide-y divide-border/30 shrink-0">
@@ -585,16 +584,14 @@ function TemplatesEditor({ projectId }: { projectId: string }) {
             </div>
             <div className="flex-1 min-w-0 flex flex-col">
               {active === null ? (
-                <div className="flex-1 flex items-center justify-center text-[12px] text-muted-foreground/45">
-                  Select a template to edit, or add a new one.
-                </div>
+                <div className="flex-1 flex items-center justify-center text-[12px] text-muted-foreground/45">{tHardcodedUi.raw('componentsKortixTicketSettingsTab.line589JsxTextSelectATemplateToEditOrAddA')}</div>
               ) : (
                 <>
                   <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
                     <input
                       value={drafts[active].name}
                       onChange={(e) => patchAt(active, { name: e.target.value })}
-                      placeholder="Name (e.g. Bug)"
+                      placeholder={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line597JsxAttrPlaceholderNameEGBug')}
                       className="h-7 flex-1 text-[12.5px] bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/30 font-medium"
                     />
                     <Button
@@ -610,7 +607,7 @@ function TemplatesEditor({ projectId }: { projectId: string }) {
                     onChange={(e) => patchAt(active, { body_md: e.target.value })}
                     rows={14}
                     className="flex-1 text-[12px] font-mono bg-transparent border-0 outline-none focus:ring-0 resize-none px-3 py-2.5 leading-[1.7] placeholder:text-muted-foreground/30"
-                    placeholder="Markdown body…"
+                    placeholder={tHardcodedUi.raw('componentsKortixTicketSettingsTab.line613JsxAttrPlaceholderMarkdownBody')}
                   />
                 </>
               )}

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
@@ -90,7 +92,7 @@ function MediaPlaceholder({
     >
       <div className="absolute top-3 left-3 inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-foreground/5 border border-foreground/10">
         {kind === 'video' ? <Play className="size-3" /> : <ImageIcon className="size-3" />}
-        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+        <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
           {kind === 'video' ? 'record' : 'screenshot'}
         </span>
       </div>
@@ -111,7 +113,7 @@ function IntegrationPill({
   name: string;
 }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card/60 hover:bg-muted/50 transition-colors">
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl border border-border bg-card/60 hover:bg-muted/50 transition-colors">
       {domain ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -124,7 +126,7 @@ function IntegrationPill({
       ) : (
         <div className="size-4 shrink-0">{icon}</div>
       )}
-      <span className="text-[13px] font-medium text-foreground">{name}</span>
+      <span className="text-sm font-medium text-foreground">{name}</span>
     </div>
   );
 }
@@ -158,7 +160,7 @@ function DeliverableCard({
           </div>
           <span className="text-sm font-semibold text-foreground">{title}</span>
         </div>
-        <p className="text-[13px] text-muted-foreground leading-relaxed">{desc}</p>
+        <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
       </div>
     </div>
   );
@@ -200,17 +202,18 @@ function UseCase({
   desc: string;
   src?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-10 items-center">
       <div className="md:col-span-5">
-        <div className="text-[11px] font-mono text-muted-foreground mb-2">{n}</div>
+        <div className="text-xs font-mono text-muted-foreground mb-2">{n}</div>
         <h3 className="text-xl sm:text-2xl font-medium tracking-tight text-foreground">{title}</h3>
         <p className="mt-2.5 text-sm text-muted-foreground leading-relaxed">{desc}</p>
       </div>
       <div className="md:col-span-7">
         <MediaPlaceholder
           label={`Demo: ${title}`}
-          hint="Screen recording or screenshot of Suna performing this workflow end-to-end."
+          hint={tHardcodedUi.raw('appHomeHomeWipPage.line213JsxAttrHintScreenRecordingOrScreenshotOfSunaPerformingThis')}
           src={src}
           kind={src ? 'image' : 'video'}
         />
@@ -222,6 +225,7 @@ function UseCase({
 /* ═══════════════════════════════════════════════════════ */
 
 export default function HomeWip() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   const [showFloatingCta, setShowFloatingCta] = useState(false);
   const { user } = useAuth();
@@ -249,7 +253,7 @@ export default function HomeWip() {
       window.location.href = '/auth';
       return;
     }
-    window.location.href = '/dashboard';
+    window.location.href = '/projects';
   }, [user]);
 
   return (
@@ -264,33 +268,26 @@ export default function HomeWip() {
             style={{ opacity: heroOpacity, scale: heroScale }}
           >
             <div className="flex-1 flex flex-col items-center justify-center pt-32 px-6 pointer-events-none">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border bg-background/60 backdrop-blur-sm text-[11px] font-medium text-muted-foreground mb-6 pointer-events-auto">
-                <span className="size-1.5 rounded-full bg-emerald-500" />
-                Open source · Self-hostable · MIT-licensed core
-              </div>
-              <h1 className="text-4xl sm:text-5xl md:text-6xl font-medium tracking-tight text-foreground text-center leading-[1.05]">
-                The open<br />
-                <span className="text-muted-foreground">AI workspace</span>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border bg-background/60 backdrop-blur-sm text-xs font-medium text-muted-foreground mb-6 pointer-events-auto">
+                <span className="size-1.5 rounded-full bg-emerald-500" />{tHardcodedUi.raw('appHomeHomeWipPage.line269JsxTextOpenSourceSelfHostableMitLicensedCore')}</div>
+              <h1 className="text-4xl sm:text-5xl md:text-6xl font-medium tracking-tight text-foreground text-center leading-[1.05]">{tHardcodedUi.raw('appHomeHomeWipPage.line272JsxTextTheOpen')}<br />
+                <span className="text-muted-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line273JsxTextAiWorkspace')}</span>
               </h1>
-              <p className="mt-6 text-base sm:text-lg text-muted-foreground leading-relaxed max-w-2xl text-center">
-                Hand off your most time-consuming work. Suna runs across your local files, cloud tools, and the browser, and ships back finished deliverables — spreadsheets, decks, docs, PDFs.
-              </p>
+              <p className="mt-6 text-base sm:text-lg text-muted-foreground leading-relaxed max-w-2xl text-center">{tHardcodedUi.raw('appHomeHomeWipPage.line276JsxTextHandOffYourMostTimeConsumingWorkSuna')}</p>
             </div>
             <div className="relative z-[1] pb-8 px-4 flex flex-col items-center gap-6">
               <Button
                 size="lg"
                 className="h-12 px-8 text-sm rounded-full transition-colors"
                 onClick={handleLaunch}
-              >
-                Get Started Free
-                <ArrowRight className="ml-1.5 size-3.5" />
+              >{tHardcodedUi.raw('appHomeHomeWipPage.line285JsxTextGetStartedFree')}<ArrowRight className="ml-1.5 size-3.5" />
               </Button>
               <button
                 onClick={handleCopy}
                 className="group flex items-center gap-2.5 h-9 px-4 rounded-full bg-background/70 border border-border hover:bg-background/90 hover:border-foreground/20 transition-colors cursor-pointer animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200 fill-mode-both backdrop-blur-sm"
               >
-                <span className="font-mono text-[11px] text-muted-foreground select-none">$</span>
-                <code className="text-[11px] font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
+                <span className="font-mono text-xs text-muted-foreground select-none">$</span>
+                <code className="text-xs font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
                 <div className="pl-2.5 border-l border-border">
                   {copied ? (
                     <Check className="size-3 text-emerald-500" />
@@ -330,8 +327,8 @@ export default function HomeWip() {
           <Reveal>
             <section className="max-w-5xl mx-auto px-6 pt-8 pb-10 sm:pb-14">
               <MediaPlaceholder
-                label="HERO VIDEO — 60–90s product loom"
-                hint="One prompt → Suna spawns parallel tasks → finished deck/sheet/doc returned. Or swap in YouTube embed Eu5mYMavctM."
+                label={tHardcodedUi.raw('appHomeHomeWipPage.line333JsxAttrLabelHeroVideo6090sProductLoom')}
+                hint={tHardcodedUi.raw('appHomeHomeWipPage.line334JsxAttrHintOnePromptSunaSpawnsParallelTasksFinishedDeck')}
                 aspect="aspect-video"
                 kind="video"
               />
@@ -342,15 +339,9 @@ export default function HomeWip() {
           <section className="max-w-6xl mx-auto px-6 py-12 sm:py-16">
             <Reveal>
               <div className="max-w-2xl mb-10">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                  /01 · Deliverables
-                </span>
-                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
-                  This is what comes back.
-                </h2>
-                <p className="mt-3 text-base text-muted-foreground leading-relaxed max-w-xl">
-                  Not transcripts. Not chats. Finished work — the artifact you would have built yourself, returned ready to send.
-                </p>
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line346JsxTextText01Deliverables')}</span>
+                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeHomeWipPage.line349JsxTextThisIsWhatComesBack')}</h2>
+                <p className="mt-3 text-base text-muted-foreground leading-relaxed max-w-xl">{tHardcodedUi.raw('appHomeHomeWipPage.line352JsxTextNotTranscriptsNotChatsFinishedWorkTheArtifact')}</p>
               </div>
             </Reveal>
 
@@ -358,32 +349,32 @@ export default function HomeWip() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 <DeliverableCard
                   icon={<Presentation className="size-3.5" />}
-                  title="Slide decks"
-                  desc="Pitch decks, board decks, weekly readouts — assembled from your sources, formatted to your brand."
+                  title={tHardcodedUi.raw('appHomeHomeWipPage.line361JsxAttrTitleSlideDecks')}
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line362JsxAttrDescPitchDecksBoardDecksWeeklyReadoutsAssembledFrom')}
                   src="/images/landing-showcase/slides.png"
                 />
                 <DeliverableCard
                   icon={<FileSpreadsheet className="size-3.5" />}
                   title="Spreadsheets"
-                  desc="Models, dashboards, comp sets, scraped lists. Cleaned, structured, ready to filter."
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line368JsxAttrDescModelsDashboardsCompSetsScrapedListsCleanedStructured')}
                   src="/images/landing-showcase/data.png"
                 />
                 <DeliverableCard
                   icon={<FileText className="size-3.5" />}
-                  title="Documents & PDFs"
-                  desc="Reports, briefs, contracts, memos. Drafted from primary sources, cited and ready to ship."
+                  title={tHardcodedUi.raw('appHomeHomeWipPage.line373JsxAttrTitleDocumentsPdfs')}
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line374JsxAttrDescReportsBriefsContractsMemosDraftedFromPrimarySources')}
                   src="/images/landing-showcase/docs.png"
                 />
                 <DeliverableCard
                   icon={<Search className="size-3.5" />}
-                  title="Research syntheses"
-                  desc="Read-through across dozens of sources, returned as a structured summary you can act on."
+                  title={tHardcodedUi.raw('appHomeHomeWipPage.line379JsxAttrTitleResearchSyntheses')}
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line380JsxAttrDescReadThroughAcrossDozensOfSourcesReturnedAs')}
                   src="/images/landing-showcase/research.png"
                 />
                 <DeliverableCard
                   icon={<ImageIcon className="size-3.5" />}
-                  title="Images & creative"
-                  desc="On-brand visuals, diagrams, social cards, marketing assets — generated and edited in-flow."
+                  title={tHardcodedUi.raw('appHomeHomeWipPage.line385JsxAttrTitleImagesCreative')}
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line386JsxAttrDescOnBrandVisualsDiagramsSocialCardsMarketingAssets')}
                   src="/images/landing-showcase/images.png"
                 />
                 <div className="rounded-2xl border border-dashed border-border bg-card/20 p-6 flex flex-col justify-between min-h-[260px]">
@@ -391,13 +382,10 @@ export default function HomeWip() {
                     <div className="flex items-center justify-center size-6 rounded-md bg-foreground/[0.06] border border-foreground/10">
                       <Sparkles className="size-3.5" />
                     </div>
-                    <span className="text-sm font-semibold text-foreground">…and anything else</span>
+                    <span className="text-sm font-semibold text-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line394JsxTextAndAnythingElse')}</span>
                   </div>
-                  <p className="text-[13px] text-muted-foreground leading-relaxed">
-                    Suna runs in a full Linux environment with internet, browser, and your tools — so the deliverable is whatever the work needs.
-                  </p>
-                  <Link href="/templates" className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:gap-2 transition-all">
-                    Explore templates <ArrowRight className="size-3" />
+                  <p className="text-sm text-muted-foreground leading-relaxed">{tHardcodedUi.raw('appHomeHomeWipPage.line397JsxTextSunaRunsInAFullLinuxEnvironmentWith')}</p>
+                  <Link href="/templates" className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:gap-2 transition-all">{tHardcodedUi.raw('appHomeHomeWipPage.line400JsxTextExploreTemplates')}<ArrowRight className="size-3" />
                   </Link>
                 </div>
               </div>
@@ -408,15 +396,9 @@ export default function HomeWip() {
           <section className="max-w-6xl mx-auto px-6 py-12 sm:py-16 border-t border-border/50">
             <Reveal>
               <div className="max-w-2xl mb-10">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                  /02 · Where it works
-                </span>
-                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
-                  Suna meets work where it lives.
-                </h2>
-                <p className="mt-3 text-base text-muted-foreground leading-relaxed max-w-xl">
-                  Most agents pick one surface. Suna unifies all three — your local files and apps, your cloud stack, and the open web.
-                </p>
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line412JsxTextText02WhereItWorks')}</span>
+                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeHomeWipPage.line415JsxTextSunaMeetsWorkWhereItLives')}</h2>
+                <p className="mt-3 text-base text-muted-foreground leading-relaxed max-w-xl">{tHardcodedUi.raw('appHomeHomeWipPage.line418JsxTextMostAgentsPickOneSurfaceSunaUnifiesAll')}</p>
               </div>
             </Reveal>
 
@@ -424,8 +406,8 @@ export default function HomeWip() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <RuntimeColumn
                   icon={<Folder className="size-5" />}
-                  title="Local files & apps"
-                  desc="Suna reads, writes, and reorganizes the folders, drives, and apps on the machine you're already using."
+                  title={tHardcodedUi.raw('appHomeHomeWipPage.line427JsxAttrTitleLocalFilesApps')}
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line428JsxAttrDescSunaReadsWritesAndReorganizesTheFoldersDrives')}
                   pills={
                     <>
                       <IntegrationPill icon={<Folder className="size-4 text-foreground" />} name="Filesystem" />
@@ -436,8 +418,8 @@ export default function HomeWip() {
                 />
                 <RuntimeColumn
                   icon={<Cloud className="size-5" />}
-                  title="Cloud tools"
-                  desc="3,000+ integrations via OAuth, MCP, REST, and CLI. The tools your team already runs on."
+                  title={tHardcodedUi.raw('appHomeHomeWipPage.line439JsxAttrTitleCloudTools')}
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line440JsxAttrDescText3000IntegrationsViaOauthMcpRestAnd')}
                   pills={
                     <>
                       <IntegrationPill domain="gmail.com" name="Gmail" />
@@ -451,8 +433,8 @@ export default function HomeWip() {
                 />
                 <RuntimeColumn
                   icon={<Globe className="size-5" />}
-                  title="The browser"
-                  desc="A real browser session — Suna logs in, navigates, fills forms, scrapes, and clicks through anything you can."
+                  title={tHardcodedUi.raw('appHomeHomeWipPage.line454JsxAttrTitleTheBrowser')}
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line455JsxAttrDescARealBrowserSessionSunaLogsInNavigates')}
                   pills={
                     <>
                       <IntegrationPill icon={<Globe className="size-4 text-foreground" />} name="Web browse" />
@@ -467,8 +449,8 @@ export default function HomeWip() {
             <Reveal delay={0.2}>
               <div className="mt-10">
                 <MediaPlaceholder
-                  label="DEMO: tri-surface runtime"
-                  hint="Split-screen recording: Suna touching a local file (left) → calling a SaaS tool (middle) → driving the browser (right). 30s loop, no audio."
+                  label={tHardcodedUi.raw('appHomeHomeWipPage.line470JsxAttrLabelDemoTriSurfaceRuntime')}
+                  hint={tHardcodedUi.raw('appHomeHomeWipPage.line471JsxAttrHintSplitScreenRecordingSunaTouchingALocalFile')}
                   aspect="aspect-[21/9]"
                   kind="video"
                 />
@@ -480,12 +462,8 @@ export default function HomeWip() {
           <section className="max-w-6xl mx-auto px-6 py-12 sm:py-16 border-t border-border/50">
             <Reveal>
               <div className="max-w-2xl mb-12">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                  /03 · What people hand off
-                </span>
-                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
-                  The work you'd rather not do yourself.
-                </h2>
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line484JsxTextText03WhatPeopleHandOff')}</span>
+                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeHomeWipPage.line487JsxTextTheWorkYouDRatherNotDoYourself')}</h2>
               </div>
             </Reveal>
 
@@ -493,32 +471,32 @@ export default function HomeWip() {
               <Reveal>
                 <UseCase
                   n="01"
-                  title="Prepare documents from source files"
-                  desc="Hand Suna a folder of drafts, transcripts, and attachments. It assembles, synthesizes, and returns a structured draft — leaving only refinement for you."
+                  title={tHardcodedUi.raw('appHomeHomeWipPage.line496JsxAttrTitlePrepareDocumentsFromSourceFiles')}
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line497JsxAttrDescHandSunaAFolderOfDraftsTranscriptsAnd')}
                   src="/images/landing-showcase/docs.png"
                 />
               </Reveal>
               <Reveal>
                 <UseCase
                   n="02"
-                  title="Synthesize research across dozens of sources"
-                  desc="Share a question and a corpus — PDFs, web pages, Notion, Drive. Suna reads through everything and returns a summary ready for review, with citations."
+                  title={tHardcodedUi.raw('appHomeHomeWipPage.line504JsxAttrTitleSynthesizeResearchAcrossDozensOfSources')}
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line505JsxAttrDescShareAQuestionAndACorpusPdfsWeb')}
                   src="/images/landing-showcase/research.png"
                 />
               </Reveal>
               <Reveal>
                 <UseCase
                   n="03"
-                  title="Extract structured data from messy files"
-                  desc="Contracts, invoices, scraped tables, scanned docs. Suna pulls out the fields that matter and returns a clean spreadsheet or JSON."
+                  title={tHardcodedUi.raw('appHomeHomeWipPage.line512JsxAttrTitleExtractStructuredDataFromMessyFiles')}
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line513JsxAttrDescContractsInvoicesScrapedTablesScannedDocsSunaPulls')}
                   src="/images/landing-showcase/data.png"
                 />
               </Reveal>
               <Reveal>
                 <UseCase
                   n="04"
-                  title="Build slide decks from your raw inputs"
-                  desc="Point Suna at the source — a doc, a meeting transcript, a quarter of metrics — and get a brand-formatted deck back, not a wireframe."
+                  title={tHardcodedUi.raw('appHomeHomeWipPage.line520JsxAttrTitleBuildSlideDecksFromYourRawInputs')}
+                  desc={tHardcodedUi.raw('appHomeHomeWipPage.line521JsxAttrDescPointSunaAtTheSourceADocA')}
                   src="/images/landing-showcase/slides.png"
                 />
               </Reveal>
@@ -530,15 +508,9 @@ export default function HomeWip() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-center">
               <Reveal className="lg:col-span-5">
                 <div>
-                  <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                    /04 · Parallel by default
-                  </span>
-                  <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
-                    Run many tasks at once.
-                  </h2>
-                  <p className="mt-3 text-base text-muted-foreground leading-relaxed">
-                    Stop babysitting one prompt at a time. Kick off a dozen jobs in parallel, walk away, and check in when they're done. Each task gets its own sandbox, its own context, its own deliverable.
-                  </p>
+                  <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line534JsxTextText04ParallelByDefault')}</span>
+                  <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeHomeWipPage.line537JsxTextRunManyTasksAtOnce')}</h2>
+                  <p className="mt-3 text-base text-muted-foreground leading-relaxed">{tHardcodedUi.raw('appHomeHomeWipPage.line540JsxTextStopBabysittingOnePromptAtATimeKick')}</p>
                   <ul className="mt-6 space-y-2.5 text-sm text-muted-foreground">
                     {[
                       'Spawn unlimited concurrent tasks from one workspace',
@@ -556,8 +528,8 @@ export default function HomeWip() {
               </Reveal>
               <Reveal delay={0.1} className="lg:col-span-7">
                 <MediaPlaceholder
-                  label="SCREENSHOT: parallel tasks dashboard"
-                  hint="Capture of /instances or task list with 6–10 tasks running concurrently — different statuses, progress bars, deliverable thumbnails."
+                  label={tHardcodedUi.raw('appHomeHomeWipPage.line559JsxAttrLabelScreenshotParallelTasksDashboard')}
+                  hint={tHardcodedUi.raw('appHomeHomeWipPage.line560JsxAttrHintCaptureOfTheProjectsTaskListWith6')}
                   aspect="aspect-[4/3]"
                   kind="image"
                 />
@@ -569,15 +541,9 @@ export default function HomeWip() {
           <section className="max-w-6xl mx-auto px-6 py-12 sm:py-16 border-t border-border/50">
             <Reveal>
               <div className="max-w-2xl mb-10">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                  /05 · Open by default
-                </span>
-                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
-                  Yours. Forever.
-                </h2>
-                <p className="mt-3 text-base text-muted-foreground leading-relaxed max-w-xl">
-                  Cowork-class capability without the vendor lock-in. Suna is open source, MIT-licensed at the core, and runs on your hardware or your cloud. Every secret stays where you put it.
-                </p>
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line573JsxTextText05OpenByDefault')}</span>
+                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeHomeWipPage.line576JsxTextYoursForever')}</h2>
+                <p className="mt-3 text-base text-muted-foreground leading-relaxed max-w-xl">{tHardcodedUi.raw('appHomeHomeWipPage.line579JsxTextCoworkClassCapabilityWithoutTheVendorLockIn')}</p>
               </div>
             </Reveal>
 
@@ -594,7 +560,7 @@ export default function HomeWip() {
                       {icon}
                     </div>
                     <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-                    <p className="mt-1.5 text-[13px] text-muted-foreground leading-relaxed">{desc}</p>
+                    <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">{desc}</p>
                   </div>
                 ))}
               </div>
@@ -603,15 +569,15 @@ export default function HomeWip() {
             <Reveal delay={0.15}>
               <div className="mt-10 rounded-2xl border border-border bg-card/40 p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
                 <div>
-                  <h3 className="text-base font-semibold text-foreground">Self-host in one line.</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">Docker, single binary, or full Kubernetes. Bring your own models.</p>
+                  <h3 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line606JsxTextSelfHostInOneLine')}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line607JsxTextDockerSingleBinaryOrFullKubernetesBringYour')}</p>
                 </div>
                 <button
                   onClick={handleCopy}
                   className="group flex items-center gap-2.5 h-11 px-4 rounded-full bg-background border border-border hover:border-foreground/20 transition-colors cursor-pointer"
                 >
-                  <span className="font-mono text-[11px] text-muted-foreground select-none">$</span>
-                  <code className="text-[12px] font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
+                  <span className="font-mono text-xs text-muted-foreground select-none">$</span>
+                  <code className="text-xs font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
                   <div className="pl-2.5 ml-1 border-l border-border">
                     {copied ? (
                       <Check className="size-3.5 text-emerald-500" />
@@ -629,29 +595,22 @@ export default function HomeWip() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
               <Reveal className="lg:col-span-6">
                 <div>
-                  <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                    /06 · For teams
-                  </span>
-                  <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
-                    An AI workspace your whole company can share.
-                  </h2>
-                  <p className="mt-3 text-base text-muted-foreground leading-relaxed">
-                    SSO, role-based access, audit logs, shared agents and skills, per-team budgets. Deploy once, give every department their own coworker.
-                  </p>
+                  <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line633JsxTextText06ForTeams')}</span>
+                  <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeHomeWipPage.line636JsxTextAnAiWorkspaceYourWholeCompanyCanShare')}</h2>
+                  <p className="mt-3 text-base text-muted-foreground leading-relaxed">{tHardcodedUi.raw('appHomeHomeWipPage.line639JsxTextSsoRoleBasedAccessAuditLogsSharedAgents')}</p>
                   <div className="mt-6 flex flex-wrap gap-3">
-                    <Button size="lg" className="h-11 px-6 rounded-full" onClick={handleLaunch}>
-                      Start a team workspace<ArrowRight className="ml-1.5 size-3.5" />
+                    <Button size="lg" className="h-11 px-6 rounded-full" onClick={handleLaunch}>{tHardcodedUi.raw('appHomeHomeWipPage.line643JsxTextStartATeamWorkspace')}<ArrowRight className="ml-1.5 size-3.5" />
                     </Button>
                     <Button size="lg" variant="outline" className="h-11 px-6 rounded-full" asChild>
-                      <Link href="/enterprise">Talk to sales</Link>
+                      <Link href="/enterprise">{tHardcodedUi.raw('appHomeHomeWipPage.line646JsxTextTalkToSales')}</Link>
                     </Button>
                   </div>
                 </div>
               </Reveal>
               <Reveal delay={0.1} className="lg:col-span-6">
                 <MediaPlaceholder
-                  label="SCREENSHOT: team workspace"
-                  hint="Org-level admin / shared agents view. Multiple seats, agent permissions, audit log glimpse. Optional: Slack message of Suna posting a deliverable."
+                  label={tHardcodedUi.raw('appHomeHomeWipPage.line653JsxAttrLabelScreenshotTeamWorkspace')}
+                  hint={tHardcodedUi.raw('appHomeHomeWipPage.line654JsxAttrHintOrgLevelAdminSharedAgentsViewMultipleSeats')}
                   aspect="aspect-[4/3]"
                   kind="image"
                 />
@@ -663,15 +622,9 @@ export default function HomeWip() {
           <section className="max-w-6xl mx-auto px-6 py-12 sm:py-16 border-t border-border/50">
             <Reveal>
               <div className="max-w-2xl mb-10">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                  /07 · Under the hood
-                </span>
-                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
-                  Built on a real machine.
-                </h2>
-                <p className="mt-3 text-base text-muted-foreground leading-relaxed max-w-xl">
-                  Every Suna workspace is a full Linux environment — bash, filesystem, package managers, browsers, the whole software ecosystem. That's why it can actually finish things.
-                </p>
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line667JsxTextText07UnderTheHood')}</span>
+                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeHomeWipPage.line670JsxTextBuiltOnARealMachine')}</h2>
+                <p className="mt-3 text-base text-muted-foreground leading-relaxed max-w-xl">{tHardcodedUi.raw('appHomeHomeWipPage.line673JsxTextEverySunaWorkspaceIsAFullLinuxEnvironment')}</p>
               </div>
             </Reveal>
 
@@ -687,7 +640,7 @@ export default function HomeWip() {
                       {icon}
                     </div>
                     <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-                    <p className="mt-1.5 text-[13px] text-muted-foreground leading-relaxed">{desc}</p>
+                    <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">{desc}</p>
                   </div>
                 ))}
               </div>
@@ -698,12 +651,8 @@ export default function HomeWip() {
           <section className="max-w-3xl mx-auto px-6 py-12 sm:py-16 border-t border-border/50">
             <Reveal>
               <div className="mb-8">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-                  /08 · FAQ
-                </span>
-                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">
-                  Questions, answered.
-                </h2>
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line702JsxTextText08Faq')}</span>
+                <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeHomeWipPage.line705JsxTextQuestionsAnswered')}</h2>
               </div>
             </Reveal>
             <Reveal delay={0.1}>
@@ -742,20 +691,17 @@ export default function HomeWip() {
           {/* ═══════════════ FINAL CTA ═══════════════ */}
           <section className="max-w-5xl mx-auto px-6 py-20 sm:py-24 text-center border-t border-border/50">
             <Reveal>
-              <h2 className="text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-foreground leading-tight">
-                Hand off the work.<br />
-                <span className="text-muted-foreground">Get back the deliverable.</span>
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-foreground leading-tight">{tHardcodedUi.raw('appHomeHomeWipPage.line746JsxTextHandOffTheWork')}<br />
+                <span className="text-muted-foreground">{tHardcodedUi.raw('appHomeHomeWipPage.line747JsxTextGetBackTheDeliverable')}</span>
               </h2>
             </Reveal>
             <Reveal delay={0.1}>
               <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-                <Button size="lg" className="h-12 px-8 text-sm rounded-full" onClick={handleLaunch}>
-                  Get started free<ArrowRight className="ml-1.5 size-3.5" />
+                <Button size="lg" className="h-12 px-8 text-sm rounded-full" onClick={handleLaunch}>{tHardcodedUi.raw('appHomeHomeWipPage.line753JsxTextGetStartedFree')}<ArrowRight className="ml-1.5 size-3.5" />
                 </Button>
                 <Button size="lg" variant="outline" className="h-12 px-8 text-sm rounded-full" asChild>
                   <a href="https://github.com/kortix-ai/suna" target="_blank" rel="noopener noreferrer">
-                    <Github className="mr-1.5 size-3.5" /> Star on GitHub
-                  </a>
+                    <Github className="mr-1.5 size-3.5" />{tHardcodedUi.raw('appHomeHomeWipPage.line757JsxTextStarOnGithub')}</a>
                 </Button>
               </div>
             </Reveal>
@@ -776,8 +722,8 @@ export default function HomeWip() {
             onClick={handleCopy}
             className="group hidden sm:flex items-center gap-2 h-8 px-3 rounded-full hover:bg-foreground/[0.08] transition-colors cursor-pointer"
           >
-            <span className="font-mono text-[11px] text-muted-foreground select-none">$</span>
-            <code className="text-[11px] font-mono text-foreground tracking-tight">curl -fsSL kortix.com/install</code>
+            <span className="font-mono text-xs text-muted-foreground select-none">$</span>
+            <code className="text-xs font-mono text-foreground tracking-tight">{tHardcodedUi.raw('appHomeHomeWipPage.line780JsxTextCurlFsslKortixComInstall')}</code>
             {copied ? (
               <Check className="size-3 text-emerald-500" />
             ) : (
@@ -793,8 +739,7 @@ export default function HomeWip() {
           >
             <Github className="size-4" />
           </a>
-          <Button size="sm" className="px-5 text-xs rounded-full font-medium" onClick={handleLaunch}>
-            Get started<ArrowRight className="ml-1.5 size-3" />
+          <Button size="sm" className="px-5 text-xs rounded-full font-medium" onClick={handleLaunch}>{tHardcodedUi.raw('appHomeHomeWipPage.line797JsxTextGetStarted')}<ArrowRight className="ml-1.5 size-3" />
           </Button>
         </div>
       </div>

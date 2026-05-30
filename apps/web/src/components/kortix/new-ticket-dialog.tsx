@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * New-ticket composer.
  *
@@ -83,6 +85,7 @@ type Step = 'pick' | 'form';
 interface PendingAssignee { type: AssigneeType; id: string; label: string }
 
 export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaultStatus }: Props) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: templatesData } = useTemplates(projectId);
   const { data: agentsData } = useProjectAgents(projectId);
   const templates = useMemo(() => templatesData ?? [], [templatesData]);
@@ -123,6 +126,10 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
 
   const submit = () => {
     if (!title.trim()) return;
+    // Guard at the source: the submit button is disabled while pending, but the
+    // keyboard paths (Cmd/Ctrl+Enter, Enter) call this directly — without this
+    // check, mashing the shortcut fires create.mutate repeatedly → duplicates.
+    if (create.isPending) return;
     create.mutate(
       {
         project_id: projectId,
@@ -154,8 +161,8 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
         )}
         hideCloseButton
       >
-        <DialogTitle className="sr-only">New ticket</DialogTitle>
-        <DialogDescription className="sr-only">Create a ticket</DialogDescription>
+        <DialogTitle className="sr-only">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line157JsxTextNewTicket')}</DialogTitle>
+        <DialogDescription className="sr-only">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line158JsxTextCreateATicket')}</DialogDescription>
 
         {step === 'pick' && hasTemplates ? (
           <TemplatePicker
@@ -211,12 +218,13 @@ function TemplatePicker({
   onPick: (t: TicketTemplate | null) => void;
   onCancel: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex flex-col">
       <div className="flex items-start px-5 pt-5 pb-4">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">New ticket</div>
-          <h2 className="text-[15px] font-semibold tracking-tight mt-1">Start from a template</h2>
+          <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line218JsxTextNewTicket')}</div>
+          <h2 className="text-[15px] font-semibold tracking-tight mt-1">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line219JsxTextStartFromATemplate')}</h2>
         </div>
         <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/60 hover:text-foreground" onClick={onCancel}>
           <X className="h-4 w-4" />
@@ -224,10 +232,10 @@ function TemplatePicker({
       </div>
 
       <div className="px-5 pb-4">
-        <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+        <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
           <TemplateRow
             title="Blank"
-            hint="Start from an empty ticket."
+            hint={tHardcodedUi.raw('componentsKortixNewTicketDialog.line230JsxAttrHintStartFromAnEmptyTicket')}
             icon={<FileText className="h-3.5 w-3.5 text-muted-foreground/55" />}
             onClick={() => onPick(null)}
           />
@@ -243,9 +251,7 @@ function TemplatePicker({
         </div>
       </div>
 
-      <div className="px-5 pb-4 text-[11px] text-muted-foreground/40">
-        Templates live in Settings → Templates.
-      </div>
+      <div className="px-5 pb-4 text-[11px] text-muted-foreground/40">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line247JsxTextTemplatesLiveInSettingsTemplates')}</div>
     </div>
   );
 }
@@ -338,6 +344,7 @@ function TicketForm({
   onSaveAsTemplate: (name: string) => Promise<void>;
   savingTemplate: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
@@ -391,8 +398,7 @@ function TicketForm({
             Templates
           </Button>
         ) : (
-          <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
-            New ticket{template ? ` · ${template.name}` : ''}
+          <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line395JsxTextNewTicket')}{' '}{template ? ` · ${template.name}` : ''}
           </div>
         )}
         <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/50 hover:text-foreground" onClick={onClose}>
@@ -408,7 +414,7 @@ function TicketForm({
             value={title}
             onChange={(e) => onTitleChange(e.target.value)}
             onKeyDown={onTitleKey}
-            placeholder="Ticket title"
+            placeholder={tHardcodedUi.raw('componentsKortixNewTicketDialog.line411JsxAttrPlaceholderTicketTitle')}
             rows={1}
             className="w-full text-[20px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight"
           />
@@ -446,9 +452,9 @@ function TicketForm({
               <select
                 value={milestoneId}
                 onChange={(e) => onMilestoneChange(e.target.value)}
-                className="w-full h-7 text-[12px] bg-transparent border border-border/50 rounded-md px-2 outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full h-7 text-[12px] bg-transparent border border-border/50 rounded-2xl px-2 outline-none focus:ring-2 focus:ring-primary/20"
               >
-                <option value="">— none —</option>
+                <option value="">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line451JsxTextNone')}</option>
                 {milestones.map((m) => (
                   <option key={m.id} value={m.id}>M{m.number} · {m.title}</option>
                 ))}
@@ -463,7 +469,7 @@ function TicketForm({
         <span className="text-[11px] text-muted-foreground/50">
           <kbd className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded border border-border/50 bg-muted/40 text-[10px] font-mono leading-none">⌘</kbd>
           <kbd className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 ml-0.5 rounded border border-border/50 bg-muted/40 text-[10px] font-mono leading-none">↵</kbd>
-          <span className="ml-1.5">to create</span>
+          <span className="ml-1.5">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line466JsxTextToCreate')}</span>
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           <SaveAsTemplateButton
@@ -490,6 +496,7 @@ function TicketForm({
 function SaveAsTemplateButton({ disabled, saving, onSave }: {
   disabled: boolean; saving: boolean; onSave: (name: string) => Promise<void>;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -524,19 +531,15 @@ function SaveAsTemplateButton({ disabled, saving, onSave }: {
             disabled && 'opacity-40 cursor-not-allowed',
           )}
           disabled={disabled}
-          title="Save current body as a template"
-          aria-label="Save as template"
+          title={tHardcodedUi.raw('componentsKortixNewTicketDialog.line527JsxAttrTitleSaveCurrentBodyAsATemplate')}
+          aria-label={tHardcodedUi.raw('componentsKortixNewTicketDialog.line528JsxAttrAriaLabelSaveAsTemplate')}
         >
           <FileStack className="h-3.5 w-3.5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" sideOffset={6} className="w-72 p-3 z-[10000]">
-        <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold mb-2">
-          Save as template
-        </div>
-        <p className="text-[11.5px] text-muted-foreground/60 mb-2.5 leading-snug">
-          Reuse this ticket's body later as a fresh template in the picker.
-        </p>
+        <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold mb-2">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line535JsxTextSaveAsTemplate')}</div>
+        <p className="text-[11.5px] text-muted-foreground/60 mb-2.5 leading-snug">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line538JsxTextReuseThisTicketSBodyLaterAsA')}</p>
         <input
           ref={inputRef}
           value={name}
@@ -545,7 +548,7 @@ function SaveAsTemplateButton({ disabled, saving, onSave }: {
             if (e.key === 'Enter') { e.preventDefault(); commit(); }
             if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
           }}
-          placeholder="Template name — e.g. Bug, Feature…"
+          placeholder={tHardcodedUi.raw('componentsKortixNewTicketDialog.line548JsxAttrPlaceholderTemplateNameEGBugFeature')}
           className="h-7 w-full text-[12px] bg-transparent border border-border/50 rounded px-2 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
         />
         {error && <p className="text-[11px] text-destructive mt-1.5">{error}</p>}
@@ -557,9 +560,7 @@ function SaveAsTemplateButton({ disabled, saving, onSave }: {
             onClick={commit}
             disabled={!name.trim() || saving}
           >
-            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-            Save template
-          </Button>
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}{tHardcodedUi.raw('componentsKortixNewTicketDialog.line561JsxTextSaveTemplate')}</Button>
         </div>
       </PopoverContent>
     </Popover>
@@ -596,13 +597,14 @@ function columnIcon(c: TicketColumn, active: boolean) {
 }
 
 function StatusPicker({ columns, value, onChange }: { columns: TicketColumn[]; value: string; onChange: (k: string) => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const selected = columns.find((c) => c.key === value) ?? columns[0];
   if (!selected) return null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
           aria-label={`Status: ${selected.label}`}
         >
           {columnIcon(selected, false)}
@@ -611,9 +613,7 @@ function StatusPicker({ columns, value, onChange }: { columns: TicketColumn[]; v
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[200px] z-[10000]">
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
-          Move to
-        </DropdownMenuLabel>
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line615JsxTextMoveTo')}</DropdownMenuLabel>
         {columns.map((c) => {
           const active = c.key === value;
           return (
@@ -648,6 +648,7 @@ function AssigneePicker({
   onAdd: (a: PendingAssignee) => void;
   onRemove: (a: PendingAssignee) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const alreadyAdded = (t: AssigneeType, id: string) => pending.some((x) => x.type === t && x.id === id);
   const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
   const agentBySlug = new Map(agents.map((a) => [a.slug, a] as const));
@@ -655,9 +656,7 @@ function AssigneePicker({
   return (
     <div className="flex flex-col gap-1.5">
       {pending.length === 0 && (
-        <p className="text-[11.5px] text-muted-foreground/40 leading-snug">
-          Unassigned — column defaults still fire.
-        </p>
+        <p className="text-[11.5px] text-muted-foreground/40 leading-snug">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line659JsxTextUnassignedColumnDefaultsStillFire')}</p>
       )}
       {pending.map((a) => {
         const ag = a.type === 'agent' ? agents.find((x) => x.id === a.id) : null;
@@ -694,9 +693,7 @@ function AssigneePicker({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-60 z-[10000]">
-          <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
-            Assign to
-          </DropdownMenuLabel>
+          <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixNewTicketDialog.line698JsxTextAssignTo')}</DropdownMenuLabel>
           <DropdownMenuItem
             disabled={alreadyAdded('user', userHandle)}
             onClick={() => onAdd({ type: 'user', id: userHandle, label: userHandle })}

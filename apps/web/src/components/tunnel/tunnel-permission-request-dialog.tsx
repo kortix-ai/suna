@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Shield, AlertTriangle, X, Clock, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,6 +29,7 @@ import { getScopeEditorCapability } from './scope-editors';
 type Mode = 'once' | 'scoped' | 'all';
 
 export function TunnelPermissionRequestDialog() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const pendingRequests = useTunnelStore((s) => s.pendingRequests);
   const removePendingRequest = useTunnelStore((s) => s.removePendingRequest);
 
@@ -105,11 +108,8 @@ export function TunnelPermissionRequestDialog() {
       <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-500" />
-            Permission Request
-          </DialogTitle>
-          <DialogDescription>
-            Your AI agent is requesting <span className="font-medium text-foreground">{currentRequest.capability}</span> access.
+            <AlertTriangle className="h-5 w-5 text-amber-500" />{tHardcodedUi.raw('componentsTunnelTunnelPermissionRequestDialog.line109JsxTextPermissionRequest')}</DialogTitle>
+          <DialogDescription>{tHardcodedUi.raw('componentsTunnelTunnelPermissionRequestDialog.line112JsxTextYourAiAgentIsRequesting')}<span className="font-medium text-foreground">{currentRequest.capability}</span> access.
           </DialogDescription>
         </DialogHeader>
 
@@ -123,7 +123,7 @@ export function TunnelPermissionRequestDialog() {
           </div>
 
           {currentRequest.reason && (
-            <div className="rounded-lg bg-muted/50 p-3 text-sm">
+            <div className="rounded-2xl bg-muted/50 p-3 text-sm">
               {currentRequest.reason}
             </div>
           )}
@@ -132,30 +132,28 @@ export function TunnelPermissionRequestDialog() {
             <ModeOption
               active={mode === 'once'}
               onClick={() => setMode('once')}
-              label="Allow this once"
-              description="Exact scope + expires in 1 hour"
+              label={tHardcodedUi.raw('componentsTunnelTunnelPermissionRequestDialog.line135JsxAttrLabelAllowThisOnce')}
+              description={tHardcodedUi.raw('componentsTunnelTunnelPermissionRequestDialog.line136JsxAttrDescriptionExactScopeExpiresIn1Hour')}
             />
             <ModeOption
               active={mode === 'scoped'}
               onClick={() => setMode('scoped')}
-              label="Add to permissions"
-              description="Configure scope and expiry"
+              label={tHardcodedUi.raw('componentsTunnelTunnelPermissionRequestDialog.line141JsxAttrLabelAddToPermissions')}
+              description={tHardcodedUi.raw('componentsTunnelTunnelPermissionRequestDialog.line142JsxAttrDescriptionConfigureScopeAndExpiry')}
               isDefault
             />
             <ModeOption
               active={mode === 'all'}
               onClick={() => setMode('all')}
               label={`Allow all ${capInfo?.label || currentRequest.capability}`}
-              description="Unrestricted access to this capability"
+              description={tHardcodedUi.raw('componentsTunnelTunnelPermissionRequestDialog.line149JsxAttrDescriptionUnrestrictedAccessToThisCapability')}
             />
           </div>
 
           {mode === 'scoped' && scopeEditorType && (
             <Collapsible open={scopeExpanded} onOpenChange={setScopeExpanded}>
               <CollapsibleTrigger className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors w-full">
-                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', scopeExpanded ? '' : '-rotate-90')} />
-                Configure scope
-              </CollapsibleTrigger>
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', scopeExpanded ? '' : '-rotate-90')} />{tHardcodedUi.raw('componentsTunnelTunnelPermissionRequestDialog.line157JsxTextConfigureScope')}</CollapsibleTrigger>
               <CollapsibleContent>
                 <div className="pt-2">
                   {scopeEditorType === 'filesystem' && (
@@ -200,7 +198,7 @@ export function TunnelPermissionRequestDialog() {
 
           {pendingRequests.length > 1 && (
             <p className="text-xs text-muted-foreground">
-              +{pendingRequests.length - 1} more request{pendingRequests.length > 2 ? 's' : ''} pending
+              +{pendingRequests.length - 1}{tHardcodedUi.raw('componentsTunnelTunnelPermissionRequestDialog.line203JsxTextMoreRequest')}{' '}{pendingRequests.length > 2 ? 's' : ''} pending
             </p>
           )}
         </div>
@@ -245,7 +243,7 @@ function ModeOption({
     <button
       onClick={onClick}
       className={cn(
-        'w-full text-left rounded-lg border px-3 py-2.5 transition-colors',
+        'w-full text-left rounded-2xl border px-3 py-2.5 transition-colors',
         active
           ? 'border-primary bg-primary/5'
           : 'border-border hover:border-border/80 hover:bg-muted/30',

@@ -1,5 +1,6 @@
 import { config } from '../../config';
 import type { WebSearchResult } from '../../types';
+import { getTraceHeaders } from '../../lib/request-context';
 
 interface TavilyResponse {
   results: Array<{
@@ -31,6 +32,7 @@ export async function webSearchTavily(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...getTraceHeaders(),
     },
     body: JSON.stringify({
       api_key: config.TAVILY_API_KEY,

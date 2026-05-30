@@ -1,18 +1,15 @@
 'use client';
 
+import { lazy, Suspense } from 'react';
+import { useTranslations } from 'next-intl';
+
 /**
  * AppHeader — the canonical top bar used outside the (dashboard) shell.
  *
  * Layout:
- *  - LEFT:  KortixLogo + optional `leading` slot (e.g. a back button).
- *  - RIGHT: optional `actions` slot + UserMenu (avatar + dropdown).
- *
- * The user menu is ALWAYS on the right — never on the left — for consistency
- * across /instances, the connecting screen, and any future top-level page.
- *
- * Owns its own UserSettingsModal so it works even when the global
- * AppProviders shell isn't mounted (e.g. during the connecting gate or on
- * the workspace picker, which is outside the (dashboard) route group).
+ *  - LEFT:  KortixLogo + AccountSwitcher (which account / workspace) + an
+ *           optional `breadcrumb` crumb for the current section ("Projects").
+ *  - RIGHT: optional `actions` slot + UserMenu (you + settings).
  *
  * Variants:
  *  - default  — renders as an in-flow header (use inside a flex column page).
@@ -20,161 +17,130 @@
  *               sitting over a full-screen loader / shell.
  */
 
-import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
-import { ArrowLeftRight, ChevronDown, LogOut, Settings } from 'lucide-react';
+import { ArrowLeftRight } from 'lucide-react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { UserSettingsModal } from '@/components/settings/user-settings-modal';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { createClient } from '@/lib/supabase/client';
-import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
+import { UserMenu } from '@/components/layout/user-menu';
+import { AccountSwitcher } from '@/components/layout/account-switcher';
 import { cn } from '@/lib/utils';
+
+// Lazy so the command palette (and its dependency graph) only loads once a
+// header page is actually on screen, mirroring project-shell/layout-content.
+const CommandPalette = lazy(() =>
+  import('@/components/command-palette').then((mod) => ({
+    default: mod.CommandPalette,
+  })),
+);
 
 export function AppHeader({
   user,
   leading,
+  breadcrumb,
   actions,
   variant = 'default',
+  logoHref = '/projects',
 }: {
   user: User;
   leading?: React.ReactNode;
+  /** Current-section crumb shown after the account pill (e.g. "Projects"). */
+  breadcrumb?: React.ReactNode;
   actions?: React.ReactNode;
   variant?: 'default' | 'overlay';
+  /** Where the logo navigates on click. Defaults to /projects (the main app
+   * landing). Pass an explicit href to override on a specific surface. */
+  logoHref?: string;
 }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
-  // Deep-linking: `?settings=...` opens the modal, then cleans the URL so the
-  // back button doesn't re-open it. Same behaviour everywhere this header is
-  // used.
-  useEffect(() => {
-    if (!searchParams.get('settings')) return;
-    setSettingsOpen(true);
-    const clean = new URL(window.location.href);
-    clean.searchParams.delete('settings');
-    window.history.replaceState({}, '', `${clean.pathname}${clean.search}`);
-  }, [searchParams]);
-
-  const handleLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    clearUserLocalStorage();
-    router.push('/auth');
-  };
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const displayName =
+    (user.user_metadata?.name as string | undefined) ||
+    user.email?.split('@')[0] ||
+    'User';
+  const displayEmail = user.email || '';
+  const avatarUrl =
+    (user.user_metadata?.avatar_url as string | undefined) ||
+    (user.user_metadata?.picture as string | undefined) ||
+    '';
 
   return (
     <>
-      <header
+    <header
+      className={cn(
+        'kx-app-header flex shrink-0 items-center justify-between gap-3 px-6 py-4',
+        variant === 'overlay' && 'pointer-events-none absolute inset-x-0 top-0 z-20',
+      )}
+    >
+      <div
         className={cn(
-          'flex items-center justify-between gap-3 px-6 py-4 shrink-0',
-          variant === 'overlay' &&
-            'absolute inset-x-0 top-0 z-20 pointer-events-none',
+          'flex min-w-0 items-center gap-1',
+          variant === 'overlay' && 'pointer-events-auto',
         )}
       >
-        <div
-          className={cn(
-            'flex items-center gap-3 min-w-0',
-            variant === 'overlay' && 'pointer-events-auto',
-          )}
+        <Link
+          href={logoHref}
+          aria-label={tHardcodedUi.raw('componentsLayoutAppHeader.line72JsxAttrAriaLabelKortixHome')}
+          className="mr-1 inline-flex cursor-pointer items-center rounded-md transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          <KortixLogo size={20} />
-          {leading}
-        </div>
-        <div
-          className={cn(
-            'flex items-center gap-1.5',
-            variant === 'overlay' && 'pointer-events-auto',
-          )}
-        >
-          {actions}
-          <UserMenu
-            user={user}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onLogout={handleLogout}
-          />
-        </div>
-      </header>
-      <UserSettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+          <KortixLogo variant="logomark" size={16} />
+        </Link>
+        {/* Vercel-style breadcrumb: the account is the workspace your projects
+            live under, so it's the first pill (which project lives in the
+            project shell's sidebar). An optional section crumb follows. */}
+        <BreadcrumbDivider />
+        <AccountSwitcher variant="header" />
+        {breadcrumb != null && (
+          <>
+            <BreadcrumbDivider />
+            <span className="select-none px-2 text-sm font-medium text-foreground">
+              {breadcrumb}
+            </span>
+          </>
+        )}
+        {leading}
+      </div>
+      <div
+        className={cn(
+          'flex items-center gap-2',
+          variant === 'overlay' && 'pointer-events-auto',
+        )}
+      >
+        {actions}
+        <UserMenu
+          user={{ name: displayName, email: displayEmail, avatar: avatarUrl }}
+          variant="header"
+        />
+      </div>
+    </header>
+    {/* Cmd+K — available on every header page, not just the project shell. */}
+    <Suspense fallback={null}>
+      <CommandPalette />
+    </Suspense>
     </>
   );
 }
 
-export function UserMenu({
-  user,
-  onOpenSettings,
-  onLogout,
-}: {
-  user: User;
-  onOpenSettings: () => void;
-  onLogout: () => void;
-}) {
-  const avatarUrl = user.user_metadata?.avatar_url as string | undefined;
-  const displayName =
-    (user.user_metadata?.name as string | undefined) || user.email || 'Account';
-  const initial = displayName.charAt(0).toUpperCase();
-
+/** Subtle Vercel-style separator between breadcrumb pills. Skewed so the
+ *  "/" reads as a divider, not a textual slash inside a pill. */
+function BreadcrumbDivider() {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1.5 h-9 pl-1 pr-2 text-muted-foreground hover:text-foreground"
-          aria-label="Account menu"
-        >
-          <Avatar className="h-7 w-7">
-            {avatarUrl && <AvatarImage src={avatarUrl} alt={displayName} />}
-            <AvatarFallback className="text-[11px] bg-muted">{initial}</AvatarFallback>
-          </Avatar>
-          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col gap-0.5 min-w-0">
-            {user.user_metadata?.name && (
-              <span className="text-sm font-medium text-foreground truncate">
-                {user.user_metadata.name as string}
-              </span>
-            )}
-            {user.email && (
-              <span className="text-xs text-muted-foreground truncate">{user.email}</span>
-            )}
-          </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={onOpenSettings}>
-          <Settings className="h-4 w-4" />
-          Settings
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onLogout} variant="destructive">
-          <LogOut className="h-4 w-4" />
-          Log out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <span
+      aria-hidden="true"
+      className="select-none px-0.5 text-sm font-light text-muted-foreground/40 transform -skew-x-12"
+    >
+      /
+    </span>
   );
 }
 
 /**
- * Workspace picker link — small "Workspaces" button intended for the
+ * Project picker link — small "Projects" button intended for the
  * AppHeader's `actions` slot on full-screen loader states. Provides a
- * one-click escape from an unreachable instance.
+ * one-click escape from an unreachable workspace.
  */
 export function WorkspacePickerLink({
-  href = '/instances',
+  href = '/projects',
 }: {
   href?: string;
 }) {
@@ -183,10 +149,10 @@ export function WorkspacePickerLink({
     <button
       type="button"
       onClick={() => router.push(href)}
-      className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+      className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
     >
       <ArrowLeftRight className="h-3.5 w-3.5" />
-      Workspaces
+      Projects
     </button>
   );
 }

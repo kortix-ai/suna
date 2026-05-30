@@ -1,5 +1,26 @@
 ---
-title: Documentation
-description: Kortix developer documentation.
+title: Kortix
+description: Run agents against your own git repos in disposable cloud sandboxes, and land their work through review.
 ---
 
+import { Card, Cards } from 'fumadocs-ui/components/card';
+
+Kortix runs AI agents against your own git repositories in disposable cloud
+sandboxes, then lands their work through review.
+
+```
+project (git repo + kortix.toml)
+   └─ session ──> isolated sandbox VM on branch "<session-id>"
+                     └─ agent (OpenCode) commits + pushes
+                           └─ change request ──> merge ──> default branch
+```
+
+A **project** is one repo. A **session** is one agent run in an isolated sandbox
+on its own branch. A **change request** merges that work back. That's the system.
+
+<Cards>
+  <Card title="Concepts" href="/docs/concepts">How it works — projects, sessions, change requests, agents, secrets, triggers, connections, channels, accounts.</Card>
+  <Card title="Reference" href="/docs/reference">Exact detail — manifest, CLI, runtime, secrets, triggers, sandbox image.</Card>
+  <Card title="Quickstart" href="/docs/quickstart">Create a project, run a session, keep the work.</Card>
+  <Card title="Guides" href="/docs/guides">Task how-tos in the dashboard.</Card>
+</Cards>

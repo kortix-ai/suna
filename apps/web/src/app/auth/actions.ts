@@ -1,10 +1,25 @@
 'use server';
 
-import { createTrialCheckout } from '@/lib/api/billing';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { createClient } from '@/lib/supabase/server';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { redirect } from 'next/navigation';
+
+function trustedWebOrigin(origin?: string | null): string {
+  const configured = getServerPublicEnv().APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
+  const candidate = configured
+    ? (configured.startsWith('http') ? configured : `https://${configured}`)
+    : origin;
+  try {
+    const url = new URL(candidate || 'http://localhost:3000');
+    if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+      return 'http://localhost:3000';
+    }
+    return url.origin;
+  } catch {
+    return 'http://localhost:3000';
+  }
+}
 
 
 export async function signIn(prevState: any, formData: FormData) {
@@ -34,7 +49,7 @@ export async function signIn(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -108,7 +123,7 @@ export async function signUp(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -173,7 +188,7 @@ export async function forgotPassword(prevState: any, formData: FormData) {
   const supabase = await createClient();
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${origin}/auth/reset-password`,
+    redirectTo: `${trustedWebOrigin(origin)}/auth/reset-password`,
   });
 
   if (error) {
@@ -241,7 +256,7 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -281,7 +296,7 @@ export async function sendOtpCode(prevState: any, formData: FormData) {
   if (isDesktopApp && origin.startsWith('kortix://')) {
     emailRedirectTo = 'kortix://auth/callback';
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}`;
+    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -340,11 +355,25 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   return {
     success: true,
     redirectTo: `${redirectUrl.pathname}${redirectUrl.search}`,
+    accessToken: data.session?.access_token || null,
+    refreshToken: data.session?.refresh_token || null,
   };
 }
 
+/**
+ * Unified signup: works identically in local and cloud.
+ *
+ * Strategy: signUp → immediately try signInWithPassword. When Supabase
+ * confirmations are off (local default, and recommended for self-host),
+ * sign-in succeeds and the user is in. When confirmations are on (cloud),
+ * sign-in returns `email_not_confirmed` and we surface "check your email".
+ *
+ * Cloud and local share this function. The only configuration-dependent
+ * behavior is whether the inner signIn succeeds — driven by Supabase's
+ * `enable_confirmations`, not by ENV_MODE.
+ */
 export async function signUpWithPassword(prevState: any, formData: FormData) {
-  const email = formData.get('email') as string;
+  const email = (formData.get('email') as string | null)?.trim().toLowerCase();
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
   const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
@@ -353,140 +382,84 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
   }
-
   if (!password || password.length < 6) {
     return { message: 'Password must be at least 6 characters' };
   }
-
   if (password !== confirmPassword) {
     return { message: 'Passwords do not match' };
   }
 
   const supabase = await createClient();
-
-  const baseUrl = origin || getServerPublicEnv().APP_URL || 'http://localhost:3000';
+  const baseUrl = trustedWebOrigin(origin);
   const emailRedirectTo = `${baseUrl}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}`;
 
-  const { error } = await supabase.auth.signUp({
-    email: email.trim().toLowerCase(),
-    password,
-    options: {
-      emailRedirectTo,
-    },
-  });
-
-  if (error) {
-    return { message: error.message || 'Could not create account' };
-  }
-
-  // Return success - client will handle redirect
-  const finalReturnUrl = returnUrl;
-  redirect(finalReturnUrl);
-}
-
-/**
- * Self-hosted installer: create the owner account + immediately sign in.
- * Only works when email confirmations are disabled (self-hosted Supabase).
- *
- * This runs SERVER-SIDE so it uses runtime env vars (SUPABASE_URL,
- * SUPABASE_ANON_KEY) instead of NEXT_PUBLIC_ vars that are baked at build
- * time — critical for Docker deployments where the baked values are stale.
- *
- * Returns the access_token so the client-side wizard can continue with
- * instance setup (which requires the JWT for Bearer auth to the backend API).
- */
-export async function installOwner(_prevState: any, formData: FormData) {
-  const email = formData.get('email') as string;
-  const password = formData.get('password') as string;
-  const confirmPassword = formData.get('confirmPassword') as string;
-
-  if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
-  }
-
-  if (!password || password.length < 6) {
-    return { message: 'Password must be at least 6 characters' };
-  }
-
-  if (password !== confirmPassword) {
-    return { message: 'Passwords do not match' };
-  }
-
-  const supabase = await createClient();
-
-  // Sign up (auto-confirmed when enable_confirmations = false)
   const { error: signUpError } = await supabase.auth.signUp({
-    email: email.trim().toLowerCase(),
+    email,
     password,
+    options: { emailRedirectTo },
   });
 
-  // If user already exists, fall through to sign-in instead of erroring
-  const alreadyExists = signUpError &&
-    (signUpError.message?.toLowerCase().includes('already registered') ||
-     signUpError.message?.toLowerCase().includes('already exists') ||
-     signUpError.status === 422);
+  const alreadyExists = signUpError && (
+    signUpError.message?.toLowerCase().includes('already registered') ||
+    signUpError.message?.toLowerCase().includes('already exists') ||
+    signUpError.status === 422
+  );
 
   if (signUpError && !alreadyExists) {
     return { message: signUpError.message || 'Could not create account' };
   }
 
-  // Sign in (either after fresh signup or if user already existed)
   const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
+    email,
     password,
   });
 
   if (signInError) {
+    if (signInError.message?.toLowerCase().includes('email_not_confirmed') || signInError.message?.toLowerCase().includes('not confirmed')) {
+      return { success: true, message: 'Check your email to confirm your account', email, requiresEmailConfirmation: true };
+    }
+    if (alreadyExists) {
+      return { message: 'An account with this email already exists. Try signing in instead.' };
+    }
     return { message: signInError.message || 'Account created but could not sign in' };
-  }
-
-  // Return the access token so the client wizard can continue instance setup.
-  // Local Docker is manual-only; the API never starts or pulls it here.
-  return {
-    success: true,
-    accessToken: signInData.session?.access_token || null,
-    refreshToken: signInData.session?.refresh_token || null,
-  };
-}
-
-/**
- * Self-hosted sign-in for returning users.
- * Runs SERVER-SIDE to use runtime env vars instead of baked NEXT_PUBLIC_ vars.
- */
-export async function selfHostedSignIn(_prevState: any, formData: FormData) {
-  const email = formData.get('email') as string;
-  const password = formData.get('password') as string;
-  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
-
-  if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
-  }
-
-  if (!password || password.length < 6) {
-    return { message: 'Password must be at least 6 characters' };
-  }
-
-  const supabase = await createClient();
-
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
-    password,
-  });
-
-  if (error) {
-    return { message: error.message || 'Invalid email or password' };
   }
 
   return {
     success: true,
     redirectTo: returnUrl,
-    accessToken: data.session?.access_token || null,
-    refreshToken: data.session?.refresh_token || null,
+    accessToken: signInData.session?.access_token || null,
+    refreshToken: signInData.session?.refresh_token || null,
   };
 }
 
 export async function signOut() {
   const supabase = await createClient();
+
+  // Tell our backend first so it can audit the logout + mark the
+  // session revoked in account_session_activity. The Supabase token
+  // is still valid here; the call falls through cleanly if BACKEND_URL
+  // isn't configured. We DON'T fail the signOut on backend errors —
+  // the user should always be able to sign out client-side.
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
+      await fetch(`${backendUrl}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: '{}',
+        // Short timeout — logout should never hang on a slow backend.
+        signal: AbortSignal.timeout(3_000),
+      });
+    }
+  } catch {
+    /* swallow — backend logout is best-effort for audit; client
+       signOut() below is the authoritative session end */
+  }
+
   const { error } = await supabase.auth.signOut();
 
   if (error) {
@@ -525,7 +498,8 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   const isNewUser = data.user && (Date.now() - new Date(data.user.created_at).getTime()) < 60000;
   const authEvent = isNewUser ? 'signup' : 'login';
 
-  // For new cloud users with no plan yet, send them to /subscription first.
+  // For new cloud users with no plan yet, land in account management. The
+  // repo-first app surface starts from /projects; the old plan route is not v1.
   const runtimeEnv = getServerPublicEnv();
   const billingEnabled = runtimeEnv.ENV_MODE === 'cloud';
   let finalDestination = returnUrl;
@@ -542,7 +516,7 @@ export async function verifyOtp(prevState: any, formData: FormData) {
           const accountState = await accountStateRes.json();
           const tierKey = accountState?.subscription?.tier_key || accountState?.tier?.name || '';
           if (!tierKey || tierKey === 'none') {
-            finalDestination = '/subscription';
+            finalDestination = '/accounts';
           }
         }
       }
@@ -556,5 +530,11 @@ export async function verifyOtp(prevState: any, formData: FormData) {
     authEvent,
     authMethod: 'email_otp',
     redirectTo: finalDestination,
+    // Hand the session back so the client can establish it synchronously
+    // (supabase.auth.setSession) before navigating. Without this the client
+    // only picks up the session on a later background token refresh, which
+    // bounces the user back to /auth for ~15s until the session lands.
+    accessToken: data.session?.access_token ?? null,
+    refreshToken: data.session?.refresh_token ?? null,
   };
 }

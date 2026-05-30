@@ -18,11 +18,20 @@ test.describe('02 — Services respond on correct ports', () => {
   test('Supabase Auth health passes on :13740', async () => {
     // Kong requires the anon key as apikey header
     const fs = require('fs');
-    const envPath = `${process.env.HOME}/.kortix/.env`;
-    const anonKey = fs
-      .readFileSync(envPath, 'utf8')
-      .match(/^SUPABASE_ANON_KEY=(.+)$/m)?.[1]
-      ?.trim();
+    const path = require('path');
+    const explicit = (process.env.E2E_ENV_FILE || '')
+      .split(path.delimiter)
+      .map((item: string) => item.trim())
+      .filter(Boolean);
+    const envPath = [...explicit, `${process.env.HOME}/.kortix/.env`].find((candidate) =>
+      fs.existsSync(candidate),
+    );
+    const anonKey = envPath
+      ? fs
+        .readFileSync(envPath, 'utf8')
+        .match(/^SUPABASE_ANON_KEY=(.+)$/m)?.[1]
+        ?.trim()
+      : '';
     const res = await fetch(`${supabaseUrl}/auth/v1/health`, {
       headers: anonKey ? { apikey: anonKey } : {},
     });

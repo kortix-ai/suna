@@ -8,7 +8,7 @@ Complete test from clean slate to every feature working.
 
 - Docker Desktop running
 - No existing `~/.kortix/` directory (or willing to reinstall)
-- Pipedream Connect credentials (optional — needed for Step 14+)
+- Optional LLM provider keys for live model calls
 
 ---
 
@@ -27,8 +27,8 @@ bash scripts/get-kortix.sh
 ### Step 3 — Choose Local mode
 - Select `1` (Local machine)
 
-### Step 4 — Skip integrations (or configure)
-- Press `N` to skip (or `Y` + enter Pipedream creds)
+### Step 4 — Confirm local defaults
+- Accept the installer defaults unless the test target requires external services
 
 ### Step 5 — Wait for image pull + startup
 - Installer pulls 4 images: postgres, frontend, kortix-api, computer
@@ -66,7 +66,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:13737
 ```bash
 docker exec kortix-postgres-1 psql -U postgres -c "\dt kortix.*"
 ```
-- [ ] 12 tables listed (api_keys, channel_configs, channel_identity_map, channel_messages, channel_sessions, deployments, executions, integrations, sandbox_integrations, sandboxes, server_entries, triggers)
+- [ ] Core tables listed for accounts, projects, sessions, triggers, deployments, sandboxes, audit, and usage
 
 ### Step 10 — Sandbox healthy
 ```bash
@@ -90,19 +90,7 @@ curl -s http://localhost:13738/v1/accounts | jq .
 ```
 - [ ] Returns array with one "Local User" account
 
-### Step 13 — Integrations connections (THE BIG ONE)
-```bash
-curl -s http://localhost:13738/v1/integrations/connections | jq .
-```
-- [ ] Returns `{"connections":[]}` (200 OK, NOT 500)
-
-### Step 14 — Providers list
-```bash
-curl -s http://localhost:13738/v1/providers | jq .
-```
-- [ ] Returns providers data
-
-### Step 15 — Setup status
+### Step 14 — Setup status
 ```bash
 curl -s http://localhost:13738/v1/setup/status | jq .
 ```
@@ -147,8 +135,8 @@ Open browser at `http://localhost:13737`.
 ### Step 22 — Sessions page
 - [ ] `http://localhost:13737/sessions` loads (empty state or list)
 
-### Step 23 — Integrations page
-- [ ] `http://localhost:13737/integrations` loads WITHOUT 500 errors in console
+### Step 23 — Projects page
+- [ ] `http://localhost:13737/projects` loads WITHOUT 500 errors in console
 
 ### Step 24 — Settings page
 - [ ] `http://localhost:13737/settings` loads
@@ -178,12 +166,6 @@ Open browser at `http://localhost:13737`.
 - [ ] Key saves successfully
 - [ ] Provider shows "connected" status
 
-### Step 31 — Verify provider health
-```bash
-curl -s http://localhost:13738/v1/providers/health | jq .
-```
-- [ ] Shows configured provider(s) as healthy
-
 ---
 
 ## Phase 6: Sandbox / Agent
@@ -208,37 +190,7 @@ docker exec kortix-sandbox ls /workspace
 
 ---
 
-## Phase 7: Integrations (requires Pipedream creds)
-
-> Skip if integrations were not configured in Step 4.
-
-### Step 35 — Verify Pipedream env vars
-```bash
-docker exec kortix-kortix-api-1 printenv | grep PIPEDREAM
-```
-- [ ] `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, `PIPEDREAM_PROJECT_ID` are set
-
-### Step 36 — Integration search
-```bash
-curl -s "http://localhost:13738/v1/integrations/apps?q=gmail" | jq .
-```
-- [ ] Returns list of matching apps
-
-### Step 37 — Connect an integration (browser)
-- Go to `http://localhost:13737/integrations`
-- Click connect on any app (e.g. Gmail, GitHub)
-- [ ] OAuth popup opens
-- [ ] After auth, connection appears in the list
-
-### Step 38 — Verify connection persisted
-```bash
-curl -s http://localhost:13738/v1/integrations/connections | jq .
-```
-- [ ] Returns array with the connected integration
-
----
-
-## Phase 8: CLI
+## Phase 7: CLI
 
 ### Step 39 — CLI help
 ```bash
@@ -276,9 +228,9 @@ docker compose -f ~/.kortix/docker-compose.yml --project-name kortix up -d
 ```
 - Wait for healthy, then:
 ```bash
-curl -s http://localhost:13738/v1/integrations/connections | jq .
+curl -s http://localhost:13738/v1/health | jq .
 ```
-- [ ] Data persists (schema still exists, connections still there)
+- [ ] API remains healthy after restart
 
 ### Step 44 — Schema re-push is idempotent
 ```bash
@@ -318,8 +270,8 @@ curl -s http://localhost:13738/v1/health | jq .status
 | 4 | 20-28 | Frontend pages |
 | 5 | 29-31 | Setup wizard |
 | 6 | 32-34 | Sandbox/Agent |
-| 7 | 35-38 | Integrations |
-| 8 | 39-42 | CLI |
+| 7 | 35-38 | CLI |
+| 8 | 39-42 | Reserved |
 | 9 | 43-44 | Persistence |
 | 10 | 45-46 | Error resilience |
 

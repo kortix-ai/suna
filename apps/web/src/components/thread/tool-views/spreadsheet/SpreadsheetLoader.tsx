@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
@@ -6,9 +7,10 @@ interface SpreadsheetLoaderProps {
 }
 
 export function SpreadsheetLoader({ mode = 'max' }: SpreadsheetLoaderProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   if (mode === 'mini') {
     return (
-      <div className="flex flex-col h-full w-full min-h-[200px] border rounded-md overflow-hidden bg-background">
+      <div className="flex flex-col h-full w-full min-h-[200px] border rounded-2xl overflow-hidden bg-background">
         <div className="h-8 border-b bg-muted/20 flex items-center px-2 gap-2">
            <Skeleton className="h-4 w-4 rounded" />
            <Skeleton className="h-4 w-4 rounded" />
@@ -22,8 +24,8 @@ export function SpreadsheetLoader({ mode = 'max' }: SpreadsheetLoaderProps) {
                  ))}
             </div>
             <div className="absolute inset-0 flex items-center justify-center">
-                 <div className="flex flex-col items-center gap-2 bg-background/80 p-4 rounded-lg backdrop-blur-sm shadow-sm">
-                    <p className="text-xs font-medium text-muted-foreground animate-pulse">Loading spreadsheet...</p>
+                 <div className="flex flex-col items-center gap-2 bg-background/80 p-4 rounded-2xl backdrop-blur-sm shadow-sm">
+                    <p className="text-xs font-medium text-muted-foreground animate-pulse">{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSpreadsheetloader.line26JsxTextLoadingSpreadsheet')}</p>
                  </div>
             </div>
         </div>
@@ -71,7 +73,7 @@ export function SpreadsheetLoader({ mode = 'max' }: SpreadsheetLoaderProps) {
           <div className="w-10 border-r flex-none bg-muted/20" />
           {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'].map(col => (
             <div key={col} className="w-24 flex-none border-r py-1.5 flex items-center justify-center">
-              <span className="text-[10px] font-semibold text-muted-foreground">{col}</span>
+              <span className="text-xs font-semibold text-muted-foreground">{col}</span>
             </div>
           ))}
           <div className="flex-1 bg-muted/10" />
@@ -81,7 +83,7 @@ export function SpreadsheetLoader({ mode = 'max' }: SpreadsheetLoaderProps) {
              {[...Array(50)].map((_, i) => (
                <div key={i} className="flex h-[28px] border-b">
                  <div className="w-10 flex-none border-r bg-muted/10 flex items-center justify-center">
-                   <span className="text-[10px] text-muted-foreground">{i + 1}</span>
+                   <span className="text-xs text-muted-foreground">{i + 1}</span>
                  </div>
                  {[...Array(11)].map((_, j) => (
                    <div key={j} className="w-24 flex-none border-r relative group">

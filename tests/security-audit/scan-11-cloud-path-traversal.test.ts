@@ -182,8 +182,8 @@ describe('Cloud Scan: Path Traversal & Route Discovery', () => {
       expect([400, 401, 404]).toContain(r.status);
     });
 
-    test('/v1/secrets/../admin returns 401 (auth before path processing)', async () => {
-      const r = await probe('/v1/secrets/../admin');
+    test('/v1/queue/../admin returns 401 (auth before path processing)', async () => {
+      const r = await probe('/v1/queue/../admin');
       expect([401, 404]).toContain(r.status);
     });
   });

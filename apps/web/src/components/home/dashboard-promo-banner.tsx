@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useEffect } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,9 +12,10 @@ import { usePathname } from 'next/navigation';
 import { useWelcomeBannerStore } from '@/stores/welcome-banner-store';
 import { usePromo } from '@/hooks/utils/use-promo';
 
-const BANNER_DISMISSED_KEY = 'dashboard-promo-banner-dismissed';
+const BANNER_DISMISSED_KEY = 'projects-promo-banner-dismissed';
 
 export function DashboardPromoBanner() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isDismissed, setIsDismissed] = useState(false);
   const [mounted, setMounted] = useState(false);
   const { data: accountState, isLoading } = useAccountState();
@@ -23,13 +26,13 @@ export function DashboardPromoBanner() {
   
   const tierKey = accountStateSelectors.tierKey(accountState)?.toLowerCase();
   const isFreeTier = !tierKey || tierKey === 'free' || tierKey === 'none';
-  const isDashboardPage = pathname === '/dashboard';
+  const isProjectsPage = pathname === '/projects';
   
   // Show Welcome Bonus promo or KORTIX26 for free tier users
   const shouldShowPromo = promo?.isActive && (promo.promoId === 'welcome-bonus' || promo.promoCode === 'KORTIX26');
 
   // Compute whether banner should be visible
-  const shouldShow = mounted && !isDismissed && isDashboardPage && !isLoading && isFreeTier && shouldShowPromo;
+  const shouldShow = mounted && !isDismissed && isProjectsPage && !isLoading && isFreeTier && shouldShowPromo;
 
   // Update the store whenever visibility changes
   useEffect(() => {
@@ -54,7 +57,7 @@ export function DashboardPromoBanner() {
     openPricingModal();
   };
 
-  // Only show on /dashboard, for confirmed free tier users, and if not dismissed
+  // Only show on /projects, for confirmed free tier users, and if not dismissed
   if (!shouldShow || !promo) return null;
 
   return (
@@ -74,12 +77,10 @@ export function DashboardPromoBanner() {
                 <Sparkles className="h-3.5 w-3.5 text-primary" />
                 <span className="text-xs sm:text-sm font-medium text-foreground">
                   <span className="text-primary">{promo.promoCode}</span>
-                  <span className="text-muted-foreground mx-1.5">&middot;</span>
-                  30% off + 2X credits
-                </span>
+                  <span className="text-muted-foreground mx-1.5">{tHardcodedUi.raw('componentsHomeDashboardPromoBanner.line77JsxTextMiddot')}</span>{tHardcodedUi.raw('componentsHomeDashboardPromoBanner.line78JsxTextText30Off2xCredits')}</span>
               </div>
 
-              <span className="text-muted-foreground hidden sm:inline">&middot;</span>
+              <span className="text-muted-foreground hidden sm:inline">{tHardcodedUi.raw('componentsHomeDashboardPromoBanner.line82JsxTextMiddot')}</span>
               
               {/* Countdown */}
               <span className="text-xs text-muted-foreground font-mono hidden sm:inline">

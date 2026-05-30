@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, FileText, Folder, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -8,6 +10,7 @@ import { useFilesStore } from '../store/files-store';
 import { cn } from '@/lib/utils';
 
 export function FileSearch() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -97,7 +100,7 @@ export function FileSearch() {
   return (
     <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={closeSearch}>
       <div className="mx-auto max-w-lg mt-4 px-4" onClick={(e) => e.stopPropagation()}>
-        <div className="rounded-lg border border-border bg-card shadow-2xl overflow-hidden">
+        <div className="rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
           {/* Search input */}
           <div className="flex items-center gap-2 px-3 border-b">
             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -106,11 +109,12 @@ export function FileSearch() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleInputKeyDown}
-              placeholder="Search files..."
+              placeholder={tHardcodedUi.raw('featuresFilesComponentsFileSearch.line109JsxAttrPlaceholderSearchFiles')}
               className="border-0 shadow-none focus-visible:ring-0 px-0 h-10"
             />
             <button
               onClick={closeSearch}
+              aria-label="Close search"
               className="p-1 rounded hover:bg-muted"
             >
               <X className="h-4 w-4 text-muted-foreground" />
@@ -120,9 +124,7 @@ export function FileSearch() {
           {/* Results */}
           <div ref={listRef} className="max-h-[300px] overflow-y-auto">
             {debouncedQuery.length === 0 && (
-              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                Type to search files...
-              </div>
+              <div className="px-4 py-6 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileSearch.line124JsxTextTypeToSearchFiles')}</div>
             )}
 
             {isLoading && debouncedQuery.length > 0 && (
@@ -132,9 +134,7 @@ export function FileSearch() {
             )}
 
             {results && results.length === 0 && debouncedQuery.length > 0 && (
-              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                No files found
-              </div>
+              <div className="px-4 py-6 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileSearch.line136JsxTextNoFilesFound')}</div>
             )}
 
             {results &&

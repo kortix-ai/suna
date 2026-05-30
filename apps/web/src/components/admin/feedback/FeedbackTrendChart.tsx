@@ -1,9 +1,11 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAdminFeedbackTimeSeries } from '@/hooks/admin/use-admin-feedback';
 import {
   ChartContainer,
@@ -32,27 +34,32 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export function FeedbackTrendChart() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [days, setDays] = useState(30);
   const [granularity, setGranularity] = useState('day');
   
   const { data: timeSeries, isLoading } = useAdminFeedbackTimeSeries(days, granularity);
 
-  const chartData = timeSeries?.map(point => {
-    const neutral = (point.count || 0) - (point.positive_count || 0) - (point.negative_count || 0);
-    return {
-      date: point.period ? format(parseISO(point.period), granularity === 'month' ? 'MMM yyyy' : 'MMM d') : '',
-      positive: point.positive_count || 0,
-      neutral: Math.max(0, neutral),
-      negative: point.negative_count || 0,
-    };
-  }) || [];
+  const chartData = useMemo(
+    () =>
+      timeSeries?.map(point => {
+        const neutral = (point.count || 0) - (point.positive_count || 0) - (point.negative_count || 0);
+        return {
+          date: point.period ? format(parseISO(point.period), granularity === 'month' ? 'MMM yyyy' : 'MMM d') : '',
+          positive: point.positive_count || 0,
+          neutral: Math.max(0, neutral),
+          negative: point.negative_count || 0,
+        };
+      }) || [],
+    [timeSeries, granularity],
+  );
 
   return (
     <Card className='h-full'>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div>
-          <CardTitle className="text-base font-medium">Feedback Volume</CardTitle>
-          <CardDescription>Stacked by sentiment over time</CardDescription>
+          <CardTitle className="text-base font-medium">{tHardcodedUi.raw('componentsAdminFeedbackFeedbacktrendchart.line54JsxTextFeedbackVolume')}</CardTitle>
+          <CardDescription>{tHardcodedUi.raw('componentsAdminFeedbackFeedbacktrendchart.line55JsxTextStackedBySentimentOverTime')}</CardDescription>
         </div>
         <div className="flex gap-2">
           <Select value={granularity} onValueChange={setGranularity}>
@@ -70,11 +77,11 @@ export function FeedbackTrendChart() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="7">7 days</SelectItem>
-              <SelectItem value="30">30 days</SelectItem>
-              <SelectItem value="90">90 days</SelectItem>
-              <SelectItem value="180">6 months</SelectItem>
-              <SelectItem value="365">1 year</SelectItem>
+              <SelectItem value="7">{tHardcodedUi.raw('componentsAdminFeedbackFeedbacktrendchart.line73JsxTextText7Days')}</SelectItem>
+              <SelectItem value="30">{tHardcodedUi.raw('componentsAdminFeedbackFeedbacktrendchart.line74JsxTextText30Days')}</SelectItem>
+              <SelectItem value="90">{tHardcodedUi.raw('componentsAdminFeedbackFeedbacktrendchart.line75JsxTextText90Days')}</SelectItem>
+              <SelectItem value="180">{tHardcodedUi.raw('componentsAdminFeedbackFeedbacktrendchart.line76JsxTextText6Months')}</SelectItem>
+              <SelectItem value="365">{tHardcodedUi.raw('componentsAdminFeedbackFeedbacktrendchart.line77JsxTextText1Year')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -83,9 +90,7 @@ export function FeedbackTrendChart() {
         {isLoading ? (
           <Skeleton className="h-[300px] w-full" />
         ) : chartData.length === 0 ? (
-          <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-            No data available for the selected period
-          </div>
+          <div className="h-[300px] flex items-center justify-center text-muted-foreground">{tHardcodedUi.raw('componentsAdminFeedbackFeedbacktrendchart.line87JsxTextNoDataAvailableForTheSelectedPeriod')}</div>
         ) : (
           <ChartContainer config={chartConfig} className="h-[300px] w-full">
             <BarChart accessibilityLayer data={chartData}>

@@ -6,12 +6,13 @@ import { tunnelRelay } from '../core/relay';
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import { isValidCapability, validateScope as validateScopeInput } from '../core/scope-validator';
 import { TunnelErrorCode, type TunnelCapability } from 'agent-tunnel';
+import { getTunnelOwnerContext } from './auth';
 
 export function createPermissionsRouter(): Hono {
   const router = new Hono();
 
   router.get('/:tunnelId', async (c: any) => {
-    const accountId = c.get('userId') as string;
+    const { ownerClause } = await getTunnelOwnerContext(c);
     const tunnelId = c.req.param('tunnelId');
 
     const [tunnel] = await db
@@ -20,7 +21,7 @@ export function createPermissionsRouter(): Hono {
       .where(
         and(
           eq(tunnelConnections.tunnelId, tunnelId),
-          eq(tunnelConnections.accountId, accountId),
+          ownerClause,
         ),
       );
 
@@ -38,7 +39,7 @@ export function createPermissionsRouter(): Hono {
   });
 
   router.post('/:tunnelId', async (c: any) => {
-    const accountId = c.get('userId') as string;
+    const { accountId, ownerClause } = await getTunnelOwnerContext(c);
     const tunnelId = c.req.param('tunnelId');
 
     const rateCheck = tunnelRateLimiter.check('permGrant', tunnelId);
@@ -75,7 +76,7 @@ export function createPermissionsRouter(): Hono {
       .where(
         and(
           eq(tunnelConnections.tunnelId, tunnelId),
-          eq(tunnelConnections.accountId, accountId),
+          ownerClause,
         ),
       );
 
@@ -105,9 +106,18 @@ export function createPermissionsRouter(): Hono {
   });
 
   router.delete('/:tunnelId/:permissionId', async (c: any) => {
-    const accountId = c.get('userId') as string;
+    const { ownerClause } = await getTunnelOwnerContext(c);
     const tunnelId = c.req.param('tunnelId');
     const permissionId = c.req.param('permissionId');
+
+    const [tunnel] = await db
+      .select({ tunnelId: tunnelConnections.tunnelId })
+      .from(tunnelConnections)
+      .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause));
+
+    if (!tunnel) {
+      return c.json({ error: 'Tunnel connection not found' }, 404);
+    }
 
     const [revoked] = await db
       .update(tunnelPermissions)
@@ -116,7 +126,6 @@ export function createPermissionsRouter(): Hono {
         and(
           eq(tunnelPermissions.permissionId, permissionId),
           eq(tunnelPermissions.tunnelId, tunnelId),
-          eq(tunnelPermissions.accountId, accountId),
         ),
       )
       .returning();

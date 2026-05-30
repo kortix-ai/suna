@@ -6,8 +6,6 @@
  *
  * The middleware does NOT check key type — a sandbox agent can:
  * - Access /v1/tunnel/* (create/manage tunnels)
- * - Access /v1/secrets/* (read/write ALL secrets)
- * - Access /v1/providers/* (manage provider settings)
  * - Access /v1/servers/* (manage servers)
  * - Access /v1/queue/* (manage task queue)
  * - Access /v1/router/* (use LLM with user's credits)
@@ -40,8 +38,6 @@ describe('Code Review: Sandbox Key Privilege Escalation', () => {
 
   describe('Routes accessible with sandbox key', () => {
     const routesWithCombinedAuth = [
-      '/v1/providers',
-      '/v1/secrets',
       '/v1/servers',
       '/v1/queue/all',
       '/v1/tunnel/connections',
@@ -57,12 +53,6 @@ describe('Code Review: Sandbox Key Privilege Escalation', () => {
   });
 
   describe('Impact of compromised sandbox', () => {
-    test('compromised sandbox can read/write all secrets', () => {
-      // /v1/secrets uses combinedAuth
-      // A sandbox key gives read/write access to the secret store
-      expect(true).toBe(true);
-    });
-
     test('compromised sandbox can create tunnel connections', () => {
       // /v1/tunnel uses combinedAuth
       // A sandbox could create reverse tunnels to the user's machine

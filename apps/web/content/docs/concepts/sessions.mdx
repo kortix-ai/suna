@@ -1,0 +1,25 @@
+---
+title: Sessions
+description: An isolated, disposable sandbox VM on a branch named after the session.
+---
+
+A **session** runs the agent in its own isolated sandbox. The platform cuts a
+branch named after the session id, provisions a Daytona VM with the repo cloned
+onto it, and runs [OpenCode](/docs/concepts/agents) inside.
+
+- **Isolated** — each session has its own VM and branch, so any number run at
+  once (yours, teammates', [automations](/docs/concepts/triggers)) without
+  interfering. None touch the default branch directly.
+- **Status** — `provisioning → running → (stopped | failed)`. The branch is cut
+  and the sandbox requested during `provisioning`; `stopped` on explicit stop or
+  idle hibernation.
+- **Persistence** — the sandbox FS is disposable (re-cloned each boot, torn down
+  on stop/restart). Only what the agent **commits and pushes** survives, and only
+  a merged [change request](/docs/concepts/change-requests) lands it on the
+  default branch.
+
+Inside the VM the `kortix-agent` daemon clones to `/workspace`, supervises
+OpenCode, and serves a control surface on port 8000 that the dashboard tunnels
+into. A trigger fire is just an ordinary session. Full runtime detail —
+status enum, injected env vars, daemon endpoints — is in
+[Session runtime](/docs/reference/session-runtime).

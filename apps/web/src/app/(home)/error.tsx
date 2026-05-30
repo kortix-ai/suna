@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -16,6 +18,7 @@ export default function HomeError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   useEffect(() => {
     console.error('[Kortix Home Error]', error);
     Sentry.captureException(error);
@@ -61,14 +64,10 @@ export default function HomeError({
         </div>
 
         {/* Title */}
-        <h1 className="text-center text-3xl font-normal tracking-tight text-foreground sm:text-[43px] sm:leading-tight">
-          Something went wrong
-        </h1>
+        <h1 className="text-center text-3xl font-normal tracking-tight text-foreground sm:text-5xl sm:leading-tight">{tHardcodedUi.raw('appHomeError.line65JsxTextSomethingWentWrong')}</h1>
 
         {/* Description */}
-        <p className="px-2 text-center text-sm leading-relaxed text-muted-foreground sm:text-base">
-          We encountered an unexpected error. Please try again or return to the homepage.
-        </p>
+        <p className="px-2 text-center text-sm leading-relaxed text-muted-foreground sm:text-base">{tHardcodedUi.raw('appHomeError.line70JsxTextWeEncounteredAnUnexpectedErrorPleaseTryAgain')}</p>
 
         {/* Status pill */}
         <motion.div
@@ -82,22 +81,16 @@ export default function HomeError({
             animate={{ opacity: [1, 0.3, 1] }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
           />
-          <span className="font-mono text-xs text-muted-foreground">
-            attempting recovery
-          </span>
+          <span className="font-mono text-xs text-muted-foreground">{tHardcodedUi.raw('appHomeError.line86JsxTextAttemptingRecovery')}</span>
         </motion.div>
 
         {/* Actions */}
         <div className="flex w-full flex-col gap-3 sm:flex-row">
           <Button size="lg" className="h-12 flex-1" onClick={reset}>
-            <RotateCcw className="h-4 w-4" />
-            Try Again
-          </Button>
+            <RotateCcw className="h-4 w-4" />{tHardcodedUi.raw('appHomeError.line94JsxTextTryAgain')}</Button>
           <Button size="lg" variant="outline" className="h-12 flex-1" asChild>
             <Link href="/" className="flex items-center justify-center gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              Return Home
-            </Link>
+              <ArrowLeft className="h-4 w-4" />{tHardcodedUi.raw('appHomeError.line99JsxTextReturnHome')}</Link>
           </Button>
         </div>
       </motion.div>

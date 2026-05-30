@@ -1,0 +1,21 @@
+{
+  "name": "@kortix/manifest-schema",
+  "version": "1.0.0",
+  "description": "Canonical kortix.toml schema + validator. One source of truth used by the CLI (kortix ship pre-flight), the backend (CR-merge gate), and any future tooling that touches a manifest.",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "smol-toml": "^1.4.2"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.0.0"
+  }
+}

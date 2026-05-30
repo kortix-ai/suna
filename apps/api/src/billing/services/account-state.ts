@@ -1,4 +1,5 @@
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
+import { projectSessions } from '@kortix/db';
 import {
   getCreditAccount,
   getSubscriptionInfo,
@@ -9,11 +10,18 @@ import {
   getDailyCreditConfig,
   isPaidTier,
   isLegacyPaidTier,
+  isPerSeatAccount,
   MINIMUM_CREDIT_FOR_RUN,
+  PER_SEAT_PRICE_USD,
+  TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
+  TYPICAL_LLM_BUDGET_PER_SEAT_USD,
 } from './tiers';
+import { getUsageBreakdownThisPeriod } from './usage-breakdown';
 import { getCreditSummary } from './credits';
 import { getAutoTopupSettings } from './auto-topup';
 import { isPlatformAdmin } from '../../shared/platform-roles';
+import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
+import { db } from '../../shared/db';
 import { config } from '../../config';
 import type {
   AccountStateResponse,
@@ -21,26 +29,20 @@ import type {
   CommitmentInfo,
 } from '../../types';
 
-async function getYoloUsage(serviceKey: string | null): Promise<AccountStateResponse['yolo_usage']> {
-  if (config.ENV_MODE !== 'cloud') return null;
-  if (!serviceKey) return null;
-  try {
-    const res = await fetch(`${config.KORTIX_YOLO_URL}/me`, {
-      headers: { Authorization: `Bearer ${serviceKey}` },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json() as any;
-    return {
-      used_percent: Number(data?.usage?.usedPercent ?? 0),
-      used_percent_precise: Number(data?.usage?.usedPercentPrecise ?? 0),
-      window_started: Boolean(data?.usage?.windowStarted),
-      window_reset_in: Number(data?.usage?.windowResetIn ?? 0),
-      window_reset_at: String(data?.usage?.windowResetAt ?? new Date().toISOString()),
-    };
-  } catch {
-    return null;
-  }
+const ACTIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running'] as const;
+
+async function countActiveSessions(accountId: string): Promise<number> {
+  const [row] = await db
+    .select({ activeCount: sql<number>`count(*)::int` })
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.accountId, accountId),
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+      ),
+    )
+    .limit(1);
+  return Number(row?.activeCount ?? 0);
 }
 
 export async function buildMinimalAccountState(accountId: string): Promise<AccountStateResponse> {
@@ -75,7 +77,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     };
   }
 
-  const isTrial = sub?.trialStatus === 'active';
   const isCancelled = sub?.stripeSubscriptionStatus === 'canceled'
     || (sub?.revenuecatCancelledAt != null);
   const subscriptionStatus = getSubscriptionStatus(sub, tierName, isAdmin);
@@ -91,7 +92,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
 
   // User's instances (sandboxes)
   let instances: any[] = [];
-  let yoloUsage: AccountStateResponse['yolo_usage'] = null;
   try {
     const { db } = await import('../../shared/db');
     const { sandboxes } = await import('@kortix/db');
@@ -125,12 +125,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
         created_at: row.createdAt.toISOString(),
       };
     });
-
-    const serviceKey = sandboxRows
-      .map((row: any) => (row.config as Record<string, unknown> | null)?.serviceKey)
-      .find((value: unknown): value is string => typeof value === 'string' && value.length > 0)
-      ?? null;
-    yoloUsage = await getYoloUsage(serviceKey);
   } catch {
     // DB may not be available in local mode
   }
@@ -157,9 +151,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       subscription_id: subscriptionId,
       current_period_end: null,
       cancel_at_period_end: false,
-      is_trial: isTrial,
-      trial_status: sub?.trialStatus ?? null,
-      trial_ends_at: sub?.trialEndsAt ?? null,
       is_cancelled: isCancelled,
       cancellation_effective_date: null,
       has_scheduled_change: scheduledChange !== null,
@@ -173,11 +164,29 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       monthly_credits: tier.monthlyCredits,
       can_purchase_credits: isAdmin ? true : tier.canPurchaseCredits,
     },
+    models: [],
     auto_topup: autoTopup,
     instances,
-    yolo_usage: yoloUsage,
     can_add_instances: isAdmin || isPaidTier(tierName),
     can_claim_computer: canClaimComputer,
+    billing_model: (isPerSeatAccount(sub?.billingModel) ? 'per_seat' : 'legacy') as 'per_seat' | 'legacy',
+    seats: isPerSeatAccount(sub?.billingModel)
+      ? {
+          count: sub?.seatCount ?? 1,
+          price_per_seat_usd: PER_SEAT_PRICE_USD,
+          typical_compute_budget_per_seat_usd: TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
+          typical_llm_budget_per_seat_usd: TYPICAL_LLM_BUDGET_PER_SEAT_USD,
+        }
+      : undefined,
+    usage_this_period: isPerSeatAccount(sub?.billingModel)
+      ? await getUsageBreakdownThisPeriod(accountId, sub?.billingCycleAnchor ?? null).catch(() => null)
+      : null,
+    limits: {
+      concurrent_sessions: {
+        active: await countActiveSessions(accountId).catch(() => 0),
+        limit: maxConcurrentSessionsForTier(tierName),
+      },
+    },
   };
 
   return state;
@@ -210,9 +219,6 @@ export function buildLocalAccountState(): AccountStateResponse {
       subscription_id: null,
       current_period_end: null,
       cancel_at_period_end: false,
-      is_trial: false,
-      trial_status: null,
-      trial_ends_at: null,
       is_cancelled: false,
       cancellation_effective_date: null,
       has_scheduled_change: false,
@@ -226,15 +232,16 @@ export function buildLocalAccountState(): AccountStateResponse {
       monthly_credits: 0,
       can_purchase_credits: false,
     },
+    models: [],
     auto_topup: {
       enabled: false,
       threshold: AUTO_TOPUP_DEFAULT_THRESHOLD,
       amount: AUTO_TOPUP_DEFAULT_AMOUNT,
     },
     instances: [],
-    yolo_usage: null,
     can_add_instances: false,
     can_claim_computer: false,
+    billing_model: 'legacy',
   };
 }
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import {
   Search,
@@ -42,7 +44,6 @@ import {
 import { downloadFile } from '../api/opencode-files';
 import { useDirectoryDownload } from '../hooks/use-directory-download';
 import { useServerStore } from '@/stores/server-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
 import type { FileNode } from '../types';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
@@ -65,9 +66,11 @@ import { DRAG_MIME } from './file-tree-item';
  * | Main area (grid or list view)                      |
  * +---------------------------------------------------+
  * 
- * File preview opens as a full-screen modal overlay.
+ * Opening a file (single- or double-click, context menu) always opens the
+ * full-screen preview modal overlay.
  */
 export function FileExplorerPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
   const viewMode = useFilesStore((s) => s.viewMode);
@@ -248,16 +251,6 @@ export function FileExplorerPage() {
     navigateToPath(node.path);
   }, [navigateToPath]);
 
-  const handleOpenFile = useCallback((node: FileNode) => {
-    // Open in tab
-    openTabAndNavigate({
-      id: `file:${node.path}`,
-      title: node.name,
-      type: 'file',
-      href: `/files/${encodeURIComponent(node.path)}`,
-    });
-  }, []);
-
   const handlePreviewFile = useCallback((node: FileNode) => {
     // Open in preview modal
     const allFiles = fileItems.map((f) => f.path);
@@ -265,14 +258,8 @@ export function FileExplorerPage() {
     openFileWithList(node.path, allFiles, Math.max(0, index));
   }, [fileItems, openFileWithList]);
 
-  const handleOpenInTab = useCallback((node: FileNode) => {
-    openTabAndNavigate({
-      id: `file:${node.path}`,
-      title: node.name,
-      type: 'file',
-      href: `/files/${encodeURIComponent(node.path)}`,
-    });
-  }, []);
+  // Opening a file always shows the in-place preview modal.
+  const handleOpenFile = handlePreviewFile;
 
   const handleDownload = useCallback(async (node: FileNode) => {
     try {
@@ -543,9 +530,8 @@ export function FileExplorerPage() {
       <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center bg-background">
         <ServerOff className="h-12 w-12 text-muted-foreground/30" />
         <div>
-          <h3 className="text-base font-medium text-foreground">Server not reachable</h3>
-          <p className="text-sm text-muted-foreground mt-1.5">
-            Could not connect to{' '}
+          <h3 className="text-base font-medium text-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line546JsxTextServerNotReachable')}</h3>
+          <p className="text-sm text-muted-foreground mt-1.5">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line548JsxTextCouldNotConnectTo')}{' '}
             <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{serverUrl}</code>
           </p>
         </div>
@@ -599,8 +585,8 @@ export function FileExplorerPage() {
                   if (e.key === 'Escape') { setIsCreatingFolder(false); setNewFolderName(''); }
                 }}
                 onBlur={handleCreateFolder}
-                className="flex-1 text-sm bg-transparent border border-border rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
-                placeholder="Folder name"
+                className="flex-1 text-sm bg-transparent border border-border rounded-2xl px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
+                placeholder={tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line603JsxAttrPlaceholderFolderName')}
               />
             </div>
           )}
@@ -617,8 +603,8 @@ export function FileExplorerPage() {
                   if (e.key === 'Escape') { setIsCreatingFile(false); setNewFileName(''); }
                 }}
                 onBlur={handleCreateFile}
-                className="flex-1 text-sm bg-transparent border border-border rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
-                placeholder="File name"
+                className="flex-1 text-sm bg-transparent border border-border rounded-2xl px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
+                placeholder={tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line621JsxAttrPlaceholderFileName')}
               />
             </div>
           )}
@@ -662,7 +648,7 @@ export function FileExplorerPage() {
         {/* Error */}
         {error && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-            <p className="text-sm text-muted-foreground">Failed to load files</p>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line665JsxTextFailedToLoadFiles')}</p>
             <p className="text-xs text-muted-foreground max-w-sm">
               {error instanceof Error ? error.message : 'Unknown error'}
             </p>
@@ -691,7 +677,6 @@ export function FileExplorerPage() {
                 onCopy={handleCopy}
                 onCut={handleCut}
                 onDropMove={handleDropMove}
-                onOpenInTab={handleOpenInTab}
                 gitStatusMap={gitStatusMap}
                 clipboardPath={clipboard?.path}
                 clipboardOperation={clipboard?.operation}
@@ -713,7 +698,6 @@ export function FileExplorerPage() {
                 onCopy={handleCopy}
                 onCut={handleCut}
                 onDropMove={handleDropMove}
-                onOpenInTab={handleOpenInTab}
                 gitStatusMap={gitStatusMap}
                 clipboardPath={clipboard?.path}
                 clipboardOperation={clipboard?.operation}
@@ -735,16 +719,14 @@ export function FileExplorerPage() {
 
       {/* Drag & drop overlay */}
       {isDragOverPage && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary/50 rounded-xl pointer-events-none">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary/50 rounded-2xl pointer-events-none">
           <div className="flex flex-col items-center gap-3 text-center">
             <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
               <Upload className="h-8 w-8 text-primary" />
             </div>
             <div>
-              <p className="text-base font-medium text-foreground">Drop files to upload</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Files will be uploaded to the current directory
-              </p>
+              <p className="text-base font-medium text-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line744JsxTextDropFilesToUpload')}</p>
+              <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line746JsxTextFilesWillBeUploadedToTheCurrentDirectory')}</p>
             </div>
           </div>
         </div>
@@ -767,9 +749,7 @@ export function FileExplorerPage() {
               className="h-6 text-xs"
               onClick={handlePaste}
               disabled={copyMutation.isPending || renameMutation.isPending}
-            >
-              Paste here
-            </Button>
+            >{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line771JsxTextPasteHere')}</Button>
             <button
               onClick={clearClipboard}
               className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -785,7 +765,7 @@ export function FileExplorerPage() {
 
       {/* History popover */}
       {historyPopoverPath && (
-        <div className="fixed bottom-4 right-4 z-50 bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
+        <div className="fixed bottom-4 right-4 z-50 bg-popover border border-border rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
           <FileHistoryPopoverContent
             filePath={historyPopoverPath}
             onClose={() => setHistoryPopoverPath(null)}
@@ -803,11 +783,8 @@ export function FileExplorerPage() {
             <AlertDialogTitle>
               Delete {deleteTarget?.type === 'directory' ? 'folder' : 'file'}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete{' '}
-              <span className="font-semibold text-foreground">&quot;{deleteTarget?.name}&quot;</span>?
-              This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line807JsxTextAreYouSureYouWantToDelete')}{' '}
+              <span className="font-semibold text-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line808JsxTextQuot')}{deleteTarget?.name}{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line808JsxTextQuot306b697a')}</span>{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line808JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>

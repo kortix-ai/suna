@@ -1,0 +1,239 @@
+name: Desktop dev release
+
+# Publishes mutable dev desktop installers from main.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/desktop/**'
+      - '.github/workflows/desktop-dev.yml'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-dev-release
+  cancel-in-progress: true
+
+env:
+  DESKTOP_TAG: desktop-dev-latest
+  DESKTOP_VERSION: 0.0.0
+  DESKTOP_PRODUCT_NAME: Kortix Dev
+  DESKTOP_IDENTIFIER: com.kortix.desktop.dev
+  DESKTOP_URL: https://dev.kortix.com/dashboard
+
+jobs:
+  build:
+    name: Build ${{ matrix.target_pretty }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target_pretty: macos-arm64
+            runner: macos-14
+            bundles: dmg
+            artifact: desktop-macos-arm64
+            files: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          - target_pretty: macos-x64
+            runner: macos-13
+            bundles: dmg
+            artifact: desktop-macos-x64
+            files: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          - target_pretty: windows-x64
+            runner: windows-2022
+            bundles: msi
+            artifact: desktop-windows-x64
+            files: apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+          - target_pretty: linux-x64
+            runner: ubuntu-22.04
+            bundles: appimage
+            artifact: desktop-linux-x64
+            files: apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            file \
+            libgtk-3-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            wget
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install pnpm
+        run: corepack enable pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Validate signing secrets
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+        run: |
+          case "${{ runner.os }}" in
+            macOS)
+              test -n "$APPLE_CERTIFICATE" || { echo "Missing APPLE_CERTIFICATE"; exit 1; }
+              test -n "$APPLE_CERTIFICATE_PASSWORD" || { echo "Missing APPLE_CERTIFICATE_PASSWORD"; exit 1; }
+              if [ -n "$APPLE_API_ISSUER" ] || [ -n "$APPLE_API_KEY" ] || [ -n "$APPLE_API_KEY_P8" ]; then
+                test -n "$APPLE_API_ISSUER" || { echo "Missing APPLE_API_ISSUER"; exit 1; }
+                test -n "$APPLE_API_KEY" || { echo "Missing APPLE_API_KEY"; exit 1; }
+                test -n "$APPLE_API_KEY_P8" || { echo "Missing APPLE_API_KEY_P8"; exit 1; }
+              else
+                test -n "$APPLE_ID" || { echo "Missing APPLE_ID"; exit 1; }
+                test -n "$APPLE_PASSWORD" || { echo "Missing APPLE_PASSWORD"; exit 1; }
+                test -n "$APPLE_TEAM_ID" || { echo "Missing APPLE_TEAM_ID"; exit 1; }
+              fi
+              ;;
+            Windows)
+              test -n "$WINDOWS_CERTIFICATE" || { echo "Missing WINDOWS_CERTIFICATE"; exit 1; }
+              test -n "$WINDOWS_CERTIFICATE_PASSWORD" || { echo "Missing WINDOWS_CERTIFICATE_PASSWORD"; exit 1; }
+              test -n "$WINDOWS_CERTIFICATE_THUMBPRINT" || { echo "Missing WINDOWS_CERTIFICATE_THUMBPRINT"; exit 1; }
+              ;;
+          esac
+
+      - name: Prepare macOS notarization key
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+            printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH"
+            echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+          fi
+
+      - name: Import Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          New-Item -ItemType Directory -Force -Path certificate | Out-Null
+          Set-Content -Path certificate/tempCert.txt -Value $env:WINDOWS_CERTIFICATE
+          certutil -decode certificate/tempCert.txt certificate/certificate.pfx
+          Remove-Item certificate/tempCert.txt
+          Import-PfxCertificate `
+            -FilePath certificate/certificate.pfx `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -Password (ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText)
+
+      - name: Configure dev desktop build
+        shell: bash
+        env:
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'apps/desktop/src-tauri/tauri.conf.json';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.version = process.env.DESKTOP_VERSION;
+          config.productName = process.env.DESKTOP_PRODUCT_NAME;
+          config.identifier = process.env.DESKTOP_IDENTIFIER;
+          if (process.env.WINDOWS_CERTIFICATE_THUMBPRINT) {
+            config.bundle ||= {};
+            config.bundle.windows ||= {};
+            config.bundle.windows.certificateThumbprint = process.env.WINDOWS_CERTIFICATE_THUMBPRINT;
+            config.bundle.windows.digestAlgorithm = 'sha256';
+            config.bundle.windows.timestampUrl = process.env.WINDOWS_TIMESTAMP_URL || 'http://timestamp.digicert.com';
+          }
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          NODE
+
+      - name: Prepare desktop shell assets
+        run: pnpm --filter @kortix/desktop run prepare-assets
+
+      - name: Build desktop installer
+        run: pnpm --filter @kortix/desktop tauri build --bundles ${{ matrix.bundles }}
+        env:
+          KORTIX_DESKTOP_DEFAULT_URL: ${{ env.DESKTOP_URL }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  release:
+    name: Publish dev desktop release
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Compute checksums
+        run: |
+          cd artifacts
+          find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+          ls -lh
+
+      - name: Move dev tag
+        run: |
+          git tag -f "${{ env.DESKTOP_TAG }}" "$GITHUB_SHA"
+          git push -f origin "${{ env.DESKTOP_TAG }}"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.DESKTOP_TAG }}
+          name: ${{ env.DESKTOP_TAG }}
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          generate_release_notes: false
+          body: |
+            Mutable dev desktop build for `${{ github.sha }}`.
+
+            Defaults to `${{ env.DESKTOP_URL }}`.
+          files: artifacts/*

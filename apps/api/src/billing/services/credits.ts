@@ -1,4 +1,5 @@
 import { getSupabase } from '../../shared/supabase';
+import { db } from '../../shared/db';
 import {
   getCreditAccount,
   getCreditBalance,
@@ -26,7 +27,6 @@ export async function getCreditSummary(accountId: string) {
     return { total: 0, daily: 0, monthly: 0, extra: 0, canRun: false };
   }
 
-  // Pure read. balance is kept in sync by the atomic RPCs (deduct/grant/reset).
   const daily = Number(account.dailyCreditsBalance) || 0;
   const monthly = Number(account.expiringCredits) || 0;
   const extra = Number(account.nonExpiringCredits) || 0;
@@ -41,10 +41,13 @@ export async function getCreditSummary(accountId: string) {
   };
 }
 
+export type LedgerDebitType = 'usage' | 'compute_debit' | 'llm_debit' | 'token_deduction' | 'token_overage';
+
 export async function deductCredits(
   accountId: string,
   amount: number,
   description: string,
+  ledgerType: LedgerDebitType = 'usage',
 ) {
   const supabase = getSupabase();
 
@@ -52,6 +55,7 @@ export async function deductCredits(
     p_account_id: accountId,
     p_amount: amount,
     p_description: description,
+    p_ledger_type: ledgerType,
   });
 
   if (error) {
@@ -75,7 +79,6 @@ export async function deductCredits(
     throw new InsufficientCreditsError(actualBalance, amount);
   }
 
-  // Fire-and-forget: check if auto-topup should trigger
   const { checkAndTriggerAutoTopup } = await import('./auto-topup');
   void checkAndTriggerAutoTopup(accountId);
 
@@ -85,6 +88,41 @@ export async function deductCredits(
     newBalance: result.new_total ?? 0,
     transactionId: result.transaction_id,
   };
+}
+
+export async function deductForLlmUsage(opts: {
+  accountId: string;
+  costUsd: number;
+  model: string;
+  provider?: string;
+  actorUserId?: string | null;
+  usageEventId?: string | null;
+  upstreamCostUsd?: number | null;
+  markup?: number | null;
+}) {
+  if (opts.costUsd <= 0) return { success: true, cost: 0, newBalance: 0, transactionId: null };
+  const description = `LLM · ${opts.provider ? `${opts.provider}/` : ''}${opts.model}`;
+  const result = await deductCredits(opts.accountId, opts.costUsd, description, 'llm_debit');
+  if (result.success && result.transactionId && (opts.usageEventId || opts.upstreamCostUsd != null)) {
+    const { creditLedger } = await import('@kortix/db');
+    const { eq, sql } = await import('drizzle-orm');
+    const auditPatch: Record<string, unknown> = {};
+    if (opts.usageEventId) auditPatch.usageEventId = opts.usageEventId;
+    if (opts.upstreamCostUsd != null) auditPatch.upstreamCostUsd = opts.upstreamCostUsd;
+    if (opts.markup != null) auditPatch.markup = opts.markup;
+    if (opts.actorUserId) auditPatch.actorUserId = opts.actorUserId;
+    auditPatch.route = '/v1/llm/chat/completions';
+    await db
+      .update(creditLedger)
+      .set({
+        metadata: sql`COALESCE(${creditLedger.metadata}, '{}'::jsonb) || ${JSON.stringify(auditPatch)}::jsonb`,
+      })
+      .where(eq(creditLedger.id, result.transactionId))
+      .catch((err: unknown) => {
+        console.warn('[Credits] failed to stamp ledger audit metadata:', err);
+      });
+  }
+  return result;
 }
 
 interface ModelPricing {
@@ -262,5 +300,3 @@ export async function resetExpiringCredits(
     }
   }
 }
-
-

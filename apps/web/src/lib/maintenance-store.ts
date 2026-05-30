@@ -97,8 +97,13 @@ export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
  * Local dev: updates in-memory store.
  */
 export async function setMaintenanceConfig(config: MaintenanceConfig): Promise<MaintenanceConfig> {
+  const edgeConfigured = !!process.env.EDGE_CONFIG;
   const edgeConfigId = process.env.EDGE_CONFIG_ID;
   const vercelToken = process.env.VERCEL_API_TOKEN;
+
+  if (edgeConfigured && (!edgeConfigId || !vercelToken)) {
+    throw new Error('Edge Config writes require EDGE_CONFIG_ID and VERCEL_API_TOKEN');
+  }
 
   if (edgeConfigId && vercelToken) {
     const res = await fetch(
@@ -124,6 +129,14 @@ export async function setMaintenanceConfig(config: MaintenanceConfig): Promise<M
     if (!res.ok) {
       const body = await res.text();
       throw new Error(`Edge Config write failed (${res.status}): ${body}`);
+    }
+
+    const client = getEdgeClient();
+    if (client) {
+      const persisted = await client.get<MaintenanceConfig>(EDGE_CONFIG_KEY).catch(() => null);
+      if (!persisted || persisted.updatedAt !== config.updatedAt) {
+        throw new Error('Edge Config write did not persist the maintenance config');
+      }
     }
 
     return config;

@@ -1,0 +1,28 @@
+# CODEOWNERS — required reviewers for pull requests
+#
+# Purpose: enforce peer review of changes (SOC 2 CC8.1, change management).
+# When a PR touches a path below, the listed owner is automatically requested
+# for review. Combined with branch protection on `newer-kortix`, this ensures
+# no code reaches the protected branch without review.
+#
+# Syntax: <path pattern>  <@owner ...>  (last matching rule wins)
+# Add teammates' GitHub handles as the team grows so PRs need a *peer* review
+# (an author can never approve their own PR).
+
+# Default owner for everything in the repo.
+*                       @markokraemer
+
+# --- Security-sensitive areas (explicit ownership for auditability) ---
+# Auth, IAM, crypto, secrets
+/apps/api/src/iam/                  @markokraemer
+/apps/api/src/middleware/auth.ts    @markokraemer
+/apps/api/src/shared/crypto.ts      @markokraemer
+/apps/api/src/projects/secrets.ts   @markokraemer
+
+# Database schema & migrations (data-layer changes)
+/packages/db/                       @markokraemer
+/supabase/migrations/               @markokraemer
+
+# CI/CD, release, and repo governance
+/.github/                           @markokraemer
+/docs/compliance/                   @markokraemer

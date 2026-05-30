@@ -1,0 +1,201 @@
+name: CI
+
+# Pull-request gate. Required to pass before merging into protected branches
+# (SOC 2 CC8.1 — automated checks run on every change before review/merge).
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  api-typecheck:
+    name: API typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        # The lockfile is pnpm 8 format (lockfileVersion 6.0), matching the
+        # packageManager pin. corepack provides exactly that version.
+        run: |
+          corepack enable pnpm
+          echo "pnpm: $(pnpm -v)  node: $(node -v)"
+
+      - name: Install dependencies (kortix-api + workspace deps)
+        # engine-strict is relaxed for CI only: an out-of-scope web dep declares
+        # engines pnpm>=10/node>=24, which conflicts with the repo's pnpm 8
+        # lockfile. This relaxes the version check only — supply-chain controls
+        # (minimum-release-age, ignore-scripts) stay enforced.
+        run: pnpm install --frozen-lockfile --filter "kortix-api..."
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Typecheck
+        run: pnpm --filter kortix-api typecheck
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        run: |
+          corepack enable pnpm
+          echo "pnpm: $(pnpm -v)  node: $(node -v)"
+
+      - name: Install dependencies (frontend + workspace deps)
+        run: pnpm install --frozen-lockfile --filter "./apps/web..."
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build standalone frontend
+        run: pnpm --filter ./apps/web build
+        env:
+          NEXT_PUBLIC_ENV_MODE: local
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
+          NEXT_PUBLIC_BILLING_ENABLED: "false"
+          NEXT_OUTPUT: standalone
+
+  sandbox-agent-build:
+    name: Sandbox agent build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: apps/kortix-sandbox-agent-server
+
+      - name: Typecheck
+        run: bun run typecheck
+        working-directory: apps/kortix-sandbox-agent-server
+
+      - name: Build Linux sandbox agent daemon
+        run: BUN_COMPILE_TARGET=bun-linux-x64 bun run build
+        working-directory: apps/kortix-sandbox-agent-server
+
+      - name: Verify binary exists
+        run: |
+          test -x apps/kortix-sandbox-agent-server/dist/kortix-agent
+          ls -lh apps/kortix-sandbox-agent-server/dist/kortix-agent
+
+  cli-binary-smoke:
+    name: CLI binary smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install pnpm
+        run: |
+          corepack enable pnpm
+          echo "pnpm: $(pnpm -v)  node: $(node -v)  bun: $(bun -v)"
+
+      - name: Install dependencies (CLI + workspace deps)
+        run: pnpm install --frozen-lockfile --filter "@kortix/cli..."
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build Linux CLI binary
+        run: |
+          bun build \
+            --compile \
+            --minify \
+            --target=bun-linux-x64 \
+            --outfile=/tmp/kortix-cli-smoke \
+            apps/cli/src/index.ts
+
+      - name: Smoke test binary
+        run: /tmp/kortix-cli-smoke version
+
+  desktop-installer-smoke:
+    name: Desktop installer smoke
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux Tauri dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            file \
+            libgtk-3-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            wget
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install pnpm
+        run: corepack enable pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Prepare desktop shell assets
+        run: pnpm --filter @kortix/desktop run prepare-assets
+
+      - name: Build Linux desktop installer
+        run: pnpm --filter @kortix/desktop tauri build --bundles appimage
+        env:
+          KORTIX_DESKTOP_DEFAULT_URL: https://dev.kortix.com/dashboard
+
+      - name: Verify installer exists
+        run: |
+          shopt -s nullglob
+          files=(apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage)
+          test "${#files[@]}" -gt 0
+          ls -lh "${files[@]}"

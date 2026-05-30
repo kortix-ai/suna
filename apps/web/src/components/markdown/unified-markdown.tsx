@@ -1,17 +1,18 @@
 'use client';
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
+
+import React, { useState, useCallback, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
 import Link from 'next/link';
 import { Streamdown, defaultRemarkPlugins, defaultRehypePlugins } from 'streamdown';
 type PluggableList = any[];
 import { defaultSchema } from 'rehype-sanitize';
 import { Check, Copy } from 'lucide-react';
-import { codeToHtml } from 'shiki';
+import { codeToHtml, getSingletonHighlighter, type Highlighter, type ShikiTransformer } from 'shiki';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { MermaidRenderer } from '@/components/ui/mermaid-renderer';
 import { isMermaidCode } from '@/lib/mermaid-utils';
 import { autoLinkUrls } from '@kortix/shared';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -20,6 +21,16 @@ import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { toast } from '@/lib/toast';
+
+// Mermaid rendering is comparatively heavy (the renderer pulls Dialog/Button
+// chrome and lazily imports the multi-hundred-KB `mermaid` package on first
+// render). Most markdown never contains a diagram, so load the renderer
+// component lazily — it only enters the bundle once a ```mermaid block exists.
+const MermaidRenderer = lazy(() =>
+  import('@/components/ui/mermaid-renderer').then((mod) => ({
+    default: mod.MermaidRenderer,
+  })),
+);
 
 // ---------------------------------------------------------------------------
 // LaTeX / KaTeX support: custom remark + rehype plugin overrides
@@ -84,7 +95,7 @@ const katexSanitizeSchema = {
 // By running sanitize first, KaTeX output is generated *after* sanitization
 // and is preserved intact. This matches the approach in newer streamdown
 // versions (see chunk-ZKROPTWQ order: raw → sanitize → katex → harden).
-const customRehypePlugins: PluggableList = (() => {
+function buildRehypePlugins(includeRaw: boolean): PluggableList {
   const byKey: Record<string, PluggableList[number]> = {};
   for (const [key, plugin] of Object.entries(defaultRehypePlugins)) {
     if (key === 'sanitize' && Array.isArray(plugin)) {
@@ -96,12 +107,23 @@ const customRehypePlugins: PluggableList = (() => {
   // Correct order: raw → sanitize → katex → harden
   const ordered: PluggableList[number][] = [];
   for (const key of ['raw', 'sanitize', 'katex', 'harden']) {
+    if (key === 'raw' && !includeRaw) { delete byKey[key]; continue; }
     if (byKey[key]) { ordered.push(byKey[key]); delete byKey[key]; }
   }
   // Append any unknown future plugins
   for (const plugin of Object.values(byKey)) ordered.push(plugin);
-  return ordered;
-})() as PluggableList;
+  return ordered as PluggableList;
+}
+
+const customRehypePlugins: PluggableList = buildRehypePlugins(true);
+
+// Variant without `rehype-raw`: raw HTML/SVG embedded in the source is rendered
+// as escaped text instead of live DOM. Used by file/source viewers where raw
+// `<svg><path/></svg>` would otherwise be parsed into elements that Streamdown's
+// block-splitting can detach from their `<svg>` parent — React then renders the
+// stray `<path>` in the HTML namespace and warns
+// ("The tag <path> is unrecognized in this browser").
+const customRehypePluginsNoRaw: PluggableList = buildRehypePlugins(false);
 
 // Helper to check if a URL is internal (same origin)
 function isInternalUrl(href: string | undefined): boolean {
@@ -134,7 +156,7 @@ function handleHashClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
   }
 }
 
-// Copy button component for code blocks
+// Header-bar copy button — always visible, low-key when idle, accent on hover.
 function CopyButton({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -152,20 +174,25 @@ function CopyButton({ code }: { code: string }) {
     <button
       onClick={handleCopy}
       className={cn(
-        "absolute top-2.5 right-2.5 p-1.5 rounded-md cursor-pointer",
-        "opacity-0 group-hover:opacity-100 transition-all duration-150",
-        "bg-background/80 backdrop-blur-sm",
-        "border border-border/40 hover:border-border/60",
-        "text-muted-foreground/70 hover:text-foreground",
-        "shadow-sm hover:shadow",
-        "outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+        "inline-flex items-center gap-1.5 h-6 px-2 rounded-md cursor-pointer",
+        "text-xs font-medium tracking-tight",
+        "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50",
+        "hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60",
+        "transition-colors duration-150",
+        "outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0",
       )}
       aria-label={copied ? "Copied!" : "Copy code"}
     >
       {copied ? (
-        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-green-400" />
+        <>
+          <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+          <span>Copied</span>
+        </>
       ) : (
-        <Copy className="h-3.5 w-3.5" />
+        <>
+          <Copy className="h-3 w-3" />
+          <span>Copy</span>
+        </>
       )}
     </button>
   );
@@ -174,6 +201,16 @@ function CopyButton({ code }: { code: string }) {
 // Maximum code length for Shiki syntax highlighting (characters).
 // Very large code blocks are expensive to highlight — truncate to keep UI responsive.
 const SHIKI_MAX_LENGTH = 50_000;
+
+// Shared theme — pierre-dark / pierre-light — matches the diff renderer
+// (PatchDiff) and every other Shiki surface in the app.
+import {
+  SHIKI_THEMES,
+  SHIKI_THEME_DARK_NAME,
+  SHIKI_THEME_LIGHT_NAME,
+} from '@/lib/shiki-theme';
+export const SHIKI_THEME_DARK = SHIKI_THEME_DARK_NAME;
+export const SHIKI_THEME_LIGHT = SHIKI_THEME_LIGHT_NAME;
 
 // Normalise language aliases that Shiki might not recognise directly
 function normalizeLanguage(lang: string): string {
@@ -192,6 +229,97 @@ function normalizeLanguage(lang: string): string {
     'md': 'markdown',
   };
   return map[lang.toLowerCase()] || lang.toLowerCase();
+}
+
+// Languages pre-loaded into the singleton highlighter at module init.
+// Anything not in this list lazy-loads on first use via `loadLanguage`.
+//
+// 'text' is included so fenced blocks without a language hint can still go
+// through Shiki — they pick up Pierre's `editor.foreground` / `background`
+// (the same colours the file viewer and thumbnails paint with), keeping
+// every code surface visually consistent.
+const PRELOAD_LANGS = [
+  'text',
+  'javascript', 'typescript', 'jsx', 'tsx',
+  'python', 'bash', 'json', 'css', 'html',
+  'markdown', 'yaml',
+];
+
+// Shared Shiki transformers — strip Shiki's wrapper background, tabindex, AND
+// any font-weight/font-style on token spans. The last bit is critical:
+// bold/italic glyphs are wider than regular ones, so themes that bold keywords
+// cause every token after a keyword to shift right when highlighting swaps
+// in. Forcing all tokens to the same weight/style means the highlighted DOM
+// occupies the exact same horizontal space as the plain-text fallback — the
+// swap becomes color-only.
+const shikiTransformers: ShikiTransformer[] = [{
+  pre(node) {
+    if (node.properties.style) {
+      node.properties.style = (node.properties.style as string)
+        .replace(/background-color:[^;]+;?/g, '');
+    }
+    delete node.properties.tabindex;
+  },
+  span(node) {
+    const style = node.properties.style;
+    if (typeof style === 'string') {
+      node.properties.style = style
+        .replace(/font-weight:[^;]+;?/g, '')
+        .replace(/font-style:[^;]+;?/g, '');
+    }
+  },
+}];
+
+// Singleton highlighter — once resolved, exposes a SYNCHRONOUS `codeToHtml`.
+// Kicked off at module init so by the time the first code block renders, the
+// highlighter is usually ready and we can highlight in the useState initialiser
+// (no plain-text → highlighted flash).
+let highlighterReady: Highlighter | null = null;
+const loadedLangs = new Set<string>(PRELOAD_LANGS.map((l) => l.toLowerCase()));
+const langLoadPromises = new Map<string, Promise<void>>();
+
+const highlighterPromise: Promise<Highlighter> = getSingletonHighlighter({
+  // Pass the theme JSON objects (not just names) so Shiki can load them —
+  // Pierre's themes are not in Shiki's bundled set. The cast skirts a strict
+  // TS check: Pierre ships VS Code-format themes (`tokenColors`), which Shiki
+  // accepts at runtime but its `ThemeInput` type only narrowly describes.
+  themes: [SHIKI_THEMES.dark as never, SHIKI_THEMES.light as never],
+  langs: PRELOAD_LANGS,
+}).then((h) => {
+  highlighterReady = h;
+  return h;
+}).catch((err) => {
+  console.warn('[unified-markdown] Shiki highlighter init failed:', err);
+  throw err;
+});
+
+function ensureLangLoaded(h: Highlighter, lang: string): Promise<void> {
+  if (loadedLangs.has(lang)) return Promise.resolve();
+  const existing = langLoadPromises.get(lang);
+  if (existing) return existing;
+  const p = h.loadLanguage(lang as never)
+    .then(() => { loadedLangs.add(lang); })
+    .catch((err) => {
+      console.warn(`[unified-markdown] failed to load Shiki lang "${lang}":`, err?.message || err);
+    })
+    .finally(() => { langLoadPromises.delete(lang); });
+  langLoadPromises.set(lang, p);
+  return p;
+}
+
+/** Sync highlight — returns null if highlighter not ready or lang not loaded. */
+function highlightSync(code: string, language: string, theme: string): string | null {
+  if (!highlighterReady) return null;
+  const lang = normalizeLanguage(language);
+  if (!loadedLangs.has(lang)) return null;
+  const truncated = code.length > SHIKI_MAX_LENGTH
+    ? code.slice(0, SHIKI_MAX_LENGTH) + '\n// ... (truncated for highlighting)'
+    : code;
+  try {
+    return highlighterReady.codeToHtml(truncated, { lang, theme, transformers: shikiTransformers });
+  } catch {
+    return null;
+  }
 }
 
 // Syntax-highlighted code using Shiki
@@ -268,20 +396,14 @@ function highlightAsync(code: string, language: string, theme: string): Promise<
     ? code.slice(0, SHIKI_MAX_LENGTH) + '\n// ... (truncated for highlighting)'
     : code;
 
-  const p = codeToHtml(truncated, {
-    lang: normalizedLang,
-    theme,
-    transformers: [{
-      pre(node) {
-        // Strip background-color (we use our own) and tabindex (causes focus outlines)
-        if (node.properties.style) {
-          node.properties.style = (node.properties.style as string)
-            .replace(/background-color:[^;]+;?/g, '');
-        }
-        delete node.properties.tabindex;
-      },
-    }],
-  })
+  // Prefer the singleton highlighter (sync once the lang grammar is loaded).
+  // Falls back to the convenience `codeToHtml` only if the singleton init failed.
+  const p = highlighterPromise
+    .then(async (h) => {
+      await ensureLangLoaded(h, normalizedLang);
+      return h.codeToHtml(truncated, { lang: normalizedLang, theme, transformers: shikiTransformers });
+    })
+    .catch(() => codeToHtml(truncated, { lang: normalizedLang, theme, transformers: shikiTransformers }))
     .then((html) => {
       evictOldest();
       shikiCache.set(key, html);
@@ -313,22 +435,28 @@ function findBestCachedHtml(code: string, language: string, theme: string): stri
 
 export function HighlightedCode({ code, language, children }: { code: string; language: string; children: React.ReactNode }) {
   const { resolvedTheme } = useTheme();
-  const theme = resolvedTheme === 'dark' ? 'github-dark' : 'github-light';
+  const theme = resolvedTheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
   const hlKey = `${language}:${theme}`;
 
   // Track the latest highlighted HTML and the code it corresponds to.
   // During streaming, code changes rapidly — we keep the previous highlight
   // visible until a new one is ready (no flash to plain text).
   //
-  // The initialiser checks both the Shiki cache AND the module-level
-  // lastHighlightedMap for prefix matches — this is critical because
-  // Streamdown remounts this component on every token during streaming,
-  // destroying component state each time.
+  // The initialiser checks (in order):
+  //   1. Shiki cache for exact match (instant)
+  //   2. Pre-loaded singleton highlighter for sync highlight (instant if lang preloaded)
+  //   3. Prefix-match against the last highlighted code for this lang+theme
+  // Steps 1 and 2 return highlighted HTML SYNCHRONOUSLY, so the very first
+  // render already paints with colours — no plain → highlighted swap, no shift.
   const [highlighted, setHighlighted] = useState<{ html: string; code: string } | null>(() => {
-    // Exact cache hit
     const cached = shikiCache.get(shikiKey(code, language, theme));
     if (cached) return { html: cached, code };
-    // Module-level prefix match (from a previous Shiki call during streaming)
+    const sync = highlightSync(code, language, theme);
+    if (sync) {
+      shikiCache.set(shikiKey(code, language, theme), sync);
+      lastHighlightedMap.set(hlKey, { html: sync, code });
+      return { html: sync, code };
+    }
     const last = lastHighlightedMap.get(hlKey);
     if (last && code.startsWith(last.code) && last.code.length > 0) return last;
     return null;
@@ -343,6 +471,16 @@ export function HighlightedCode({ code, language, children }: { code: string; la
       const result = { html: cached, code };
       setHighlighted(result);
       lastHighlightedMap.set(hlKey, result);
+      return;
+    }
+
+    // Singleton may have finished loading between render and effect — try sync
+    const sync = highlightSync(code, language, theme);
+    if (sync) {
+      const result = { html: sync, code };
+      shikiCache.set(shikiKey(code, language, theme), sync);
+      lastHighlightedMap.set(hlKey, result);
+      setHighlighted(result);
       return;
     }
 
@@ -381,7 +519,7 @@ export function HighlightedCode({ code, language, children }: { code: string; la
   }, [code, language, theme, hlKey]);
 
   const shikiResetClasses = cn(
-    "text-[13px] font-mono leading-[1.7] whitespace-pre",
+    "text-sm font-mono leading-[1.65] whitespace-pre",
     // Collapse Shiki's wrapper elements so only .line spans render
     "[&_pre]:contents [&_code]:contents",
     // Reset .line spans: prevent global * { border-border } from causing visual artifacts
@@ -400,58 +538,106 @@ export function HighlightedCode({ code, language, children }: { code: string; la
   }
 
   // If we have a highlight for a PREFIX of the current code (streaming — code grew),
-  // show the highlighted prefix + plain text tail
+  // show the highlighted prefix + plain text tail. Tail span has no colour
+  // override so it inherits Pierre's editor foreground from the `<pre>`.
   if (highlighted && code.startsWith(highlighted.code) && highlighted.code.length > 0) {
     const tail = code.slice(highlighted.code.length);
     return (
       <code className={shikiResetClasses}>
         <span dangerouslySetInnerHTML={{ __html: highlighted.html }} />
-        {tail && <span className="text-inherit">{tail}</span>}
+        {tail && <span>{tail}</span>}
       </code>
     );
   }
 
-  // No matching highlight yet — show plain text
+  // No matching highlight yet — show plain text in Pierre's editor fg (the
+  // `<pre>` wrapping sets the colour; we deliberately don't override it).
   return (
-    <code className="text-[13px] font-mono leading-[1.7] text-inherit whitespace-pre">
+    <code className="text-sm font-mono leading-[1.65] whitespace-pre">
       {children}
     </code>
   );
 }
 
-// Code block component with copy functionality
-function CodeBlock({ children, isStreaming }: { children: React.ReactNode; isStreaming?: boolean }) {
-  const preRef = useRef<HTMLPreElement>(null);
-  const [codeText, setCodeText] = useState('');
+// Display label for the language pill — falls back to "text" for fenced
+// blocks without a language hint.
+function languageLabel(language: string): string {
+  if (!language) return 'text';
+  const lower = language.toLowerCase();
+  const display: Record<string, string> = {
+    js: 'javascript',
+    ts: 'typescript',
+    py: 'python',
+    rb: 'ruby',
+    sh: 'bash',
+    shell: 'bash',
+    zsh: 'bash',
+    yml: 'yaml',
+    md: 'markdown',
+    htm: 'html',
+  };
+  return display[lower] || lower;
+}
 
-  useEffect(() => {
-    if (preRef.current) {
-      const codeElement = preRef.current.querySelector('code');
-      if (codeElement) {
-        const text = codeElement.textContent || '';
-        setCodeText(text.trim());
-      }
-    }
-  }, [children]);
-
+// Card chrome for block code — header (language + copy) over the highlighted body.
+// Used by both the markdown renderer and the standalone `CodeHighlight` export.
+//
+// Colours come straight from Pierre's theme JSON so the code surface lines
+// up with every other Pierre-themed area (diffs, file viewer, thumbnails).
+// Pierre Dark / Pierre Light:
+//   body   bg  =  editor.background         (#ffffff / #070707)
+//   header bg  =  sideBar.background        (#f8f8f8 / #141415)
+//   border     =  panel.border-ish          (#eeeeef / #1f1f21)
+//   label fg   =  editorLineNumber          (#84848A — shared across modes)
+//   body fg    =  editor.foreground         (#070707 / #fbfbfb)
+function CodeBlock({
+  code,
+  language,
+  children,
+  isStreaming,
+  className,
+}: {
+  code: string;
+  language: string;
+  children: React.ReactNode;
+  isStreaming?: boolean;
+  className?: string;
+}) {
   return (
-    <div className="relative group my-5">
-      <pre
-        ref={preRef}
+    <div
+      className={cn(
+        "relative group not-prose my-5",
+        "rounded-2xl overflow-hidden",
+        "border border-border",
+        "bg-card",
+        "shadow-[0_1px_0_rgba(0,0,0,0.02)] dark:shadow-none",
+        className,
+      )}
+    >
+      <div
         className={cn(
-          "p-4 rounded-xl overflow-x-auto",
-          "bg-zinc-50 dark:bg-zinc-900/80",
-          "border border-zinc-200/70 dark:border-zinc-800/60",
-          "text-[13px] font-mono leading-[1.7]",
-          "text-zinc-800 dark:text-zinc-200",
-          // Reset nested code elements — prevent borders/outlines from leaking in
+          "flex items-center justify-between",
+          "h-9 pl-3.5 pr-1.5",
+          "border-b border-border",
+          "bg-muted/30",
+        )}
+      >
+        <span className="text-xs font-mono tracking-tight text-muted-foreground select-none">
+          {languageLabel(language)}
+        </span>
+        {code && !isStreaming && <CopyButton code={code} />}
+      </div>
+      <pre
+        className={cn(
+          "px-4 py-3.5 overflow-x-auto",
+          "text-sm font-mono leading-[1.65]",
+          "text-foreground",
           "[&_code]:bg-transparent [&_code]:text-inherit [&_code]:p-0 [&_code]:border-none",
           "[&_span]:border-none [&_span]:outline-none",
         )}
       >
         {children}
       </pre>
-      {codeText && !isStreaming && <CopyButton code={codeText} />}
     </div>
   );
 }
@@ -477,7 +663,7 @@ function KaTeXBlock({ math }: { math: string }) {
 
   return (
     <div
-      className="my-5 overflow-x-auto py-4 px-5 rounded-xl border border-border/60 bg-card/50 [&_.katex-display]:!my-0"
+      className="my-5 overflow-x-auto py-4 px-5 rounded-2xl border border-border/60 bg-card/50 [&_.katex-display]:!my-0"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
@@ -522,13 +708,23 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
     openPreview(text);
   }, [text, openPreview, isAbsolute]);
 
+  const baseInline =
+    "px-[0.35rem] py-[0.1rem] rounded-[5px] text-sm font-mono " +
+    "bg-zinc-100 dark:bg-zinc-800/70 text-foreground/90 " +
+    "ring-1 ring-inset ring-zinc-200/70 dark:ring-zinc-700/40";
+
   if (isUrl) {
     return (
       <a
         href={text}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-block px-1.5 py-0.5 rounded-md text-[13px] font-mono bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/50 text-foreground cursor-pointer hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:border-blue-700/50 dark:hover:text-blue-400 transition-colors"
+        className={cn(
+          baseInline,
+          "inline-block cursor-pointer transition-colors",
+          "hover:text-blue-600 hover:bg-blue-50 hover:ring-blue-200/70",
+          "dark:hover:text-blue-400 dark:hover:bg-blue-900/20 dark:hover:ring-blue-700/40",
+        )}
         title={`Open ${text} in a new tab`}
       >
         {children}
@@ -540,9 +736,10 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
     return (
       <code
         className={cn(
-          "px-1.5 py-0.5 rounded-md text-[13px] font-mono bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/50 text-foreground transition-colors",
+          baseInline,
+          "transition-colors",
           isAbsolute
-            ? "cursor-pointer hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:border-blue-700/50 dark:hover:text-blue-400"
+            ? "cursor-pointer hover:text-blue-600 hover:bg-blue-50 hover:ring-blue-200/70 dark:hover:text-blue-400 dark:hover:bg-blue-900/20 dark:hover:ring-blue-700/40"
             : "cursor-not-allowed opacity-70",
         )}
         onClick={handleFileClick}
@@ -554,11 +751,7 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return (
-    <code className="px-1.5 py-0.5 rounded-md text-[13px] font-mono bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/50 text-foreground">
-      {children}
-    </code>
-  );
+  return <code className={baseInline}>{children}</code>;
 }
 
 /**
@@ -578,24 +771,11 @@ export function CodeHighlight({
   className?: string;
 }) {
   return (
-    <div className={cn('relative group', className)}>
-      <pre
-        className={cn(
-          'p-4 rounded-xl overflow-x-auto',
-          'bg-zinc-50 dark:bg-zinc-900/80',
-          'border border-zinc-200/70 dark:border-zinc-800/60',
-          'text-[13px] font-mono leading-[1.7]',
-          'text-zinc-800 dark:text-zinc-200',
-          '[&_code]:bg-transparent [&_code]:text-inherit [&_code]:p-0 [&_code]:border-none',
-          '[&_span]:border-none [&_span]:outline-none',
-        )}
-      >
-        <HighlightedCode code={code} language={language}>
-          {code}
-        </HighlightedCode>
-      </pre>
-      {code && <CopyButton code={code} />}
-    </div>
+    <CodeBlock code={code} language={language} className={cn('my-0', className)}>
+      <HighlightedCode code={code} language={language}>
+        {code}
+      </HighlightedCode>
+    </CodeBlock>
   );
 }
 
@@ -603,6 +783,13 @@ export interface UnifiedMarkdownProps {
   content: string;
   className?: string;
   isStreaming?: boolean; // Enable streaming animation for incomplete markdown
+  /**
+   * Allow raw HTML (and inline SVG) embedded in the Markdown to be parsed into
+   * live DOM. Defaults to `true`. Set to `false` for file/source viewers so that
+   * embedded markup is shown as escaped text rather than broken,
+   * namespace-less DOM (avoids React's "<path> is unrecognized" warning).
+   */
+  allowHtml?: boolean;
 }
 
 /**
@@ -621,7 +808,9 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   content,
   className,
   isStreaming = false,
+  allowHtml = true,
 }) => {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Resolve the active sandbox server so we can proxy localhost URLs
   const { proxyUrl } = useSandboxProxy();
 
@@ -771,39 +960,41 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
       const isBlock = hasLanguageClass || isMultiLine;
 
       if (isBlock) {
-        // Mermaid diagrams
+        // Mermaid diagrams — render their own card chrome
         if (isMermaidCode(language, code)) {
-          return <MermaidRenderer chart={code} className="my-5" />;
+          return (
+            <Suspense fallback={null}>
+              <MermaidRenderer chart={code} className="my-5" />
+            </Suspense>
+          );
         }
 
-        // KaTeX/LaTeX code blocks - render as math (like mermaid renders as diagrams)
+        // KaTeX/LaTeX code blocks — render as math, also self-contained
         if (KATEX_LANGUAGES.has(language.toLowerCase())) {
           return <KaTeXBlock math={code} />;
         }
 
-        // Syntax-highlighted block code
-        if (language) {
-          return <HighlightedCode code={code} language={language}>{children}</HighlightedCode>;
-        }
-
-        // Block code without language - plain mono font
+        // Everything else: shared card with header bar. `language || 'text'`
+        // routes no-hint fences through Shiki too — they don't get any
+        // syntax tokens (Shiki's `text` language is a no-op tokenizer) but
+        // they pick up Pierre's editor foreground/background, so plain-text
+        // fences match the rest of the code chrome instead of inheriting the
+        // surrounding paragraph colour.
         return (
-          <code className="text-[13px] font-mono leading-[1.7] text-inherit whitespace-pre">
-            {children}
-          </code>
+          <CodeBlock code={code} language={language} isStreaming={isStreaming}>
+            <HighlightedCode code={code} language={language || 'text'}>
+              {children}
+            </HighlightedCode>
+          </CodeBlock>
         );
       }
 
       // Inline code - subtle pill style, clickable if it looks like a file path
       return <ClickableInlineCode>{children}</ClickableInlineCode>;
     },
-    pre: ({ children }: { children?: React.ReactNode }) => {
-      // KaTeX & Mermaid blocks handle their own container styling - skip CodeBlock wrapper
-      if (React.isValidElement(children) && (children.type === KaTeXBlock || children.type === MermaidRenderer)) {
-        return <>{children}</>;
-      }
-      return <CodeBlock isStreaming={isStreaming}>{children}</CodeBlock>;
-    },
+    // `code` handler already returns the fully-styled block (CodeBlock / KaTeX /
+    // Mermaid). The default `<pre>` would double-wrap it, so we collapse it.
+    pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
 
     // ═══════════════════════════════════════════════════════════════
     // BLOCKQUOTES - Clean side border
@@ -830,7 +1021,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
     // TABLES - Clean, modern table design
     // ═══════════════════════════════════════════════════════════════
     table: ({ children }: { children?: React.ReactNode }) => (
-      <div className="my-5 overflow-x-auto rounded-xl border border-border/60">
+      <div className="my-5 overflow-x-auto rounded-2xl border border-border/60">
         <table className="w-full text-sm !m-0">
           {children}
         </table>
@@ -955,9 +1146,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
 
   if (!safeContent) {
     return (
-      <div className={cn('text-muted-foreground text-sm', className)}>
-        No content
-      </div>
+      <div className={cn('text-muted-foreground text-sm', className)}>{tHardcodedUi.raw('componentsMarkdownUnifiedMarkdown.line1115JsxTextNoContent')}</div>
     );
   }
 
@@ -974,7 +1163,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
         mode="static"
         components={components}
         remarkPlugins={customRemarkPlugins}
-        rehypePlugins={customRehypePlugins}
+        rehypePlugins={allowHtml ? customRehypePlugins : customRehypePluginsNoRaw}
       >
         {finalContent}
       </Streamdown>

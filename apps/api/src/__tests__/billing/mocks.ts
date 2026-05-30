@@ -68,7 +68,7 @@ export function registerGlobalMocks() {
   mock.module('../../config', () => ({
     config: {
       STRIPE_WEBHOOK_SECRET: 'whsec_test',
-      ENV_MODE: 'cloud',
+      KORTIX_BILLING_INTERNAL_ENABLED: true,
       INTERNAL_KORTIX_ENV: 'staging',
     },
   }));
@@ -279,9 +279,12 @@ export function createMockStripeCheckoutSession(overrides: Record<string, any> =
   };
 }
 
+let stripeEventSequence = 0;
+
 export function createMockStripeEvent(type: string, object: any, overrides: Record<string, any> = {}) {
+  stripeEventSequence += 1;
   return {
-    id: `evt_test_${Date.now()}`,
+    id: `evt_test_${Date.now()}_${stripeEventSequence}`,
     type,
     data: { object },
     created: Math.floor(Date.now() / 1000),
@@ -324,6 +327,21 @@ export function createMockStripeClient(overrides: Record<string, any> = {}) {
         id: 'cus_new_123',
         email: params.email,
         metadata: params.metadata,
+      })),
+      retrieve: overrides.customersRetrieve ?? (async (id: string) => ({
+        id,
+        invoice_settings: { default_payment_method: null },
+        deleted: false,
+      })),
+    },
+    paymentMethods: {
+      list: overrides.paymentMethodsList ?? (async () => ({ data: [] })),
+    },
+    prices: {
+      retrieve: overrides.pricesRetrieve ?? (async (id: string) => ({
+        id,
+        unit_amount: id === 'price_1RIGvuG6l1KZGqIrw14abxeL' ? 0 : 2000,
+        recurring: { interval: 'month' },
       })),
     },
     checkout: {

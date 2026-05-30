@@ -1,0 +1,12 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "---Concepts---",
+    "concepts",
+    "reference",
+    "---Using the web app---",
+    "quickstart",
+    "guides"
+  ]
+}

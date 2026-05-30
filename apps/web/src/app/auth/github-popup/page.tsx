@@ -1,9 +1,12 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { Button } from '@/components/ui/button';
 
 interface AuthMessage {
   type: 'github-auth-success' | 'github-auth-error';
@@ -12,6 +15,7 @@ interface AuthMessage {
 }
 
 export default function GitHubOAuthPopup() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [status, setStatus] = useState<'loading' | 'processing' | 'error'>(
     'loading',
   );
@@ -19,10 +23,13 @@ export default function GitHubOAuthPopup() {
 
   useEffect(() => {
     const supabase = createClient();
+    let authSubscription: { unsubscribe: () => void } | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
 
     // Get return URL from sessionStorage (set by parent component)
     const returnUrl =
-      sessionStorage.getItem('github-returnUrl') || '/dashboard';
+      sessionStorage.getItem('github-returnUrl') || '/projects';
 
     const postMessage = (message: AuthMessage) => {
       try {
@@ -81,11 +88,13 @@ export default function GitHubOAuthPopup() {
           try {
             // Wait a moment for Supabase to process the session
             await new Promise((resolve) => setTimeout(resolve, 1000));
+            if (cancelled) return;
 
             const {
               data: { session },
               error,
             } = await supabase.auth.getSession();
+            if (cancelled) return;
 
             if (error) {
               throw error;
@@ -108,9 +117,10 @@ export default function GitHubOAuthPopup() {
                 handleError('Authentication failed - please try again');
               }
             });
+            authSubscription = subscription;
 
             // Cleanup subscription after timeout
-            setTimeout(() => {
+            timeoutId = setTimeout(() => {
               subscription.unsubscribe();
               handleError('Authentication timeout - please try again');
             }, 10000); // 10 second timeout
@@ -154,7 +164,10 @@ export default function GitHubOAuthPopup() {
     handleOAuth();
 
     return () => {
+      cancelled = true;
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      authSubscription?.unsubscribe();
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, []);
 
@@ -174,9 +187,9 @@ export default function GitHubOAuthPopup() {
   const getStatusColor = () => {
     switch (status) {
       case 'error':
-        return 'text-red-500';
+        return 'text-destructive';
       case 'processing':
-        return 'text-emerald-500';
+        return 'text-emerald-600 dark:text-emerald-400';
       default:
         return 'text-muted-foreground';
     }
@@ -190,17 +203,14 @@ export default function GitHubOAuthPopup() {
         )}
 
         <div className="space-y-2">
-          <h1 className="text-lg font-medium">GitHub Sign-In</h1>
+          <h1 className="text-lg font-medium">{tHardcodedUi.raw('appAuthGithubPopupPage.line194JsxTextGithubSignIn')}</h1>
           <p className={cn('text-sm', getStatusColor())}>{getStatusMessage()}</p>
         </div>
 
         {status === 'error' && (
-          <button
-            onClick={() => window.close()}
-            className="mt-4 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-          >
+          <Button onClick={() => window.close()} className="mt-4">
             Close
-          </button>
+          </Button>
         )}
       </div>
     </main>

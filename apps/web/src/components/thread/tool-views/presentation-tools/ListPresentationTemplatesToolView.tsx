@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { useState } from "react"
 import Image from "next/image"
@@ -33,6 +34,7 @@ export function ListPresentationTemplatesToolView({
   toolTimestamp,
   isStreaming = false,
 }: ToolViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(name)
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
@@ -131,7 +133,7 @@ export function ListPresentationTemplatesToolView({
 
         <div className="px-4 py-2 h-9 bg-zinc-50/30 dark:bg-zinc-900/30 border-t border-zinc-200/30 dark:border-zinc-800/30 flex justify-between items-center">
           <div className="text-xs text-zinc-400 dark:text-zinc-500">
-            <span className="font-mono">Template Preview</span>
+            <span className="font-mono">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationtemplatestoolview.line134JsxTextTemplatePreview')}</span>
           </div>
           <div className="text-xs text-zinc-400 dark:text-zinc-500">
             {formatTimestamp(toolTimestamp)}
@@ -153,10 +155,10 @@ export function ListPresentationTemplatesToolView({
         {isStreaming ? (
           <LoadingState
             icon={Palette}
-            iconColor="text-orange-500 dark:text-orange-400"
-            bgColor="bg-gradient-to-b from-orange-100 to-orange-50 shadow-inner dark:from-orange-800/40 dark:to-orange-900/60 dark:shadow-orange-950/20"
-            title="Loading presentation templates"
-            filePath="Fetching available templates..."
+            iconColor={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationtemplatestoolview.line156JsxAttrIconcolorTextOrange500DarkTextOrange400')}
+            bgColor={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationtemplatestoolview.line157JsxAttrBgcolorBgGradientToBFromOrange100To')}
+            title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationtemplatestoolview.line158JsxAttrTitleLoadingPresentationTemplates')}
+            filePath={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationtemplatestoolview.line159JsxAttrFilepathFetchingAvailableTemplates')}
             showProgress={true}
           />
         ) : !templatesData || !templatesData.templates || templatesData.templates.length === 0 || error ? (
@@ -164,9 +166,7 @@ export function ListPresentationTemplatesToolView({
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-rose-100 to-rose-50 shadow-inner dark:from-rose-800/40 dark:to-rose-900/60">
               <AlertTriangle className="h-10 w-10 text-rose-400 dark:text-rose-600" />
             </div>
-            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-              No templates available
-            </h3>
+            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsListpresentationtemplatestoolview.line168JsxTextNoTemplatesAvailable')}</h3>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md">
               {error || templatesData?.message || "Check back soon for new presentation templates"}
             </p>
@@ -183,7 +183,7 @@ export function ListPresentationTemplatesToolView({
                     <div
                       key={template.id}
                       onClick={() => handleTemplateClick(template.id)}
-                      className="group rounded-lg cursor-pointer transition-colors duration-200 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-lg hover:scale-[1.01]"
+                      className="group rounded-2xl cursor-pointer transition-colors duration-200 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-lg hover:scale-[1.01]"
                     >
                       <div className="relative rounded-t-lg overflow-hidden bg-muted">
                         {imageUrl ? (

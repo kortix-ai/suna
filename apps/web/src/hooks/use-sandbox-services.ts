@@ -129,6 +129,7 @@ export function useSandboxServices(options?: { enabled?: boolean; includeAll?: b
     staleTime: 5_000,
     gcTime: 60_000,
     refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }
@@ -167,6 +168,7 @@ export function useSandboxServiceLogs(serviceId: string | null, options?: { enab
     staleTime: 3_000,
     gcTime: 60_000,
     refetchInterval: serviceId ? 3_000 : false,
+    refetchIntervalInBackground: false,
   });
 }
 

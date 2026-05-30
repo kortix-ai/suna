@@ -20,6 +20,7 @@ export {
   
   // Mutation hooks
   useCreateCheckoutSession,
+  useCreatePerSeatCheckout,
   useCreatePortalSession,
   useCancelSubscription,
   useReactivateSubscription,
@@ -29,15 +30,9 @@ export {
   useCancelScheduledChange,
   useSyncSubscription,
   
-  // Usage/transactions (separate queries)
+  // Usage history (transactions ledger lives in ./use-transactions below)
   useUsageHistory,
-  useTransactions,
-  
-  // Trial
-  useTrialStatus,
-  useStartTrial,
-  useCancelTrial,
-  
+
   // Selectors for extracting data
   accountStateSelectors,
 } from './use-account-state';
@@ -48,6 +43,9 @@ export {
 
 // Billing modal state
 export { useBillingModal } from './use-billing-modal';
+
+// Credits ledger (rich variant with typeFilter, account-scoped via context)
+export { useTransactions, useTransactionsSummary } from './use-transactions';
 
 // Download restriction for free tier
 export { useDownloadRestriction } from './use-download-restriction';

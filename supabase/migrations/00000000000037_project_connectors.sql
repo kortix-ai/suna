@@ -1,0 +1,3 @@
+-- Superseded before merge.
+-- The previous draft created an obsolete project connector table that was
+-- removed in favor of the Executor bridge connection model.

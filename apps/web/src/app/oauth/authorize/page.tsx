@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
@@ -11,7 +13,7 @@ import { Shield, X } from 'lucide-react';
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   profile: 'View your account information',
-  'machines:read': 'View your machines provisioned via JustAVPS',
+  'machines:read': 'View your project session sandboxes',
 };
 
 export default function OAuthConsentPage() {
@@ -25,21 +27,20 @@ export default function OAuthConsentPage() {
 }
 
 function OAuthConsent() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, isLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [consentRequest, setConsentRequest] = useState<{
+    clientName: string;
+    scopes: string[];
+  } | null>(null);
 
-  const clientName = searchParams.get('client_name') || 'Unknown App';
-  const clientId = searchParams.get('client_id') || '';
-  const scope = searchParams.get('scope') || '';
-  const state = searchParams.get('state') || '';
-  const redirectUri = searchParams.get('redirect_uri') || '';
-  const codeChallenge = searchParams.get('code_challenge') || '';
-  const codeChallengeMethod = searchParams.get('code_challenge_method') || 'S256';
-
-  const scopes = scope.split(' ').filter(Boolean);
+  const requestId = searchParams.get('request_id') || '';
+  const clientName = consentRequest?.clientName || 'Unknown App';
+  const scopes = consentRequest?.scopes || [];
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -47,6 +48,52 @@ function OAuthConsent() {
       router.replace(`/auth?returnUrl=${encodeURIComponent(currentUrl.pathname + currentUrl.search)}`);
     }
   }, [user, isLoading, router]);
+
+  useEffect(() => {
+    if (isLoading || !user || !requestId) return;
+    let cancelled = false;
+
+    async function loadConsentRequest() {
+      setError(null);
+      setConsentRequest(null);
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          setError('Session expired. Please sign in again.');
+          return;
+        }
+
+        const backendUrl = getEnv().BACKEND_URL || '';
+        const res = await fetch(`${backendUrl}/oauth/authorize/consent/${encodeURIComponent(requestId)}`, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          setError(data?.error_description || data?.error || 'Authorization request expired.');
+          return;
+        }
+        if (!cancelled) {
+          setConsentRequest({
+            clientName: data.client_name || 'Unknown App',
+            scopes: Array.isArray(data.scopes)
+              ? data.scopes.filter((scope: unknown): scope is string => typeof scope === 'string')
+              : String(data.scope || '').split(' ').filter(Boolean),
+          });
+        }
+      } catch {
+        if (!cancelled) setError('Network error. Please try again.');
+      }
+    }
+
+    loadConsentRequest();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, requestId, user]);
 
   const handleConsent = async (approved: boolean) => {
     setSubmitting(true);
@@ -69,12 +116,7 @@ function OAuthConsent() {
           Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          client_id: clientId,
-          redirect_uri: redirectUri,
-          scope,
-          state,
-          code_challenge: codeChallenge,
-          code_challenge_method: codeChallengeMethod,
+          request_id: requestId,
           approved,
         }),
       });
@@ -100,12 +142,29 @@ function OAuthConsent() {
     return <ConnectingScreen forceConnecting minimal title="Authorizing" />;
   }
 
-  if (!clientId || !redirectUri || !codeChallenge) {
+  if (!requestId) {
     return (
       <div className="fixed inset-0 bg-background flex items-center justify-center">
         <div className="max-w-sm text-center space-y-4">
-          <p className="text-destructive font-medium">Invalid authorization request</p>
-          <p className="text-sm text-muted-foreground">Missing required parameters.</p>
+          <p className="text-destructive font-medium">{tHardcodedUi.raw('appOauthAuthorizePage.line146JsxTextInvalidAuthorizationRequest')}</p>
+          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appOauthAuthorizePage.line147JsxTextMissingRequiredParameters')}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!consentRequest) {
+    return (
+      <div className="fixed inset-0 bg-background flex items-center justify-center">
+        <div className="max-w-sm text-center space-y-4">
+          {error ? (
+            <>
+              <p className="text-destructive font-medium">{tHardcodedUi.raw('appOauthAuthorizePage.line159JsxTextAuthorizationRequestUnavailable')}</p>
+              <p className="text-sm text-muted-foreground">{error}</p>
+            </>
+          ) : (
+            <ConnectingScreen forceConnecting minimal title="Authorizing" />
+          )}
         </div>
       </div>
     );
@@ -124,13 +183,11 @@ function OAuthConsent() {
             Authorize {clientName}
           </h1>
           <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{clientName}</span> wants to access your Kortix account
-          </p>
+            <span className="font-medium text-foreground">{clientName}</span>{tHardcodedUi.raw('appOauthAuthorizePage.line183JsxTextWantsToAccessYourKortixAccount')}</p>
         </div>
 
-        <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            This will allow {clientName} to:
+        <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('appOauthAuthorizePage.line189JsxTextThisWillAllow')}{' '}{clientName} to:
           </p>
           <ul className="space-y-2">
             {scopes.map((s) => (
@@ -142,13 +199,13 @@ function OAuthConsent() {
           </ul>
         </div>
 
-        <div className="rounded-xl border border-border bg-muted/20 px-4 py-3">
-          <p className="text-xs text-muted-foreground">Signed in as</p>
+        <div className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appOauthAuthorizePage.line202JsxTextSignedInAs')}</p>
           <p className="text-sm font-medium truncate">{user.email}</p>
         </div>
 
         {error && (
-          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
             {error}
           </div>
         )}
@@ -172,9 +229,7 @@ function OAuthConsent() {
           </Button>
         </div>
 
-        <p className="text-xs text-center text-muted-foreground">
-          You can revoke access at any time from your account settings.
-        </p>
+        <p className="text-xs text-center text-muted-foreground">{tHardcodedUi.raw('appOauthAuthorizePage.line232JsxTextYouCanRevokeAccessAtAnyTimeFrom')}</p>
       </div>
     </div>
   );

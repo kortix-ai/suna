@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 import { authenticatedFetch, getSupabaseAccessToken } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
@@ -168,6 +169,16 @@ function getSandboxServerUrl(sandboxId: string): string {
 export function resolveServerUrl(server: ServerEntry): string {
   if (server.sandboxId) return getSandboxServerUrl(server.sandboxId);
   return server.url || getDefaultSandboxUrl();
+}
+
+/**
+ * Derive the OpenCode proxy URL for a sandbox by its provider sandbox id
+ * (a project session's `external_id`). Pure function of the id — no dependency
+ * on the active server — so we can connect to several session sandboxes in
+ * parallel (e.g. background SSE streams for every open session tab).
+ */
+export function getSandboxUrlForExternalId(externalId: string): string {
+  return getSandboxServerUrl(externalId);
 }
 
 const DEFAULT_SERVER_ID = 'default';
@@ -636,6 +647,7 @@ export const useServerStore = create<ServerStore>()(
     }),
     {
       name: 'opencode-servers-v6', // v6: sandbox URLs derived at runtime, never persisted
+      storage: createSafeJSONStorage(),
       partialize: (state) => ({
         servers: state.servers.filter((s) => !isManagedEntry(s)),
         activeServerId: state.activeServerId,
@@ -1051,6 +1063,66 @@ export async function switchToInstanceAsync(
       sandboxId: match.external_id,
       instanceId: match.sandbox_id,
       mappedPorts: extractMappedPorts(match),
+    },
+    { autoSwitch: false, isLocal, stableId: isLocal ? undefined : stableId },
+  );
+  switchToServerEntry(serverId);
+  return { serverId, alreadyActive: false };
+}
+
+/**
+ * Project-session variant of `switchToInstanceAsync`. Uses the project-
+ * scoped `/projects/:projectId/sessions/:sessionId/sandbox` endpoint instead
+ * of the legacy /platform/sandbox/list lookup so session sandboxes stay
+ * fully decoupled from the legacy `kortix.sandboxes` table.
+ */
+export async function switchToSessionSandboxAsync(
+  projectId: string,
+  sessionId: string,
+  /**
+   * Already-fetched sandbox row from the caller (the session page queries it to
+   * gate its own render). Passing it here avoids a duplicate
+   * GET /sessions/:id/sandbox round-trip on first open of a session — pure dead
+   * time on the path to showing a running sandbox.
+   */
+  prefetched?: {
+    status: string;
+    external_id: string | null;
+    provider: string;
+    sandbox_id: string;
+  } | null,
+): Promise<SwitchToInstanceResult | null> {
+  // Fast path: if the active server already points at this session, no-op.
+  const sync = switchToInstance(sessionId);
+  if (sync) return sync;
+
+  let sandbox = prefetched ?? null;
+  if (!sandbox) {
+    const { getProjectSessionSandbox } = await import('@/lib/projects-client');
+    sandbox = await getProjectSessionSandbox(projectId, sessionId);
+  }
+
+  if (!sandbox || sandbox.status !== 'active' || !sandbox.external_id) {
+    return null;
+  }
+
+  const provider = sandbox.provider as SandboxProvider;
+  const store = useServerStore.getState();
+  const isLocal = provider === 'local_docker';
+  const existing = store.servers.find((s) => s.instanceId === sandbox.sandbox_id);
+  const stableId = isLocal
+    ? undefined
+    : existing?.id ?? stableServerIdForInstance(sandbox.sandbox_id, provider);
+  const label = `session ${sandbox.sandbox_id.slice(0, 8)}`;
+  // Session sandboxes only run on cloud providers today; local_docker has no
+  // mapped-port metadata to forward.
+  const serverId = store.registerOrUpdateSandbox(
+    {
+      label,
+      provider,
+      sandboxId: sandbox.external_id,
+      instanceId: sandbox.sandbox_id,
+      mappedPorts: undefined,
     },
     { autoSwitch: false, isLocal, stableId: isLocal ? undefined : stableId },
   );

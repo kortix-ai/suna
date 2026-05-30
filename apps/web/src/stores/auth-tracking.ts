@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 export type AuthMethod = 'google' | 'github' | 'email';
 
@@ -29,6 +30,7 @@ export const useAuthTracking = create<AuthTrackingState>()(
     }),
     {
       name: 'auth-tracking-storage',
+      storage: createSafeJSONStorage(),
       partialize: (state) => ({ lastAuthMethod: state.lastAuthMethod }),
     }
   )

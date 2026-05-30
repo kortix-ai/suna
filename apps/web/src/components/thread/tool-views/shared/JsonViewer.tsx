@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
@@ -17,6 +18,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
   defaultExpanded = false, 
   className = "" 
 }) => {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [copied, setCopied] = useState(false);
 
@@ -92,7 +94,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
   };
 
   return (
-    <div className={cn('border border-border rounded-lg', className)}>
+    <div className={cn('border border-border rounded-2xl', className)}>
       <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2">
           <Button
@@ -116,7 +118,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
           size="sm"
           onClick={handleCopy}
           className="h-6 w-6 p-0"
-          title="Copy to clipboard"
+          title={tHardcodedUi.raw('componentsThreadToolViewsSharedJsonviewer.line119JsxAttrTitleCopyToClipboard')}
         >
           {copied ? (
             <Check className="h-3 w-3 text-muted-foreground" />
@@ -128,7 +130,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
       
       {isExpanded && (
         <div className="p-3">
-          <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto bg-background/50 p-3 rounded-lg border max-h-24 md:max-h-48">
+          <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto bg-background/50 p-3 rounded-2xl border max-h-24 md:max-h-48">
             {formatJson(data)}
           </pre>
         </div>

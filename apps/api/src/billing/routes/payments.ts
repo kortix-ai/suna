@@ -11,12 +11,12 @@ import {
   insertPurchase,
 } from '../repositories/transactions';
 import { BillingError } from '../../errors';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { resolveScopedAccountId } from '../../shared/resolve-account';
 
 export const paymentsRouter = new Hono<AppEnv>();
 
 paymentsRouter.post('/purchase-credits', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const email = c.get('userEmail');
   const body = await c.req.json();
   const amount = Number(body.amount);
@@ -70,7 +70,7 @@ paymentsRouter.post('/purchase-credits', async (c) => {
 });
 
 paymentsRouter.get('/transactions', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'query');
   const limit = Number(c.req.query('limit') ?? 50);
   const offset = Number(c.req.query('offset') ?? 0);
   const typeFilterParam = c.req.query('type_filter') || undefined;
@@ -104,7 +104,7 @@ paymentsRouter.get('/transactions', async (c) => {
 });
 
 paymentsRouter.get('/transactions/summary', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'query');
   const days = Number(c.req.query('days') ?? 30);
   const summary = await getTransactionsSummary(accountId, days);
   return c.json(summary);
@@ -113,21 +113,21 @@ paymentsRouter.get('/transactions/summary', async (c) => {
 // ─── Auto-topup ──────────────────────────────────────────────────────────────
 
 paymentsRouter.get('/auto-topup/settings', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'query');
   const { getAutoTopupSettings } = await import('../services/auto-topup');
   const settings = await getAutoTopupSettings(accountId);
   return c.json(settings);
 });
 
 paymentsRouter.get('/auto-topup/setup-status', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'query');
   const { getAutoTopupSetupStatus } = await import('../services/auto-topup');
   const status = await getAutoTopupSetupStatus(accountId);
   return c.json(status);
 });
 
 paymentsRouter.post('/auto-topup/configure', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'body');
   const body = await c.req.json();
   const { configureAutoTopup } = await import('../services/auto-topup');
 
@@ -143,7 +143,7 @@ paymentsRouter.post('/auto-topup/configure', async (c) => {
 // ─── Credit usage ────────────────────────────────────────────────────────────
 
 paymentsRouter.get('/credit-usage', async (c) => {
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'query');
   const limit = Number(c.req.query('limit') ?? 50);
   const offset = Number(c.req.query('offset') ?? 0);
 

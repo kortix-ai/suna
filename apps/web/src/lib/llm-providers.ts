@@ -1,0 +1,177 @@
+/**
+ * LLM-provider catalog for the per-project Provider Modal.
+ *
+ * Data source: a slim snapshot of https://models.dev/api.json (the same data
+ * OpenCode uses internally). The snapshot lives at
+ * `packages/shared/src/llm-catalog/catalog.generated.json` and is regenerated
+ * by `apps/web/scripts/refresh-llm-catalog.ts`.
+ *
+ * "Connecting" a provider writes its env vars to `project_secrets`. Sessions
+ * pick those up as env vars at sandbox boot — so connecting Anthropic here is
+ * exactly equivalent to setting ANTHROPIC_API_KEY on the Secrets page, just
+ * with a friendlier flow.
+ */
+
+import { CATALOG as catalog } from '@kortix/shared/llm-catalog';
+
+export interface LlmProviderModel {
+  id: string;
+  name: string;
+  /**
+   * release_date when known (YYYY-MM-DD). Used to drive newest-first ordering.
+   * The catalog generator already pre-sorts each provider's models by this
+   * field; the field is exposed so the UI can render a "released X ago" hint.
+   */
+  released: string | null;
+}
+
+export interface LlmProviderEntry {
+  /** Stable id (matches provider-branding logo lookup). */
+  id: string;
+  /** Display name. */
+  label: string;
+  /**
+   * Env vars written to project_secrets when the provider is connected. Most
+   * providers have exactly one; some (Azure, Bedrock) need multiple.
+   */
+  envVars: string[];
+  /** Where the user gets their credentials — opens in a new tab. */
+  helpUrl: string | null;
+  /** Short one-line tag shown in the catalog row. */
+  hint: string;
+  /** Catalog of models for this provider. */
+  models: LlmProviderModel[];
+  /** True for the curated popular set — pinned to the top of the catalog. */
+  featured: boolean;
+}
+
+interface RawProvider {
+  id: string;
+  name: string;
+  env: string[];
+  doc: string | null;
+  models: LlmProviderModel[];
+}
+
+interface RawCatalog {
+  source: string;
+  fetched_at: string;
+  provider_count: number;
+  model_count: number;
+  providers: RawProvider[];
+}
+
+const RAW = catalog as RawCatalog;
+
+/**
+ * Curated featured set — these surface first in the modal. Anything not in
+ * this list is still browsable below, sorted A-Z.
+ */
+const FEATURED_IDS = new Set([
+  'anthropic',
+  'openai',
+  'google',
+  'openrouter',
+  'vercel',
+  'github-copilot',
+  'groq',
+  'xai',
+  'deepseek',
+  'mistral',
+  'cerebras',
+  'togetherai',
+  'fireworks-ai',
+  'perplexity',
+  'amazon-bedrock',
+  'azure',
+  'google-vertex',
+  'huggingface',
+  'cohere',
+  'cohere-platform',
+  'nvidia',
+  'kortix',
+]);
+
+/**
+ * Curated hints for the recognizable providers. Anything not here falls back
+ * to "<N> model(s)" — still useful, just less editorialized.
+ */
+const HINT_OVERRIDES: Record<string, string> = {
+  anthropic: 'Claude — Opus, Sonnet, Haiku',
+  openai: 'GPT-5, GPT-4o, o-series',
+  google: 'Gemini 2.5 Pro, Flash',
+  openrouter: 'Routes across many providers (used by the platform LLM router)',
+  vercel: 'Vercel AI Gateway',
+  'github-copilot': 'Reuse an existing Copilot plan',
+  groq: 'Fast inference — Llama, Mixtral, Kimi',
+  xai: 'Grok',
+  deepseek: 'DeepSeek V3, R1',
+  mistral: 'Mistral Large, Codestral',
+  cerebras: 'Very fast — Llama, Qwen',
+  togetherai: 'Open models hosted',
+  'fireworks-ai': 'Open models hosted',
+  perplexity: 'Web-grounded models',
+  'amazon-bedrock': 'AWS Bedrock — Claude, Llama, Titan',
+  azure: 'Azure OpenAI',
+  'google-vertex': 'Google Vertex AI',
+  huggingface: 'Hugging Face Inference',
+  cohere: 'Cohere — Command R',
+  nvidia: 'NVIDIA NIM',
+};
+
+function toEntry(raw: RawProvider): LlmProviderEntry {
+  const featured = FEATURED_IDS.has(raw.id);
+  const hint =
+    HINT_OVERRIDES[raw.id] ??
+    `${raw.models.length} model${raw.models.length === 1 ? '' : 's'}`;
+  return {
+    id: raw.id,
+    label: raw.name,
+    envVars: raw.env,
+    helpUrl: raw.doc,
+    hint,
+    models: raw.models,
+    featured,
+  };
+}
+
+/**
+ * Featured first (in the FEATURED_IDS order), then everything else A-Z by id.
+ * The featured order matters: we want Anthropic + OpenAI at the very top.
+ */
+function order(entries: LlmProviderEntry[]): LlmProviderEntry[] {
+  const featuredOrder = Array.from(FEATURED_IDS);
+  const featuredIndex = new Map(featuredOrder.map((id, index) => [id, index]));
+  return [...entries].sort((a, b) => {
+    if (a.featured && !b.featured) return -1;
+    if (!a.featured && b.featured) return 1;
+    if (a.featured && b.featured) {
+      const ai = featuredIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+      const bi = featuredIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+      return ai - bi;
+    }
+    return a.label.localeCompare(b.label);
+  });
+}
+
+export const LLM_PROVIDERS: LlmProviderEntry[] = order(RAW.providers.map(toEntry));
+
+/** Lookup by id. */
+export const LLM_PROVIDER_BY_ID = new Map<string, LlmProviderEntry>(
+  LLM_PROVIDERS.map((entry) => [entry.id, entry]),
+);
+
+/** Lookup by env-var name — used to mark "connected" status from secret names. */
+export const LLM_PROVIDER_BY_ENV_VAR = new Map<string, LlmProviderEntry>(
+  LLM_PROVIDERS.flatMap((entry) =>
+    entry.envVars.map((envVar) => [envVar, entry] as const),
+  ),
+);
+
+/** Catalog metadata for diagnostic display ("catalog refreshed N hours ago"). */
+export const LLM_CATALOG_META = {
+  source: RAW.source,
+  fetchedAt: RAW.fetched_at,
+  providerCount: RAW.provider_count,
+  modelCount: RAW.model_count,
+};

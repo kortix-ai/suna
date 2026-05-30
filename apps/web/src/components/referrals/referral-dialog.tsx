@@ -48,7 +48,7 @@ export function ReferralDialog({ open: controlledOpen, onOpenChange: controlledO
           </div>
 
           {/* Credit Info */}
-          <div className="bg-muted/30 rounded-lg sm:rounded-xl p-6 mb-3 sm:mb-5 border border-border/50">
+          <div className="bg-muted/30 rounded-2xl p-6 mb-3 sm:mb-5 border border-border/50">
             <div className="flex items-center justify-between gap-4 sm:gap-6">
               <div className="flex-1 flex flex-col items-start">
                 <p className="text-xs sm:text-sm text-muted-foreground mb-2">{t('youEarn')}</p>

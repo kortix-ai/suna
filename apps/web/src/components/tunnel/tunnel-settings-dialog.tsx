@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * TunnelSettingsDialog — Radix Dialog replacing the slide-in panel.
  *
@@ -31,6 +33,7 @@ interface TunnelSettingsDialogProps {
 type SettingsTab = 'permissions' | 'audit' | 'connection';
 
 export function TunnelSettingsDialog({ tunnel, open, onOpenChange }: TunnelSettingsDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: liveData } = useTunnelConnection(tunnel?.tunnelId || '');
   const conn = liveData || tunnel;
   const tunnelId = conn?.tunnelId;
@@ -134,9 +137,7 @@ export function TunnelSettingsDialog({ tunnel, open, onOpenChange }: TunnelSetti
                 Permissions
               </TabsTrigger>
               <TabsTrigger value="audit" className="flex-1">
-                <ScrollText className="h-3.5 w-3.5" />
-                Audit Log
-              </TabsTrigger>
+                <ScrollText className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsTunnelTunnelSettingsDialog.line138JsxTextAuditLog')}</TabsTrigger>
               <TabsTrigger value="connection" className="flex-1">
                 <Info className="h-3.5 w-3.5" />
                 Connection
@@ -173,6 +174,7 @@ export function TunnelSettingsDialog({ tunnel, open, onOpenChange }: TunnelSetti
 // ─── Connection Info Tab ────────────────────────────────────────────────────
 
 function ConnectionInfoTab({ connection }: { connection: TunnelConnection }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = React.useState(false);
   const machineInfo = connection.machineInfo as Record<string, string> | undefined;
   const isOnline = connection.isLive;
@@ -204,7 +206,7 @@ function ConnectionInfoTab({ connection }: { connection: TunnelConnection }) {
       {rows.map((row) => (
         <div
           key={row.label}
-          className="grid grid-cols-[120px_1fr] items-center gap-3 rounded-lg border border-border/60 bg-card/40 px-3 py-2.5"
+          className="grid grid-cols-[120px_1fr] items-center gap-3 rounded-2xl border border-border/60 bg-card/40 px-3 py-2.5"
         >
           <span className="text-xs text-muted-foreground">{row.label}</span>
           <div className="flex items-center justify-end gap-2 min-w-0">
@@ -224,7 +226,7 @@ function ConnectionInfoTab({ connection }: { connection: TunnelConnection }) {
             ) : row.label === 'Capabilities' ? (
               <div className="flex flex-wrap justify-end gap-1.5">
                 {capabilities.length > 0 ? capabilities.map((cap) => (
-                  <Badge key={cap} variant="secondary" className="h-6 text-[11px] font-medium">
+                  <Badge key={cap} variant="secondary" className="h-6 text-xs font-medium">
                     {cap}
                   </Badge>
                 )) : (
@@ -240,7 +242,7 @@ function ConnectionInfoTab({ connection }: { connection: TunnelConnection }) {
               <button
                 onClick={handleCopy}
                 className="h-7 w-7 inline-flex items-center justify-center rounded-md border border-border/60 bg-background hover:bg-muted transition-colors cursor-pointer"
-                aria-label="Copy tunnel ID"
+                aria-label={tHardcodedUi.raw('componentsTunnelTunnelSettingsDialog.line243JsxAttrAriaLabelCopyTunnelId')}
                 type="button"
               >
                 {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}

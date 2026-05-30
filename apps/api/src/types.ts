@@ -76,19 +76,26 @@ export interface AppContext {
   keyId?: string;
 }
 
-// Context variables set by auth middleware (platform)
+// Context variables set by auth middleware (platform).
+// Single source of truth for everything apiKeyAuth / supabaseAuth / combinedAuth
+// write onto the Hono context — keep this in sync with middleware/auth.ts.
 export interface AuthVariables {
   userId: string;
   userEmail: string;
   accountId?: string;
+  authType?: 'supabase' | 'pat' | 'apiKey';
+  apiKeyType?: 'user' | 'sandbox';
+  keyId?: string;
+  sandboxId?: string;
+  /** Set for project-scoped CLI PATs — enforced against the URL :projectId. */
+  tokenProjectId?: string;
+  /** PAT token identity for the IAM engine (token-as-principal evaluation). */
+  iamTokenId?: string;
 }
 
-// Hono environment type (cron/billing)
+// Hono environment type — Variables match exactly what the auth middleware sets.
 export type AppEnv = {
-  Variables: {
-    userId: string;
-    userEmail: string;
-  };
+  Variables: AuthVariables;
 };
 
 // ─── Tier System (Billing) ──────────────────────────────────────────────────
@@ -103,6 +110,8 @@ export interface TierConfig {
   models: string[];
   dailyCreditConfig: DailyCreditConfig | null;
   hidden: boolean;
+  /** Max concurrent project sessions allowed for accounts on this tier. */
+  concurrentSessionLimit: number;
 }
 
 export interface DailyCreditConfig {
@@ -181,9 +190,6 @@ export interface AccountStateResponse {
     subscription_id: string | null;
     current_period_end: number | null;
     cancel_at_period_end: boolean;
-    is_trial: boolean;
-    trial_status: string | null;
-    trial_ends_at: string | null;
     is_cancelled: boolean;
     cancellation_effective_date: string | null;
     has_scheduled_change: boolean;
@@ -197,6 +203,8 @@ export interface AccountStateResponse {
     monthly_credits: number;
     can_purchase_credits: boolean;
   };
+  /** @deprecated Model gates moved into provider configuration and sandbox model discovery. */
+  models: ModelInfo[];
   auto_topup: {
     enabled: boolean;
     threshold: number;
@@ -215,16 +223,44 @@ export interface AccountStateResponse {
     stripe_subscription_item_id: string | null;
     created_at: string;
   }>;
-  yolo_usage?: {
-    used_percent: number;
-    used_percent_precise: number;
-    window_started: boolean;
-    window_reset_in: number;
-    window_reset_at: string;
-  } | null;
   can_add_instances: boolean;
   /** True when a legacy paid user has no active machine and can claim one. */
   can_claim_computer?: boolean;
+
+  // Billing v2 — surfaced for per-seat accounts only. Legacy accounts get
+  // billing_model='legacy' here and the frontend renders the legacy UI.
+  billing_model: 'legacy' | 'per_seat';
+  seats?: {
+    count: number;
+    price_per_seat_usd: number;
+    /** Pricing-page transparency only — not a wallet partition. */
+    typical_compute_budget_per_seat_usd: number;
+    /** Pricing-page transparency only — not a wallet partition. */
+    typical_llm_budget_per_seat_usd: number;
+  };
+  /**
+   * Spend breakdown by category for the current billing period. Sourced from
+   * credit_ledger aggregation, not from a partitioned wallet. Null for legacy
+   * accounts.
+   */
+  usage_this_period?: {
+    compute_usd: number;
+    llm_usd: number;
+    total_usd: number;
+    period_start: string | null;
+    period_end: string | null;
+  } | null;
+  /**
+   * Account-level resource limits + current usage. The `concurrent_sessions`
+   * field surfaces the same cap the API enforces at session-create time
+   * (see shared/account-limits.ts).
+   */
+  limits?: {
+    concurrent_sessions: {
+      active: number;
+      limit: number;
+    };
+  };
 }
 
 export interface ScheduledChange {

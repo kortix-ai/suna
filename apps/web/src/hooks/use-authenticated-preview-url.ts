@@ -23,9 +23,56 @@ function derivePreviewAuthEndpoint(candidateUrl: string): string | null {
   }
 }
 
+function isPreviewProxyUrl(candidateUrl: string, serverUrl?: string): boolean {
+  try {
+    const url = new URL(candidateUrl);
+    const path = url.pathname;
+    const isPreviewPath = /^\/v1\/p\/[^/]+\/\d+(?:\/|$)/.test(path)
+      || /^\/proxy\/\d+(?:\/|$)/.test(path);
+    if (!isPreviewPath) return false;
+
+    const trustedOrigins = new Set<string>();
+    if (serverUrl) {
+      try {
+        trustedOrigins.add(new URL(serverUrl).origin);
+      } catch {}
+    }
+    if (typeof window !== 'undefined') {
+      trustedOrigins.add(window.location.origin);
+    }
+    return trustedOrigins.size === 0 || trustedOrigins.has(url.origin);
+  } catch {
+    return false;
+  }
+}
+
 export function buildPreviewAuthEndpoint(previewUrl: string, serverUrl?: string): string | null {
+  if (!isPreviewProxyUrl(previewUrl, serverUrl)) return null;
   return (serverUrl ? derivePreviewAuthEndpoint(serverUrl) : null)
     ?? derivePreviewAuthEndpoint(previewUrl);
+}
+
+/**
+ * Subdomain preview form: `p{port}-{sandbox}.{host}/...`. These can't use the
+ * host-only `/v1/p/` session cookie (it never reaches the preview subdomain),
+ * so they authenticate via a one-shot `?token` on the first request.
+ */
+export function isSubdomainPreviewUrl(candidateUrl: string): boolean {
+  try {
+    return /^p\d+-[^.]+\./.test(new URL(candidateUrl).hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function appendPreviewToken(previewUrl: string, token: string): string {
+  try {
+    const u = new URL(previewUrl);
+    u.searchParams.set('token', token);
+    return u.toString();
+  } catch {
+    return previewUrl;
+  }
 }
 
 /**
@@ -71,6 +118,15 @@ export function useAuthenticatedPreviewUrl(previewUrl: string): string | null {
         return;
       }
 
+      // Subdomain previews (p{port}-{sandbox}.host/) — the /v1/p/ session cookie
+      // never reaches them, so authenticate the first request with a one-shot
+      // ?token. The subdomain proxy validates it, marks the subdomain authed
+      // in-memory for sub-resources, and strips the token before forwarding.
+      if (isSubdomainPreviewUrl(previewUrl)) {
+        setAuthenticatedUrl(appendPreviewToken(previewUrl, token));
+        return;
+      }
+
       const authEndpoint = buildPreviewAuthEndpoint(previewUrl, serverUrl);
       if (!authEndpoint) {
         setAuthenticatedUrl(previewUrl);
@@ -107,6 +163,8 @@ export function useAuthenticatedPreviewUrl(previewUrl: string): string | null {
       }
 
       if (cancelled) return;
+      // Path-based previews authenticate via the cookie set above; subdomain
+      // previews returned earlier with a ?token.
       setAuthenticatedUrl(previewUrl);
     }
 

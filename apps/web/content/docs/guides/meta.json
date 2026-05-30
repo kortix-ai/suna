@@ -1,0 +1,10 @@
+{
+  "title": "Guides",
+  "pages": [
+    "index",
+    "managing-secrets",
+    "connecting-tools",
+    "automating-work",
+    "using-the-cli"
+  ]
+}

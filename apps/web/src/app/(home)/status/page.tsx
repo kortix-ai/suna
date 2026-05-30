@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { Suspense } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -55,6 +57,7 @@ const getStatusColor = (status: string) => {
 };
 
 function StatusPageContent() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: technicalIssue } = useTechnicalIssueQuery();
   
   const statusItems = defaultStatusItems.map(item => {
@@ -98,12 +101,8 @@ function StatusPageContent() {
           <div className="flex flex-col items-center gap-6 text-center">
             <KortixLogo size={32} />
             <div className="space-y-2">
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">
-                System Status
-              </h1>
-              <p className="text-sm text-muted-foreground max-w-md">
-                Real-time status of all Kortix services
-              </p>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">{tHardcodedUi.raw('appHomeStatusPage.line102JsxTextSystemStatus')}</h1>
+              <p className="text-sm text-muted-foreground max-w-md">{tHardcodedUi.raw('appHomeStatusPage.line105JsxTextRealTimeStatusOfAllKortixServices')}</p>
             </div>
             <div className={cn('flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-sm border', 
                 overallStatus === 'operational' 
@@ -126,7 +125,7 @@ function StatusPageContent() {
         {technicalIssue?.enabled && (
           <div className="relative z-10 px-4 sm:px-6 mb-8">
             <div className="max-w-4xl mx-auto">
-              <div className="relative overflow-hidden rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-border backdrop-blur-sm">
+              <div className="relative overflow-hidden rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-border backdrop-blur-sm">
                 <div className="relative p-4">
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 p-2 rounded-full bg-destructive/20">
@@ -164,7 +163,7 @@ function StatusPageContent() {
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 border-t border-destructive/10">
                         <Activity className="h-3 w-3" />
-                        <span>We are actively working to resolve this issue.</span>
+                        <span>{tHardcodedUi.raw('appHomeStatusPage.line167JsxTextWeAreActivelyWorkingToResolveThisIssue')}</span>
                       </div>
                     </div>
                   </div>
@@ -178,22 +177,18 @@ function StatusPageContent() {
             <Card className="bg-card/50 backdrop-blur-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-lg">
-                  <Activity className="h-4 w-4 text-primary" />
-                  Service Status
-                </CardTitle>
-                <CardDescription className="text-sm">
-                  Current operational status of all Kortix services
-                </CardDescription>
+                  <Activity className="h-4 w-4 text-primary" />{tHardcodedUi.raw('appHomeStatusPage.line182JsxTextServiceStatus')}</CardTitle>
+                <CardDescription className="text-sm">{tHardcodedUi.raw('appHomeStatusPage.line185JsxTextCurrentOperationalStatusOfAllKortixServices')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
                   {statusItems.map((item) => (
                     <div
                       key={item.service}
-                      className="flex items-center justify-between p-3 rounded-xl border bg-card/30 hover:bg-card/50 transition-colors"
+                      className="flex items-center justify-between p-3 rounded-2xl border bg-card/30 hover:bg-card/50 transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl border bg-primary/10">
+                        <div className="p-2 rounded-2xl border bg-primary/10">
                           <item.icon className="h-4 w-4 text-primary" />
                         </div>
                         <div>
@@ -212,8 +207,8 @@ function StatusPageContent() {
               </CardContent>
             </Card>
             <div className="text-center space-y-1 text-xs text-muted-foreground">
-              <p>This page is updated automatically when issues are detected.</p>
-              <p>For support inquiries, please contact our team.</p>
+              <p>{tHardcodedUi.raw('appHomeStatusPage.line215JsxTextThisPageIsUpdatedAutomaticallyWhenIssuesAre')}</p>
+              <p>{tHardcodedUi.raw('appHomeStatusPage.line216JsxTextForSupportInquiriesPleaseContactOurTeam')}</p>
             </div>
           </div>
         </div>

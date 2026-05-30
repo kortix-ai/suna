@@ -130,17 +130,11 @@ echo ""
 echo "  API Proxy (/v1)"
 echo ""
 
-API_CODE=$(curl -s -k $AUTH_ARGS -o /dev/null -w "%{http_code}" "${BASE_URL}/v1/providers" 2>/dev/null)
+API_CODE=$(curl -s -k $AUTH_ARGS -o /dev/null -w "%{http_code}" "${BASE_URL}/v1/setup/health" 2>/dev/null)
 if [ "$API_CODE" = "200" ] || [ "$API_CODE" = "401" ]; then
-  pass "API at /v1/providers responds (${API_CODE})"
+  pass "API at /v1/setup/health responds (${API_CODE})"
 else
-  # API might not have providers route, try setup
-  API_CODE2=$(curl -s -k $AUTH_ARGS -o /dev/null -w "%{http_code}" "${BASE_URL}/v1/setup/health" 2>/dev/null)
-  if [ "$API_CODE2" = "200" ]; then
-    pass "API at /v1/setup/health responds"
-  else
-    fail "API proxy at /v1 (got: ${API_CODE}, ${API_CODE2})"
-  fi
+  fail "API proxy at /v1 (got: ${API_CODE})"
 fi
 
 echo ""

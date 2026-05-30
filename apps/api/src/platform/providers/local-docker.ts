@@ -1,6 +1,6 @@
 import Docker from 'dockerode';
 import { execSync } from 'child_process';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { config, SANDBOX_VERSION } from '../../config';
 import { generateSandboxKeyPair } from '../../shared/crypto';
@@ -36,58 +36,6 @@ const BASE_URL = `http://localhost:${PORT_MAP['8000']}`;
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `"'"'`)}'`;
-}
-
-/**
- * Resolve bind-mounts that overlay the host's `core/kortix-master` checkout
- * onto the baked sandbox image's `/ephemeral/kortix-master` tree.
- *
- * Returns [] when not running from a repo checkout (packaged install) so
- * production / self-hosted deployments are unaffected.
- *
- * Set `KORTIX_DEV_BIND_SOURCE=0` to force-disable even when running from a
- * checkout (e.g. when intentionally testing the baked image).
- */
-function findRepoRoot(): string | null {
-  if (process.env.KORTIX_DEV_BIND_SOURCE === '0') return null;
-  // apps/api/src → repo root = ../../.. from this file's runtime location.
-  // Walk up until we find a `core/kortix-master/opencode/opencode.jsonc`.
-  let dir = resolve(__dirname);
-  for (let i = 0; i < 8; i++) {
-    const probe = resolve(dir, 'core/kortix-master/opencode/opencode.jsonc');
-    if (existsSync(probe)) return dir;
-    const parent = resolve(dir, '..');
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
-
-function buildDevSourceBinds(): string[] {
-  const repoRoot = findRepoRoot();
-  if (!repoRoot) return [];
-
-  const km = resolve(repoRoot, 'core/kortix-master');
-  const services = resolve(repoRoot, 'core/services');
-  // Mirror core/docker/docker-compose.dev.yml — read-only, ephemeral target.
-  const paths: Array<[string, string]> = [
-    [resolve(km, 'src'),                       '/ephemeral/kortix-master/src'],
-    [resolve(km, 'opencode/plugin'),           '/ephemeral/kortix-master/opencode/plugin'],
-    [resolve(km, 'opencode/agents'),           '/ephemeral/kortix-master/opencode/agents'],
-    [resolve(km, 'opencode/commands'),         '/ephemeral/kortix-master/opencode/commands'],
-    [resolve(km, 'opencode/skills'),           '/ephemeral/kortix-master/opencode/skills'],
-    [resolve(km, 'opencode/tools'),            '/ephemeral/kortix-master/opencode/tools'],
-    [resolve(km, 'opencode/patches'),          '/ephemeral/kortix-master/opencode/patches'],
-    [resolve(km, 'opencode/opencode.jsonc'),   '/ephemeral/kortix-master/opencode/opencode.jsonc'],
-    [resolve(km, 'opencode/kortix-system.md'), '/ephemeral/kortix-master/opencode/kortix-system.md'],
-    [resolve(km, 'channels/src'),              '/ephemeral/kortix-master/channels/src'],
-    [resolve(km, 'triggers/src'),              '/ephemeral/kortix-master/triggers/src'],
-    [resolve(km, 'scripts'),                   '/ephemeral/kortix-master/scripts'],
-    [services,                                 '/ephemeral/services'],
-  ];
-  return paths
-    .filter(([src]) => existsSync(src))
-    .map(([src, dst]) => `${src}:${dst}:ro`);
 }
 
 function buildDockerEnvWriteCommand(payload: Record<string, string>, targetDir: string): string {
@@ -251,7 +199,7 @@ function setUpdateStatus(partial: Partial<SandboxUpdateStatus>): void {
 /**
  * Derive the target image name from a version string.
  * Uses the current SANDBOX_IMAGE config as the base (strips existing tag).
- * e.g. "kortix/computer:0.7.5" + version "0.8.0" → "kortix/computer:0.8.0"
+ * e.g. "kortix/kortix-sandbox:0.7.5" + version "0.8.0" → "kortix/kortix-sandbox:0.8.0"
  */
 function getImageForVersion(version: string): string {
   const current = config.SANDBOX_IMAGE;
@@ -259,37 +207,6 @@ function getImageForVersion(version: string): string {
   const base = colonIdx > 0 ? current.slice(0, colonIdx) : current;
   return `${base}:${version}`;
 }
-
-export function isDevSandboxContainerEnv(env: Record<string, string | undefined>): boolean {
-  const value = env.KORTIX_DEV_MODE?.toLowerCase();
-  return value === '1' || value === 'true';
-}
-
-export function isDevSandboxImage(image: string | null | undefined): boolean {
-  if (!image) return false;
-  const colonIdx = image.lastIndexOf(':');
-  const tag = colonIdx >= 0 ? image.slice(colonIdx + 1).toLowerCase() : '';
-  return tag === 'dev' || tag.startsWith('dev-');
-}
-
-export function isDevSandboxContainerLabels(labels: Record<string, string | undefined> | null | undefined): boolean {
-  if (!labels) return false;
-  if (labels['kortix.devSourceBinds'] === 'true') return true;
-
-  // Docker Desktop annotates bind mounts as labels. Existing dev containers
-  // created before `kortix.devSourceBinds` existed still carry these labels,
-  // so use them as a safety signal before destructive update/recreate flows.
-  return Object.entries(labels).some(([key, value]) => (
-    key.startsWith('desktop.docker.io/binds/')
-    && key.endsWith('/Target')
-    && typeof value === 'string'
-    && (
-      value.startsWith('/ephemeral/kortix-master/')
-      || value.startsWith('/ephemeral/services')
-    )
-  ));
-}
-
 export class LocalDockerProvider implements SandboxProvider {
   readonly name: ProviderName = 'local_docker';
   private docker: Docker;
@@ -461,27 +378,6 @@ export class LocalDockerProvider implements SandboxProvider {
     try {
       const existing = await this.find();
       if (existing) {
-        const existingEnv = await this.getContainerEnv();
-        const existingLabels = await this.getContainerLabels();
-        if (
-          isDevSandboxContainerEnv(existingEnv)
-          || isDevSandboxImage(existing.image)
-          || isDevSandboxContainerLabels(existingLabels)
-        ) {
-          const message = `Refusing to update dev sandbox container "${CONTAINER_NAME}". Use pnpm dev:sandbox:build or restart the compose sandbox instead.`;
-          setUpdateStatus({
-            phase: 'failed',
-            progress: 0,
-            message,
-            targetVersion,
-            previousVersion: existing.image.split(':').pop() || null,
-            currentVersion: existing.image.split(':').pop() || null,
-            error: message,
-            startedAt: new Date().toISOString(),
-          });
-          throw new Error(message);
-        }
-
         const currentTag = existing.image.split(':').pop() || null;
         previousVersion = currentTag;
       }
@@ -895,7 +791,7 @@ export class LocalDockerProvider implements SandboxProvider {
   }
 
   /**
-   * Pull a specific image by full name (e.g. "kortix/computer:0.8.0").
+   * Pull a specific image by full name (e.g. "kortix/kortix-sandbox:0.8.0").
    * Updates both _pullStatus and _updateStatus with progress.
    */
   private async pullImageByName(imageName: string): Promise<void> {
@@ -968,13 +864,11 @@ export class LocalDockerProvider implements SandboxProvider {
       'SANDBOX_ID',
       'INTERNAL_SERVICE_KEY',
       'PROJECT_ID',
-      'ENV_MODE',
       'CORS_ALLOWED_ORIGINS',
       'TAVILY_API_URL',
       'REPLICATE_API_URL',
       'SERPER_API_URL',
       'FIRECRAWL_API_URL',
-      'KORTIX_DEV_MODE',
     ]);
 
     const filteredSandboxEnv = sandboxEnvVars.filter((entry) => {
@@ -984,16 +878,6 @@ export class LocalDockerProvider implements SandboxProvider {
 
     const sandboxApiBase = getSandboxInternalApiUrl();
     const routerBase = `${sandboxApiBase}/v1/router`;
-
-    // Dev-mode bind-mounts: when this explicit provider path is invoked from a
-    // repo checkout, mount the host's `core/kortix-master` source tree over the
-    // image's baked copy so plugin/agent/config edits are live without rebuilding
-    // the image. Mirrors what `core/docker/docker-compose.dev.yml` does for
-    // manual compose runs.
-    const devBinds = buildDevSourceBinds();
-    if (devBinds.length > 0) {
-      console.log(`[LOCAL-DOCKER] Dev-mode: mounting ${devBinds.length} source path(s) over baked image`);
-    }
 
     const env = [
       'PUID=911',
@@ -1025,16 +909,25 @@ export class LocalDockerProvider implements SandboxProvider {
       'PROJECT_ID=local',
       // ── Tool proxy URLs — route through kortix-api router ─────────────
       // Sandbox tools use KORTIX_TOKEN to auth; the router injects the real
-      // upstream API key. Matches cloud provider env injection (justavps/daytona/pool).
+      // upstream API key. Matches managed-provider env injection.
       `TAVILY_API_URL=${routerBase}/tavily`,
       `REPLICATE_API_URL=${routerBase}/replicate`,
       `SERPER_API_URL=${routerBase}/serper`,
       `FIRECRAWL_API_URL=${routerBase}/firecrawl`,
       ...(config.KORTIX_LOCAL_IMAGES ? ['KORTIX_LOCAL_SOURCE=1'] : []),
-      `ENV_MODE=${config.KORTIX_BILLING_INTERNAL_ENABLED ? 'cloud' : 'local'}`,
       `CORS_ALLOWED_ORIGINS=${[config.FRONTEND_URL, config.KORTIX_URL].filter(Boolean).join(',')}`,
-      ...(devBinds.length > 0 ? ['KORTIX_DEV_MODE=1'] : []),
       ...filteredSandboxEnv,
+      // The in-sandbox `kortix` CLI authenticates with the project-scoped PAT
+      // (KORTIX_CLI_TOKEN), not KORTIX_TOKEN (the service key). Forward it so
+      // `kortix cr open` / `secrets` / … work in local sandboxes too — parity
+      // with the cloud provider. Appended last so it wins over any stray local
+      // value. See apps/api/src/platform/services/session-sandbox.ts.
+      ...(this._lastCreateOpts?.envVars?.KORTIX_CLI_TOKEN
+        ? [`KORTIX_CLI_TOKEN=${this._lastCreateOpts.envVars.KORTIX_CLI_TOKEN}`]
+        : []),
+      ...(this._lastCreateOpts?.envVars?.KORTIX_EXECUTOR_TOKEN
+        ? [`KORTIX_EXECUTOR_TOKEN=${this._lastCreateOpts.envVars.KORTIX_EXECUTOR_TOKEN}`]
+        : []),
     ];
 
     const container = await this.docker.createContainer({
@@ -1050,7 +943,6 @@ export class LocalDockerProvider implements SandboxProvider {
         Binds: [
           `${CONTAINER_NAME}-data:/workspace`,
           `${CONTAINER_NAME}-data:/config`,
-          ...devBinds,
         ],
         ...(config.SANDBOX_NETWORK ? { NetworkMode: config.SANDBOX_NETWORK } : {}),
       },
@@ -1058,7 +950,6 @@ export class LocalDockerProvider implements SandboxProvider {
         'kortix.sandbox': 'true',
         'kortix.account': 'local',
         'kortix.user': 'local',
-        'kortix.devSourceBinds': devBinds.length > 0 ? 'true' : 'false',
       },
     });
 
@@ -1085,16 +976,6 @@ export class LocalDockerProvider implements SandboxProvider {
         }
       }
       return result;
-    } catch {
-      return {};
-    }
-  }
-
-  async getContainerLabels(): Promise<Record<string, string>> {
-    try {
-      const container = this.docker.getContainer(CONTAINER_NAME);
-      const info = await container.inspect();
-      return (info.Config.Labels || {}) as Record<string, string>;
     } catch {
       return {};
     }

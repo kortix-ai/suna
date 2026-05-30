@@ -291,7 +291,7 @@ const IntegrationLogos: React.FC<{ data: BaseAgentData; maxLogos?: number }> = (
       ))}
       {remainingCount > 0 && (
         <div className="w-5 h-5 rounded-md bg-muted flex items-center justify-center">
-          <span className="text-[10px] font-medium text-muted-foreground">+{remainingCount}</span>
+          <span className="text-xs font-medium text-muted-foreground">+{remainingCount}</span>
         </div>
       )}
     </div>
@@ -471,13 +471,13 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
           {data.capabilities && data.capabilities.length > 0 && (
             <div className="space-y-1">
               {data.capabilities.slice(0, 3).map((capability) => (
-                <div key={capability} className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                <div key={capability} className="flex items-start gap-1.5 text-xs text-muted-foreground">
                   <span className="mt-1 w-0.5 h-0.5 rounded-full bg-muted-foreground/40 flex-shrink-0" />
                   <span className="leading-tight">{capability}</span>
                 </div>
               ))}
               {data.capabilities.length > 3 && (
-                <div className="text-[11px] text-muted-foreground pl-2">
+                <div className="text-xs text-muted-foreground pl-2">
                   +{data.capabilities.length - 3} more
                 </div>
               )}
@@ -625,7 +625,29 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
     };
     
     return (
-      <div className={cardClassName} onClick={() => onClick?.(data)}>
+      <div
+        className={cn(
+          cardClassName,
+          'outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50',
+        )}
+        onClick={() => onClick?.(data)}
+        onKeyDown={
+          onClick
+            ? (e) => {
+                // Only act when the card itself is focused — nested action
+                // buttons keep their own keyboard behaviour.
+                if (e.target !== e.currentTarget) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onClick(data);
+                }
+              }
+            : undefined
+        }
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        aria-label={onClick ? data.name : undefined}
+      >
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
         <div className="relative p-6 flex flex-col flex-1">
           <div className="flex items-start justify-between mb-4">

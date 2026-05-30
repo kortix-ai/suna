@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * XlsxRenderer — True Excel-like viewer powered by Univer (Apache 2.0, free).
  *
@@ -475,6 +477,7 @@ export function XlsxRenderer({
   sandboxId,
   project,
 }: XlsxRendererProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { session } = useAuth();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const univerInstanceRef = useRef<{
@@ -719,7 +722,7 @@ export function XlsxRenderer({
             <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">Failed to load spreadsheet</h3>
+            <h3 className="text-lg font-medium text-foreground">{tHardcodedUi.raw('componentsFileRenderersXlsxRenderer.line722JsxTextFailedToLoadSpreadsheet')}</h3>
             <p className="text-xs text-muted-foreground mt-1">{error}</p>
           </div>
           <Button onClick={handleRetry} variant="outline" size="sm">
@@ -748,7 +751,7 @@ export function XlsxRenderer({
       {/* Loading overlay */}
       {isLoading && (
         <div className="absolute inset-0 z-50 bg-background/90 backdrop-blur-sm flex items-center justify-center">
-          <div className="text-sm text-muted-foreground animate-pulse">Loading spreadsheet…</div>
+          <div className="text-sm text-muted-foreground animate-pulse">{tHardcodedUi.raw('componentsFileRenderersXlsxRenderer.line751JsxTextLoadingSpreadsheet')}</div>
         </div>
       )}
     </div>

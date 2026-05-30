@@ -6,6 +6,43 @@
 ARG BUN_VERSION=1.2
 FROM oven/bun:${BUN_VERSION}-slim AS base
 
+# ---- Sandbox Agent Stage ----
+# The API builds Daytona layered snapshots at runtime. Those snapshots bake the
+# sandbox-side daemon from this repo, so the deployable API image must carry the
+# latest compiled Linux binary even though we no longer publish a sandbox image.
+FROM oven/bun:${BUN_VERSION}-slim AS sandbox-agent
+
+WORKDIR /agent
+
+ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
+
+COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
+RUN bun install --frozen-lockfile
+
+COPY apps/kortix-sandbox-agent-server/ ./
+RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
+
+# ---- CLI Stage ----
+# The same layered snapshots bake the `kortix` admin CLI (apps/cli) so every
+# in-sandbox agent can run `kortix cr open`, `secrets`, `sessions`, … We compile
+# it to a self-contained Linux binary here, the same way as the daemon above,
+# and the runner copies it to the path the snapshot builder reads
+# (apps/cli/dist/kortix → KORTIX_SNAPSHOT_CLI_BIN_PATH).
+FROM oven/bun:${BUN_VERSION}-slim AS sandbox-cli
+
+WORKDIR /cli
+
+ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
+
+# Minimal workspace so bun resolves the two `@kortix/*` packages the CLI imports
+# to their source, then compile (inlines them + smol-toml into one binary).
+COPY apps/cli ./apps/cli
+COPY packages/manifest-schema ./packages/manifest-schema
+COPY packages/starter ./packages/starter
+RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
+    && bun install --no-save \
+    && BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash apps/cli/scripts/build.sh
+
 # ---- Deps Stage ----
 # Install with pnpm (matches lockfile), run with bun
 FROM node:22-slim AS deps
@@ -22,6 +59,7 @@ COPY ${SERVICE} ./${SERVICE}
 COPY packages/shared ./packages/shared
 COPY packages/db ./packages/db
 COPY packages/agent-tunnel ./packages/agent-tunnel
+COPY packages/starter ./packages/starter
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
@@ -39,7 +77,9 @@ ARG SERVICE
 ENV NODE_ENV=production
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     docker.io \
+    git \
     openssh-client && \
     rm -rf /var/lib/apt/lists/*
 
@@ -61,9 +101,19 @@ COPY --from=deps /app/packages/db/package.json ./packages/db/package.json
 COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
 COPY --from=deps /app/packages/agent-tunnel/src ./packages/agent-tunnel/src
 COPY --from=deps /app/packages/agent-tunnel/package.json ./packages/agent-tunnel/package.json
+COPY --from=deps /app/packages/starter/src ./packages/starter/src
+COPY --from=deps /app/packages/starter/package.json ./packages/starter/package.json
+COPY --from=deps /app/packages/starter/tsconfig.json ./packages/starter/tsconfig.json
 
 # Copy SQL migrations used by ensureSchema() at runtime.
 COPY supabase/migrations ./supabase/migrations
+
+# Copy runtime artifacts used by the layered snapshot builder.
+COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
+COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
+COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
+COPY apps/sandbox/agent-cli ./apps/sandbox/agent-cli
+COPY packages/executor-sdk ./packages/executor-sdk
 
 # Copy the app (source + its node_modules if any)
 COPY --from=deps /app/${SERVICE} ./${SERVICE}

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useMemo, useCallback } from 'react';
 import {
   GitCommitHorizontal,
@@ -25,7 +27,7 @@ import { cn } from '@/lib/utils';
 import { useFileHistory, useFileCommitDiff } from '../hooks/use-file-history';
 import type { GitCommit } from '../types';
 import { createTwoFilesPatch } from 'diff';
-import { useDiffHighlight, renderHighlightedLine } from '@/hooks/use-diff-highlight';
+import { DiffView } from '@/components/diff/diff-view';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -60,83 +62,17 @@ function formatFullDate(timestamp: number): string {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Compact Diff View
-// ---------------------------------------------------------------------------
-
-function CompactDiffLines({ patch, filename }: { patch: string; filename: string }) {
-  const diffLines = useMemo(() => {
-    const lines = patch.split('\n');
-    const startIdx = lines.findIndex((l) => l.startsWith('@@'));
-    return startIdx >= 0 ? lines.slice(startIdx) : lines;
-  }, [patch]);
-
-  const codeLines = useMemo(
-    () =>
-      diffLines.map((line) => {
-        if (line.startsWith('@@') || line.startsWith('+++') || line.startsWith('---') || line === '') return '';
-        return line.length > 0 ? line.substring(1) : '';
-      }),
-    [diffLines],
-  );
-
-  const highlighted = useDiffHighlight(codeLines, filename);
-
-  return (
-    <pre className="p-2 font-mono text-[10px] leading-[1.5] overflow-x-auto select-text">
-      {diffLines.map((line, i) => {
-        const isAdd = line.startsWith('+') && !line.startsWith('+++');
-        const isDel = line.startsWith('-') && !line.startsWith('---');
-        const isHunk = line.startsWith('@@');
-        const isHeader = line.startsWith('+++') || line.startsWith('---');
-
-        let cls = 'text-muted-foreground/60';
-        if (isAdd) cls = 'bg-emerald-500/5';
-        else if (isDel) cls = 'bg-red-500/5';
-        else if (isHunk) cls = 'text-blue-500/60';
-
-        if (isHunk || isHeader || line === '') {
-          return (
-            <div key={i} className={cls}>
-              {line || ' '}
-            </div>
-          );
-        }
-
-        const prefix = line[0] || ' ';
-        const highlightedTokens = highlighted?.[i];
-
-        if (highlightedTokens) {
-          const html = renderHighlightedLine(highlightedTokens, codeLines[i]);
-          return (
-            <div key={i} className={cls}>
-              <span className={cn(isAdd && 'text-emerald-600 dark:text-emerald-400', isDel && 'text-red-600 dark:text-red-400')}>
-                {prefix}
-              </span>
-              <span dangerouslySetInnerHTML={{ __html: html }} />
-            </div>
-          );
-        }
-
-        return (
-          <div key={i} className={cn(cls, isAdd && 'text-emerald-600 dark:text-emerald-400', isDel && 'text-red-600 dark:text-red-400')}>
-            {line || ' '}
-          </div>
-        );
-      })}
-    </pre>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Compact Commit Diff
 // ---------------------------------------------------------------------------
 
 function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitHash: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: diff, isLoading, error } = useFileCommitDiff(filePath, commitHash);
 
   if (isLoading) return <div className="p-2"><Skeleton className="h-16 w-full" /></div>;
-  if (error || !diff) return <div className="p-2 text-[10px] text-muted-foreground">Failed to load diff</div>;
+  if (error || !diff) return <div className="p-2 text-xs text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPopover.line72JsxTextFailedToLoadDiff')}</div>;
 
   const statusIcon = {
     added: <FilePlus2 className="size-3 text-emerald-500" />,
@@ -155,18 +91,18 @@ function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitH
     <div className="border-t border-border/30 bg-muted/20">
       <div className="flex items-center gap-1.5 px-2 py-1 border-b border-border/20">
         {statusIcon}
-        <span className="text-[10px] font-medium capitalize text-muted-foreground">{diff.status}</span>
-        <div className="flex items-center gap-1 ml-auto text-[10px]">
+        <span className="text-xs font-medium capitalize text-muted-foreground">{diff.status}</span>
+        <div className="flex items-center gap-1 ml-auto text-xs">
           {diff.additions > 0 && <span className="text-emerald-500">+{diff.additions}</span>}
           {diff.deletions > 0 && <span className="text-red-500">-{diff.deletions}</span>}
         </div>
       </div>
       {patchContent ? (
         <div className="max-h-[200px] overflow-auto">
-          <CompactDiffLines patch={patchContent} filename={filePath} />
+          <DiffView patch={patchContent} layout="unified" hideFileHeader />
         </div>
       ) : (
-        <div className="p-2 text-[10px] text-muted-foreground text-center">No diff</div>
+        <div className="p-2 text-xs text-muted-foreground text-center">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPopover.line102JsxTextNoDiff')}</div>
       )}
     </div>
   );
@@ -177,6 +113,7 @@ function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitH
 // ---------------------------------------------------------------------------
 
 function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -187,11 +124,20 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
     setTimeout(() => setCopied(false), 2000);
   }, [commit.hash]);
 
+  const toggle = () => setExpanded((v) => !v);
   return (
-    <div className={cn('rounded-lg border overflow-hidden transition-colors', expanded ? 'border-primary/30 bg-primary/5' : 'border-border/40 hover:border-border/60')}>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-start gap-2 w-full px-2.5 py-2 text-left cursor-pointer hover:bg-muted/20"
+    <div className={cn('rounded-2xl border overflow-hidden transition-colors', expanded ? 'border-primary/30 bg-primary/5' : 'border-border/40 hover:border-border/60')}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggle();
+          }
+        }}
+        className="flex items-start gap-2 w-full px-2.5 py-2 text-left cursor-pointer hover:bg-muted/20 outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
         <div className="flex items-center gap-1 mt-0.5 shrink-0">
           {expanded ? <ChevronDown className="size-3 text-muted-foreground/50" /> : <ChevronRight className="size-3 text-muted-foreground/50" />}
@@ -199,7 +145,7 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
         </div>
         <div className="flex-1 min-w-0 space-y-0.5">
           <p className="text-xs font-medium text-foreground leading-snug line-clamp-1">{commit.subject}</p>
-          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-0.5">
               <User className="size-2.5" />
               {commit.author}
@@ -215,12 +161,12 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
           variant="muted"
           size="xs"
           className="font-mono shrink-0"
-          title="Copy hash"
+          title={tHardcodedUi.raw('featuresFilesComponentsFileHistoryPopover.line160JsxAttrTitleCopyHash')}
         >
           {copied ? <Check className="size-2.5 text-emerald-500" /> : <Copy className="size-2.5" />}
           {commit.shortHash}
         </Button>
-      </button>
+      </div>
       {expanded && <CompactCommitDiff filePath={filePath} commitHash={commit.hash} />}
     </div>
   );
@@ -236,6 +182,7 @@ interface FileHistoryPopoverContentProps {
 }
 
 export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopoverContentProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: history, isLoading, error } = useFileHistory(filePath);
 
   const fileName = filePath.split('/').pop() || '';
@@ -248,7 +195,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
         <History className="h-4 w-4 text-muted-foreground shrink-0" />
         <span className="font-medium text-sm truncate flex-1">{fileName}</span>
         {totalCommits > 0 && (
-          <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+          <span className="text-xs text-muted-foreground tabular-nums shrink-0">
             {totalCommits} commit{totalCommits !== 1 ? 's' : ''}
           </span>
         )}
@@ -281,7 +228,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
         {!isLoading && !error && totalCommits === 0 && (
           <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
             <GitCommitHorizontal className="h-6 w-6 text-muted-foreground/20" />
-            <p className="text-xs text-muted-foreground">No commit history</p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPopover.line226JsxTextNoCommitHistory')}</p>
           </div>
         )}
 
@@ -296,8 +243,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
             ))}
             {history?.hasMore && (
               <div className="text-center py-1">
-                <span className="text-[10px] text-muted-foreground/50">
-                  Showing first {totalCommits} commits
+                <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresFilesComponentsFileHistoryPopover.line242JsxTextShowingFirst')}{' '}{totalCommits} commits
                 </span>
               </div>
             )}

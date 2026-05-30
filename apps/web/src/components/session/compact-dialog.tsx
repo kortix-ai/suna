@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback } from 'react';
 import { Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -21,6 +23,7 @@ interface CompactDialogProps {
 }
 
 export function CompactDialog({ sessionId, open, onOpenChange }: CompactDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const summarize = useSummarizeOpenCodeSession();
 
   const handleCompact = useCallback(() => {
@@ -43,21 +46,15 @@ export function CompactDialog({ sessionId, open, onOpenChange }: CompactDialogPr
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Layers className="h-4 w-4" />
-            Compact Session
-          </DialogTitle>
-          <DialogDescription className="text-sm leading-relaxed">
-            This will summarize older messages using AI to free up context space.
-            Key information is preserved, but original messages will be condensed
-            into a compact summary.
-          </DialogDescription>
+            <Layers className="h-4 w-4" />{tHardcodedUi.raw('componentsSessionCompactDialog.line47JsxTextCompactSession')}</DialogTitle>
+          <DialogDescription className="text-sm leading-relaxed">{tHardcodedUi.raw('componentsSessionCompactDialog.line50JsxTextThisWillSummarizeOlderMessagesUsingAiTo')}</DialogDescription>
         </DialogHeader>
-        <div className="rounded-lg bg-muted/50 border border-border/40 px-3 py-2.5 text-xs text-muted-foreground space-y-1.5">
-          <p>What happens during compaction:</p>
+        <div className="rounded-2xl bg-muted/50 border border-border/40 px-3 py-2.5 text-xs text-muted-foreground space-y-1.5">
+          <p>{tHardcodedUi.raw('componentsSessionCompactDialog.line56JsxTextWhatHappensDuringCompaction')}</p>
           <ul className="list-disc list-inside space-y-0.5 pl-1">
-            <li>Older messages are summarized into a concise recap</li>
-            <li>Tool outputs and file changes are preserved as references</li>
-            <li>Recent messages remain unchanged</li>
+            <li>{tHardcodedUi.raw('componentsSessionCompactDialog.line58JsxTextOlderMessagesAreSummarizedIntoAConciseRecap')}</li>
+            <li>{tHardcodedUi.raw('componentsSessionCompactDialog.line59JsxTextToolOutputsAndFileChangesArePreservedAs')}</li>
+            <li>{tHardcodedUi.raw('componentsSessionCompactDialog.line60JsxTextRecentMessagesRemainUnchanged')}</li>
           </ul>
         </div>
         <DialogFooter className="gap-2">

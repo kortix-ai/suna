@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type Turn, type MessageWithParts, isTextPart, type TextPart } from '@/ui';
 import { cn } from '@/lib/utils';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
@@ -12,39 +12,89 @@ interface ChatMinimapProps {
   messages: MessageWithParts[];
 }
 
+interface MinimapItem {
+  id: string;
+  text: string;
+}
+
+// How many dashes the collapsed rail shows at most. Longer sessions are
+// down-sampled to this many so the rail stays quiet — every message is still
+// listed in the expanded view.
+const MAX_DASHES = 12;
+
 function extractUserText(turn: Turn): string {
   const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
   const raw = textParts.map((p) => p.text).join(' ');
-  const stripped = stripKortixSystemTags(raw);
-  return stripped.replace(/<[^>]+>/g, '').trim();
+  return stripKortixSystemTags(raw)
+    .replace(/<[^>]+>/g, '')
+    .trim();
 }
 
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen) + '\u2026';
+  return text.slice(0, maxLen).trimEnd() + '…';
 }
 
 export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) {
-  const [visibleTurnId, setVisibleTurnId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [hovered, setHovered] = useState(false);
-  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  const activeRowRef = useRef<HTMLButtonElement | null>(null);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // One entry per user turn that actually has text.
+  const items = useMemo<MinimapItem[]>(
+    () =>
+      turns
+        .map((turn) => ({ id: turn.userMessage.info.id, text: extractUserText(turn) }))
+        .filter((item) => item.text.length > 0),
+    [turns],
+  );
+
+  // Down-sampled set of dashes for the collapsed rail (evenly spaced).
+  const dashes = useMemo<{ item: MinimapItem; index: number }[]>(() => {
+    if (items.length <= MAX_DASHES) {
+      return items.map((item, index) => ({ item, index }));
+    }
+    return Array.from({ length: MAX_DASHES }, (_, d) => {
+      const index = Math.round((d * (items.length - 1)) / (MAX_DASHES - 1));
+      return { item: items[index], index };
+    });
+  }, [items]);
+
+  const activeIndex = useMemo(
+    () => items.findIndex((item) => item.id === activeId),
+    [items, activeId],
+  );
+
+  // Which dash to light up — the one nearest the active turn.
+  const activeDashIndex = useMemo(() => {
+    if (activeIndex < 0) return -1;
+    let best = -1;
+    let bestDist = Infinity;
+    for (const dash of dashes) {
+      const dist = Math.abs(dash.index - activeIndex);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = dash.index;
+      }
+    }
+    return best;
+  }, [dashes, activeIndex]);
+
+  // Track which turn is currently in view so we can highlight it.
   useEffect(() => {
     const scrollEl = scrollRef.current;
     const contentEl = contentRef.current;
-    if (!scrollEl || !contentEl || turns.length === 0) return;
+    if (!scrollEl || !contentEl || items.length === 0) return;
 
-    observerRef.current?.disconnect();
     const visibleMap = new Map<string, number>();
-
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          const el = entry.target as HTMLElement;
-          const turnId = el.getAttribute('data-turn-id');
-          if (!turnId) continue;
-          visibleMap.set(turnId, entry.intersectionRatio);
+          const id = (entry.target as HTMLElement).getAttribute('data-turn-id');
+          if (!id) continue;
+          visibleMap.set(id, entry.intersectionRatio);
         }
         let bestId: string | null = null;
         let bestRatio = 0;
@@ -54,34 +104,36 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
             bestId = id;
           }
         }
-        if (bestId) setVisibleTurnId(bestId);
+        if (bestId) setActiveId(bestId);
       },
-      {
-        root: scrollEl,
-        threshold: [0, 0.1, 0.25, 0.5, 0.75, 1],
-      },
+      { root: scrollEl, threshold: [0, 0.25, 0.5, 0.75, 1] },
     );
 
-    const turnEls = contentEl.querySelectorAll<HTMLElement>('[data-turn-id]');
-    turnEls.forEach((el) => observer.observe(el));
-    observerRef.current = observer;
+    contentEl
+      .querySelectorAll<HTMLElement>('[data-turn-id]')
+      .forEach((el) => observer.observe(el));
 
     return () => observer.disconnect();
-  }, [scrollRef, contentRef, turns]);
+  }, [scrollRef, contentRef, items]);
 
-  const handleBarClick = useCallback(
-    (turnId: string) => {
+  // Keep the active row visible in the expanded jump list.
+  useEffect(() => {
+    if (!hovered) return;
+    activeRowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [hovered, activeId]);
+
+  const handleJump = useCallback(
+    (id: string) => {
       const contentEl = contentRef.current;
       const scrollEl = scrollRef.current;
       if (!contentEl || !scrollEl) return;
-
-      const target = contentEl.querySelector<HTMLElement>(`[data-turn-id="${turnId}"]`);
+      const target = contentEl.querySelector<HTMLElement>(`[data-turn-id="${id}"]`);
       if (!target) return;
-
-      const scrollRect = scrollEl.getBoundingClientRect();
-      const targetRect = target.getBoundingClientRect();
-      const offset = targetRect.top - scrollRect.top + scrollEl.scrollTop - 24;
-
+      const offset =
+        target.getBoundingClientRect().top -
+        scrollEl.getBoundingClientRect().top +
+        scrollEl.scrollTop -
+        24;
       scrollEl.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
     },
     [contentRef, scrollRef],
@@ -99,92 +151,97 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
     leaveTimerRef.current = setTimeout(() => {
       setHovered(false);
       leaveTimerRef.current = null;
-    }, 200);
+    }, 180);
   }, []);
 
-  useEffect(() => {
-    return () => {
+  useEffect(
+    () => () => {
       if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
-    };
-  }, []);
+    },
+    [],
+  );
 
-  if (turns.length < 3) return null;
+  if (items.length < 3) return null;
 
   return (
     <div
-      className={cn(
-        'absolute right-3 sm:right-4 z-10 flex items-start justify-end pointer-events-none',
-        'top-1/2 -translate-y-1/2',
-      )}
+      className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 z-10 pointer-events-none"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
+      {/* Collapsed rail — a few quiet dashes */}
       <div
         className={cn(
-          'pointer-events-auto flex flex-col transition-all duration-200 ease-out',
-          hovered
-            ? 'bg-popover/95 backdrop-blur-md rounded-xl border border-border/30 px-1.5 py-2 min-w-[220px] max-w-[280px] max-h-[60vh] overflow-y-auto scrollbar-hide gap-0'
-            : 'py-1 gap-[5px]',
+          'flex flex-col items-end py-1',
+          'transition-opacity duration-200 ease-out',
+          hovered ? 'opacity-0 pointer-events-none' : 'opacity-100',
         )}
       >
-        {turns.map((turn) => {
-          const turnId = turn.userMessage.info.id;
-          const isActive = turnId === visibleTurnId;
-          const text = extractUserText(turn);
-          if (!text) return null;
-
-          if (hovered) {
-            return (
-              <button
-                key={turnId}
-                type="button"
-                onClick={() => handleBarClick(turnId)}
-                className={cn(
-                  'flex items-center gap-2.5 py-1.5 px-2.5 rounded-lg text-left cursor-pointer transition-colors duration-100',
-                  isActive
-                    ? 'bg-muted/80'
-                    : 'hover:bg-muted/40',
-                )}
-              >
-                <div
-                  className={cn(
-                    'w-[5px] h-[5px] rounded-full flex-shrink-0 transition-colors',
-                    isActive ? 'bg-foreground' : 'bg-muted-foreground/30',
-                  )}
-                />
-                <span
-                  className={cn(
-                    'text-xs leading-snug truncate',
-                    isActive
-                      ? 'text-foreground font-medium'
-                      : 'text-muted-foreground/70',
-                  )}
-                >
-                  {truncate(text, 40)}
-                </span>
-              </button>
-            );
-          }
-
+        {dashes.map(({ item, index }) => {
+          const isActive = index === activeDashIndex;
           return (
             <button
-              key={turnId}
+              key={`${item.id}-${index}`}
               type="button"
-              onClick={() => handleBarClick(turnId)}
-              className="cursor-pointer group"
-              title={truncate(text, 60)}
+              onClick={() => handleJump(item.id)}
+              title={truncate(item.text, 60)}
+              className="group pointer-events-auto flex items-center justify-end px-1.5 py-[3px] cursor-pointer"
             >
-              <div
+              <span
                 className={cn(
-                  'w-[18px] h-[3px] rounded-full transition-all duration-150',
+                  'h-[3px] w-4 rounded-full transition-all duration-150',
                   isActive
-                    ? 'bg-foreground/50'
-                    : 'bg-muted-foreground/20 group-hover:bg-muted-foreground/35',
+                    ? 'bg-foreground/60'
+                    : 'bg-muted-foreground/20 group-hover:bg-muted-foreground/40',
                 )}
               />
             </button>
           );
         })}
+      </div>
+
+      {/* Expanded jump list — every message, on hover */}
+      <div
+        className={cn(
+          'absolute right-0 top-1/2 -translate-y-1/2 origin-right',
+          'transition-all duration-200 ease-out',
+          hovered
+            ? 'opacity-100 scale-100 pointer-events-auto'
+            : 'opacity-0 scale-95 pointer-events-none',
+        )}
+      >
+        <div className="flex flex-col gap-0.5 w-[268px] max-h-[60vh] overflow-y-auto scrollbar-hide rounded-2xl border border-border/40 bg-popover/95 p-1.5 shadow-xl backdrop-blur-md">
+          {items.map((item) => {
+            const isActive = item.id === activeId;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                ref={isActive ? activeRowRef : undefined}
+                onClick={() => handleJump(item.id)}
+                className={cn(
+                  'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors duration-100',
+                  isActive ? 'bg-muted' : 'hover:bg-muted/50',
+                )}
+              >
+                <span
+                  className={cn(
+                    'h-[3px] w-3 flex-shrink-0 rounded-full',
+                    isActive ? 'bg-foreground/70' : 'bg-muted-foreground/30',
+                  )}
+                />
+                <span
+                  className={cn(
+                    'flex-1 truncate text-xs leading-snug',
+                    isActive ? 'font-medium text-foreground' : 'text-muted-foreground',
+                  )}
+                >
+                  {truncate(item.text, 44)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

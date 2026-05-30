@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +7,7 @@ import { Maximize2, Presentation } from 'lucide-react';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { Project } from '@/types/project';
+import { PRESENTATION_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 
 interface SlideMetadata {
   title: string;
@@ -32,6 +34,7 @@ export function PresentationSlideCard({
   showFullScreenButton = true,
   refreshTimestamp,
 }: PresentationSlideCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { subdomainOpts } = useSandboxProxy();
   const [containerRef, setContainerRef] = useState<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
@@ -85,7 +88,7 @@ export function PresentationSlideCard({
 
   if (!slidePreviewUrl) {
     return (
-      <div className={cn('group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden', className)}>
+      <div className={cn('group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden', className)}>
         <div className="px-3 py-2 bg-muted/20 border-b border-border/40 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="h-6 px-2 text-xs font-mono">
@@ -101,7 +104,7 @@ export function PresentationSlideCard({
         <div className="flex items-center justify-center h-48 bg-muted/30">
           <div className="text-center">
             <Presentation className="h-12 w-12 mx-auto mb-4 text-zinc-400" />
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">No slide content to preview</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationslidecard.line104JsxTextNoSlideContentToPreview')}</p>
           </div>
         </div>
       </div>
@@ -110,7 +113,7 @@ export function PresentationSlideCard({
 
   return (
     <div 
-      className={cn('group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden hover:shadow-lg hover:shadow-black/5 dark:hover:shadow-black/20 hover:scale-[1.01] transition-colors duration-200', className)}
+      className={cn('group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden hover:shadow-lg hover:shadow-black/5 dark:hover:shadow-black/20 hover:scale-[1.01] transition-colors duration-200', className)}
     >
       {/* Slide header */}
       <div className="px-3 py-2 bg-muted/20 border-b border-border/40 flex items-center justify-between">
@@ -130,7 +133,7 @@ export function PresentationSlideCard({
             size="sm"
             onClick={() => onFullScreenClick?.(slide.number)}
             className="h-8 w-8 p-0 opacity-60 group-hover:opacity-100 transition-opacity"
-            title="Open in full screen"
+            title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationslidecard.line133JsxAttrTitleOpenInFullScreen')}
             disabled={!onFullScreenClick}
           >
             <Maximize2 className="h-4 w-4" />
@@ -157,7 +160,7 @@ export function PresentationSlideCard({
               src={slidePreviewUrl}
               title={`Slide ${slide.number}: ${slide.title}`}
               className="border-0 rounded-xl"
-              sandbox="allow-same-origin allow-scripts"
+              sandbox={PRESENTATION_IFRAME_SANDBOX}
               style={{
                 width: '1920px',
                 height: '1080px',

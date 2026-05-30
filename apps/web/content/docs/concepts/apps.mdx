@@ -1,0 +1,88 @@
+---
+title: Apps
+description: Ship a website from your project — the manifest declares it, Kortix deploys it.
+---
+
+An **app** is something deployable that lives alongside your agent in the same
+project — a marketing site, a docs site, a small dashboard. You declare apps
+in `kortix.toml` and Kortix takes care of the build and a public URL.
+
+```toml
+[[apps]]
+slug = "marketing"
+name = "Marketing site"
+
+  [apps.source]
+  type = "git"
+  root_path = "apps/site"
+
+  [apps.build]
+  command = "pnpm build"
+  out_dir = "dist"
+```
+
+That's a full deploy. Save the file (via a change request or the Apps tab in
+the dashboard), and the next reconcile loop ships it.
+
+## How it works
+
+Apps reconcile from the manifest. Three pieces:
+
+1. **Manifest is the source of truth.** Edits to a `[[apps]]` entry (commit
+   to `main`, or via the Apps UI which commits for you) are picked up by a
+   background sweep that compares each entry's config hash to the last
+   deployment and redeploys anything that drifted.
+2. **One provider adapter does the actual deploy.** Today that's Freestyle —
+   we hand it your source, build config, env, and (optionally) domains; it
+   returns a deployment id and a live URL. The provider registry is pluggable,
+   so other backends can slot in without changes to your manifest.
+3. **Every deploy is a row in the `deployments` table.** That row is what the
+   Apps tab shows you — status, live URL, error if any, last-deploy time.
+
+## Zero-config URL
+
+`domains` is optional. Leave it off and Freestyle issues a free
+`*.style.dev` subdomain — we persist it back into the deployment record so
+the live URL shows up immediately in the Apps tab. Add a `domains` entry only
+when you want a custom hostname.
+
+## Build behavior
+
+The build phase is optional but defaults sensibly:
+
+- `[apps.build]` with `command` / `out_dir` — forwarded as-is to the provider.
+- `[apps.build]` present but empty — let the provider auto-detect.
+- No `[apps.build]` at all, source is `git` — auto-detect (most repos need a
+  build to expose an entrypoint).
+- No `[apps.build]` at all, source is `tar` — skip the build phase (the
+  tarball is treated as the built artifact).
+
+## Env
+
+`[apps.env]` is a flat `key = "value"` table that the build sees. It's meant
+for **non-secret** values like a public API URL. For secrets (API keys, DB
+URLs), declare them in `[env].optional`, set the value in the project's
+Secrets Manager, and reference them by name from your build.
+
+## Drift triggers a redeploy
+
+The sweep hashes a stable subset of each app — source, build, env, domains,
+framework, enabled — and stores it on the deployment row. When the manifest
+hash differs from the last deployment, the next sweep redeploys. Renames
+(slug or name changes) don't trigger redeploys, because the content didn't
+change.
+
+To force a deploy without editing the manifest, hit "Deploy now" in the Apps
+tab.
+
+## What this isn't
+
+- **Long-running services.** Apps target static + edge-server deploys
+  (frontends, marketing sites, edge functions). Long-running backends with
+  persistent state aren't the target — they belong in their own
+  infrastructure.
+- **CI/CD for the agent code itself.** Apps deploy `[[apps]]` entries. They
+  don't deploy `kortix.toml`, your agent, or anything else under
+  `.kortix/opencode/` — that all just runs inside sessions.
+
+Schema: [Manifest reference — `[[apps]]`](/docs/reference/manifest#apps).

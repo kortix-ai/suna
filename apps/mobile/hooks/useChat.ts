@@ -1389,12 +1389,23 @@ export function useChat(): UseChatReturn {
     
     setIsRetrying(true);
     
-    // SIMPLE CHECK: If we have ANY assistant/tool messages, AI responded - just refresh, NEVER resend
-    const hasAIResponse = messages.some(msg => 
-      msg.type === 'assistant' || 
-      msg.type === 'tool' || 
-      (msg.content && typeof msg.content === 'object' && 'role' in msg.content && msg.content.role === 'assistant')
-    );
+    const isAIResponse = (msg: UnifiedMessage) =>
+      msg.type === 'assistant' ||
+      msg.type === 'tool' ||
+      (() => {
+        try {
+          const content = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
+          return !!content && typeof content === 'object' && content.role === 'assistant';
+        } catch {
+          return false;
+        }
+      })();
+
+    const lastUserMessageIndex = [...messages].reverse().findIndex((msg) => msg.type === 'user');
+    const lastUserIndex = lastUserMessageIndex === -1 ? -1 : messages.length - 1 - lastUserMessageIndex;
+    const hasAIResponse = lastUserIndex >= 0
+      ? messages.slice(lastUserIndex + 1).some(isAIResponse)
+      : false;
     
     if (hasAIResponse) {
       log.log('[useChat] Retry: AI already responded, refreshing thread (NOT resending)');

@@ -1,8 +1,10 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast as sonnerToast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 import {
   grantSandboxProjectAccess,
@@ -39,6 +41,7 @@ interface Props {
 }
 
 export function ProjectMembersTab({ project }: Props) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const activeInstanceId = useServerStore((s) =>
     s.servers.find((srv) => srv.id === s.activeServerId)?.instanceId ?? null,
   );
@@ -72,8 +75,8 @@ export function ProjectMembersTab({ project }: Props) {
     return (
       <EmptyState
         icon={IconUsers}
-        title="Not allowed here"
-        description="You don't have permission to manage project access. Ask the instance owner to grant projects:access.manage."
+        title={tHardcodedUi.raw('componentsKortixProjectMembersTab.line75JsxAttrTitleNotAllowedHere')}
+        description={tHardcodedUi.raw('componentsKortixProjectMembersTab.line76JsxAttrDescriptionYouDonTHavePermissionToManageProject')}
       />
     );
   }
@@ -88,6 +91,7 @@ function ProjectMembersInner({
   sandbox: SandboxInfo;
   project: { id: string; name: string };
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -130,12 +134,12 @@ function ProjectMembersInner({
     mutationFn: (input: { userId: string; role: 'admin' | 'member' }) =>
       grantSandboxProjectAccess(sandbox, project.id, input.userId, input.role),
     onSuccess: () => {
-      sonnerToast.success('Added to project');
+      toast.success('Added to project');
       setPickerOpen(false);
       invalidate();
     },
     onError: (err) => {
-      sonnerToast.error(err instanceof Error ? err.message : 'Failed to add');
+      toast.error(err instanceof Error ? err.message : 'Failed to add');
     },
   });
 
@@ -143,11 +147,11 @@ function ProjectMembersInner({
     mutationFn: (userId: string) =>
       revokeSandboxProjectAccess(sandbox, project.id, userId),
     onSuccess: () => {
-      sonnerToast.success('Removed from project');
+      toast.success('Removed from project');
       invalidate();
     },
     onError: (err) => {
-      sonnerToast.error(err instanceof Error ? err.message : 'Failed to remove');
+      toast.error(err instanceof Error ? err.message : 'Failed to remove');
     },
   });
 
@@ -158,11 +162,9 @@ function ProjectMembersInner({
       <div className="container mx-auto max-w-3xl px-4 sm:px-6 lg:px-10 py-8 space-y-6">
         <header className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-muted-foreground/60 text-[11px] font-semibold uppercase tracking-[0.08em]">
-              Members · {memberRows.length}
+            <div className="text-muted-foreground/60 text-[11px] font-semibold uppercase tracking-[0.08em]">{tHardcodedUi.raw('componentsKortixProjectMembersTab.line162JsxTextMembers')}{memberRows.length}
             </div>
-            <p className="text-muted-foreground mt-1 text-[12px]">
-              People explicitly granted access to <span className="text-foreground">{project.name}</span>.
+            <p className="text-muted-foreground mt-1 text-[12px]">{tHardcodedUi.raw('componentsKortixProjectMembersTab.line165JsxTextPeopleExplicitlyGrantedAccessTo')}<span className="text-foreground">{project.name}</span>.
             </p>
           </div>
           {candidates.length > 0 ? (
@@ -178,12 +180,9 @@ function ProjectMembersInner({
 
         {membersQuery.isLoading ? (
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            <IconLoader className="h-4 w-4 animate-spin" /> Loading members…
-          </div>
+            <IconLoader className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsKortixProjectMembersTab.line181JsxTextLoadingMembers')}</div>
         ) : memberRows.length === 0 ? (
-          <div className="border-border/60 bg-muted/20 text-muted-foreground rounded-xl border border-dashed px-4 py-8 text-center text-sm">
-            Just you. Add teammates to let them see this project.
-          </div>
+          <div className="border-border/60 bg-muted/20 text-muted-foreground rounded-2xl border border-dashed px-4 py-8 text-center text-sm">{tHardcodedUi.raw('componentsKortixProjectMembersTab.line185JsxTextJustYouAddTeammatesToLetThemSee')}</div>
         ) : (
           <div className="space-y-1.5">
             {memberRows.map((m) => (
@@ -216,6 +215,7 @@ function ProjectMemberRow({
   onRevoke: () => void;
   pending: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const identity = email || member.user_id;
   return (
     <UserRow
@@ -235,7 +235,7 @@ function ProjectMemberRow({
             className="text-muted-foreground hover:text-destructive h-7 w-7"
             onClick={onRevoke}
             disabled={pending}
-            aria-label="Remove from project"
+            aria-label={tHardcodedUi.raw('componentsKortixProjectMembersTab.line238JsxAttrAriaLabelRemoveFromProject')}
           >
             {pending ? (
               <IconLoader className="h-3.5 w-3.5 animate-spin" />
@@ -262,6 +262,7 @@ function AddPersonButton({
   onPick: (userId: string, role: 'admin' | 'member') => void;
   pending: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <CommandPopover open={open} onOpenChange={onOpenChange}>
       <CommandPopoverTrigger>
@@ -270,18 +271,14 @@ function AddPersonButton({
             <IconLoader className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <>
-              <IconInvite className="mr-1.5 h-3.5 w-3.5" />
-              Add teammate
-            </>
+              <IconInvite className="mr-1.5 h-3.5 w-3.5" />{tHardcodedUi.raw('componentsKortixProjectMembersTab.line274JsxTextAddTeammate')}</>
           )}
         </Button>
       </CommandPopoverTrigger>
       <CommandPopoverContent side="bottom" align="end" shouldFilter>
-        <CommandInput placeholder="Find a teammate…" />
+        <CommandInput placeholder={tHardcodedUi.raw('componentsKortixProjectMembersTab.line280JsxAttrPlaceholderFindATeammate')} />
         <CommandList>
-          <CommandEmpty className="px-4 py-6 text-center text-xs">
-            No matches.
-          </CommandEmpty>
+          <CommandEmpty className="px-4 py-6 text-center text-xs">{tHardcodedUi.raw('componentsKortixProjectMembersTab.line283JsxTextNoMatches')}</CommandEmpty>
           <CommandGroup>
             {candidates.map((c) => {
               const label = c.email || c.user_id;

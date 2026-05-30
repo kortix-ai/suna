@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -22,6 +24,7 @@ export function BinaryRenderer({
   onDownload,
   isDownloading = false,
 }: BinaryRendererProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
   
   // Download restriction for free tier users
@@ -58,15 +61,13 @@ export function BinaryRenderer({
       <div className="flex flex-col items-center text-center max-w-md">
         <div className="relative mb-6">
           <File className="h-24 w-24 text-muted-foreground/50" />
-          <div className="absolute bottom-1 right-1 bg-background rounded-sm px-1.5 py-0.5 text-xs font-medium text-muted-foreground border">
+          <div className="absolute bottom-1 right-1 bg-background rounded-2xl px-1.5 py-0.5 text-xs font-medium text-muted-foreground border">
             {fileExtension.toUpperCase()}
           </div>
         </div>
 
         <h3 className="text-lg font-semibold mb-2">{fileName.split('/').pop()}</h3>
-        <p className="text-sm text-muted-foreground mb-6">
-          This binary file cannot be previewed in the browser
-        </p>
+        <p className="text-sm text-muted-foreground mb-6">{tHardcodedUi.raw('componentsFileRenderersBinaryRenderer.line68JsxTextThisBinaryFileCannotBePreviewedInThe')}</p>
 
         <Button
           variant="default"

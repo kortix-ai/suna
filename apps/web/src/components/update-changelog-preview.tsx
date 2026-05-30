@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -15,13 +17,13 @@ import { cn } from '@/lib/utils';
 import type { ChangelogChange } from '@/lib/platform-client';
 
 const changeTypeConfig: Record<string, { icon: typeof Sparkles; color: string }> = {
-  feature: { icon: Sparkles, color: 'text-emerald-500' },
-  fix: { icon: Bug, color: 'text-red-400' },
-  improvement: { icon: Zap, color: 'text-blue-400' },
-  breaking: { icon: AlertTriangle, color: 'text-amber-500' },
-  upstream: { icon: RefreshCw, color: 'text-violet-400' },
-  security: { icon: Shield, color: 'text-rose-400' },
-  deprecation: { icon: AlertTriangle, color: 'text-orange-400' },
+  feature: { icon: Sparkles, color: 'text-emerald-600 dark:text-emerald-400' },
+  fix: { icon: Bug, color: 'text-destructive' },
+  improvement: { icon: Zap, color: 'text-blue-600 dark:text-blue-400' },
+  breaking: { icon: AlertTriangle, color: 'text-amber-600 dark:text-amber-400' },
+  upstream: { icon: RefreshCw, color: 'text-muted-foreground' },
+  security: { icon: Shield, color: 'text-destructive' },
+  deprecation: { icon: AlertTriangle, color: 'text-amber-600 dark:text-amber-400' },
 };
 
 function ChangeItem({ change }: { change: ChangelogChange }) {
@@ -55,6 +57,7 @@ export function UpdateChangelogPreview({
   collapsedCount?: number;
   moreButtonVariant?: 'ghost' | 'link';
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
 
   const visibleChanges = useMemo(
@@ -71,8 +74,8 @@ export function UpdateChangelogPreview({
       className={cn(
         'overflow-hidden',
         variant === 'muted'
-          ? 'rounded-xl border border-border/60 bg-muted/10'
-          : 'rounded-lg border border-border/50 bg-muted/30',
+          ? 'rounded-2xl border border-border/60 bg-muted/10'
+          : 'rounded-2xl border border-border/50 bg-muted/30',
         className,
       )}
     >
@@ -99,8 +102,7 @@ export function UpdateChangelogPreview({
             variant === 'muted' ? 'border-t border-border/60' : 'border-t border-border/30 h-auto py-2',
           )}
         >
-          Show {remainingCount} more changes
-        </Button>
+          Show {remainingCount}{tHardcodedUi.raw('componentsUpdateChangelogPreview.line102JsxTextMoreChanges')}</Button>
       ) : null}
     </div>
   );

@@ -41,8 +41,17 @@ export function calculateCost(
  */
 export async function proxyToOpenRouter(
   body: Record<string, unknown>,
-  isStreaming: boolean
+  isStreaming: boolean,
+  apiKey = config.OPENROUTER_API_KEY,
+  traceHeaders: Record<string, string> = {},
 ): Promise<Response> {
+  if (!apiKey) {
+    return new Response(JSON.stringify({ error: 'OpenRouter API key not configured' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const modelId = body.model as string;
   const openrouterId = resolveOpenRouterId(modelId);
 
@@ -57,9 +66,10 @@ export async function proxyToOpenRouter(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
+      'Authorization': `Bearer ${apiKey}`,
       'HTTP-Referer': config.FRONTEND_URL || 'https://kortix.ai',
       'X-Title': 'Kortix',
+      ...traceHeaders,
     },
     body: JSON.stringify(forwardBody),
   });

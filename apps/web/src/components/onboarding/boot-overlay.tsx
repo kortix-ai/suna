@@ -1,8 +1,10 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
 const SYMBOL =
   'M25.5614 24.916H29.8268C29.8268 19.6306 26.9378 15.0039 22.6171 12.4587C26.9377 9.91355 29.8267 5.28685 29.8267 0.00146484H25.5613C25.5613 5.00287 21.8906 9.18692 17.0654 10.1679V0.00146484H12.8005V10.1679C7.9526 9.20401 4.3046 5.0186 4.3046 0.00146484H0.0391572C0.0391572 5.28685 2.92822 9.91355 7.24884 12.4587C2.92818 15.0039 0.0390625 19.6306 0.0390625 24.916H4.30451C4.30451 19.8989 7.95259 15.7135 12.8005 14.7496V24.9206H17.0654V14.7496C21.9133 15.7134 25.5614 19.8989 25.5614 24.916Z';
@@ -29,12 +31,14 @@ interface BootOverlayProps {
 }
 
 export function BootOverlay({ onComplete }: BootOverlayProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [phase, setPhase] = useState<Phase>('bios');
   const [visibleLines, setVisibleLines] = useState(0);
   const [progressFill, setProgressFill] = useState(false);
   const [biosReady, setBiosReady] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bootTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const prefersReducedMotion = useReducedMotion();
 
   // Boot sound
   useEffect(() => {
@@ -94,7 +98,7 @@ export function BootOverlay({ onComplete }: BootOverlayProps) {
             initial={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.12 } }}
           >
-            <div className="font-mono text-[13px] sm:text-sm leading-relaxed">
+            <div className="font-mono text-sm sm:text-sm leading-relaxed">
               {BIOS_LINES.slice(0, visibleLines).map((line, i) => (
                 <motion.div
                   key={i}
@@ -115,8 +119,8 @@ export function BootOverlay({ onComplete }: BootOverlayProps) {
               {visibleLines > 0 && !biosReady && (
                 <motion.span
                   className="inline-block w-2 h-[14px] bg-foreground/70 ml-0.5 mt-0.5"
-                  animate={{ opacity: [1, 0] }}
-                  transition={{ duration: 0.5, repeat: Infinity }}
+                  animate={prefersReducedMotion ? undefined : { opacity: [1, 0] }}
+                  transition={prefersReducedMotion ? undefined : { duration: 0.5, repeat: Infinity }}
                 />
               )}
               {biosReady && (
@@ -128,12 +132,10 @@ export function BootOverlay({ onComplete }: BootOverlayProps) {
                   onClick={continueBoot}
                 >
                   <motion.span
-                    className="font-mono text-[13px] sm:text-sm text-foreground/90"
-                    animate={{ opacity: [1, 0.3] }}
-                    transition={{ duration: 0.7, repeat: Infinity, repeatType: 'reverse' }}
-                  >
-                    Press Enter to boot...
-                  </motion.span>
+                    className="font-mono text-sm sm:text-sm text-foreground/90"
+                    animate={prefersReducedMotion ? undefined : { opacity: [1, 0.3] }}
+                    transition={prefersReducedMotion ? undefined : { duration: 0.7, repeat: Infinity, repeatType: 'reverse' }}
+                  >{tHardcodedUi.raw('componentsOnboardingBootOverlay.line135JsxTextPressEnterToBoot')}</motion.span>
                 </motion.div>
               )}
             </div>

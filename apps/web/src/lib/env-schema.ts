@@ -8,6 +8,10 @@ const RuntimeEnvSchema = z.object({
   APP_URL: z.string().url('APP_URL must be a valid URL').default('http://localhost:3000'),
   /** Default sandbox container name — used as fallback before the store hydrates */
   SANDBOX_ID: z.string().optional().default('kortix-sandbox'),
+  /** Comma-separated list of social auth providers to surface on the auth page (e.g. "google"). Empty = none. */
+  AUTH_PROVIDERS: z.string().optional().default(''),
+  /** Comma-separated list of email auth methods to surface on the auth page (e.g. "magic,password"). */
+  AUTH_METHODS: z.string().optional().default('magic,password'),
 })
 
 export type RuntimeEnv = z.infer<typeof RuntimeEnvSchema>

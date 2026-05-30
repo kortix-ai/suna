@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +14,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
 import { DateTimePicker } from "./date-time-picker";
@@ -58,19 +59,20 @@ export function MaintenanceConfigDialog({
   onSave,
   isPending,
 }: MaintenanceConfigDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const levelConfig = MAINTENANCE_LEVELS.find((l) => l.value === level);
   const Icon = levelConfig?.icon;
   const isNone = level === 'none';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] gap-0 overflow-hidden p-0">
+        <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
+          <DialogTitle className="flex items-center gap-2 text-lg font-semibold tracking-tight">
             {Icon && <Icon className={cn('w-5 h-5', levelConfig?.color)} />}
             Configure {levelConfig?.label || 'Maintenance'}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-sm text-muted-foreground">
             {isNone
               ? 'This will clear all active maintenance notifications.'
               : `Set up the ${levelConfig?.label?.toLowerCase()} notification that users will see.`}
@@ -78,7 +80,7 @@ export function MaintenanceConfigDialog({
         </DialogHeader>
 
         {!isNone && (
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 overflow-y-auto px-6 py-5">
             <div className="space-y-2">
               <Label htmlFor="m-title">Title</Label>
               <Input
@@ -93,7 +95,7 @@ export function MaintenanceConfigDialog({
               <Label htmlFor="m-message">Message</Label>
               <Textarea
                 id="m-message"
-                placeholder="Describe the situation..."
+                placeholder={tHardcodedUi.raw('appAdminUtilsComponentsMaintenanceDialog.line95JsxAttrPlaceholderDescribeTheSituation')}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 rows={3}
@@ -103,12 +105,12 @@ export function MaintenanceConfigDialog({
             {(level === 'warning' || level === 'blocking') && (
               <div className="grid grid-cols-2 gap-3">
                 <DateTimePicker
-                  label="Start Time"
+                  label={tHardcodedUi.raw('appAdminUtilsComponentsMaintenanceDialog.line105JsxAttrLabelStartTime')}
                   date={startDate}
                   setDate={setStartDate}
                 />
                 <DateTimePicker
-                  label="End Time"
+                  label={tHardcodedUi.raw('appAdminUtilsComponentsMaintenanceDialog.line110JsxAttrLabelEndTime')}
                   date={endDate}
                   setDate={setEndDate}
                 />
@@ -117,7 +119,7 @@ export function MaintenanceConfigDialog({
 
             {(level === 'critical' || level === 'blocking') && (
               <div className="space-y-2">
-                <Label>Affected Services</Label>
+                <Label>{tHardcodedUi.raw('appAdminUtilsComponentsMaintenanceDialog.line119JsxTextAffectedServices')}</Label>
                 <div className="grid grid-cols-2 gap-2">
                   {AVAILABLE_SERVICES.map((service) => {
                     const SvcIcon = service.icon;
@@ -127,7 +129,7 @@ export function MaintenanceConfigDialog({
                         key={service.id}
                         onClick={() => toggleService(service.label)}
                         className={cn(
-                          'flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors text-sm',
+                          'flex items-center gap-2 p-2 rounded-2xl border cursor-pointer transition-colors text-sm',
                           isSelected
                             ? 'border-primary bg-primary/5'
                             : 'border-border hover:border-primary/50',
@@ -149,7 +151,7 @@ export function MaintenanceConfigDialog({
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="m-status-url">Status URL (optional)</Label>
+              <Label htmlFor="m-status-url">{tHardcodedUi.raw('appAdminUtilsComponentsMaintenanceDialog.line151JsxTextStatusUrlOptional')}</Label>
               <Input
                 id="m-status-url"
                 placeholder="https://status.yourapp.com"
@@ -161,15 +163,13 @@ export function MaintenanceConfigDialog({
         )}
 
         {isNone && (
-          <div className="py-4">
-            <p className="text-sm text-muted-foreground">
-              Clicking save will clear all maintenance notifications and restore normal access.
-            </p>
+          <div className="px-6 py-5">
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAdminUtilsComponentsMaintenanceDialog.line165JsxTextClickingSaveWillClearAllMaintenanceNotificationsAnd')}</p>
           </div>
         )}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
@@ -180,7 +180,7 @@ export function MaintenanceConfigDialog({
             {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             {isNone ? 'Clear & Save' : 'Activate'}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

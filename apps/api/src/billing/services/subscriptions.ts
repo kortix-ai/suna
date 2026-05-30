@@ -8,7 +8,8 @@ import {
 } from '../repositories/credit-accounts';
 import { getCustomerByAccountId, upsertCustomer } from '../repositories/customers';
 import { BillingError, SubscriptionError } from '../../errors';
-import { getTier, isUpgrade, isDowngrade, getMonthlyCredits, resolvePriceId, getComputeDisplayPriceCents, getComputeProductId, getComputeDescription } from './tiers';
+import { getTier, isUpgrade, resolvePriceId, getComputeDisplayPriceCents, getComputeProductId, getComputeDescription, resolvePerSeatPriceId, defaultAutoTopupForSeats, MAX_SEATS_PER_ACCOUNT } from './tiers';
+import { countActiveMembers, mintYoloTokensForAllMembers } from './seat-management';
 import { grantCredits, resetExpiringCredits } from './credits';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import Stripe from 'stripe';
@@ -83,6 +84,11 @@ export async function createCheckoutSession(params: {
   const customerId = await getOrCreateStripeCustomer(accountId, email);
   const stripe = getStripe();
   const adminCheckout = await isPlatformAdmin(accountId);
+  const account = await getCreditAccount(accountId);
+  const previousFreeSubscriptionId =
+    (account?.tier ?? 'free') === 'free' && account?.stripeSubscriptionId
+      ? account.stripeSubscriptionId
+      : undefined;
 
   const priceId = resolvePriceId(tierKey, commitmentType);
   if (!priceId) throw new BillingError('No price configured for this tier');
@@ -91,6 +97,7 @@ export async function createCheckoutSession(params: {
     account_id: accountId,
     tier_key: tierKey,
     commitment_type: commitmentType ?? 'monthly',
+    ...(previousFreeSubscriptionId ? { previous_subscription_id: previousFreeSubscriptionId } : {}),
     ...(serverType ? { server_type: serverType } : {}),
     ...(location ? { location } : {}),
   };
@@ -149,16 +156,12 @@ export async function createCheckoutSession(params: {
           active: true,
         });
 
-        if (serverType) {
-          const { provisionSandboxFromCheckout } = await import('../../platform/services/sandbox-provisioner');
-          await provisionSandboxFromCheckout({
-            accountId,
-            subscriptionId: subscription.id,
-            serverType,
-            location: location || undefined,
-            tierKey,
-          });
-        }
+        // Legacy auto-provision of a per-account sandbox at checkout time
+        // has been removed — sandboxes are now per-session, provisioned on
+        // demand under /v1/projects/:id/sessions.
+        void serverType;
+        void location;
+        void tierKey;
 
         return {
           status: 'subscription_created' as const,
@@ -215,10 +218,7 @@ export async function createCheckoutSession(params: {
       ...(computeDesc ? { description: computeDesc } : {}),
     },
     metadata: {
-      account_id: accountId,
-      tier_key: tierKey,
-      ...(serverType ? { server_type: serverType } : {}),
-      ...(location ? { location } : {}),
+      ...metadata,
       ...(adminCheckout ? { admin_checkout: 'true' } : {}),
     },
     ...(locale ? { locale: locale as any } : {}),
@@ -228,6 +228,113 @@ export async function createCheckoutSession(params: {
     status: 'checkout_created' as const,
     checkout_url: session.url,
     session_id: session.id,
+  };
+}
+
+/**
+ * Billing v2 — start a per-seat subscription.
+ *
+ * Creates a Stripe subscription with `quantity = current member count`. If a
+ * payment method is saved we charge it directly; otherwise we hand off to
+ * hosted Checkout. The seat-grant of included compute/YOLO credits is applied
+ * by the `customer.subscription.updated` webhook (services/webhooks.ts) so we
+ * have a single source of truth for "credits granted per seat".
+ */
+export async function createPerSeatCheckoutSession(params: {
+  accountId: string;
+  email: string;
+  successUrl: string;
+  cancelUrl: string;
+  locale?: string;
+}) {
+  const { accountId, email, successUrl, cancelUrl, locale } = params;
+
+  const priceId = resolvePerSeatPriceId();
+  if (!priceId) {
+    throw new BillingError(
+      'Per-seat price is not configured. Set STRIPE_PRICES.subscriptions.per_seat for this environment.',
+    );
+  }
+
+  const seatCount = Math.min(MAX_SEATS_PER_ACCOUNT, Math.max(1, await countActiveMembers(accountId)));
+  const customerId = await getOrCreateStripeCustomer(accountId, email);
+  const stripe = getStripe();
+  const account = await getCreditAccount(accountId);
+
+  const metadata = {
+    account_id: accountId,
+    tier_key: 'per_seat',
+    billing_model: 'per_seat',
+    initial_seat_count: String(seatCount),
+  };
+
+  // If a card is on file, create the subscription directly with the right
+  // quantity. Webhook then sets seat_subscription_item_id + grants credits.
+  const savedPaymentMethodId = await getUsableCustomerPaymentMethod(customerId);
+  if (savedPaymentMethodId) {
+    try {
+      const subscription = await stripe.subscriptions.create({
+        customer: customerId,
+        items: [{ price: priceId, quantity: seatCount }],
+        collection_method: 'charge_automatically',
+        default_payment_method: savedPaymentMethodId,
+        payment_behavior: 'error_if_incomplete',
+        payment_settings: { save_default_payment_method: 'on_subscription' },
+        metadata,
+      });
+
+      if (subscription.status === 'active' || subscription.status === 'trialing') {
+        const seatItem = subscription.items.data[0];
+        const defaults = defaultAutoTopupForSeats(seatCount);
+        await upsertCreditAccount(accountId, {
+          tier: 'per_seat',
+          billingModel: 'per_seat',
+          seatCount,
+          seatSubscriptionItemId: seatItem?.id ?? null,
+          provider: 'stripe',
+          stripeSubscriptionId: subscription.id,
+          stripeSubscriptionStatus: subscription.status,
+          paymentStatus: 'active',
+          autoTopupEnabled: true,
+          autoTopupThreshold: String(account?.autoTopupCustomized ? account.autoTopupThreshold : defaults.threshold),
+          autoTopupAmount: String(account?.autoTopupCustomized ? account.autoTopupAmount : defaults.amount),
+        });
+        // Mint YOLO tokens for everyone already on the account (the owner +
+        // any pre-subscription members). New post-subscription adds go through
+        // onMemberAdded which handles minting per member.
+        void mintYoloTokensForAllMembers(accountId).catch(() => {});
+        return {
+          status: 'subscription_created' as const,
+          subscription_id: subscription.id,
+          seat_count: seatCount,
+        };
+      }
+    } catch (err) {
+      console.warn(
+        `[Billing] Direct per-seat subscription creation failed for ${accountId}, falling back to Checkout:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    customer: customerId,
+    mode: 'subscription',
+    line_items: [{ price: priceId, quantity: seatCount }],
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    allow_promotion_codes: true,
+    payment_method_collection: 'always',
+    subscription_data: { metadata },
+    metadata,
+    ...(locale ? { locale: locale as any } : {}),
+  });
+
+  return {
+    status: 'checkout_created' as const,
+    checkout_url: session.url,
+    session_id: session.id,
+    seat_count: seatCount,
   };
 }
 
@@ -333,15 +440,15 @@ export async function confirmInlineCheckout(params: {
 
 export async function createPortalSession(accountId: string, returnUrl: string, email?: string) {
   let customer = await getCustomerByAccountId(accountId);
-  if (!customer) {
+  let customerId = customer?.id ?? null;
+  if (!customerId) {
     if (!email) throw new BillingError('No billing customer found');
-    const customerId = await getOrCreateStripeCustomer(accountId, email);
-    customer = { id: customerId } as typeof customer;
+    customerId = await getOrCreateStripeCustomer(accountId, email);
   }
 
   const stripe = getStripe();
   const session = await stripe.billingPortal.sessions.create({
-    customer: customer.id,
+    customer: customerId,
     return_url: returnUrl,
   });
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useState, useCallback } from 'react';
 import {
   CircleAlert,
@@ -27,6 +29,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { STATUS_TEXT, StatusBadge } from '@/components/ui/status';
 import {
   useDiagnosticsStore,
   type LspDiagnostic,
@@ -47,11 +50,11 @@ function SeverityIcon({
 }) {
   switch (severity) {
     case 1: // Error
-      return <CircleAlert className={cn('text-red-500', className)} />;
+      return <CircleAlert className={cn(STATUS_TEXT.destructive, className)} />;
     case 2: // Warning
-      return <AlertTriangle className={cn('text-yellow-500', className)} />;
+      return <AlertTriangle className={cn(STATUS_TEXT.warning, className)} />;
     case 3: // Info
-      return <Info className={cn('text-blue-500', className)} />;
+      return <Info className={cn(STATUS_TEXT.info, className)} />;
     case 4: // Hint
     default:
       return <HelpCircle className={cn('text-muted-foreground', className)} />;
@@ -136,19 +139,20 @@ function DiagnosticRow({
   diagnostic: LspDiagnostic;
   onClick: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-start gap-2 px-2.5 py-1.5 text-left hover:bg-muted/50 transition-colors cursor-pointer rounded-md group"
+      className="w-full flex items-start gap-2 px-2.5 py-1.5 text-left hover:bg-muted/50 transition-colors cursor-pointer rounded-lg group"
     >
       <SeverityIcon severity={diagnostic.severity} className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <p className="text-xs text-foreground/90 leading-snug line-clamp-2 group-hover:text-foreground">
           {diagnostic.message}
         </p>
-        <span className="text-[10px] text-muted-foreground/60 font-mono">
-          Ln {diagnostic.line + 1}, Col {diagnostic.column + 1}
+        <span className="text-xs text-muted-foreground/60 font-mono">
+          Ln {diagnostic.line + 1}{tHardcodedUi.raw('componentsSessionDiagnosticsPanel.line152JsxTextCol')}{' '}{diagnostic.column + 1}
           {diagnostic.source && <span className="ml-1.5">({diagnostic.source})</span>}
         </span>
       </div>
@@ -189,19 +193,19 @@ function FileGroupSection({
         <FileCode2 className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
         <span className="text-xs font-medium text-foreground truncate">{filename}</span>
         {directory && (
-          <span className="text-[10px] text-muted-foreground/50 font-mono truncate hidden sm:inline">
+          <span className="text-xs text-muted-foreground/50 font-mono truncate hidden sm:inline">
             {directory}
           </span>
         )}
         <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
           {group.errorCount > 0 && (
-            <span className="flex items-center gap-0.5 text-[10px] font-medium text-red-500">
+            <span className={cn('flex items-center gap-0.5 text-xs font-medium', STATUS_TEXT.destructive)}>
               <CircleAlert className="h-2.5 w-2.5" />
               {group.errorCount}
             </span>
           )}
           {group.warningCount > 0 && (
-            <span className="flex items-center gap-0.5 text-[10px] font-medium text-yellow-500">
+            <span className={cn('flex items-center gap-0.5 text-xs font-medium', STATUS_TEXT.warning)}>
               <AlertTriangle className="h-2.5 w-2.5" />
               {group.warningCount}
             </span>
@@ -228,6 +232,7 @@ function FileGroupSection({
 // ============================================================================
 
 export function DiagnosticsBadge() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const byFile = useDiagnosticsStore((s) => s.byFile);
   const [open, setOpen] = useState(false);
 
@@ -275,13 +280,13 @@ export function DiagnosticsBadge() {
               className="inline-flex items-center gap-1.5 h-7 px-2 rounded-lg text-xs font-medium transition-colors cursor-pointer hover:bg-muted/60"
             >
               {errorCount > 0 && (
-                <span className="flex items-center gap-1 text-red-500">
+                <span className={cn('flex items-center gap-1', STATUS_TEXT.destructive)}>
                   <CircleAlert className="h-3.5 w-3.5" />
                   <span>{errorCount}</span>
                 </span>
               )}
               {warningCount > 0 && (
-                <span className="flex items-center gap-1 text-yellow-500">
+                <span className={cn('flex items-center gap-1', STATUS_TEXT.warning)}>
                   <AlertTriangle className="h-3.5 w-3.5" />
                   <span>{warningCount}</span>
                 </span>
@@ -309,14 +314,14 @@ export function DiagnosticsBadge() {
               <span className="text-sm font-medium text-foreground">Diagnostics</span>
               <div className="flex items-center gap-2">
                 {errorCount > 0 && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-500/10 text-red-500">
+                  <StatusBadge tone="destructive">
                     {errorCount} error{errorCount !== 1 ? 's' : ''}
-                  </span>
+                  </StatusBadge>
                 )}
                 {warningCount > 0 && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-yellow-500/10 text-yellow-500">
+                  <StatusBadge tone="warning">
                     {warningCount} warning{warningCount !== 1 ? 's' : ''}
-                  </span>
+                  </StatusBadge>
                 )}
               </div>
             </div>
@@ -334,9 +339,7 @@ export function DiagnosticsBadge() {
                 />
               ))
             ) : (
-              <div className="text-xs text-center py-6 text-muted-foreground">
-                No diagnostics
-              </div>
+              <div className="text-xs text-center py-6 text-muted-foreground">{tHardcodedUi.raw('componentsSessionDiagnosticsPanel.line339JsxTextNoDiagnostics')}</div>
             )}
           </div>
         </div>
@@ -351,6 +354,7 @@ interface DiagnosticsDialogProps {
 }
 
 export function DiagnosticsDialog({ open, onOpenChange }: DiagnosticsDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const byFile = useDiagnosticsStore((s) => s.byFile);
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
 
@@ -391,17 +395,17 @@ export function DiagnosticsDialog({ open, onOpenChange }: DiagnosticsDialogProps
         <div className="px-4 pb-3">
           <div className="flex items-center gap-2 py-2.5">
             {errorCount > 0 && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-500/10 text-red-500">
+              <StatusBadge tone="destructive">
                 {errorCount} error{errorCount !== 1 ? 's' : ''}
-              </span>
+              </StatusBadge>
             )}
             {warningCount > 0 && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-yellow-500/10 text-yellow-500">
+              <StatusBadge tone="warning">
                 {warningCount} warning{warningCount !== 1 ? 's' : ''}
-              </span>
+              </StatusBadge>
             )}
             {errorCount === 0 && warningCount === 0 && (
-              <span className="text-xs text-muted-foreground">No diagnostics</span>
+              <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionDiagnosticsPanel.line405JsxTextNoDiagnostics')}</span>
             )}
           </div>
 
@@ -416,9 +420,7 @@ export function DiagnosticsDialog({ open, onOpenChange }: DiagnosticsDialogProps
                 />
               ))
             ) : (
-              <div className="text-xs text-center py-6 text-muted-foreground">
-                No diagnostics
-              </div>
+              <div className="text-xs text-center py-6 text-muted-foreground">{tHardcodedUi.raw('componentsSessionDiagnosticsPanel.line421JsxTextNoDiagnostics')}</div>
             )}
           </div>
         </div>

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useMemo } from 'react';
 import {
   FileCode2,
@@ -15,260 +17,12 @@ import {
   Minimize2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { STATUS_TEXT, DiffStat, StatusBadge } from '@/components/ui/status';
 import { useOpenCodeSessionDiff, useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { createTwoFilesPatch } from 'diff';
 import type { FileDiff, ApplyPatchFile } from '@/ui/types';
-import { useDiffHighlight, renderHighlightedLine } from '@/hooks/use-diff-highlight';
-
-// ============================================================================
-// Diff line renderer (unified view)
-// ============================================================================
-
-function DiffLines({ patch, filename }: { patch: string; filename: string }) {
-  const diffLines = useMemo(() => patch.split('\n').slice(4), [patch]);
-
-  // Extract code content (without +/-/space prefix) for highlighting
-  const codeLines = useMemo(
-    () =>
-      diffLines.map((line) => {
-        if (line.startsWith('@@') || line === '') return '';
-        // Strip the +/-/space prefix
-        return line.length > 0 ? line.substring(1) : '';
-      }),
-    [diffLines],
-  );
-
-  const highlighted = useDiffHighlight(codeLines, filename);
-
-  return (
-    <pre className="p-3 font-mono text-[11px] leading-[1.6] select-text whitespace-pre-wrap break-all">
-      {diffLines.map((line, i) => {
-        const isAdd = line.startsWith('+');
-        const isDel = line.startsWith('-');
-        const isHunk = line.startsWith('@@');
-
-        let cls = 'text-muted-foreground/60';
-        if (isAdd) cls = 'bg-emerald-500/5';
-        else if (isDel) cls = 'bg-red-500/5';
-        else if (isHunk) cls = 'text-blue-500/60 text-[10px]';
-
-        // For hunk headers or empty lines, render plain
-        if (isHunk || line === '') {
-          return (
-            <div key={i} className={cls}>
-              {line || ' '}
-            </div>
-          );
-        }
-
-        const prefix = line[0] || ' ';
-        const highlightedTokens = highlighted?.[i];
-
-        if (highlightedTokens) {
-          const html = renderHighlightedLine(highlightedTokens, codeLines[i]);
-          return (
-            <div key={i} className={cls}>
-              <span
-                className={cn(
-                  isAdd && 'text-emerald-600 dark:text-emerald-400',
-                  isDel && 'text-red-600 dark:text-red-400',
-                )}
-              >
-                {prefix}
-              </span>
-              <span dangerouslySetInnerHTML={{ __html: html }} />
-            </div>
-          );
-        }
-
-        // Fallback: no highlighting available
-        return (
-          <div
-            key={i}
-            className={cn(
-              cls,
-              isAdd && 'text-emerald-600 dark:text-emerald-400',
-              isDel && 'text-red-600 dark:text-red-400',
-            )}
-          >
-            {line || ' '}
-          </div>
-        );
-      })}
-    </pre>
-  );
-}
-
-// ============================================================================
-// Side-by-side diff renderer
-// ============================================================================
-
-interface SideBySideLine {
-  left: { num: number | null; content: string; type: 'unchanged' | 'deleted' | 'empty' };
-  right: { num: number | null; content: string; type: 'unchanged' | 'added' | 'empty' };
-}
-
-function parsePatchToSideBySide(patch: string): SideBySideLine[] {
-  const lines = patch.split('\n').slice(4); // skip header
-  const result: SideBySideLine[] = [];
-  let leftNum = 0;
-  let rightNum = 0;
-
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-
-    if (line.startsWith('@@')) {
-      // Parse hunk header: @@ -leftStart,leftCount +rightStart,rightCount @@
-      const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-      if (match) {
-        leftNum = parseInt(match[1], 10) - 1;
-        rightNum = parseInt(match[2], 10) - 1;
-      }
-      result.push({
-        left: { num: null, content: line, type: 'unchanged' },
-        right: { num: null, content: '', type: 'empty' },
-      });
-      i++;
-      continue;
-    }
-
-    if (line.startsWith('-')) {
-      // Collect consecutive deletions
-      const deletions: string[] = [];
-      while (i < lines.length && lines[i].startsWith('-')) {
-        deletions.push(lines[i].substring(1));
-        i++;
-      }
-      // Collect consecutive additions
-      const additions: string[] = [];
-      while (i < lines.length && lines[i].startsWith('+')) {
-        additions.push(lines[i].substring(1));
-        i++;
-      }
-      // Pair them up
-      const maxLen = Math.max(deletions.length, additions.length);
-      for (let j = 0; j < maxLen; j++) {
-        const hasLeft = j < deletions.length;
-        const hasRight = j < additions.length;
-        result.push({
-          left: {
-            num: hasLeft ? ++leftNum : null,
-            content: hasLeft ? deletions[j] : '',
-            type: hasLeft ? 'deleted' : 'empty',
-          },
-          right: {
-            num: hasRight ? ++rightNum : null,
-            content: hasRight ? additions[j] : '',
-            type: hasRight ? 'added' : 'empty',
-          },
-        });
-      }
-      continue;
-    }
-
-    if (line.startsWith('+')) {
-      rightNum++;
-      result.push({
-        left: { num: null, content: '', type: 'empty' },
-        right: { num: rightNum, content: line.substring(1), type: 'added' },
-      });
-      i++;
-      continue;
-    }
-
-    // Context line
-    leftNum++;
-    rightNum++;
-    result.push({
-      left: { num: leftNum, content: line.startsWith(' ') ? line.substring(1) : line, type: 'unchanged' },
-      right: { num: rightNum, content: line.startsWith(' ') ? line.substring(1) : line, type: 'unchanged' },
-    });
-    i++;
-  }
-
-  return result;
-}
-
-function SideBySideDiff({ patch, filename }: { patch: string; filename: string }) {
-  const rows = useMemo(() => parsePatchToSideBySide(patch), [patch]);
-
-  // Collect all content lines for highlighting (left + right interleaved)
-  const { leftLines, rightLines } = useMemo(() => {
-    const left: string[] = [];
-    const right: string[] = [];
-    for (const row of rows) {
-      left.push(row.left.content || '');
-      right.push(row.right.content || '');
-    }
-    return { leftLines: left, rightLines: right };
-  }, [rows]);
-
-  const leftHighlighted = useDiffHighlight(leftLines, filename);
-  const rightHighlighted = useDiffHighlight(rightLines, filename);
-
-  return (
-    <div className="select-text overflow-hidden">
-      <table className="w-full font-mono text-[11px] leading-[1.6] border-collapse table-fixed">
-        <tbody>
-          {rows.map((row, i) => {
-            const leftTokens = leftHighlighted?.[i];
-            const rightTokens = rightHighlighted?.[i];
-            const isLeftHunk = row.left.content.startsWith('@@');
-
-            return (
-              <tr key={i}>
-                {/* Left side (old) */}
-                <td className="w-8 min-w-8 text-right pr-2 select-none text-muted-foreground/30 align-top border-r border-border/20">
-                  {row.left.num ?? ''}
-                </td>
-                <td
-                  className={cn(
-                    'px-2 whitespace-pre-wrap break-all border-r border-border/30 w-[calc(50%-2rem)]',
-                    row.left.type === 'deleted' && 'bg-red-500/10',
-                    row.left.type === 'empty' && 'bg-muted/5',
-                    row.left.type === 'unchanged' && 'text-muted-foreground/60',
-                  )}
-                >
-                  {isLeftHunk ? (
-                    <span className="text-blue-500/60 text-[10px]">{row.left.content}</span>
-                  ) : leftTokens && row.left.content ? (
-                    <span dangerouslySetInnerHTML={{ __html: renderHighlightedLine(leftTokens, row.left.content) }} />
-                  ) : (
-                    <span className={cn(row.left.type === 'deleted' && 'text-red-600 dark:text-red-400')}>
-                      {row.left.content || ' '}
-                    </span>
-                  )}
-                </td>
-                {/* Right side (new) */}
-                <td className="w-8 min-w-8 text-right pr-2 select-none text-muted-foreground/30 align-top border-r border-border/20">
-                  {row.right.num ?? ''}
-                </td>
-                <td
-                  className={cn(
-                    'px-2 whitespace-pre-wrap break-all w-[calc(50%-2rem)]',
-                    row.right.type === 'added' && 'bg-emerald-500/10',
-                    row.right.type === 'empty' && 'bg-muted/5',
-                    row.right.type === 'unchanged' && 'text-muted-foreground/60',
-                  )}
-                >
-                  {rightTokens && row.right.content ? (
-                    <span dangerouslySetInnerHTML={{ __html: renderHighlightedLine(rightTokens, row.right.content) }} />
-                  ) : (
-                    <span className={cn(row.right.type === 'added' && 'text-emerald-600 dark:text-emerald-400')}>
-                      {row.right.content || ' '}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+import { DiffView } from '@/components/diff/diff-view';
 
 // ============================================================================
 // Single file diff card
@@ -279,9 +33,9 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
 
   const statusIcon = useMemo(() => {
     switch (diff.status) {
-      case 'added': return <FilePlus2 className="size-3.5 text-emerald-500" />;
-      case 'deleted': return <FileX2 className="size-3.5 text-red-500" />;
-      default: return <FileEdit className="size-3.5 text-blue-500" />;
+      case 'added': return <FilePlus2 className={cn('size-3.5', STATUS_TEXT.success)} />;
+      case 'deleted': return <FileX2 className={cn('size-3.5', STATUS_TEXT.destructive)} />;
+      default: return <FileEdit className={cn('size-3.5', STATUS_TEXT.info)} />;
     }
   }, [diff.status]);
 
@@ -293,11 +47,11 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
     }
   }, [diff.status]);
 
-  const statusColor = useMemo(() => {
+  const statusVariant = useMemo((): 'success' | 'destructive' | 'info' => {
     switch (diff.status) {
-      case 'added': return 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10';
-      case 'deleted': return 'text-red-600 dark:text-red-400 bg-red-500/10';
-      default: return 'text-blue-600 dark:text-blue-400 bg-blue-500/10';
+      case 'added': return 'success';
+      case 'deleted': return 'destructive';
+      default: return 'info';
     }
   }, [diff.status]);
 
@@ -316,7 +70,7 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
   const directory = diff.file.includes('/') ? diff.file.substring(0, diff.file.lastIndexOf('/')) : '';
 
   return (
-    <div className="rounded-lg border border-border/50 overflow-hidden bg-card">
+    <div className="rounded-2xl border border-border/50 overflow-hidden bg-card">
       {/* File header */}
       <button
         onClick={() => hasDiffContent && setExpanded(!expanded)}
@@ -338,35 +92,30 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
         <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
           <span className="text-xs font-medium text-foreground truncate">{filename}</span>
           {directory && (
-            <span className="text-[10px] text-muted-foreground/50 truncate hidden sm:inline">
+            <span className="text-xs text-muted-foreground/50 truncate hidden sm:inline">
               {directory}
             </span>
           )}
         </div>
 
         {/* Status badge */}
-        <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', statusColor)}>
-          {statusLabel}
-        </span>
+        <StatusBadge tone={statusVariant}>{statusLabel}</StatusBadge>
 
         {/* Addition/deletion counts */}
-        <span className="flex items-center gap-1.5 text-[10px] whitespace-nowrap flex-shrink-0">
-          {diff.additions > 0 && <span className="text-emerald-500">+{diff.additions}</span>}
-          {diff.deletions > 0 && <span className="text-red-500">-{diff.deletions}</span>}
-        </span>
+        <DiffStat
+          additions={diff.additions}
+          deletions={diff.deletions}
+          className="text-xs whitespace-nowrap flex-shrink-0"
+        />
       </button>
 
       {/* Expanded diff content */}
       {expanded && hasDiffContent && (
         <div className={cn(
-          'border-t border-border/40 bg-zinc-50/50 dark:bg-zinc-900/30 overflow-y-auto',
+          'border-t border-border/40 overflow-y-auto',
           isFullscreen ? 'max-h-[calc(100vh-12rem)]' : 'max-h-96',
         )}>
-          {viewMode === 'split' ? (
-            <SideBySideDiff patch={patch} filename={diff.file} />
-          ) : (
-            <DiffLines patch={patch} filename={diff.file} />
-          )}
+          <DiffView patch={patch} layout={viewMode} hideFileHeader />
         </div>
       )}
     </div>
@@ -390,6 +139,7 @@ function DiffSummaryBar({
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const totals = useMemo(() => {
     let additions = 0, deletions = 0, added = 0, deleted = 0, modified = 0;
     for (const d of diffs) {
@@ -403,29 +153,28 @@ function DiffSummaryBar({
   }, [diffs]);
 
   return (
-    <div className="flex items-center gap-3 px-5 py-3 pr-12 border-b border-border/40 bg-muted/20">
-      <span className="text-xs text-muted-foreground">
+    <div className="flex w-full items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-2.5 pr-12">
+      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
         {diffs.length} {diffs.length === 1 ? 'file' : 'files'} changed
       </span>
-      <div className="flex items-center gap-2 ml-auto text-[10px]">
+      <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs">
         {totals.added > 0 && (
-          <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+          <span className={cn('flex items-center gap-1', STATUS_TEXT.success)}>
             <FilePlus2 className="size-3" /> {totals.added}
           </span>
         )}
         {totals.modified > 0 && (
-          <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+          <span className={cn('flex items-center gap-1', STATUS_TEXT.info)}>
             <FileEdit className="size-3" /> {totals.modified}
           </span>
         )}
         {totals.deleted > 0 && (
-          <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
+          <span className={cn('flex items-center gap-1', STATUS_TEXT.destructive)}>
             <FileX2 className="size-3" /> {totals.deleted}
           </span>
         )}
         <span className="text-muted-foreground/50 mx-1">|</span>
-        {totals.additions > 0 && <span className="text-emerald-500">+{totals.additions}</span>}
-        {totals.deletions > 0 && <span className="text-red-500 ml-1">-{totals.deletions}</span>}
+        <DiffStat additions={totals.additions} deletions={totals.deletions} />
 
         {/* View mode toggle */}
         <span className="text-muted-foreground/50 mx-1">|</span>
@@ -437,7 +186,7 @@ function DiffSummaryBar({
               ? 'text-foreground bg-muted/60'
               : 'text-muted-foreground/50 hover:text-muted-foreground',
           )}
-          title="Unified view"
+          title={tHardcodedUi.raw('componentsSessionSessionDiffViewer.line186JsxAttrTitleUnifiedView')}
         >
           <Rows2 className="size-3.5" />
         </button>
@@ -449,7 +198,7 @@ function DiffSummaryBar({
               ? 'text-foreground bg-muted/60'
               : 'text-muted-foreground/50 hover:text-muted-foreground',
           )}
-          title="Side-by-side view"
+          title={tHardcodedUi.raw('componentsSessionSessionDiffViewer.line198JsxAttrTitleSideBySideView')}
         >
           <Columns2 className="size-3.5" />
         </button>
@@ -565,6 +314,7 @@ interface SessionDiffViewerProps {
 }
 
 export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen }: SessionDiffViewerProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: apiDiffs, isLoading, error } = useOpenCodeSessionDiff(sessionId);
   const { data: messages } = useOpenCodeMessages(sessionId);
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
@@ -606,7 +356,7 @@ export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen 
           <span className="text-xs font-medium text-muted-foreground">Changes</span>
         </div>
         <div className="flex-1 flex items-center justify-center text-center px-6">
-          <p className="text-xs text-muted-foreground">Failed to load changes</p>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line355JsxTextFailedToLoadChanges')}</p>
         </div>
       </div>
     );
@@ -621,10 +371,8 @@ export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen 
         </div>
         <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 min-h-[200px]">
           <FileCode2 className="size-10 text-muted-foreground/20 mb-4" />
-          <p className="text-base text-muted-foreground">No changes yet</p>
-          <p className="text-sm text-muted-foreground/50 mt-1.5">
-            File changes will appear here as the session progresses
-          </p>
+          <p className="text-base text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line370JsxTextNoChangesYet')}</p>
+          <p className="text-sm text-muted-foreground/50 mt-1.5">{tHardcodedUi.raw('componentsSessionSessionDiffViewer.line372JsxTextFileChangesWillAppearHereAsTheSession')}</p>
         </div>
       </div>
     );

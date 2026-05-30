@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from 'react';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { createClient } from '@/lib/supabase/client';
@@ -67,11 +69,11 @@ function SleepClock({ phase }: { phase: 'in' | 'visible' | 'out' }) {
         transition: 'opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
-      <p className="text-foreground/35 text-[13px] font-light tracking-widest" suppressHydrationWarning>
+      <p className="text-foreground/35 text-sm font-light tracking-widest" suppressHydrationWarning>
         {day} {month} {date}
       </p>
       <p
-        className="text-foreground/80 text-[80px] sm:text-[104px] font-extralight leading-none -tracking-[0.02em] tabular-nums"
+        className="text-foreground/80 text-7xl sm:text-8xl font-extralight leading-none -tracking-[0.02em] tabular-nums"
         suppressHydrationWarning
       >
         {h}:{m}
@@ -97,6 +99,7 @@ function useSleepUser() {
 }
 
 export function SleepOverlay() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { sleeping, wake } = useSleep();
   const user = useSleepUser();
   const [stage, setStage] = useState<'mounting' | 'in' | 'visible' | 'out' | 'hidden'>('hidden');
@@ -188,12 +191,10 @@ export function SleepOverlay() {
             </span>
           )}
         </div>
-        <p className="text-foreground/80 text-[15px] sm:text-base font-medium tracking-wide mb-1">
+        <p className="text-foreground/80 text-sm sm:text-base font-medium tracking-wide mb-1">
           {user?.name || ''}
         </p>
-        <p className="text-foreground/30 text-xs tracking-wide">
-          Click anywhere or press Enter to continue
-        </p>
+        <p className="text-foreground/30 text-xs tracking-wide">{tHardcodedUi.raw('componentsDashboardSleepOverlay.line195JsxTextClickAnywhereOrPressEnterToContinue')}</p>
       </div>
     </div>
   );

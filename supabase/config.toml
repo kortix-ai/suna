@@ -41,13 +41,27 @@ enable_signup = true
 enable_signup = true
 enable_confirmations = false
 
+# GitHub OAuth — used by both /auth (sign-in) and the project import flow.
+# Requires a GitHub OAuth App with callback http://127.0.0.1:54321/auth/v1/callback.
+# Set SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID and
+# SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET in the supabase CLI environment
+# before running `supabase start` / `supabase stop && supabase start`.
+[auth.external.github]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET)"
+redirect_uri = "http://127.0.0.1:54321/auth/v1/callback"
+
 # ─── Realtime ─────────────────────────────────────────────────────────────────
 [realtime]
 enabled = false
 
 # ─── Storage ──────────────────────────────────────────────────────────────────
+# Enabled for the public "avatars" bucket (profile pictures). See
+# migrations/00000000000060_avatars_storage_bucket.sql.
 [storage]
-enabled = false
+enabled = true
+file_size_limit = "50MiB"
 
 # ─── Edge Functions ───────────────────────────────────────────────────────────
 [edge_runtime]

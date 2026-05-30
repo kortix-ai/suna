@@ -18,14 +18,14 @@ test.describe('04 — Authentication flow', () => {
     expect(res.status).toBe(200);
   });
 
-  test('authenticated user can access platform init status', async () => {
+  test('authenticated user can read available sandbox providers', async () => {
     const token = await getAccessToken();
-    const res = await fetch(`${apiBase}/platform/init/local/status`, {
+    const res = await fetch(`${apiBase}/setup/sandbox-providers`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);
-    const data = (await res.json()) as { status: string };
-    expect(data.status).toBe('ready');
+    const data = (await res.json()) as { providers: string[] };
+    expect(data.providers.length).toBeGreaterThan(0);
   });
 
   test('browser login flow reaches wizard', async ({ page }) => {
@@ -43,23 +43,38 @@ test.describe('04 — Authentication flow', () => {
       await page.waitForTimeout(1_500);
     }
 
-    // May already be authenticated from a prior session, or show login form
+    // May already be authenticated from a prior session, or show auth form.
+    const signUpHeading = page.getByRole('heading', { name: 'Create your account' });
     const signInHeading = page.getByRole('heading', { name: 'Sign in to Kortix' });
     const wizardHeading = page.getByRole('heading', { name: /Connect a provider/i });
 
-    // Wait for either the login form or the wizard
-    await expect(signInHeading.or(wizardHeading)).toBeVisible({ timeout: 15_000 });
+    // Wait for either the auth form or the wizard
+    await expect(signUpHeading.or(signInHeading).or(wizardHeading)).toBeVisible({ timeout: 15_000 });
 
     // If login form is showing, fill and submit
+    if (await signUpHeading.isVisible().catch(() => false)) {
+      await page.getByRole('button', { name: /^Sign in$/i }).first().click();
+    }
     if (await signInHeading.isVisible().catch(() => false)) {
+      const usePassword = page.getByRole('button', { name: /Use password instead/i });
+      if (await usePassword.isVisible().catch(() => false)) {
+        await usePassword.click();
+      }
       await page.locator('input[name="email"]').fill(ownerEmail);
       await page.locator('input[name="password"]').fill(ownerPassword);
-      await page.getByRole('button', { name: 'Sign in' }).click();
+      await page.locator('form').getByRole('button', { name: /^Sign in$/i }).click();
     }
 
-    // Should reach the setup wizard (Connect a provider) or dashboard
-    await expect(
-      wizardHeading.or(page.getByRole('button', { name: /New session/i })),
-    ).toBeVisible({ timeout: 30_000 });
+    // Should reach the setup wizard or the v1 project shell.
+    const projectsHeading = page.getByRole('heading', { name: 'Projects', exact: true });
+    const newProjectButton = page.getByRole('button', { name: /New project|Add new project/i }).first();
+    const visibleShell = await Promise.race([
+      wizardHeading.waitFor({ state: 'visible', timeout: 30_000 }).then(() => true).catch(() => false),
+      projectsHeading.waitFor({ state: 'visible', timeout: 30_000 }).then(() => true).catch(() => false),
+      newProjectButton.waitFor({ state: 'visible', timeout: 30_000 }).then(() => true).catch(() => false),
+    ]);
+    expect(visibleShell).toBe(true);
+    expect(page.url()).not.toContain('/instances');
+    expect(page.url()).not.toContain('/dashboard');
   });
 });

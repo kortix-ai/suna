@@ -36,10 +36,16 @@ export function SharePageWrapper({ children }: { children: React.ReactNode }) {
     return <div className="flex-1">{children}</div>;
   }
 
-  // Logged-in: wrap with providers + sidebar
+  // Logged-in: keep shared providers, but do not mount legacy dashboard sidebars
+  // or global instance/settings modals on the repo-first v1 surface.
   if (isLoggedIn) {
     return (
-      <AppProviders showSidebar={true}>
+      <AppProviders
+        showSidebar={false}
+        showRightSidebar={false}
+        showGlobalNewInstanceModal={false}
+        showGlobalUserSettingsModal={false}
+      >
         {children}
         <Suspense fallback={null}>
           <PresentationViewerWrapper />

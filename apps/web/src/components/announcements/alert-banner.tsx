@@ -28,9 +28,9 @@ const variantStyles: Record<AlertBannerVariant, {
   iconColor: string;
 }> = {
   warning: {
-    iconBg: 'bg-amber-500/20 dark:bg-amber-500/20',
-    iconBorder: 'border-amber-500/60 dark:border-amber-500/30',
-    iconColor: 'text-amber-500',
+    iconBg: 'bg-amber-500/10',
+    iconBorder: 'border-amber-500/30',
+    iconColor: 'text-amber-600 dark:text-amber-400',
   },
   error: {
     iconBg: 'bg-muted',
@@ -38,9 +38,9 @@ const variantStyles: Record<AlertBannerVariant, {
     iconColor: 'text-muted-foreground',
   },
   info: {
-    iconBg: 'bg-blue-500/10 dark:bg-blue-500/20',
-    iconBorder: 'border-blue-500/20 dark:border-blue-500/30',
-    iconColor: 'text-blue-500',
+    iconBg: 'bg-blue-500/10',
+    iconBorder: 'border-blue-500/25',
+    iconColor: 'text-blue-600 dark:text-blue-400',
   },
 };
 
@@ -58,7 +58,7 @@ export function AlertBanner({
   const [isDismissed, setIsDismissed] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const pathname = normalizeAppPathname(usePathname());
-  const isDashboardPage = pathname?.startsWith('/dashboard') || pathname?.startsWith('/agents') || pathname?.startsWith('/workspace') || pathname?.startsWith('/projects') || pathname?.startsWith('/settings') || pathname === '/';
+  const isDashboardPage = pathname?.startsWith('/agents') || pathname?.startsWith('/workspace') || pathname?.startsWith('/projects') || pathname?.startsWith('/settings') || pathname === '/';
 
   const storageKey = `alert-dismissed-${dismissKey}`;
 
@@ -108,25 +108,25 @@ export function AlertBanner({
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
         className="fixed bottom-4 right-4 z-[110] w-[340px]"
       >
-        <div className="relative bg-muted rounded-xl overflow-hidden border">
+        <div className="relative bg-muted rounded-2xl overflow-hidden border">
           <Button variant="ghost" size="icon-sm" onClick={handleDismiss}>
-<X className="h-3 w-3 text-foreground dark:text-white" />
-          
+<X className="h-3 w-3 text-foreground" />
+
 </Button>
 
-          <div 
-            className={`p-4 bg-muted/50 dark:bg-[#161618] ${statusUrl ? 'cursor-pointer hover:bg-muted dark:hover:bg-[#1a1a1c]' : ''} transition-colors`}
+          <div
+            className={`p-4 bg-muted/50 ${statusUrl ? 'cursor-pointer hover:bg-muted' : ''} transition-colors`}
             onClick={statusUrl ? handleStatusClick : undefined}
           >
             <div className="flex items-start gap-3">
-              <div className={`w-12 h-12 ${styles.iconBg} rounded-xl border ${styles.iconBorder} flex items-center justify-center flex-shrink-0`}>
+              <div className={`w-12 h-12 ${styles.iconBg} rounded-2xl border ${styles.iconBorder} flex items-center justify-center flex-shrink-0`}>
                 <Icon className={cn('h-5 w-5', styles.iconColor)} />
               </div>
               <div className="flex-1 min-w-0 pr-4">
-                <h3 className="text-foreground dark:text-white text-sm font-semibold mb-1">
+                <h3 className="text-foreground text-sm font-semibold mb-1">
                   {title}
                 </h3>
-                <p className="text-muted-foreground dark:text-white/60 text-xs leading-relaxed line-clamp-2">
+                <p className="text-muted-foreground text-xs leading-relaxed line-clamp-2">
                   {message}
                 </p>
                 {countdown && (

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
@@ -17,15 +19,12 @@ import {
   Loader2,
   Mail,
   RefreshCw,
-  Server,
   Shield,
   SlidersHorizontal,
   Users,
   X,
 } from 'lucide-react';
 
-import type { SandboxInfo } from '@/lib/platform-client';
-import { InstanceSettingsModal } from '@/app/instances/_components/instance-settings-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -68,13 +67,11 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import {
   useAdminAccountLedger,
-  useAdminAccountSandboxes,
   useAdminAccountUsers,
   useAdminAccounts,
   useAdminDebitCredits,
   useAdminGrantCredits,
   type AdminAccount,
-  type AdminAccountSandbox,
   type AdminAccountUser,
   type AdminAccountsFilters,
   type AdminAccountsSortBy,
@@ -283,6 +280,7 @@ function activeFilterCount(f: AccountFilters): number {
 }
 
 export default function AdminAccountsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput);
   const [page, setPage] = useState(1);
@@ -339,7 +337,7 @@ export default function AdminAccountsPage() {
       <SectionHeader
         icon={Users}
         title="Accounts"
-        description="Filter, sort, and inspect every account. Grant or debit credits, review ledger, and see billing state."
+        description={tHardcodedUi.raw('appAdminAccountsPage.line337JsxAttrDescriptionFilterSortAndInspectEveryAccountGrantOr')}
         actions={
           <Button
             variant="outline"
@@ -356,7 +354,7 @@ export default function AdminAccountsPage() {
 
       <StatRow>
         <StatPill
-          label="Total (filtered)"
+          label={tHardcodedUi.raw('appAdminAccountsPage.line354JsxAttrLabelTotalFiltered')}
           value={total.toLocaleString()}
           hint={filtersCount > 0 ? 'Matches current filters' : 'All accounts'}
         />
@@ -364,15 +362,15 @@ export default function AdminAccountsPage() {
           label="Paid"
           value={(summary?.paidCount ?? 0).toLocaleString()}
           tone="success"
-          hint="Non-free tiers"
+          hint={tHardcodedUi.raw('appAdminAccountsPage.line362JsxAttrHintNonFreeTiers')}
         />
         <StatPill
-          label="Credits in set"
+          label={tHardcodedUi.raw('appAdminAccountsPage.line365JsxAttrLabelCreditsInSet')}
           value={formatCredits(summary?.totalCredits ?? 0)}
-          hint="Sum of balances"
+          hint={tHardcodedUi.raw('appAdminAccountsPage.line367JsxAttrHintSumOfBalances')}
         />
         <StatPill
-          label="Past due"
+          label={tHardcodedUi.raw('appAdminAccountsPage.line370JsxAttrLabelPastDue')}
           value={summary?.pastDueCount ?? 0}
           tone={(summary?.pastDueCount ?? 0) > 0 ? 'warning' : 'default'}
           hint={(summary?.pastDueCount ?? 0) > 0 ? 'Needs review' : 'All clear'}
@@ -393,7 +391,7 @@ export default function AdminAccountsPage() {
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(8)].map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full rounded-lg" />
+            <Skeleton key={i} className="h-12 w-full rounded-2xl" />
           ))}
         </div>
       ) : accounts.length === 0 ? (
@@ -410,9 +408,7 @@ export default function AdminAccountsPage() {
             }
             action={
               search || filtersCount > 0 ? (
-                <Button variant="outline" size="sm" onClick={resetFilters}>
-                  Clear filters
-                </Button>
+                <Button variant="outline" size="sm" onClick={resetFilters}>{tHardcodedUi.raw('appAdminAccountsPage.line409JsxTextClearFilters')}</Button>
               ) : undefined
             }
           />
@@ -577,12 +573,13 @@ function FilterBar({
   onReset: () => void;
   filtersCount: number;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
       <PageSearchBar
         value={searchInput}
         onChange={onSearchChange}
-        placeholder="Search by account, owner email, or account ID…"
+        placeholder={tHardcodedUi.raw('appAdminAccountsPage.line580JsxAttrPlaceholderSearchByAccountOwnerEmailOrAccountId')}
       />
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -590,9 +587,9 @@ function FilterBar({
           <Switch
             checked={filters.paidOnly}
             onCheckedChange={(v) => onFiltersChange({ ...filters, paidOnly: v })}
-            aria-label="Paid accounts only"
+            aria-label={tHardcodedUi.raw('appAdminAccountsPage.line588JsxAttrAriaLabelPaidAccountsOnly')}
           />
-          <span className="text-sm">Paid only</span>
+          <span className="text-sm">{tHardcodedUi.raw('appAdminAccountsPage.line590JsxTextPaidOnly')}</span>
         </label>
 
         <Popover>
@@ -624,14 +621,14 @@ function FilterBar({
             <SelectValue placeholder="Sort" />
           </SelectTrigger>
           <SelectContent align="end">
-            <SelectItem value="created:desc">Newest first</SelectItem>
-            <SelectItem value="created:asc">Oldest first</SelectItem>
-            <SelectItem value="balance:desc">Balance — high</SelectItem>
-            <SelectItem value="balance:asc">Balance — low</SelectItem>
-            <SelectItem value="members:desc">Most members</SelectItem>
-            <SelectItem value="members:asc">Fewest members</SelectItem>
-            <SelectItem value="name:asc">Name A–Z</SelectItem>
-            <SelectItem value="name:desc">Name Z–A</SelectItem>
+            <SelectItem value="created:desc">{tHardcodedUi.raw('appAdminAccountsPage.line622JsxTextNewestFirst')}</SelectItem>
+            <SelectItem value="created:asc">{tHardcodedUi.raw('appAdminAccountsPage.line623JsxTextOldestFirst')}</SelectItem>
+            <SelectItem value="balance:desc">{tHardcodedUi.raw('appAdminAccountsPage.line624JsxTextBalanceHigh')}</SelectItem>
+            <SelectItem value="balance:asc">{tHardcodedUi.raw('appAdminAccountsPage.line625JsxTextBalanceLow')}</SelectItem>
+            <SelectItem value="members:desc">{tHardcodedUi.raw('appAdminAccountsPage.line626JsxTextMostMembers')}</SelectItem>
+            <SelectItem value="members:asc">{tHardcodedUi.raw('appAdminAccountsPage.line627JsxTextFewestMembers')}</SelectItem>
+            <SelectItem value="name:asc">{tHardcodedUi.raw('appAdminAccountsPage.line628JsxTextNameAZ')}</SelectItem>
+            <SelectItem value="name:desc">{tHardcodedUi.raw('appAdminAccountsPage.line629JsxTextNameZA')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -648,6 +645,7 @@ function FiltersPanel({
   onChange: (f: AccountFilters) => void;
   onReset: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [minBalance, setMinBalance] = useState(
     filters.minBalance !== null ? String(filters.minBalance) : '',
   );
@@ -690,9 +688,7 @@ function FiltersPanel({
     <div className="max-h-[70vh] overflow-y-auto">
       <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
         <span className="text-sm font-medium">Filters</span>
-        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onReset}>
-          Reset all
-        </Button>
+        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onReset}>{tHardcodedUi.raw('appAdminAccountsPage.line689JsxTextResetAll')}</Button>
       </div>
 
       <div className="px-4 py-3 border-b border-border/60 space-y-2">
@@ -700,7 +696,7 @@ function FiltersPanel({
           Subscription
         </div>
         <div className="flex items-center justify-between text-sm">
-          <span>Has active subscription</span>
+          <span>{tHardcodedUi.raw('appAdminAccountsPage.line698JsxTextHasActiveSubscription')}</span>
           <Select
             value={
               filters.hasSubscription === true
@@ -748,7 +744,7 @@ function FiltersPanel({
           {TIER_OPTIONS.map((t) => (
             <label
               key={t.value}
-              className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
+              className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
             >
               <Checkbox
                 checked={filters.tier.includes(t.value)}
@@ -762,9 +758,7 @@ function FiltersPanel({
 
       <div className="px-4 py-3 border-b border-border/60 space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Payment status
-          </div>
+          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appAdminAccountsPage.line761JsxTextPaymentStatus')}</div>
           {filters.paymentStatus.length > 0 && (
             <Button
               variant="ghost"
@@ -780,7 +774,7 @@ function FiltersPanel({
           {PAYMENT_STATUS_OPTIONS.map((p) => (
             <label
               key={p.value}
-              className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
+              className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
             >
               <Checkbox
                 checked={filters.paymentStatus.includes(p.value)}
@@ -831,6 +825,7 @@ function ActiveChips({
   searchInput: string;
   onSearchChange: (v: string) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
 
   if (searchInput) {
@@ -914,9 +909,7 @@ function ActiveChips({
             onSearchChange('');
             onChange({ ...EMPTY_FILTERS, sortBy: filters.sortBy, sortDir: filters.sortDir });
           }}
-        >
-          Clear all
-        </Button>
+        >{tHardcodedUi.raw('appAdminAccountsPage.line913JsxTextClearAll')}</Button>
       )}
     </div>
   );
@@ -992,7 +985,6 @@ function AccountDetailSheet({
 
 function AccountDetail({ account }: { account: AdminAccount }) {
   const usersQuery = useAdminAccountUsers(account.accountId);
-  const sandboxesQuery = useAdminAccountSandboxes(account.accountId);
   const ledgerQuery = useAdminAccountLedger(account.accountId, 100);
   const actions = billingActionsFor(account);
 
@@ -1025,7 +1017,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
                 href={a.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted/40"
+                className="group inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted/40"
               >
                 <ServiceFavicon domain={a.domain} />
                 {a.label}
@@ -1059,15 +1051,6 @@ function AccountDetail({ account }: { account: AdminAccount }) {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="instances" className="gap-1.5">
-              <Server className="h-3.5 w-3.5" />
-              Instances
-              {sandboxesQuery.data?.sandboxes && (
-                <Badge variant="muted" size="sm">
-                  {sandboxesQuery.data.sandboxes.length}
-                </Badge>
-              )}
-            </TabsTrigger>
             <TabsTrigger value="ledger" className="gap-1.5">
               <History className="h-3.5 w-3.5" />
               Ledger
@@ -1084,9 +1067,6 @@ function AccountDetail({ account }: { account: AdminAccount }) {
           <TabsContent value="users" className="mt-4">
             <UsersTab usersQuery={usersQuery} />
           </TabsContent>
-          <TabsContent value="instances" className="mt-4">
-            <InstancesTab sandboxesQuery={sandboxesQuery} />
-          </TabsContent>
           <TabsContent value="ledger" className="mt-4">
             <LedgerTab ledgerQuery={ledgerQuery} />
           </TabsContent>
@@ -1100,6 +1080,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
 }
 
 function CreditsTab({ account }: { account: AdminAccount }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const grant = useAdminGrantCredits();
   const debit = useAdminDebitCredits();
   const [amount, setAmount] = useState('');
@@ -1156,7 +1137,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
 
   return (
     <>
-      <div className="space-y-4 rounded-xl border border-border/60 bg-card p-4">
+      <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4">
         <div className="flex flex-wrap gap-1.5">
           {REIMBURSEMENT_PRESETS.map((n) => (
             <Button
@@ -1176,13 +1157,13 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder="Amount (e.g. 25)"
+            placeholder={tHardcodedUi.raw('appAdminAccountsPage.line1161JsxAttrPlaceholderAmountEG25')}
             step="0.01"
           />
           <Input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Reason / note"
+            placeholder={tHardcodedUi.raw('appAdminAccountsPage.line1167JsxAttrPlaceholderReasonNote')}
           />
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input
@@ -1190,9 +1171,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               checked={isExpiring}
               onChange={(e) => setIsExpiring(e.target.checked)}
               className="size-4"
-            />
-            Grant as expiring credits
-          </label>
+            />{tHardcodedUi.raw('appAdminAccountsPage.line1176JsxTextGrantAsExpiringCredits')}</label>
         </div>
         <div className="flex gap-2">
           <Button
@@ -1204,9 +1183,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <ArrowUpRight className="h-3.5 w-3.5" />
-            )}
-            Grant credits
-          </Button>
+            )}{tHardcodedUi.raw('appAdminAccountsPage.line1190JsxTextGrantCredits')}</Button>
           <Button
             variant="outline"
             onClick={() => setConfirmDebit(true)}
@@ -1222,16 +1199,14 @@ function CreditsTab({ account }: { account: AdminAccount }) {
       <ConfirmDialog
         open={confirmDebit}
         onOpenChange={setConfirmDebit}
-        title="Debit credits?"
+        title={tHardcodedUi.raw('appAdminAccountsPage.line1207JsxAttrTitleDebitCredits')}
         description={
           <div className="space-y-2 text-sm">
             <p>
               Deduct <span className="font-mono text-foreground">{isValid ? money(parsed) : '—'}</span>{' '}
               from <span className="font-medium">{account.name || account.accountId}</span>.
             </p>
-            <p className="text-xs text-muted-foreground">
-              Will fail if the account has insufficient credits. Action is recorded in the ledger.
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appAdminAccountsPage.line1215JsxTextWillFailIfTheAccountHasInsufficientCredits')}</p>
           </div>
         }
         confirmLabel="Debit"
@@ -1247,23 +1222,22 @@ function UsersTab({
 }: {
   usersQuery: ReturnType<typeof useAdminAccountUsers>;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   if (usersQuery.isLoading) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading users…
-      </div>
+      <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('appAdminAccountsPage.line1236JsxTextLoadingUsers')}</div>
     );
   }
 
   const users = usersQuery.data?.users ?? [];
   if (users.length === 0) {
     return (
-      <div className="rounded-xl border border-border/60 bg-card">
+      <div className="rounded-2xl border border-border/60 bg-card">
         <EmptyState
           icon={IconInbox}
-          title="No users on this account"
-          description="Members will appear here once users are added."
+          title={tHardcodedUi.raw('appAdminAccountsPage.line1247JsxAttrTitleNoUsersOnThisAccount')}
+          description={tHardcodedUi.raw('appAdminAccountsPage.line1248JsxAttrDescriptionMembersWillAppearHereOnceUsersAreAdded')}
           size="sm"
         />
       </div>
@@ -1271,7 +1245,7 @@ function UsersTab({
   }
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card divide-y divide-border/60">
+    <div className="rounded-2xl border border-border/60 bg-card divide-y divide-border/60">
       {users.map((user) => {
         const banned = user.banned_until && new Date(user.banned_until) > new Date();
         const confirmed = !!user.email_confirmed_at;
@@ -1300,13 +1274,13 @@ function UsersTab({
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
               <div className="truncate">
-                <span className="text-muted-foreground/70">Last sign-in: </span>
+                <span className="text-muted-foreground/70">{tHardcodedUi.raw('appAdminAccountsPage.line1285JsxTextLastSignIn')}</span>
                 <span className="text-foreground/80">
                   {user.last_sign_in_at ? formatRelative(user.last_sign_in_at) : 'Never'}
                 </span>
               </div>
               <div className="truncate">
-                <span className="text-muted-foreground/70">Signed up: </span>
+                <span className="text-muted-foreground/70">{tHardcodedUi.raw('appAdminAccountsPage.line1291JsxTextSignedUp')}</span>
                 <span className="text-foreground/80">
                   {user.signed_up_at ? formatRelative(user.signed_up_at) : '—'}
                 </span>
@@ -1315,87 +1289,12 @@ function UsersTab({
                 <span className="text-muted-foreground/70">Provider: </span>
                 <span className="text-foreground/80 capitalize">{user.provider || '—'}</span>
               </div>
-              <div className="truncate font-mono text-[11px]">{user.user_id.slice(0, 8)}…</div>
+              <div className="truncate font-mono text-xs">{user.user_id.slice(0, 8)}…</div>
             </div>
           </div>
         );
       })}
     </div>
-  );
-}
-
-function InstancesTab({
-  sandboxesQuery,
-}: {
-  sandboxesQuery: ReturnType<typeof useAdminAccountSandboxes>;
-}) {
-  const [selected, setSelected] = useState<SandboxInfo | null>(null);
-
-  if (sandboxesQuery.isLoading) {
-    return (
-      <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading instances…
-      </div>
-    );
-  }
-
-  const sandboxes = sandboxesQuery.data?.sandboxes ?? [];
-  if (sandboxes.length === 0) {
-    return (
-      <div className="rounded-xl border border-border/60 bg-card">
-        <EmptyState
-          icon={IconInbox}
-          title="No instances on this account"
-          description="Sandboxes created by this account will show up here."
-          size="sm"
-        />
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="rounded-xl border border-border/60 bg-card divide-y divide-border/60">
-        {sandboxes.map((sb) => (
-          <button
-            key={sb.sandboxId}
-            type="button"
-            onClick={() => setSelected(toSandboxInfo(sb))}
-            className="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none"
-          >
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="truncate font-medium">
-                  {sb.name || (
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {sb.sandboxId.slice(0, 8)}
-                    </span>
-                  )}
-                </span>
-                <Badge variant={sandboxStatusVariant(sb.status)} size="sm" className="capitalize">
-                  {sb.status ?? 'unknown'}
-                </Badge>
-              </div>
-              <div className="mt-0.5 text-xs text-muted-foreground truncate">
-                <span className="capitalize">{sb.provider ?? '—'}</span>
-                <span className="mx-1.5 opacity-50">·</span>
-                <span className="font-mono">{sb.sandboxId.slice(0, 8)}</span>
-                <span className="mx-1.5 opacity-50">·</span>
-                last active {formatRelative(sb.lastUsedAt || sb.updatedAt || sb.createdAt)}
-              </div>
-            </div>
-            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 shrink-0" />
-          </button>
-        ))}
-      </div>
-
-      <InstanceSettingsModal
-        sandbox={selected}
-        open={!!selected}
-        onOpenChange={(open) => !open && setSelected(null)}
-      />
-    </>
   );
 }
 
@@ -1412,60 +1311,27 @@ function formatRelative(value: string | null) {
   return `${Math.floor(days / 365)}y ago`;
 }
 
-function sandboxStatusVariant(status: string | null): React.ComponentProps<typeof Badge>['variant'] {
-  if (!status) return 'muted';
-  switch (status.toLowerCase()) {
-    case 'active':
-    case 'running':
-      return 'success';
-    case 'pooled':
-      return 'info';
-    case 'provisioning':
-      return 'warning';
-    case 'error':
-    case 'failed':
-      return 'destructive';
-    default:
-      return 'secondary';
-  }
-}
-
-function toSandboxInfo(sb: AdminAccountSandbox): SandboxInfo {
-  return {
-    sandbox_id: sb.sandboxId,
-    external_id: sb.externalId || '',
-    name: sb.name || sb.sandboxId,
-    provider: (sb.provider as SandboxInfo['provider']) || 'justavps',
-    base_url: sb.baseUrl || '',
-    status: sb.status || 'unknown',
-    metadata: (sb.metadata as Record<string, unknown> | undefined) ?? undefined,
-    created_at: sb.createdAt,
-    updated_at: sb.updatedAt,
-  };
-}
-
 function LedgerTab({
   ledgerQuery,
 }: {
   ledgerQuery: ReturnType<typeof useAdminAccountLedger>;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   if (ledgerQuery.isLoading) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading ledger…
-      </div>
+      <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('appAdminAccountsPage.line1331JsxTextLoadingLedger')}</div>
     );
   }
 
   const entries = ledgerQuery.data?.entries ?? [];
   if (entries.length === 0) {
     return (
-      <div className="rounded-xl border border-border/60 bg-card">
+      <div className="rounded-2xl border border-border/60 bg-card">
         <EmptyState
           icon={IconInbox}
-          title="No ledger entries"
-          description="Credit activity will show up here."
+          title={tHardcodedUi.raw('appAdminAccountsPage.line1342JsxAttrTitleNoLedgerEntries')}
+          description={tHardcodedUi.raw('appAdminAccountsPage.line1343JsxAttrDescriptionCreditActivityWillShowUpHere')}
           size="sm"
         />
       </div>
@@ -1473,7 +1339,7 @@ function LedgerTab({
   }
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card divide-y divide-border/60 max-h-[50vh] overflow-y-auto">
+    <div className="rounded-2xl border border-border/60 bg-card divide-y divide-border/60 max-h-[50vh] overflow-y-auto">
       {entries.map((entry) => {
         const amount = Number(entry.amount);
         const positive = amount >= 0;
@@ -1524,6 +1390,7 @@ function LedgerTab({
 }
 
 function BillingTab({ account }: { account: AdminAccount }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const actions = billingActionsFor(account);
 
   const summary: Array<[string, React.ReactNode]> = [
@@ -1574,7 +1441,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
               href={a.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="group inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/40"
+              className="group inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/40"
             >
               <ServiceFavicon domain={a.domain} />
               {a.label}
@@ -1584,7 +1451,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
         </div>
       )}
 
-      <div className="rounded-xl border border-border/60 bg-card text-sm">
+      <div className="rounded-2xl border border-border/60 bg-card text-sm">
         <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/60">
           {summary.map(([label, value]) => (
             <div key={label} className="px-4 py-3 flex items-center justify-between gap-3">
@@ -1597,7 +1464,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border/60 bg-card divide-y divide-border/60 text-sm">
+      <div className="rounded-2xl border border-border/60 bg-card divide-y divide-border/60 text-sm">
         {idRows.map(({ label, value, href }) => (
           <div
             key={label}
@@ -1608,7 +1475,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
             </span>
             {value ? (
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <code className="font-mono text-[11px] text-foreground/90 break-all bg-muted/30 rounded px-2 py-1 flex-1 min-w-0">
+                <code className="font-mono text-xs text-foreground/90 break-all bg-muted/30 rounded px-2 py-1 flex-1 min-w-0">
                   {value}
                 </code>
                 {href && (
@@ -1616,8 +1483,8 @@ function BillingTab({ account }: { account: AdminAccount }) {
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground shrink-0"
-                    title="Open in Stripe"
+                    className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground shrink-0"
+                    title={tHardcodedUi.raw('appAdminAccountsPage.line1495JsxAttrTitleOpenInStripe')}
                   >
                     <ServiceFavicon domain="stripe.com" className="h-3 w-3" />
                     Open

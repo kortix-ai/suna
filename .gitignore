@@ -21,6 +21,15 @@ build/
 .env.docker
 *.env.docker
 
+# Secrets & keys (defense-in-depth with secret-scanning push protection + gitleaks)
+# The committed root .npmrc is config-only (no secrets); ignore token-bearing variants
+# like .npmrc.release. *.key does not match Android's debug.keystore.
+.npmrc.*
+*.pem
+*.key
+*.p12
+*.pfx
+
 # Logs
 *.log
 npm-debug.log*
@@ -40,11 +49,13 @@ pnpm-debug.log*
 # Testing
 coverage/
 .nyc_output/
+test-results/
 
 # Temporary files
 *.tmp
 *.temp
 .cache/
+example-project/
 
 # Next.js
 .vercel/
@@ -65,8 +76,12 @@ dump.rdb
 .cwc/
 test/
 
-# Core runtime data
-.kortix/
+# suna is itself a Kortix project: its root .kortix/ (Dockerfile + opencode
+# config dir) is committed and synced via git, so cloud sessions clone the real
+# config. Only the per-clone link state stays out. Other vendored .kortix dirs
+# stay ignored further down.
+.kortix/link.json
+apps/kortix-v0/.local/
 apps/api/.kortix-data/
 apps/api/.sandbox-auth-token.json
 core/kortix-master/opencode/.kortix/
@@ -76,3 +91,10 @@ core/kortix-master/opencode/.kortix/
 .pulumi
 .pulumi/
 .vercel
+
+
+kortix
+kortix-darwin-arm64
+kortix-darwin-x64
+kortix-linux-x64
+kortix-linux-arm64

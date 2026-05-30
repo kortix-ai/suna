@@ -1,9 +1,12 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Suspense, useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
@@ -15,6 +18,8 @@ import {
   useDenyDeviceAuth,
 } from '@/hooks/tunnel/use-tunnel';
 import { CAPABILITY_REGISTRY } from '@/components/tunnel/types';
+
+const EXPIRED_STATUS_ICON_CLASS = 'bg-amber-500/10 border-amber-500/20';
 
 export default function DeviceAuthorizePage() {
   return (
@@ -31,6 +36,7 @@ export default function DeviceAuthorizePage() {
 }
 
 function DeviceAuthorize() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const params = useParams();
   const router = useRouter();
   const code = params.code as string;
@@ -109,8 +115,8 @@ function DeviceAuthorize() {
     return (
       <StatusScreen
         icon={<X className="h-6 w-6 text-foreground/50" />}
-        title="Request Not Found"
-        description="This authorization request doesn't exist or has expired."
+        title={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line113JsxAttrTitleRequestNotFound')}
+        description={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line114JsxAttrDescriptionThisAuthorizationRequestDoesnTExistOrHas')}
       />
     );
   }
@@ -119,10 +125,10 @@ function DeviceAuthorize() {
   if (info.status === 'expired' || remaining <= 0) {
     return (
       <StatusScreen
-        icon={<Clock className="h-6 w-6 text-amber-500" />}
-        iconClassName="bg-amber-500/10 border-amber-500/20"
-        title="Request Expired"
-        description="This authorization request has expired. Run the connect command again."
+        icon={<Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />}
+        iconClassName={EXPIRED_STATUS_ICON_CLASS}
+        title={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line125JsxAttrTitleRequestExpired')}
+        description={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line126JsxAttrDescriptionThisAuthorizationRequestHasExpiredRunTheConnect')}
       />
     );
   }
@@ -133,7 +139,7 @@ function DeviceAuthorize() {
     return (
       <StatusScreen
         icon={isApproved
-          ? <Check className="h-6 w-6 text-emerald-500" />
+          ? <Check className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
           : <X className="h-6 w-6 text-destructive" />
         }
         iconClassName={isApproved
@@ -158,19 +164,17 @@ function DeviceAuthorize() {
 
       <div className="relative z-10 flex flex-col items-center justify-center h-full px-4">
         <div className="w-full max-w-[380px]">
-          <div className="bg-background/80 dark:bg-background/75 backdrop-blur-2xl border border-foreground/[0.06] rounded-[20px] px-7 py-8">
+          <div className="bg-background/80 dark:bg-background/75 backdrop-blur-2xl border border-foreground/[0.06] rounded-2xl px-7 py-8">
             {/* Header */}
             <div className="flex flex-col items-center gap-1 mb-6">
               <KortixLogo size={24} />
-              <p className="text-[11px] text-foreground/30 tracking-[0.2em] uppercase mt-3">
-                Authorize Device
-              </p>
+              <p className="text-xs text-foreground/30 tracking-[0.2em] uppercase mt-3">{tHardcodedUi.raw('appTunnelAuthorizeCodePage.line167JsxTextAuthorizeDevice')}</p>
             </div>
 
             {/* Device code hero */}
-            <div className="flex items-center justify-between rounded-xl bg-foreground/[0.04] border border-foreground/[0.06] px-4 py-3 mb-6">
+            <div className="flex items-center justify-between rounded-2xl bg-foreground/[0.04] border border-foreground/[0.06] px-4 py-3 mb-6">
               <div className="flex items-center gap-3">
-                <div className="size-2 rounded-full bg-amber-400 animate-pulse" />
+                <div className="size-2 rounded-full bg-amber-500 animate-pulse" />
                 <span className="font-mono text-lg font-medium tracking-[0.15em]">
                   {info.deviceCode}
                 </span>
@@ -182,7 +186,7 @@ function DeviceAuthorize() {
 
             {/* Machine info */}
             {info.machineHostname && (
-              <div className="flex items-center gap-2 text-[13px] text-foreground/40 mb-5">
+              <div className="flex items-center gap-2 text-sm text-foreground/40 mb-5">
                 <Monitor className="h-3.5 w-3.5" />
                 <span>{info.machineHostname}</span>
               </div>
@@ -190,11 +194,11 @@ function DeviceAuthorize() {
 
             {/* Connection name */}
             <div className="mb-5">
-              <input type="text"
+              <Input
+                type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={info.machineHostname || 'Connection name'}
-                className="w-full h-11 text-sm bg-foreground/[0.03] border border-foreground/[0.08] rounded-xl px-3.5 shadow-none focus-visible:outline-none focus-visible:border-foreground/20 transition-colors placeholder:text-foreground/25"
               />
             </div>
 
@@ -204,7 +208,7 @@ function DeviceAuthorize() {
                 <div className="w-full border-t border-foreground/[0.06]" />
               </div>
               <div className="relative flex justify-center">
-                <span className="px-3 bg-background/80 dark:bg-background/75 text-[10px] text-foreground/20 tracking-[0.15em] uppercase">
+                <span className="px-3 bg-background/80 dark:bg-background/75 text-xs text-foreground/20 tracking-[0.15em] uppercase">
                   Permissions
                 </span>
               </div>
@@ -221,7 +225,7 @@ function DeviceAuthorize() {
                     type="button"
                     onClick={() => toggleCap(cap.key)}
                     className={cn(
-                      'flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-colors',
+                      'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-left transition-colors',
                       selected
                         ? 'bg-foreground/[0.06]'
                         : 'hover:bg-foreground/[0.03]',
@@ -237,7 +241,7 @@ function DeviceAuthorize() {
                     </div>
                     <Icon className={cn('h-4 w-4 shrink-0', selected ? 'text-foreground/70' : 'text-foreground/25')} />
                     <div className="flex-1 min-w-0">
-                      <span className={cn('text-[13px]', selected ? 'text-foreground/80' : 'text-foreground/40')}>
+                      <span className={cn('text-sm', selected ? 'text-foreground/80' : 'text-foreground/40')}>
                         {cap.label}
                       </span>
                     </div>
@@ -249,7 +253,8 @@ function DeviceAuthorize() {
             {/* Actions */}
             <div className="space-y-2">
               <Button
-                className="w-full h-11 text-[13px] font-medium rounded-xl shadow-none"
+                size="lg"
+                className="w-full text-sm font-medium"
                 onClick={handleApprove}
                 disabled={approve.isPending || deny.isPending}
               >
@@ -259,16 +264,12 @@ function DeviceAuthorize() {
                 onClick={handleDeny}
                 disabled={deny.isPending || approve.isPending}
                 className="w-full text-xs text-foreground/30 hover:text-foreground/50 transition-colors py-2"
-              >
-                Deny request
-              </button>
+              >{tHardcodedUi.raw('appTunnelAuthorizeCodePage.line265JsxTextDenyRequest')}</button>
             </div>
           </div>
 
           {/* Footer hint */}
-          <p className="text-[11px] text-center text-foreground/20 mt-4">
-            Confirm the code above matches your terminal.
-          </p>
+          <p className="text-xs text-center text-foreground/20 mt-4">{tHardcodedUi.raw('appTunnelAuthorizeCodePage.line272JsxTextConfirmTheCodeAboveMatchesYourTerminal')}</p>
         </div>
       </div>
     </div>
@@ -298,7 +299,7 @@ function StatusScreen({
           {icon}
         </div>
         <div className="text-center space-y-1">
-          <h1 className="text-[28px] font-extralight tracking-tight text-foreground/80">
+          <h1 className="text-3xl font-extralight tracking-tight text-foreground/80">
             {title}
           </h1>
           <p className="text-sm text-foreground/50 max-w-[280px]">

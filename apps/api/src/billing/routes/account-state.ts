@@ -3,7 +3,8 @@ import type { AppEnv } from '../../types';
 import { buildAccountState, buildMinimalAccountState, buildLocalAccountState } from '../services/account-state';
 import { hasDatabase } from '../../shared/db';
 import { config } from '../../config';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { resolveScopedAccountId } from '../../shared/resolve-account';
+import { maybeMigrateLegacyAccount } from '../services/legacy-account-migration';
 
 export const accountStateRouter = new Hono<AppEnv>();
 
@@ -11,7 +12,18 @@ accountStateRouter.get('/', async (c) => {
   if (!hasDatabase) {
     return c.json(buildLocalAccountState());
   }
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'query');
+
+  // Lazy migration: legacy customer → per-seat on first sign-in. Fire-and-
+  // forget so we never delay the response on Stripe latency. The next refetch
+  // (or any account_state call within ~5s of the migration) will see the new
+  // billing_model + the granted credit.
+  if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
+    void maybeMigrateLegacyAccount(accountId).catch((err) => {
+      console.error(`[lazy-migrate] background migration failed for ${accountId}:`, err);
+    });
+  }
+
   try {
     const state = await buildAccountState(accountId);
     // Billing disabled — return real data but never block the user
@@ -31,7 +43,7 @@ accountStateRouter.get('/minimal', async (c) => {
   if (!hasDatabase) {
     return c.json(buildLocalAccountState());
   }
-  const accountId = await resolveAccountId(c.get('userId'));
+  const accountId = await resolveScopedAccountId(c, 'query');
   try {
     const state = await buildMinimalAccountState(accountId);
     if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {

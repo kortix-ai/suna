@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import {
   ChevronRight,
@@ -19,7 +21,6 @@ import {
   Clipboard,
   CircleAlert,
   AlertTriangle,
-  ExternalLink,
   Home,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -61,7 +62,6 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDiagnosticsStore, buildDiagnosticCountsMap } from '@/stores/diagnostics-store';
 import { toast } from '@/lib/toast';
-import { openTabAndNavigate } from '@/stores/tab-store';
 
 // ─── Recursive tree node ────────────────────────────────────────────────────
 
@@ -125,6 +125,7 @@ function TreeNode({
   onDownloadDir,
   isDirDownloading,
 }: TreeNodeProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const filesStore = useFilesStoreApi();
   const expandedDirs = useFilesStore((s) => s.expandedDirs);
   const toggleDir = useFilesStore((s) => s.toggleDir);
@@ -330,19 +331,6 @@ function TreeNode({
             {isDir ? 'Open folder' : 'Open file'}
           </ContextMenuItem>
           {!isDir && (
-            <ContextMenuItem onClick={() => {
-              openTabAndNavigate({
-                id: `file:${node.path}`,
-                title: node.name,
-                type: 'file',
-                href: `/files/${encodeURIComponent(node.path)}`,
-              });
-            }}>
-              <ExternalLink className="mr-2 h-4 w-4" />
-              Open in new tab
-            </ContextMenuItem>
-          )}
-          {!isDir && (
             <ContextMenuItem onClick={() => downloadFile(node.path, node.name)}>
               <Download className="mr-2 h-4 w-4" />
               Download
@@ -363,25 +351,17 @@ function TreeNode({
           )}
           {!isDir && (
             <ContextMenuItem onClick={() => filesStore.getState().openHistory(node.path)}>
-              <History className="mr-2 h-4 w-4" />
-              View History
-            </ContextMenuItem>
+              <History className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsFileTree.line367JsxTextViewHistory')}</ContextMenuItem>
           )}
           {isDir && (
             <>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => onCreateInDir(node.path, 'file')}>
-                <FilePlus className="mr-2 h-4 w-4" />
-                New File
-              </ContextMenuItem>
+                <FilePlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsFileTree.line375JsxTextNewFile')}</ContextMenuItem>
               <ContextMenuItem onClick={() => onCreateInDir(node.path, 'folder')}>
-                <FolderPlus className="mr-2 h-4 w-4" />
-                New Folder
-              </ContextMenuItem>
+                <FolderPlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsFileTree.line379JsxTextNewFolder')}</ContextMenuItem>
               <ContextMenuItem onClick={() => onUploadToDir(node.path)}>
-                <Upload className="mr-2 h-4 w-4" />
-                Upload file
-              </ContextMenuItem>
+                <Upload className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsFileTree.line383JsxTextUploadFile')}</ContextMenuItem>
             </>
           )}
           <ContextMenuSeparator />
@@ -394,9 +374,7 @@ function TreeNode({
             Cut
           </ContextMenuItem>
           <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.path)}>
-            <Copy className="mr-2 h-4 w-4" />
-            Copy path
-          </ContextMenuItem>
+            <Copy className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsFileTree.line398JsxTextCopyPath')}</ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem onClick={() => {
             setTimeout(() => { setRenameName(node.name); setIsRenaming(true); }, 100);
@@ -633,6 +611,7 @@ function TreeNodeChildren({
 // ─── Main tree sidebar ──────────────────────────────────────────────────────
 
 export function FileTree() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const filesStore = useFilesStoreApi();
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -909,10 +888,10 @@ export function FileTree() {
           Explorer
         </span>
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setNewFileName('untitled.txt'); setIsCreatingFile(true); }} title="New file">
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setNewFileName('untitled.txt'); setIsCreatingFile(true); }} title={tHardcodedUi.raw('featuresFilesComponentsFileTree.line912JsxAttrTitleNewFile')}>
             <FilePlus className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setNewFolderName('New Folder'); setIsCreatingFolder(true); }} title="New folder">
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setNewFolderName('New Folder'); setIsCreatingFolder(true); }} title={tHardcodedUi.raw('featuresFilesComponentsFileTree.line915JsxAttrTitleNewFolder')}>
             <FolderPlus className="h-3.5 w-3.5" />
           </Button>
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleUpload()} title="Upload">
@@ -933,7 +912,7 @@ export function FileTree() {
             variant="ghost"
             size="icon"
             className="h-5 w-5 shrink-0 text-muted-foreground/50 hover:text-foreground"
-            title="Back to /workspace"
+            title={tHardcodedUi.raw('featuresFilesComponentsFileTree.line936JsxAttrTitleBackToWorkspace')}
             onClick={() => navigateToPath('/workspace')}
           >
             <Home className="h-3 w-3" />
@@ -961,7 +940,7 @@ export function FileTree() {
         ) : (
           <button
             className="flex-1 text-left text-xs font-mono text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/30 rounded px-1.5 py-0.5 truncate transition-colors cursor-pointer min-w-0"
-            title="Click to navigate to path"
+            title={tHardcodedUi.raw('featuresFilesComponentsFileTree.line964JsxAttrTitleClickToNavigateToPath')}
             onClick={() => {
               setPathInputValue(currentPath);
               setPathInputActive(true);
@@ -1050,9 +1029,7 @@ export function FileTree() {
         >
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {deleteTarget?.type === 'directory' ? 'folder' : 'file'}</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete <span className="font-semibold text-foreground">&quot;{deleteTarget?.name}&quot;</span>? This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>{tHardcodedUi.raw('featuresFilesComponentsFileTree.line1054JsxTextAreYouSureYouWantToDelete')}<span className="font-semibold text-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileTree.line1054JsxTextQuot')}{deleteTarget?.name}{tHardcodedUi.raw('featuresFilesComponentsFileTree.line1054JsxTextQuot46a46963')}</span>{tHardcodedUi.raw('featuresFilesComponentsFileTree.line1054JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutationHook.isPending}>Cancel</AlertDialogCancel>

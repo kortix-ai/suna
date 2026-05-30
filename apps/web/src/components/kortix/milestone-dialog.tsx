@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Milestone dialog — single modal for create AND edit.
  *
@@ -12,7 +14,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   Dialog,
   DialogContent,
@@ -73,6 +75,7 @@ export function MilestoneDialog({
 // ── Create ──────────────────────────────────────────────────────────────────
 
 function CreatePanel({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [acceptance, setAcceptance] = useState('');
@@ -103,10 +106,8 @@ function CreatePanel({ projectId, onClose }: { projectId: string; onClose: () =>
   return (
     <>
       <DialogHeader className="px-5 py-4 border-b border-border/40">
-        <DialogTitle>New milestone</DialogTitle>
-        <DialogDescription>
-          An outcome-level goal that groups tickets. Keep the acceptance criteria concrete — PM will run it to verify "done".
-        </DialogDescription>
+        <DialogTitle>{tHardcodedUi.raw('componentsKortixMilestoneDialog.line106JsxTextNewMilestone')}</DialogTitle>
+        <DialogDescription>{tHardcodedUi.raw('componentsKortixMilestoneDialog.line108JsxTextAnOutcomeLevelGoalThatGroupsTicketsKeep')}</DialogDescription>
       </DialogHeader>
 
       <form onSubmit={submit} className="p-5 space-y-4">
@@ -140,6 +141,7 @@ function EditPanel({
   milestone: Milestone;
   onClose: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // Live re-fetch to keep linked tickets + activity fresh
   const { data: detail } = useMilestone(projectId, String(milestone.number));
   const { data: events } = useMilestoneEvents(projectId, String(milestone.number));
@@ -231,8 +233,7 @@ function EditPanel({
           {milestone.title}
         </DialogTitle>
         <DialogDescription className="text-[11.5px] text-muted-foreground/55">
-          {milestone.progress.done}/{milestone.progress.total} tickets done · {milestone.percent_complete}% complete
-          {milestone.due_at && isOpen && <> · due {new Date(milestone.due_at).toLocaleDateString()}</>}
+          {milestone.progress.done}/{milestone.progress.total}{tHardcodedUi.raw('componentsKortixMilestoneDialog.line234JsxTextTicketsDone')}{milestone.percent_complete}{tHardcodedUi.raw('componentsKortixMilestoneDialog.line234JsxTextComplete')}{' '}{milestone.due_at && isOpen && <>{tHardcodedUi.raw('componentsKortixMilestoneDialog.line235JsxTextDue')}{' '}{new Date(milestone.due_at).toLocaleDateString()}</>}
         </DialogDescription>
       </DialogHeader>
 
@@ -254,11 +255,9 @@ function EditPanel({
         <Section label={`Linked tickets (${tickets.length})`}>
           {tickets.length === 0
             ? (
-              <p className="text-[11.5px] text-muted-foreground/55">
-                No tickets yet. TL links sub-tickets during decomposition; you can also set a ticket's milestone from its detail view.
-              </p>
+              <p className="text-[11.5px] text-muted-foreground/55">{tHardcodedUi.raw('componentsKortixMilestoneDialog.line258JsxTextNoTicketsYetTlLinksSubTicketsDuring')}</p>
             ) : (
-              <ul className="rounded-md border border-border/40 divide-y divide-border/30 overflow-hidden">
+              <ul className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden">
                 {tickets.map((t) => (
                   <li key={t.id} className="flex items-center justify-between gap-3 px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -294,7 +293,7 @@ function EditPanel({
                 ))}
               </ul>
             ) : (
-              <p className="text-[11.5px] text-muted-foreground/55">No activity yet.</p>
+              <p className="text-[11.5px] text-muted-foreground/55">{tHardcodedUi.raw('componentsKortixMilestoneDialog.line297JsxTextNoActivityYet')}</p>
             )}
         </Section>
       </div>
@@ -306,17 +305,15 @@ function EditPanel({
             <Textarea
               value={closeSummary}
               onChange={(e) => setCloseSummary(e.target.value)}
-              placeholder="Closing summary — evidence the acceptance criteria pass (file:line, test output, curl result)."
+              placeholder={tHardcodedUi.raw('componentsKortixMilestoneDialog.line309JsxAttrPlaceholderClosingSummaryEvidenceTheAcceptanceCriteriaPassFile')}
               rows={2}
               className="text-[12px] resize-y"
             />
             <div className="flex items-center gap-2 flex-wrap">
               <Button size="sm" onClick={doClose(false)} disabled={anyPending} className="gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Mark as done
-              </Button>
+                <CheckCircle2 className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsKortixMilestoneDialog.line315JsxTextMarkAsDone')}</Button>
               <Button size="sm" variant="ghost" onClick={doClose(true)} disabled={anyPending} className="gap-1.5">
-                <XCircle className="h-3.5 w-3.5" /> Cancel milestone
-              </Button>
+                <XCircle className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsKortixMilestoneDialog.line318JsxTextCancelMilestone')}</Button>
               <div className="ml-auto">
                 <DeleteButton confirm={confirmDelete} pending={deleteM.isPending}
                   onClick={() => confirmDelete ? doDelete() : setConfirmDelete(true)}
@@ -360,13 +357,14 @@ function FormFields({
   hue: number | null; setHue: (v: number | null) => void;
   autoFocusTitle?: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="space-y-4">
       <FieldRow label="Title">
         <Input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Delivery path e2e"
+          placeholder={tHardcodedUi.raw('componentsKortixMilestoneDialog.line369JsxAttrPlaceholderDeliveryPathE2e')}
           autoFocus={autoFocusTitle}
           maxLength={120}
         />
@@ -376,27 +374,25 @@ function FormFields({
         <Textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="1–3 lines of context — what this outcome covers."
+          placeholder={tHardcodedUi.raw('componentsKortixMilestoneDialog.line379JsxAttrPlaceholderText13LinesOfContextWhatThisOutcome')}
           rows={2}
           className="resize-y"
         />
       </FieldRow>
 
-      <FieldRow label="Acceptance criteria">
+      <FieldRow label={tHardcodedUi.raw('componentsKortixMilestoneDialog.line385JsxAttrLabelAcceptanceCriteria')}>
         <Textarea
           value={acceptance}
           onChange={(e) => setAcceptance(e.target.value)}
-          placeholder="Done when: POST /events → subscriber receives signed hook within 3 attempts."
+          placeholder={tHardcodedUi.raw('componentsKortixMilestoneDialog.line389JsxAttrPlaceholderDoneWhenPostEventsSubscriberReceivesSignedHook')}
           rows={3}
           className="resize-y font-mono text-[12px]"
         />
-        <p className="text-[10.5px] text-muted-foreground/50 mt-1">
-          A concrete check — shell command, curl, test name, manual verification step.
-        </p>
+        <p className="text-[10.5px] text-muted-foreground/50 mt-1">{tHardcodedUi.raw('componentsKortixMilestoneDialog.line394JsxTextAConcreteCheckShellCommandCurlTestName')}</p>
       </FieldRow>
 
       <div className="grid grid-cols-2 gap-4">
-        <FieldRow label="Due date (optional)">
+        <FieldRow label={tHardcodedUi.raw('componentsKortixMilestoneDialog.line399JsxAttrLabelDueDateOptional')}>
           <Input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
         </FieldRow>
         <FieldRow label="Color">
@@ -407,8 +403,8 @@ function FormFields({
               className={cn('h-5 w-5 rounded-full border transition',
                 hue === null ? 'border-foreground ring-2 ring-foreground/20' : 'border-border/50 hover:border-border',
               )}
-              aria-label="No color"
-              title="No color"
+              aria-label={tHardcodedUi.raw('componentsKortixMilestoneDialog.line410JsxAttrAriaLabelNoColor')}
+              title={tHardcodedUi.raw('componentsKortixMilestoneDialog.line411JsxAttrTitleNoColor')}
             >
               <span className="block h-full w-full rounded-full bg-muted/40" />
             </button>
@@ -455,14 +451,13 @@ function DeleteButton({
 }: {
   confirm: boolean; pending: boolean; onClick: () => void; onCancelConfirm: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   if (confirm) {
     return (
       <div className="flex items-center gap-1.5">
         <Button size="sm" variant="ghost" onClick={onCancelConfirm} disabled={pending}>Cancel</Button>
         <Button size="sm" variant="destructive" onClick={onClick} disabled={pending} className="gap-1.5">
-          {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-          Confirm delete
-        </Button>
+          {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}{tHardcodedUi.raw('componentsKortixMilestoneDialog.line464JsxTextConfirmDelete')}</Button>
       </div>
     );
   }

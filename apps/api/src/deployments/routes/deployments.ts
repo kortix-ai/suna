@@ -4,76 +4,13 @@ import { eq, and, desc, count } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { deployments } from '@kortix/db';
 import { NotFoundError, ValidationError } from '../../errors';
-import { config } from '../../config';
 import type { AppEnv } from '../../types';
-
-// ─── Dynamic Freestyle config ────────────────────────────────────────────────
-// The Kortix API runs in a separate container from the sandbox. API keys set
-// via the Secrets Manager are stored in the sandbox's secret store (Kortix
-// Master /env). We fetch them from there at deploy-time so keys set after
-// startup work without restarting the API service.
-
-function getMasterUrlCandidates(): string[] {
-  const candidates: string[] = [];
-  const explicit = process.env.KORTIX_MASTER_URL;
-  if (explicit?.trim()) candidates.push(explicit.trim());
-  candidates.push('http://sandbox:8000');
-  candidates.push(`http://localhost:${config.SANDBOX_PORT_BASE || 14000}`);
-  return Array.from(new Set(candidates));
-}
-
-/** Try to read a single secret from the sandbox's Kortix Master /env/:key endpoint. */
-async function readSandboxSecret(key: string): Promise<string> {
-  const candidates = getMasterUrlCandidates();
-  const serviceKey = process.env.INTERNAL_SERVICE_KEY;
-  const headers: Record<string, string> = {};
-  if (serviceKey) headers['Authorization'] = `Bearer ${serviceKey}`;
-
-  for (const base of candidates) {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch(`${base}/env/${encodeURIComponent(key)}`, {
-        headers,
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-      if (!res.ok) continue;
-      const data = await res.json();
-      // Response is { [key]: value } or { secrets: { ... } }
-      const val = data?.[key] ?? data?.secrets?.[key] ?? '';
-      if (typeof val === 'string' && val.trim()) return val.trim();
-    } catch { /* try next candidate */ }
-  }
-  return '';
-}
-
-// Cache the fetched key for 60s to avoid hammering the sandbox on every request
-let _cachedFreestyleKey = '';
-let _cachedFreestyleKeyAt = 0;
-const CACHE_TTL_MS = 60_000;
-
-async function getFreestyleApiKey(): Promise<string> {
-  // 1. process.env (set at container start)
-  if (process.env.FREESTYLE_API_KEY) return process.env.FREESTYLE_API_KEY;
-  // 2. Static config (same as process.env, but just in case)
-  if (config.FREESTYLE_API_KEY) return config.FREESTYLE_API_KEY;
-  // 3. Sandbox secret store (set via Secrets Manager at runtime)
-  const now = Date.now();
-  if (_cachedFreestyleKey && (now - _cachedFreestyleKeyAt) < CACHE_TTL_MS) {
-    return _cachedFreestyleKey;
-  }
-  const val = await readSandboxSecret('FREESTYLE_API_KEY');
-  if (val) {
-    _cachedFreestyleKey = val;
-    _cachedFreestyleKeyAt = now;
-  }
-  return val;
-}
-
-function getFreestyleApiUrl(): string {
-  return process.env.FREESTYLE_API_URL || config.FREESTYLE_API_URL || 'https://api.freestyle.sh';
-}
+import {
+  buildFreestyleConfigLegacy,
+  buildFreestyleSourceLegacy,
+  callFreestyle,
+  getFreestyleApiKey,
+} from '../providers/freestyle';
 
 const app = new Hono<AppEnv>();
 
@@ -148,98 +85,6 @@ async function getDeploymentForUser(deploymentId: string, userId: string) {
   return deployment ?? null;
 }
 
-/**
- * Build the Freestyle API source object from our request format.
- * This mirrors the transform done by the freestyle-sandboxes SDK.
- */
-function buildFreestyleSource(data: z.infer<typeof createDeploymentSchema>) {
-  switch (data.source_type) {
-    case 'git':
-      return {
-        kind: 'git' as const,
-        url: data.source_ref!,
-        branch: data.branch,
-        dir: data.root_path,
-      };
-    case 'code':
-      return {
-        kind: 'files' as const,
-        files: {
-          'index.ts': { content: data.code! },
-        },
-      };
-    case 'files':
-      return {
-        kind: 'files' as const,
-        files: Object.fromEntries(
-          (data.files ?? []).map((f) => [f.path, { content: f.content, encoding: f.encoding }]),
-        ),
-      };
-    case 'tar':
-      return {
-        kind: 'tar' as const,
-        url: data.tar_url!,
-      };
-  }
-}
-
-/**
- * Build the Freestyle API config object from our request format.
- */
-function buildFreestyleConfig(data: z.infer<typeof createDeploymentSchema>) {
-  return {
-    await: true,
-    domains: data.domains,
-    build: data.build,
-    envVars: data.env_vars,
-    nodeModules: data.node_modules,
-    entrypoint: data.entrypoint,
-    timeout: data.timeout_ms,
-    staticOnly: data.static_only,
-    publicDir: data.public_dir,
-    cleanUrls: data.clean_urls,
-    headers: data.headers,
-    redirects: data.redirects,
-    networkPermissions: data.network_permissions?.map((np) => ({
-      action: np.action,
-      query: np.domain,
-      behavior: np.behavior,
-    })),
-  };
-}
-
-/**
- * Call the Freestyle REST API.
- */
-async function callFreestyle(
-  path: string,
-  options: { method: string; body?: unknown; timeoutMs?: number },
-) {
-  const apiKey = await getFreestyleApiKey();
-  const url = `${getFreestyleApiUrl()}${path}`;
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`,
-  };
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 120000);
-
-  try {
-    const response = await fetch(url, {
-      method: options.method,
-      headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    return response;
-  } catch (error) {
-    clearTimeout(timeout);
-    throw error;
-  }
-}
-
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 // POST /v1/deployments - Create a deployment via Freestyle
@@ -267,9 +112,11 @@ app.post('/', async (c) => {
     throw new ValidationError('tar_url is required for tar deployments');
   }
 
-  // Build the Freestyle payload upfront (needed for both DB metadata and API call)
-  const freestyleSource = buildFreestyleSource(data);
-  const freestyleConfig = buildFreestyleConfig(data);
+  // Build the Freestyle payload upfront (needed for both DB metadata and API call).
+  // `data` has been validated by zod and the manual source-specific checks above,
+  // so the legacy helpers can rely on the required fields being present.
+  const freestyleSource = buildFreestyleSourceLegacy(data as Parameters<typeof buildFreestyleSourceLegacy>[0]);
+  const freestyleConfig = buildFreestyleConfigLegacy(data as Parameters<typeof buildFreestyleConfigLegacy>[0]);
 
   // Create deployment record in DB as pending — store full Freestyle payload in metadata for redeploy
   const [deployment] = await db

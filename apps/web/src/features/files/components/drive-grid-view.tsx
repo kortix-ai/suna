@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useMemo, useCallback, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,7 +17,6 @@ import {
   Scissors,
   ClipboardCopy,
   RefreshCw,
-  ExternalLink,
   Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -45,7 +46,6 @@ interface DriveGridItemProps {
   onCopy?: (node: FileNode) => void;
   onCut?: (node: FileNode) => void;
   onDropMove?: (sourcePath: string, targetDirPath: string) => void;
-  onOpenInTab?: (node: FileNode) => void;
   isDownloadingItem?: boolean;
   gitStatus?: GitStatusType;
   isCut?: boolean;
@@ -65,6 +65,7 @@ function FolderCard({
   isDownloadingItem,
   isCut,
 }: DriveGridItemProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -163,7 +164,7 @@ function FolderCard({
           onDrop={handleDrop}
           onClick={isRenaming ? undefined : onClick}
           className={cn(
-            'group flex items-center gap-2.5 h-10 px-3 rounded-lg border border-border/50 cursor-pointer select-none',
+            'group flex items-center gap-2.5 h-10 px-3 rounded-2xl border border-border/50 cursor-pointer select-none',
             'transition-colors duration-150',
             'hover:bg-muted/50 hover:border-border',
             'active:scale-[0.98]',
@@ -186,10 +187,10 @@ function FolderCard({
                 }}
                 onBlur={confirmRename}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full text-[13px] bg-transparent border-b border-primary/50 py-0.5 outline-none"
+                className="w-full text-sm bg-transparent border-b border-primary/50 py-0.5 outline-none"
               />
             ) : (
-              <span className="text-[13px] truncate text-foreground">
+              <span className="text-sm truncate text-foreground">
                 {node.name}
               </span>
             )}
@@ -207,7 +208,7 @@ function FolderCard({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
-        <ContextMenuItem onClick={onClick}>Open folder</ContextMenuItem>
+        <ContextMenuItem onClick={onClick}>{tHardcodedUi.raw('featuresFilesComponentsDriveGridView.line210JsxTextOpenFolder')}</ContextMenuItem>
         {onDownload && (
           <ContextMenuItem onClick={() => onDownload(node)} disabled={isDownloadingItem}>
             <Download className="mr-2 h-4 w-4" />
@@ -228,9 +229,7 @@ function FolderCard({
           </ContextMenuItem>
         )}
         <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.path)}>
-          <Copy className="mr-2 h-4 w-4" />
-          Copy path
-        </ContextMenuItem>
+          <Copy className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsDriveGridView.line232JsxTextCopyPath')}</ContextMenuItem>
         <ContextMenuSeparator />
         {onRename && (
           <ContextMenuItem onClick={() => setTimeout(startRenaming, 100)}>
@@ -261,9 +260,9 @@ function FileCard({
   onHistory,
   onCopy,
   onCut,
-  onOpenInTab,
   isCut,
 }: DriveGridItemProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isDragging, setIsDragging] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameName, setRenameName] = useState('');
@@ -330,7 +329,7 @@ function FileCard({
           onClick={isRenaming ? undefined : onClick}
           onDoubleClick={isRenaming ? undefined : onDoubleClick}
           className={cn(
-            'group relative flex flex-col rounded-lg border border-border/50 cursor-pointer select-none overflow-hidden',
+            'group relative flex flex-col rounded-2xl border border-border/50 cursor-pointer select-none overflow-hidden',
             'transition-colors duration-150',
             'hover:bg-muted/30 hover:border-border hover:shadow-sm',
             'active:scale-[0.98]',
@@ -371,12 +370,12 @@ function FileCard({
                 }}
                 onBlur={confirmRename}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full text-[13px] bg-transparent border-b border-primary/50 py-0.5 outline-none"
+                className="w-full text-sm bg-transparent border-b border-primary/50 py-0.5 outline-none"
               />
             ) : (
               <div className="flex items-center gap-1.5 min-w-0 w-full">
                 {getFileIcon(node.name, { className: 'h-4 w-4 shrink-0', variant: 'monochrome' })}
-                <span className="text-[13px] truncate text-foreground">{node.name}</span>
+                <span className="text-sm truncate text-foreground">{node.name}</span>
               </div>
             )}
           </div>
@@ -386,12 +385,6 @@ function FileCard({
         <ContextMenuItem onClick={onClick}>
           Preview
         </ContextMenuItem>
-        {onOpenInTab && (
-          <ContextMenuItem onClick={() => onOpenInTab(node)}>
-            <ExternalLink className="mr-2 h-4 w-4" />
-            Open in tab
-          </ContextMenuItem>
-        )}
         {onDownload && (
           <ContextMenuItem onClick={() => onDownload(node)}>
             <Download className="mr-2 h-4 w-4" />
@@ -400,9 +393,7 @@ function FileCard({
         )}
         {onHistory && (
           <ContextMenuItem onClick={() => onHistory(node)}>
-            <History className="mr-2 h-4 w-4" />
-            View history
-          </ContextMenuItem>
+            <History className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsDriveGridView.line404JsxTextViewHistory')}</ContextMenuItem>
         )}
         <ContextMenuSeparator />
         {onCopy && (
@@ -418,9 +409,7 @@ function FileCard({
           </ContextMenuItem>
         )}
         <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.path)}>
-          <Copy className="mr-2 h-4 w-4" />
-          Copy path
-        </ContextMenuItem>
+          <Copy className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsDriveGridView.line422JsxTextCopyPath')}</ContextMenuItem>
         <ContextMenuSeparator />
         {onRename && (
           <ContextMenuItem onClick={() => setTimeout(startRenaming, 100)}>
@@ -462,7 +451,6 @@ interface DriveGridViewProps {
   onCopy: (node: FileNode) => void;
   onCut: (node: FileNode) => void;
   onDropMove: (sourcePath: string, targetDirPath: string) => void;
-  onOpenInTab: (node: FileNode) => void;
   gitStatusMap: Map<string, GitStatusType>;
   clipboardPath?: string;
   clipboardOperation?: string;
@@ -484,12 +472,12 @@ export function DriveGridView({
   onCopy,
   onCut,
   onDropMove,
-  onOpenInTab,
   gitStatusMap,
   clipboardPath,
   clipboardOperation,
   isDirDownloading,
 }: DriveGridViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="p-4 space-y-6">
       {/* Elevated system directories */}
@@ -509,14 +497,14 @@ export function DriveGridView({
                   onClick={() => onNavigateToDir(node)}
                   title={meta?.description}
                   className={cn(
-                    'group flex h-10 cursor-pointer select-none items-center gap-2.5 rounded-lg border border-border/50 px-3',
+                    'group flex h-10 cursor-pointer select-none items-center gap-2.5 rounded-2xl border border-border/50 px-3',
                     'transition-colors duration-150',
                     'hover:bg-muted/50 hover:border-border',
                     'active:scale-[0.98]',
                   )}
                 >
                   <DirIcon className="h-4.5 w-4.5 shrink-0 text-primary/70" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                     {node.name}
                   </span>
                 </div>
@@ -571,7 +559,6 @@ export function DriveGridView({
                 onHistory={onHistory}
                 onCopy={onCopy}
                 onCut={onCut}
-                onOpenInTab={onOpenInTab}
                 gitStatus={gitStatusMap.get(node.path)}
                 isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
               />
@@ -584,10 +571,8 @@ export function DriveGridView({
       {dirs.length === 0 && files.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <FolderOpen className="h-16 w-16 text-muted-foreground/20 mb-4" />
-          <p className="text-sm text-muted-foreground">This folder is empty</p>
-          <p className="text-xs text-muted-foreground/60 mt-1">
-            Drop files here or use the New button to get started
-          </p>
+          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsDriveGridView.line587JsxTextThisFolderIsEmpty')}</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">{tHardcodedUi.raw('featuresFilesComponentsDriveGridView.line589JsxTextDropFilesHereOrUseTheNewButton')}</p>
         </div>
       )}
     </div>

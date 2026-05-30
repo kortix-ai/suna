@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Wrench, Clock } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { AlertBanner } from './alert-banner';
@@ -15,6 +17,7 @@ export function MaintenanceCountdownBanner({
   endTime,
   updatedAt,
 }: MaintenanceCountdownBannerProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [countdown, setCountdown] = useState<string>('');
   const [isActive, setIsActive] = useState(false);
   const [isOver, setIsOver] = useState(false);
@@ -100,7 +103,7 @@ export function MaintenanceCountdownBanner({
 
   return (
     <AlertBanner
-      title="Scheduled Maintenance"
+      title={tHardcodedUi.raw('componentsAnnouncementsMaintenanceCountdownBanner.line103JsxAttrTitleScheduledMaintenance')}
       message={`Planned maintenance from ${formatDateTime(startTime)} to ${formatDateTime(endTime)}`}
       variant="warning"
       icon={Wrench}

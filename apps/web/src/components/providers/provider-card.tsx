@@ -12,13 +12,13 @@ import { ProviderLogo } from './provider-branding';
 // never produces a visual jump.
 
 export const PROVIDER_CARD_CHROME =
-  'group flex h-auto w-full items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35';
+  'group flex h-auto w-full items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35';
 
 export function GroupHeading({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div
       className={cn(
-        'px-1 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40',
+        'px-1 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40',
         className,
       )}
     >
@@ -29,7 +29,7 @@ export function GroupHeading({ children, className }: { children: ReactNode; cla
 
 export function ConnectedBadge() {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-px text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-px text-xs font-medium text-emerald-600 dark:text-emerald-400">
       <span className="h-1 w-1 rounded-full bg-emerald-500" />
       connected
     </span>

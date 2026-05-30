@@ -1,5 +1,7 @@
 "use client"
 
+
+import { useTranslations } from 'next-intl';
 import * as React from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
@@ -59,6 +61,7 @@ interface HelpSidebarProps extends React.ComponentProps<typeof Sidebar> {
 }
 
 export function HelpSidebar({ onSearchClick, ...props }: HelpSidebarProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname()
 
   const isActive = (url: string) => {
@@ -77,7 +80,7 @@ export function HelpSidebar({ onSearchClick, ...props }: HelpSidebarProps) {
           >
             <div className="flex items-center gap-2">
               <Search className="h-4 w-4" />
-              <span className="text-sm">Search help</span>
+              <span className="text-sm">{tHardcodedUi.raw('componentsHelpHelpSidebar.line80JsxTextSearchHelp')}</span>
             </div>
             <div className="flex items-center gap-1">
               <div className="h-7 w-7 flex items-center justify-center text-sm text-muted-foreground bg-muted rounded-lg">
@@ -139,7 +142,7 @@ export function HelpSidebar({ onSearchClick, ...props }: HelpSidebarProps) {
         ))}
       </SidebarContent>
       <SidebarFooter className="bg-transparent p-4 flex flex-row justify-between items-center">
-        <div className="text-muted-foreground text-xs">Version 0.1.0</div>
+        <div className="text-muted-foreground text-xs">{tHardcodedUi.raw('componentsHelpHelpSidebar.line142JsxTextVersion010')}</div>
         <ThemeToggle />
       </SidebarFooter>
       <SidebarRail />

@@ -2,6 +2,10 @@
 
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import {
+  MODEL_SELECTOR_PROVIDER_IDS as SHARED_MODEL_SELECTOR_PROVIDER_IDS,
+  PROVIDER_LABELS as SHARED_PROVIDER_LABELS,
+} from '@kortix/shared/llm-catalog';
 
 export const POPULAR_PROVIDER_IDS = [
   'anthropic',
@@ -12,94 +16,8 @@ export const POPULAR_PROVIDER_IDS = [
   'vercel',
 ];
 
-export const MODEL_SELECTOR_PROVIDER_IDS = [
-  'kortix-yolo',
-  'kortix',
-  'anthropic',
-  'openai',
-  'github-copilot',
-  'google',
-  'openrouter',
-  'vercel',
-];
-
-export const PROVIDER_LABELS: Record<string, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  google: 'Google',
-  xai: 'xAI',
-  moonshotai: 'Moonshot',
-  'moonshotai-cn': 'Moonshot',
-  opencode: 'OpenCode Zen',
-  'kortix-yolo': 'Kortix Yolo',
-  kortix: 'Kortix',
-  firmware: 'Firmware',
-  bedrock: 'AWS Bedrock',
-  openrouter: 'OpenRouter',
-  'github-copilot': 'GitHub Copilot',
-  vercel: 'Vercel',
-  groq: 'Groq',
-  deepseek: 'DeepSeek',
-  mistral: 'Mistral',
-  cohere: 'Cohere',
-  llama: 'Llama',
-  huggingface: 'Hugging Face',
-  cerebras: 'Cerebras',
-  togetherai: 'Together AI',
-  fireworks: 'Fireworks',
-  deepinfra: 'DeepInfra',
-  nvidia: 'NVIDIA',
-  cloudflare: 'Cloudflare',
-  azure: 'Azure',
-  ollama: 'Ollama',
-  perplexity: 'Perplexity',
-  lmstudio: 'LM Studio',
-  v0: 'v0',
-  wandb: 'W&B',
-  baseten: 'Baseten',
-  minimax: 'Moonshot',
-  'minimax-cn': 'Moonshot',
-  siliconflow: 'SiliconFlow',
-  'siliconflow-cn': 'SiliconFlow',
-  zhipuai: 'ZhipuAI',
-  'zhipuai-cn': 'ZhipuAI',
-  'google-vertex': 'Google Vertex',
-  'google-vertex-anthropic': 'Vertex Anthropic',
-  'azure-cognitive-services': 'Azure Cognitive',
-  'cloudflare-ai-gateway': 'Cloudflare Gateway',
-  'github-models': 'GitHub Models',
-  'ollama-cloud': 'Ollama Cloud',
-  'kai Coding Plan': 'AI21',
-  zaicodingplan: 'AI21',
-  venice: 'Venice',
-  upstage: 'Upstage',
-  nebius: 'Nebius',
-  vultr: 'Vultr',
-  friendli: 'Friendli',
-  poe: 'Poe',
-  requesty: 'Requesty',
-  'sap-ai-core': 'SAP AI Core',
-  scaleway: 'Scaleway',
-  'inception': 'Inception',
-  'morph': 'Morph',
-  'abacus': 'Abacus',
-  'bailing': 'Bailing',
-  'chutes': 'Chutes',
-  'fastrouter': 'FastRouter',
-  'helicone': 'Helicone',
-  'iflowcn': 'iFlytek',
-  'inference': 'Inference',
-  'io-net': 'IO.net',
-  'kimi-for-coding': 'Kimi',
-  'lucidquery': 'LucidQuery',
-  'modelscope': 'ModelScope',
-  'nano-gpt': 'NanoGPT',
-  'ovhcloud': 'OVHcloud',
-  'submodel': 'Submodel',
-  'synthetic': 'Synthetic',
-  'xiaomi': 'Xiaomi',
-  'zenmux': 'Zenmux',
-};
+export const MODEL_SELECTOR_PROVIDER_IDS: readonly string[] = SHARED_MODEL_SELECTOR_PROVIDER_IDS;
+export const PROVIDER_LABELS: Record<string, string> = SHARED_PROVIDER_LABELS;
 
 export const PROVIDER_HINTS: Record<string, string> = {
   anthropic: 'Pro/Max or API key',
@@ -109,7 +27,6 @@ export const PROVIDER_HINTS: Record<string, string> = {
 
 export const PROVIDER_NOTES: Record<string, string> = {
   opencode: 'One key for many hosted models',
-  'kortix-yolo': 'Fast and Think models from Kortix Yolo',
   anthropic: 'Claude Pro/Max subscription or your own API key',
   openai: 'ChatGPT Pro/Plus subscription or your own API key',
   'github-copilot': 'Reuse your existing Copilot plan',
@@ -122,7 +39,6 @@ const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   anthropic: { src: '/provider-icons/anthropic.svg', fallback: 'AN' },
   openai: { src: '/provider-icons/openai.svg', fallback: 'OA' },
   opencode: { src: '/provider-icons/opencode.svg', fallback: 'OC' },
-  'kortix-yolo': { src: '/kortix-symbol.svg', fallback: 'KY' },
   kortix: { src: '/kortix-symbol.svg', fallback: 'KX' },
   'github-copilot': { src: '/provider-icons/github-copilot.svg', fallback: 'GH' },
   google: { src: '/provider-icons/google.svg', fallback: 'GO' },
@@ -213,7 +129,7 @@ export function ProviderLogo({
       ) : (
         <span className={cn(
           'font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300',
-          size === 'small' ? 'text-[0.5625rem]' : size === 'large' ? 'text-xs' : 'text-[10px]'
+          size === 'small' ? 'text-xs' : size === 'large' ? 'text-xs' : 'text-xs'
         )}>
           {initialsFor(providerID, name)}
         </span>

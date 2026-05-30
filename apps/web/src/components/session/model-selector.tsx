@@ -1,9 +1,14 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useParams } from 'next/navigation';
 import {
   Check,
   ChevronDown,
+  Eye,
+  EyeOff,
   Plus,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -21,7 +26,9 @@ import {
   CommandList,
   CommandGroup,
   CommandItem,
+  CommandFooter,
 } from '@/components/ui/command';
+import { Switch } from '@/components/ui/switch';
 
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { FlatModel } from './session-chat-input';
@@ -33,6 +40,7 @@ import {
 } from '@/components/providers/provider-branding';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
+import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
 
 // Re-export for consumers
 export { ConnectProviderContent } from '@/components/providers/connect-provider-content';
@@ -105,32 +113,58 @@ export interface ModelSelectorProps {
 }
 
 export function ModelSelector({ models, selectedModel, onSelect }: ModelSelectorProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  // Reveal models the "latest" filter hides by default (older releases /
+  // superseded models in a family). Off by default to keep the picker tidy.
+  const [showHidden, setShowHidden] = useState(false);
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const modelStore = useModelStore(models);
+
+  // When mounted under /projects/[id]/..., route the action buttons to the
+  // per-project provider modal so credentials land in `project_secrets`. On
+  // every other route (instance dashboard, /milano, /berlin, etc.) we keep
+  // the legacy GlobalProviderModal that writes to the active sandbox.
+  const params = useParams<{ id?: string }>();
+  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [projectModalTab, setProjectModalTab] =
+    useState<'connected' | 'catalog' | 'models'>('catalog');
 
   const current = models.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
   );
   const displayName = current?.modelName || models[0]?.modelName || 'Model';
 
-  // Reset search when closing
+  // Reset search + collapse "older" reveal when closing
   useEffect(() => {
-    if (!open) setSearch('');
+    if (!open) {
+      setSearch('');
+      setShowHidden(false);
+    }
   }, [open]);
 
   // ── Filtered + grouped models ──
+
+  // Are there any models the "latest" filter is currently hiding? Drives the
+  // "Show older models" footer — no point showing it when nothing is hidden.
+  const hasHidden = useMemo(
+    () => models.some((m) => !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })),
+    [models, modelStore],
+  );
 
   const visibleModels = useMemo(() => {
     const q = search.toLowerCase();
     return models
       .filter((m) => {
-        if (!q && !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })) return false;
+        // A search query reveals everything; otherwise respect visibility
+        // unless the user expanded the "older models" section.
+        if (!q && !showHidden && !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })) return false;
         return !q || (m.modelName || '').toLowerCase().includes(q) || (m.modelID || '').toLowerCase().includes(q) || (m.providerName || '').toLowerCase().includes(q);
       })
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [models, search, modelStore]);
+  }, [models, search, showHidden, modelStore]);
 
   const grouped = useMemo(() => {
     const groups = new Map<string, { providerName: string; providerID: string; models: FlatModel[] }>();
@@ -166,18 +200,35 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
 
   const handleOpenProviderModal = useCallback((tab: ProviderModalTab) => {
     setOpen(false);
+    if (projectId) {
+      // Legacy tabs: 'providers' | 'connected' | 'models'. Map 'providers'
+      // (the "add" view in the old modal) to our 'catalog' tab.
+      setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
+      setProjectModalOpen(true);
+      return;
+    }
     openProviderModal(tab);
-  }, [openProviderModal]);
+  }, [projectId, openProviderModal]);
 
   return (
+    <>
+    {projectId && (
+      <ProjectProviderModal
+        projectId={projectId}
+        open={projectModalOpen}
+        onOpenChange={setProjectModalOpen}
+        defaultTab={projectModalTab}
+      />
+    )}
     <CommandPopover open={open} onOpenChange={setOpen}>
       <Tooltip>
         <TooltipTrigger asChild>
           <CommandPopoverTrigger>
             <button
               type="button"
+              aria-label={tHardcodedUi.raw('componentsSessionModelSelector.line207JsxAttrAriaLabelModelPicker')}
               className={cn(
-                'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-200 cursor-pointer',
+                'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-200 cursor-pointer',
                 open && 'bg-muted text-foreground',
               )}
             >
@@ -186,13 +237,13 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
             </button>
           </CommandPopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">Choose model</TooltipContent>
+        <TooltipContent side="top" className="text-xs">{tHardcodedUi.raw('componentsSessionModelSelector.line218JsxTextChooseModel')}</TooltipContent>
       </Tooltip>
 
       <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
         <CommandInput
           compact
-          placeholder="Search models..."
+          placeholder={tHardcodedUi.raw('componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels')}
           value={search}
           onValueChange={setSearch}
           rightElement={
@@ -207,7 +258,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                     <Plus className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">Connect provider</TooltipContent>
+                <TooltipContent side="top" className="text-xs">{tHardcodedUi.raw('componentsSessionModelSelector.line239JsxTextConnectProvider')}</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -219,7 +270,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">Manage models</TooltipContent>
+                <TooltipContent side="top" className="text-xs">{tHardcodedUi.raw('componentsSessionModelSelector.line251JsxTextManageModels')}</TooltipContent>
               </Tooltip>
             </div>
           }
@@ -235,7 +286,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                     <div className="flex items-center gap-2">
                       <ProviderLogo providerID={group.providerID} name={group.providerName} size="small" />
                       <span className="flex-1">{PROVIDER_LABELS[group.providerID] || group.providerName}</span>
-                      <span className="text-[10px] text-muted-foreground/30 normal-case tracking-normal">
+                      <span className="text-xs text-muted-foreground/30 normal-case tracking-normal">
                         {group.models.length}
                       </span>
                     </div>
@@ -245,25 +296,54 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                   {group.models.map((model) => {
                     const isSelected = selectedModel?.providerID === model.providerID && selectedModel?.modelID === model.modelID;
                     const isFree = model.providerID === 'opencode' && (!model.cost || model.cost.input === 0);
+                    const modelKey = { providerID: model.providerID, modelID: model.modelID };
+                    // "Latest" models are always shown; older ones get an
+                    // activation switch so they can be pinned into the picker.
+                    const isLatestModel = modelStore.isLatest(modelKey);
+                    const isModelVisible = modelStore.isVisible(modelKey);
 
                     return (
                       <CommandItem
                         key={`${model.providerID}:${model.modelID}`}
                         value={`model-${model.providerID}-${model.modelID}`}
-                        className={cn('!pl-3', isSelected && 'bg-foreground/[0.06]')}
+                        className={cn(
+                          '!pl-3',
+                          isSelected && 'bg-foreground/[0.06]',
+                          !isLatestModel && !isModelVisible && 'opacity-60',
+                        )}
                         onSelect={() => handleSelect(model)}
                       >
                         <div className="min-w-0 flex-1 py-0.5">
                           <div className={cn(
-                            'truncate text-[13px] leading-tight',
+                            'truncate text-sm leading-tight',
                             isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
                           )}>
                             {model.modelName}
                           </div>
-                          <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-1">{model.modelID}</p>
+                          <p className="truncate text-xs text-muted-foreground/55 leading-snug mt-1">{model.modelID}</p>
                         </div>
                         {isFree && <Tag variant="free">Free</Tag>}
                         {isSelected && <Check className="text-foreground shrink-0" />}
+                        {!isLatestModel && !isSelected && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div
+                                className="shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              >
+                                <Switch
+                                  checked={isModelVisible}
+                                  onCheckedChange={(checked) => modelStore.setVisibility(modelKey, checked)}
+                                  aria-label={`Show ${model.modelName} in the model picker`}
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="left" className="text-xs">
+                              {isModelVisible ? 'Showing in picker' : 'Show in picker'}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                       </CommandItem>
                     );
                   })}
@@ -271,12 +351,29 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
               ))}
             </>
           ) : (
-            <div className="py-8 text-center text-xs text-muted-foreground/50">
-              No models found
-            </div>
+            <div className="py-8 text-center text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsSessionModelSelector.line304JsxTextNoModelsFound')}</div>
           )}
         </CommandList>
+
+        {hasHidden && !search && (
+          <CommandFooter
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowHidden((v) => !v)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setShowHidden((v) => !v);
+              }
+            }}
+            className="cursor-pointer select-none hover:bg-foreground/[0.04] hover:text-foreground transition-colors"
+          >
+            {showHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            <span>{showHidden ? 'Hide older models' : 'Show older models'}</span>
+          </CommandFooter>
+        )}
       </CommandPopoverContent>
     </CommandPopover>
+    </>
   );
 }

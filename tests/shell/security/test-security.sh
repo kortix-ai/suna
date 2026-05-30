@@ -171,25 +171,12 @@ echo ""
 echo "  API service key forwarding"
 echo ""
 
-API_PROVIDERS="$ROOT_DIR/apps/api/src/providers/routes.ts"
 API_SETUP="$ROOT_DIR/apps/api/src/setup/index.ts"
-
-if grep -q 'INTERNAL_SERVICE_KEY' "$API_PROVIDERS"; then
-  pass "providers/routes.ts injects INTERNAL_SERVICE_KEY"
-else
-  fail "providers/routes.ts injects INTERNAL_SERVICE_KEY"
-fi
 
 if grep -q 'INTERNAL_SERVICE_KEY' "$API_SETUP"; then
   pass "setup/index.ts injects INTERNAL_SERVICE_KEY"
 else
   fail "setup/index.ts injects INTERNAL_SERVICE_KEY"
-fi
-
-if grep -q 'Authorization.*Bearer.*serviceKey' "$API_PROVIDERS"; then
-  pass "providers/routes.ts sends Bearer token header"
-else
-  fail "providers/routes.ts sends Bearer token header"
 fi
 
 if grep -q 'Authorization.*Bearer.*serviceKey' "$API_SETUP"; then

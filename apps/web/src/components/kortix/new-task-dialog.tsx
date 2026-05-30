@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import Image from 'next/image';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
@@ -49,6 +51,7 @@ export function NewTaskDialog({
   projectPath?: string;
   defaultStatus?: KortixTaskStatus;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [verification, setVerification] = useState('');
@@ -114,7 +117,7 @@ export function NewTaskDialog({
         );
         attachmentPaths = results.flat().map((r) => r.path);
       } catch {
-        toast('Failed to upload attachments');
+        toast(tHardcodedUi.raw('componentsKortixNewTaskDialog.line117CallToastFailedToUploadAttachments'));
         setUploading(false);
         return;
       }
@@ -142,8 +145,8 @@ export function NewTaskDialog({
           const taskId = (task as any)?.id;
           if (autoRun && taskId) {
             start.mutate({ id: taskId }, {
-              onSuccess: () => toast('Task started', { description: t }),
-              onError: () => toast('Task created but failed to start', { description: t }),
+              onSuccess: () => toast(tHardcodedUi.raw('componentsKortixNewTaskDialog.line145CallToastTaskStarted'), { description: t }),
+              onError: () => toast(tHardcodedUi.raw('componentsKortixNewTaskDialog.line146CallToastTaskCreatedButFailedToStart'), { description: t }),
             });
           } else {
             toast(`Task created${createMore ? ' — ready for next' : ''}`, { description: t });
@@ -160,7 +163,7 @@ export function NewTaskDialog({
           }
         },
         onError: () => {
-          toast('Failed to create task', { description: 'Something went wrong.' });
+          toast(tHardcodedUi.raw('componentsKortixNewTaskDialog.line163CallToastFailedToCreateTask'), { description: 'Something went wrong.' });
         },
       },
     );
@@ -176,9 +179,8 @@ export function NewTaskDialog({
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
       >
-        <DialogTitle className="sr-only">New task</DialogTitle>
-        <DialogDescription className="sr-only">
-          Create a new task {projectName ? `in ${projectName}` : ''}
+        <DialogTitle className="sr-only">{tHardcodedUi.raw('componentsKortixNewTaskDialog.line179JsxTextNewTask')}</DialogTitle>
+        <DialogDescription className="sr-only">{tHardcodedUi.raw('componentsKortixNewTaskDialog.line181JsxTextCreateANewTask')}{' '}{projectName ? `in ${projectName}` : ''}
         </DialogDescription>
 
         {/* ── Header ─────────────────────────────────────────── */}
@@ -188,7 +190,7 @@ export function NewTaskDialog({
               {projectName || 'KORTIX'}
             </span>
             <span className="text-muted-foreground/40">›</span>
-            <span className="text-muted-foreground">New task</span>
+            <span className="text-muted-foreground">{tHardcodedUi.raw('componentsKortixNewTaskDialog.line191JsxTextNewTask')}</span>
           </div>
           <div className="ml-auto">
             <Button
@@ -213,7 +215,7 @@ export function NewTaskDialog({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
             }}
-            placeholder="Task title"
+            placeholder={tHardcodedUi.raw('componentsKortixNewTaskDialog.line216JsxAttrPlaceholderTaskTitle')}
             className="w-full text-[22px] font-semibold bg-transparent border-0 outline-none placeholder:text-muted-foreground/35 text-foreground tracking-tight leading-tight"
           />
           <textarea
@@ -222,7 +224,7 @@ export function NewTaskDialog({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
             }}
-            placeholder="Add description…"
+            placeholder={tHardcodedUi.raw('componentsKortixNewTaskDialog.line225JsxAttrPlaceholderAddDescription')}
             rows={5}
             className="w-full text-sm bg-transparent border-0 outline-none resize-none placeholder:text-muted-foreground/35 text-foreground/90 leading-relaxed min-h-[100px]"
           />
@@ -231,9 +233,7 @@ export function NewTaskDialog({
           {showVerification ? (
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/50 font-semibold">
-                  Verification condition
-                </span>
+                <span className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/50 font-semibold">{tHardcodedUi.raw('componentsKortixNewTaskDialog.line235JsxTextVerificationCondition')}</span>
                 <button
                   onClick={() => { setShowVerification(false); setVerification(''); }}
                   className="text-[11px] text-muted-foreground/40 hover:text-foreground cursor-pointer"
@@ -244,7 +244,7 @@ export function NewTaskDialog({
               <textarea
                 value={verification}
                 onChange={(e) => setVerification(e.target.value)}
-                placeholder="How will we know this task is actually done?"
+                placeholder={tHardcodedUi.raw('componentsKortixNewTaskDialog.line247JsxAttrPlaceholderHowWillWeKnowThisTaskIsActually')}
                 rows={2}
                 className="w-full text-sm bg-transparent border-0 outline-none resize-none placeholder:text-muted-foreground/35 text-foreground/90 leading-relaxed"
               />
@@ -253,9 +253,7 @@ export function NewTaskDialog({
             <button
               onClick={() => setShowVerification(true)}
               className="text-[11px] text-muted-foreground/40 hover:text-foreground font-medium transition-colors cursor-pointer"
-            >
-              + Add verification condition
-            </button>
+            >{tHardcodedUi.raw('componentsKortixNewTaskDialog.line257JsxTextAddVerificationCondition')}</button>
           )}
 
           {/* Attachment preview strip */}
@@ -266,7 +264,7 @@ export function NewTaskDialog({
                 const preview = previews[i];
                 return (
                   <div key={i} className="relative group">
-                    <div className="flex flex-col rounded-lg border border-border/50 overflow-hidden w-[120px] bg-card hover:bg-muted/30 hover:border-border transition-colors">
+                    <div className="flex flex-col rounded-2xl border border-border/50 overflow-hidden w-[120px] bg-card hover:bg-muted/30 hover:border-border transition-colors">
                       {/* Thumbnail */}
                       <div className="h-[72px] relative flex items-center justify-center overflow-hidden bg-muted/20">
                         {preview ? (
@@ -317,7 +315,7 @@ export function NewTaskDialog({
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-muted-foreground/50 hover:text-foreground"
-              title="Attach files"
+              title={tHardcodedUi.raw('componentsKortixNewTaskDialog.line320JsxAttrTitleAttachFiles')}
               onClick={() => fileInputRef.current?.click()}
             >
               <Paperclip className="h-4 w-4" />
@@ -327,9 +325,7 @@ export function NewTaskDialog({
               Auto-run
             </label>
             <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-              <Switch checked={createMore} onCheckedChange={setCreateMore} />
-              Create more
-            </label>
+              <Switch checked={createMore} onCheckedChange={setCreateMore} />{tHardcodedUi.raw('componentsKortixNewTaskDialog.line331JsxTextCreateMore')}</label>
           </div>
 
           <Button

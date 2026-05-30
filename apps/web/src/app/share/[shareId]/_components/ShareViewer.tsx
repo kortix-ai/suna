@@ -1,10 +1,13 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { getEnv } from '@/lib/env-config';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { partToText } from './share-message-text';
 import {
   AlertTriangle,
   Copy,
@@ -16,6 +19,7 @@ import {
   Menu,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
   TooltipContent,
@@ -104,6 +108,7 @@ async function fetchShareData(shareId: string): Promise<ShareData> {
 // ============================================================================
 
 export function ShareViewer({ shareId }: { shareId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [data, setData] = useState<ShareData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -143,7 +148,7 @@ export function ShareViewer({ shareId }: { shareId: string }) {
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <KortixLoader size="medium" />
-          <p className="text-sm text-muted-foreground">Loading shared session...</p>
+          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appShareShareidComponentsShareviewer.line147JsxTextLoadingSharedSession')}</p>
         </div>
       </div>
     );
@@ -206,6 +211,7 @@ export function ShareViewer({ shareId }: { shareId: string }) {
 // ============================================================================
 
 function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
 
   const copyShareLink = async () => {
@@ -226,9 +232,9 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
         <div className="flex items-center gap-1 min-w-0 flex-1">
           <div className="text-sm font-medium text-muted-foreground flex items-center gap-2 min-w-0">
             <span className="truncate max-w-[140px] sm:max-w-none">{sessionTitle}</span>
-            <span className="text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-md shrink-0 font-medium">
+            <Badge size="sm" variant="secondary" className="shrink-0">
               Shared
-            </span>
+            </Badge>
           </div>
         </div>
 
@@ -248,7 +254,7 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" sideOffset={4}>
-                <p>Copy share link</p>
+                <p>{tHardcodedUi.raw('appShareShareidComponentsShareviewer.line252JsxTextCopyShareLink')}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -269,7 +275,7 @@ function ShareMessageView({
   role: 'user' | 'assistant';
   parts: MessagePart[];
 }) {
-  const text = parts.map((p) => p.text || p.content?.text || '').join('\n').trim();
+  const text = parts.map(partToText).join('\n').trim();
   if (!text) return null;
 
   if (role === 'user') {
@@ -319,7 +325,7 @@ function AssistantBlock({
       <div className="flex w-full break-words">
         <div className="space-y-1.5 min-w-0 flex-1">
           {parts.map((part) => {
-            const partText = part.text || part.content?.text || '';
+            const partText = partToText(part);
             if (!partText.trim()) return null;
             return (
               <div key={part.id} className="break-words overflow-hidden">

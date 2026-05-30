@@ -31,25 +31,23 @@ export function ToolViewIconTitle({
 }: ToolViewIconTitleProps) {
   return (
     <div className={cn("flex items-center gap-2 min-w-0 overflow-hidden flex-1", className)}>
-      <div className="relative p-2 rounded-lg border bg-muted border-border flex-shrink-0">
-        <Icon className="w-5 h-5 text-foreground" />
-      </div>
-      <div className="min-w-0 flex-1 overflow-hidden">
+      <Icon className="w-3.5 h-3.5 text-muted-foreground/80 flex-shrink-0" />
+      <div className="min-w-0 flex-1 overflow-hidden flex items-baseline gap-2">
         {onTitleClick ? (
           <div
-            className="text-base font-medium text-foreground truncate cursor-pointer hover:text-primary transition-colors"
+            className="text-sm font-medium text-foreground tracking-tight truncate cursor-pointer hover:text-foreground/70 transition-colors"
             onClick={onTitleClick}
             title={subtitle || undefined}
           >
             {title}
           </div>
         ) : (
-          <div className="text-base font-medium text-foreground truncate">
+          <div className="text-sm font-medium text-foreground tracking-tight truncate">
             {title}
           </div>
         )}
         {subtitle && (
-          <div className="text-xs text-muted-foreground truncate" title={subtitle}>
+          <div className="text-xs text-muted-foreground/70 truncate" title={subtitle}>
             {subtitle}
           </div>
         )}

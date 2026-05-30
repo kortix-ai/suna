@@ -14,6 +14,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
+import { useBillingAccountId } from '@/stores/billing-account-context';
 
 import { CREDITS_PER_DOLLAR, dollarsToCredits } from '@kortix/shared';
 import {
@@ -33,10 +34,14 @@ import {
 
 export const accountStateKeys = {
   all: ['account-state'] as const,
-  state: () => [...accountStateKeys.all, 'state'] as const,
+  // Scope each query by accountId. `undefined` means "the user's primary
+  // account" (resolved server-side from the auth user) — used by global
+  // surfaces like the user menu. /accounts/[id] pages pass the explicit id so
+  // multi-account users don't see the same wallet/limits across all pages.
+  state: (accountId?: string) =>
+    [...accountStateKeys.all, 'state', { accountId: accountId ?? null }] as const,
   usageHistory: (days?: number) => [...accountStateKeys.all, 'usage-history', { days }] as const,
   transactions: (limit?: number, offset?: number) => [...accountStateKeys.all, 'transactions', { limit, offset }] as const,
-  trial: () => [...accountStateKeys.all, 'trial'] as const,
 };
 
 // =============================================================================
@@ -49,33 +54,45 @@ let pendingSkipCache = false;
 let activeRefetchPromise: Promise<void> | null = null;
 const REFETCH_DEBOUNCE_MS = 200;
 
-export function invalidateAccountState(queryClient: ReturnType<typeof useQueryClient>, refetch = false, skipCache = false) {
-  // Invalidate the query cache (marks data as stale)
-  queryClient.invalidateQueries({ queryKey: accountStateKeys.state() });
-  
+export function invalidateAccountState(
+  queryClient: ReturnType<typeof useQueryClient>,
+  refetch = false,
+  skipCache = false,
+  accountId?: string,
+) {
+  // Invalidate the query cache (marks data as stale). Per-account queries
+  // have their own cache slot (see accountStateKeys.state).
+  queryClient.invalidateQueries({ queryKey: accountStateKeys.state(accountId) });
+  // Also invalidate the global (primary-account) slot when a per-account
+  // mutation lands — global surfaces should reflect the new state too if
+  // they happen to point at the same account.
+  if (accountId) {
+    queryClient.invalidateQueries({ queryKey: accountStateKeys.state() });
+  }
+
   if (!refetch) return;
-  
+
   // Track if any caller wants skipCache (most aggressive wins)
   if (skipCache) {
     pendingSkipCache = true;
   }
-  
+
   // If there's already an active refetch in progress, just queue the skipCache preference
   if (activeRefetchPromise) {
     return;
   }
-  
+
   // Clear any pending debounce timeout
   if (refetchTimeout) {
     clearTimeout(refetchTimeout);
   }
-  
+
   // Debounce to batch multiple rapid calls into one
   refetchTimeout = setTimeout(() => {
     const shouldSkipCache = pendingSkipCache;
     pendingSkipCache = false;
     refetchTimeout = null;
-    
+
     // Create a single promise that all callers will share
     activeRefetchPromise = (async () => {
       try {
@@ -84,12 +101,12 @@ export function invalidateAccountState(queryClient: ReturnType<typeof useQueryCl
         if (shouldSkipCache) {
           // For skipCache, we need to bypass the cached queryFn
           // Use setQueryData with fresh data
-          const freshData = await billingApi.getAccountState(true);
-          queryClient.setQueryData(accountStateKeys.state(), freshData);
+          const freshData = await billingApi.getAccountState(true, accountId);
+          queryClient.setQueryData(accountStateKeys.state(accountId), freshData);
         } else {
           // Normal refetch - React Query handles deduplication
-          await queryClient.refetchQueries({ 
-            queryKey: accountStateKeys.state(),
+          await queryClient.refetchQueries({
+            queryKey: accountStateKeys.state(accountId),
             type: 'active',
           });
         }
@@ -110,6 +127,8 @@ interface UseAccountStateOptions {
   refetchOnMount?: boolean;
   refetchOnWindowFocus?: boolean;
   skipCache?: boolean; // Skip backend cache (useful after checkout/subscription changes)
+  /** Fetch a specific account's state. Defaults to the user's primary account. */
+  accountId?: string;
 }
 
 /**
@@ -129,10 +148,15 @@ interface UseAccountStateOptions {
  */
 export function useAccountState(options?: UseAccountStateOptions) {
   const enabled = options?.enabled ?? true;
-  
+  // Explicit option wins; fall back to the nearest BillingAccountProvider so
+  // any consumer inside /accounts/[id] is automatically scoped without
+  // every call site having to pass the id by hand.
+  const contextAccountId = useBillingAccountId();
+  const accountId = options?.accountId ?? contextAccountId;
+
   return useQuery<AccountState>({
-    queryKey: accountStateKeys.state(),
-    queryFn: () => billingApi.getAccountState(options?.skipCache ?? false),
+    queryKey: accountStateKeys.state(accountId),
+    queryFn: () => billingApi.getAccountState(options?.skipCache ?? false, accountId),
     enabled,
     staleTime: options?.staleTime ?? 1000 * 60 * 2,
     gcTime: 1000 * 60 * 15,
@@ -161,9 +185,12 @@ export function useAccountState(options?: UseAccountStateOptions) {
  * Use this in components that display credits during agent runs.
  */
 export function useAccountStateWithStreaming(isStreaming: boolean = false) {
+  // Inherit the BillingAccountProvider if one is wrapping us — keeps the
+  // streaming variant aligned with the static one on /accounts/[id].
+  const accountId = useBillingAccountId();
   return useQuery<AccountState>({
-    queryKey: accountStateKeys.state(),
-    queryFn: () => billingApi.getAccountState(),
+    queryKey: accountStateKeys.state(accountId),
+    queryFn: () => billingApi.getAccountState(false, accountId),
     staleTime: 1000 * 60 * 5, // 5 minutes during streaming
     gcTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
@@ -180,14 +207,15 @@ export function useAccountStateWithStreaming(isStreaming: boolean = false) {
 
 export function useCreateCheckoutSession() {
   const queryClient = useQueryClient();
-  
+  const accountId = useBillingAccountId();
+
   return useMutation({
-    mutationFn: (request: CreateCheckoutSessionRequest) => 
-      billingApi.createCheckoutSession(request),
+    mutationFn: (request: CreateCheckoutSessionRequest) =>
+      billingApi.createCheckoutSession(request, accountId),
     onSuccess: (data) => {
       // Invalidate and refetch on upgrade/update - checkout redirects user anyway
       if (data.status === 'upgraded' || data.status === 'updated') {
-        invalidateAccountState(queryClient, true, true); // Force refetch with skipCache after checkout
+        invalidateAccountState(queryClient, true, true, accountId); // Force refetch with skipCache after checkout
       }
       if (data.checkout_url) {
         window.location.href = data.checkout_url;
@@ -196,9 +224,53 @@ export function useCreateCheckoutSession() {
   });
 }
 
-export function useCreatePortalSession() {
+// Billing v2 — start the per-seat subscription flow. If a card is on file,
+// the API creates the subscription directly and returns { status: 'subscription_created' };
+// otherwise it returns { status: 'checkout_created', checkout_url } and we redirect.
+export function useCreatePerSeatCheckout() {
+  const queryClient = useQueryClient();
+  const accountId = useBillingAccountId();
+
   return useMutation({
-    mutationFn: (params: CreatePortalSessionRequest) => billingApi.createPortalSession(params),
+    mutationFn: (args: { success_url: string; cancel_url: string; locale?: string }) =>
+      billingApi.createPerSeatCheckout(args, accountId),
+    onSuccess: async (data) => {
+      if (data.status === 'subscription_created') {
+        // Direct sub creation (Stripe found a saved payment method on the customer
+        // and skipped Checkout). Without explicit feedback the dialog appears to
+        // hang — the request settles but nothing visibly changes. Close the
+        // dialog, toast, and refresh account state so the new tier + wallet
+        // grant land in the UI.
+        const { useUpgradeDialogStore } = await import('@/stores/upgrade-dialog-store');
+        useUpgradeDialogStore.getState().closeUpgradeDialog();
+        await invalidateAccountState(queryClient, true, true, accountId);
+        toast.success('Subscription activated', {
+          description: `${data.seat_count} seat${data.seat_count === 1 ? '' : 's'} active · $20 of usage credit deposited.`,
+        });
+        return;
+      }
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url;
+        return;
+      }
+      // Shouldn't happen — API always returns one of the two shapes. Fail loud
+      // instead of silently leaving the dialog spinning.
+      toast.error('Checkout did not start', {
+        description: 'No checkout URL was returned. Try again or contact support.',
+      });
+    },
+    onError: (err: any) => {
+      toast.error('Checkout failed to start', {
+        description: err?.message || 'Try again, or contact support if this keeps happening.',
+      });
+    },
+  });
+}
+
+export function useCreatePortalSession() {
+  const accountId = useBillingAccountId();
+  return useMutation({
+    mutationFn: (params: CreatePortalSessionRequest) => billingApi.createPortalSession(params, accountId),
     onSuccess: (data) => {
       const portalUrl = data?.portal_url || (data as any)?.url;
       if (portalUrl) {
@@ -215,11 +287,12 @@ export function useCreatePortalSession() {
 
 export function useCancelSubscription() {
   const queryClient = useQueryClient();
-  
+  const accountId = useBillingAccountId();
+
   return useMutation({
-    mutationFn: (request?: CancelSubscriptionRequest) => billingApi.cancelSubscription(request),
+    mutationFn: (request?: CancelSubscriptionRequest) => billingApi.cancelSubscription(request, accountId),
     onSuccess: (response) => {
-      invalidateAccountState(queryClient, true); // Refetch to show updated state
+      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
       if (response.success) {
         toast.success(response.message);
       } else {
@@ -234,11 +307,12 @@ export function useCancelSubscription() {
 
 export function useReactivateSubscription() {
   const queryClient = useQueryClient();
-  
+  const accountId = useBillingAccountId();
+
   return useMutation({
-    mutationFn: () => billingApi.reactivateSubscription(),
+    mutationFn: () => billingApi.reactivateSubscription(accountId),
     onSuccess: (response) => {
-      invalidateAccountState(queryClient, true); // Refetch to show updated state
+      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
       if (response.success) {
         toast.success(response.message);
       } else {
@@ -253,9 +327,10 @@ export function useReactivateSubscription() {
 
 export function usePurchaseCredits() {
   const queryClient = useQueryClient();
-  
+  const accountId = useBillingAccountId();
+
   return useMutation({
-    mutationFn: (request: PurchaseCreditsRequest) => billingApi.purchaseCredits(request),
+    mutationFn: (request: PurchaseCreditsRequest) => billingApi.purchaseCredits(request, accountId),
     onSuccess: (data) => {
       // Will redirect to checkout - invalidation happens on return via backend
       if (data.checkout_url) {
@@ -279,11 +354,12 @@ export function useDeductTokenUsage() {
 
 export function useScheduleDowngrade() {
   const queryClient = useQueryClient();
-  
+  const accountId = useBillingAccountId();
+
   return useMutation({
-    mutationFn: (request: ScheduleDowngradeRequest) => billingApi.scheduleDowngrade(request),
+    mutationFn: (request: ScheduleDowngradeRequest) => billingApi.scheduleDowngrade(request, accountId),
     onSuccess: (response) => {
-      invalidateAccountState(queryClient, true); // Refetch to show scheduled change
+      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show scheduled change
       if (response.success) {
         toast.success(response.message);
       } else {
@@ -298,11 +374,12 @@ export function useScheduleDowngrade() {
 
 export function useCancelScheduledChange() {
   const queryClient = useQueryClient();
-  
+  const accountId = useBillingAccountId();
+
   return useMutation({
-    mutationFn: () => billingApi.cancelScheduledChange(),
+    mutationFn: () => billingApi.cancelScheduledChange(accountId),
     onSuccess: (response) => {
-      invalidateAccountState(queryClient, true); // Refetch to show updated state
+      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
       if (response.success) {
         toast.success(response.message);
       } else {
@@ -317,11 +394,12 @@ export function useCancelScheduledChange() {
 
 export function useSyncSubscription() {
   const queryClient = useQueryClient();
-  
+  const accountId = useBillingAccountId();
+
   return useMutation({
-    mutationFn: () => billingApi.syncSubscription(),
+    mutationFn: () => billingApi.syncSubscription(accountId),
     onSuccess: () => {
-      invalidateAccountState(queryClient);
+      invalidateAccountState(queryClient, false, false, accountId);
       toast.success('Subscription synced successfully');
     },
     onError: (error: any) => {
@@ -342,55 +420,11 @@ export function useUsageHistory(days = 30) {
   });
 }
 
-export function useTransactions(limit = 50, offset = 0) {
-  return useQuery({
-    queryKey: accountStateKeys.transactions(limit, offset),
-    queryFn: () => billingApi.getTransactions(limit, offset),
-    staleTime: 1000 * 60 * 5, // 5 minutes
-  });
-}
-
-// =============================================================================
-// TRIAL HOOKS
-// =============================================================================
-
-export function useTrialStatus(options?: { enabled?: boolean }) {
-  return useQuery({
-    queryKey: accountStateKeys.trial(),
-    queryFn: () => billingApi.getTrialStatus(),
-    enabled: options?.enabled ?? true,
-    staleTime: 1000 * 60 * 5,
-  });
-}
-
-export function useStartTrial() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (request: { success_url: string; cancel_url: string }) => 
-      billingApi.startTrial(request),
-    onSuccess: (data) => {
-      invalidateAccountState(queryClient);
-      if (data.checkout_url) {
-        window.location.href = data.checkout_url;
-      }
-    },
-  });
-}
-
-export function useCancelTrial() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: () => billingApi.cancelTrial(),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient);
-      if (response.success) {
-        toast.success(response.message);
-      }
-    },
-  });
-}
+// `useTransactions` (rich variant with typeFilter) lives in `./use-transactions`
+// and is the only one actually used by the BillingTab history block. The
+// previous duplicate here was a thin wrapper that the index re-exported but
+// nothing imported — removed to avoid two hooks with the same name backed by
+// different cache keys.
 
 // =============================================================================
 // SELECTORS - Helper functions to extract specific data from account state
@@ -431,9 +465,6 @@ export const accountStateSelectors = {
     if (tierKey === 'pro') return 'Pro';
     return 'Basic';
   },
-  
-  /** Check if on trial */
-  isTrial: (state: AccountState | undefined) => state?.subscription?.is_trial ?? false,
   
   /** Check if subscription is cancelled */
   isCancelled: (state: AccountState | undefined) => state?.subscription?.is_cancelled ?? false,

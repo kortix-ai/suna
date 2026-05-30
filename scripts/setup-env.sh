@@ -89,26 +89,6 @@ write_env "apps/api/.env" \
   "$(kv DAYTONA_SERVER_URL)" \
   "$(kv DAYTONA_TARGET)" \
   "" \
-  "# JustAVPS (conditional — only if justavps provider enabled)" \
-  "$(kv JUSTAVPS_API_URL https://justavps.com/api/v1)" \
-  "$(kv JUSTAVPS_API_KEY)" \
-  "$(kv JUSTAVPS_IMAGE_ID)" \
-  "$(kv JUSTAVPS_DEFAULT_LOCATION nbg1)" \
-  "$(kv JUSTAVPS_DEFAULT_SERVER_TYPE pro)" \
-  "$(kv JUSTAVPS_IMAGE_BUILD_LOCATION)" \
-  "$(kv JUSTAVPS_IMAGE_BUILD_SERVER_TYPE)" \
-  "$(kv JUSTAVPS_PROXY_DOMAIN kortix.cloud)" \
-  "$(kv JUSTAVPS_WEBHOOK_SECRET)" \
-  "$(kv JUSTAVPS_WEBHOOK_URL)" \
-  "" \
-  "# Integrations / Pipedream" \
-  "$(kv INTEGRATION_AUTH_PROVIDER pipedream)" \
-  "$(kv PIPEDREAM_CLIENT_ID)" \
-  "$(kv PIPEDREAM_CLIENT_SECRET)" \
-  "$(kv PIPEDREAM_PROJECT_ID)" \
-  "$(kv PIPEDREAM_ENVIRONMENT development)" \
-  "$(kv PIPEDREAM_WEBHOOK_SECRET)" \
-  "" \
   "# Scheduler / Cron" \
   "$(kv SCHEDULER_ENABLED true)" \
   "$(kv CRON_TICK_SECRET)" \
@@ -158,4 +138,4 @@ echo "Next steps:"
 echo "  pnpm dev           # start everything"
 echo "  pnpm dev:api       # start API only"
 echo "  pnpm dev:frontend  # start frontend only"
-echo "  pnpm dev:sandbox   # start sandbox docker stack only"
+echo "  pnpm dev:sandbox   # build sandbox image for local_docker sessions"

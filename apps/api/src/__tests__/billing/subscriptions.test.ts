@@ -114,7 +114,7 @@ describe('createCheckoutSession', () => {
     const result = await createCheckoutSession({
       accountId: 'acc_test_123',
       email: 'test@example.com',
-      tierKey: 'tier_6_50',
+      tierKey: 'pro',
       successUrl: 'https://example.com/success',
       cancelUrl: 'https://example.com/cancel',
     });
@@ -123,59 +123,25 @@ describe('createCheckoutSession', () => {
     expect((result as any).session_id).toBeDefined();
   });
 
-  test('returns no_change for same tier', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ tier: 'tier_6_50' });
-
-    const result = await createCheckoutSession({
-      accountId: 'acc_test_123',
-      email: 'test@example.com',
-      tierKey: 'tier_6_50',
-      successUrl: 'https://example.com/success',
-      cancelUrl: 'https://example.com/cancel',
-    });
-
-    expect((result as any).status).toBe('no_change');
-  });
-
-  test('calls handleUpgrade for upgrades', async () => {
+  test('creates checkout for free-to-pro with an existing free subscription', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
-        tier: 'tier_2_20',
+        tier: 'free',
         stripeSubscriptionId: 'sub_existing',
       });
 
     const result = await createCheckoutSession({
       accountId: 'acc_test_123',
       email: 'test@example.com',
-      tierKey: 'tier_6_50',
+      tierKey: 'pro',
       successUrl: 'https://example.com/success',
       cancelUrl: 'https://example.com/cancel',
     });
 
-    expect((result as any).status).toBe('upgraded');
+    expect((result as any).status).toBe('checkout_created');
   });
 
-  test('calls scheduleDowngrade for downgrades', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        tier: 'tier_6_50',
-        stripeSubscriptionId: 'sub_existing',
-      });
-
-    const result = await createCheckoutSession({
-      accountId: 'acc_test_123',
-      email: 'test@example.com',
-      tierKey: 'tier_2_20',
-      successUrl: 'https://example.com/success',
-      cancelUrl: 'https://example.com/cancel',
-    });
-
-    expect((result as any).success).toBe(true);
-    expect((result as any).message).toContain('scheduled');
-  });
-
-  test('resolves correct price ID for monthly/yearly', async () => {
+  test('resolves the current paid tier price ID', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({ tier: 'free', stripeSubscriptionId: null });
 
@@ -188,15 +154,14 @@ describe('createCheckoutSession', () => {
     await createCheckoutSession({
       accountId: 'acc_test_123',
       email: 'test@example.com',
-      tierKey: 'tier_6_50',
+      tierKey: 'pro',
       successUrl: 'https://example.com/success',
       cancelUrl: 'https://example.com/cancel',
-      commitmentType: 'yearly',
     });
 
     expect(capturedParams).not.toBeNull();
-    // Should use yearly price ID for staging
-    expect(capturedParams.line_items[0].price).toBe('price_1ReGoJG6l1KZGqIr0DJWtoOc');
+    expect(capturedParams.line_items[0].price_data.unit_amount).toBe(2000);
+    expect(capturedParams.line_items[0].price_data.recurring.interval).toBe('month');
   });
 });
 
@@ -260,11 +225,11 @@ describe('reactivateSubscription', () => {
 
 describe('scheduleDowngrade', () => {
   test('stores scheduled change in DB', async () => {
-    const result = await scheduleDowngrade('acc_test_123', 'tier_2_20');
+    const result = await scheduleDowngrade('acc_test_123', 'free');
 
     expect(result.success).toBe(true);
     expect(updateCreditAccountCalls.length).toBe(1);
-    expect(updateCreditAccountCalls[0].data.scheduledTierChange).toBe('tier_2_20');
+    expect(updateCreditAccountCalls[0].data.scheduledTierChange).toBe('free');
     expect(updateCreditAccountCalls[0].data.scheduledTierChangeDate).toBeDefined();
   });
 
@@ -310,7 +275,7 @@ describe('createCheckoutSession: previous_subscription_id metadata', () => {
     await createCheckoutSession({
       accountId: 'acc_test_123',
       email: 'test@example.com',
-      tierKey: 'tier_6_50',
+      tierKey: 'pro',
       successUrl: 'https://example.com/success',
       cancelUrl: 'https://example.com/cancel',
     });
@@ -335,7 +300,7 @@ describe('createCheckoutSession: previous_subscription_id metadata', () => {
     await createCheckoutSession({
       accountId: 'acc_test_123',
       email: 'test@example.com',
-      tierKey: 'tier_6_50',
+      tierKey: 'pro',
       successUrl: 'https://example.com/success',
       cancelUrl: 'https://example.com/cancel',
     });
@@ -365,7 +330,7 @@ describe('createInlineCheckout: free tier handling', () => {
     const result = await createInlineCheckout({
       accountId: 'acc_test_123',
       email: 'test@example.com',
-      tierKey: 'tier_6_50',
+      tierKey: 'pro',
       billingPeriod: 'monthly',
     });
 
@@ -393,7 +358,7 @@ describe('createInlineCheckout: free tier handling', () => {
     await createInlineCheckout({
       accountId: 'acc_test_123',
       email: 'test@example.com',
-      tierKey: 'tier_6_50',
+      tierKey: 'pro',
       billingPeriod: 'monthly',
     });
 
@@ -417,7 +382,7 @@ describe('createInlineCheckout: free tier handling', () => {
     const result = await createInlineCheckout({
       accountId: 'acc_test_123',
       email: 'test@example.com',
-      tierKey: 'tier_6_50',
+      tierKey: 'pro',
       billingPeriod: 'monthly',
     });
 
@@ -436,7 +401,7 @@ describe('confirmInlineCheckout: cancel old free sub', () => {
         status: 'active',
         metadata: {
           account_id: 'acc_test_123',
-          tier_key: 'tier_6_50',
+          tier_key: 'pro',
           billing_period: 'monthly',
           previous_subscription_id: 'sub_old_free',
         },
@@ -451,7 +416,7 @@ describe('confirmInlineCheckout: cancel old free sub', () => {
     const result = await confirmInlineCheckout({
       accountId: 'acc_test_123',
       subscriptionId: 'sub_new_paid',
-      tierKey: 'tier_6_50',
+      tierKey: 'pro',
     });
 
     expect(result.success).toBe(true);
@@ -466,7 +431,7 @@ describe('confirmInlineCheckout: cancel old free sub', () => {
         status: 'active',
         metadata: {
           account_id: 'acc_test_123',
-          tier_key: 'tier_6_50',
+          tier_key: 'pro',
           billing_period: 'monthly',
         },
       });
@@ -480,7 +445,7 @@ describe('confirmInlineCheckout: cancel old free sub', () => {
     const result = await confirmInlineCheckout({
       accountId: 'acc_test_123',
       subscriptionId: 'sub_new_paid',
-      tierKey: 'tier_6_50',
+      tierKey: 'pro',
     });
 
     expect(result.success).toBe(true);

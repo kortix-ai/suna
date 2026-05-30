@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * v2 Ticket Board.
  *
@@ -115,6 +117,7 @@ interface Props {
 }
 
 export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicket, onUpdateStatus, onDeleteTicket }: Props) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [search, setSearch] = useState('');
   const [milestoneFilter, setMilestoneFilter] = useState<string>('all'); // 'all' | 'none' | <milestone_id>
   const [deleteTarget, setDeleteTarget] = useState<Ticket | null>(null);
@@ -208,13 +211,11 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
     return (
       <EmptyState
         icon={Inbox}
-        title="No tickets yet"
-        description={<>Press <kbd className="inline-flex items-center min-w-[20px] h-5 px-1 rounded border border-border bg-muted/50 text-[11px] font-mono">C</kbd> to create one.</>}
+        title={tHardcodedUi.raw('componentsKortixTicketBoard.line211JsxAttrTitleNoTicketsYet')}
+        description={<>Press <kbd className="inline-flex items-center min-w-[20px] h-5 px-1 rounded border border-border bg-muted/50 text-[11px] font-mono">C</kbd>{tHardcodedUi.raw('componentsKortixTicketBoard.line212JsxTextToCreateOne')}</>}
         action={
           <Button size="sm" onClick={() => onNewTicket()} className="h-8 px-4 text-[13px]">
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
-            Create ticket
-          </Button>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />{tHardcodedUi.raw('componentsKortixTicketBoard.line216JsxTextCreateTicket')}</Button>
         }
       />
     );
@@ -231,7 +232,7 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search tickets or #number…"
+              placeholder={tHardcodedUi.raw('componentsKortixTicketBoard.line234JsxAttrPlaceholderSearchTicketsOrNumber')}
               className="h-7 w-[220px] pl-7 pr-7 text-[12px] bg-transparent border border-border/50 rounded-full outline-none focus:ring-2 focus:ring-primary/20 placeholder:text-muted-foreground/35"
             />
             {search && (
@@ -248,15 +249,15 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
               value={milestoneFilter}
               onChange={(e) => setMilestoneFilter(e.target.value)}
               className="h-7 text-[12px] bg-transparent border border-border/50 rounded-full outline-none focus:ring-2 focus:ring-primary/20 px-2.5"
-              title="Filter by milestone"
+              title={tHardcodedUi.raw('componentsKortixTicketBoard.line251JsxAttrTitleFilterByMilestone')}
             >
-              <option value="all">All milestones</option>
-              <option value="none">— no milestone —</option>
+              <option value="all">{tHardcodedUi.raw('componentsKortixTicketBoard.line253JsxTextAllMilestones')}</option>
+              <option value="none">{tHardcodedUi.raw('componentsKortixTicketBoard.line254JsxTextNoMilestone')}</option>
               {milestones.filter((m) => m.status === 'open').map((m) => (
                 <option key={m.id} value={m.id}>M{m.number} · {m.title}</option>
               ))}
               {milestones.some((m) => m.status !== 'open') && (
-                <optgroup label="Closed / cancelled">
+                <optgroup label={tHardcodedUi.raw('componentsKortixTicketBoard.line259JsxAttrLabelClosedCancelled')}>
                   {milestones.filter((m) => m.status !== 'open').map((m) => (
                     <option key={m.id} value={m.id}>M{m.number} · {m.title} ({m.status})</option>
                   ))}
@@ -264,9 +265,7 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
               )}
             </select>
           )}
-          <span className="text-[11px] text-muted-foreground/40 ml-2 hidden sm:inline">
-            drag cards to move — or use the ⋯ menu
-          </span>
+          <span className="text-[11px] text-muted-foreground/40 ml-2 hidden sm:inline">{tHardcodedUi.raw('componentsKortixTicketBoard.line268JsxTextDragCardsToMoveOrUseTheMenu')}</span>
         </div>
       </div>
 
@@ -292,10 +291,8 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
                   {rows.length === 0 ? (
                     <button
                       onClick={() => onNewTicket(col.key)}
-                      className="w-full py-6 rounded-xl border border-dashed border-border/40 text-[12px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
-                    >
-                      + Add ticket
-                    </button>
+                      className="w-full py-6 rounded-2xl border border-dashed border-border/40 text-[12px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
+                    >{tHardcodedUi.raw('componentsKortixTicketBoard.line297JsxTextAddTicket')}</button>
                   ) : (
                     rows.map((t) => (
                       <DraggableTicketCard
@@ -333,8 +330,8 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        title="Delete ticket"
-        description={<>Delete <span className="font-semibold">#{deleteTarget?.number} — {deleteTarget?.title}</span>? This can&apos;t be undone.</>}
+        title={tHardcodedUi.raw('componentsKortixTicketBoard.line336JsxAttrTitleDeleteTicket')}
+        description={<>Delete <span className="font-semibold">#{deleteTarget?.number} — {deleteTarget?.title}</span>{tHardcodedUi.raw('componentsKortixTicketBoard.line337JsxTextThisCanAposTBeUndone')}</>}
         confirmLabel="Delete"
         onConfirm={() => { if (deleteTarget) { onDeleteTicket(deleteTarget.id); setDeleteTarget(null); } }}
       />
@@ -351,6 +348,7 @@ function Column({ column, count, onAdd, isActiveDrag, children }: {
   isActiveDrag: boolean;
   children: React.ReactNode;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { setNodeRef, isOver } = useDroppable({ id: column.key });
   const Icon = iconForColumn(column);
   const tint = tintForColumn(column);
@@ -365,7 +363,7 @@ function Column({ column, count, onAdd, isActiveDrag, children }: {
           size="sm"
           className="ml-auto h-6 w-6 p-0 text-muted-foreground/40 hover:text-foreground"
           onClick={onAdd}
-          title="Add ticket"
+          title={tHardcodedUi.raw('componentsKortixTicketBoard.line368JsxAttrTitleAddTicket')}
         >
           <Plus className="h-3.5 w-3.5" />
         </Button>
@@ -373,7 +371,7 @@ function Column({ column, count, onAdd, isActiveDrag, children }: {
       <div
         ref={setNodeRef}
         className={cn(
-          'flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 pb-4 rounded-xl transition-colors',
+          'flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 pb-4 rounded-2xl transition-colors',
           isActiveDrag && 'bg-muted/10',
           isOver && 'bg-primary/[0.04] ring-1 ring-inset ring-primary/30',
         )}
@@ -485,13 +483,14 @@ function TicketCardInner({
   triggersOn?: Trigger[];
   milestone?: Milestone;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { handle: currentHandle, avatarUrl: currentAvatarUrl } = useCurrentUserAvatarProps();
 
   return (
     <div
       onClick={onSelect}
       className={cn(
-        'group rounded-xl border border-border/50 bg-card p-3 cursor-pointer select-none',
+        'group rounded-2xl border border-border/50 bg-card p-3 cursor-pointer select-none',
         'transition-colors hover:border-border/80 hover:bg-muted/20',
         dragging && 'shadow-xl border-primary/40',
       )}
@@ -520,27 +519,21 @@ function TicketCardInner({
                 size="sm"
                 className="h-6 w-6 p-0 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted-foreground/50 hover:text-foreground"
                 onClick={(e) => e.stopPropagation()}
-                aria-label="Ticket actions"
+                aria-label={tHardcodedUi.raw('componentsKortixTicketBoard.line523JsxAttrAriaLabelTicketActions')}
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 z-[10000]" onClick={(e) => e.stopPropagation()}>
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onSelect?.(); }} className="gap-2 cursor-pointer">
-                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/60" />
-                Open ticket
-              </DropdownMenuItem>
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/60" />{tHardcodedUi.raw('componentsKortixTicketBoard.line531JsxTextOpenTicket')}</DropdownMenuItem>
               <DropdownMenuItem
                 onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(`#${ticket.number} ${ticket.title}`); }}
                 className="gap-2 cursor-pointer"
               >
-                <Copy className="h-3.5 w-3.5 text-muted-foreground/60" />
-                Copy reference
-              </DropdownMenuItem>
+                <Copy className="h-3.5 w-3.5 text-muted-foreground/60" />{tHardcodedUi.raw('componentsKortixTicketBoard.line538JsxTextCopyReference')}</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
-                Move to
-              </DropdownMenuLabel>
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixTicketBoard.line542JsxTextMoveTo')}</DropdownMenuLabel>
               {columns.filter((c) => c.key !== ticket.status).map((c) => {
                 const Ic = iconForColumn(c);
                 const tint = tintForColumn(c);
@@ -560,9 +553,7 @@ function TicketCardInner({
                 onClick={(e) => { e.stopPropagation(); onDelete(); }}
                 className="gap-2 cursor-pointer text-destructive focus:text-destructive"
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete ticket
-              </DropdownMenuItem>
+                <Trash2 className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsKortixTicketBoard.line564JsxTextDeleteTicket')}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -610,6 +601,7 @@ function TicketCardInner({
 // ─── Milestone badge on ticket card ─────────────────────────────────────────
 
 function MilestoneBadge({ milestone }: { milestone: Milestone }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const hue = milestone.color_hue ?? 210;
   const isClosed = milestone.status !== 'open';
   return (
@@ -653,7 +645,7 @@ function MilestoneBadge({ milestone }: { milestone: Milestone }) {
             </div>
           )}
           <div className="mt-1.5 text-[10px] text-muted-foreground/60">
-            {milestone.progress.done}/{milestone.progress.total} done · {milestone.percent_complete}%
+            {milestone.progress.done}/{milestone.progress.total}{tHardcodedUi.raw('componentsKortixTicketBoard.line656JsxTextDone')}{milestone.percent_complete}%
           </div>
         </TooltipContent>
       </Tooltip>
@@ -662,6 +654,7 @@ function MilestoneBadge({ milestone }: { milestone: Milestone }) {
 }
 
 function TriggersOnBadge({ triggers }: { triggers: Trigger[] }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const active = triggers.filter((t) => t.isActive);
   const hasAny = triggers.length > 0;
   const hasCron = triggers.some((t) => t.type === 'cron');
@@ -706,8 +699,7 @@ function TriggersOnBadge({ triggers }: { triggers: Trigger[] }) {
                     : `POST ${t.webhook?.path || ''}`}
                 </div>
                 {t.lastRunAt && (
-                  <div className="ml-4 text-[10.5px] text-muted-foreground/55">
-                    last ran {formatRelative(t.lastRunAt)}
+                  <div className="ml-4 text-[10.5px] text-muted-foreground/55">{tHardcodedUi.raw('componentsKortixTicketBoard.line710JsxTextLastRan')}{' '}{formatRelative(t.lastRunAt)}
                   </div>
                 )}
               </li>

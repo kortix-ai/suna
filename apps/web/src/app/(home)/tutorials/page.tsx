@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { 
@@ -127,6 +129,7 @@ function TableOfContents({
 }
 
 function TutorialCard({ tutorial, index }: { tutorial: Tutorial; index: number }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isActive, setIsActive] = useState(false);
   const chapterNumber = index + 1;
   const Icon = tutorial.icon;
@@ -151,9 +154,7 @@ function TutorialCard({ tutorial, index }: { tutorial: Tutorial; index: number }
                 Chapter {chapterNumber}
               </span>
               {tutorial.isPlaceholder ? (
-                <span className="text-xs font-medium text-amber-600 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-1 rounded-full">
-                  Coming Soon
-                </span>
+                <span className="text-xs font-medium text-amber-600 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-1 rounded-full">{tHardcodedUi.raw('appHomeTutorialsPage.line155JsxTextComingSoon')}</span>
               ) : tutorial.duration && (
                 <span className="text-xs font-medium text-muted-foreground bg-accent/50 px-2 py-1 rounded-full">
                   {tutorial.duration}
@@ -178,8 +179,8 @@ function TutorialCard({ tutorial, index }: { tutorial: Tutorial; index: number }
                   <div className="w-16 h-16 rounded-full bg-accent/50 flex items-center justify-center mx-auto mb-4">
                     <Play className="w-8 h-8 text-muted-foreground" />
                   </div>
-                  <p className="text-muted-foreground font-medium">Tutorial video coming soon</p>
-                  <p className="text-sm text-muted-foreground/70 mt-1">Check back for updates</p>
+                  <p className="text-muted-foreground font-medium">{tHardcodedUi.raw('appHomeTutorialsPage.line181JsxTextTutorialVideoComingSoon')}</p>
+                  <p className="text-sm text-muted-foreground/70 mt-1">{tHardcodedUi.raw('appHomeTutorialsPage.line182JsxTextCheckBackForUpdates')}</p>
                 </div>
               </div>
             </div>
@@ -204,7 +205,7 @@ function TutorialCard({ tutorial, index }: { tutorial: Tutorial; index: number }
               >
                 <div className="bg-background/90 backdrop-blur-sm px-4 py-2 rounded-full border border-border shadow-sm flex items-center gap-2">
                   <Play className="w-4 h-4 text-primary" />
-                  <span className="text-sm font-medium text-foreground">Click to interact</span>
+                  <span className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appHomeTutorialsPage.line207JsxTextClickToInteract')}</span>
                 </div>
               </div>
             )}
@@ -216,6 +217,7 @@ function TutorialCard({ tutorial, index }: { tutorial: Tutorial; index: number }
 }
 
 export default function TutorialsPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [activeId, setActiveId] = useState(tutorials[0]?.id || '');
 
   // Track active section based on scroll position
@@ -259,17 +261,12 @@ export default function TutorialsPage() {
               <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
                 <BookOpen className="w-6 h-6 text-primary" />
               </div>
-              <span className="text-sm font-medium text-muted-foreground">
-                Learn Kortix
-              </span>
+              <span className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('appHomeTutorialsPage.line263JsxTextLearnKortix')}</span>
             </div>
             <h1 className="text-3xl md:text-4xl lg:text-5xl font-semibold tracking-tight text-foreground mb-4">
               Tutorials
             </h1>
-            <p className="text-lg text-muted-foreground leading-relaxed">
-              Step-by-step interactive tutorials to help you get the most out of Kortix. 
-              From getting started to advanced workflows, master every feature.
-            </p>
+            <p className="text-lg text-muted-foreground leading-relaxed">{tHardcodedUi.raw('appHomeTutorialsPage.line270JsxTextStepByStepInteractiveTutorialsToHelpYou')}</p>
           </motion.div>
         </div>
       </div>
@@ -288,18 +285,13 @@ export default function TutorialsPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.3 }}
-              className="border border-dashed border-border rounded-xl p-8 text-center"
+              className="border border-dashed border-border rounded-2xl p-8 text-center"
             >
               <div className="w-12 h-12 rounded-xl bg-accent/50 flex items-center justify-center mx-auto mb-4">
                 <Play className="w-6 h-6 text-muted-foreground" />
               </div>
-              <h3 className="text-lg font-medium text-foreground mb-2">
-                More tutorials coming soon
-              </h3>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                We&apos;re always adding new tutorials to help you get the most out of Kortix. 
-                Check back regularly for fresh content and tips.
-              </p>
+              <h3 className="text-lg font-medium text-foreground mb-2">{tHardcodedUi.raw('appHomeTutorialsPage.line297JsxTextMoreTutorialsComingSoon')}</h3>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">{tHardcodedUi.raw('appHomeTutorialsPage.line300JsxTextWeAposReAlwaysAddingNewTutorialsTo')}</p>
             </motion.div>
           </div>
 
@@ -325,9 +317,7 @@ export default function TutorialsPage() {
                     href="mailto:support@kortix.com"
                     className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
                   >
-                    <ChevronRight className="w-4 h-4" />
-                    Contact us
-                  </a>
+                    <ChevronRight className="w-4 h-4" />{tHardcodedUi.raw('appHomeTutorialsPage.line329JsxTextContactUs')}</a>
                 </div>
               </div>
             </div>

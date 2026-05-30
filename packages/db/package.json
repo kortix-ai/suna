@@ -16,8 +16,6 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "db:generate": "bunx drizzle-kit generate",
-    "db:migrate": "bun run scripts/migrate.ts",
-    "db:migrate:mark-baseline": "bun run scripts/mark-baseline.ts",
     "db:push": "bunx drizzle-kit push --force",
     "db:studio": "bunx drizzle-kit studio"
   },

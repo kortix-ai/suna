@@ -73,18 +73,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
     type: 'page',
     href: '/configuration',
   },
-  '/marketplace': {
-    id: 'page:/marketplace',
-    title: 'Marketplace',
-    type: 'page',
-    href: '/marketplace',
-  },
-  '/skills': {
-    id: 'page:/skills',
-    title: 'Skills',
-    type: 'page',
-    href: '/skills',
-  },
   '/tools': {
     id: 'page:/tools',
     title: 'Tools',
@@ -102,18 +90,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
     title: 'Scheduled Tasks',
     type: 'page',
     href: '/scheduled-tasks',
-  },
-  '/channels': {
-    id: 'page:/channels',
-    title: 'Channels',
-    type: 'page',
-    href: '/channels',
-  },
-  '/connectors': {
-    id: 'page:/connectors',
-    title: 'Connectors',
-    type: 'page',
-    href: '/connectors',
   },
   '/files': {
     id: 'page:/files',

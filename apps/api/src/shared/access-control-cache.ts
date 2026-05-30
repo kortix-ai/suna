@@ -4,6 +4,10 @@ import { eq } from 'drizzle-orm';
 
 const REFRESH_INTERVAL_MS = 60_000;
 
+const globalForAccessControl = globalThis as typeof globalThis & {
+  __kortixAccessControlRefreshTimer?: ReturnType<typeof setInterval> | null;
+};
+
 let signupsEnabled = true; // fail-open default
 let allowedEmails = new Set<string>();
 let allowedDomains = new Set<string>();
@@ -36,14 +40,22 @@ async function refresh() {
 }
 
 export function startAccessControlCache() {
+  if (globalForAccessControl.__kortixAccessControlRefreshTimer) {
+    clearInterval(globalForAccessControl.__kortixAccessControlRefreshTimer);
+  }
   refresh(); // initial load (fire-and-forget)
   refreshTimer = setInterval(refresh, REFRESH_INTERVAL_MS);
+  globalForAccessControl.__kortixAccessControlRefreshTimer = refreshTimer;
 }
 
 export function stopAccessControlCache() {
   if (refreshTimer) {
     clearInterval(refreshTimer);
     refreshTimer = null;
+  }
+  if (globalForAccessControl.__kortixAccessControlRefreshTimer) {
+    clearInterval(globalForAccessControl.__kortixAccessControlRefreshTimer);
+    globalForAccessControl.__kortixAccessControlRefreshTimer = null;
   }
 }
 

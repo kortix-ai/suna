@@ -79,7 +79,7 @@ ${streamingContent}
   return (
     <div 
       className={cn(
-        'group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden',
+        'group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden',
         isGenerating && 'ring-2 ring-blue-500/30',
         className
       )}

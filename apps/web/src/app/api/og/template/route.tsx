@@ -1,3 +1,4 @@
+import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
 import { getServerPublicEnv } from '@/lib/public-env-server';
@@ -5,6 +6,7 @@ import { getServerPublicEnv } from '@/lib/public-env-server';
 export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
+  const tHardcodedUi = { raw: getHardcodedUiServerText };
   try {
     const runtimeEnv = getServerPublicEnv();
     const { searchParams } = new URL(request.url);
@@ -15,7 +17,8 @@ export async function GET(request: NextRequest) {
     }
 
     const templateResponse = await fetch(
-      `${runtimeEnv.BACKEND_URL}/templates/public/${shareId}`
+      `${runtimeEnv.BACKEND_URL}/templates/public/${shareId}`,
+      { signal: AbortSignal.timeout(5000) }
     );
 
     if (!templateResponse.ok) {
@@ -70,9 +73,7 @@ export async function GET(request: NextRequest) {
                   border: '1px solid #3b82f640',
                 }}
               >
-                <span style={{ color: '#93c5fd', fontSize: '14px', fontWeight: 600 }}>
-                  ✨ Official Template
-                </span>
+                <span style={{ color: '#93c5fd', fontSize: '14px', fontWeight: 600 }}>{tHardcodedUi.raw('appApiOgTemplateRoute.line74JsxTextOfficialTemplate')}</span>
               </div>
             )}
             <div
@@ -171,7 +172,7 @@ export async function GET(request: NextRequest) {
             >
               <span style={{ color: '#64748b', fontSize: '20px' }}>Kortix</span>
               <span style={{ color: '#334155', fontSize: '20px' }}>•</span>
-              <span style={{ color: '#64748b', fontSize: '20px' }}>AI Agent Marketplace</span>
+              <span style={{ color: '#64748b', fontSize: '20px' }}>{tHardcodedUi.raw('appApiOgTemplateRoute.line174JsxTextAiAgentMarketplace')}</span>
             </div>
           </div>
         </div>
@@ -221,17 +222,13 @@ export async function GET(request: NextRequest) {
                 color: '#ffffff',
                 marginBottom: '16px',
               }}
-            >
-              AI Agent Template
-            </h1>
+            >{tHardcodedUi.raw('appApiOgTemplateRoute.line225JsxTextAiAgentTemplate')}</h1>
             <p
               style={{
                 fontSize: '20px',
                 color: '#94a3b8',
               }}
-            >
-              Discover powerful AI agents on Kortix
-            </p>
+            >{tHardcodedUi.raw('appApiOgTemplateRoute.line233JsxTextDiscoverPowerfulAiAgentsOnKortix')}</p>
           </div>
         </div>
       ),

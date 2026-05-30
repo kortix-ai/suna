@@ -1,0 +1,220 @@
+# Kortix project manifest. Source of truth for project-wide config that
+# lives in git alongside the code. `kortix_version` pins the schema so
+# the platform can evolve safely.
+kortix_version = 1
+
+[project]
+name = "kortix-main"
+description = "A Kortix project."
+
+# Env vars the runtime needs. Required values must be set in the Kortix
+# Secrets Manager before a session can start.
+[env]
+required = []
+optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
+
+# ─── Sandbox templates ───────────────────────────────────────────────────
+# Sessions boot from a sandbox image. The platform default (Ubuntu + the
+# Kortix runtime layer) is always available; define named custom images as
+# `[[sandbox.templates]]` entries (a Dockerfile in the repo OR a public
+# image). The Kortix runtime layer is always added on top.
+#
+# `default` makes one of these the PROJECT-WIDE default, so every session —
+# UI, triggers, channels — boots it without passing a slug. Unset → the
+# platform default. Flip it to "dev" once the full-stack image is validated
+# to build, fit the disk cap, and boot the stack.
+#
+# Hardware is clamped to this Daytona account's ceiling: 6 vCPU / 12 GiB /
+# 40 GiB. cpu = cores; memory/disk in GiB.
+[sandbox]
+default = "dev"
+# Command the daemon runs (backgrounded) once the repo is cloned + the agent is
+# up — so every session auto-starts the full local stack with zero manual steps.
+# `pnpm dev` is sandbox-aware (scripts/dev-local.sh): dockerd → supabase start →
+# materialize .env → build+serve web → api dev. Tail it at /var/log/kortix-on-boot.log.
+on_boot = "pnpm dev"
+
+# Full dev box: node + pnpm + bun + Docker + Supabase CLI, sized to run the
+# whole local stack (`supabase start` + API + web) in-sandbox like a human
+# would. Built from .kortix/Dockerfile.
+[[sandbox.templates]]
+slug = "dev"
+name = "Full dev box (suna stack)"
+dockerfile = ".kortix/Dockerfile"
+cpu = 6
+memory = 12
+disk = 40
+
+# OpenCode runtime config dir. The agent daemon launches opencode with
+# OPENCODE_CONFIG_DIR pointed here, so agents/skills/commands/tools live
+# under this folder. Defaults to `.kortix/opencode` — relocate if you
+# want to share a single opencode config across multiple Kortix repos.
+[opencode]
+config_dir = ".kortix/opencode"
+
+# ─── Triggers ────────────────────────────────────────────────────────────
+# Each `[[triggers]]` entry spawns a fresh session that runs `prompt` as
+# its initial message. Add from the Kortix UI or uncomment one below.
+# Slugs must be lowercase URL-safe and unique per project.
+#
+# Cron trigger — fires on a 6-field croner expression
+# (second minute hour day month weekday).
+#
+# [[triggers]]
+# slug = "daily-digest"
+# name = "Daily digest"
+# type = "cron"
+# agent = "kortix"                # any agent under [opencode] config_dir
+# enabled = true
+# cron = "0 0 9 * * 1-5"          # 09:00 Mon–Fri
+# timezone = "America/Los_Angeles"
+# prompt = """
+# Summarize yesterday's commits across the repo. Save the result to
+# notes/digest-{{ fired_at }}.md and open a PR against main.
+# """
+#
+# Webhook trigger — fires on signed POSTs to
+#   /v1/webhooks/projects/<project_id>/<slug>
+# Signature header: `X-Kortix-Signature: sha256=<hmac>` (HMAC-SHA256 over
+# the raw body using the secret named by `secret_env`).
+# GitHub's `X-Hub-Signature-256` is also accepted.
+#
+# [[triggers]]
+# slug = "slack-hook"
+# name = "Slack handler"
+# type = "webhook"
+# agent = "kortix"
+# enabled = true
+# secret_env = "WEBHOOK_SLACK_SECRET"  # add the value via Secrets Manager
+# prompt = """
+# Slack event from {{ headers.user_agent }}.
+# User said: {{ body.text }}
+# """
+
+# ─── PR bot ──────────────────────────────────────────────────────────────
+# Two webhook triggers driven by GitHub `pull_request` events. Point a
+# GitHub webhook (content-type application/json, "Pull requests" event,
+# secret = the GITHUB_WEBHOOK_SECRET project secret) at each URL:
+#   .../v1/webhooks/projects/<project_id>/pr-review
+#   .../v1/webhooks/projects/<project_id>/pr-preview
+# Both run the `pr-bot` agent (.kortix/opencode/agents/pr-bot.md). The bot
+# talks to GitHub through the `github` connector (see [[connectors]] below)
+# — comments, opens PRs, reads PR data via the executor, no raw token. The
+# only secret these triggers need is GITHUB_WEBHOOK_SECRET (the HMAC the
+# GitHub webhook signs with). See docs/automations/pr-bot.md for setup +
+# dogfood notes.
+
+[[triggers]]
+slug = "pr-review"
+name = "PR thermo review"
+type = "webhook"
+agent = "pr-bot"
+enabled = true
+secret_env = "GITHUB_WEBHOOK_SECRET"
+prompt = """
+A GitHub pull_request event fired. action = {{ body.action }}.
+Proceed ONLY for actions: opened, reopened, synchronize, ready_for_review.
+For any other action, do nothing and stop immediately.
+
+PR #{{ body.number }} — "{{ body.pull_request.title }}"
+repo {{ body.repository.full_name }}
+head {{ body.pull_request.head.ref }}  base {{ body.pull_request.base.ref }}
+
+Run the REVIEW flow from your pr-bot playbook. First:
+  export REPO={{ body.repository.full_name }} PR_NUMBER={{ body.number }} \\
+    PR_HEAD_REF={{ body.pull_request.head.ref }} \\
+    PR_BASE_REF={{ body.pull_request.base.ref }}
+Then check out the PR, apply the thermo-nuclear-review skill to the PR
+diff (origin/$PR_BASE_REF...HEAD), post the sticky `review` comment, and
+open a stacked fix PR only if you have concrete, behavior-preserving
+improvements.
+"""
+
+[[triggers]]
+slug = "pr-preview"
+name = "PR preview environment"
+type = "webhook"
+agent = "pr-bot"
+enabled = true
+secret_env = "GITHUB_WEBHOOK_SECRET"
+prompt = """
+A GitHub pull_request event fired. action = {{ body.action }}.
+Proceed ONLY for actions: opened, reopened, synchronize, ready_for_review.
+For any other action, do nothing and stop immediately.
+
+PR #{{ body.number }} — "{{ body.pull_request.title }}"
+repo {{ body.repository.full_name }}
+head {{ body.pull_request.head.ref }}  base {{ body.pull_request.base.ref }}
+
+Run the PREVIEW flow from your pr-bot playbook. First:
+  export REPO={{ body.repository.full_name }} PR_NUMBER={{ body.number }} \\
+    PR_HEAD_REF={{ body.pull_request.head.ref }} \\
+    PR_BASE_REF={{ body.pull_request.base.ref }}
+Then check out the PR, start the frontend + backend dev servers, mint
+one-click preview URLs with preview-url.sh, and post them as the sticky
+`preview` comment. If a server can't start, say so honestly with logs.
+"""
+
+# ─── Channels ────────────────────────────────────────────────────────────
+# Connect a chat platform (Slack today; Teams/Discord/etc. later) to this
+# project. The Slack install (bot token + signing secret) lives in this
+# project's secrets manager — connect it from Customize → Channels in the
+# Kortix dashboard. Once connected, the bot listens in any channel of the
+# workspace it's been invited to.
+#
+# One [[channels]] entry per platform per project. Everything except
+# `platform` is optional and has sensible defaults.
+#
+# [[channels]]
+# platform = "slack"
+# enabled = true                       # optional, default true
+# agent = "kortix"                     # optional, defaults to opencode's default agent
+# events = ["mention", "dm"]           # optional, default ["mention", "dm"]
+# prompt_prefix = """                  # optional, prepended to every user prompt
+# You're working on {{ project.name }}.
+# {{ message.text }}
+# """
+
+# ─── Apps (experimental) ─────────────────────────────────────────────────
+# Gated by the platform flag KORTIX_APPS_EXPERIMENTAL. When off, entries
+# are parsed but never acted on. One `[[apps]]` entry per deployable.
+#
+# [[apps]]
+# slug = "marketing-site"
+# name = "Marketing site"
+# enabled = true
+# framework = "next"
+# domains = ["marketing.example.com"]
+#
+#   [apps.source]
+#   type = "git"                  # or "tar"
+#   repo = "https://github.com/me/site"
+#   branch = "main"
+#   root_path = "apps/site"       # path inside the repo to deploy from
+#
+#   [apps.build]
+#   command = "pnpm build"
+#   out_dir = "dist"
+#
+#   [apps.env]
+#   NEXT_PUBLIC_API_URL = "https://api.example.com"
+
+# GitHub connector — the agent's GitHub identity is a custom TOKEN, not the
+# person who connected: the executor authenticates every call with the
+# GITHUB_AGENT_TOKEN secret (bearer); the gateway injects it server-side, the
+# agent never sees it. Whoever owns that token is who the agent posts as — set a
+# bot account's PAT for a true bot identity:
+#   kortix secrets set GITHUB_AGENT_TOKEN=<fine-grained PAT, Contents+PRs R/W>
+# Routes are curated for what the PR-bot needs (comment/review/PR/get/list). To
+# expose the FULL GitHub API instead, swap provider→"openapi" + spec→GitHub's
+# OpenAPI description (github/rest-api-description) — same token auth.
+[[connectors]]
+slug = "github"
+name = "GitHub"
+provider = "http"
+base_url = "https://api.github.com"
+spec = ".kortix/executor/github.routes.json"
+
+  [connectors.auth]
+  type = "bearer"
+  secret = "GITHUB_AGENT_TOKEN"

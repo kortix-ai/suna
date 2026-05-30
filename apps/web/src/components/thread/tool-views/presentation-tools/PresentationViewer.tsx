@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Card,
@@ -74,6 +75,7 @@ export function PresentationViewer({
   project,
   showHeader = true,
 }: PresentationViewerProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { subdomainOpts } = useSandboxProxy();
   const [metadata, setMetadata] = useState<PresentationMetadata | null>(null);
 
@@ -713,7 +715,7 @@ export function PresentationViewer({
       {showHeader && <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
+            <div className="relative p-2 rounded-2xl border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
               <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div className="flex items-center gap-2">
@@ -743,7 +745,7 @@ export function PresentationViewer({
                     }
                   }}
                   className="h-8 w-8 p-0"
-                  title="Open in full screen"
+                  title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationviewer.line746JsxAttrTitleOpenInFullScreen')}
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                 </Button>
@@ -754,7 +756,7 @@ export function PresentationViewer({
                       variant="ghost" 
                       size="sm" 
                       className="w-8 p-0"
-                      title="Export presentation"
+                      title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationviewer.line757JsxAttrTitleExportPresentation')}
                       disabled={isDownloading}
                     >
                       {isDownloading ? (
@@ -786,9 +788,7 @@ export function PresentationViewer({
                       className="cursor-pointer"
                       disabled={isDownloading}
                     >
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Google Slides
-                    </DropdownMenuItem>
+                      <ExternalLink className="h-4 w-4 mr-2" />{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationviewer.line790JsxTextGoogleSlides')}</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </>
@@ -851,17 +851,13 @@ export function PresentationViewer({
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
               <AlertTriangle className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
             </div>
-            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-              Tool Execution Error
-            </h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md mb-4">
-              The presentation tool encountered an error during execution:
-            </p>
+            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationviewer.line855JsxTextToolExecutionError')}</h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md mb-4">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationviewer.line858JsxTextThePresentationToolEncounteredAnErrorDuringExecution')}</p>
             <div className="w-full max-w-2xl">
               <CodeBlockCode 
                 code={toolExecutionError} 
                 language="text"
-                className="text-xs bg-zinc-100 dark:bg-zinc-800 p-3 rounded-md border"
+                className="text-xs bg-zinc-100 dark:bg-zinc-800 p-3 rounded-2xl border"
               />
             </div>
           </div>
@@ -887,12 +883,8 @@ export function PresentationViewer({
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
               <Presentation className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
             </div>
-            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-              No slides found
-            </h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md">
-              This presentation doesn't have any slides yet.
-            </p>
+            <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationviewer.line891JsxTextNoSlidesFound')}</h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationviewer.line894JsxTextThisPresentationDoesnTHaveAnySlidesYet')}</p>
           </div>
         ) : (
           <ScrollArea className="h-full">

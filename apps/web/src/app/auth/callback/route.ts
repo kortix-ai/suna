@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes'
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url'
+import { buildDesktopBounceHtml } from '@/lib/auth/desktop-bounce'
 
 /**
  * Auth Callback Route - Web Handler
@@ -32,36 +33,10 @@ export async function GET(request: NextRequest) {
   // leave the browser tab on a real page so it doesn't spin forever waiting
   // for a navigation that the kortix:// scheme never produces.
   if (desktop) {
-    const forwardParams = new URLSearchParams()
-    for (const [k, v] of searchParams) {
-      if (k !== 'desktop') forwardParams.set(k, v)
-    }
-    const deepLink = `kortix://auth/callback${forwardParams.toString() ? `?${forwardParams.toString()}` : ''}`
-    const escaped = deepLink.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
-    const html = `<!doctype html><html><head><meta charset="utf-8"/>
-<title>Opening Kortix…</title>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<style>
-  html,body{margin:0;height:100%;background:#0a0a0a;color:#f4f4f5;
-    font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;}
-  .wrap{display:grid;place-items:center;height:100%;text-align:center;padding:24px;}
-  h1{font-size:22px;font-weight:500;margin:0 0 10px;letter-spacing:-0.01em;}
-  p{margin:0;color:#a1a1aa;font-size:13px;line-height:1.6;max-width:340px;}
-  a{color:#f4f4f5;text-decoration:underline;text-underline-offset:3px;}
-  .dot{width:6px;height:6px;border-radius:50%;background:currentColor;
-    display:inline-block;margin:0 2px;opacity:.4;animation:pulse 1.2s infinite both;}
-  .dot:nth-child(2){animation-delay:.2s;}.dot:nth-child(3){animation-delay:.4s;}
-  @keyframes pulse{0%,80%,100%{opacity:.2}40%{opacity:1}}
-  .dots{margin-bottom:18px;color:#52525b;}
-</style></head><body>
-<div class="wrap"><div>
-  <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-  <h1>You're signed in</h1>
-  <p>Opening Kortix… you can close this tab.<br/>
-    If nothing happens, <a href="${escaped}">click here</a> to open the app.</p>
-</div></div>
-<script>window.location.replace(${JSON.stringify(deepLink)});</script>
-</body></html>`
+    // The deep link is built from attacker-influenced query params, so the
+    // HTML is rendered by a helper that escapes both the href attribute and the
+    // inline <script> payload for their respective contexts (see desktop-bounce).
+    const html = buildDesktopBounceHtml(searchParams)
     return new NextResponse(html, {
       status: 200,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
@@ -79,7 +54,7 @@ export async function GET(request: NextRequest) {
 
   // Handle errors FIRST - before any Supabase operations that might affect session
   if (error) {
-    console.error('❌ Auth callback error:', error, errorCode, errorDescription)
+    console.error('Auth callback error:', error, errorCode, errorDescription)
 
     // Check if the error is due to expired/invalid link
     const isExpiredOrInvalid =
@@ -98,7 +73,6 @@ export async function GET(request: NextRequest) {
       if (email) expiredUrl.searchParams.set('email', email)
       if (next) expiredUrl.searchParams.set('returnUrl', next)
 
-      console.log('🔄 Redirecting to auth page with expired state')
       return NextResponse.redirect(expiredUrl)
     }
 
@@ -126,7 +100,7 @@ export async function GET(request: NextRequest) {
       const { data, error } = await supabase.auth.exchangeCodeForSession(code)
       
       if (error) {
-        console.error('❌ Error exchanging code for session:', error)
+        console.error('Error exchanging code for session:', error)
         
         // Check if the error is due to expired/invalid link
         const isExpired = 
@@ -144,7 +118,6 @@ export async function GET(request: NextRequest) {
           if (email) expiredUrl.searchParams.set('email', email)
           if (next) expiredUrl.searchParams.set('returnUrl', next)
 
-          console.log('🔄 Redirecting to auth page with expired state')
           return NextResponse.redirect(expiredUrl)
         }
         
@@ -172,7 +145,6 @@ export async function GET(request: NextRequest) {
                 referral_code: pendingReferralCode
               }
             })
-            console.log('✅ Added referral code to OAuth user:', pendingReferralCode)
             shouldClearReferralCookie = true
           } catch (error) {
             console.error('Failed to add referral code to OAuth user:', error)
@@ -189,9 +161,8 @@ export async function GET(request: NextRequest) {
                   terms_accepted_at: new Date().toISOString(),
                 },
               });
-              console.log('✅ Terms acceptance date saved to user metadata');
             } catch (updateError) {
-              console.warn('⚠️ Failed to save terms acceptance:', updateError);
+              console.warn('Failed to save terms acceptance:', updateError);
             }
           }
         }
@@ -218,14 +189,11 @@ export async function GET(request: NextRequest) {
               const hasSubscription = tierKey && tierKey !== 'none';
 
               if (!hasSubscription) {
-                console.log('⚠️ No subscription detected - redirecting to /subscription to choose a plan');
-                finalDestination = '/subscription';
-              } else {
-                console.log('✅ Account already has subscription, proceeding normally');
+                finalDestination = '/accounts';
               }
             }
           } catch (err) {
-            console.warn('⚠️ Could not check account state from backend:', err);
+            console.warn('Could not check account state from backend:', err);
           }
         }
       }
@@ -236,7 +204,7 @@ export async function GET(request: NextRequest) {
       redirectUrl.searchParams.set('auth_method', authMethod)
       const response = NextResponse.redirect(redirectUrl)
 
-      // Clear stale instance cookie so user picks a fresh instance after login
+      // Clear stale legacy instance cookie so repo-first sessions do not inherit it after login.
       response.cookies.set(ACTIVE_INSTANCE_COOKIE, '', { maxAge: 0, path: '/' })
 
       // Clear referral cookie if it was processed
@@ -246,7 +214,7 @@ export async function GET(request: NextRequest) {
 
       return response
     } catch (error) {
-      console.error('❌ Unexpected error in auth callback:', error)
+      console.error('Unexpected error in auth callback:', error)
       return NextResponse.redirect(`${baseUrl}/auth?error=unexpected_error`)
     }
   }

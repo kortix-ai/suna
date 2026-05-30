@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { toast as sonnerToast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { downloadDirectory } from '../api/opencode-files';
 
 /**
  * Hook that manages downloading directories as zips with visible progress.
  *
  * Supports multiple concurrent downloads — each gets its own toast with
- * live progress. Uses raw sonner (not the suppressed wrapper) so toasts appear.
+ * live progress, addressed by a stable toast id so updates replace in place.
  *
  * Returns:
  *  - `downloadDir(path, name)` — trigger a download (concurrent-safe)
@@ -29,7 +29,7 @@ export function useDirectoryDownload() {
     activeRef.current.add(dirPath);
     rerender();
 
-    const toastId = sonnerToast.loading(`Zipping ${dirName}…`, { duration: Infinity });
+    const toastId = toast.loading(`Zipping ${dirName}…`, { duration: Infinity });
 
     try {
       let lastPct = 0;
@@ -38,13 +38,13 @@ export function useDirectoryDownload() {
         const pct = Math.round(progress * 100);
         if (pct !== lastPct) {
           lastPct = pct;
-          sonnerToast.loading(`Zipping ${dirName}… ${pct}%`, { id: toastId, duration: Infinity });
+          toast.loading(`Zipping ${dirName}… ${pct}%`, { id: toastId, duration: Infinity });
         }
       });
 
-      sonnerToast.success(`Downloaded ${dirName}.zip`, { id: toastId, duration: 3000 });
+      toast.success(`Downloaded ${dirName}.zip`, { id: toastId, duration: 3000 });
     } catch (err) {
-      sonnerToast.error(
+      toast.error(
         `Failed to download ${dirName}: ${err instanceof Error ? err.message : 'Unknown error'}`,
         { id: toastId, duration: 5000 },
       );

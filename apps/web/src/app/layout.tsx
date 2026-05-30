@@ -1,3 +1,4 @@
+import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { ThemeProvider } from '@/components/home/theme-provider';
 import { siteMetadata } from '@/lib/site-metadata';
 import type { Metadata, Viewport } from 'next';
@@ -10,7 +11,8 @@ import { roobert } from './fonts/roobert';
 import { roobertMono } from './fonts/roobert-mono';
 import { Suspense, lazy } from 'react';
 import { I18nProvider } from '@/components/i18n-provider';
-import { getServerPublicEnv } from '@/lib/public-env-server';
+import { serializeRuntimeConfigScript } from '@/lib/public-env-server';
+import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { featureFlags } from '@/lib/feature-flags';
 import { connection } from 'next/server';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
@@ -26,9 +28,6 @@ const AnnouncementDialog = lazy(() => import('@/components/announcements/announc
 const RouteChangeTracker = lazy(() => import('@/components/analytics/route-change-tracker').then(mod => ({ default: mod.RouteChangeTracker })));
 const AuthEventTracker = lazy(() => import('@/components/analytics/auth-event-tracker').then(mod => ({ default: mod.AuthEventTracker })));
 const LocalhostLinkInterceptor = lazy(() => import('@/components/localhost-link-interceptor').then(mod => ({ default: mod.LocalhostLinkInterceptor })));
-// Not lazy — wraps {children} so it must be available for SSR to avoid hydration mismatch
-import { IntegrationConnectProvider } from '@/components/integrations/integration-connect-provider';
-
 
 export const viewport: Viewport = {
   themeColor: [
@@ -106,10 +105,10 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const tHardcodedUi = { raw: getHardcodedUiServerText };
   // Opt into dynamic rendering so process.env is evaluated at request time,
   // not baked at build time. Critical for Docker images with runtime env vars.
   await connection();
-  const runtimeEnv = getServerPublicEnv();
 
   return (
     <html lang="en" translate="no" suppressHydrationWarning className={`notranslate ${roobert.variable} ${roobertMono.variable}`}>
@@ -118,7 +117,7 @@ export default async function RootLayout({
             Docker images get correct env vars regardless of build-time defaults. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.__KORTIX_RUNTIME_CONFIG=${JSON.stringify(runtimeEnv)};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`,
+            __html: serializeRuntimeConfigScript(),
           }}
         />
 
@@ -181,10 +180,10 @@ export default async function RootLayout({
                   context = { master_group: 'General', content_group: 'Other', page_type: 'home', language: lang };
                 } else if (pathname.indexOf('/auth') === 0) {
                   context = { master_group: 'General', content_group: 'User', page_type: 'auth', language: lang };
-                } else if (pathname === '/dashboard') {
-                  context = { master_group: 'Platform', content_group: 'Dashboard', page_type: 'home', language: lang };
+                } else if (pathname === '/projects') {
+                  context = { master_group: 'Platform', content_group: 'Projects', page_type: 'home', language: lang };
                 } else if (pathname.indexOf('/workspace') === 0 || pathname.indexOf('/projects') === 0 || pathname.indexOf('/thread') === 0) {
-                  context = { master_group: 'Platform', content_group: 'Dashboard', page_type: 'thread', language: lang };
+                  context = { master_group: 'Platform', content_group: 'Projects', page_type: 'thread', language: lang };
                 } else if (pathname.indexOf('/settings') === 0) {
                   context = { master_group: 'Platform', content_group: 'User', page_type: 'settings', language: lang };
                 }
@@ -196,25 +195,25 @@ export default async function RootLayout({
         />
 
         {/* Static SEO meta tags - rendered in initial HTML */}
-        <title>Kortix – The Autonomous Company Operating System</title>
-        <meta name="description" content="A cloud computer where AI agents run your company. Connect 3,000+ tools, configure autonomous agents, set triggers — and the machine operates 24/7 with persistent memory." />
-        <meta name="keywords" content="Kortix, autonomous company operating system, AI agents, self-driving company, cloud computer, AI automation, agent orchestration, goal loops, AI triggers, persistent memory, autonomous workforce, AI operations" />
-        <meta property="og:title" content="Kortix – The Autonomous Company Operating System" />
-        <meta property="og:description" content="A cloud computer where AI agents run your company. Connect 3,000+ tools, configure autonomous agents, set triggers — and the machine operates 24/7 with persistent memory." />
+        <title>{tHardcodedUi.raw('appLayout.line196JsxTextKortixTheAutonomousCompanyOperatingSystem')}</title>
+        <meta name="description" content={tHardcodedUi.raw('appLayout.line197JsxAttrContentACloudComputerWhereAiAgentsRunYour')} />
+        <meta name="keywords" content={tHardcodedUi.raw('appLayout.line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf')} />
+        <meta property="og:title" content={tHardcodedUi.raw('appLayout.line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem')} />
+        <meta property="og:description" content={tHardcodedUi.raw('appLayout.line200JsxAttrContentACloudComputerWhereAiAgentsRunYour')} />
         <meta property="og:image" content="https://kortix.com/banner.png" />
         <meta property="og:url" content="https://kortix.com" />
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="Kortix" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Kortix – The Autonomous Company Operating System" />
-        <meta name="twitter:description" content="A cloud computer where AI agents run your company. Connect 3,000+ tools, configure autonomous agents, set triggers — and the machine operates 24/7 with persistent memory." />
+        <meta name="twitter:title" content={tHardcodedUi.raw('appLayout.line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem')} />
+        <meta name="twitter:description" content={tHardcodedUi.raw('appLayout.line207JsxAttrContentACloudComputerWhereAiAgentsRunYour')} />
         <meta name="twitter:image" content="https://kortix.com/banner.png" />
-        <meta name="twitter:site" content="@kortix" />
+        <meta name="twitter:site" content={tHardcodedUi.raw('appLayout.line209JsxAttrContentKortix')} />
         <link rel="canonical" href="https://kortix.com" />
 
         {/* iOS Smart App Banner - shows native install banner in Safari */}
         {!featureFlags.disableMobileAdvertising ? (
-          <meta name="apple-itunes-app" content="app-id=6754448524, app-argument=kortix://" />
+          <meta name="apple-itunes-app" content={tHardcodedUi.raw('appLayout.line214JsxAttrContentAppId6754448524AppArgumentKortix')} />
         ) : null}
 
 
@@ -266,7 +265,14 @@ export default async function RootLayout({
         />
       </head>
 
-      <body translate="no" className="notranslate antialiased font-sans bg-background">
+      {/* suppressHydrationWarning silences Grammarly et al. injecting
+          `data-gr-*` attributes onto <body> before React hydrates. The
+          warning is purely cosmetic but pollutes the dev overlay. */}
+      <body
+        translate="no"
+        className="notranslate antialiased font-sans bg-background"
+        suppressHydrationWarning
+      >
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
@@ -278,13 +284,17 @@ export default async function RootLayout({
           <AuthProvider>
             <I18nProvider>
               <ReactQueryProvider>
-                <IntegrationConnectProvider>
+                <ClientErrorBoundary>
                   {children}
-                </IntegrationConnectProvider>
+                </ClientErrorBoundary>
                 <Toaster />
               </ReactQueryProvider>
             </I18nProvider>
           </AuthProvider>
+          {/* Non-critical lazy widgets — wrap in a boundary so a failed chunk
+              load reports to Sentry and renders nothing, instead of escalating
+              to global-error and blanking the whole app. */}
+          <ClientErrorBoundary silent>
           {/* Analytics - lazy loaded to not block FCP */}
           <Suspense fallback={null}>
             <Analytics />
@@ -309,6 +319,7 @@ export default async function RootLayout({
           <Suspense fallback={null}>
             <LocalhostLinkInterceptor />
           </Suspense>
+          </ClientErrorBoundary>
         </ThemeProvider>
       </body>
     </html>

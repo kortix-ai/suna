@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Project Triggers tab — filtered view of the global triggers pool.
  *
@@ -18,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Timer, Webhook, Clock, CheckCircle2, Trash2, MessageSquare, Terminal, Globe, Calendar, Ticket as TicketIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useTickets, type Ticket } from '@/hooks/kortix/use-kortix-tickets';
 
 // ─── Helpers (same as ScheduledTasksPage) ───────────────────────────────────
@@ -84,6 +86,7 @@ function TriggerRow({
   deleting: boolean;
   boundTicket?: Ticket;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const actionType = trigger.action_type ?? 'prompt';
   const actionIcon = actionType === 'command'
     ? <Terminal className="h-3 w-3" />
@@ -157,7 +160,7 @@ function TriggerRow({
             'text-muted-foreground hover:text-red-500 hover:bg-red-500/10',
             deleting && 'opacity-100 text-red-500',
           )}
-          title="Delete trigger"
+          title={tHardcodedUi.raw('componentsKortixTriggersTab.line160JsxAttrTitleDeleteTrigger')}
         >
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
@@ -174,6 +177,7 @@ interface Props {
 }
 
 export function TriggersTab({ projectId }: Props) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: allTriggers = [], isLoading } = useTriggers();
   const { data: projectTickets = [] } = useTickets(projectId);
   const deleteMutation = useDeleteTrigger();
@@ -227,17 +231,13 @@ export function TriggersTab({ projectId }: Props) {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-semibold tracking-tight">Triggers</h2>
-              <p className="text-[12px] text-muted-foreground/60 mt-0.5">
-                Cron + webhook triggers scoped to this project.
-              </p>
+              <p className="text-[12px] text-muted-foreground/60 mt-0.5">{tHardcodedUi.raw('componentsKortixTriggersTab.line231JsxTextCronWebhookTriggersScopedToThisProject')}</p>
             </div>
             <Button size="sm" onClick={() => setShowCreate(true)}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Add Trigger
-            </Button>
+              <Plus className="h-4 w-4 mr-1.5" />{tHardcodedUi.raw('componentsKortixTriggersTab.line236JsxTextAddTrigger')}</Button>
           </div>
 
-          <div className="rounded-xl border border-border/50 divide-y divide-border/40 overflow-hidden bg-card/40">
+          <div className="rounded-2xl border border-border/50 divide-y divide-border/40 overflow-hidden bg-card/40">
             {isLoading && (
               <div className="p-4 space-y-3">
                 {[1, 2].map((i) => (
@@ -256,14 +256,10 @@ export function TriggersTab({ projectId }: Props) {
                 <div className="mx-auto w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center mb-3">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                 </div>
-                <p className="text-[13px] font-medium mb-1">No triggers in this project</p>
-                <p className="text-[12px] text-muted-foreground/60 mb-4">
-                  Cron or webhook — runs a prompt, command, or HTTP call when it fires.
-                </p>
+                <p className="text-[13px] font-medium mb-1">{tHardcodedUi.raw('componentsKortixTriggersTab.line259JsxTextNoTriggersInThisProject')}</p>
+                <p className="text-[12px] text-muted-foreground/60 mb-4">{tHardcodedUi.raw('componentsKortixTriggersTab.line261JsxTextCronOrWebhookRunsAPromptCommandOr')}</p>
                 <Button size="sm" variant="outline" onClick={() => setShowCreate(true)}>
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  Add trigger
-                </Button>
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />{tHardcodedUi.raw('componentsKortixTriggersTab.line265JsxTextAddTrigger')}</Button>
               </div>
             )}
             {triggers.map((t) => (

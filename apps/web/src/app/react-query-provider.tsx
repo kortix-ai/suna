@@ -4,13 +4,13 @@ import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { handleApiError } from '@/lib/error-handler';
+import { registerQueryClient } from '@/lib/query-client-singleton';
 
 import { isBillingError } from '@/lib/api/errors';
 
 export function ReactQueryProvider({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
+  const [queryClient] = useState(() => {
+    const client = new QueryClient({
         defaultOptions: {
           queries: {
             // Default staleTime increased from 20s to 5min. Most data is kept
@@ -46,6 +46,14 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
               if (isBillingError(error)) {
                 return;
               }
+              // Transient "opencode not ready" 503 surfaces while a sandbox is
+              // still booting its opencode binary. The auto-create + SDK call
+              // sites already retry internally; surfacing this as a user toast
+              // is just noise during the boot window. Suppress it.
+              const msg = typeof error?.message === 'string' ? error.message : '';
+              if (/opencode not ready/i.test(msg)) {
+                return;
+              }
               handleApiError(error, {
                 operation: 'perform action',
                 silent: false,
@@ -53,8 +61,12 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
             },
           },
         },
-      }),
-  );
+      });
+    // Expose the instance so auth-driven resets (logout, cross-account
+    // sign-in) can clear the cache from outside the React Query context.
+    registerQueryClient(client);
+    return client;
+  });
 
   return (
     <QueryClientProvider client={queryClient}>

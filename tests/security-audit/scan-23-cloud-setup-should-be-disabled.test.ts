@@ -85,16 +85,6 @@ describe('Cloud Scan: Setup Routes Should Be Disabled (all should 404)', () => {
       expect(r.status).toBe(401);
     });
 
-    test('GET /v1/setup/env — returns 401 (should be 404 on cloud)', async () => {
-      const r = await probe('GET', '/v1/setup/env');
-      expect(r.status).toBe(401);
-    });
-
-    test('POST /v1/setup/env — returns 401 (should be 404 on cloud)', async () => {
-      const r = await probe('POST', '/v1/setup/env', { key: 'TEST', value: 'x' });
-      expect(r.status).toBe(401);
-    });
-
     test('GET /v1/setup/supabase-status — returns 401 (should be 404 on cloud)', async () => {
       const r = await probe('GET', '/v1/setup/supabase-status');
       expect(r.status).toBe(401);
@@ -138,8 +128,6 @@ describe('Cloud Scan: Setup Routes Should Be Disabled (all should 404)', () => {
         'GET /v1/setup/sandbox-providers',      // public, returns 200
         'POST /v1/setup/bootstrap-owner',       // public, LEAKS EMAIL
         'GET /v1/setup/status',                 // auth, returns 401
-        'GET /v1/setup/env',                    // auth, NO ADMIN CHECK
-        'POST /v1/setup/env',                   // auth, NO ADMIN CHECK
         'GET /v1/setup/supabase-status',        // auth, returns 401
         'GET /v1/setup/health',                 // auth, returns 401
         'POST /v1/setup/schema',                // auth, returns 401
@@ -148,7 +136,7 @@ describe('Cloud Scan: Setup Routes Should Be Disabled (all should 404)', () => {
         'GET /v1/setup/setup-wizard-step',      // auth, returns 401
         'POST /v1/setup/setup-wizard-step',     // auth, returns 401
       ];
-      expect(routesOnCloud.length).toBe(15);
+      expect(routesOnCloud.length).toBe(11);
     });
   });
 });

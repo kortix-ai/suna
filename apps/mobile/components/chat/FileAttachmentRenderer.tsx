@@ -91,250 +91,6 @@ function constructHtmlPreviewUrl(sandboxUrl: string, filePath: string): string {
   return `${sandboxUrl}/${encodedPath}`;
 }
 
-/**
- * Generates HTML with embedded mammoth.js for rendering DOCX files
- * mammoth.js works reliably in WebView and converts DOCX to clean HTML
- */
-function generateDocxPreviewHtml(base64Data: string, isDark: boolean): string {
-  const bgColor = isDark ? '#121215' : '#ffffff';
-  const textColor = isDark ? '#f8f8f8' : '#121215';
-
-  // Extract just the base64 part if it's a data URL
-  const base64Content = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%;
-      min-height: 100%;
-      background: ${bgColor};
-      color: ${textColor};
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      font-size: 14px;
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-    }
-    #loading {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      font-size: 14px;
-    }
-    #error {
-      display: none;
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: #ef4444;
-      padding: 20px;
-    }
-    #container {
-      padding: 16px;
-      max-width: 100%;
-    }
-    /* Document styling */
-    #container h1 { font-size: 1.8em; font-weight: bold; margin: 0.67em 0; }
-    #container h2 { font-size: 1.4em; font-weight: bold; margin: 0.83em 0; }
-    #container h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0; }
-    #container p { margin: 0.8em 0; }
-    #container ul, #container ol { margin: 0.8em 0; padding-left: 1.8em; }
-    #container li { margin: 0.4em 0; }
-    #container table {
-      border-collapse: collapse;
-      margin: 1em 0;
-      width: 100%;
-      font-size: 13px;
-    }
-    #container th, #container td {
-      border: 1px solid ${isDark ? 'rgba(248,248,248,0.3)' : '#d1d5db'};
-      padding: 8px 10px;
-      text-align: left;
-    }
-    #container th {
-      background: ${isDark ? 'rgba(248,248,248,0.1)' : '#f3f4f6'};
-      font-weight: 600;
-    }
-    #container img { max-width: 100%; height: auto; margin: 0.8em 0; }
-    #container a { color: ${isDark ? '#60a5fa' : '#2563eb'}; }
-    #container blockquote {
-      border-left: 3px solid ${isDark ? 'rgba(248,248,248,0.3)' : '#d1d5db'};
-      padding-left: 1em;
-      margin: 0.8em 0;
-      color: ${isDark ? 'rgba(248,248,248,0.7)' : '#6b7280'};
-    }
-    #container strong, #container b { font-weight: 600; }
-    #container em, #container i { font-style: italic; }
-  </style>
-</head>
-<body>
-  <div id="loading">Loading...</div>
-  <div id="error">Failed to load document</div>
-  <div id="container"></div>
-  <script>
-    async function renderDocx() {
-      try {
-        const base64 = '${base64Content}';
-        const binaryString = atob(base64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer });
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('container').innerHTML = result.value;
-      } catch (err) {
-        console.error('DOCX error:', err);
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('error').style.display = 'block';
-        document.getElementById('error').textContent = 'Failed to load: ' + (err.message || err);
-      }
-    }
-
-    if (typeof mammoth !== 'undefined') {
-      renderDocx();
-    } else {
-      window.onload = function() {
-        if (typeof mammoth !== 'undefined') {
-          renderDocx();
-        } else {
-          document.getElementById('loading').style.display = 'none';
-          document.getElementById('error').style.display = 'block';
-          document.getElementById('error').textContent = 'Failed to load library';
-        }
-      };
-    }
-  </script>
-</body>
-</html>`;
-}
-
-/**
- * Generates HTML with embedded PDF.js for rendering PDF files
- * Uses the official PDF.js viewer for reliable PDF rendering in WebView
- */
-function generatePdfPreviewHtml(base64Data: string, isDark: boolean): string {
-  const bgColor = isDark ? '#121215' : '#ffffff';
-
-  // Extract just the base64 part if it's a data URL
-  const base64Content = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%;
-      height: 100%;
-      background: ${bgColor};
-      overflow-x: hidden;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    #loading {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      font-size: 14px;
-      color: ${isDark ? '#a1a1aa' : '#71717a'};
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-    #error {
-      display: none;
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: #ef4444;
-      padding: 20px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-    #container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      padding: 8px;
-    }
-    .page-canvas {
-      max-width: 100%;
-      height: auto;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      background: white;
-    }
-  </style>
-</head>
-<body>
-  <div id="loading">Loading PDF...</div>
-  <div id="error">Failed to load PDF</div>
-  <div id="container"></div>
-  <script>
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-    async function renderPdf() {
-      try {
-        const base64 = '${base64Content}';
-        const binaryString = atob(base64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
-        document.getElementById('loading').style.display = 'none';
-
-        const container = document.getElementById('container');
-        const containerWidth = container.clientWidth - 16;
-
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale: 1 });
-          const scale = containerWidth / viewport.width;
-          const scaledViewport = page.getViewport({ scale });
-
-          const canvas = document.createElement('canvas');
-          canvas.className = 'page-canvas';
-          canvas.width = scaledViewport.width;
-          canvas.height = scaledViewport.height;
-
-          const ctx = canvas.getContext('2d');
-          await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
-
-          container.appendChild(canvas);
-        }
-      } catch (err) {
-        console.error('PDF error:', err);
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('error').style.display = 'block';
-        document.getElementById('error').textContent = 'Failed to load PDF: ' + (err.message || err);
-      }
-    }
-
-    renderPdf();
-  </script>
-</body>
-</html>`;
-}
-
 interface FileAttachment {
   path: string;
   type: 'image' | 'document' | 'other';
@@ -951,26 +707,16 @@ function DocumentAttachment({
                 <Text className="text-xs text-primary font-medium">Open file</Text>
               </Pressable>
             </View>
-          ) : isDocx && docxBlobUrl ? (
-            <WebView
-              source={{ html: generateDocxPreviewHtml(docxBlobUrl, colorScheme === 'dark') }}
-              style={{ width: '100%', height: 400 }}
-              scrollEnabled={true}
-              originWhitelist={['*']}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
-              mixedContentMode="compatibility"
-            />
-          ) : isPdf && pdfBlobUrl ? (
-            <WebView
-              source={{ html: generatePdfPreviewHtml(pdfBlobUrl, colorScheme === 'dark') }}
-              style={{ width: '100%', height: 400 }}
-              scrollEnabled={true}
-              originWhitelist={['*']}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
-              mixedContentMode="compatibility"
-            />
+          ) : (isDocx && docxBlobUrl) || (isPdf && pdfBlobUrl) ? (
+            <View className="flex-1 items-center justify-center p-8">
+              <Icon as={FileText} size={32} className="text-muted-foreground mb-2" />
+              <Text className="text-xs text-muted-foreground text-center">
+                Preview disabled for this file type
+              </Text>
+              <Pressable onPress={handlePress} className="mt-3 px-4 py-2 bg-primary/10 rounded-full">
+                <Text className="text-xs text-primary font-medium">Open file</Text>
+              </Pressable>
+            </View>
           ) : fileContent ? (
             isHtml ? (
               <WebView
@@ -978,8 +724,8 @@ function DocumentAttachment({
                 style={{ width: '100%', height: 400 }}
                 scrollEnabled={true}
                 originWhitelist={['*']}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
+                javaScriptEnabled={false}
+                domStorageEnabled={false}
               />
             ) : (
               <ScrollView className="p-4" style={{ height: 400 }} showsVerticalScrollIndicator={true}>
@@ -1179,37 +925,6 @@ function PresentationAttachment({
   // Calculate the scale factor to fit 1920x1080 content into the container
   const scale = containerWidth / 1920;
 
-  // Inject JavaScript to properly scale the slide content
-  const injectedJS = `
-    (function() {
-      const existingViewport = document.querySelector('meta[name="viewport"]');
-      if (existingViewport) existingViewport.remove();
-      
-      const viewport = document.createElement('meta');
-      viewport.name = 'viewport';
-      viewport.content = 'width=1920, initial-scale=1, user-scalable=no';
-      document.head.appendChild(viewport);
-      
-      const style = document.createElement('style');
-      style.textContent = \`
-        * { box-sizing: border-box; }
-        html, body {
-          margin: 0;
-          padding: 0;
-          width: 1920px;
-          height: 1080px;
-          overflow: hidden;
-          background: white;
-        }
-        body > * {
-          max-width: 100%;
-        }
-      \`;
-      document.head.appendChild(style);
-      true;
-    })();
-  `;
-
   return (
     <View
       className="bg-card rounded-2xl overflow-hidden mb-3"
@@ -1245,9 +960,8 @@ function PresentationAttachment({
                 showsHorizontalScrollIndicator={false}
                 style={{ width: 1920, height: 1080, backgroundColor: 'white' }}
                 originWhitelist={['*']}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                injectedJavaScript={injectedJS}
+                javaScriptEnabled={false}
+                domStorageEnabled={false}
                 onMessage={() => { }}
               />
             </View>
@@ -1378,8 +1092,8 @@ function HtmlPreviewAttachment({
           style={{ width: '100%', height: 300 }}
           scrollEnabled={true}
           originWhitelist={['*']}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
+          javaScriptEnabled={false}
+          domStorageEnabled={false}
         />
       </View>
     </View>
@@ -1446,4 +1160,3 @@ export function FileAttachmentsGrid({
     </View>
   );
 }
-

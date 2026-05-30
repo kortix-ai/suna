@@ -4,11 +4,58 @@ export type SandboxInitStatus = 'pending' | 'provisioning' | 'retrying' | 'ready
 export type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
 
 export const SANDBOX_INIT_MAX_ATTEMPTS = 3;
-const RETRY_DELAY_MS = 2_000;
+/**
+ * Base delay for generic (non-capacity, non-still-building) retries. Previously
+ * 2_000ms — when Daytona blipped on attempt 1, the session paid a flat 2s
+ * before the retry even started. We now do exponential backoff from 250ms:
+ *   attempt 1 fail → 250ms → attempt 2 fail → 500ms → attempt 3 fail → 1000ms
+ * Worst-case window is ~1.75s shorter while the retry coverage stays the same.
+ */
+const RETRY_DELAY_BASE_MS = 250;
+const RETRY_DELAY_MAX_MS = 4_000;
+const SNAPSHOT_BUILDING_MAX_ATTEMPTS = 30;
+const SNAPSHOT_BUILDING_RETRY_DELAY_MS = 10_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isSnapshotStillBuilding(error: unknown): boolean {
+  return /snapshot .+ is building/i.test(errorMessage(error));
+}
+
+/**
+ * Provider is temporarily at capacity (no compute runners free in our region,
+ * org-wide rate limit, etc.). These clear on their own in ~30s–2min, so the
+ * right move is to keep the session in `provisioning` and quietly poll instead
+ * of bouncing it to `error` after 3 fast retries.
+ *
+ * Recognized signals (case-insensitive substring match on the error message):
+ *   - "no available runners"      — Daytona infra at capacity
+ *   - "capacity"                  — generic provider capacity errors
+ *   - "rate limit" / "ratelimit"  — quota / throttling
+ *   - "too many requests"         — HTTP 429 style
+ */
+function isProviderCapacityLimited(error: unknown): boolean {
+  const m = errorMessage(error).toLowerCase();
+  return (
+    m.includes('no available runner') ||
+    m.includes('no runners available') ||
+    m.includes('out of capacity') ||
+    m.includes('capacity exceeded') ||
+    m.includes('rate limit') ||
+    m.includes('ratelimit') ||
+    m.includes('too many requests')
+  );
+}
+
+/** Number of attempts + base delay for capacity-limited retries (~5 min window). */
+const PROVIDER_CAPACITY_MAX_ATTEMPTS = 30;
+const PROVIDER_CAPACITY_RETRY_DELAY_MS = 10_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -131,7 +178,7 @@ export function buildSandboxInitFailureMetadata(
   attempt: number,
   willRetry: boolean,
 ): Record<string, unknown> {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   const now = new Date().toISOString();
   const next = stripSandboxInitFailureMetadata(metadata);
   if (willRetry) {
@@ -171,17 +218,35 @@ export async function retrySandboxProvisionCreate(
   } = {},
 ): Promise<{ result: ProvisionResult; attempts: number }> {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= SANDBOX_INIT_MAX_ATTEMPTS; attempt++) {
+  // Outer bound is the longest patience-window we'd extend for any retry class.
+  const HARD_CAP = Math.max(SNAPSHOT_BUILDING_MAX_ATTEMPTS, PROVIDER_CAPACITY_MAX_ATTEMPTS);
+  for (let attempt = 1; attempt <= HARD_CAP; attempt++) {
     await hooks.onAttemptStart?.(attempt);
     try {
       const result = await provider.create(createOpts);
       return { result, attempts: attempt };
     } catch (error) {
       lastError = error;
-      const willRetry = attempt < SANDBOX_INIT_MAX_ATTEMPTS;
+      const snapshotStillBuilding = isSnapshotStillBuilding(error);
+      const capacityLimited = !snapshotStillBuilding && isProviderCapacityLimited(error);
+      const maxAttempts = snapshotStillBuilding
+        ? SNAPSHOT_BUILDING_MAX_ATTEMPTS
+        : capacityLimited
+          ? PROVIDER_CAPACITY_MAX_ATTEMPTS
+          : SANDBOX_INIT_MAX_ATTEMPTS;
+      const willRetry = attempt < maxAttempts;
       await hooks.onAttemptFailure?.(attempt, error, willRetry);
       if (!willRetry) throw error;
-      await sleep(RETRY_DELAY_MS);
+      // Generic retries use exponential backoff from RETRY_DELAY_BASE_MS,
+      // capped at RETRY_DELAY_MAX_MS. Snapshot-building and provider-capacity
+      // keep their long fixed windows since they're "wait for an external
+      // condition," not "retry a flaky call."
+      const delay = snapshotStillBuilding
+        ? SNAPSHOT_BUILDING_RETRY_DELAY_MS
+        : capacityLimited
+          ? PROVIDER_CAPACITY_RETRY_DELAY_MS
+          : Math.min(RETRY_DELAY_BASE_MS * 2 ** (attempt - 1), RETRY_DELAY_MAX_MS);
+      await sleep(delay);
     }
   }
   throw lastError instanceof Error ? lastError : new Error('Sandbox initialization failed');

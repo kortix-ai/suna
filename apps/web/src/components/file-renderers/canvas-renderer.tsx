@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus,
@@ -1105,6 +1107,7 @@ function FloatingToolbar({
   authToken?: string;
   sandboxId?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [editPrompt, setEditPrompt] = useState('');
@@ -1483,7 +1486,7 @@ function FloatingToolbar({
         }}
       >
         <div className="flex items-center gap-2 bg-card border border-border rounded-full px-3 py-1.5">
-          <span className="text-xs text-muted-foreground">Click on text to edit</span>
+          <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1486JsxTextClickOnTextToEdit')}</span>
           <Button
             variant="ghost"
             size="sm"
@@ -1550,7 +1553,7 @@ function FloatingToolbar({
         }}
       >
         <div className="flex items-center gap-2 bg-card border border-border rounded-full px-3 py-1.5">
-          <span className="text-xs text-muted-foreground">Select area</span>
+          <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1553JsxTextSelectArea')}</span>
           <Button
             variant="ghost"
             size="sm"
@@ -1607,12 +1610,12 @@ function FloatingToolbar({
                 {activeAction === 'upscale' ? (
                   <KortixLoader size="small" />
                 ) : (
-                  <span className="text-[10px] font-semibold border border-current rounded px-0.5">HD</span>
+                  <span className="text-xs font-semibold border border-current rounded px-0.5">HD</span>
                 )}
                 Upscale
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Upscale image with AI</TooltipContent>
+            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1615JsxTextUpscaleImageWithAi')}</TooltipContent>
           </Tooltip>
 
           {/* Remove Background */}
@@ -1634,11 +1637,9 @@ function FloatingToolbar({
                     <rect x="1" y="9" width="6" height="6" strokeDasharray="2 1" />
                     <rect x="9" y="9" width="6" height="6" />
                   </svg>
-                )}
-                Remove bg
-              </Button>
+                )}{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1638JsxTextRemoveBg')}</Button>
             </TooltipTrigger>
-            <TooltipContent>Remove background with AI</TooltipContent>
+            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1641JsxTextRemoveBackgroundWithAi')}</TooltipContent>
           </Tooltip>
 
           {/* Edit Text - OCR-based selection */}
@@ -1651,11 +1652,9 @@ function FloatingToolbar({
                 onClick={startTextEditMode}
                 disabled={isProcessing || textEditMode}
               >
-                {isDetectingText ? <KortixLoader size="small" /> : <Type className="h-3.5 w-3.5" />}
-                Edit text
-              </Button>
+                {isDetectingText ? <KortixLoader size="small" /> : <Type className="h-3.5 w-3.5" />}{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1655JsxTextEditText')}</Button>
             </TooltipTrigger>
-            <TooltipContent>Select and edit text in image</TooltipContent>
+            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1658JsxTextSelectAndEditTextInImage')}</TooltipContent>
           </Tooltip>
 
           {/* Crop Copy */}
@@ -1672,7 +1671,7 @@ function FloatingToolbar({
                 Cut
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Create cropped copy</TooltipContent>
+            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1675JsxTextCreateCroppedCopy')}</TooltipContent>
           </Tooltip>
 
           {/* Mark Edit - with prompt input */}
@@ -1698,13 +1697,13 @@ function FloatingToolbar({
                   </Button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent>AI-powered image editing</TooltipContent>
+              <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1701JsxTextAiPoweredImageEditing')}</TooltipContent>
             </Tooltip>
             <PopoverContent className="w-80 p-3" align="end">
               <div className="space-y-3">
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wide">AI Image Edit</div>
+                <div className="text-xs text-muted-foreground uppercase tracking-wide">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1705JsxTextAiImageEdit')}</div>
                 <Textarea
-                  placeholder="Describe the edit you want to make..."
+                  placeholder={tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1707JsxAttrPlaceholderDescribeTheEditYouWantToMake')}
                   value={editPrompt}
                   onChange={(e) => setEditPrompt(e.target.value)}
                   className="min-h-[80px] resize-none shadow-none"
@@ -1808,6 +1807,7 @@ function FrameFloatingToolbar({
   sandboxId?: string;
   authToken?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showSizePopover, setShowSizePopover] = useState(false);
   const [showNamePopover, setShowNamePopover] = useState(false);
@@ -1865,11 +1865,11 @@ function FrameFloatingToolbar({
                   </Button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent>Rename frame</TooltipContent>
+              <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1868JsxTextRenameFrame')}</TooltipContent>
             </Tooltip>
             <PopoverContent className="w-auto p-3" align="center">
               <div className="space-y-2">
-                <div className="text-xs text-muted-foreground font-medium">Frame Name</div>
+                <div className="text-xs text-muted-foreground font-medium">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1872JsxTextFrameName')}</div>
                 <input
                   type="text"
                   value={tempName}
@@ -1913,15 +1913,15 @@ function FrameFloatingToolbar({
                   </Button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent>Set dimensions</TooltipContent>
+              <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1916JsxTextSetDimensions')}</TooltipContent>
             </Tooltip>
             <PopoverContent className="w-auto p-3" align="center">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs text-muted-foreground font-medium">Frame Size</div>
+                  <div className="text-xs text-muted-foreground font-medium">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1921JsxTextFrameSize')}</div>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-muted-foreground">
+                      <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs text-muted-foreground">
                         Presets
                       </Button>
                     </PopoverTrigger>
@@ -1953,7 +1953,7 @@ function FrameFloatingToolbar({
                         },
                       ].map(cat => (
                         <div key={cat.cat}>
-                          <div className="px-2 py-1 text-[0.5625rem] text-muted-foreground uppercase tracking-wider">{cat.cat}</div>
+                          <div className="px-2 py-1 text-xs text-muted-foreground uppercase tracking-wider">{cat.cat}</div>
                           {cat.items.map(p => (
                             <button
                               key={p.n}
@@ -1964,7 +1964,7 @@ function FrameFloatingToolbar({
                               }}
                             >
                               <span>{p.n}</span>
-                              <span className="text-[0.5625rem] text-muted-foreground font-mono">{p.w}×{p.h}</span>
+                              <span className="text-xs text-muted-foreground font-mono">{p.w}×{p.h}</span>
                             </button>
                           ))}
                         </div>
@@ -1974,7 +1974,7 @@ function FrameFloatingToolbar({
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] text-muted-foreground uppercase">Width</label>
+                    <label className="text-xs text-muted-foreground uppercase">Width</label>
                     <input
                       type="number"
                       value={tempWidth}
@@ -1986,7 +1986,7 @@ function FrameFloatingToolbar({
                   </div>
                   <X className="h-3 w-3 text-muted-foreground mt-4" />
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] text-muted-foreground uppercase">Height</label>
+                    <label className="text-xs text-muted-foreground uppercase">Height</label>
                     <input
                       type="number"
                       value={tempHeight}
@@ -2031,7 +2031,7 @@ function FrameFloatingToolbar({
                   </Button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent>Background color</TooltipContent>
+              <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2034JsxTextBackgroundColor')}</TooltipContent>
             </Tooltip>
             <PopoverContent className="w-auto p-2" align="center">
               <div className="grid grid-cols-6 gap-1">
@@ -2090,7 +2090,7 @@ function FrameFloatingToolbar({
                 Export
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Export frame as PNG</TooltipContent>
+            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2093JsxTextExportFrameAsPng')}</TooltipContent>
           </Tooltip>
 
           <div className="w-px h-5 bg-border mx-0.5" />
@@ -2144,6 +2144,7 @@ function MultiSelectToolbar({
   authToken?: string;
   sandboxId?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isProcessing, setIsProcessing] = useState(false);
   const [mergePrompt, setMergePrompt] = useState('');
   const [showMergeDialog, setShowMergeDialog] = useState(false);
@@ -2260,7 +2261,7 @@ function MultiSelectToolbar({
     >
       {/* Selection info */}
       <div className="flex items-center justify-center gap-2 mb-1">
-        <span className="text-xs text-muted-foreground">{elements.length} images selected</span>
+        <span className="text-xs text-muted-foreground">{elements.length}{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2263JsxTextImagesSelected')}</span>
       </div>
 
       {/* Merge toolbar */}
@@ -2284,7 +2285,7 @@ function MultiSelectToolbar({
                 Merge
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Merge selected images with AI</TooltipContent>
+            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2287JsxTextMergeSelectedImagesWithAi')}</TooltipContent>
           </Tooltip>
 
           {/* Separator */}
@@ -2303,7 +2304,7 @@ function MultiSelectToolbar({
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Delete selected</TooltipContent>
+            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2306JsxTextDeleteSelected')}</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       </div>
@@ -2312,12 +2313,12 @@ function MultiSelectToolbar({
       <Dialog open={showMergeDialog} onOpenChange={setShowMergeDialog}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Merge images</DialogTitle>
+            <DialogTitle>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2315JsxTextMergeImages')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {/* Image order preview */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Image order (click arrows to swap)</label>
+              <label className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2320JsxTextImageOrderClickArrowsToSwap')}</label>
               <div className="flex items-center gap-2 overflow-x-auto py-2">
                 {orderedElements.map((el, idx) => (
                   <div key={el.id} className="flex items-center gap-1">
@@ -2333,11 +2334,11 @@ function MultiSelectToolbar({
                         ) : (
                           <div className="w-full h-full flex flex-col items-center justify-center text-xs text-muted-foreground p-1">
                             <ImagePlus className="h-4 w-4 mb-0.5 opacity-50" />
-                            <span className="truncate w-full text-center text-[0.5625rem]">{el.name?.split('/').pop() || `Image ${idx + 1}`}</span>
+                            <span className="truncate w-full text-center text-xs">{el.name?.split('/').pop() || `Image ${idx + 1}`}</span>
                           </div>
                         )}
                       </div>
-                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[10px] px-1.5 rounded-full">
+                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-1.5 rounded-full">
                         {idx + 1}
                       </div>
                     </div>
@@ -2347,7 +2348,7 @@ function MultiSelectToolbar({
                         size="icon"
                         className="h-6 w-6 shrink-0"
                         onClick={() => swapImages(idx, idx + 1)}
-                        title="Swap with next"
+                        title={tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2350JsxAttrTitleSwapWithNext')}
                       >
                         <ArrowLeftRight className="h-3 w-3" />
                       </Button>
@@ -2359,11 +2360,11 @@ function MultiSelectToolbar({
 
             {/* Merge prompt */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">How should these images be merged?</label>
+              <label className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2362JsxTextHowShouldTheseImagesBeMerged')}</label>
               <Textarea
                 value={mergePrompt}
                 onChange={(e) => setMergePrompt(e.target.value)}
-                placeholder='e.g. "Blend seamlessly", "Create a collage", "Overlay second on first"'
+                placeholder={tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2366JsxAttrPlaceholderEGBlendSeamlesslyCreateACollageOverlay')}
                 className="min-h-[80px]"
                 autoFocus
               />
@@ -2389,6 +2390,7 @@ function MultiSelectToolbar({
 }
 
 export function CanvasRenderer({ content, filePath, fileName, sandboxId, className, onSave }: CanvasRendererProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { session } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2534,30 +2536,19 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     const hasUnsaved = hasUnsavedChangesRef.current;
     const isEditing = isUserEditingRef.current;
     
-    console.log('[CANVAS_LIVE_DEBUG] forceFetch called:', { 
-      sandboxId, 
-      filePath, 
-      hasAuth: !!authToken, 
-      hasUnsaved,
-      isEditing,
-    });
 
     if (!sandboxId || !filePath || !authToken) {
-      console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - missing required params');
       return;
     }
     if (hasUnsaved || isEditing) {
-      console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - user editing or unsaved changes');
       return;
     }
 
     lastFetchTimeRef.current = Date.now();
 
     try {
-      console.log('[CANVAS_LIVE_DEBUG] forceFetch fetching via OpenCode:', filePath);
 
       const newContent = await fetchFileAsText(filePath);
-      console.log('[CANVAS_LIVE_DEBUG] forceFetch content length:', newContent?.length);
 
       if (!newContent) return;
 
@@ -2568,21 +2559,13 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
         const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
 
-        console.log('[CANVAS_LIVE_DEBUG] forceFetch comparing elements:', {
-          serverCount,
-          localCount,
-          changed: newElementIds !== currentElementIds,
-          hasUnsavedNow: hasUnsavedChangesRef.current,
-        });
 
         // Don't overwrite local state if we have more elements locally (user added something)
         if (localCount > serverCount) {
-          console.log('[CANVAS_LIVE_DEBUG] forceFetch SKIPPED - local has MORE elements (user added content)');
           return;
         }
 
         if (newElementIds !== currentElementIds) {
-          console.log('[CANVAS_LIVE_DEBUG] forceFetch updating elements - CHANGE DETECTED!');
           // Only re-center if server has MORE elements (AI added content)
           const shouldRecenter = serverCount > localCount;
           setCanvasData(parsed);
@@ -2591,34 +2574,23 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             hasCenteredRef.current = false; // Re-center to show new AI-added content
           }
         } else {
-          console.log('[CANVAS_LIVE_DEBUG] forceFetch - no changes detected');
         }
       } catch (parseErr) {
-        console.log('[CANVAS_LIVE_DEBUG] forceFetch parse error:', parseErr);
       }
     } catch (err) {
-      console.log('[CANVAS_LIVE_DEBUG] forceFetch network error:', err);
     }
   }, [sandboxId, filePath, authToken]);
 
   // Listen for canvas-tool-updated events to trigger immediate refresh
   useEffect(() => {
-    console.log('[CANVAS_LIVE_DEBUG] Setting up canvas-tool-updated listener for filePath:', filePath);
 
     const handleCanvasUpdate = (event: CustomEvent<{ canvasPath: string; timestamp: number }>) => {
       const eventPath = event.detail.canvasPath;
-      console.log('[CANVAS_LIVE_DEBUG] Received canvas-tool-updated event:', {
-        eventPath,
-        filePath,
-        timestamp: event.detail.timestamp,
-      });
 
       // Check if this event is for our canvas
       if (filePath && (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '')))) {
-        console.log('[CANVAS_LIVE_DEBUG] Event matches our canvas, calling forceFetch');
         forceFetch();
       } else {
-        console.log('[CANVAS_LIVE_DEBUG] Event does NOT match our canvas, ignoring');
       }
     };
 
@@ -2632,7 +2604,6 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         // Only process events from the last 10 seconds
         if (Date.now() - timestamp < 10000) {
           if (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '').replace('/workspace/', ''))) {
-            console.log('[CANVAS_LIVE_DEBUG] Found pending event for our canvas, forcing fetch:', eventPath);
             pendingEvents.delete(eventPath); // Clear after processing
             forceFetch();
             break;
@@ -2645,7 +2616,6 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     }
 
     return () => {
-      console.log('[CANVAS_LIVE_DEBUG] Removing canvas-tool-updated listener');
       window.removeEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
     };
   }, [filePath, forceFetch]);
@@ -2662,7 +2632,6 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       const isEditing = isUserEditingRef.current;
       
       if (hasUnsaved || isEditing) {
-        console.log('[CANVAS_LIVE_DEBUG] Polling skipped - user editing or unsaved changes', { hasUnsaved, isEditing });
         return;
       }
 
@@ -2671,7 +2640,6 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       if (now - lastFetchTimeRef.current < POLL_INTERVAL - 200) return;
       lastFetchTimeRef.current = now;
 
-      console.log('[CANVAS_LIVE_DEBUG] Polling: fetching canvas content');
 
       try {
         const newContent = await fetchFileAsText(filePath);
@@ -2685,22 +2653,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
           const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
 
-          console.log('[CANVAS_LIVE_DEBUG] Polling: comparing elements', {
-            serverCount,
-            localCount,
-            changed: newElementIds !== currentElementIds,
-            hasUnsavedNow: hasUnsavedChangesRef.current,
-          });
 
           // Don't overwrite local state if we have more elements locally (user added something)
           if (localCount > serverCount) {
-            console.log('[CANVAS_LIVE_DEBUG] Polling SKIPPED - local has MORE elements (user added content)');
             return;
           }
 
           // Only update if structure actually changed (new/removed elements)
           if (newElementIds !== currentElementIds) {
-            console.log('[CANVAS_LIVE_DEBUG] Polling: UPDATING - new elements detected!');
             // Only re-center if server has MORE elements (AI added content)
             const shouldRecenter = serverCount > localCount;
             setCanvasData(parsed);
@@ -2710,10 +2670,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             }
           }
         } catch (parseErr) {
-          console.log('[CANVAS_LIVE_DEBUG] Polling: parse error', parseErr);
         }
       } catch (err) {
-        console.log('[CANVAS_LIVE_DEBUG] Polling: network error', err);
       }
     };
 
@@ -2951,10 +2909,6 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
       // Only log when there's a change to avoid spam
       if (hasChanges !== hasUnsavedChanges) {
-        console.log('[CANVAS_LIVE_DEBUG] hasUnsavedChanges changed to:', hasChanges, {
-          localCount: elements.length,
-          serverCount: canvasData.elements?.length || 0,
-        });
       }
 
       setHasUnsavedChanges(hasChanges);
@@ -3322,9 +3276,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     return (
       <div className="flex flex-col items-center justify-center h-full w-full gap-4 bg-background">
         <KortixLoader size="medium" />
-        <div className="text-muted-foreground text-center text-sm">
-          Loading canvas...
-        </div>
+        <div className="text-muted-foreground text-center text-sm">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3326JsxTextLoadingCanvas')}</div>
       </div>
     );
   }
@@ -3333,7 +3285,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
   return (
     <div className={cn("flex flex-col h-full w-full bg-background", className)} style={canvasData?.background ? { backgroundColor: canvasData.background } : undefined}>
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+      <input ref={fileInputRef} type="file" accept={tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3336JsxAttrAcceptImage')} className="hidden" onChange={handleFileChange} />
 
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-card shrink-0">
@@ -3344,23 +3296,23 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 <Button variant="ghost" size="icon" className={cn("h-7 w-7 rounded-full", toolMode === 'select' && "bg-primary text-primary-foreground")} onClick={() => setToolMode('select')}>
                   <MousePointer2 className="h-4 w-4" />
                 </Button>
-              </TooltipTrigger><TooltipContent>Select (V)</TooltipContent></Tooltip>
+              </TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3347JsxTextSelectV')}</TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className={cn("h-7 w-7 rounded-full", toolMode === 'pan' && "bg-primary text-primary-foreground")} onClick={() => setToolMode('pan')}>
                   <Hand className="h-4 w-4" />
                 </Button>
-              </TooltipTrigger><TooltipContent>Pan (H)</TooltipContent></Tooltip>
+              </TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3352JsxTextPanH')}</TooltipContent></Tooltip>
             </div>
 
             <div className="flex items-center border border-border rounded-full px-1 py-0.5">
-              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={handleZoomOut}><Minus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Zoom Out</TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={handleZoomOut}><Minus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3356JsxTextZoomOut')}</TooltipContent></Tooltip>
               <span className="text-xs text-muted-foreground px-2 min-w-12 text-center">{Math.round(scale * 100)}%</span>
-              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={handleZoomIn}><Plus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Zoom In</TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={handleZoomIn}><Plus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3358JsxTextZoomIn')}</TooltipContent></Tooltip>
             </div>
 
-            <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleResetView}><Maximize className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Reset View</TooltipContent></Tooltip>
+            <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleResetView}><Maximize className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3361JsxTextResetView')}</TooltipContent></Tooltip>
             <Tooltip><TooltipTrigger asChild><Button id="canvas-save-btn" variant="ghost" size="icon" className={cn("h-8 w-8 relative", hasUnsavedChanges && "text-primary")} onClick={handleSave} disabled={isSaving || !onSave}>{isSaving ? <KortixLoader size="small" /> : <Save className="h-4 w-4" />}{hasUnsavedChanges && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-primary rounded-full" />}</Button></TooltipTrigger><TooltipContent>{isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save changes (⌘S)' : 'No changes'}</TooltipContent></Tooltip>
-            <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUploadClick}><ImagePlus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Add Image</TooltipContent></Tooltip>
+            <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUploadClick}><ImagePlus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3363JsxTextAddImage')}</TooltipContent></Tooltip>
             {/* Add Frame with presets */}
             <Popover>
               <Tooltip>
@@ -3371,7 +3323,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                     </Button>
                   </PopoverTrigger>
                 </TooltipTrigger>
-                <TooltipContent>Add Frame</TooltipContent>
+                <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3374JsxTextAddFrame')}</TooltipContent>
               </Tooltip>
               <PopoverContent className="w-56 p-1 max-h-96 overflow-y-auto" align="start">
                 {/* Custom frame at top */}
@@ -3384,7 +3336,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
                 {framePresets.map((category) => (
                   <div key={category.category}>
-                    <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">
+                    <div className="px-2 py-1 text-xs text-muted-foreground uppercase tracking-wider">
                       {category.category}
                     </div>
                     {category.items.map((preset) => (
@@ -3394,7 +3346,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                         onClick={() => handleAddFrame(preset.width, preset.height, preset.name)}
                       >
                         <span>{preset.name}</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">{preset.width}×{preset.height}</span>
+                        <span className="text-xs text-muted-foreground font-mono">{preset.width}×{preset.height}</span>
                       </button>
                     ))}
                   </div>
@@ -3412,13 +3364,13 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                     </Button>
                   </PopoverTrigger>
                 </TooltipTrigger>
-                <TooltipContent>Generate with AI</TooltipContent>
+                <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3415JsxTextGenerateWithAi')}</TooltipContent>
               </Tooltip>
               <PopoverContent className="w-80 p-3" align="end">
                 <div className="space-y-3">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Quick Image Generation</div>
+                  <div className="text-xs text-muted-foreground uppercase tracking-wide">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3419JsxTextQuickImageGeneration')}</div>
                   <Textarea
-                    placeholder="Describe the image you want to create..."
+                    placeholder={tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3421JsxAttrPlaceholderDescribeTheImageYouWantToCreate')}
                     value={generatePrompt}
                     onChange={(e) => setGeneratePrompt(e.target.value)}
                     className="min-h-[80px] resize-none shadow-none"
@@ -3493,8 +3445,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center text-muted-foreground">
               <ImagePlus className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium">Canvas is empty</p>
-              <p className="text-sm mt-1">Add images to get started</p>
+              <p className="text-lg font-medium">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3496JsxTextCanvasIsEmpty')}</p>
+              <p className="text-sm mt-1">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3497JsxTextAddImagesToGetStarted')}</p>
             </div>
           </div>
         )}
@@ -3645,15 +3597,6 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           const width = targetEl.width * scale;
           const height = targetEl.height * scale;
 
-          console.log('[SHIMMER_DEBUG] Showing shimmer on:', { 
-            processingId: processingElementId,
-            showingOn: containingFrame ? 'FRAME' : 'IMAGE',
-            frameId: containingFrame?.id,
-            posX, 
-            posY, 
-            width, 
-            height,
-          });
 
           return (
             <div

@@ -79,13 +79,13 @@ fi
 # ── 4. Verify sandbox image exists ──────────────────────────────────────────
 echo "[4/5] Checking sandbox image..."
 cd "$ROOT_DIR"
-SANDBOX_IMAGE="${SANDBOX_IMAGE:-kortix/computer:latest}"
+SANDBOX_IMAGE="${SANDBOX_IMAGE:-kortix/kortix-sandbox:dev}"
 
 if docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1; then
   echo "  $SANDBOX_IMAGE exists locally"
 else
   echo "  WARNING: $SANDBOX_IMAGE not found locally!"
-  echo "  Build it first:  docker build -f core/docker/Dockerfile --build-arg SANDBOX_VERSION=dev -t $SANDBOX_IMAGE ."
+  echo "  Build it first:  docker build -f apps/sandbox/Dockerfile -t $SANDBOX_IMAGE ."
   echo "  Or the API will try to pull it from Docker Hub on first init."
 fi
 

@@ -122,7 +122,7 @@ export function FileTabContent({ tabId, filePath }: FileTabContentProps) {
       </div>
 
       {/* Path bar footer with diagnostics summary */}
-      <div className="flex items-center justify-between gap-4 px-3 py-1 border-t border-border/50 text-[10px] text-muted-foreground/50 shrink-0">
+      <div className="flex items-center justify-between gap-4 px-3 py-1 border-t border-border/50 text-xs text-muted-foreground/50 shrink-0">
         <span className="truncate">{filePath}</span>
         {(errorCount > 0 || warningCount > 0) && (
           <span className="inline-flex items-center gap-2 shrink-0">

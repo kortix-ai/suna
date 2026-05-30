@@ -32,6 +32,8 @@ interface SandboxConnectionStore {
 	openCodeVersion: string | null;
 	/** Whether the OpenCode server reports healthy */
 	healthy: boolean | null;
+	/** Last runtime boot/readiness error reported by /kortix/health */
+	runtimeError: string | null;
 	recoveryPhase: SandboxRecoveryPhase;
 	restartRequestedAt: number | null;
 }
@@ -90,6 +92,7 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	sandboxVersion: null,
 	openCodeVersion: null,
 	healthy: null,
+	runtimeError: null,
 	recoveryPhase: "idle",
 	restartRequestedAt: null,
 }));
@@ -186,9 +189,10 @@ export function resetForServerSwitch() {
 			disconnectedAt: null,
 			sandboxVersion: null,
 			openCodeVersion: null,
-		healthy: null,
-		recoveryPhase: "idle",
-		restartRequestedAt: null,
+			healthy: null,
+			runtimeError: null,
+			recoveryPhase: "idle",
+			restartRequestedAt: null,
 		});
 		saveWasConnected(true);
 		return;
@@ -204,6 +208,7 @@ export function resetForServerSwitch() {
 		sandboxVersion: null,
 		openCodeVersion: null,
 		healthy: null,
+		runtimeError: null,
 		recoveryPhase: "idle",
 		restartRequestedAt: null,
 	});
@@ -243,11 +248,17 @@ export function setSandboxVersion(version: string | null) {
 	useSandboxConnectionStore.setState({ sandboxVersion: version });
 }
 
-export function setOpenCodeHealth(healthy: boolean, version?: string) {
+export function setOpenCodeHealth(healthy: boolean, version?: string, runtimeError?: string | null) {
 	const state = useSandboxConnectionStore.getState();
 	const updates: Partial<SandboxConnectionStore> = {};
 	if (state.healthy !== healthy) updates.healthy = healthy;
 	if (version !== undefined && state.openCodeVersion !== version) updates.openCodeVersion = version;
+	const nextRuntimeError = healthy ? null : runtimeError;
+	if (runtimeError !== undefined && state.runtimeError !== nextRuntimeError) {
+		updates.runtimeError = nextRuntimeError;
+	} else if (healthy && state.runtimeError !== null) {
+		updates.runtimeError = null;
+	}
 	if (Object.keys(updates).length > 0) {
 		useSandboxConnectionStore.setState(updates);
 	}

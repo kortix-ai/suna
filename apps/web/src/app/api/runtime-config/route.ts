@@ -1,12 +1,10 @@
-import { getServerPublicEnv } from '@/lib/public-env-server'
+import { serializeRuntimeConfigScript } from '@/lib/public-env-server'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 export async function GET() {
-  const runtimeEnv = getServerPublicEnv()
-  const payload = JSON.stringify(runtimeEnv)
-  const script = `window.__KORTIX_RUNTIME_CONFIG=${payload};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`
+  const script = serializeRuntimeConfigScript()
 
   return new Response(script, {
     headers: {

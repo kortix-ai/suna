@@ -1,7 +1,9 @@
 import { toast } from '@/lib/toast';
 import { BillingError, isBillingError, formatBillingErrorForUI } from './api/errors';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
-import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
+import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { isBillingEnabled } from '@/lib/config';
 import * as Sentry from '@sentry/nextjs';
 
 export interface ApiError extends Error {
@@ -96,6 +98,30 @@ const shouldShowError = (error: any, context?: ErrorContext): boolean => {
   return true;
 };
 
+// Suppress duplicate toasts when the same error fires repeatedly — typically
+// a polling query (sessions list, project metadata) hitting a 403/5xx every
+// few seconds. We keep one toast per (status, message) per dedupe window;
+// after the window passes, a fresh toast can fire as a reminder.
+const TOAST_DEDUPE_MS = 30_000;
+const recentToasts = new Map<string, number>();
+
+const shouldSuppressDuplicate = (status: number | undefined, message: string): boolean => {
+  const key = `${status ?? 'x'}:${message}`;
+  const now = Date.now();
+  const lastShown = recentToasts.get(key);
+  if (lastShown && now - lastShown < TOAST_DEDUPE_MS) {
+    return true;
+  }
+  recentToasts.set(key, now);
+  // Opportunistically prune so the map doesn't grow unbounded across a session.
+  if (recentToasts.size > 50) {
+    for (const [k, t] of recentToasts) {
+      if (now - t >= TOAST_DEDUPE_MS) recentToasts.delete(k);
+    }
+  }
+  return false;
+};
+
 const formatErrorMessage = (message: string, context?: ErrorContext): string => {
   if (!context?.operation && !context?.resource) {
     return message;
@@ -122,11 +148,19 @@ const formatErrorMessage = (message: string, context?: ErrorContext): string => 
 
 
 export const handleApiError = (error: any, context?: ErrorContext): void => {
-  console.error('API Error:', error, context);
+  const status = error?.status || error?.response?.status;
+  // Expected 4xx (auth, validation, forbidden, not-found, etc.) should not
+  // light up the Next.js dev overlay — they're user-facing business outcomes
+  // we already surface via toast. Keep server errors and network failures
+  // at console.error so real bugs still surface.
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    console.warn('API Error:', error, context);
+  } else {
+    console.error('API Error:', error, context);
+  }
 
   // Report server errors (5xx) and network failures to Better Stack via Sentry.
   // 4xx errors are expected (auth, validation) and don't need alerting.
-  const status = error?.status || error?.response?.status;
   if (status >= 500 || error?.code === 'TIMEOUT' || error?.code === 'NETWORK_ERROR') {
     Sentry.captureException(error instanceof Error ? error : new Error(error?.message || String(error)), {
       tags: {
@@ -142,6 +176,67 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
     });
   }
 
+  // Billing v2 — structured 402 detection runs BEFORE shouldShowError, because
+  // shouldShowError short-circuits on `error instanceof BillingError` to
+  // suppress its toast — but we still need to open the upgrade dialog for
+  // those errors. Don't rely on `instanceof` here either, since Next.js HMR
+  // can swap the class identity across module reloads.
+  const v2Status: number | undefined =
+    (error as any)?.status ?? (error as any)?.response?.status;
+  const errAny = error as any;
+  const v2Detail =
+    errAny?.detail ??
+    errAny?.data ??
+    errAny?.details ??
+    (typeof errAny === 'object' ? errAny : null);
+  const v2Code: string | undefined =
+    v2Detail?.code ??
+    errAny?.code;
+  const v2Message: string | undefined =
+    v2Detail?.message ??
+    v2Detail?.error ??
+    errAny?.message;
+  const v2Balance: number =
+    typeof v2Detail?.balance === 'number' ? v2Detail.balance : 0;
+
+  if (
+    isBillingEnabled() &&
+    v2Status === 402 &&
+    (v2Code === 'subscription_required' ||
+      v2Code === 'insufficient_credits' ||
+      v2Code === 'no_account')
+  ) {
+    useUpgradeDialogStore.getState().openUpgradeDialog({
+      reason: v2Code,
+      message: v2Message ?? '',
+      balance: v2Balance,
+    });
+    return;
+  }
+
+  // Concurrent session limit — single clean toast with usage + an Open Settings
+  // action. The dedup key (status, message) suppresses any duplicate the call
+  // site might also emit with the same body.
+  if (v2Status === 429 && v2Code === 'concurrent_session_limit') {
+    const limit = typeof v2Detail?.limit === 'number' ? v2Detail.limit : undefined;
+    const active = typeof v2Detail?.active_sessions === 'number' ? v2Detail.active_sessions : undefined;
+    const title = limit !== undefined
+      ? `You're at your session limit (${active ?? limit}/${limit})`
+      : 'Session limit reached';
+    if (!shouldSuppressDuplicate(v2Status, title)) {
+      toast.warning(title, {
+        description: 'Close a running session, or upgrade your plan for more.',
+        duration: 6000,
+        action: {
+          label: 'Manage plan',
+          onClick: () =>
+            useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
+        },
+      });
+    }
+    return;
+  }
+
   if (!shouldShowError(error, context)) {
     return;
   }
@@ -149,19 +244,21 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   const rawMessage = extractErrorMessage(error);
   const formattedMessage = formatErrorMessage(rawMessage, context);
 
-  // Handle billing errors.
-  // Insufficient-credits 402s route to the Billing tab (inline auto top-up + buy credits);
-  // other 402s (e.g. no subscription) still open the new-instance flow.
+  // Legacy 402 paths (no structured code) — preserved behaviour.
   const errorUI = formatBillingErrorForUI(error);
   if (errorUI) {
-    const message = (error as BillingError)?.detail?.message?.toLowerCase() || '';
+    const detail = (error as BillingError)?.detail as
+      | { code?: string; message?: string; balance?: number }
+      | undefined;
+
+    const message = detail?.message?.toLowerCase() || '';
     const isCreditsExhausted =
       message.includes('credit') ||
       message.includes('balance') ||
       message.includes('insufficient');
 
     if (isCreditsExhausted) {
-      useUserSettingsModalStore.getState().openUserSettings({
+      useAccountSettingsModalStore.getState().openAccountSettings({
         tab: 'billing',
         highlight: 'credits',
       });
@@ -175,6 +272,10 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
         alertTitle: errorUI.alertTitle,
       });
     }
+    return;
+  }
+
+  if (shouldSuppressDuplicate(status, formattedMessage)) {
     return;
   }
 

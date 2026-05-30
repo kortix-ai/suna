@@ -38,17 +38,41 @@ export interface SandboxInfo {
   updated_at: string;
 }
 
-interface PlatformResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  created?: boolean;
+interface ProjectSummary {
+  project_id: string;
+  account_id: string;
+  name: string;
+  updated_at: string;
 }
 
-interface LocalBridgeSandboxResponse {
-  success: boolean;
-  status?: string;
-  data?: SandboxInfo | null;
+interface ProjectSessionSummary {
+  session_id: string;
+  account_id: string;
+  project_id: string;
+  sandbox_provider: SandboxProviderName | null;
+  sandbox_id: string;
+  sandbox_url: string | null;
+  name: string | null;
+  status: string;
+  error: string | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ProjectSessionSandbox {
+  sandbox_id: string;
+  session_id: string;
+  project_id: string;
+  account_id: string;
+  provider: SandboxProviderName;
+  external_id: string | null;
+  base_url: string | null;
+  status: string;
+  config?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -68,10 +92,10 @@ export function getSandboxPortUrl(sandboxExternalId: string, port: string): stri
   return `${API_URL}/p/${sandboxExternalId}/${port}`;
 }
 
-async function platformFetch<T>(
+async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
-): Promise<PlatformResponse<T>> {
+): Promise<T> {
   const token = await getAuthToken();
   if (!token) {
     throw new Error('Not authenticated');
@@ -88,13 +112,120 @@ async function platformFetch<T>(
     headers,
   });
 
-  const body = await res.json();
-
+  const text = await res.text();
+  const body = text ? JSON.parse(text) : null;
   if (!res.ok) {
-    throw new Error(body?.error || body?.message || `Platform API error ${res.status}`);
+    throw new Error(body?.error || body?.message || `API error ${res.status}`);
+  }
+  return body as T;
+}
+
+function normalizeSessionStatus(status: string | undefined): string {
+  if (status === 'running') return 'active';
+  if (status === 'queued' || status === 'branching' || status === 'provisioning') return 'provisioning';
+  if (status === 'failed') return 'error';
+  if (status === 'stopped' || status === 'completed') return 'stopped';
+  return status || 'unknown';
+}
+
+function toSandboxInfo(
+  project: ProjectSummary,
+  session: ProjectSessionSummary,
+  runtime?: ProjectSessionSandbox | null,
+): SandboxInfo {
+  const externalId = runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
+  const status = normalizeSessionStatus(runtime?.status || session.status);
+  return {
+    sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
+    external_id: externalId,
+    name: session.name || `${project.name} session`,
+    provider: runtime?.provider || session.sandbox_provider || 'daytona',
+    base_url: runtime?.base_url || session.sandbox_url || (runtime?.external_id ? getSandboxUrl(runtime.external_id) : ''),
+    status,
+    version: null,
+    metadata: {
+      ...(session.metadata || {}),
+      project_id: project.project_id,
+      session_id: session.session_id,
+      project_name: project.name,
+      error: session.error,
+      runtime_status: runtime?.status,
+    },
+    created_at: runtime?.created_at || session.created_at,
+    updated_at: runtime?.updated_at || session.updated_at,
+  };
+}
+
+async function listProjects(): Promise<ProjectSummary[]> {
+  return apiFetch<ProjectSummary[]>('/projects');
+}
+
+async function listProjectSessions(projectId: string): Promise<ProjectSessionSummary[]> {
+  return apiFetch<ProjectSessionSummary[]>(`/projects/${encodeURIComponent(projectId)}/sessions`);
+}
+
+async function getProjectSessionSandbox(
+  projectId: string,
+  sessionId: string,
+): Promise<ProjectSessionSandbox | null> {
+  try {
+    return await apiFetch<ProjectSessionSandbox>(
+      `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/sandbox`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function listProjectSessionSandboxes(): Promise<Array<{
+  project: ProjectSummary;
+  session: ProjectSessionSummary;
+  runtime: ProjectSessionSandbox | null;
+  sandbox: SandboxInfo;
+}>> {
+  const projects = await listProjects();
+  const results: Array<{
+    project: ProjectSummary;
+    session: ProjectSessionSummary;
+    runtime: ProjectSessionSandbox | null;
+    sandbox: SandboxInfo;
+  }> = [];
+
+  for (const project of projects) {
+    const sessions = await listProjectSessions(project.project_id).catch(() => []);
+    for (const session of sessions) {
+      const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
+      results.push({
+        project,
+        session,
+        runtime,
+        sandbox: toSandboxInfo(project, session, runtime),
+      });
+    }
   }
 
-  return body as PlatformResponse<T>;
+  return results.sort((a, b) => {
+    const priority: Record<string, number> = { active: 0, provisioning: 1, stopped: 2, error: 3 };
+    const statusDelta = (priority[a.sandbox.status] ?? 99) - (priority[b.sandbox.status] ?? 99);
+    if (statusDelta !== 0) return statusDelta;
+    return Date.parse(b.sandbox.updated_at) - Date.parse(a.sandbox.updated_at);
+  });
+}
+
+export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
+  project: ProjectSummary;
+  session: ProjectSessionSummary;
+  runtime: ProjectSessionSandbox | null;
+  sandbox: SandboxInfo;
+} | null> {
+  const rows = await listProjectSessionSandboxes();
+  if (!sandboxId) return rows[0] ?? null;
+  return rows.find((row) =>
+    row.sandbox.sandbox_id === sandboxId ||
+    row.sandbox.external_id === sandboxId ||
+    row.session.session_id === sandboxId ||
+    row.runtime?.external_id === sandboxId
+  ) ?? null;
 }
 
 // ─── API Methods ─────────────────────────────────────────────────────────────
@@ -105,19 +236,30 @@ async function platformFetch<T>(
  */
 export async function ensureSandbox(opts?: {
   provider?: SandboxProviderName;
+  projectId?: string;
 }): Promise<{ sandbox: SandboxInfo; created: boolean }> {
   log.log('📦 [Platform] Ensuring sandbox...');
-  const result = await platformFetch<SandboxInfo>('/platform/init', {
-    method: 'POST',
-    body: opts?.provider ? JSON.stringify({ provider: opts.provider }) : undefined,
-  });
 
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to ensure sandbox');
+  const existing = await getActiveSandbox();
+  if (existing) return { sandbox: existing, created: false };
+
+  const projects = await listProjects();
+  const project = opts?.projectId
+    ? projects.find((item) => item.project_id === opts.projectId)
+    : projects[0];
+  if (!project) {
+    throw new Error('Create a project before starting a sandbox');
   }
 
-  log.log('✅ [Platform] Sandbox ensured:', result.data.external_id);
-  return { sandbox: result.data, created: result.created ?? false };
+  const session = await apiFetch<ProjectSessionSummary>(`/projects/${encodeURIComponent(project.project_id)}/sessions`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
+  const sandbox = toSandboxInfo(project, session, runtime);
+
+  log.log('✅ [Platform] Project session sandbox ensured:', sandbox.external_id);
+  return { sandbox, created: true };
 }
 
 /**
@@ -126,15 +268,8 @@ export async function ensureSandbox(opts?: {
  */
 export async function getActiveSandbox(): Promise<SandboxInfo | null> {
   try {
-    const result = await platformFetch<SandboxInfo>('/platform/sandbox', {
-      method: 'GET',
-    });
-
-    if (!result.success || !result.data) {
-      return null;
-    }
-
-    return result.data;
+    const row = await findProjectSessionSandbox();
+    return row?.sandbox ?? null;
   } catch {
     return null;
   }
@@ -150,23 +285,16 @@ export async function getActiveSandbox(): Promise<SandboxInfo | null> {
  */
 export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> {
   try {
-    const qs = sandboxId ? `?sandbox_id=${encodeURIComponent(sandboxId)}` : '';
-    const result = await platformFetch<SandboxInfo[]>(`/platform/sandbox/list${qs}`, {
-      method: 'GET',
-    });
-
-    const rows = result.success && result.data ? result.data : [];
-    const discoveredLocal = await discoverLocalSandbox();
-    if (!discoveredLocal) return rows;
-    if (sandboxId && discoveredLocal.sandbox_id !== sandboxId) return rows;
-
-    const withoutDuplicate = rows.filter((s) => s.sandbox_id !== discoveredLocal.sandbox_id);
-    return [discoveredLocal, ...withoutDuplicate];
+    const rows = await listProjectSessionSandboxes();
+    return rows
+      .map((row) => row.sandbox)
+      .filter((sandbox) =>
+        !sandboxId ||
+        sandbox.sandbox_id === sandboxId ||
+        sandbox.external_id === sandboxId
+      );
   } catch {
-    const discoveredLocal = await discoverLocalSandbox().catch(() => null);
-    if (!discoveredLocal) return [];
-    if (sandboxId && discoveredLocal.sandbox_id !== sandboxId) return [];
-    return [discoveredLocal];
+    return [];
   }
 }
 
@@ -178,54 +306,22 @@ export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> 
  * GET /platform/local-bridge/status
  */
 export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
-  const url = `${API_URL}/platform/local-bridge/status`;
-  try {
-    const token = await getAuthToken();
-    if (!token) {
-      log.log('🔎 [discoverLocalSandbox] no auth token — skipping');
-      return null;
-    }
-
-    const res = await fetch(url, {
-      method: 'GET',
-      signal: AbortSignal.timeout(1500),
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (!res.ok) {
-      log.log(`🔎 [discoverLocalSandbox] ${url} → ${res.status} (not-ok)`);
-      return null;
-    }
-
-    const body = (await res.json()) as LocalBridgeSandboxResponse;
-    if (!body.success || body.status !== 'ready' || !body.data?.sandbox_id) {
-      log.log(
-        `🔎 [discoverLocalSandbox] ${url} → status="${body.status}" data=${
-          body.data ? 'present' : 'null'
-        } — no local sandbox`,
-      );
-      return null;
-    }
-    log.log(
-      `🔎 [discoverLocalSandbox] found local sandbox: ${body.data.sandbox_id} (${body.data.external_id})`,
-    );
-    return body.data;
-  } catch (err: any) {
-    log.log(`🔎 [discoverLocalSandbox] ${url} failed:`, err?.message || err);
-    return null;
-  }
+  return null;
 }
 
 /**
  * Restart the active sandbox.
  * POST /platform/sandbox/restart
  */
-export async function restartSandbox(): Promise<void> {
-  await platformFetch<void>('/platform/sandbox/restart', {
+export async function restartSandbox(sandboxId?: string): Promise<void> {
+  const row = await findProjectSessionSandbox(sandboxId);
+  if (!row) throw new Error('No project session sandbox found');
+  await apiFetch<void>(
+    `/projects/${encodeURIComponent(row.project.project_id)}/sessions/${encodeURIComponent(row.session.session_id)}/restart`,
+    {
     method: 'POST',
-  });
+    },
+  );
 }
 
 /**
@@ -233,9 +329,7 @@ export async function restartSandbox(): Promise<void> {
  * POST /platform/sandbox/stop
  */
 export async function stopSandbox(): Promise<void> {
-  await platformFetch<void>('/platform/sandbox/stop', {
-    method: 'POST',
-  });
+  throw new Error('Stopping project-session sandboxes is not supported by the current API');
 }
 
 /**
@@ -243,9 +337,12 @@ export async function stopSandbox(): Promise<void> {
  * DELETE /platform/sandbox/:sandboxId
  */
 export async function deleteSandbox(sandboxId: string): Promise<void> {
-  await platformFetch<void>(`/platform/sandbox/${sandboxId}`, {
-    method: 'DELETE',
-  });
+  const row = await findProjectSessionSandbox(sandboxId);
+  if (!row) throw new Error('Project session sandbox not found');
+  await apiFetch<void>(
+    `/projects/${encodeURIComponent(row.project.project_id)}/sessions/${encodeURIComponent(row.session.session_id)}`,
+    { method: 'DELETE' },
+  );
 }
 
 /**
@@ -253,14 +350,7 @@ export async function deleteSandbox(sandboxId: string): Promise<void> {
  * GET /platform/providers
  */
 export async function getProviders(): Promise<string[]> {
-  const result = await platformFetch<any>('/platform/providers', {
-    method: 'GET',
-  });
-  const data = result.data;
-  if (Array.isArray(data)) return data;
-  // Some backends return { providers: [...] }
-  if (data && Array.isArray(data.providers)) return data.providers;
-  return [];
+  return ['daytona'];
 }
 
 /**
@@ -274,56 +364,13 @@ export interface LocalSandboxProgress {
 }
 
 export async function initLocalSandbox(
-  name?: string,
+  _name?: string,
   onProgress?: (progress: LocalSandboxProgress) => void,
 ): Promise<SandboxInfo> {
-  const token = await getAuthToken();
-  if (!token) throw new Error('Not authenticated');
-
-  onProgress?.({ status: 'starting', progress: 0, message: 'Initializing...' });
-
-  const res = await fetch(`${API_URL}/platform/init/local`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: name ? JSON.stringify({ name }) : undefined,
-  });
-
-  const body = await res.json();
-  if (!res.ok) throw new Error(body?.error || body?.message || 'Failed to init local sandbox');
-
-  // If already ready, return immediately
-  if (body.data?.status === 'ready' || body.data?.status === 'running') {
-    onProgress?.({ status: 'ready', progress: 100, message: 'Connected' });
-    return body.data as SandboxInfo;
-  }
-
-  // Poll for progress
-  for (let i = 0; i < 360; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    const statusRes = await fetch(`${API_URL}/platform/init/local/status`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const statusBody = await statusRes.json();
-    const data = statusBody.data;
-    const status = data?.status;
-
-    if (status === 'ready' || status === 'running') {
-      onProgress?.({ status: 'ready', progress: 100, message: 'Connected' });
-      return data as SandboxInfo;
-    }
-    if (status === 'error') {
-      throw new Error(data?.message || 'Local sandbox creation failed');
-    }
-
-    // Report progress from backend or estimate
-    const pct = data?.progress ?? Math.min(Math.round((i / 180) * 95), 95);
-    const msg = data?.message || (i < 10 ? 'Pulling sandbox image...' : 'Setting up sandbox...');
-    onProgress?.({ status: status || 'pulling', progress: pct, message: msg });
-  }
-  throw new Error('Timed out while pulling sandbox image');
+  onProgress?.({ status: 'starting', progress: 0, message: 'Starting project session...' });
+  const result = await ensureSandbox();
+  onProgress?.({ status: result.sandbox.status, progress: result.sandbox.status === 'active' ? 100 : 25, message: 'Project session started' });
+  return result.sandbox;
 }
 
 /**
@@ -461,25 +508,26 @@ export async function getFullChangelog(): Promise<ChangelogEntry[]> {
   }
 }
 
-export async function triggerSandboxUpdate(version: string): Promise<void> {
-  await platformFetch<void>('/platform/sandbox/update', {
-    method: 'POST',
-    body: JSON.stringify({ version }),
-  });
+export async function triggerSandboxUpdate(_version: string): Promise<void> {
+  throw new Error('Sandbox image updates are managed by project-session provisioning in the current API');
 }
 
 export async function getSandboxUpdateStatus(): Promise<SandboxUpdateStatus> {
-  const result = await platformFetch<SandboxUpdateStatus>('/platform/sandbox/update/status', {
-    method: 'GET',
-  });
-  if (result.data) return result.data;
-  return result as unknown as SandboxUpdateStatus;
+  return {
+    phase: 'idle',
+    progress: 0,
+    message: 'Project-session sandboxes do not expose legacy update status',
+    targetVersion: null,
+    previousVersion: null,
+    currentVersion: null,
+    error: null,
+    startedAt: null,
+    updatedAt: null,
+  };
 }
 
 export async function resetSandboxUpdateStatus(): Promise<void> {
-  await platformFetch<void>('/platform/sandbox/update/reset', {
-    method: 'POST',
-  });
+  return;
 }
 
 // ─── SSH API ────────────────────────────────────────────────────────────────
@@ -506,23 +554,11 @@ export interface SSHSetupResult extends SSHConnectionInfo {
 }
 
 export async function setupSSH(): Promise<SSHSetupResult> {
-  const result = await platformFetch<SSHSetupResult>('/platform/sandbox/ssh/setup', {
-    method: 'POST',
-  });
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to setup SSH');
-  }
-  return result.data;
+  throw new Error('SSH setup is not exposed for project-session sandboxes');
 }
 
 export async function getSSHConnection(): Promise<SSHConnectionInfo> {
-  const result = await platformFetch<SSHConnectionInfo>('/platform/sandbox/ssh/connection', {
-    method: 'GET',
-  });
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to resolve SSH connection');
-  }
-  return result.data;
+  throw new Error('SSH connection details are not exposed for project-session sandboxes');
 }
 
 // ─── Running Services API ───────────────────────────────────────────────────

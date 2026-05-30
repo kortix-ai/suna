@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,7 @@ import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { downloadPresentation, DownloadFormat, handleGoogleSlidesUpload } from '../utils/presentation-utils';
 import { useDownloadRestriction } from '@/hooks/billing';
+import { PRESENTATION_WITH_MODALS_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 
 interface SlideMetadata {
   title: string;
@@ -58,6 +60,7 @@ export function FullScreenPresentationViewer({
   sandboxUrl,
   initialSlide = 1,
 }: FullScreenPresentationViewerProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { subdomainOpts } = useSandboxProxy();
   const [metadata, setMetadata] = useState<PresentationMetadata | null>(null);
   const [currentSlide, setCurrentSlide] = useState(initialSlide);
@@ -374,7 +377,7 @@ export function FullScreenPresentationViewer({
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <Presentation className="h-12 w-12 mx-auto mb-4 text-zinc-400" />
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">No slide content to preview</p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsFullscreenpresentationviewer.line377JsxTextNoSlideContentToPreview')}</p>
             </div>
           </div>
         );
@@ -403,7 +406,7 @@ export function FullScreenPresentationViewer({
               src={showEditor ? `${sandboxUrl}/api/html/${slide.file_path}/editor` : slideUrlWithCacheBust}
               title={`Slide ${slide.number}: ${slide.title}`}
               className="border-0 rounded-xl"
-              sandbox="allow-same-origin allow-scripts allow-modals"
+              sandbox={PRESENTATION_WITH_MODALS_IFRAME_SANDBOX}
               style={{
                 width: '1920px',
                 height: '1080px',
@@ -447,7 +450,7 @@ export function FullScreenPresentationViewer({
       <div className="flex-shrink-0 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
-            <div className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
+            <div className="relative p-2 rounded-2xl border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
               <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             
@@ -482,7 +485,7 @@ export function FullScreenPresentationViewer({
                   variant="ghost" 
                   size="sm" 
                   className="w-8 p-0"
-                  title="Export presentation"
+                  title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsFullscreenpresentationviewer.line485JsxAttrTitleExportPresentation')}
                   disabled={isDownloadingPDF || isDownloadingPPTX || isDownloadingGoogleSlides}
                 >
                   {(isDownloadingPDF || isDownloadingPPTX || isDownloadingGoogleSlides) ? (
@@ -514,9 +517,7 @@ export function FullScreenPresentationViewer({
                   onClick={() => handleDownload(DownloadFormat.GOOGLE_SLIDES)} 
                   disabled={isDownloadingGoogleSlides}
                 >
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Google Slides
-                </DropdownMenuItem>
+                  <ExternalLink className="h-4 w-4 mr-2" />{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsFullscreenpresentationviewer.line518JsxTextGoogleSlides')}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -526,7 +527,7 @@ export function FullScreenPresentationViewer({
               size="sm"
               onClick={onClose}
               className="h-8 w-8 p-0"
-              title="Close full screen"
+              title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsFullscreenpresentationviewer.line529JsxAttrTitleCloseFullScreen')}
             >
               <X className="h-3.5 w-3.5" />
             </Button>
@@ -618,7 +619,7 @@ export function FullScreenPresentationViewer({
           </div>
         ) : (
           <div className="text-center">
-            <p className="text-zinc-700 dark:text-zinc-300">No slide found</p>
+            <p className="text-zinc-700 dark:text-zinc-300">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsFullscreenpresentationviewer.line621JsxTextNoSlideFound')}</p>
           </div>
         )}
       </div>

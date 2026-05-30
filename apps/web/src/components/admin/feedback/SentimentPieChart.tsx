@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdminSentimentSummary } from '@/hooks/admin/use-admin-feedback';
@@ -29,6 +31,7 @@ const chartConfig = {
 const COLORS = ['hsl(220 80% 50%)', 'hsl(220 20% 60%)', 'hsl(0 70% 50%)'];
 
 export function SentimentPieChart() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: sentiment, isLoading } = useAdminSentimentSummary();
 
   const chartData = sentiment ? [
@@ -42,16 +45,14 @@ export function SentimentPieChart() {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base font-medium">Sentiment Breakdown</CardTitle>
-        <CardDescription>Overall feedback sentiment</CardDescription>
+        <CardTitle className="text-base font-medium">{tHardcodedUi.raw('componentsAdminFeedbackSentimentpiechart.line45JsxTextSentimentBreakdown')}</CardTitle>
+        <CardDescription>{tHardcodedUi.raw('componentsAdminFeedbackSentimentpiechart.line46JsxTextOverallFeedbackSentiment')}</CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <Skeleton className="h-[250px] w-full" />
         ) : chartData.length === 0 ? (
-          <div className="h-[250px] flex items-center justify-center text-muted-foreground">
-            No sentiment data available
-          </div>
+          <div className="h-[250px] flex items-center justify-center text-muted-foreground">{tHardcodedUi.raw('componentsAdminFeedbackSentimentpiechart.line53JsxTextNoSentimentDataAvailable')}</div>
         ) : (
           <div className="flex flex-col items-center">
             <ChartContainer config={chartConfig} className="h-[200px] w-full">

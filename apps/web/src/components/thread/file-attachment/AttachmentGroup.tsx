@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 /**
  * AttachmentGroup - Compatibility wrapper for old AttachmentGroup interface
  * Maintains backward compatibility while using new components
@@ -55,6 +56,7 @@ export function AttachmentGroup({
     standalone = false,
     alignRight = false,
 }: AttachmentGroupProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
 
@@ -170,7 +172,7 @@ export function AttachmentGroup({
                                                     </div>
                                                 </TooltipTrigger>
                                                 <TooltipContent side="top">
-                                                    <p>Remove file</p>
+                                                    <p>{tHardcodedUi.raw('componentsThreadFileAttachmentAttachmentgroup.line173JsxTextRemoveFile')}</p>
                                                 </TooltipContent>
                                             </Tooltip>
                                         </TooltipProvider>
@@ -184,7 +186,7 @@ export function AttachmentGroup({
                         <button
                             onClick={() => setIsModalOpen(true)}
                             className={cn(
-                                "h-[54px] rounded-xl cursor-pointer",
+                                "h-[54px] rounded-2xl cursor-pointer",
                                 "border border-black/10 dark:border-white/10",
                                 "bg-black/5 dark:bg-black/20",
                                 "hover:bg-primary/10 dark:hover:bg-primary/20",
@@ -208,7 +210,7 @@ export function AttachmentGroup({
                 <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
                     <DialogHeader className="mb-1">
                         <DialogTitle>
-                            <span>All Files ({uniqueFiles.length})</span>
+                            <span>{tHardcodedUi.raw('componentsThreadFileAttachmentAttachmentgroup.line211JsxTextAllFiles')}{uniqueFiles.length})</span>
                         </DialogTitle>
                     </DialogHeader>
                     <div className={cn(
@@ -253,7 +255,7 @@ export function AttachmentGroup({
                                                         </div>
                                                     </TooltipTrigger>
                                                     <TooltipContent side="top">
-                                                        <p>Remove file</p>
+                                                        <p>{tHardcodedUi.raw('componentsThreadFileAttachmentAttachmentgroup.line256JsxTextRemoveFile')}</p>
                                                     </TooltipContent>
                                                 </Tooltip>
                                             </TooltipProvider>

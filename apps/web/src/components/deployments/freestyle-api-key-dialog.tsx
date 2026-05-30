@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -11,10 +13,11 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Loader2, KeyRound, ExternalLink } from 'lucide-react';
 import { useSetSecret } from '@/hooks/secrets/use-secrets';
 import { deploymentKeys } from '@/hooks/deployments/use-deployments';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 interface FreestyleApiKeyDialogProps {
   open: boolean;
@@ -27,6 +30,7 @@ export function FreestyleApiKeyDialog({
   onOpenChange,
   onSaved,
 }: FreestyleApiKeyDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [apiKey, setApiKey] = useState('');
   const setSecret = useSetSecret();
   const queryClient = useQueryClient();
@@ -62,25 +66,20 @@ export function FreestyleApiKeyDialog({
       <DialogContent className="max-w-md" aria-describedby="freestyle-key-description">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <KeyRound className="h-5 w-5" />
-            Configure Freestyle API Key
-          </DialogTitle>
-          <DialogDescription id="freestyle-key-description">
-            A Freestyle API key is required to deploy applications to production.
-          </DialogDescription>
+            <KeyRound className="h-5 w-5" />{tHardcodedUi.raw('componentsDeploymentsFreestyleApiKeyDialog.line67JsxTextConfigureFreestyleApiKey')}</DialogTitle>
+          <DialogDescription id="freestyle-key-description">{tHardcodedUi.raw('componentsDeploymentsFreestyleApiKeyDialog.line70JsxTextAFreestyleApiKeyIsRequiredToDeploy')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">
-              API Key <span className="text-red-500">*</span>
+            <label className="block text-sm font-medium text-foreground mb-1.5">{tHardcodedUi.raw('componentsDeploymentsFreestyleApiKeyDialog.line77JsxTextApiKey')}<span className="text-destructive">*</span>
             </label>
-            <input
+            <Input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="fs_..."
-              className="h-9 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 font-mono"
+              className="font-mono"
               autoComplete="off"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !setSecret.isPending) handleSave();
@@ -94,9 +93,7 @@ export function FreestyleApiKeyDialog({
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ExternalLink className="h-3 w-3" />
-            Get your API key from freestyle.sh
-          </a>
+            <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('componentsDeploymentsFreestyleApiKeyDialog.line99JsxTextGetYourApiKeyFromFreestyleSh')}</a>
         </div>
 
         <DialogFooter>

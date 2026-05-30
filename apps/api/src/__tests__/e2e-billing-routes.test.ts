@@ -54,6 +54,7 @@ mock.module('../middleware/auth', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => TEST_USER_ID,
+  resolveScopedAccountId: async () => TEST_USER_ID,
 }));
 
 // Credits service mock
@@ -157,14 +158,11 @@ mock.module('../shared/stripe', () => ({
 mock.module('../config', () => ({
   config: {
     STRIPE_WEBHOOK_SECRET: 'whsec_test',
-    ENV_MODE: 'cloud',
     INTERNAL_KORTIX_ENV: 'staging',
     DATABASE_URL: '',
     FRONTEND_URL: 'http://localhost:3000',
     KORTIX_BILLING_INTERNAL_ENABLED: true,
     ALLOWED_SANDBOX_PROVIDERS: ['local_docker'],
-    isLocal: () => false,
-    isCloud: () => true,
     isDaytonaEnabled: () => false,
     isLocalDockerEnabled: () => false,
     getDefaultProvider: () => 'local_docker',
@@ -256,16 +254,18 @@ describe('Billing: tier-configurations', () => {
 
     // Should include visible tiers
     const tierNames = body.tiers.map((t: any) => t.name);
-    expect(tierNames).toContain('free');
+    expect(tierNames).toContain('pro');
 
-    // Should NOT include hidden tiers
+    // Should NOT include hidden tiers ('free' is hidden from signup flows,
+    // 'none' is the internal no-access tier).
     expect(tierNames).not.toContain('none');
+    expect(tierNames).not.toContain('free');
 
     // Verify tier structure
-    const freeTier = body.tiers.find((t: any) => t.name === 'free');
-    expect(freeTier.display_name).toBe('Basic');
-    expect(freeTier.monthly_price).toBe(0);
-    expect(freeTier.monthly_credits).toBe(0);
+    const proTier = body.tiers.find((t: any) => t.name === 'pro');
+    expect(proTier.display_name).toBe('Pro');
+    expect(proTier.monthly_price).toBe(20);
+    expect(proTier.monthly_credits).toBe(0);
 
   });
 });

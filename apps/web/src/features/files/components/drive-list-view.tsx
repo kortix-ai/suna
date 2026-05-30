@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,7 +16,6 @@ import {
   Scissors,
   ClipboardCopy,
   RefreshCw,
-  ExternalLink,
   ArrowUp,
   ArrowDown,
   FolderOpen,
@@ -46,7 +47,6 @@ interface ListRowProps {
   onCopy?: (node: FileNode) => void;
   onCut?: (node: FileNode) => void;
   onDropMove?: (sourcePath: string, targetDirPath: string) => void;
-  onOpenInTab?: (node: FileNode) => void;
   isDownloadingItem?: boolean;
   gitStatus?: GitStatusType;
   isCut?: boolean;
@@ -63,10 +63,10 @@ function ListRow({
   onCopy,
   onCut,
   onDropMove,
-  onOpenInTab,
   isDownloadingItem,
   isCut,
 }: ListRowProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -249,12 +249,6 @@ function ListRow({
         <ContextMenuItem onClick={onClick}>
           {isDir ? 'Open folder' : 'Preview'}
         </ContextMenuItem>
-        {!isDir && onOpenInTab && (
-          <ContextMenuItem onClick={() => onOpenInTab(node)}>
-            <ExternalLink className="mr-2 h-4 w-4" />
-            Open in tab
-          </ContextMenuItem>
-        )}
         {onDownload && (
           <ContextMenuItem onClick={() => onDownload(node)} disabled={isDownloadingItem}>
             {isDownloadingItem ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -263,9 +257,7 @@ function ListRow({
         )}
         {!isDir && onHistory && (
           <ContextMenuItem onClick={() => onHistory(node)}>
-            <History className="mr-2 h-4 w-4" />
-            View history
-          </ContextMenuItem>
+            <History className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsDriveListView.line267JsxTextViewHistory')}</ContextMenuItem>
         )}
         <ContextMenuSeparator />
         {onCopy && (
@@ -281,9 +273,7 @@ function ListRow({
           </ContextMenuItem>
         )}
         <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.path)}>
-          <Copy className="mr-2 h-4 w-4" />
-          Copy path
-        </ContextMenuItem>
+          <Copy className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsDriveListView.line285JsxTextCopyPath')}</ContextMenuItem>
         <ContextMenuSeparator />
         {onRename && (
           <ContextMenuItem onClick={() => setTimeout(startRenaming, 100)}>
@@ -319,7 +309,6 @@ interface DriveListViewProps {
   onCopy: (node: FileNode) => void;
   onCut: (node: FileNode) => void;
   onDropMove: (sourcePath: string, targetDirPath: string) => void;
-  onOpenInTab: (node: FileNode) => void;
   gitStatusMap: Map<string, GitStatusType>;
   clipboardPath?: string;
   clipboardOperation?: string;
@@ -347,12 +336,12 @@ export function DriveListView({
   onCopy,
   onCut,
   onDropMove,
-  onOpenInTab,
   gitStatusMap,
   clipboardPath,
   clipboardOperation,
   isDirDownloading,
 }: DriveListViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const sortBy = useFilesStore((s) => s.sortBy);
   const sortOrder = useFilesStore((s) => s.sortOrder);
   const setSortBy = useFilesStore((s) => s.setSortBy);
@@ -379,10 +368,8 @@ export function DriveListView({
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <FolderOpen className="h-16 w-16 text-muted-foreground/20 mb-4" />
-        <p className="text-sm text-muted-foreground">This folder is empty</p>
-        <p className="text-xs text-muted-foreground/60 mt-1">
-          Drop files here or use the New button to get started
-        </p>
+        <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsDriveListView.line382JsxTextThisFolderIsEmpty')}</p>
+        <p className="text-xs text-muted-foreground/60 mt-1">{tHardcodedUi.raw('featuresFilesComponentsDriveListView.line384JsxTextDropFilesHereOrUseTheNewButton')}</p>
       </div>
     );
   }
@@ -434,17 +421,17 @@ export function DriveListView({
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <FolderCog className="h-4 w-4 text-primary/60 shrink-0" />
-            <span className="text-[13px] font-medium text-foreground truncate">
+            <span className="text-sm font-medium text-foreground truncate">
               {node.name}
             </span>
             {ELEVATED_DIR_META[node.name] && (
-              <span className="text-[11px] text-muted-foreground/40 truncate hidden sm:inline">
+              <span className="text-xs text-muted-foreground/40 truncate hidden sm:inline">
                 {ELEVATED_DIR_META[node.name]}
               </span>
             )}
           </div>
-          <span className="text-[11px] text-primary/50 font-medium">System</span>
-          <span className="text-[11px] text-muted-foreground/40">—</span>
+          <span className="text-xs text-primary/50 font-medium">System</span>
+          <span className="text-xs text-muted-foreground/40">—</span>
           <span />
         </div>
       ))}
@@ -477,7 +464,6 @@ export function DriveListView({
           onHistory={onHistory}
           onCopy={onCopy}
           onCut={onCut}
-          onOpenInTab={onOpenInTab}
           gitStatus={gitStatusMap.get(node.path)}
           isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
         />

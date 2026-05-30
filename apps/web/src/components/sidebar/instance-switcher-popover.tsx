@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Workspace switcher — Slack/Linear-style.
  *
@@ -40,7 +42,7 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from '@/components/ui/popover';
-import { InstanceSettingsModal } from '@/app/instances/_components/instance-settings-modal';
+import { InstanceSettingsModal } from '@/components/instances/instance-settings-modal';
 import { isBillingEnabled } from '@/lib/config';
 import { listSandboxes, ensureSandbox, type SandboxInfo } from '@/lib/platform-client';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
@@ -84,7 +86,7 @@ function WorkspaceAvatar({
   sandbox: SandboxInfo | null;
   size?: 'sm' | 'xs';
 }) {
-  const dim = size === 'sm' ? 'h-6 w-6 text-[10px]' : 'h-5 w-5 text-[9px]';
+  const dim = size === 'sm' ? 'h-6 w-6 text-xs' : 'h-5 w-5 text-xs';
   return (
     <span
       aria-hidden
@@ -142,6 +144,7 @@ export function WorkspacesFlyoutContent({
    *  Lets the parent close the flyout. */
   onAfterAction?: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
@@ -210,13 +213,9 @@ export function WorkspacesFlyoutContent({
       <div className="p-1 flex flex-col">
         {isLoading && visible.length === 0 ? (
           <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
-            Loading…
-          </div>
+            <Loader2 className="size-3.5 animate-spin" />{tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line214JsxTextLoading')}</div>
         ) : visible.length === 0 ? (
-          <div className="px-2 py-6 text-center text-xs text-muted-foreground/60">
-            No workspaces yet
-          </div>
+          <div className="px-2 py-6 text-center text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line218JsxTextNoWorkspacesYet')}</div>
         ) : (
           visible.map((s) => {
             const isActive = s.sandbox_id === activeInstanceId;
@@ -287,7 +286,7 @@ export function WorkspacesFlyoutContent({
           className={rowClass}
         >
           <ArrowUpRight />
-          <span className="flex-1 text-left">All workspaces</span>
+          <span className="flex-1 text-left">{tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line290JsxTextAllWorkspaces')}</span>
         </button>
       </div>
 
@@ -305,6 +304,7 @@ export function WorkspacesFlyoutContent({
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function InstanceSwitcherPopover() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
   const { user } = useAuth();
 
@@ -350,22 +350,22 @@ export function InstanceSwitcherPopover() {
           <button
             type="button"
             className={cn(
-              'group/switcher flex items-center gap-2 w-full h-10 px-1.5 rounded-lg text-left',
+              'group/switcher flex items-center gap-2 w-full h-9 px-1.5 rounded-lg text-left',
               'text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer',
               open && 'bg-sidebar-accent',
             )}
-            aria-label="Switch workspace"
+            aria-label={tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line357JsxAttrAriaLabelSwitchWorkspace')}
           >
             <WorkspaceAvatar sandbox={triggerSandbox} size="sm" />
             <div className="flex-1 min-w-0">
-              <p className="truncate text-[12.5px] font-semibold leading-tight text-foreground">
+              <p className="truncate text-xs font-semibold leading-tight text-foreground">
                 {triggerLabel}
               </p>
-              <p className="truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60 leading-tight mt-0.5">
+              <p className="truncate text-xs font-medium uppercase tracking-wider text-muted-foreground/60 leading-tight mt-0.5">
                 Workspace
               </p>
             </div>
-            <ChevronsUpDown className="size-3.5 opacity-50 flex-shrink-0 group-hover/switcher:opacity-100 transition-opacity" />
+            <ChevronsUpDown className="size-3 opacity-50 flex-shrink-0 group-hover/switcher:opacity-100 transition-opacity" />
           </button>
         </PopoverTrigger>
 
@@ -374,7 +374,7 @@ export function InstanceSwitcherPopover() {
           align="start"
           sideOffset={6}
           className={cn(
-            'w-[280px] p-0 overflow-hidden rounded-xl border-0',
+            'w-[280px] p-0 overflow-hidden rounded-2xl border-0',
             // Same dark slab surface as the unified dropdown system —
             // bg-card with hairline white inner border, soft drop, top-edge
             // gradient highlight. Identical material to DropdownMenuContent.

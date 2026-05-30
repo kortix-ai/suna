@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // ─── Sprite sheet data (1:1 with Chrome's T-Rex runner) ─────────────────────
@@ -357,6 +359,7 @@ function checkCollision(
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function DinoGame() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<GameState | null>(null);
   const animFrameRef = useRef<number>(0);
@@ -743,9 +746,7 @@ export function DinoGame() {
           imageRendering: 'pixelated',
         }}
       />
-      <p className="text-[10px] text-foreground/20 select-none">
-        Space / ↑ jump · ↓ duck
-      </p>
+      <p className="text-xs text-foreground/20 select-none">{tHardcodedUi.raw('componentsGamesDinoGame.line747JsxTextSpaceJumpDuck')}</p>
     </div>
   );
 }

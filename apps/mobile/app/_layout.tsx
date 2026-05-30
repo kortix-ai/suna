@@ -29,6 +29,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from '@/lib/logger';
 import { useAppearanceStore } from '@/stores/appearance-store';
 import { installHapticsGate } from '@/lib/haptics';
+import { consumeAuthCallbackState } from '@/lib/auth/callback-state';
 
 // Patch expo-haptics globally so every Haptics.* call across the app respects
 // the user's "Haptic Feedback" toggle in Settings → Sounds.
@@ -271,16 +272,15 @@ export default function RootLayout() {
       }
       isHandlingDeepLink = true;
 
-      log.log('🔗 Deep link received:', event.url);
-
       const url = event.url;
       const parsedUrl = Linking.parse(url);
 
-      log.log('🔍 Parsed URL:', {
+      log.log('🔗 Deep link received:', {
         hostname: parsedUrl.hostname,
         path: parsedUrl.path,
-        queryParams: parsedUrl.queryParams,
         scheme: parsedUrl.scheme,
+        hasQuery: Boolean(parsedUrl.queryParams && Object.keys(parsedUrl.queryParams).length),
+        hasFragment: url.includes('#'),
       });
 
       // Check for universal links (https://kortix.com/share/xxx or https://staging.kortix.com/share/xxx)
@@ -313,6 +313,16 @@ export default function RootLayout() {
           let hashFragment = '';
           if (hashIndex !== -1) {
             hashFragment = url.substring(hashIndex + 1);
+          }
+          let callbackState = typeof parsedUrl.queryParams?.state === 'string'
+            ? parsedUrl.queryParams.state
+            : null;
+          if (!callbackState && hashFragment) {
+            try {
+              callbackState = new URLSearchParams(hashFragment).get('state');
+            } catch {
+              callbackState = null;
+            }
           }
 
           // Check for errors in hash fragment first
@@ -411,6 +421,14 @@ export default function RootLayout() {
           });
 
           if (access_token && refresh_token) {
+            const stateOk = await consumeAuthCallbackState(callbackState);
+            if (!stateOk) {
+              log.warn('⚠️ Auth callback rejected: missing or invalid state');
+              isHandlingDeepLink = false;
+              router.replace('/auth');
+              return;
+            }
+
             log.log('✅ Setting session with tokens...');
 
             const { data, error } = await supabase.auth.setSession({
@@ -508,7 +526,7 @@ export default function RootLayout() {
     // Handle initial URL (app opened via deep link)
     Linking.getInitialURL().then((url) => {
       if (url) {
-        log.log('🔗 Initial URL found:', url);
+        log.log('🔗 Initial URL found');
         // Small delay to ensure app is ready
         setTimeout(() => {
           handleDeepLink({ url });
@@ -651,11 +669,12 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
 
     const currentSegment = segments[0] as string | undefined;
     const inAuthGroup = currentSegment === 'auth';
+    const inPublicShare = currentSegment === 'share';
     // Index/splash screen has no segment or empty segment
     const onSplashScreen = !currentSegment;
 
     // RULE 1: Unauthenticated users can only be on auth or splash screens
-    if (!isAuthenticated && !inAuthGroup && !onSplashScreen) {
+    if (!isAuthenticated && !inAuthGroup && !inPublicShare && !onSplashScreen) {
       log.log('🚫 Unauthenticated user on protected route, redirecting to /auth');
       router.replace('/auth');
       return;

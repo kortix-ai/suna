@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Ticket detail drawer.
  *
@@ -89,6 +91,7 @@ interface Props {
 }
 
 export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents, pollingEnabled, focusEventId }: Props) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: ticket } = useTicket(ticketId ?? undefined, { pollingEnabled });
   const { data: events } = useTicketEvents(ticketId ?? undefined, { pollingEnabled });
   const updateTicket = useUpdateTicket();
@@ -142,12 +145,11 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
         hideCloseButton
       >
         <DialogTitle className="sr-only">{ticket?.title || 'Ticket'}</DialogTitle>
-        <DialogDescription className="sr-only">Ticket detail</DialogDescription>
+        <DialogDescription className="sr-only">{tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line145JsxTextTicketDetail')}</DialogDescription>
 
         {!ticket ? (
           <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading ticket…
-          </div>
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />{tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line149JsxTextLoadingTicket')}</div>
         ) : (
           <>
             {/* Header */}
@@ -196,7 +198,7 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
                       agents={agents}
                       userHandle={userHandle}
                       userAvatarUrl={myAvatarUrl}
-                      placeholder="Add a description — acceptance criteria, notes, anything durable."
+                      placeholder={tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line199JsxAttrPlaceholderAddADescriptionAcceptanceCriteriaNotesAnythingDurable')}
                     />
                   </section>
 
@@ -207,9 +209,9 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
                       <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Activity</span>
                       <span className="text-[10px] text-muted-foreground/30 tabular-nums ml-auto">{events?.length ?? 0}</span>
                     </div>
-                    <div className="rounded-xl border border-border/40 bg-card divide-y divide-border/30 overflow-hidden">
+                    <div className="rounded-2xl border border-border/40 bg-card divide-y divide-border/30 overflow-hidden">
                       {(events ?? []).length === 0 ? (
-                        <div className="text-[12px] text-muted-foreground/40 py-5 text-center">No activity yet.</div>
+                        <div className="text-[12px] text-muted-foreground/40 py-5 text-center">{tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line212JsxTextNoActivityYet')}</div>
                       ) : (
                         (events ?? []).map((ev) => (
                           <EventRow
@@ -225,7 +227,7 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
                     </div>
 
                     {/* Comment composer */}
-                    <div className="mt-3 rounded-xl border border-border/40 bg-card focus-within:border-border transition-colors">
+                    <div className="mt-3 rounded-2xl border border-border/40 bg-card focus-within:border-border transition-colors">
                       <MentionTextarea
                         value={comment}
                         onChange={setComment}
@@ -238,12 +240,12 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
                             postComment();
                           }
                         }}
-                        placeholder="Comment. Type @ to tag a team member."
+                        placeholder={tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line241JsxAttrPlaceholderCommentTypeToTagATeamMember')}
                         rows={3}
                         className="w-full text-[13px] leading-relaxed bg-transparent border-0 outline-none focus:ring-0 resize-none px-4 pt-3 placeholder:text-muted-foreground/35"
                       />
                       <div className="flex items-center gap-2 px-3 pb-2">
-                        <span className="text-[10px] text-muted-foreground/40">⌘↵ to send</span>
+                        <span className="text-[10px] text-muted-foreground/40">{tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line246JsxTextToSend')}</span>
                         <Button
                           size="sm" className="ml-auto h-7 px-3 text-[12px] gap-1"
                           onClick={postComment}
@@ -373,13 +375,14 @@ function columnIcon(c: TicketColumn) {
 }
 
 function StatusPills({ columns, value, onChange }: { columns: TicketColumn[]; value: string; onChange: (k: string) => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const selected = columns.find((c) => c.key === value) ?? columns[0];
   if (!selected) return null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
         >
           {columnIcon(selected)}
           <span className="flex-1 text-left truncate font-medium">{selected.label}</span>
@@ -387,9 +390,7 @@ function StatusPills({ columns, value, onChange }: { columns: TicketColumn[]; va
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[220px] z-[10000]">
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
-          Move to
-        </DropdownMenuLabel>
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line391JsxTextMoveTo')}</DropdownMenuLabel>
         {columns.map((c) => {
           const active = c.key === value;
           return (
@@ -421,6 +422,7 @@ function AssigneeList({
   onAssign: (type: 'user' | 'agent', id: string) => void;
   onUnassign: (type: 'user' | 'agent', id: string) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const has = (type: 'user' | 'agent', id: string) => ticket.assignees.some((a: any) => a.assignee_type === type && a.assignee_id === id);
   const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
   return (
@@ -463,7 +465,7 @@ function AssigneeList({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-60 z-[10000]">
-          <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Assign to</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line466JsxTextAssignTo')}</DropdownMenuLabel>
           <DropdownMenuItem
             disabled={has('user', userHandle)}
             onClick={() => onAssign('user', userHandle)}
@@ -505,13 +507,14 @@ function FieldRow({ field, value, onChange }: { field: ProjectField; value: unkn
 }
 
 function FieldInput({ field, value, onChange }: { field: ProjectField; value: unknown; onChange: (v: unknown) => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   if (field.type === 'select') {
     let options: string[] = [];
     try { options = field.options_json ? JSON.parse(field.options_json) : []; } catch { }
     const current = (value as string) ?? '';
     return (
       <Select value={current} onValueChange={(v) => onChange(v || null)}>
-        <SelectTrigger size="sm" className="h-7 text-[12px]"><SelectValue placeholder="Choose…" /></SelectTrigger>
+        <SelectTrigger size="sm" className="h-7 text-[12px]"><SelectValue placeholder={tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line514JsxAttrPlaceholderChoose')} /></SelectTrigger>
         <SelectContent>
           {options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
         </SelectContent>
@@ -529,14 +532,14 @@ function FieldInput({ field, value, onChange }: { field: ProjectField; value: un
     return <input
       type="number" value={(value as number | string) ?? ''}
       onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-      placeholder="Number…"
+      placeholder={tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line532JsxAttrPlaceholderNumber')}
       className="h-7 w-full text-[12px] bg-transparent border border-border/40 rounded px-2 outline-none focus:ring-2 focus:ring-primary/20"
     />;
   }
   return <input
     type="text" value={(value as string) ?? ''}
     onChange={(e) => onChange(e.target.value)}
-    placeholder="Text…"
+    placeholder={tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line539JsxAttrPlaceholderText')}
     className="h-7 w-full text-[12px] bg-transparent border border-border/40 rounded px-2 outline-none focus:ring-2 focus:ring-primary/20"
   />;
 }
@@ -544,6 +547,7 @@ function FieldInput({ field, value, onChange }: { field: ProjectField; value: un
 // ─── Event row ──────────────────────────────────────────────────────────────
 
 function EventRow({ event, agentById, userHandle, agents, focused }: { event: any; agentById: Map<string, ProjectAgent>; userHandle: string; agents: ProjectAgent[]; focused?: boolean }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
   const ref = useRef<HTMLDivElement>(null);
 
@@ -604,8 +608,8 @@ function EventRow({ event, agentById, userHandle, agents, focused }: { event: an
     const who = p?.assignee_type === 'agent' ? `@${agentById.get(p.assignee_id)?.slug ?? p.assignee_id}` : `@${p?.assignee_id}`;
     summary = <>unassigned {who}</>;
   } else if (event.type === 'mention') summary = <>@{agentById.get(p?.mentioned_agent_id)?.slug ?? p?.mentioned_agent_slug} mentioned</>;
-  else if (event.type === 'created') summary = <>created the ticket</>;
-  else if (event.type === 'field_changed') summary = <>updated fields</>;
+  else if (event.type === 'created') summary = <>{tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line607JsxTextCreatedTheTicket')}</>;
+  else if (event.type === 'field_changed') summary = <>{tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line608JsxTextUpdatedFields')}</>;
   else summary = <>{event.type}{event.message ? ` — ${event.message}` : ''}</>;
 
   return (
@@ -631,6 +635,7 @@ function MilestonePicker({
   projectId: string;
   currentId: string | null;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: milestones = [] } = useMilestonesHook(projectId, 'all');
   const setTicketMilestone = useSetTicketMilestoneHook();
   const current = milestones.find((m) => m.id === currentId) ?? null;
@@ -642,14 +647,14 @@ function MilestonePicker({
           setTicketMilestone.mutate({ projectId, ticketId, milestoneId: e.target.value || null })
         }
         disabled={setTicketMilestone.isPending}
-        className="w-full h-7 text-[12px] bg-transparent border border-border/50 rounded-md px-2 outline-none focus:ring-2 focus:ring-primary/20"
+        className="w-full h-7 text-[12px] bg-transparent border border-border/50 rounded-2xl px-2 outline-none focus:ring-2 focus:ring-primary/20"
       >
-        <option value="">— none —</option>
+        <option value="">{tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line647JsxTextNone')}</option>
         {milestones.filter((m) => m.status === 'open').map((m) => (
           <option key={m.id} value={m.id}>M{m.number} · {m.title}</option>
         ))}
         {milestones.some((m) => m.status !== 'open') && (
-          <optgroup label="Closed / cancelled">
+          <optgroup label={tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line652JsxAttrLabelClosedCancelled')}>
             {milestones.filter((m) => m.status !== 'open').map((m) => (
               <option key={m.id} value={m.id}>M{m.number} · {m.title} ({m.status})</option>
             ))}
@@ -666,7 +671,7 @@ function MilestonePicker({
             }}
           />
           <span className="leading-relaxed">
-            {current.progress.done}/{current.progress.total} tickets done · {current.percent_complete}%
+            {current.progress.done}/{current.progress.total}{tHardcodedUi.raw('componentsKortixTicketDetailDrawer.line669JsxTextTicketsDone')}{current.percent_complete}%
             {current.status !== 'open' && (
               <span className="ml-1.5 text-[10px] uppercase tracking-[0.06em] font-semibold text-muted-foreground/50">
                 · {current.status}

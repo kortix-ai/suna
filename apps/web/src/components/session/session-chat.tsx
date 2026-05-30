@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import {
   ArrowDown,
   ArrowUp,
@@ -32,6 +33,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { SandboxImage } from '@/components/session/sandbox-image';
 
@@ -55,13 +57,15 @@ import {
 import { SessionWelcome } from '@/components/session/session-welcome';
 import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
 
-import { ToolPartRenderer } from '@/components/session/tool-renderers';
+import { ToolPartRenderer, ToolActivateContext } from '@/components/session/tool-renderers';
 import {
   contextToolSummary,
   contextToolTrigger,
 } from '@/components/session/tool-meta';
 import { SandboxUrlDetector } from '@/components/thread/content/sandbox-url-detector';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { STATUS_TEXT, STATUS_BG, STATUS_BORDER } from '@/components/ui/status';
 import {
   Collapsible,
   CollapsibleContent,
@@ -105,6 +109,7 @@ import {
   useOpenCodeAgents,
   useOpenCodeCommands,
   useOpenCodeProviders,
+  useOpenCodeRuntimeReady,
   useOpenCodeSession,
   useOpenCodeSessions,
 } from '@/hooks/opencode/use-opencode-sessions';
@@ -126,19 +131,15 @@ import { ChatMinimap } from '@/components/session/chat-minimap';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { toast as sonnerToast } from 'sonner';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import {
-  useMessageQueueStore,
-  selectSessionItems,
-  type QueuedMessage,
-} from '@/stores/message-queue-store';
-import { useMessageQueueDrain } from '@/hooks/opencode/use-message-queue-drain';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
-import { useServerStore } from '@/stores/server-store';
+import { useChatSendStore } from '@/stores/chat-send-store';
+import { useServerStore, getActiveOpenCodeUrl } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   buildFileRefsBlock,
@@ -365,7 +366,7 @@ function SystemMessageIndicator({
   return (
     <div className="flex items-center gap-2 -my-1">
       <div className="flex-1 h-px bg-border/30" />
-      <span className="text-[10px] text-muted-foreground/30 select-none whitespace-nowrap">
+      <span className="text-xs text-muted-foreground/30 select-none whitespace-nowrap">
         {text}
       </span>
       <div className="flex-1 h-px bg-border/30" />
@@ -398,7 +399,7 @@ function AnsweredQuestionCard({
 
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded}>
-      <div className="rounded-lg border border-border/40 bg-muted/20 overflow-hidden">
+      <div className="rounded-2xl border border-border/40 bg-muted/20 overflow-hidden">
         <CollapsibleTrigger asChild>
           <Button
             type="button"
@@ -409,7 +410,7 @@ function AnsweredQuestionCard({
             <span className="text-xs font-medium text-foreground">
               Questions
             </span>
-            <span className="text-[11px] text-muted-foreground/70">
+            <span className="text-xs text-muted-foreground/70">
               {answeredCount} answered
             </span>
             <ChevronDown
@@ -430,7 +431,7 @@ function AnsweredQuestionCard({
                   key={i}
                   className="px-2.5 py-2 border-b border-border/30 last:border-b-0"
                 >
-                  <div className="[&_*]:!text-muted-foreground/70 [&_p]:!my-0 [&_p]:!leading-relaxed [&_p]:!text-[11px] [&_ul]:!my-0 [&_ol]:!my-0 [&_li]:!my-0 [&_code]:!text-[10px] [&_strong]:!text-muted-foreground/60">
+                  <div className="[&_*]:!text-muted-foreground/70 [&_p]:!my-0 [&_p]:!leading-relaxed [&_p]:!text-xs [&_ul]:!my-0 [&_ol]:!my-0 [&_li]:!my-0 [&_code]:!text-xs [&_strong]:!text-muted-foreground/60">
                     <UnifiedMarkdown content={q.question} />
                   </div>
                   <div className="text-sm font-medium text-foreground mt-0.5">
@@ -616,6 +617,14 @@ interface ParsedFileRef {
 
 const FILE_TAG_REGEX =
   /<file\s+path="([^"]*?)"\s+mime="([^"]*?)"\s+filename="([^"]*?)">\s*[\s\S]*?<\/file>/g;
+
+// Fixed third-party brand colors for channel-source cards. These are the
+// platforms' own brand hues (not themeable), so they live as named
+// constants rather than as inline hex literals.
+const CHANNEL_BRAND_COLOR = {
+  Telegram: '#29B6F6',
+  Slack: '#E91E63',
+} as const;
 
 function parseFileReferences(text: string): {
   cleanText: string;
@@ -1045,13 +1054,14 @@ function DCPNotificationCard({
 }: {
   notification: DCPNotification;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
   const isPrune = notification.type === 'prune';
   const hasItems = notification.items.length > 0;
   const hasDetails = hasItems || notification.distilled || notification.summary;
 
   return (
-    <div className="rounded-lg border border-border/60 bg-card/50 overflow-hidden">
+    <div className="rounded-2xl border border-border/60 bg-card/50 overflow-hidden">
       {/* Header */}
       <Button
         onClick={() => hasDetails && setExpanded(!expanded)}
@@ -1062,37 +1072,37 @@ function DCPNotificationCard({
         )}
       >
         <Scissors className="size-3.5 text-muted-foreground/70 flex-shrink-0" />
-        <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+        <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
           {isPrune ? 'Context Pruned' : 'Context Compressed'}
         </span>
 
         {/* Stats pills */}
         <div className="flex items-center gap-1.5 ml-auto">
           {notification.reason && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/70">
+            <Badge variant="muted" size="sm">
               {DCP_REASON_LABELS[notification.reason] || notification.reason}
-            </span>
+            </Badge>
           )}
           {isPrune && notification.prunedCount > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 font-medium">
+            <Badge variant="warning" size="sm">
               {notification.prunedCount} pruned
-            </span>
+            </Badge>
           )}
           {!isPrune &&
             notification.messagesCount &&
             notification.messagesCount > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500 font-medium">
+              <Badge variant="info" size="sm">
                 {notification.messagesCount} msgs
-              </span>
+              </Badge>
             )}
           {notification.batchSaved > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 font-medium">
+            <Badge variant="success" size="sm">
               -{formatDCPTokens(notification.batchSaved)} tokens
-            </span>
+            </Badge>
           )}
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+          <Badge variant="muted" size="sm">
             {formatDCPTokens(notification.tokensSaved)} saved
-          </span>
+          </Badge>
           {hasDetails && (
             <ChevronDown
               className={cn(
@@ -1113,10 +1123,10 @@ function DCPNotificationCard({
               {notification.items.map((item, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-2 text-[11px] text-muted-foreground/80"
+                  className="flex items-center gap-2 text-xs text-muted-foreground/80"
                 >
-                  <span className="text-muted-foreground/40">&rarr;</span>
-                  <span className="font-mono text-[10px] px-1 py-0.5 rounded bg-muted/50 text-muted-foreground/70">
+                  <span className="text-muted-foreground/40">{tHardcodedUi.raw('componentsSessionSessionChat.line1124JsxTextRarr')}</span>
+                  <span className="font-mono text-xs px-1 py-0.5 rounded bg-muted/50 text-muted-foreground/70">
                     {item.tool}
                   </span>
                   {item.description && (
@@ -1131,7 +1141,7 @@ function DCPNotificationCard({
 
           {/* Compress topic */}
           {notification.topic && (
-            <div className="text-[11px] text-muted-foreground/80">
+            <div className="text-xs text-muted-foreground/80">
               <span className="text-muted-foreground/50">Topic:</span>{' '}
               <span>{notification.topic}</span>
             </div>
@@ -1140,10 +1150,10 @@ function DCPNotificationCard({
           {/* Distilled content */}
           {notification.distilled && (
             <div className="mt-1.5 border-t border-border/30 pt-1.5">
-              <div className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-1">
+              <div className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider mb-1">
                 Distilled
               </div>
-              <div className="text-[11px] text-muted-foreground/80 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+              <div className="text-xs text-muted-foreground/80 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                 {notification.distilled}
               </div>
             </div>
@@ -1152,10 +1162,10 @@ function DCPNotificationCard({
           {/* Compress summary */}
           {notification.summary && (
             <div className="mt-1.5 border-t border-border/30 pt-1.5">
-              <div className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-1">
+              <div className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider mb-1">
                 Summary
               </div>
-              <div className="text-[11px] text-muted-foreground/80 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+              <div className="text-xs text-muted-foreground/80 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                 {notification.summary}
               </div>
             </div>
@@ -1193,13 +1203,13 @@ function SystemNotificationCard({
   const iconColor = isError
     ? 'text-destructive/50'
     : isWarning
-      ? 'text-amber-500/50'
+      ? STATUS_TEXT.warning
       : 'text-muted-foreground/50';
 
   const trigger = (
     <div
       className={cn(
-        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg',
+        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl',
         'bg-muted/20 border border-border/40',
         'text-xs select-none max-w-full',
         hasExpandable && 'cursor-pointer hover:bg-muted/40 transition-colors',
@@ -1239,7 +1249,7 @@ function SystemNotificationCard({
                   <span className="text-muted-foreground/40 flex-shrink-0">
                     {key}:
                   </span>
-                  <span className="text-muted-foreground/60 font-mono text-[11px] break-all">
+                  <span className="text-muted-foreground/60 font-mono text-xs break-all">
                     {value}
                   </span>
                 </div>
@@ -1247,7 +1257,7 @@ function SystemNotificationCard({
             </div>
           )}
           {notification.body && (
-            <div className="text-muted-foreground/50 font-mono text-[11px] whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
+            <div className="text-muted-foreground/50 font-mono text-xs whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
               {notification.body.slice(0, 2000)}
             </div>
           )}
@@ -1331,6 +1341,7 @@ function EditPartDialog({
   onSave: (text: string) => void;
   loading?: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [text, setText] = useState(initialText);
 
   // Reset text when dialog opens with new content
@@ -1351,11 +1362,9 @@ function EditPartDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader className="flex-shrink-0">
-          <DialogTitle>Edit fork prompt</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsSessionSessionChat.line1360JsxTextEditForkPrompt')}</DialogTitle>
           <DialogDescription>
-            This creates a native fork at this message and opens the new session
-            with your edited prompt restored in the composer.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1362JsxTextThisCreatesANativeForkAtThisMessage')}</DialogDescription>
         </DialogHeader>
         <div className="flex-1 min-h-0 py-2">
           <Textarea
@@ -1386,8 +1395,7 @@ function EditPartDialog({
             {loading ? (
               <Loader2 className="size-3.5 animate-spin mr-1.5" />
             ) : null}
-            Fork with edits
-          </Button>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1395JsxTextForkWithEdits')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1405,15 +1413,14 @@ function ConfirmForkDialog({
   onConfirm: () => void;
   loading?: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Fork session?</DialogTitle>
+          <DialogTitle>{tHardcodedUi.raw('componentsSessionSessionChat.line1418JsxTextForkSession')}</DialogTitle>
           <DialogDescription>
-            This will create a new session from this point in the conversation.
-            The fork opens separately and won&apos;t change this session.
-          </DialogDescription>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1420JsxTextThisWillCreateANewSessionFromThis')}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button
@@ -1427,8 +1434,7 @@ function ConfirmForkDialog({
             {loading ? (
               <Loader2 className="size-3.5 animate-spin mr-1.5" />
             ) : null}
-            Fork session
-          </Button>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1436JsxTextForkSession')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1452,6 +1458,7 @@ function PartActions({
   loading?: boolean;
   className?: string;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [editOpen, setEditOpen] = useState(false);
 
   // Only text parts are editable
@@ -1476,8 +1483,7 @@ function PartActions({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">
-            Edit fork prompt
-          </TooltipContent>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1485JsxTextEditForkPrompt')}</TooltipContent>
         </Tooltip>
       </div>
 
@@ -1915,6 +1921,9 @@ function UserMessageRow({
   // Channel messages (Telegram/Slack): render as a branded card with user name
   if (channelMessageInfo) {
     const isTelegram = channelMessageInfo.platform === 'Telegram';
+    const brandColor = isTelegram
+      ? CHANNEL_BRAND_COLOR.Telegram
+      : CHANNEL_BRAND_COLOR.Slack;
     return (
       <div className="flex flex-col items-end gap-1">
         <div className="inline-flex flex-col gap-1.5 px-4 py-2.5 rounded-2xl border border-border/60 bg-muted/40 max-w-[85%]">
@@ -1922,7 +1931,7 @@ function UserMessageRow({
             <svg
               className="size-3.5 shrink-0"
               viewBox="0 0 24 24"
-              fill={isTelegram ? '#29B6F6' : '#E91E63'}
+              fill={brandColor}
             >
               {isTelegram ? (
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" />
@@ -1932,7 +1941,7 @@ function UserMessageRow({
             </svg>
             <span
               className="text-xs font-medium"
-              style={{ color: isTelegram ? '#29B6F6' : '#E91E63' }}
+              style={{ color: brandColor }}
             >
               {channelMessageInfo.platform}
             </span>
@@ -1962,7 +1971,7 @@ function UserMessageRow({
               {triggerEventInfo.data?.trigger || 'Scheduled Task'}
             </span>
             {triggerEventInfo.data?.data?.manual && (
-              <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                 Manual
               </span>
             )}
@@ -2084,9 +2093,9 @@ function UserMessageRow({
         {/* Project references — compact neutral chips, one per referenced project */}
         {/* Reply context banner */}
         {replyContext && (
-          <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10">
+          <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-2xl bg-primary/5 border border-primary/10">
             <Reply className="size-3 text-primary/60 flex-shrink-0" />
-            <span className="text-[11px] text-muted-foreground truncate">
+            <span className="text-xs text-muted-foreground truncate">
               {replyContext.length > 150
                 ? `${replyContext.slice(0, 150)}...`
                 : replyContext}
@@ -2187,7 +2196,7 @@ function UserMessageRow({
         )}
       </div>
       {isEdited && (
-        <span className="text-[10px] text-muted-foreground/50 pr-1">
+        <span className="text-xs text-muted-foreground/50 pr-1">
           edited
         </span>
       )}
@@ -2398,7 +2407,7 @@ function GroupedReasoningCard({
 
       <CollapsibleContent>
         <div className="ml-[18px] mt-0.5 mb-1.5 pl-3 border-l border-border/30">
-          <div className="space-y-2 text-muted-foreground/50 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-[12px] [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-[12px] [&_.kortix-markdown_li]:!leading-[1.5] [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60">
+          <div className="space-y-2 text-muted-foreground/50 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-xs [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-xs [&_.kortix-markdown_li]:!leading-[1.5] [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60">
             {nonEmptyParts.map((p, i) => (
               <div key={p.id ?? i}>
                 <ThrottledMarkdown content={p.text!} isStreaming={false} />
@@ -2548,7 +2557,7 @@ function SameToolGroup({
           )}
           <span className="min-w-0 flex-1 truncate">{headerLabel}</span>
           {durationLabel && (
-            <span className="text-[10px] font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
+            <span className="text-xs font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
               {durationLabel}
             </span>
           )}
@@ -2594,7 +2603,7 @@ function SameToolGroup({
                       </span>
                     )}
                     {!running && dur >= 1000 && (
-                      <span className="ml-auto text-[10px] font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
+                      <span className="ml-auto text-xs font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
                         {Math.round(dur / 1000)}s
                       </span>
                     )}
@@ -2678,6 +2687,7 @@ function SessionTurn({
   disableToolNavigation,
   onPermissionReply,
 }: SessionTurnProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   const [userCopied, setUserCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
@@ -3222,10 +3232,10 @@ function SessionTurn({
   if (isCompaction && !working && response) {
     return (
       <div className="group/turn">
-        <div className="rounded-lg border border-border/60 bg-card/50 overflow-hidden">
+        <div className="rounded-2xl border border-border/60 bg-card/50 overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40 bg-muted/40">
             <Layers className="size-3.5 text-muted-foreground/70" />
-            <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+            <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
               Compaction
             </span>
           </div>
@@ -3269,15 +3279,15 @@ function SessionTurn({
               e.key === 'Enter' && setSessionReportModalOpen(true)
             }
             className={cn(
-              'flex items-center gap-2 px-3 py-2 rounded-lg text-xs',
+              'flex items-center gap-2 px-3 py-2 rounded-2xl text-xs',
               'border select-none cursor-pointer transition-colors group/report',
               sessionReport.status === 'COMPLETE'
-                ? 'bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10'
+                ? cn(STATUS_BG.success, STATUS_BORDER.success, 'hover:bg-emerald-500/15')
                 : 'bg-destructive/5 border-destructive/20 hover:bg-destructive/10',
             )}
           >
             {sessionReport.status === 'COMPLETE' ? (
-              <CheckCircle className="size-3.5 text-emerald-500 flex-shrink-0" />
+              <CheckCircle className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.success)} />
             ) : (
               <AlertTriangle className="size-3.5 text-destructive flex-shrink-0" />
             )}
@@ -3286,7 +3296,7 @@ function SessionTurn({
                 className={cn(
                   'font-medium',
                   sessionReport.status === 'COMPLETE'
-                    ? 'text-emerald-700 dark:text-emerald-400'
+                    ? STATUS_TEXT.success
                     : 'text-destructive',
                 )}
               >
@@ -3383,7 +3393,7 @@ function SessionTurn({
                       <GitFork className="size-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Fork to new session</TooltipContent>
+                  <TooltipContent>{tHardcodedUi.raw('componentsSessionSessionChat.line3395JsxTextForkToNewSession')}</TooltipContent>
                 </Tooltip>
               )}
             </div>
@@ -3473,6 +3483,12 @@ function SessionTurn({
                 'scrape',
                 'scrape_webpage',
               ]);
+              // Tools that always render as individual rows — never folded into
+              // a "Tool · Nx" pile. File writes/creations are distinct artifacts
+              // (index.html, styles.css, …) the user wants to see one-per-line.
+              // Shell commands are likewise distinct actions, each shown on its
+              // own row rather than collapsed into a "Shell · Nx" pile.
+              const NO_GROUP_SET = new Set(['write', 'bash']);
               const norm = (t: string) => {
                 const n = t.replace(/^oc-/, '').replace(/-/g, '_');
                 if (CONTEXT_SET.has(n)) return '__context__';
@@ -3500,6 +3516,7 @@ function SessionTurn({
                     shouldShowToolPart(tp) &&
                     tp.tool !== 'todowrite' &&
                     tp.tool !== 'question' &&
+                    !NO_GROUP_SET.has(norm(tp.tool)) &&
                     !hasPermission &&
                     !isToolPartHidden(tp, message.info.id, hidden);
 
@@ -3604,9 +3621,9 @@ function SessionTurn({
                   return (
                     <div key={part.id} className="flex items-center gap-2 py-2.5">
                       <div className="flex-1 h-px bg-border" />
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/80 border border-border/60">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl bg-muted/80 border border-border/60">
                         <Layers className="size-3 text-muted-foreground" />
-                        <span className="text-[10px] font-semibold text-muted-foreground tracking-wide">
+                        <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                           Compaction
                         </span>
                       </div>
@@ -3750,7 +3767,7 @@ function SessionTurn({
                     /{commandForTurn.name}
                   </span>
                   {commandForTurn.args && (
-                    <span className="text-[11px] text-muted-foreground truncate">
+                    <span className="text-xs text-muted-foreground truncate">
                       {commandForTurn.args}
                     </span>
                   )}
@@ -3766,11 +3783,16 @@ function SessionTurn({
             ))}
 
           {/* Answered question parts — shown after the response text only when
-				    there are no steps (no-steps turns). When hasSteps is true,
-				    answered questions render inline within the steps section above.
-				    Skip while working — the steps section (guarded by `working || hasSteps`)
-				    already renders them to avoid duplicates. */}
-          {!hasSteps && !working && answeredQuestionParts.length > 0 && (
+				    NONE of the upstream renderers fire. The steps section above is
+				    gated by `working || hasSteps || hasReasoning`; if any of those
+				    is true, the question parts have already been rendered inline
+				    there as AnsweredQuestionCards. Mirroring that guard's inverse
+				    here is the only way to avoid the double-render that showed up
+				    on interrupted sessions that contained reasoning but no tool
+				    steps (e.g. "Planning a process for questions" → user answers
+				    → interrupt; hasSteps=false, working=false, hasReasoning=true,
+				    and without the !hasReasoning check the card rendered twice). */}
+          {!hasSteps && !working && !hasReasoning && answeredQuestionParts.length > 0 && (
             <div className="space-y-2 mt-3">
               {answeredQuestionParts.map(({ part }) => (
                 <AnsweredQuestionCard key={part.id} part={part as ToolPart} />
@@ -3801,7 +3823,7 @@ function SessionTurn({
               <span className="relative inline-flex rounded-full size-3 bg-muted-foreground/50" />
             </span>
             {retryInfo ? (
-              <span className="text-muted-foreground/70">Waiting to retry</span>
+              <span className="text-muted-foreground/70">{tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry')}</span>
             ) : (
               <AnimatedThinkingText
                 statusText={throttledStatus || undefined}
@@ -3824,7 +3846,7 @@ function SessionTurn({
         <div className="flex items-center gap-0.5 opacity-0 group-hover/turn:opacity-100 transition-opacity duration-150">
           {/* Duration & cost */}
           {duration && (
-            <span className="text-[11px] text-muted-foreground/50 mr-1">
+            <span className="text-xs text-muted-foreground/50 mr-1">
               {duration}
               {costInfo && (
                 <>
@@ -3883,12 +3905,39 @@ export function SessionChat({
   readOnly,
   initialScrollTop,
 }: SessionChatProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const onboardingActive = useOnboardingModeStore((s) => s.active);
   const onboardingSessionId = useOnboardingModeStore((s) => s.sessionId);
   const disableToolNavigation =
     onboardingActive && onboardingSessionId === sessionId;
-  const activeTabId = useTabStore((s) => s.activeTabId);
-  const isActiveSessionTab = activeTabId === sessionId;
+  // Every open session tab is pre-mounted at once (see layout-content.tsx), so
+  // only the visible tab may be treated as "active" — otherwise every busy
+  // session would react to global shortcuts (ESC-to-stop, auto question
+  // handling) at the same time. The standalone project session route
+  // (/projects/[id]/sessions/[sessionId]) mounts a single SessionChat whose id
+  // is never registered in this tab store; there it's the only chat mounted, so
+  // it's always active.
+  //
+  // Subscribe to the BOOLEAN result rather than the raw activeTabId value: a
+  // tab switch then only re-renders the two sessions whose active state flips,
+  // not every mounted SessionChat. This is what keeps tab switching 0-latency.
+  const isActiveSessionTab = useTabStore((s) =>
+    s.tabs[sessionId] ? s.activeTabId === sessionId : true,
+  );
+
+  // Clicking a tool call in the chat opens the side panel (Actions view)
+  // focused on that tool's large preview — instead of expanding inline.
+  const focusToolCall = useKortixComputerStore((s) => s.focusToolCall);
+  const setSidePanelView = useSessionBrowserStore((s) => s.setView);
+  const handleToolActivate = useCallback(
+    (callID: string) => {
+      setSidePanelView(sessionId, 'actions');
+      focusToolCall(callID);
+    },
+    [sessionId, setSidePanelView, focusToolCall],
+  );
+  const toolActivate =
+    readOnly || disableToolNavigation ? null : handleToolActivate;
 
   // ---- Context modal ----
   const [contextModalOpen, setContextModalOpen] = useState(false);
@@ -3976,8 +4025,14 @@ export function SessionChat({
   }, [isSidePanelOpen, setIsSidePanelOpen]);
 
   // ---- Hooks ----
-  const { data: session, isLoading: sessionLoading } =
-    useOpenCodeSession(sessionId);
+  // runtimeReady gates the session query (it's disabled until the sandbox
+  // runtime is connected + healthy). We need it here too so the render logic
+  // can tell "still booting" apart from "genuinely gone".
+  const runtimeReady = useOpenCodeRuntimeReady();
+  const {
+    data: session,
+    isFetched: sessionFetched,
+  } = useOpenCodeSession(sessionId);
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
@@ -4222,8 +4277,13 @@ export function SessionChat({
           .messages({ sessionID: sessionId })
           .then((res) => {
             if (res.data) {
+              // hydrate() already drops superseded optimistic messages AND
+              // bridges their text onto the real server message. Do NOT also
+              // call clearOptimisticMessages here: on an error send whose user
+              // message the server hasn't persisted yet, that wipes the user's
+              // typed text and leaves an empty bubble. Keeping the optimistic
+              // message means the user always still sees what they sent.
               useSyncStore.getState().hydrate(sessionId, res.data as any);
-              useSyncStore.getState().clearOptimisticMessages(sessionId);
             } else {
               // No server data — just remove the optimistic message
               removeOptimisticUserMessage(messageID);
@@ -4358,11 +4418,6 @@ export function SessionChat({
   );
 
   // ---- Check if any messages have tool calls ----
-  const hasToolCalls = useMemo(() => {
-    if (!messages) return false;
-    return messages.some((msg) => msg.parts?.some((p) => p.type === 'tool'));
-  }, [messages]);
-
   // ---- Restore model/agent from last user message ----
   // Seeds agent/model from the last user message ONLY if there's no per-session
   // selection yet. This handles opening a session for the first time. If the user
@@ -4567,170 +4622,9 @@ export function SessionChat({
     hasPendingUserReply,
   ]);
 
-  // ---- Message Queue ----
-  // Mirrors OpenCode's `followup` queue (research/opencode/packages/app/src/
-  // pages/session.tsx, lines 540-2018):
-  //   - per-session items + paused + failed flags in the store
-  //   - one reactive drain effect (use-message-queue-drain) — no setTimeout,
-  //     no requestAnimationFrame, no double locks
-  //   - failed items stay at the head and don't auto-retry
-  //   - paused is set on session abort and cleared on enqueue / send-now
-  const queuedMessages = useMessageQueueStore(selectSessionItems(sessionId));
-  const queueRemove = useMessageQueueStore((s) => s.remove);
-  const queueMoveUp = useMessageQueueStore((s) => s.moveUp);
-  const queueMoveDown = useMessageQueueStore((s) => s.moveDown);
-  const queueClearSession = useMessageQueueStore((s) => s.clearSession);
-  const queueSetPaused = useMessageQueueStore((s) => s.setPaused);
-  const queueSetFailed = useMessageQueueStore((s) => s.setFailed);
-  const [queueExpanded, setQueueExpanded] = useState(false);
-
-  const hasActiveQuestionForQueue = useOpenCodePendingStore((s) =>
-    Object.values(s.questions).some((q) => q.sessionID === sessionId),
-  );
-
-  // Composite gate. The drain only fires when ALL of these are clear:
-  //
-  //   - isBusy: the debounced UI busy state (2s tail after server idles)
-  //   - isServerBusy: server-reported status === 'busy' | 'retry'
-  //   - hasIncompleteAssistant: latest assistant message hasn't completed
-  //   - hasPendingUserReply: there's a user message with no assistant reply yet
-  //   - pendingSendInFlight: a previous handleSend hasn't been server-acked
-  //   - hasActiveQuestionForQueue: a structured question is awaiting answer
-  //
-  // While ANY of these are true, queued messages accumulate in the local
-  // store and the queue UI shows them. When ALL clear (the assistant turn
-  // is genuinely complete), the drain fires ONCE and sends every queued
-  // item concurrently via Promise.allSettled — the OpenCode server's
-  // runner (research/opencode/packages/opencode/src/effect/runner.ts:111)
-  // serializes the prompt_async calls per-session so they execute in
-  // arrival order, but we don't have to wait for the assistant response
-  // between client-side sends.
-  const canDrain =
-    !isBusy &&
-    !isServerBusy &&
-    !hasIncompleteAssistant &&
-    !hasPendingUserReply &&
-    !pendingSendInFlight &&
-    !hasActiveQuestionForQueue;
-
-  // handleSend is defined later in the component, but we need a stable
-  // reference for the drain hook. Use a ref so the hook always sees the
-  // current closure without re-firing on every render.
-  const handleSendRef = useRef<typeof handleSend>();
-
-  useMessageQueueDrain({
-    sessionId,
-    canDrain,
-    sendFn: useCallback(
-      async (msgs: QueuedMessage[]) => {
-        // Defensive filter: drop any items the user removed (or send-now'd)
-        // between the drain snapshot and now. Without this, a send-now click
-        // mid-drain would cause the same message to be sent twice.
-        const liveIds = new Set(
-          (useMessageQueueStore.getState().items[sessionId] ?? []).map(
-            (m) => m.id,
-          ),
-        );
-        const toSend = msgs.filter((m) => liveIds.has(m.id));
-        if (toSend.length === 0) return;
-
-        // Fire all queued messages CONCURRENTLY in one synchronous burst.
-        // Each handleSend runs its sync prefix (build optimistic message →
-        // addOptimisticUserMessage → setStatus busy) up to its first await
-        // (file upload OR promptAsync). Because all N sync prefixes run
-        // back-to-back in the same JS tick BEFORE any await yields, React
-        // batches the N optimistic-add store mutations into a single
-        // re-render — the user sees all N user messages appear at once,
-        // not staggered.
-        //
-        // After the .map returns N pending promises, Promise.allSettled
-        // waits for all of them. Each handleSend's `await promptAsync` is
-        // an HTTP call to /session/.../prompt_async which the server
-        // accepts (204) and queues internally via its per-session Runner
-        // deferred chain (research/opencode/packages/opencode/src/effect/
-        // runner.ts:111). The server processes them in arrival order.
-        const results = await Promise.allSettled(
-          toSend.map((msg) =>
-            // Cast: AttachedFile and QueuedFile share the same shape but live
-            // in different module hierarchies; runtime values are interchangeable.
-            handleSendRef.current!(
-              msg.text,
-              msg.files as AttachedFile[] | undefined,
-              undefined,
-              {
-                agent: msg.agent ?? undefined,
-                model: msg.model ?? undefined,
-                variant: msg.variant ?? undefined,
-              },
-            ),
-          ),
-        );
-
-        // Per-item state reconciliation. Successful items are removed from
-        // the queue; failed items stay put. We mark `failed` to the first
-        // remaining failed item's id so the drain effect doesn't retry-loop
-        // (the gate `failed === items[0].id` blocks the next cycle until
-        // the user manually intervenes via send-now or remove).
-        const store = useMessageQueueStore.getState();
-        let anyFailed = false;
-        results.forEach((result, idx) => {
-          const msg = toSend[idx];
-          if (result.status === 'fulfilled') {
-            store.remove(sessionId, msg.id);
-          } else {
-            anyFailed = true;
-            console.error('[message-queue] item send failed', {
-              sessionId,
-              messageId: msg.id,
-              err: result.reason,
-            });
-          }
-        });
-
-        if (anyFailed) {
-          const remaining =
-            useMessageQueueStore.getState().items[sessionId] ?? [];
-          if (remaining.length > 0) {
-            store.setFailed(sessionId, remaining[0].id);
-          }
-        }
-      },
-      [sessionId],
-    ),
-  });
-
-  // Send-now handler. Matches OpenCode (session.tsx:2016-2018, sendFollowup
-  // with `manual: true`): just send the queued item now, regardless of pause.
-  // Does NOT abort the current turn — the OpenCode server's runner will
-  // serialize concurrent prompt_async calls via its deferred chain (see
-  // research/opencode/packages/opencode/src/effect/runner.ts:111).
-  const handleQueueSendNow = useCallback(
-    (messageId: string) => {
-      const msg = useMessageQueueStore
-        .getState()
-        .items[sessionId]?.find((m) => m.id === messageId);
-      if (!msg) return;
-      // Clearing pause + failed lets the drain effect re-pick this up if the
-      // synchronous send below races. setFailed is also called to clear any
-      // prior failure on this id.
-      queueSetPaused(sessionId, false);
-      queueSetFailed(sessionId, undefined);
-      queueRemove(sessionId, messageId);
-      void handleSendRef.current!(
-        msg.text,
-        msg.files as AttachedFile[] | undefined,
-        undefined,
-        {
-          agent: msg.agent ?? undefined,
-          model: msg.model ?? undefined,
-          variant: msg.variant ?? undefined,
-        },
-      ).catch(() => {
-        // handleSend already cleaned up the optimistic UI; nothing more to do.
-      });
-    },
-    [sessionId, queueSetPaused, queueSetFailed, queueRemove],
-  );
+  // No client-side message queue: sends go straight to the server, which
+  // serializes concurrent prompt_async calls per-session (so sending while the
+  // agent is busy is safe). See SessionChatInput.handleSubmit → onSend.
 
   // Stop polling when session goes idle (via SSE or polling fallback).
   // Grace period: if we sent a message recently (within 5s), don't stop polling
@@ -5569,8 +5463,13 @@ export function SessionChat({
           .messages({ sessionID: sessionId })
           .then((res) => {
             if (res.data) {
+              // hydrate() already drops superseded optimistic messages AND
+              // bridges their text onto the real server message. Do NOT also
+              // call clearOptimisticMessages here: on an error send whose user
+              // message the server hasn't persisted yet, that wipes the user's
+              // typed text and leaves an empty bubble. Keeping the optimistic
+              // message means the user always still sees what they sent.
               useSyncStore.getState().hydrate(sessionId, res.data as any);
-              useSyncStore.getState().clearOptimisticMessages(sessionId);
             } else {
               removeOptimisticUserMessage(messageID);
             }
@@ -5580,36 +5479,120 @@ export function SessionChat({
           });
       };
 
-      let res: any;
-      try {
-        res = await client.session.promptAsync({
-          sessionID: sessionId,
-          parts: mappedParts,
-          // Pass the session's directory so opencode resolves project-scoped
-          // agents (.opencode/agent/*.md under the project) and applies them
-          // when the user picked a project agent from the picker.
-          ...(session?.directory ? { directory: session.directory } : {}),
-          ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
-          ...(sendOpts?.model ? { model: sendOpts.model } : {}),
-          ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
-        } as any);
-      } catch (err) {
-        // Network / thrown SDK error — clean up and propagate so the queue
-        // drain can mark the item as failed and the input can restore text.
-        handleSendError();
-        throw err;
-      }
+      const promptBody = {
+        sessionID: sessionId,
+        parts: mappedParts,
+        // Pass the session's directory so opencode resolves project-scoped
+        // agents (.opencode/agent/*.md under the project) and applies them
+        // when the user picked a project agent from the picker.
+        ...(session?.directory ? { directory: session.directory } : {}),
+        ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
+        ...(sendOpts?.model ? { model: sendOpts.model } : {}),
+        ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
+      } as any;
 
-      // The SDK resolves (not rejects) on HTTP errors, returning
-      // { error: ... } instead of throwing. Treat this as a failure so the
-      // UI doesn't stay stuck on "busy" with the optimistic user bubble.
-      if (res?.error) {
-        handleSendError();
-        const message =
-          (typeof res.error?.data?.message === 'string' && res.error.data.message) ||
-          (typeof res.error === 'string' && res.error) ||
-          'Failed to send message';
-        throw new Error(message);
+      // Sending to the sandbox's OpenCode server can transiently fail — the
+      // container may be waking from auto-stop, restarting, or the tunnel
+      // blips. A single blip used to surface as "Failed to send message" and
+      // bounce the draft back. Retry transient failures with backoff so a flaky
+      // send self-heals; only give up (and surface the error) after several
+      // attempts.
+      //
+      // We retry ONLY cases where the server did not accept the prompt — a
+      // thrown network error (request never completed) or a 5xx/429/408
+      // response — so an already-queued prompt is never double-sent. A 4xx
+      // (bad request, auth, missing model key) is a real failure and surfaces
+      // immediately. The optimistic user message + busy status stay up across
+      // retries, so the UI shows the send in progress the whole time.
+      const retryBackoffMs = [400, 1000, 2000];
+      const maxAttempts = retryBackoffMs.length + 1;
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+      let res: any;
+      for (let attempt = 1; ; attempt++) {
+        let caught = false;
+        let caughtErr: unknown;
+        try {
+          res = await client.session.promptAsync(promptBody);
+        } catch (err) {
+          caught = true;
+          caughtErr = err;
+        }
+
+        // Thrown = network/transport failure (request didn't complete).
+        if (caught) {
+          // Lead with a readable string; the dev overlay renders complex error
+          // objects that embed a non-enumerable Response as a useless `{}`.
+          console.error(
+            `[session-chat] send threw (attempt ${attempt}): ${formatCommandError(caughtErr)}`,
+            {
+              sessionId,
+              attempt,
+              activeUrl: getActiveOpenCodeUrl(),
+              error: caughtErr,
+            },
+          );
+          if (attempt < maxAttempts) {
+            await sleep(retryBackoffMs[attempt - 1]);
+            continue;
+          }
+          handleSendError();
+          throw caughtErr instanceof Error
+            ? caughtErr
+            : new Error('Couldn’t reach the server.');
+        }
+
+        // The SDK resolves (not rejects) on HTTP errors, returning
+        // { error, response } instead of throwing.
+        if (res?.error) {
+          const status = res?.response?.status as number | undefined;
+          // Full ground truth in the console so we stop guessing the cause:
+          // the exact status, the URL it actually hit, and the error body.
+          // Lead with a readable string; the dev overlay renders the raw SDK
+          // error object that embeds a non-enumerable Response as `{}`.
+          console.error(
+            `[session-chat] send failed (HTTP ${status ?? 'unknown'}, attempt ${attempt}): ${formatCommandError(res?.error)}`,
+            {
+              sessionId,
+              attempt,
+              status,
+              requestedUrl: res?.response?.url,
+              activeUrl: getActiveOpenCodeUrl(),
+              error: res?.error,
+            },
+          );
+          const transient =
+            status === undefined || status >= 500 || status === 408 || status === 429;
+          if (transient && attempt < maxAttempts) {
+            await sleep(retryBackoffMs[attempt - 1]);
+            continue;
+          }
+          handleSendError();
+          // Surface the real cause in the toast — a bare "Failed to send
+          // message" hides whether this was a 4xx (bad request/auth/model) or
+          // a 5xx/proxy blip. Lead with the server's message if it gave one,
+          // otherwise show the HTTP status so it's diagnosable at a glance.
+          const extracted = formatCommandError(res?.error);
+          const detail =
+            (typeof res.error?.data?.message === 'string' && res.error.data.message) ||
+            (typeof res.error === 'string' && res.error) ||
+            // formatCommandError falls back to JSON.stringify / a generic
+            // placeholder; only trust it as toast copy when it produced a
+            // short, human-readable line, not a raw object dump.
+            (extracted &&
+            extracted !== 'Command failed' &&
+            !extracted.startsWith('{') &&
+            extracted.length <= 160
+              ? extracted
+              : null);
+          throw new Error(
+            detail ?? `Couldn’t send your message (HTTP ${status ?? 'unknown'}).`,
+          );
+        }
+
+        // Success — the server accepted the prompt (204) and streams the
+        // response over SSE.
+        break;
       }
 
       return messageID;
@@ -5628,9 +5611,17 @@ export function SessionChat({
     ],
   );
 
-  // Wire the queue drain to the latest handleSend without triggering the
-  // drain effect on every handleSend identity change.
-  handleSendRef.current = handleSend;
+  // Expose this session's canonical sender so sibling surfaces (e.g. the
+  // "Changes" side panel's "Ask agent to open a change request" button) can
+  // drive the agent through the SAME robust path the input uses — optimistic
+  // message, SSE wiring, error propagation — instead of copying a prompt to the
+  // clipboard. Keyed by the OpenCode chat session id (`sessionId`).
+  const registerSender = useChatSendStore((s) => s.registerSender);
+  const unregisterSender = useChatSendStore((s) => s.unregisterSender);
+  useEffect(() => {
+    registerSender(sessionId, (text: string) => handleSend(text));
+    return () => unregisterSender(sessionId);
+  }, [sessionId, handleSend, registerSender, unregisterSender]);
 
   const handleStop = useCallback(() => {
     // Guard against rapid clicks — ignore if an abort is already in flight
@@ -5668,12 +5659,8 @@ export function SessionChat({
       }
     }
 
-    // Pause queue auto-drain on abort. Matches OpenCode (session.tsx:2011-2015,
-    // `onAbort: setFollowup("paused", id, true)`). Enqueueing a new message or
-    // clicking "send now" on a queued item will clear the pause.
-    queueSetPaused(sessionId, true);
     abortSession.mutate(sessionId);
-  }, [sessionId, abortSession, queueSetPaused]);
+  }, [sessionId, abortSession]);
 
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
@@ -5711,16 +5698,23 @@ export function SessionChat({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !isBusy) return;
 
+      // ESC was already consumed by something else — e.g. the composer's own
+      // slash/mention popover (which calls preventDefault) or another focused
+      // control that handled it — so it must never advance the stop counter.
       if (e.defaultPrevented) return;
 
-      // Only the main chat composer should arm triple-ESC stop. Modal/dialog ESC
-      // handling and other focused controls must never advance this counter.
+      // ESC-to-stop is a page-wide shortcut: it must fire whether or not the
+      // composer is focused, because users watch the agent run with focus
+      // elsewhere (chat body, a tool view, or nothing at all). The only presses
+      // we ignore are those meant for an open overlay the user is interacting
+      // with — when focus sits inside a dialog/menu/popover/select, that ESC is
+      // for dismissing it, not for stopping. (A hovered tooltip never takes
+      // focus, so the stop button's own tooltip can't suppress the shortcut.)
       const active = document.activeElement;
-      const isChatTextareaFocused =
-        active instanceof HTMLTextAreaElement &&
-        active.dataset.sessionChatStopScope === 'true';
-
-      if (!isChatTextareaFocused) return;
+      const focusInOverlay = active?.closest(
+        '[role="dialog"],[role="alertdialog"],[role="menu"],[data-radix-popper-content-wrapper]',
+      );
+      if (focusInOverlay) return;
 
       e.preventDefault();
 
@@ -5851,16 +5845,28 @@ export function SessionChat({
     [],
   );
 
+  const pathname = usePathname();
+  const router = useRouter();
+
   // Thread context for subsessions only (real parentID).
   const { data: parentSessionData } = useOpenCodeSession(
     session?.parentID || '',
   );
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
+    const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
     return {
       variant: 'thread' as const,
       parentTitle: parentSessionData.title || 'Parent session',
       onBackToParent: () => {
+        if (projectRoute) {
+          const [, projectId, projectSessionId] = projectRoute;
+          const href = parentSessionData.parentID
+            ? `/projects/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
+            : `/projects/${projectId}/sessions/${projectSessionId}`;
+          router.push(href);
+          return;
+        }
         openTabAndNavigate({
           id: parentSessionData.id,
           title: parentSessionData.title || 'Parent session',
@@ -5870,7 +5876,7 @@ export function SessionChat({
         });
       },
     };
-  }, [session?.parentID, parentSessionData]);
+  }, [session?.parentID, parentSessionData, pathname, router]);
 
   // ============================================================================
   // Loading / Not-found states
@@ -5889,9 +5895,19 @@ export function SessionChat({
   // spinning while we wait to confirm "0 messages", we show the welcome
   // screen right away.
   const hasMessages = messages && messages.length > 0;
+  // "Not found" is a TERMINAL answer, never a loading guess. It's only true once
+  // the runtime is connected AND the session lookup has actually run and come
+  // back empty. While the runtime is still connecting (the query is disabled and
+  // therefore reports isLoading=false) or the lookup is in flight, we know
+  // nothing yet — so we must show the loading state, not the error. This is what
+  // stops the "This session is not accessible right now." flash on boot.
+  const sessionResolved = runtimeReady && sessionFetched;
+  const isNotFound = !session && sessionResolved && !optimisticPrompt;
+  // Everything that isn't "we have content" and isn't the terminal not-found
+  // state is loading — including the boot window where the query is still
+  // disabled (isLoading=false) waiting on the runtime.
   const isDataLoading =
-    !session && sessionLoading && !hasMessages && !optimisticPrompt;
-  const isNotFound = !session && !sessionLoading && !optimisticPrompt;
+    !session && !isNotFound && !hasMessages && !optimisticPrompt;
   const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome =
     !prevHasChatContentRef.current && hasChatContent;
@@ -5899,7 +5915,7 @@ export function SessionChat({
     !hasChatContent || welcomeFadeActive || isTransitioningFromWelcome;
 
   return (
-    <div className="relative flex flex-col h-full bg-background">
+    <div className="relative flex flex-col h-full bg-background" data-testid="session-chat">
       {/* Full-bleed welcome wallpaper — spans the entire session (behind header,
           messages, project selector, and chat input). Input renders as frosted
           glass so the wallpaper reads through uninterrupted. */}
@@ -5922,7 +5938,6 @@ export function SessionChat({
           sessionTitle={session?.title || 'Untitled'}
           onToggleSidePanel={handleTogglePanel}
           isSidePanelOpen={isSidePanelOpen}
-          canOpenSidePanel={hasToolCalls}
           leadingAction={headerLeadingAction}
         />
       )}
@@ -5945,8 +5960,7 @@ export function SessionChat({
       ) : isNotFound ? (
         <div className="flex-1 flex flex-col items-center justify-center min-h-0 gap-3 text-center px-6">
           <div className="text-sm text-muted-foreground">
-            This session is not accessible right now.
-          </div>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow')}</div>
           <button
             type="button"
             onClick={() => {
@@ -5957,8 +5971,7 @@ export function SessionChat({
             }}
             className="text-sm text-primary hover:underline"
           >
-            ← Go to home
-          </button>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}</button>
         </div>
       ) : (
         <div ref={chatAreaRef} className="relative flex-1 min-h-0 z-10">
@@ -6001,9 +6014,9 @@ export function SessionChat({
                           return (
                             <>
                               {optReply && (
-                                <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10">
+                                <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-2xl bg-primary/5 border border-primary/10">
                                   <Reply className="size-3 text-primary/60 flex-shrink-0" />
-                                  <span className="text-[11px] text-muted-foreground truncate">
+                                  <span className="text-xs text-muted-foreground truncate">
                                     {optReply.length > 150
                                       ? `${optReply.slice(0, 150)}...`
                                       : optReply}
@@ -6050,9 +6063,8 @@ export function SessionChat({
                         className="dark:invert-0 invert flex-shrink-0 h-[14px] w-auto"
                       />
                       {isRetrying && (
-                        <span className="text-xs text-amber-500">
-                          Retrying connection...
-                        </span>
+                        <span className={cn('text-xs', STATUS_TEXT.warning)}>
+                          {tHardcodedUi.raw('componentsSessionSessionChat.line5927JsxTextRetryingConnection')}</span>
                       )}
                     </div>
                   </div>
@@ -6062,9 +6074,9 @@ export function SessionChat({
                   <div className="space-y-3 mt-12">
                     <div className="flex items-center gap-3 py-4 my-3">
                       <div className="flex-1 h-px bg-border" />
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/80 border border-border/60">
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted/80 border border-border/60">
                         <Layers className="size-3.5 text-muted-foreground" />
-                        <span className="text-[11px] font-semibold text-muted-foreground tracking-wide">
+                        <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                           Compaction
                         </span>
                       </div>
@@ -6078,13 +6090,15 @@ export function SessionChat({
                         className="dark:invert-0 invert flex-shrink-0 h-[14px] w-auto"
                       />
                       <div className="text-sm text-muted-foreground">
-                        Compacting session...
-                      </div>
+                        {tHardcodedUi.raw('componentsSessionSessionChat.line5954JsxTextCompactingSession')}</div>
                     </div>
                   </div>
                 )}
 
-                {/* Turn-based message rendering */}
+                {/* Turn-based message rendering.
+                    ToolActivateContext makes inline tool rows open the side
+                    panel (Actions) focused on that tool, instead of expanding. */}
+                <ToolActivateContext.Provider value={toolActivate}>
                 {turns.map((turn, turnIndex) => {
                   // Check if this turn is a compaction summary
                   const hasCompaction =
@@ -6110,9 +6124,9 @@ export function SessionChat({
                       {hasCompaction && (
                         <div className="flex items-center gap-3 py-4 my-3">
                           <div className="flex-1 h-px bg-border" />
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/80 border border-border/60">
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted/80 border border-border/60">
                             <Layers className="size-3.5 text-muted-foreground" />
-                            <span className="text-[11px] font-semibold text-muted-foreground tracking-wide">
+                            <span className="text-xs font-semibold text-muted-foreground tracking-wide">
                               Compaction
                             </span>
                           </div>
@@ -6143,6 +6157,7 @@ export function SessionChat({
                     </div>
                   );
                 })}
+                </ToolActivateContext.Provider>
 
                 {/* Busy indicator when no turns yet but session is busy */}
                 {commandError && (
@@ -6215,8 +6230,7 @@ export function SessionChat({
               onClick={smoothScrollToAbsoluteBottom}
             >
               <ArrowDown className="size-3 mr-1" />
-              Scroll to bottom
-            </Button>
+              {tHardcodedUi.raw('componentsSessionSessionChat.line6095JsxTextScrollToBottom')}</Button>
           </div>
         </div>
       )}
@@ -6261,164 +6275,23 @@ export function SessionChat({
             questionPromptRef.current?.performAction();
           }}
           inputSlot={
-            renderedQuestion || queuedMessages.length > 0 ? (
-              <>
-                {renderedQuestion && (
-                  <div
-                    className={cn(
-                      'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
-                      questionPromptVisible
-                        ? 'max-h-[520px] opacity-100 translate-y-0 duration-300'
-                        : 'max-h-0 opacity-0 -translate-y-1 duration-320 pointer-events-none',
-                    )}
-                  >
-                    <QuestionPrompt
-                      ref={questionPromptRef}
-                      request={renderedQuestion}
-                      onReply={handleQuestionReply}
-                      onReject={handleQuestionReject}
-                      onActionChange={handleQuestionActionChange}
-                    />
-                  </div>
+            renderedQuestion ? (
+              <div
+                className={cn(
+                  'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
+                  questionPromptVisible
+                    ? 'max-h-[520px] opacity-100 translate-y-0 duration-300'
+                    : 'max-h-0 opacity-0 -translate-y-1 duration-320 pointer-events-none',
                 )}
-                {queuedMessages.length > 0 && (
-                  <div className="rounded-xl bg-muted/50 overflow-hidden">
-                    {/* Compact header row */}
-                    <Button
-                      type="button"
-                      onClick={() => setQueueExpanded((v) => !v)}
-                      variant="ghost"
-                      className="flex items-center gap-2 w-full px-3 py-1.5 h-auto rounded-none justify-start hover:bg-muted/80"
-                    >
-                      <ListPlus className="size-3.5 text-muted-foreground flex-shrink-0" />
-                      <span className="text-xs text-muted-foreground flex-1 text-left truncate">
-                        {queuedMessages.length} message
-                        {queuedMessages.length !== 1 ? 's' : ''} queued
-                        {!queueExpanded && queuedMessages.length > 0 && (
-                          <span className="text-foreground/80 font-medium">
-                            {(() => {
-                              const previewText = queuedMessages[0].text.trim();
-                              if (previewText.length > 0) {
-                                return (
-                                  <>
-                                    {' '}
-                                    · {previewText.slice(0, 50)}
-                                    {previewText.length > 50 ? '…' : ''}
-                                  </>
-                                );
-                              }
-                              const fileCount =
-                                queuedMessages[0].files?.length ?? 0;
-                              if (fileCount > 0) {
-                                return (
-                                  <>
-                                    {' '}
-                                    · {fileCount} file{fileCount > 1 ? 's' : ''}
-                                  </>
-                                );
-                              }
-                              return null;
-                            })()}
-                          </span>
-                        )}
-                      </span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            queueClearSession(sessionId);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.stopPropagation();
-                              queueClearSession(sessionId);
-                            }
-                          }}
-                          className="inline-flex items-center justify-center size-5 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                        >
-                          <X className="size-3" />
-                        </span>
-                        <ChevronUp
-                          className={cn(
-                            'size-3 text-muted-foreground/40 transition-transform',
-                            !queueExpanded && 'rotate-180',
-                          )}
-                        />
-                      </div>
-                    </Button>
-
-                    {/* Expanded list — show for any number of queued messages */}
-                    {queueExpanded && queuedMessages.length > 0 && (
-                      <div className="border-t border-border/30 max-h-[160px] overflow-y-auto scrollbar-hide">
-                        <div className="flex flex-col px-1.5 py-1">
-                          {queuedMessages.map((qm, idx) => (
-                            <div
-                              key={qm.id}
-                              className="group/q flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-muted/60 transition-colors"
-                            >
-                              <span className="text-[10px] tabular-nums text-muted-foreground/40 shrink-0 w-3 text-center">
-                                {idx + 1}
-                              </span>
-                              <p className="flex-1 text-xs text-muted-foreground truncate min-w-0">
-                                {qm.text ||
-                                  `${qm.files?.length ?? 0} file${(qm.files?.length ?? 0) === 1 ? '' : 's'}`}
-                              </p>
-                              <div className="flex items-center gap-0.5 opacity-0 group-hover/q:opacity-100 transition-opacity shrink-0">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      type="button"
-                                      onClick={() => handleQueueSendNow(qm.id)}
-                                      variant="ghost"
-                                      size="icon-xs"
-                                    >
-                                      <Send className="size-2.5" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top">
-                                    <p className="text-xs">Send now</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                                {idx > 0 && (
-                                  <Button
-                                    type="button"
-                                    onClick={() => queueMoveUp(sessionId, qm.id)}
-                                    variant="ghost"
-                                    size="icon-xs"
-                                  >
-                                    <ArrowUp className="size-2.5" />
-                                  </Button>
-                                )}
-                                {idx < queuedMessages.length - 1 && (
-                                  <Button
-                                    type="button"
-                                    onClick={() => queueMoveDown(sessionId, qm.id)}
-                                    variant="ghost"
-                                    size="icon-xs"
-                                  >
-                                    <ArrowDown className="size-2.5" />
-                                  </Button>
-                                )}
-                                <Button
-                                  type="button"
-                                  onClick={() => queueRemove(sessionId, qm.id)}
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  className="hover:text-destructive hover:bg-destructive/10"
-                                >
-                                  <X className="size-2.5" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
+              >
+                <QuestionPrompt
+                  ref={questionPromptRef}
+                  request={renderedQuestion}
+                  onReply={handleQuestionReply}
+                  onReject={handleQuestionReject}
+                  onActionChange={handleQuestionActionChange}
+                />
+              </div>
             ) : undefined
           }
         />

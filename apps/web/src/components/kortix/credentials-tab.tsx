@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Credentials tab — project-scoped encrypted secret store.
  *
@@ -17,7 +19,7 @@
 
 import { useMemo, useState } from 'react';
 import { KeyRound, Plus, Eye, EyeOff, Copy, Trash2, Loader2, ShieldCheck } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,6 +47,7 @@ import { relativeTime } from '@/lib/kortix/task-meta';
 const NAME_RE = /^[A-Z_][A-Z0-9_]*$/i;
 
 export function CredentialsTab({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data, isLoading } = useCredentials(projectId);
   const [dialog, setDialog] = useState<{ mode: 'create' } | { mode: 'edit'; item: CredentialItem } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<CredentialItem | null>(null);
@@ -60,16 +63,15 @@ export function CredentialsTab({ projectId }: { projectId: string }) {
           <div>
             <h2 className="text-[15px] font-semibold tracking-tight">Credentials</h2>
             <p className="text-[11.5px] text-muted-foreground/60 mt-1 flex items-center gap-1.5">
-              <ShieldCheck className="h-3 w-3" /> AES-256-GCM encrypted, scoped to this project only. Agents read via <code className="text-[11px] px-1 py-0.5 rounded bg-muted/50">credential_get()</code>.
+              <ShieldCheck className="h-3 w-3" />{tHardcodedUi.raw('componentsKortixCredentialsTab.line63JsxTextAes256GcmEncryptedScopedToThisProject')}<code className="text-[11px] px-1 py-0.5 rounded bg-muted/50">credential_get()</code>.
             </p>
           </div>
           <Button size="sm" onClick={() => setDialog({ mode: 'create' })} className="gap-1.5">
-            <Plus className="h-3.5 w-3.5" /> New credential
-          </Button>
+            <Plus className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsKortixCredentialsTab.line67JsxTextNewCredential')}</Button>
         </header>
 
         {isLoading && (
-          <div className="text-[12px] text-muted-foreground/50 py-6 text-center">Loading credentials…</div>
+          <div className="text-[12px] text-muted-foreground/50 py-6 text-center">{tHardcodedUi.raw('componentsKortixCredentialsTab.line72JsxTextLoadingCredentials')}</div>
         )}
 
         {!isLoading && items.length === 0 && (
@@ -77,7 +79,7 @@ export function CredentialsTab({ projectId }: { projectId: string }) {
         )}
 
         {!isLoading && items.length > 0 && (
-          <ul className="rounded-xl border border-border/40 bg-card divide-y divide-border/30 overflow-hidden">
+          <ul className="rounded-2xl border border-border/40 bg-card divide-y divide-border/30 overflow-hidden">
             {items.map((item) => (
               <CredentialRow
                 key={item.id}
@@ -101,8 +103,8 @@ export function CredentialsTab({ projectId }: { projectId: string }) {
       <ConfirmDialog
         open={confirmDelete !== null}
         onOpenChange={(o) => { if (!o) setConfirmDelete(null); }}
-        title="Delete credential?"
-        description={confirmDelete ? `"${confirmDelete.name}" will be removed from this project's vault. Audit log entries are preserved.` : ''}
+        title={tHardcodedUi.raw('componentsKortixCredentialsTab.line104JsxAttrTitleDeleteCredential')}
+        description={confirmDelete ? `"${confirmDelete.name}" will be removed from this project. Audit log entries are preserved.` : ''}
         confirmLabel="Delete"
         isPending={delCred.isPending}
         onConfirm={async () => {
@@ -134,6 +136,7 @@ function CredentialRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const reveal = useRevealCredential();
   const [value, setValue] = useState<string | null>(null);
 
@@ -168,7 +171,7 @@ function CredentialRow({
             <button
               onClick={onEdit}
               className="text-[13px] font-semibold font-mono truncate hover:text-foreground/80 cursor-pointer text-left"
-              title="Click to edit"
+              title={tHardcodedUi.raw('componentsKortixCredentialsTab.line171JsxAttrTitleClickToEdit')}
             >
               {item.name}
             </button>
@@ -179,11 +182,11 @@ function CredentialRow({
           <div className="mt-1 flex items-center gap-3 text-[10.5px] tabular-nums text-muted-foreground/50">
             <span>set {relativeTime(item.updated_at)}</span>
             {item.last_read_at
-              ? <span>· last read {relativeTime(item.last_read_at)}</span>
-              : <span>· never read</span>}
+              ? <span>{tHardcodedUi.raw('componentsKortixCredentialsTab.line182JsxTextLastRead')}{' '}{relativeTime(item.last_read_at)}</span>
+              : <span>{tHardcodedUi.raw('componentsKortixCredentialsTab.line183JsxTextNeverRead')}</span>}
           </div>
           {value !== null && (
-            <div className="mt-2 rounded-md bg-muted/40 border border-border/40 px-2.5 py-1.5 font-mono text-[12px] break-all">
+            <div className="mt-2 rounded-2xl bg-muted/40 border border-border/40 px-2.5 py-1.5 font-mono text-[12px] break-all">
               {value}
             </div>
           )}
@@ -206,7 +209,7 @@ function CredentialRow({
             variant="ghost" size="sm"
             onClick={onCopy}
             className="h-7 px-2 text-muted-foreground/60 hover:text-foreground"
-            title="Copy value to clipboard"
+            title={tHardcodedUi.raw('componentsKortixCredentialsTab.line209JsxAttrTitleCopyValueToClipboard')}
           >
             <Copy className="h-3.5 w-3.5" />
           </Button>
@@ -237,6 +240,7 @@ function CredentialDialog({
   onOpenChange: (o: boolean) => void;
   initial: CredentialItem | null;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isEdit = initial !== null;
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
@@ -279,9 +283,7 @@ function CredentialDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? `Update ${initial?.name}` : 'New credential'}</DialogTitle>
           <DialogDescription className="flex items-center gap-1.5">
-            <ShieldCheck className="h-3 w-3" />
-            Encrypted with AES-256-GCM, scoped to this project only.
-          </DialogDescription>
+            <ShieldCheck className="h-3 w-3" />{tHardcodedUi.raw('componentsKortixCredentialsTab.line283JsxTextEncryptedWithAes256GcmScopedToThis')}</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4">
@@ -297,15 +299,13 @@ function CredentialDialog({
               maxLength={120}
             />
             {!isEdit && name && !nameValid && (
-              <p className="text-[10.5px] text-destructive/80">
-                Letters, digits, underscore — no leading digit, no dashes.
-              </p>
+              <p className="text-[10.5px] text-destructive/80">{tHardcodedUi.raw('componentsKortixCredentialsTab.line301JsxTextLettersDigitsUnderscoreNoLeadingDigitNoDashes')}</p>
             )}
           </div>
 
           <div className="space-y-1.5">
             <label className="text-[11px] uppercase tracking-[0.06em] font-semibold text-muted-foreground/70">
-              Value{isEdit && <span className="font-normal normal-case text-muted-foreground/50"> — enter a new value to rotate; leave blank to keep existing and update description only</span>}
+              Value{isEdit && <span className="font-normal normal-case text-muted-foreground/50">{tHardcodedUi.raw('componentsKortixCredentialsTab.line308JsxTextEnterANewValueToRotateLeaveBlank')}</span>}
             </label>
             <Textarea
               value={value}
@@ -318,11 +318,11 @@ function CredentialDialog({
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[11px] uppercase tracking-[0.06em] font-semibold text-muted-foreground/70">Description (optional)</label>
+            <label className="text-[11px] uppercase tracking-[0.06em] font-semibold text-muted-foreground/70">{tHardcodedUi.raw('componentsKortixCredentialsTab.line321JsxTextDescriptionOptional')}</label>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Stripe live-mode API key — for the billing worker"
+              placeholder={tHardcodedUi.raw('componentsKortixCredentialsTab.line325JsxAttrPlaceholderStripeLiveModeApiKeyForTheBilling')}
               maxLength={240}
             />
           </div>
@@ -344,18 +344,15 @@ function CredentialDialog({
 // ── Empty ───────────────────────────────────────────────────────────────────
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="rounded-xl border border-dashed border-border/50 bg-muted/10 p-8 text-center">
+    <div className="rounded-2xl border border-dashed border-border/50 bg-muted/10 p-8 text-center">
       <KeyRound className="h-6 w-6 text-muted-foreground/40 mx-auto mb-3" />
-      <h3 className="text-[13px] font-semibold text-foreground/90">No credentials yet</h3>
-      <p className="text-[11.5px] text-muted-foreground/60 mt-1 max-w-md mx-auto">
-        Store project-specific secrets (API keys, tokens, connection strings).
-        Agents read them with <code className="text-[11px] px-1 py-0.5 rounded bg-muted/50">credential_get(&quot;NAME&quot;)</code> instead of scraping <code className="text-[11px] px-1 py-0.5 rounded bg-muted/50">.env</code> files.
-        Values never enter <code className="text-[11px] px-1 py-0.5 rounded bg-muted/50">process.env</code>.
+      <h3 className="text-[13px] font-semibold text-foreground/90">{tHardcodedUi.raw('componentsKortixCredentialsTab.line350JsxTextNoCredentialsYet')}</h3>
+      <p className="text-[11.5px] text-muted-foreground/60 mt-1 max-w-md mx-auto">{tHardcodedUi.raw('componentsKortixCredentialsTab.line352JsxTextStoreProjectSpecificSecretsApiKeysTokensConnection')}<code className="text-[11px] px-1 py-0.5 rounded bg-muted/50">{tHardcodedUi.raw('componentsKortixCredentialsTab.line353JsxTextCredentialGetQuotNameQuot')}</code>{tHardcodedUi.raw('componentsKortixCredentialsTab.line353JsxTextInsteadOfScraping')}<code className="text-[11px] px-1 py-0.5 rounded bg-muted/50">.env</code>{tHardcodedUi.raw('componentsKortixCredentialsTab.line353JsxTextFilesValuesNeverEnter')}<code className="text-[11px] px-1 py-0.5 rounded bg-muted/50">process.env</code>.
       </p>
       <Button size="sm" onClick={onCreate} className="mt-3 gap-1.5">
-        <Plus className="h-3.5 w-3.5" /> Store first credential
-      </Button>
+        <Plus className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsKortixCredentialsTab.line357JsxTextStoreFirstCredential')}</Button>
     </div>
   );
 }

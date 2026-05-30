@@ -25,6 +25,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -35,6 +37,11 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   onConfirm: () => void;
   isPending?: boolean;
+  /** Render the confirm button in destructive red. Use for delete /
+   *  revoke / disable-security-feature flows. */
+  confirmVariant?: 'default' | 'destructive';
+  /** Optional leading icon on the confirm button. */
+  confirmIcon?: React.ReactNode;
 }
 
 export function ConfirmDialog({
@@ -46,6 +53,8 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   onConfirm,
   isPending,
+  confirmVariant = 'default',
+  confirmIcon,
 }: ConfirmDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -64,7 +73,9 @@ export function ConfirmDialog({
               onConfirm();
             }}
             disabled={isPending}
+            className={cn(buttonVariants({ variant: confirmVariant }), 'gap-1.5')}
           >
+            {confirmIcon}
             {isPending ? `${confirmLabel}…` : confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>

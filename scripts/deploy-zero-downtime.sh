@@ -64,7 +64,6 @@ git submodule update --init --recursive --remote
 # Migrate .env from old paths to new paths (one-time after repo restructure)
 [ -f kortix-api/.env ] && [ ! -f apps/api/.env ] && mkdir -p apps/api && mv kortix-api/.env apps/api/.env && echo "  Migrated kortix-api/.env → apps/api/.env"
 [ -f apps/frontend/.env ] && [ ! -f apps/web/.env ] && mkdir -p apps/web && mv apps/frontend/.env apps/web/.env && echo "  Migrated apps/frontend/.env → apps/web/.env"
-[ -f sandbox/docker/.env ] && [ ! -f core/docker/.env ] && mkdir -p core/docker && mv sandbox/docker/.env core/docker/.env && echo "  Migrated sandbox/docker/.env → core/docker/.env"
 
 COMMIT=$(git rev-parse --short HEAD)
 IMAGE_TAG="${IMAGE_NAME}:${COMMIT}"

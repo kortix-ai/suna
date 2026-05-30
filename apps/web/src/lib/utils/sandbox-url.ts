@@ -381,16 +381,22 @@ export function rewriteLocalhostUrl(
   const safePath = normalizePath(path);
 
   // Path-based proxy whenever the backend is NOT on the user's machine.
-  // This is the only safe choice when apiBaseUrl is remote — the subdomain
-  // scheme relies on *.localhost DNS which would point at the user's own box.
+  // The subdomain scheme below relies on *.localhost DNS pointing at 127.0.0.1
+  // (browser-native) to reach kortix-api. That only works when kortix-api is
+  // actually on the user's box. Otherwise we always go path-based through the
+  // public API base URL (which terminates at whichever ingress fronts the API).
   if (!isBackendOnLocalhost(subdomainOpts.apiBaseUrl)) {
-    // apiBaseUrl is like "https://e2e-test.kortix.cloud/v1" — strip trailing slash.
     const base = subdomainOpts.apiBaseUrl.replace(/\/+$/, '');
     return `${base}/p/${subdomainOpts.sandboxId}/${port}${safePath}`;
   }
 
-  // Subdomain proxy — only used in true local-dev where kortix-api is on
-  // 127.0.0.1 so *.localhost:{backendPort} is guaranteed to reach it.
+  // Subdomain proxy — true HTTP passthrough.
+  //
+  // The proxied app sees itself at root `/`, so absolute paths, redirects
+  // (Location: /foo), service workers, WebSockets, and any framework that
+  // assumes root-mounting all work natively. The API has a top-level Bun
+  // fetch handler (apps/api/src/sandbox-proxy/subdomain.ts) that matches
+  // this hostname pattern, validates first-request auth, and forwards.
   return `http://p${port}-${subdomainOpts.sandboxId}.localhost:${subdomainOpts.backendPort}${safePath}`;
 }
 
@@ -417,12 +423,8 @@ export function isProxiableLocalhostUrl(url: string): boolean {
 
   if (EXCLUDED_PORTS.has(parsed.port)) return false;
 
-   // If the URL is a known frontend app route (e.g. /connectors?connect=...,
-  // /settings, /dashboard) it must NOT be proxied — it is a navigation link to
-  // the local frontend, not a sandbox service.  This is critical for the
-   // connector-connect flow which generates http://localhost:3000/connectors?...
-  // URLs that should open in the same browser tab, not go through the p3000-...
-  // subdomain proxy.
+  // If the URL is a known frontend app route (e.g. /settings or /dashboard) it must NOT be proxied — it is a navigation link to
+  // the local frontend, not a sandbox service.
   if (isAppRouteUrl(url)) return false;
 
   return true;

@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 // ============================================================================
 // Types
@@ -95,6 +96,7 @@ export const useSoundStore = create<SoundState>()(
     }),
     {
       name: 'kortix-sound-preferences',
+      storage: createSafeJSONStorage(),
       partialize: (state) => ({
         preferences: state.preferences,
       }),

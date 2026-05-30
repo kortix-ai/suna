@@ -1,4 +1,4 @@
-/* 
+/*
  * Tailwind CSS v4 directives - these are valid Tailwind syntax
  * CSS linters may show warnings but these are false positives
  */
@@ -93,6 +93,32 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* App typography scale. Keep html at 100% so browser and OS zoom
+     preferences remain intact; adjust readable UI sizes through tokens. */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: calc(1 / 0.75);
+  --text-sm: 0.875rem;
+  --text-sm--line-height: calc(1.25 / 0.875);
+  --text-base: 1rem;
+  --text-base--line-height: calc(1.5 / 1);
+  --text-lg: 1.125rem;
+  --text-lg--line-height: calc(1.75 / 1.125);
+  --text-xl: 1.25rem;
+  --text-xl--line-height: calc(1.75 / 1.25);
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: calc(2 / 1.5);
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: calc(2.25 / 1.875);
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: calc(2.5 / 2.25);
+  --text-5xl: 3rem;
+  --text-5xl--line-height: 1;
+  --text-6xl: 3.75rem;
+  --text-6xl--line-height: 1;
+  --text-7xl: 4.5rem;
+  --text-7xl--line-height: 1;
+  --text-8xl: 6rem;
+  --text-8xl--line-height: 1;
   /* Standard border radius values */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -933,9 +959,19 @@
     /* stylelint-disable-next-line at-rule-no-unknown */
     @apply border-border outline-ring/50;
   }
+
+  /* Tailwind v4 dropped the default pointer cursor on buttons. Restore it for
+     all enabled buttons / role="button" so interactive controls feel clickable.
+     Lives in the base layer, so disabled controls and any explicit cursor-*
+     utility (e.g. cursor-default) still win over this default. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
   html {
     scroll-behavior: smooth;
-    font-size: 105%;
+    font-size: 100%;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -991,14 +1027,14 @@
 }
 
 .bg-pattern-grid {
-  background-image: 
+  background-image:
     linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
   background-size: 20px 20px;
 }
 
 .dark .bg-pattern-grid {
-  background-image: 
+  background-image:
     linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 20px 20px;
@@ -1869,3 +1905,43 @@ html[data-desktop-platform="macos"] .kx-desktop-controls {
 }
 /* Drag region: the chrome strip covers the title-bar zone. On macOS the
    first 80px is the OS traffic-light area; rest is freely draggable. */
+
+/* ─── Desktop title-bar inset (shared) ───────────────────────────────────
+   Vertical space reserved at the very top of the window for the OS window
+   controls, so top-reaching surfaces (the AppHeader, full-screen modals)
+   never sit under them. Zero on the web; on desktop, tall enough to clear
+   the macOS traffic lights / the Win-Linux control cluster. */
+html[data-desktop="true"] {
+  --kx-titlebar-inset: 28px;
+}
+html[data-desktop-platform="macos"] {
+  --kx-titlebar-inset: 40px;
+}
+
+/* AppHeader (the breadcrumb bar on non-project pages): clear the OS window
+   controls on desktop. macOS draws traffic lights top-left (~80px); Windows
+   and Linux draw min/max/close top-right. */
+html[data-desktop-platform="macos"] .kx-app-header {
+  padding-left: 104px;
+}
+html[data-desktop="true"]:not([data-desktop-platform="macos"]) .kx-app-header {
+  padding-right: 120px;
+}
+
+/* Full-screen / top-reaching modals (e.g. the File Preview modal) start
+   below the title-bar inset on desktop so their own chrome never underlaps
+   the OS window controls. Pairs with `inset-3 sm:inset-4` for the sides. */
+.kx-fullscreen-modal {
+  top: calc(0.75rem + var(--kx-titlebar-inset, 0px));
+}
+@media (min-width: 640px) {
+  .kx-fullscreen-modal {
+    top: calc(1rem + var(--kx-titlebar-inset, 0px));
+  }
+}
+
+/* For a full-bleed (inset-0) modal whose chrome floats from the top via a
+   margin (e.g. the Files file-preview top bar): drop it past the inset too. */
+.kx-titlebar-safe-mt {
+  margin-top: calc(0.75rem + var(--kx-titlebar-inset, 0px));
+}

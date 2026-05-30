@@ -1,11 +1,15 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useEffect, useCallback } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
 import { configureAutoTopup, getAutoTopupSettings, getAutoTopupSetupStatus, type AutoTopupConfig } from '@/lib/api/billing';
+import { useBillingAccountId } from '@/stores/billing-account-context';
 import { toast } from '@/lib/toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -39,6 +43,7 @@ export function AutoTopupCard({
   onChange,
   configRef,
 }: AutoTopupCardProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -46,21 +51,23 @@ export function AutoTopupCard({
 
   // Fail fast: these endpoints can stall on Stripe round-trips; we'd rather
   // render with defaults than spin forever.
+  const accountId = useBillingAccountId();
+
   const {
     data: fetchedConfig,
     isLoading,
     isError: settingsError,
     refetch: refetchSettings,
   } = useQuery({
-    queryKey: ['auto-topup-settings'],
-    queryFn: getAutoTopupSettings,
+    queryKey: ['auto-topup-settings', { accountId: accountId ?? null }],
+    queryFn: () => getAutoTopupSettings(accountId),
     retry: 0,
     enabled: fetchSettings,
   });
 
   const { data: setupStatus } = useQuery({
-    queryKey: ['auto-topup-setup-status'],
-    queryFn: getAutoTopupSetupStatus,
+    queryKey: ['auto-topup-setup-status', { accountId: accountId ?? null }],
+    queryFn: () => getAutoTopupSetupStatus(accountId),
     retry: 0,
     enabled: fetchSettings,
   });
@@ -112,7 +119,7 @@ export function AutoTopupCard({
     setSaving(true);
     setSaveResult(null);
     try {
-      await configureAutoTopup({ enabled, threshold: thresholdNum, amount: amountNum });
+      await configureAutoTopup({ enabled, threshold: thresholdNum, amount: amountNum }, accountId);
       queryClient.invalidateQueries({ queryKey: ['auto-topup-settings'] });
       queryClient.invalidateQueries({ queryKey: ['accountState'] });
       queryClient.invalidateQueries({ queryKey: ['auto-topup-setup-status'] });
@@ -126,7 +133,7 @@ export function AutoTopupCard({
     } finally {
       setSaving(false);
     }
-  }, [enabled, threshold, amount, setupStatus, queryClient]);
+  }, [enabled, threshold, amount, setupStatus, queryClient, accountId]);
 
   const showMissingCardWarning = enabled && setupStatus && !setupStatus.has_default_payment_method;
 
@@ -145,11 +152,11 @@ export function AutoTopupCard({
         <Alert variant="warning">
           <AlertCircle className="size-4" />
           <AlertDescription className="flex items-center justify-between gap-2">
-            <span>Couldn't load your current settings. Showing defaults.</span>
+            <span>{tHardcodedUi.raw('componentsBillingAutoTopupCard.line149JsxTextCouldnTLoadYourCurrentSettingsShowingDefaults')}</span>
             <Button
               size="sm"
               variant="outline"
-              className="h-6 text-[11px] px-2 shrink-0"
+              className="h-6 text-xs px-2 shrink-0"
               onClick={() => refetchSettings()}
             >
               Retry
@@ -161,8 +168,8 @@ export function AutoTopupCard({
       {/* Toggle row */}
       <div className="flex items-center justify-between">
         <div className="text-left">
-          <p className="text-sm font-medium">Auto Top-up</p>
-          <p className="text-xs text-muted-foreground">Recharge credits automatically</p>
+          <p className="text-sm font-medium">{tHardcodedUi.raw('componentsBillingAutoTopupCard.line165JsxTextAutoTopUp')}</p>
+          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsBillingAutoTopupCard.line166JsxTextRechargeCreditsAutomatically')}</p>
         </div>
         <Switch
           checked={enabled}
@@ -177,9 +184,7 @@ export function AutoTopupCard({
       {showMissingCardWarning && (
         <Alert variant="warning">
           <AlertCircle className="size-4" />
-          <AlertDescription>
-            No default payment method found. Add a default card in Billing before enabling auto top-up.
-          </AlertDescription>
+          <AlertDescription>{tHardcodedUi.raw('componentsBillingAutoTopupCard.line182JsxTextNoDefaultPaymentMethodFoundAddADefault')}</AlertDescription>
         </Alert>
       )}
 
@@ -190,26 +195,26 @@ export function AutoTopupCard({
             <span className="text-xs text-muted-foreground shrink-0">Add</span>
             <div className="relative flex-1">
               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
-              <input
+              <Input
                 type="number"
                 min={1}
                 step={1}
                 value={amount}
                 onChange={(e) => { setAmount(e.target.value); setDirty(true); setSaveResult(null); }}
-                className="w-full h-8 rounded-lg border border-border bg-background pl-6 pr-2 text-xs tabular-nums text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-foreground/30 transition-colors"
+                className="h-8 pl-6 pr-2 text-xs tabular-nums"
                 placeholder={String(AUTO_TOPUP_DEFAULT_AMOUNT)}
               />
             </div>
-            <span className="text-xs text-muted-foreground shrink-0">when below</span>
+            <span className="text-xs text-muted-foreground shrink-0">{tHardcodedUi.raw('componentsBillingAutoTopupCard.line204JsxTextWhenBelow')}</span>
             <div className="relative flex-1">
               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
-              <input
+              <Input
                 type="number"
                 min={AUTO_TOPUP_MIN_THRESHOLD}
                 step={1}
                 value={threshold}
                 onChange={(e) => { setThreshold(e.target.value); setDirty(true); setSaveResult(null); }}
-                className="w-full h-8 rounded-lg border border-border bg-background pl-6 pr-2 text-xs tabular-nums text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-foreground/30 transition-colors"
+                className="h-8 pl-6 pr-2 text-xs tabular-nums"
                 placeholder={String(AUTO_TOPUP_DEFAULT_THRESHOLD)}
               />
             </div>
@@ -218,17 +223,13 @@ export function AutoTopupCard({
           {/* Green confirmation */}
           <div className="flex items-start gap-2 pt-1">
             <ShieldCheck className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
-            <p className="text-xs text-muted-foreground">
-              Your card is only charged when your balance drops. Disable anytime in Settings.
-            </p>
+            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsBillingAutoTopupCard.line223JsxTextYourCardIsOnlyChargedWhenYourBalance')}</p>
           </div>
         </div>
       )}
 
       {!enabled && (
-        <p className="text-[11px] text-muted-foreground/40">
-          Your agent will pause when credits run out. You can enable this anytime.
-        </p>
+        <p className="text-xs text-muted-foreground/40">{tHardcodedUi.raw('componentsBillingAutoTopupCard.line231JsxTextYourAgentWillPauseWhenCreditsRunOut')}</p>
       )}
 
       {saveResult && (

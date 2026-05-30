@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import {
   Layout,
@@ -62,7 +64,7 @@ function ShimmerBox({ className }: { className?: string }) {
   const colorClass = useMemo(() => BLOB_COLORS[Math.floor(Math.random() * BLOB_COLORS.length)], []);
 
   return (
-    <div className={cn("relative rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700", className)}>
+    <div className={cn("relative rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700", className)}>
       <div className={`absolute inset-[-50%] bg-gradient-to-br ${colorClass} blur-2xl rounded-lg`} />
       <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm rounded-lg" />
       <div
@@ -86,6 +88,7 @@ export function CanvasToolView({
   project,
   onFileClick,
 }: CanvasToolViewProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [refreshKey, setRefreshKey] = useState(0);
   const lastRefreshRef = useRef<number>(0);
   
@@ -229,7 +232,7 @@ export function CanvasToolView({
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
             <div className={cn(
-              "relative p-2 rounded-lg border flex-shrink-0",
+              "relative p-2 rounded-2xl border flex-shrink-0",
               actionInfo.bgColor,
               actionInfo.borderColor
             )}>
@@ -258,7 +261,7 @@ export function CanvasToolView({
                 size="sm"
                 onClick={handleOpenInViewer}
                 className="h-8 w-8 p-0"
-                title="Open in file viewer"
+                title={tHardcodedUi.raw('componentsThreadToolViewsCanvasToolCanvastoolview.line261JsxAttrTitleOpenInFileViewer')}
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </Button>
@@ -278,9 +281,7 @@ export function CanvasToolView({
             <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gradient-to-b from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-900/60">
               <AlertTriangle className="h-8 w-8 text-zinc-500 dark:text-zinc-400" />
             </div>
-            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
-              Operation Failed
-            </h3>
+            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">{tHardcodedUi.raw('componentsThreadToolViewsCanvasToolCanvastoolview.line282JsxTextOperationFailed')}</h3>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 text-center max-w-md">
               {error || 'An error occurred during the canvas operation'}
             </p>
@@ -304,12 +305,8 @@ export function CanvasToolView({
             <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gradient-to-b from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-900/60">
               <Layout className="h-8 w-8 text-zinc-400 dark:text-zinc-600" />
             </div>
-            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
-              Canvas Empty
-            </h3>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 text-center max-w-md">
-              This canvas doesn't have any content yet.
-            </p>
+            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">{tHardcodedUi.raw('componentsThreadToolViewsCanvasToolCanvastoolview.line308JsxTextCanvasEmpty')}</h3>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 text-center max-w-md">{tHardcodedUi.raw('componentsThreadToolViewsCanvasToolCanvastoolview.line311JsxTextThisCanvasDoesnTHaveAnyContentYet')}</p>
           </div>
         )}
       </CardContent>

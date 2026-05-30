@@ -1,27 +1,21 @@
 /**
  * Preview proxy ownership gate + user-context resolver.
  *
- * Two responsibilities:
- *   1. Tell the preview proxy whether a given user can reach a sandbox.
- *   2. Produce the payload the proxy signs and forwards as
- *      `X-Kortix-User-Context` to kortix-master (Phase 1 of the multi-user
- *      authorization layer).
+ * Project-sessions on Daytona model:
+ *   - A sandbox lives in `kortix.session_sandboxes`.
+ *   - A user can hit the sandbox if they're a member of the account that owns
+ *     it (account_members.account_id == session_sandboxes.account_id), or if
+ *     they're a platform admin.
  *
- * Both share one cache keyed by (previewSandboxId, userId) — the heavy cost
- * is the membership lookup, not the signing. Signing happens per request
- * on top of a cached context so freshly-revoked tokens aren't served.
+ * The legacy sandbox-members / scope / role machinery has been removed along
+ * with the rest of the /instances surface.
  */
 
 import { db } from './db';
+import { isPlatformAdmin } from './platform-roles';
 import { resolveAccountId } from './resolve-account';
-import {
-  canAccessPreviewTarget,
-  decideAccess,
-  loadUserTeamContext,
-} from '../teams';
-import { effectiveScopes } from '../permissions';
-import { sandboxes } from '@kortix/db';
-import { eq, or } from 'drizzle-orm';
+import { accountMembers, sessionSandboxes } from '@kortix/db';
+import { and, eq, or } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -42,26 +36,36 @@ function cacheKey(previewSandboxId: string, userId: string): string {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Resolve the REAL sandbox uuid + account id from the `previewSandboxId`,
- * which can be either a uuid or an externalId (container name / provider id).
+ * Resolve the real session sandbox uuid + owning account from a
+ * `previewSandboxId`, which can be either a uuid (sandboxId / externalId) or
+ * the Daytona-side externalId string.
  */
 async function resolveSandboxRef(
   previewSandboxId: string,
 ): Promise<{ sandboxId: string; accountId: string } | null> {
   const idCondition = UUID_RE.test(previewSandboxId)
     ? or(
-        eq(sandboxes.externalId, previewSandboxId),
-        eq(sandboxes.sandboxId, previewSandboxId),
+        eq(sessionSandboxes.externalId, previewSandboxId),
+        eq(sessionSandboxes.sandboxId, previewSandboxId),
       )
-    : eq(sandboxes.externalId, previewSandboxId);
+    : eq(sessionSandboxes.externalId, previewSandboxId);
 
   const [row] = await db
-    .select({ sandboxId: sandboxes.sandboxId, accountId: sandboxes.accountId })
-    .from(sandboxes)
+    .select({ sandboxId: sessionSandboxes.sandboxId, accountId: sessionSandboxes.accountId })
+    .from(sessionSandboxes)
     .where(idCondition)
     .limit(1);
 
   return row ?? null;
+}
+
+async function isAccountMember(userId: string, accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ accountId: accountMembers.accountId })
+    .from(accountMembers)
+    .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
+    .limit(1);
+  return !!row;
 }
 
 async function computeEntry(
@@ -72,13 +76,14 @@ async function computeEntry(
 
   const ref = await resolveSandboxRef(previewSandboxId);
   const primaryAccountId = await resolveAccountId(userId);
-  const ctx = await loadUserTeamContext(db, userId, primaryAccountId);
+  const platformAdmin = await isPlatformAdmin(primaryAccountId);
 
   if (!ref) {
-    const allowed = await canAccessPreviewTarget(db, ctx, previewSandboxId);
+    // No sandbox row found. Allow only platform admins so the lookup-by-name
+    // dev path (local bridge etc.) still works for staff debugging.
     return {
-      allowed,
-      payload: allowed
+      allowed: platformAdmin,
+      payload: platformAdmin
         ? {
             userId,
             sandboxId: previewSandboxId,
@@ -90,40 +95,18 @@ async function computeEntry(
     };
   }
 
-  const decision = await decideAccess(
-    db,
-    ctx,
-    { sandboxId: ref.sandboxId, accountId: ref.accountId },
-    'view',
-  );
-  if (!decision.allowed) {
+  const member = platformAdmin || (await isAccountMember(userId, ref.accountId));
+  if (!member) {
     return { allowed: false, payload: null, expiresAt };
   }
-
-  let sandboxRole: KortixUserContext['sandboxRole'];
-  if (ctx.isPlatformAdmin) {
-    sandboxRole = 'platform_admin';
-  } else if (ctx.ownerAccountIds.includes(ref.accountId)) {
-    sandboxRole = 'owner';
-  } else if (ctx.managerAccountIds.includes(ref.accountId)) {
-    sandboxRole = 'admin';
-  } else {
-    sandboxRole = 'member';
-  }
-
-  const scopeSet = await effectiveScopes(db, ctx, {
-    sandboxId: ref.sandboxId,
-    accountId: ref.accountId,
-  });
-  const scopes = Array.from(scopeSet);
 
   return {
     allowed: true,
     payload: {
       userId,
       sandboxId: ref.sandboxId,
-      sandboxRole,
-      scopes,
+      sandboxRole: platformAdmin ? 'platform_admin' : 'member',
+      scopes: ['*'],
     },
     expiresAt,
   };
@@ -159,8 +142,7 @@ export async function canAccessPreviewSandbox(input: {
 
 /**
  * Payload ready to sign + forward as `X-Kortix-User-Context`. Null when the
- * caller isn't authenticated or isn't allowed on this sandbox — caller should
- * skip attaching the header in that case.
+ * caller isn't authenticated or isn't allowed on this sandbox.
  */
 export async function resolvePreviewUserContext(
   previewSandboxId: string,
@@ -175,10 +157,7 @@ export function clearPreviewOwnershipCache(): void {
   previewContextCache.clear();
 }
 
-/**
- * Drop every cached entry for a user. Call when their memberships or role
- * changes so the next proxy request re-evaluates from the database.
- */
+/** Drop every cached entry for a user. */
 export function invalidatePreviewCacheForUser(userId: string): void {
   const suffix = `:${userId}`;
   for (const key of previewContextCache.keys()) {
@@ -187,4 +166,3 @@ export function invalidatePreviewCacheForUser(userId: string): void {
     }
   }
 }
-

@@ -6,6 +6,7 @@ import { tunnelRelay } from '../core/relay';
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import { isValidCapability, validateScope as validateScopeInput } from '../core/scope-validator';
 import { TunnelErrorCode, type TunnelCapability } from 'agent-tunnel';
+import { getTunnelOwnerContext } from './auth';
 
 type SSEWriter = (event: string, data: unknown) => void;
 const sseSubscribers = new Map<string, Set<SSEWriter>>();
@@ -30,7 +31,7 @@ export function createPermissionRequestsRouter(): Hono {
   const router = new Hono();
 
   router.get('/', async (c: any) => {
-    const accountId = c.get('userId') as string;
+    const { accountId } = await getTunnelOwnerContext(c);
 
     const requests = await db
       .select()
@@ -47,7 +48,7 @@ export function createPermissionRequestsRouter(): Hono {
   });
 
   router.get('/stream', async (c: any) => {
-    const accountId = c.get('userId') as string;
+    const { accountId } = await getTunnelOwnerContext(c);
 
     return new Response(
       new ReadableStream({
@@ -95,7 +96,7 @@ export function createPermissionRequestsRouter(): Hono {
   });
 
   router.post('/:requestId/approve', async (c: any) => {
-    const accountId = c.get('userId') as string;
+    const { accountId } = await getTunnelOwnerContext(c);
     const requestId = c.req.param('requestId');
     const body = await c.req.json().catch(() => ({}));
     const rateCheck = tunnelRateLimiter.check('permGrant', accountId);
@@ -166,7 +167,7 @@ export function createPermissionRequestsRouter(): Hono {
   });
 
   router.post('/:requestId/deny', async (c: any) => {
-    const accountId = c.get('userId') as string;
+    const { accountId } = await getTunnelOwnerContext(c);
     const requestId = c.req.param('requestId');
 
     const [request] = await db

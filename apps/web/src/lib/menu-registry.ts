@@ -23,8 +23,6 @@ import {
   LayoutDashboard,
   Blocks,
   FolderOpen,
-  Plug,
-  MessageSquare,
   Calendar,
   ScrollText,
   Brain,
@@ -33,9 +31,14 @@ import {
   Compass,
   Activity,
   Rocket,
-  Sparkles,
   Coins,
   LayoutTemplate,
+  // Projects / app navigation (new project shell)
+  FolderGit2,
+  MessagesSquare,
+  SlidersHorizontal,
+  Webhook,
+  Hash,
 
   // Actions
   Plus,
@@ -47,6 +50,7 @@ import {
 
   // Settings pages
   KeyRound,
+  Plug,
   Settings as SettingsIcon,
   Key,
   Bot,
@@ -54,7 +58,6 @@ import {
   // Preferences
   Palette,
   Volume2,
-  Bell,
   Keyboard,
 
   // Account
@@ -114,6 +117,7 @@ export type SettingsTabId =
   | 'billing'
   | 'transactions'
   | 'referrals'
+  | 'tokens'
   | 'shortcuts'
   | 'instance-members'
   | 'instance-projects';
@@ -195,6 +199,9 @@ export interface MenuItemDef {
   requiresAdmin?: boolean;
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
+  /** If true, item is only shown when a project is active (new project shell).
+   *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
+  requiresProject?: boolean;
   /** If true, item is only shown when the project / project-paradigm
    *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
    *  project-paradigm surfaces (Board today; Milestones, Team later). */
@@ -281,6 +288,189 @@ export const menuRegistry: MenuItemDef[] = [
   },
 
   // ──────────────────────────────────────────────────────────────────────────
+  // PROJECT & APP NAVIGATION (command palette — new project shell)
+  // App-level items always show; project-level items use the {projectId} token
+  // and only show when a project is active (requiresProject).
+  // ──────────────────────────────────────────────────────────────────────────
+  {
+    id: 'nav-projects',
+    label: 'Projects',
+    icon: FolderGit2,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects',
+    keywords: 'projects list all workspaces switch',
+  },
+  {
+    id: 'nav-accounts',
+    label: 'Accounts',
+    icon: Users,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/accounts',
+    keywords: 'accounts teams organizations members switch manage',
+  },
+  {
+    id: 'proj-sessions',
+    label: 'Open Session',
+    icon: MessagesSquare,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // Opens the in-palette "Open Session" sub-picker (see SUBMENU_PAGE_BY_ID);
+    // the href is only a non-palette fallback and points at the project root
+    // (the session-list page was removed in favour of the composer landing).
+    href: '/projects/{projectId}',
+    requiresProject: true,
+    keywords: 'sessions runs threads project conversations open',
+  },
+  {
+    id: 'proj-customize',
+    label: 'Customize',
+    icon: SlidersHorizontal,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize',
+    requiresProject: true,
+    keywords: 'customize configure project agents skills commands',
+  },
+  {
+    id: 'proj-files',
+    label: 'Customize · Files',
+    icon: FolderOpen,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/files',
+    requiresProject: true,
+    keywords: 'files repository project customize browser explorer',
+  },
+  {
+    id: 'proj-agents',
+    label: 'Customize · Agents',
+    icon: Bot,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/agents',
+    requiresProject: true,
+    keywords: 'agents subagents project customize ai',
+  },
+  {
+    id: 'proj-skills',
+    label: 'Customize · Skills',
+    icon: Blocks,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/skills',
+    requiresProject: true,
+    keywords: 'skills project customize abilities',
+  },
+  {
+    id: 'proj-commands',
+    label: 'Customize · Commands',
+    icon: TerminalSquare,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/commands',
+    requiresProject: true,
+    keywords: 'commands slash project customize',
+  },
+  {
+    id: 'proj-secrets',
+    label: 'Customize · Secrets',
+    icon: KeyRound,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/secrets',
+    requiresProject: true,
+    keywords: 'secrets env environment variables project customize',
+  },
+  {
+    id: 'proj-connectors',
+    label: 'Customize · Connectors',
+    icon: Plug,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/connectors',
+    requiresProject: true,
+    keywords: 'connectors integrations pipedream mcp openapi apps executor project customize',
+  },
+  {
+    id: 'proj-connectors-policies',
+    label: 'Customize · Connectors · Policies',
+    icon: Plug,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/connectors?tab=policies',
+    requiresProject: true,
+    keywords: 'policies approval block require_approval rules tools executor guardrails project customize',
+  },
+  {
+    id: 'proj-members',
+    label: 'Customize · Members',
+    icon: Users,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/members',
+    requiresProject: true,
+    keywords: 'members team access collaborators project customize',
+  },
+  {
+    id: 'proj-schedules',
+    label: 'Customize · Schedules',
+    icon: Calendar,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/schedules',
+    requiresProject: true,
+    keywords: 'schedules cron triggers timed project customize',
+  },
+  {
+    id: 'proj-webhooks',
+    label: 'Customize · Webhooks',
+    icon: Webhook,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/webhooks',
+    requiresProject: true,
+    keywords: 'webhooks triggers http project customize',
+  },
+  {
+    id: 'proj-channels',
+    label: 'Customize · Channels',
+    icon: Hash,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/channels',
+    requiresProject: true,
+    keywords: 'channels slack integrations project customize',
+  },
+  {
+    id: 'proj-settings',
+    label: 'Project settings',
+    icon: SettingsIcon,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/settings',
+    requiresProject: true,
+    keywords: 'project settings repository general danger zone',
+  },
+
+  // ──────────────────────────────────────────────────────────────────────────
   // QUICK ACTIONS (right sidebar top section)
   // ──────────────────────────────────────────────────────────────────────────
   {
@@ -313,7 +503,7 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette', 'rightSidebar'],
     kind: 'navigate',
     href: '/workspace',
-    activePathPrefixes: ['/workspace', '/agents', '/skills', '/commands', '/tools'],
+    activePathPrefixes: ['/workspace', '/agents', '/commands', '/tools'],
     keywords: 'workspace agents skills commands tools build create',
   },
   {
@@ -376,16 +566,6 @@ export const menuRegistry: MenuItemDef[] = [
     tabType: 'dashboard',
   },
   {
-    id: 'marketplace',
-    label: 'Marketplace',
-    icon: Sparkles,
-    group: 'navigation',
-    showIn: [],
-    subGroup: 'tools',
-    kind: 'navigate',
-    href: '/marketplace',
-  },
-  {
     id: 'scheduled-tasks',
     label: 'Triggers',
     icon: Calendar,
@@ -396,16 +576,6 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/scheduled-tasks',
   },
   {
-    id: 'channels',
-    label: 'Channels',
-    icon: MessageSquare,
-    group: 'navigation',
-    subGroup: 'services',
-    showIn: ['commandPalette', 'rightSidebar'],
-    kind: 'navigate',
-    href: '/channels',
-  },
-  {
     id: 'tunnel',
     label: 'Tunnel',
     icon: Cable,
@@ -414,16 +584,6 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['rightSidebar'],
     kind: 'navigate',
     href: '/tunnel',
-  },
-  {
-    id: 'connectors',
-    label: 'Connectors',
-    icon: Plug,
-    group: 'navigation',
-    subGroup: 'services',
-    showIn: ['commandPalette', 'rightSidebar'],
-    kind: 'navigate',
-    href: '/connectors',
   },
   ...(DEPLOYMENTS_ENABLED
     ? [{
@@ -639,7 +799,6 @@ export const menuRegistry: MenuItemDef[] = [
     settingsTab: 'appearance',
     keywords: 'appearance theme color mode wallpaper',
   },
-
   {
     id: 'pref-sounds',
     label: 'Sounds',
@@ -650,16 +809,7 @@ export const menuRegistry: MenuItemDef[] = [
     settingsTab: 'sounds',
     keywords: 'sounds audio volume notification sound effects mute',
   },
-  {
-    id: 'pref-notifications',
-    label: 'Notifications',
-    icon: Bell,
-    group: 'preferences',
-    showIn: ['commandPalette'],
-    kind: 'settings',
-    settingsTab: 'notifications',
-    keywords: 'notifications alerts push web browser desktop',
-  },
+
   {
     id: 'pref-shortcuts',
     label: 'Shortcuts',
@@ -682,18 +832,18 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette', 'userMenu'],
     kind: 'settings',
     settingsTab: 'billing',
-    keywords: 'billing payment credit card subscription manage',
+    keywords: 'billing payment credit card subscription manage wallet tier plan limits overview spend usage',
     requiresBilling: true,
   },
   {
     id: 'account-transactions',
-    label: 'Transactions',
+    label: 'Credits ledger',
     icon: Receipt,
     group: 'account',
     showIn: ['commandPalette'],
     kind: 'settings',
     settingsTab: 'transactions',
-    keywords: 'transactions credits history purchases receipts',
+    keywords: 'credits ledger transactions history purchases receipts',
   },
   {
     id: 'account-referrals',
@@ -705,6 +855,16 @@ export const menuRegistry: MenuItemDef[] = [
     settingsTab: 'referrals',
     keywords: 'referrals invite share friends earn',
     requiresBilling: true,
+  },
+  {
+    id: 'account-tokens',
+    label: 'CLI tokens',
+    icon: KeyRound,
+    group: 'account',
+    showIn: ['commandPalette', 'userMenu'],
+    kind: 'settings',
+    settingsTab: 'tokens',
+    keywords: 'cli tokens personal access pat command line authentication',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -841,7 +1001,7 @@ export interface SettingsTab {
 
 /** Preference tabs for the settings modal */
 export function getPreferenceTabs(): SettingsTab[] {
-  const preferenceIds: SettingsTabId[] = ['general', 'appearance', 'sounds', 'notifications', 'shortcuts'];
+  const preferenceIds: SettingsTabId[] = ['general', 'appearance', 'sounds', 'shortcuts'];
   return preferenceIds.map((tabId) => {
     const item = menuRegistry.find(
       (i) => i.kind === 'settings' && i.settingsTab === tabId,
@@ -870,7 +1030,8 @@ export function getInstanceTabs(): SettingsTab[] {
 export function getAccountTabs(billingEnabled: boolean): SettingsTab[] {
   const items: SettingsTab[] = [
     { id: 'billing', label: 'Billing', icon: CreditCard },
-    { id: 'transactions', label: 'Transactions', icon: Receipt },
+    { id: 'transactions', label: 'Credits ledger', icon: Receipt },
+    { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
   ];
   // Referrals tab disabled for now
   // if (billingEnabled) {

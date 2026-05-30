@@ -171,10 +171,9 @@ export function formatTranscript(
 
 /**
  * Generate a default filename for the transcript.
+ * Always keyed off the session id so the file is stable and unambiguous
+ * (e.g. `session-<uuid>.md`) rather than a mutable, collision-prone title slug.
  */
-export function getTranscriptFilename(sessionId: string, title?: string): string {
-  const slug = title
-    ? title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
-    : sessionId.slice(0, 8);
-  return `session-${slug}.md`;
+export function getTranscriptFilename(sessionId: string, _title?: string): string {
+  return `session-${sessionId}.md`;
 }

@@ -40,7 +40,37 @@ mock.module('../repositories/api-keys', () => ({
 }));
 
 mock.module('../shared/crypto', () => ({
+  // Constants
+  KEY_PREFIX: 'kortix_',
+  KEY_PREFIX_PAT: 'kortix_pat_',
+  KEY_PREFIX_PUBLIC: 'kortix_pk_',
+  KEY_PREFIX_SA: 'kortix_sa_',
+  KEY_PREFIX_SANDBOX: 'kortix_sb_',
+  KEY_PREFIX_TUNNEL: 'kortix_tun_',
+  // Token predicates (behaviorally relevant to this suite)
   isKortixToken: (token: string) => token.startsWith('kortix_'),
+  isAccountToken: (token: string) => token.startsWith('kortix_pat_'),
+  isServiceAccountToken: (token: string) => token.startsWith('kortix_sa_'),
+  isTunnelToken: (token: string) => token.startsWith('kortix_tun_'),
+  isApiKeySecretConfigured: () => true,
+  // Generators / hashing (existence-only for import resolution)
+  randomAlphanumeric: (length: number) => 'a'.repeat(length),
+  hashSecretKey: (key: string) => `hash:${key}`,
+  verifySecretKey: (key: string, hash: string) => hash === `hash:${key}`,
+  timingSafeStringEqual: (a: string, b: string) => a === b,
+  generateDeviceCode: () => 'device-code',
+  generateTunnelToken: () => 'tunnel-token',
+  generateSandboxKeyPair: () => ({ publicKey: 'pub', privateKey: 'priv' }),
+  generateServiceAccountSecret: () => 'kortix_sa_secret',
+  generateAccountTokenPair: () => ({ secretKey: 'kortix_pat_secret', keyHash: 'hash' }),
+  generateApiKeyPair: () => ({ secretKey: 'kortix_secret', keyHash: 'hash' }),
+  deriveSigningKey: () => 'signing-key',
+  signMessage: () => 'signature',
+  verifyMessageSignature: () => true,
+}));
+
+mock.module('../repositories/account-tokens', () => ({
+  validateAccountToken: async () => ({ isValid: false, error: 'Invalid PAT' }),
 }));
 
 mock.module('../shared/jwt-verify', () => ({
@@ -68,6 +98,7 @@ mock.module('../shared/supabase', () => ({
 
 mock.module('../config', () => ({
   config: {
+    isLocal: () => false,
     isLocalDockerEnabled: () => true,
     SANDBOX_CONTAINER_NAME: 'kortix-sandbox',
   },
@@ -229,10 +260,10 @@ describe('preview auth ownership', () => {
     expect(res.status).toBe(200);
   });
 
-  test('allows localhost local-sandbox preview without auth', async () => {
+  test('rejects localhost local-sandbox preview without auth', async () => {
     const app = createApp();
     const res = await app.request('http://localhost/v1/p/kortix-sandbox/8000/session/status');
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
   });
 
   test('still requires auth for remote hosts hitting the local sandbox route', async () => {

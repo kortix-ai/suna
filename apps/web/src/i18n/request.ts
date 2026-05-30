@@ -2,6 +2,7 @@ import { getRequestConfig } from 'next-intl/server';
 import { cookies, headers } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { locales, defaultLocale, type Locale } from './config';
+import { getCookieLocale, getUserLocale, normalizeLocale } from './locale';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 
@@ -12,9 +13,9 @@ export default getRequestConfig(async ({ requestLocale }) => {
   
   // Priority 1: Check cookie FIRST (faster, no API call needed)
   // This is set by middleware or user preference
-  const localeCookie = cookieStore.get('locale')?.value;
-  if (localeCookie && locales.includes(localeCookie as Locale)) {
-    locale = localeCookie as Locale;
+  const localeCookie = getCookieLocale(cookieStore.get('locale')?.value);
+  if (localeCookie) {
+    locale = localeCookie;
     return {
       locale,
       messages: (await import(`../../translations/${locale}.json`)).default
@@ -47,8 +48,9 @@ export default getRequestConfig(async ({ requestLocale }) => {
     );
     
     const { data: { user } } = await supabase.auth.getUser();
-    if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
-      locale = user.user_metadata.locale as Locale;
+    const userLocale = getUserLocale(user);
+    if (userLocale) {
+      locale = userLocale;
       return {
         locale,
         messages: (await import(`../../translations/${locale}.json`)).default
@@ -61,9 +63,9 @@ export default getRequestConfig(async ({ requestLocale }) => {
   // Priority 3: If locale is provided in the URL path (e.g., /de, /it), use it for marketing pages
   // This allows SEO-friendly URLs like /de, /it for marketing content
   // Only used if user hasn't set an explicit preference
-  const urlLocale = (await requestLocale) || headersList.get('x-locale');
-  if (urlLocale && locales.includes(urlLocale as Locale)) {
-    locale = urlLocale as Locale;
+  const urlLocale = normalizeLocale((await requestLocale) || headersList.get('x-locale'));
+  if (urlLocale) {
+    locale = urlLocale;
     return {
       locale,
       messages: (await import(`../../translations/${locale}.json`)).default
@@ -73,8 +75,8 @@ export default getRequestConfig(async ({ requestLocale }) => {
   // Priority 4: Try to detect from Accept-Language header (browser language)
   const acceptLanguage = headersList.get('accept-language');
   if (acceptLanguage) {
-    const browserLocale = acceptLanguage.split(',')[0].split('-')[0].toLowerCase();
-    if (locales.includes(browserLocale as Locale)) {
+    const browserLocale = normalizeLocale(acceptLanguage.split(',')[0]);
+    if (browserLocale) {
       locale = browserLocale as Locale;
     }
   }

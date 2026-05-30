@@ -49,11 +49,11 @@ export function EmptyState({
             <IconComponent className={cn(iconSize, 'text-muted-foreground/20')} strokeWidth={1.25} />
           </div>
         )}
-        <h3 className="text-[15px] font-semibold text-foreground tracking-tight">
+        <h3 className="text-sm font-semibold text-foreground tracking-tight">
           {title}
         </h3>
         {description && (
-          <p className="mt-1.5 text-[13px] text-muted-foreground/80 leading-relaxed">
+          <p className="mt-1.5 text-sm text-muted-foreground/80 leading-relaxed">
             {description}
           </p>
         )}

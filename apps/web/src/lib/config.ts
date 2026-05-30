@@ -69,19 +69,13 @@ export const config: Config = {
 };
 
 /**
- * Whether billing (Stripe, credit tracking) is enabled.
- * True when ENV_MODE is 'cloud'. Self-hosted = everything else.
+ * Whether billing (Stripe, credit tracking, paywall, plan picker) is enabled.
+ * This is the ONLY thing ENV_MODE controls. Everything else — auth, sandbox
+ * provisioning, projects, accounts — runs the same code path in local and cloud.
  */
 export const isBillingEnabled = (): boolean => {
   return getEnv().ENV_MODE === 'cloud';
 };
 
-/**
- * Whether this is a self-hosted deployment.
- * Self-hosted mode uses email+password auth (no magic links, no OAuth).
- */
-export const isSelfHosted = (): boolean => {
-  return !isBillingEnabled();
-};
 import { getEnv } from '@/lib/env-config';
 

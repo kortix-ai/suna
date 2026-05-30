@@ -1,0 +1,24 @@
+{
+  "name": "@kortix/sandbox-agent-server",
+  "version": "0.1.0",
+  "description": "Consolidated sandbox-side daemon: OpenCode supervisor + Kortix API surface.",
+  "type": "module",
+  "main": "src/main.ts",
+  "bin": {
+    "kortix-agent": "./dist/kortix-agent"
+  },
+  "scripts": {
+    "dev": "bun run --hot src/main.ts",
+    "build": "bash scripts/build.sh",
+    "start": "./dist/kortix-agent",
+    "typecheck": "bun tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.6.0"
+  }
+}

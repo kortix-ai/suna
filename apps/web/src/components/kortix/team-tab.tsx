@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Team tab — single-column roster that matches the Project About design
  * language (max-w-3xl container, uppercase section labels, rounded-xl cards
@@ -100,6 +102,7 @@ is done, move it with \`ticket_update_status\`.
   comment. Use \`ticket_update_status\`.`;
 
 export function TeamTab({ projectId }: { projectId: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: agents = [] } = useProjectAgents(projectId);
   const { data: columns = [] } = useColumns(projectId);
   const userHandle = useUserHandle();
@@ -122,20 +125,18 @@ export function TeamTab({ projectId }: { projectId: string }) {
               className="ml-auto h-6 px-2 text-[11px] text-muted-foreground/60 hover:text-foreground gap-1"
               onClick={() => setCreateOpen(true)}
             >
-              <Plus className="h-3 w-3" />
-              New agent
-            </Button>
+              <Plus className="h-3 w-3" />{tHardcodedUi.raw('componentsKortixTeamTab.line126JsxTextNewAgent')}</Button>
           </div>
 
-          <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+          <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
             <UserRow handle={userHandle} />
             {agents.length === 0 ? (
               <button
                 onClick={() => setCreateOpen(true)}
                 className="w-full py-8 text-center hover:bg-muted/20 transition-colors cursor-pointer"
               >
-                <p className="text-[12.5px] text-foreground/70 font-medium mb-0.5">No agents yet</p>
-                <p className="text-[11.5px] text-muted-foreground/50">Add the first team agent for this project.</p>
+                <p className="text-[12.5px] text-foreground/70 font-medium mb-0.5">{tHardcodedUi.raw('componentsKortixTeamTab.line137JsxTextNoAgentsYet')}</p>
+                <p className="text-[11.5px] text-muted-foreground/50">{tHardcodedUi.raw('componentsKortixTeamTab.line138JsxTextAddTheFirstTeamAgentForThisProject')}</p>
               </button>
             ) : (
               agents.map((a) => (
@@ -147,17 +148,12 @@ export function TeamTab({ projectId }: { projectId: string }) {
 
         {/* ─── Notes ─── */}
         <section>
-          <SectionLabel label="How it works" icon={<ShieldCheck className="h-3.5 w-3.5 text-muted-foreground/45" />} />
-          <div className="rounded-xl border border-border/40 bg-card px-4 py-3 text-[12.5px] leading-relaxed text-muted-foreground/80 space-y-2">
+          <SectionLabel label={tHardcodedUi.raw('componentsKortixTeamTab.line150JsxAttrLabelHowItWorks')} icon={<ShieldCheck className="h-3.5 w-3.5 text-muted-foreground/45" />} />
+          <div className="rounded-2xl border border-border/40 bg-card px-4 py-3 text-[12.5px] leading-relaxed text-muted-foreground/80 space-y-2">
             <p>
-              <span className="text-foreground/90">Contributors</span> can comment, update custom fields,
-              assign, and move tickets between columns. <span className="text-foreground/90">Orchestrators</span>
-              additionally configure columns, fields, templates, and the team roster.
-            </p>
-            <p>
-              Each agent has an execution mode — <code className="font-mono text-[11px] bg-muted/40 px-1 rounded">per_ticket</code>
-              {' '}reuses one session per ticket (concurrent mentions queue), <code className="font-mono text-[11px] bg-muted/40 px-1 rounded">per_assignment</code> spawns a fresh session each time.
-            </p>
+              <span className="text-foreground/90">Contributors</span>{tHardcodedUi.raw('componentsKortixTeamTab.line153JsxTextCanCommentUpdateCustomFieldsAssignAndMove')}<span className="text-foreground/90">Orchestrators</span>{tHardcodedUi.raw('componentsKortixTeamTab.line155JsxTextAdditionallyConfigureColumnsFieldsTemplatesAndTheTeam')}</p>
+            <p>{tHardcodedUi.raw('componentsKortixTeamTab.line158JsxTextEachAgentHasAnExecutionMode')}<code className="font-mono text-[11px] bg-muted/40 px-1 rounded">per_ticket</code>
+              {' '}{tHardcodedUi.raw('componentsKortixTeamTab.line159JsxTextReusesOneSessionPerTicketConcurrentMentionsQueue')}<code className="font-mono text-[11px] bg-muted/40 px-1 rounded">per_assignment</code>{tHardcodedUi.raw('componentsKortixTeamTab.line159JsxTextSpawnsAFreshSessionEachTime')}</p>
           </div>
         </section>
       </div>
@@ -190,6 +186,7 @@ function SectionLabel({ label, icon }: { label: string; icon?: React.ReactNode }
 // ─── Rows ───────────────────────────────────────────────────────────────────
 
 function UserRow({ handle }: { handle: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { avatarUrl } = useCurrentUserAvatarProps();
   return (
     <div className="flex items-center gap-3 px-4 py-3">
@@ -197,11 +194,9 @@ function UserRow({ handle }: { handle: string }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[13px] font-semibold truncate">@{handle}</span>
-          <span className="text-[10px] text-muted-foreground/40">real human</span>
+          <span className="text-[10px] text-muted-foreground/40">{tHardcodedUi.raw('componentsKortixTeamTab.line200JsxTextRealHuman')}</span>
         </div>
-        <p className="text-[11.5px] text-muted-foreground/55 truncate">
-          Agents tag @{handle} when a decision is needed.
-        </p>
+        <p className="text-[11.5px] text-muted-foreground/55 truncate">{tHardcodedUi.raw('componentsKortixTeamTab.line203JsxTextAgentsTag')}{handle}{tHardcodedUi.raw('componentsKortixTeamTab.line203JsxTextWhenADecisionIsNeeded')}</p>
       </div>
     </div>
   );
@@ -278,6 +273,7 @@ function choiceToMode(c: ExecutionChoice): ExecutionMode {
 function CreateAgentDialog({ open, onClose, projectId, columns }: {
   open: boolean; onClose: () => void; projectId: string; columns: Array<{ key: string; label: string }>;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const create = useCreateProjectAgent();
   const [slug, setSlug] = useState('');
   const [state, setState] = useState<AgentFormState>({
@@ -313,7 +309,7 @@ function CreateAgentDialog({ open, onClose, projectId, columns }: {
     <AgentFormDialog
       open={open}
       onOpenChange={(o) => { if (!o) onClose(); }}
-      title="New team agent"
+      title={tHardcodedUi.raw('componentsKortixTeamTab.line316JsxAttrTitleNewTeamAgent')}
       footerLeft={`Writes .kortix/agents/${slug || 'slug'}.md`}
       submitLabel="Create"
       submitIcon={create.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
@@ -337,6 +333,7 @@ function CreateAgentDialog({ open, onClose, projectId, columns }: {
 function EditAgentDialog({ slug, onClose, projectId, columns }: {
   slug: string | null; onClose: () => void; projectId: string; columns: Array<{ key: string; label: string }>;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data } = useAgentPersona(projectId, slug ?? undefined, { enabled: !!slug });
   const update = useUpdateProjectAgent();
   const del = useDeleteProjectAgent();
@@ -401,9 +398,7 @@ function EditAgentDialog({ slug, onClose, projectId, columns }: {
       >
         {!data ? (
           <div className="p-10 text-center text-sm text-muted-foreground/60">
-            <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
-            Loading…
-          </div>
+            <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />{tHardcodedUi.raw('componentsKortixTeamTab.line405JsxTextLoading')}</div>
         ) : (
           <AgentFormBody
             columns={columns}
@@ -417,7 +412,7 @@ function EditAgentDialog({ slug, onClose, projectId, columns }: {
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title={`Delete @${slug}?`}
-        description={<>Removes the agent markdown file and deregisters it from the team. Existing tickets aren&apos;t deleted.</>}
+        description={<>{tHardcodedUi.raw('componentsKortixTeamTab.line420JsxTextRemovesTheAgentMarkdownFileAndDeregistersIt')}</>}
         confirmLabel="Delete"
         onConfirm={() => { del.mutate({ projectId, slug }, { onSuccess: onClose }); }}
       />
@@ -494,6 +489,7 @@ function AgentFormBody({
   slug?: string;
   onSlugChange?: (v: string) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const el = bodyRef.current;
@@ -520,7 +516,7 @@ function AgentFormBody({
             <input
               value={state.name}
               onChange={(e) => patch({ name: e.target.value })}
-              placeholder="Agent name"
+              placeholder={tHardcodedUi.raw('componentsKortixTeamTab.line523JsxAttrPlaceholderAgentName')}
               className="w-full text-[20px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 leading-tight"
             />
             {onSlugChange && (
@@ -543,7 +539,7 @@ function AgentFormBody({
           ref={bodyRef}
           value={state.body_md}
           onChange={(e) => patch({ body_md: e.target.value })}
-          placeholder="System prompt — describe responsibilities, flow, and what this agent owns."
+          placeholder={tHardcodedUi.raw('componentsKortixTeamTab.line546JsxAttrPlaceholderSystemPromptDescribeResponsibilitiesFlowAndWhatThis')}
           rows={8}
           className="w-full mt-3 text-[13px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
         />
@@ -556,14 +552,12 @@ function AgentFormBody({
         <MetaBlock label="Role">
           <RolePicker value={state.canManage ? 'orchestrator' : 'contributor'} onChange={(r) => patch({ canManage: r === 'orchestrator' })} />
         </MetaBlock>
-        <MetaBlock label="Default for">
+        <MetaBlock label={tHardcodedUi.raw('componentsKortixTeamTab.line559JsxAttrLabelDefaultFor')}>
           <ColumnPicker columns={columns} value={state.defaultCol} onChange={(v) => patch({ defaultCol: v })} />
         </MetaBlock>
         <MetaBlock label="Model">
           <ModelPicker value={state.defaultModel} onChange={(v) => patch({ defaultModel: v })} />
-          <p className="text-[10.5px] text-muted-foreground/40 mt-1 leading-snug">
-            Overrides the session default when this agent runs.
-          </p>
+          <p className="text-[10.5px] text-muted-foreground/40 mt-1 leading-snug">{tHardcodedUi.raw('componentsKortixTeamTab.line565JsxTextOverridesTheSessionDefaultWhenThisAgentRuns')}</p>
         </MetaBlock>
       </aside>
     </div>
@@ -586,12 +580,13 @@ function AgentAvatarPicker({
   onHueChange: (h: number | null) => void;
   onIconChange: (i: string | null) => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label="Customise agent look"
+          aria-label={tHardcodedUi.raw('componentsKortixTeamTab.line594JsxAttrAriaLabelCustomiseAgentLook')}
           className="group relative shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
         >
           <AgentAvatar hue={hue} icon={icon} slug={slug || 'agent'} name={name} size="lg" />
@@ -649,7 +644,7 @@ function AgentAvatarPicker({
         </div>
 
         <div className="flex items-center mt-3 pt-3 border-t border-border/40">
-          <span className="text-[10.5px] text-muted-foreground/50">Random color + icon inferred from name if unset.</span>
+          <span className="text-[10.5px] text-muted-foreground/50">{tHardcodedUi.raw('componentsKortixTeamTab.line652JsxTextRandomColorIconInferredFromNameIfUnset')}</span>
           <Button
             variant="ghost"
             size="sm"
@@ -676,17 +671,18 @@ function MetaBlock({ label, children }: { label: string; children: React.ReactNo
 // ─── Dropdown pickers (match the ticket composer's status picker) ──────────
 
 function ExecutionPicker({ value, onChange }: { value: ExecutionChoice; onChange: (v: ExecutionChoice) => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
           <Zap className="h-3.5 w-3.5 text-muted-foreground/55" />
           <span className="flex-1 text-left truncate font-medium">{EXECUTION_LABELS[value]}</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[260px] z-[10000]">
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Execution mode</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixTeamTab.line689JsxTextExecutionMode')}</DropdownMenuLabel>
         {(['per_ticket', 'new_session'] as ExecutionChoice[]).map((choice) => (
           <DropdownMenuItem
             key={choice}
@@ -710,10 +706,11 @@ function ExecutionPicker({ value, onChange }: { value: ExecutionChoice; onChange
 }
 
 function RolePicker({ value, onChange }: { value: 'contributor' | 'orchestrator'; onChange: (v: 'contributor' | 'orchestrator') => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
           <ShieldCheck className={cn('h-3.5 w-3.5', value === 'orchestrator' ? 'text-primary' : 'text-muted-foreground/55')} />
           <span className="flex-1 text-left truncate font-medium capitalize">{value}</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
@@ -727,9 +724,7 @@ function RolePicker({ value, onChange }: { value: 'contributor' | 'orchestrator'
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[12px] font-medium">Contributor</div>
-            <div className="text-[10.5px] text-muted-foreground/60 leading-snug whitespace-normal">
-              Can work tickets: comment, move status, assign, edit fields.
-            </div>
+            <div className="text-[10.5px] text-muted-foreground/60 leading-snug whitespace-normal">{tHardcodedUi.raw('componentsKortixTeamTab.line731JsxTextCanWorkTicketsCommentMoveStatusAssignEdit')}</div>
           </div>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onChange('orchestrator')} className="items-start gap-2 cursor-pointer py-2">
@@ -738,9 +733,7 @@ function RolePicker({ value, onChange }: { value: 'contributor' | 'orchestrator'
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[12px] font-medium">Orchestrator</div>
-            <div className="text-[10.5px] text-muted-foreground/60 leading-snug whitespace-normal">
-              Plus: manage team, columns, custom fields, templates, context.
-            </div>
+            <div className="text-[10.5px] text-muted-foreground/60 leading-snug whitespace-normal">{tHardcodedUi.raw('componentsKortixTeamTab.line742JsxTextPlusManageTeamColumnsCustomFieldsTemplatesContext')}</div>
           </div>
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -749,6 +742,7 @@ function RolePicker({ value, onChange }: { value: 'contributor' | 'orchestrator'
 }
 
 function ModelPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: providers } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const byProvider = useMemo(() => {
@@ -766,7 +760,7 @@ function ModelPicker({ value, onChange }: { value: string; onChange: (v: string)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
           <Cpu className={cn('h-3.5 w-3.5 shrink-0', value ? 'text-primary' : 'text-muted-foreground/55')} />
           <span className={cn('flex-1 text-left truncate', value ? 'font-medium' : 'text-muted-foreground/60')}>{label}</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
@@ -776,17 +770,13 @@ function ModelPicker({ value, onChange }: { value: string; onChange: (v: string)
         align="start"
         className="w-[260px] max-h-[340px] overflow-y-auto z-[10000]"
       >
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
-          Default model
-        </DropdownMenuLabel>
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixTeamTab.line780JsxTextDefaultModel')}</DropdownMenuLabel>
         <DropdownMenuItem onClick={() => onChange('')} className="gap-2 cursor-pointer">
-          <span className="flex-1 text-muted-foreground/80">Session default</span>
+          <span className="flex-1 text-muted-foreground/80">{tHardcodedUi.raw('componentsKortixTeamTab.line783JsxTextSessionDefault')}</span>
           {!value && <Check className="h-3 w-3 text-primary" />}
         </DropdownMenuItem>
         {byProvider.length === 0 ? (
-          <div className="px-2 py-3 text-[11.5px] text-muted-foreground/55">
-            No providers connected.
-          </div>
+          <div className="px-2 py-3 text-[11.5px] text-muted-foreground/55">{tHardcodedUi.raw('componentsKortixTeamTab.line788JsxTextNoProvidersConnected')}</div>
         ) : (
           byProvider.map(([providerID, group]) => (
             <div key={providerID}>
@@ -816,18 +806,19 @@ function ModelPicker({ value, onChange }: { value: string; onChange: (v: string)
 }
 
 function ColumnPicker({ columns, value, onChange }: { columns: Array<{ key: string; label: string }>; value: string; onChange: (v: string) => void }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const label = value === '_none' ? 'None' : (columns.find((c) => c.key === value)?.label ?? value);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-2xl border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
           <Cpu className="h-3.5 w-3.5 text-muted-foreground/55" />
           <span className="flex-1 text-left truncate font-medium">{label}</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[220px] z-[10000]">
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Default for column</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{tHardcodedUi.raw('componentsKortixTeamTab.line830JsxTextDefaultForColumn')}</DropdownMenuLabel>
         <DropdownMenuItem onClick={() => onChange('_none')} className="gap-2 cursor-pointer">
           <span className="flex-1">None</span>
           {value === '_none' && <Check className="h-3 w-3 text-primary" />}

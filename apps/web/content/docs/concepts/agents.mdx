@@ -1,0 +1,26 @@
+---
+title: Agents
+description: The agent runtime is OpenCode, configured from the repo's .kortix/opencode directory.
+---
+
+The agent in every [session](/docs/concepts/sessions) is
+**[OpenCode](https://opencode.ai/docs/)**. The `kortix-agent` daemon runs it as
+`opencode serve` with its config dir pointed at the project's `.kortix/opencode/`.
+
+Everything about agent behavior lives there, in OpenCode's standard layout (the
+platform never reads it):
+
+- **Agents** — personas in `agents/`
+- **Skills** — on-demand `SKILL.md` know-how in `skills/`
+- **Commands, tools, plugins**
+- **Models, providers, MCP servers** — in `opencode.jsonc`
+
+Every project ships a default agent + the kortix-system skill, so it runs with no
+setup. Beyond reading/writing repo files, an agent can use external tools through
+connected integrations (per project — it only uses what's connected; see
+[Connecting your tools](/docs/guides/connecting-tools)).
+
+New agents, skills, or tools reach future sessions only after a
+[change request](/docs/concepts/change-requests) merges them. Authoring details:
+[opencode.ai/docs](https://opencode.ai/docs/) and
+[Kortix vs OpenCode config](/docs/reference/config-boundary).

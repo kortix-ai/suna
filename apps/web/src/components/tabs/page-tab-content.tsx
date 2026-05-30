@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { lazy, Suspense, useMemo, type ComponentType } from 'react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
@@ -17,44 +19,32 @@ const DashboardContent = lazy(() =>
 );
 
 const SecretsPage = lazy(() =>
-	import('@/app/(dashboard)/settings/credentials/page'),
+	import('@/components/pages/settings/credentials/page'),
 );
 
 const ApiKeysPage = lazy(() =>
-	import('@/app/(dashboard)/settings/api-keys/page'),
+	import('@/components/pages/settings/api-keys/page'),
 );
 
 const ProvidersPage = lazy(() =>
-	import('@/app/(dashboard)/settings/providers/page'),
+	import('@/components/pages/settings/providers/page'),
 );
 
 const CreditsPage = lazy(() =>
-	import('@/app/(dashboard)/credits-explained/page'),
+	import('@/components/pages/credits-explained/page'),
 );
 
 const ChangelogPage = lazy(() =>
-	import('@/app/(dashboard)/changelog/page'),
+	import('@/components/pages/changelog/page'),
 );
 
 const WorkspacePage = lazy(() =>
-	import('@/app/(dashboard)/workspace/page'),
+	import('@/components/pages/workspace/page'),
 );
 
 const TriggersPage = lazy(() =>
 	import('@/components/scheduled-tasks/scheduled-tasks-page').then((m) => ({
 		default: m.ScheduledTasksPage,
-	})),
-);
-
-const ChannelsPage = lazy(() =>
-	import('@/components/channels/channels-page').then((m) => ({
-		default: m.ChannelsPage,
-	})),
-);
-
-const IntegrationsPage = lazy(() =>
-	import('@/components/integrations/integrations-page').then((m) => ({
-		default: m.IntegrationsPage,
 	})),
 );
 
@@ -70,13 +60,7 @@ const FilesPage = lazy(() =>
 	})),
 );
 
-const BoardPage = lazy(() => import('@/app/(dashboard)/board/page'));
-
-const MarketplacePage = lazy(() =>
-	import('@/features/skills/components/marketplace').then((m) => ({
-		default: m.Marketplace,
-	})),
-);
+const BoardPage = lazy(() => import('@/components/pages/board/page'));
 
 const DeploymentsPage = lazy(() =>
 	import('@/components/deployments/deployments-page').then((m) => ({
@@ -86,26 +70,26 @@ const DeploymentsPage = lazy(() =>
 
 // Admin pages (currently live under the dashboard route group)
 const AdminAnalyticsPage = lazy(() =>
-	import('@/app/(dashboard)/admin/analytics/page'),
+	import('@/components/pages/admin/analytics/page'),
 );
 const AdminFeedbackPage = lazy(() =>
-	import('@/app/(dashboard)/admin/feedback/page'),
+	import('@/components/pages/admin/feedback/page'),
 );
 const AdminNotificationsPage = lazy(() =>
-	import('@/app/(dashboard)/admin/notifications/page'),
+	import('@/components/pages/admin/notifications/page'),
 );
 const AdminSandboxPoolPage = lazy(() =>
-	import('@/app/(dashboard)/admin/sandbox-pool/page'),
+	import('@/components/pages/admin/sandbox-pool/page'),
 );
 const AdminStressTestPage = lazy(() =>
-	import('@/app/(dashboard)/admin/stress-test/page'),
+	import('@/components/pages/admin/stress-test/page'),
 );
 const LegacyThreadPage = lazy(() =>
-	import('@/app/(dashboard)/legacy/[threadId]/page'),
+	import('@/components/pages/legacy/page'),
 );
 
 const TaskDetailPage = lazy(() =>
-	import('@/app/(dashboard)/tasks/[id]/page'),
+	import('@/components/pages/tasks/page'),
 );
 
 // ---------------------------------------------------------------------------
@@ -121,16 +105,11 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/credits-explained': CreditsPage,
 	'/changelog': ChangelogPage,
 	'/workspace': WorkspacePage,
-	// Marketplace - browse and install all components from registry
-	'/marketplace': MarketplacePage,
-	'/skills': MarketplacePage, // backwards compat
 	'/tools': WorkspacePage,
 	'/commands': WorkspacePage,
 	'/agents': WorkspacePage,
 	// Extra pages not in original ROUTE_MAP but exist as routes
 	'/scheduled-tasks': TriggersPage,
-	'/channels': ChannelsPage,
-	'/connectors': IntegrationsPage,
 	'/files': FilesPage,
 	'/board': BoardPage,
 	'/tunnel': TunnelOverviewPage,
@@ -161,6 +140,7 @@ function resolveComponent(routeKey: string): { Component: ComponentType<any>; pa
 }
 
 export function PageTabContent({ href }: { href: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
 	const routeKey = useMemo(() => {
 		try {
 			return new URL(href, window.location.origin).pathname;
@@ -183,9 +163,7 @@ export function PageTabContent({ href }: { href: string }) {
 
 	if (!resolved) {
 		return (
-			<div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-				Page not found
-			</div>
+			<div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTabsPageTabContent.line164JsxTextPageNotFound')}</div>
 		);
 	}
 

@@ -39,7 +39,7 @@ function Command({
     <CommandPrimitive
       data-slot="command"
       className={cn(
-        'bg-transparent text-popover-foreground flex h-full w-full flex-col overflow-hidden rounded-xl',
+        'bg-transparent text-popover-foreground flex h-full w-full flex-col overflow-hidden rounded-2xl',
         className,
       )}
       {...props}
@@ -76,7 +76,7 @@ function CommandDialog({
           // Bump items back up inside the cmd palette — items are
           // compact-by-default everywhere else, but this is the big
           // Cmd+K surface so it gets the roomier spec.
-          '[&_[data-slot=command-item]]:gap-3 [&_[data-slot=command-item]]:rounded-lg [&_[data-slot=command-item]]:px-3 [&_[data-slot=command-item]]:py-2.5 [&_[data-slot=command-item]]:text-[13.5px]',
+          '[&_[data-slot=command-item]]:gap-3 [&_[data-slot=command-item]]:rounded-lg [&_[data-slot=command-item]]:px-3 [&_[data-slot=command-item]]:py-2.5 [&_[data-slot=command-item]]:text-sm',
           "[&_[data-slot=command-item]_svg:not([class*='size-'])]:size-[17px]",
           className,
         )}
@@ -172,7 +172,7 @@ function CommandPopoverContent({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        'w-[300px] p-0 overflow-hidden rounded-xl',
+        'w-[300px] p-0 overflow-hidden rounded-2xl',
         // Same `bg-card` token as DropdownMenuContent — every dropdown in
         // the app sits on the same material. Hairline white inner border
         // and a 1px top-edge highlight gradient catch light like a real
@@ -189,10 +189,10 @@ function CommandPopoverContent({
         // surrounding chrome (input + group / heading) so popovers don't
         // feel as cavernous as the Cmd+K palette.
         '[&_[data-slot=command-input-wrapper]]:h-9 [&_[data-slot=command-input-wrapper]]:px-3 [&_[data-slot=command-input-wrapper]]:gap-2',
-        '[&_[data-slot=command-input]]:h-9 [&_[data-slot=command-input]]:text-[13px]',
+        '[&_[data-slot=command-input]]:h-9 [&_[data-slot=command-input]]:text-sm',
         '[&_[data-slot=command-list]]:py-0',
         '[&_[data-slot=command-group]]:py-1',
-        '[&_[cmdk-group-heading]]:!pt-2 [&_[cmdk-group-heading]]:!pb-1 [&_[cmdk-group-heading]]:!px-2 [&_[cmdk-group-heading]]:!text-[10px] [&_[cmdk-group-heading]]:!tracking-[0.12em]',
+        '[&_[cmdk-group-heading]]:!pt-2 [&_[cmdk-group-heading]]:!pb-1 [&_[cmdk-group-heading]]:!px-2 [&_[cmdk-group-heading]]:!text-xs [&_[cmdk-group-heading]]:!tracking-[0.12em]',
         className,
       )}
     >
@@ -230,7 +230,7 @@ function CommandInput({
         data-slot="command-input"
         className={cn(
           'placeholder:text-muted-foreground/45 text-foreground flex w-full bg-transparent outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
-          compact ? 'h-11 text-[13px]' : 'h-[58px] text-[15px] tracking-[-0.005em]',
+          compact ? 'h-11 text-sm' : 'h-[58px] text-sm tracking-[-0.005em]',
           className,
         )}
         {...props}
@@ -277,7 +277,7 @@ function CommandGroup({
       data-slot="command-group"
       className={cn(
         'text-foreground overflow-hidden py-1.5',
-        '[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.1em] [&_[cmdk-group-heading]]:text-muted-foreground/50',
+        '[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.1em] [&_[cmdk-group-heading]]:text-muted-foreground/50',
         className,
       )}
       {...props}
@@ -378,7 +378,7 @@ function CommandShortcut({
         ? tokens.map((t, i) => (
             <kbd
               key={`${t}-${i}`}
-              className="inline-flex items-center justify-center h-[18px] min-w-[18px] px-1.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-[10.5px] font-medium text-muted-foreground/60 leading-none font-sans"
+              className="inline-flex items-center justify-center h-[18px] min-w-[18px] px-1.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-xs font-medium text-muted-foreground/60 leading-none font-sans"
             >
               {formatShortcutToken(t)}
             </kbd>
@@ -401,7 +401,7 @@ function CommandFooter({
     <div
       data-slot="command-footer"
       className={cn(
-        'flex items-center gap-4 border-t border-border/50 bg-foreground/[0.015] px-4 py-2.5 text-[11px] text-muted-foreground/55',
+        'flex items-center gap-4 border-t border-border/50 bg-foreground/[0.015] px-4 py-2.5 text-xs text-muted-foreground/55',
         className,
       )}
       {...props}
@@ -414,7 +414,7 @@ function CommandFooter({
 /** Inline keyboard hint badge — consistent across all command surfaces. */
 function CommandKbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="inline-flex items-center justify-center h-[18px] min-w-[18px] px-1.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-[10.5px] font-medium text-muted-foreground/60 leading-none font-sans">
+    <kbd className="inline-flex items-center justify-center h-[18px] min-w-[18px] px-1.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-xs font-medium text-muted-foreground/60 leading-none font-sans">
       {children}
     </kbd>
   );

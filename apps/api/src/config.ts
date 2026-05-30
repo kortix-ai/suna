@@ -11,7 +11,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker' | 'justavps';
+export type SandboxProviderName = 'daytona' | 'local_docker';
 export type InternalKortixEnv = 'dev' | 'staging' | 'prod';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -59,7 +59,6 @@ const envSchema = z.object({
 
   // ── Core (required) ──────────────────────────────────────────────────────
   PORT:                        optInt(8008),
-  ENV_MODE:                    z.enum(['local', 'cloud']).optional().default('local'),
 
   // ── Database (REQUIRED) ──────────────────────────────────────────────────
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required — cannot start without a database'),
@@ -76,8 +75,15 @@ const envSchema = z.object({
 
   // ── Internal Deployment Controls (optional, safe defaults for self-hosted) ─
   INTERNAL_KORTIX_ENV:              z.enum(['dev', 'staging', 'prod']).optional().default('dev'),
-  KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,  // NOTE: overridden by ENV_MODE=cloud below
+  // Master switch: turns on real billing (Stripe + credit ledger), makes
+  // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
+  // Set to true on managed/cloud deployments; leave false for self-host + dev.
+  KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,
   KORTIX_DEPLOYMENTS_ENABLED:       optBoolFalse,
+  // EXPERIMENTAL: turns on the [[apps]] section in kortix.toml — manifest
+  // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
+  // by default until the wire is hardened.
+  KORTIX_APPS_EXPERIMENTAL:         optBoolFalse,
 
   // ── Search Providers (optional — features degrade gracefully) ────────────
   TAVILY_API_URL:              optUrl('https://api.tavily.com'),
@@ -96,6 +102,44 @@ const envSchema = z.object({
   // ── Freestyle / Deployments (optional) ───────────────────────────────────
   FREESTYLE_API_URL:           optUrl('https://api.freestyle.sh'),
   FREESTYLE_API_KEY:           optStr,
+
+  // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
+  // The new backend has no JustAVPS provider, but it must reach legacy VMs to
+  // back them up. VMs are reachable via the CF proxy at {slug}.{proxy domain};
+  // exec goes through the Daytona toolbox API on that host. JUSTAVPS_API_* are
+  // only needed to refresh an expired per-sandbox proxy token.
+  JUSTAVPS_PROXY_DOMAIN:       optStrDefault('kortix.cloud'),
+  JUSTAVPS_API_URL:            optStrDefault('http://localhost:3001'),
+  JUSTAVPS_API_KEY:            optStr,
+  // Supabase Storage bucket holding the durable per-sandbox backup bundle
+  // (workspace files + OpenCode chat-history store). Source for rehydrate.
+  LEGACY_MIGRATION_BACKUP_BUCKET: optStrDefault('legacy-migrations'),
+  // Base image written into a synthesized .kortix/Dockerfile when a migrated
+  // legacy workspace has none. TODO: set to the canonical Kortix base image.
+  LEGACY_MIGRATION_DEFAULT_IMAGE: optStrDefault('ubuntu:24.04'),
+
+  // ── Channels — Slack adapter (optional) ──────────────────────────────────
+  // KORTIX_CHANNELS_MODE: 'auto' (default) honors whatever Slack env is set —
+  // SLACK_BOT_TOKEN → single, SLACK_CLIENT_ID+SECRET → multi, both → both.
+  // 'single' forces BYO-app mode (requires SLACK_BOT_TOKEN). 'multi' forces
+  // Kortix-managed-app mode (requires SLACK_CLIENT_ID+SECRET+REDIRECT_URI).
+  KORTIX_CHANNELS_MODE:        z.enum(['auto', 'single', 'multi']).optional().default('auto'),
+  SLACK_BOT_TOKEN:             optStr,
+  SLACK_SIGNING_SECRET:        optStr,
+  SLACK_TEAM_ID:               optStr,
+  SLACK_CLIENT_ID:             optStr,
+  SLACK_CLIENT_SECRET:         optStr,
+  SLACK_REDIRECT_URI:          optStr,
+  // Must stay in sync with the bot scopes declared in
+  // apps/api/src/channels/slack-app-manifest.json — anything narrower here
+  // means the OAuth flow grants fewer scopes than the manifest advertises
+  // and tools like `slack channels`/`slack users` fail with missing_scope.
+  SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,channels:history,channels:read,channels:join,chat:write,chat:write.public,files:read,files:write,groups:history,groups:read,im:history,im:read,im:write,mpim:history,mpim:read,reactions:read,reactions:write,users:read'),
+  // Optional banner image rendered at the top of the App Home tab. Must be a
+  // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
+  SLACK_HOME_HERO_URL:         optStr,
+  KORTIX_API_KEY_ENC_KEY:      optStr,
+  KORTIX_DASHBOARD_URL:        optStr,
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
@@ -118,38 +162,27 @@ const envSchema = z.object({
   REVENUECAT_WEBHOOK_SECRET:   optStr,
 
   // ── Daytona — Sandbox provisioning (conditional: required if daytona provider enabled) ──
+  // Note: there is intentionally no DAYTONA_SNAPSHOT here. Every sandbox
+  // boots from a per-project snapshot built by the snapshot builder
+  // (apps/api/src/snapshots/builder.ts). A shared/global fallback image
+  // would silently bypass per-project Dockerfiles and is explicitly
+  // disallowed.
   DAYTONA_API_KEY:             optStr,
   DAYTONA_SERVER_URL:          optStr,
   DAYTONA_TARGET:              optStr,
-  DAYTONA_SNAPSHOT:            optStr,
-
-  // ── JustAVPS — Sandbox provisioning via JustAVPS API (conditional: required if justavps provider enabled) ──
-  JUSTAVPS_API_URL:                   optStrDefault('http://localhost:3001'),
-  JUSTAVPS_API_KEY:                   optStr,
-  JUSTAVPS_IMAGE_ID:                  optStr,   // Optional pin — if unset, auto-resolves latest kortix-computer-v* image from JustAVPS
-  JUSTAVPS_DEFAULT_LOCATION:          optStrDefault('hel1'),
-  JUSTAVPS_DEFAULT_SERVER_TYPE:       optStrDefault('pro'),
-  JUSTAVPS_PROXY_DOMAIN:              optStrDefault('kortix.cloud'),  // CF Worker proxy domain ({slug}.kortix.cloud)
-  JUSTAVPS_WEBHOOK_SECRET:            optStr,   // HMAC secret for verifying JustAVPS webhook signatures
-  JUSTAVPS_WEBHOOK_URL:               optStr,   // URL where JustAVPS should send webhook events (e.g. https://api.kortix.com/v1/platform/webhooks/justavps)
-
-  // ── Sandbox Pool (optional — pre-provision sandboxes for instant claiming) ──
-  POOL_ENABLED:                optBoolFalse,
-  POOL_MAX_AGE_HOURS:          optInt(24),
 
   // ── Sandbox Platform ──────────────────────────────────────────────────────
-  // KORTIX_URL is auto-derived from PORT if not explicitly set (see validateEnv).
+  // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL:                  optStr,
   KORTIX_YOLO_URL:             optUrl('https://api-yolo.kortix.com/v1'),
-  ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('local_docker'),
-  SANDBOX_IMAGE:               optStr,  // overridden below if empty
+  ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
+  SANDBOX_IMAGE:               optStr,
   KORTIX_LOCAL_IMAGES:         optBoolFalse,
   DOCKER_HOST:                 optStr,
   SANDBOX_NETWORK:             optStr,
+  // Default port base for sandbox port mapping; kept for the queue drainer
+  // and deployments router which still reference it.
   SANDBOX_PORT_BASE:           optInt(14000),
-  // Container name for the local Docker sandbox — configurable so dev and
-  // self-hosted instances can coexist on the same Docker daemon.
-  // Empty string treated as unset so env_file with missing key is safe.
   SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
 
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
@@ -158,12 +191,11 @@ const envSchema = z.object({
   // ── Frontend (optional) ──────────────────────────────────────────────────
   FRONTEND_URL:                optUrl('http://localhost:3000'),
 
-  // ── Integrations / Pipedream (optional: only validated if explicitly set to "pipedream") ──
-  INTEGRATION_AUTH_PROVIDER:   optStr,
+  // ── Pipedream Connect (optional — powers the Executor's 1-click connectors) ─
   PIPEDREAM_CLIENT_ID:         optStr,
   PIPEDREAM_CLIENT_SECRET:     optStr,
   PIPEDREAM_PROJECT_ID:        optStr,
-  PIPEDREAM_ENVIRONMENT:       optStrDefault('development'),
+  PIPEDREAM_ENVIRONMENT:       optStrDefault('production'),
   PIPEDREAM_WEBHOOK_SECRET:    optStr,
 
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
@@ -180,12 +212,20 @@ const envSchema = z.object({
   TUNNEL_RATE_LIMIT_PERM_GRANT:      optInt(30),
   TUNNEL_MAX_WS_MESSAGE_SIZE:        optInt(5 * 1024 * 1024),
 
+  // ── Abuse controls (optional, all have sane defaults) ────────────────────
+  KORTIX_INVITE_ACCEPT_REQS_PER_MIN:      optInt(20),
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE:    optInt(60),
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID:    optInt(600),
+  KORTIX_PROXY_REQS_PER_MIN:              optInt(600),
+  KORTIX_MAX_CONCURRENT_SESSIONS_FREE:    optInt(1),
+  KORTIX_MAX_CONCURRENT_SESSIONS_PAID:    optInt(5),
+  KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
+  KORTIX_TRIGGER_SCHEDULER_ENABLED:        optBoolTrue,
+  KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS:    optInt(60_000),
+
   // ── Version / GitHub (optional) ───────────────────────────────────────────
   SANDBOX_VERSION:             optStr,  // dev override: skip npm registry lookup for latest version
   GITHUB_TOKEN:                optStr,  // optional: authenticated GitHub API calls for changelog
-  SANDBOX_AUTO_UPDATE_ENABLED: optBoolTrue,
-  SANDBOX_AUTO_UPDATE_INTERVAL_MS: optInt(10 * 60_000),
-  SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS: optInt(6 * 60 * 60_000),
 
   // ── Mailtrap (optional — provisioning email notifications) ────────────────
   MAILTRAP_API_TOKEN:          optStr,
@@ -208,19 +248,25 @@ const envSchema = z.object({
 
 type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 
-/** Parse comma-separated provider list (e.g. "daytona,local_docker") */
+// Recognised provider names. Source-of-truth for what can legally appear in
+// ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
+// here plus a case in `getProvider()` in platform/providers/index.ts.
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'local_docker'] as const;
+
+/** Parse comma-separated provider list (e.g. "daytona,local_docker"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
-  if (!raw) return ['local_docker'];
+  if (!raw) return ['daytona'];
   const names = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   const valid: SandboxProviderName[] = [];
   for (const n of names) {
-    if (n === 'daytona' || n === 'local_docker' || n === 'justavps') {
-      if (!valid.includes(n)) valid.push(n);
+    if ((KNOWN_PROVIDERS as readonly string[]).includes(n)) {
+      const known = n as SandboxProviderName;
+      if (!valid.includes(known)) valid.push(known);
     } else {
       console.warn(`[config] Unknown sandbox provider "${n}" in ALLOWED_SANDBOX_PROVIDERS - ignored`);
     }
   }
-  return valid.length > 0 ? valid : ['local_docker'];
+  return valid.length > 0 ? valid : ['daytona'];
 }
 
 function validateEnv(): z.infer<typeof envSchema> {
@@ -246,32 +292,15 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (!raw.DAYTONA_SERVER_URL) issues.push({ var: 'DAYTONA_SERVER_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
   }
-
-  // ── Conditional: local_docker → need DOCKER_HOST ───────────────────────
-  if (providers.includes('local_docker')) {
-    if (!raw.DOCKER_HOST) issues.push({ var: 'DOCKER_HOST', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "local_docker"', level: 'error' });
-  }
-
-  // ── Conditional: justavps → need JustAVPS keys ────────────────────────
-  if (providers.includes('justavps')) {
-    if (!raw.JUSTAVPS_API_KEY) issues.push({ var: 'JUSTAVPS_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "justavps"', level: 'error' });
-    // JUSTAVPS_IMAGE_ID is optional — if unset, the provider auto-resolves the latest kortix-computer-v* image at runtime.
-  }
-
-  // ── Conditional: Pipedream integration → warn if credentials missing ────
-  // Not fatal — requests can provide their own creds via X-Pipedream-* headers.
-  const integrationProvider = (raw as any).INTEGRATION_AUTH_PROVIDER || 'pipedream';
-  if (integrationProvider === 'pipedream') {
-    if (!raw.PIPEDREAM_CLIENT_ID)     issues.push({ var: 'PIPEDREAM_CLIENT_ID',     message: 'Pipedream integrations will only work via request headers (X-Pipedream-Client-Id)', level: 'warn' });
-    if (!raw.PIPEDREAM_CLIENT_SECRET) issues.push({ var: 'PIPEDREAM_CLIENT_SECRET', message: 'Pipedream integrations will only work via request headers (X-Pipedream-Client-Secret)', level: 'warn' });
-    if (!raw.PIPEDREAM_PROJECT_ID)    issues.push({ var: 'PIPEDREAM_PROJECT_ID',    message: 'Pipedream integrations will only work via request headers (X-Pipedream-Project-Id)', level: 'warn' });
+  if (providers.includes('local_docker') && !raw.DOCKER_HOST) {
+    issues.push({ var: 'DOCKER_HOST', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "local_docker"', level: 'error' });
   }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
-  const billingWillBeEnabled = (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === 'true' || (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === true || (raw as any).ENV_MODE === 'cloud';
+  const billingWillBeEnabled = (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === 'true' || (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === true;
   if (billingWillBeEnabled) {
-    if (!raw.STRIPE_SECRET_KEY)    issues.push({ var: 'STRIPE_SECRET_KEY',    message: 'Required when billing is enabled (ENV_MODE=cloud)', level: 'error' });
-    if (!raw.STRIPE_WEBHOOK_SECRET) issues.push({ var: 'STRIPE_WEBHOOK_SECRET', message: 'Required when billing is enabled (ENV_MODE=cloud)', level: 'error' });
+    if (!raw.STRIPE_SECRET_KEY)    issues.push({ var: 'STRIPE_SECRET_KEY',    message: 'Required when KORTIX_BILLING_INTERNAL_ENABLED=true', level: 'error' });
+    if (!raw.STRIPE_WEBHOOK_SECRET) issues.push({ var: 'STRIPE_WEBHOOK_SECRET', message: 'Required when KORTIX_BILLING_INTERNAL_ENABLED=true', level: 'error' });
   }
 
   // ── Conditional: Tunnel enabled → need signing secret ──────────────────
@@ -281,17 +310,16 @@ function validateEnv(): z.infer<typeof envSchema> {
   }
 
   // ── Conditional: KORTIX_URL — required for sandbox routing ──────────────
-  // Used by every sandbox provider (local_docker, daytona, justavps),
-  // channels webhook URL generation, pool env injection, and sandbox health.
-  // Auto-derive from PORT in local mode if not set — fatal in cloud mode.
+  // Auto-derive from PORT for self-host/dev — fatal when billing is enabled
+  // (you can't bill against an unreachable origin).
   if (!raw.KORTIX_URL) {
-    const envMode = (raw as any).ENV_MODE || 'local';
     const port = (raw as any).PORT || '8008';
-    if (envMode === 'cloud') {
-      issues.push({ var: 'KORTIX_URL', message: 'Required in cloud mode — sandbox routing, channels webhooks, and health checks will break', level: 'error' });
+    if (billingWillBeEnabled) {
+      issues.push({ var: 'KORTIX_URL', message: 'Required when KORTIX_BILLING_INTERNAL_ENABLED=true — sandbox routing and health checks will break', level: 'error' });
     } else {
-      // Auto-derive for local mode so it "just works"
-      const derived = `http://localhost:${port}/v1/router`;
+      // Auto-derive so dev/self-host "just works". KORTIX_URL is the public
+      // API origin/base; individual callers append /v1, /v1/router, etc.
+      const derived = `http://localhost:${port}`;
       process.env.KORTIX_URL = derived;
       if (result.success) (result.data as any).KORTIX_URL = derived;
       console.warn(`[config] KORTIX_URL not set — auto-derived: ${derived}`);
@@ -349,15 +377,6 @@ function validateEnv(): z.infer<typeof envSchema> {
 
 const env = validateEnv();
 
-// Auto-updates are safe to default-on for managed cloud sandboxes, but local
-// development also uses a Docker container named `kortix-sandbox`. If the API
-// auto-update loop runs with the local_docker provider, it can stop/remove the
-// developer's live `pnpm dev:sandbox` container. Keep local mode opt-in while
-// preserving the existing cloud default.
-const sandboxAutoUpdateExplicitlyConfigured =
-  typeof process.env.SANDBOX_AUTO_UPDATE_ENABLED === 'string'
-  && process.env.SANDBOX_AUTO_UPDATE_ENABLED.trim() !== '';
-
 // ─── Parse Providers ────────────────────────────────────────────────────────
 
 const allowedProviders = parseAllowedProviders(env.ALLOWED_SANDBOX_PROVIDERS);
@@ -366,13 +385,13 @@ const allowedProviders = parseAllowedProviders(env.ALLOWED_SANDBOX_PROVIDERS);
 
 export const config = {
   PORT: env.PORT,
-  ENV_MODE: env.ENV_MODE,
 
   // ─── Internal Deployment Controls ─────────────────────────────────────────
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
-  // Billing is enabled when ENV_MODE is 'cloud' — no separate env var needed.
-  KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED || env.ENV_MODE === 'cloud',
+  // Single master switch — see schema docstring above.
+  KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_DEPLOYMENTS_ENABLED: env.KORTIX_DEPLOYMENTS_ENABLED,
+  KORTIX_APPS_EXPERIMENTAL: env.KORTIX_APPS_EXPERIMENTAL,
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,
@@ -383,6 +402,13 @@ export const config = {
 
   // ─── API Key Hashing ──────────────────────────────────────────────────────
   API_KEY_SECRET: env.API_KEY_SECRET,
+
+  // ─── Pipedream Connect (Executor 1-click connectors) ──────────────────────
+  PIPEDREAM_CLIENT_ID: env.PIPEDREAM_CLIENT_ID,
+  PIPEDREAM_CLIENT_SECRET: env.PIPEDREAM_CLIENT_SECRET,
+  PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,
+  PIPEDREAM_ENVIRONMENT: env.PIPEDREAM_ENVIRONMENT,
+  PIPEDREAM_WEBHOOK_SECRET: env.PIPEDREAM_WEBHOOK_SECRET,
 
   // ─── Search Providers ──────────────────────────────────────────────────────
   TAVILY_API_URL: env.TAVILY_API_URL,
@@ -401,6 +427,25 @@ export const config = {
   // ─── Freestyle (Deployments) ──────────────────────────────────────────────
   FREESTYLE_API_URL: env.FREESTYLE_API_URL,
   FREESTYLE_API_KEY: env.FREESTYLE_API_KEY,
+
+  // ─── Legacy migration ─────────────────────────────────────────────────────
+  JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
+  JUSTAVPS_API_URL: env.JUSTAVPS_API_URL,
+  JUSTAVPS_API_KEY: env.JUSTAVPS_API_KEY,
+  LEGACY_MIGRATION_BACKUP_BUCKET: env.LEGACY_MIGRATION_BACKUP_BUCKET,
+  LEGACY_MIGRATION_DEFAULT_IMAGE: env.LEGACY_MIGRATION_DEFAULT_IMAGE,
+
+  // ─── Channels (Slack) ─────────────────────────────────────────────────────
+  KORTIX_CHANNELS_MODE: env.KORTIX_CHANNELS_MODE,
+  SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
+  SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
+  SLACK_TEAM_ID: env.SLACK_TEAM_ID,
+  SLACK_CLIENT_ID: env.SLACK_CLIENT_ID,
+  SLACK_CLIENT_SECRET: env.SLACK_CLIENT_SECRET,
+  SLACK_REDIRECT_URI: env.SLACK_REDIRECT_URI,
+  SLACK_OAUTH_SCOPES: env.SLACK_OAUTH_SCOPES,
+  SLACK_HOME_HERO_URL: env.SLACK_HOME_HERO_URL,
+  KORTIX_DASHBOARD_URL: env.KORTIX_DASHBOARD_URL,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
@@ -423,30 +468,18 @@ export const config = {
   REVENUECAT_WEBHOOK_SECRET: env.REVENUECAT_WEBHOOK_SECRET,
 
   // ─── Daytona (Sandbox provisioning + preview proxy) ───────────────────────
+  // No DAYTONA_SNAPSHOT here — see comment in the env schema above. Every
+  // sandbox boots from its project-specific snapshot resolved at session
+  // start time by apps/api/src/snapshots/builder.ts.
   DAYTONA_API_KEY: env.DAYTONA_API_KEY,
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
-  DAYTONA_SNAPSHOT: env.DAYTONA_SNAPSHOT || `kortix-sandbox-v${SANDBOX_VERSION}`,
-
-  // ─── JustAVPS (VPS Sandbox provisioning via JustAVPS) ────────────────────
-  JUSTAVPS_API_URL: env.JUSTAVPS_API_URL,
-  JUSTAVPS_API_KEY: env.JUSTAVPS_API_KEY,
-  JUSTAVPS_IMAGE_ID: env.JUSTAVPS_IMAGE_ID,
-  JUSTAVPS_DEFAULT_LOCATION: env.JUSTAVPS_DEFAULT_LOCATION,
-  JUSTAVPS_DEFAULT_SERVER_TYPE: env.JUSTAVPS_DEFAULT_SERVER_TYPE,
-  JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
-  JUSTAVPS_WEBHOOK_SECRET: env.JUSTAVPS_WEBHOOK_SECRET,
-  JUSTAVPS_WEBHOOK_URL: env.JUSTAVPS_WEBHOOK_URL,
-
-  // ─── Sandbox Pool ─────────────────────────────────────────────────────────
-  POOL_ENABLED: env.POOL_ENABLED,
-  POOL_MAX_AGE_HOURS: env.POOL_MAX_AGE_HOURS,
 
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   KORTIX_YOLO_URL: env.KORTIX_YOLO_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
-  SANDBOX_IMAGE: env.SANDBOX_IMAGE || 'kortix/computer:latest',
+  SANDBOX_IMAGE: env.SANDBOX_IMAGE || 'kortix/kortix-sandbox:latest',
   KORTIX_LOCAL_IMAGES: env.KORTIX_LOCAL_IMAGES,
   DOCKER_HOST: env.DOCKER_HOST,
   SANDBOX_NETWORK: env.SANDBOX_NETWORK,
@@ -501,14 +534,6 @@ export const config = {
   // ─── Frontend ────────────────────────────────────────────────────────────
   FRONTEND_URL: env.FRONTEND_URL,
 
-  // ─── Integrations (OAuth Provider) ───────────────────────────────────────
-  INTEGRATION_AUTH_PROVIDER: env.INTEGRATION_AUTH_PROVIDER,
-  PIPEDREAM_CLIENT_ID: env.PIPEDREAM_CLIENT_ID,
-  PIPEDREAM_CLIENT_SECRET: env.PIPEDREAM_CLIENT_SECRET,
-  PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,
-  PIPEDREAM_ENVIRONMENT: env.PIPEDREAM_ENVIRONMENT,
-  PIPEDREAM_WEBHOOK_SECRET: env.PIPEDREAM_WEBHOOK_SECRET,
-
   // ─── Tunnel (Reverse-Tunnel to Local Machine) ──────────────────────────────
   TUNNEL_SIGNING_SECRET: env.TUNNEL_SIGNING_SECRET,
   TUNNEL_ENABLED: env.TUNNEL_ENABLED,
@@ -523,15 +548,21 @@ export const config = {
   TUNNEL_RATE_LIMIT_PERM_GRANT: env.TUNNEL_RATE_LIMIT_PERM_GRANT,
   TUNNEL_MAX_WS_MESSAGE_SIZE: env.TUNNEL_MAX_WS_MESSAGE_SIZE,
 
+  // ─── Abuse Controls ───────────────────────────────────────────────────────
+  KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
+  KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
+  KORTIX_MAX_CONCURRENT_SESSIONS_FREE: env.KORTIX_MAX_CONCURRENT_SESSIONS_FREE,
+  KORTIX_MAX_CONCURRENT_SESSIONS_PAID: env.KORTIX_MAX_CONCURRENT_SESSIONS_PAID,
+  KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
+  KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,
+  KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: env.KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS,
+
   // ─── Version / GitHub ──────────────────────────────────────────────────────
   /** Dev override: force a specific sandbox version via env var. */
   SANDBOX_VERSION_OVERRIDE: env.SANDBOX_VERSION,
   GITHUB_TOKEN: env.GITHUB_TOKEN,
-  SANDBOX_AUTO_UPDATE_ENABLED: sandboxAutoUpdateExplicitlyConfigured
-    ? env.SANDBOX_AUTO_UPDATE_ENABLED
-    : env.ENV_MODE === 'cloud',
-  SANDBOX_AUTO_UPDATE_INTERVAL_MS: env.SANDBOX_AUTO_UPDATE_INTERVAL_MS,
-  SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS: env.SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS,
 
   // ─── Mailtrap (Email Notifications) ────────────────────────────────────────
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
@@ -546,12 +577,27 @@ export const config = {
 
   // ─── Helper Methods ────────────────────────────────────────────────────────
 
-  isLocal(): boolean {
-    return this.ENV_MODE === 'local';
+  isProviderEnabled(name: SandboxProviderName): boolean {
+    if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
+    switch (name) {
+      case 'daytona': return !!this.DAYTONA_API_KEY;
+      case 'local_docker': return !!this.DOCKER_HOST;
+      default: {
+        const exhaustive: never = name;
+        return exhaustive;
+      }
+    }
   },
 
-  isCloud(): boolean {
-    return !this.isLocal();
+  /**
+   * Default sandbox provider for new sessions. First entry of
+   * ALLOWED_SANDBOX_PROVIDERS, with 'daytona' as the safety belt for an
+   * empty list. The single-provider invariant means there's no resolution
+   * order today, but the function is the contract callers depend on —
+   * adding a new provider later just changes what the list can contain.
+   */
+  getDefaultProvider(): SandboxProviderName {
+    return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
   },
 
   isDaytonaEnabled(): boolean {
@@ -559,23 +605,7 @@ export const config = {
   },
 
   isLocalDockerEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker');
-  },
-
-  isJustAVPSEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('justavps') && !!this.JUSTAVPS_API_KEY;
-  },
-
-  isPoolEnabled(): boolean {
-    return this.POOL_ENABLED;
-  },
-
-  /** Default provider, preferring managed VPS in cloud mode when available. */
-  getDefaultProvider(): SandboxProviderName {
-    if (this.ENV_MODE === 'cloud' && this.ALLOWED_SANDBOX_PROVIDERS.includes('justavps')) {
-      return 'justavps';
-    }
-    return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'local_docker';
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker') && !!this.DOCKER_HOST;
   },
 
 };
@@ -645,6 +675,18 @@ export const TOOL_PRICING: Record<string, ToolPricing> = {
     baseCost: 0.05,
     perResultCost: 0,
     markupMultiplier: 1.5,
+  },
+  // Moondream2 vision captioning (image_search enrichment) — cheap per-call model.
+  proxy_replicate_moondream: {
+    baseCost: 0.002,
+    perResultCost: 0,
+    markupMultiplier: 1.5,
+  },
+  // Polling a created prediction's status — billed at zero (the create call already paid).
+  proxy_replicate_poll: {
+    baseCost: 0,
+    perResultCost: 0,
+    markupMultiplier: 1,
   },
   proxy_context7: {
     baseCost: 0.001,

@@ -46,6 +46,24 @@ BEGIN
         );
     END IF;
 
+    IF p_amount <= 0 THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Amount must be positive',
+            'required', p_amount,
+            'available', v_total_balance
+        );
+    END IF;
+
+    IF v_total_balance < p_amount THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Insufficient credits',
+            'required', p_amount,
+            'available', v_total_balance
+        );
+    END IF;
+
     v_remaining := p_amount;
 
     -- Step 1: Deduct from DAILY credits first
@@ -71,7 +89,7 @@ BEGIN
     END IF;
 
     -- Step 3: Deduct from EXTRA (non-expiring) credits last
-    IF v_remaining > 0 THEN
+    IF v_remaining > 0 AND v_non_expiring_balance > 0 THEN
         v_amount_from_non_expiring := v_remaining;
         v_remaining := 0;
     END IF;

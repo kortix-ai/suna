@@ -1,178 +1,118 @@
 # Kortix
 
-## Turn Any Computer Into an AI Computer
+A company is going to be a git repository.
+
+Not as a metaphor. Literally — something you can clone. Inside it: the company's agents, the skills it has built up, the way it actually does its work, every fact it has ever learned, and the definition of the machines all of that runs on. Versioned. Diffable. Owned outright. Running on its own around the clock, opening pull requests against itself, getting better at being your company while everyone's asleep.
+
+That's half the bet. The other half is that an AI-native company needs a single place to be run from. Call it the WordPress of AGI, call it a command center — one core platform where all the context lives, where the agents live, the skills, the triggers, the connectors, the memory, the whole continuous build-out of the company, in one spot, so a person can actually operate the thing instead of duct-taping forty tools together and praying.
+
+OpenAI, Anthropic, and a pile of others are going to build a version of this. Of course they are. The difference is what you get and what you keep. Here you run the best models, whichever ones those are this month, not whatever one vendor happens to sell. It's open. You can run it on your own infrastructure. You own all the data, you own the configuration, you own the stack down to the metal if you want it. Everyone else is building a place to rent your company back to you. We're building the one you own.
+
+Everything else here is just what falls out of taking both halves seriously.
 
 ---
 
-Kortix is a computer that runs itself.
+## Why now, and why this
 
-It's a full Linux machine — real filesystem, real shell, real tools — with an AI cortex wired into it. It connects to every tool you use, remembers everything it's ever learned, and runs autonomous workers around the clock. It writes its own code, builds its own tools, creates its own automations. The longer it runs, the smarter it gets.
+The models got good. That part is over. You can hand one a hard problem and it will reason its way through better than most people you've worked with. What it can't do is remember that you exist. Every session it wakes up with no idea who you are, what you're building, what you decided last Tuesday, or where any of your stuff lives. It's brilliant and it has no past. Useless for running anything real.
 
-It's not a chatbot. It's not a copilot. It's a computer with a brain.
+So people built tools to give it a past. And those tools are demos. One tenant, one machine, no isolation, no version history, no permissions worth the name, no story for security beyond "trust us." You cannot run forty of them at once. You cannot see what changed and roll it back. You cannot put one in front of an enterprise without the security team laughing you out of the building. They're gorgeous on a launch video and they fold the moment a business leans its weight on them.
 
----
+The other option is to crawl back to the model labs, who will happily host the polished version — and keep your data, your configuration, and your model on their side of the wall, where it stays theirs and you rent access to your own operation forever.
 
-## The Problem
-
-The bottleneck for AI was never intelligence. It was always context.
-
-Large language models are extraordinary reasoning machines trapped behind a blank text box. Every conversation starts from zero. The model doesn't know your name, your company, your codebase, your customers, your bank balance, your deployment pipeline, or the conversation you had with it yesterday. You have to re-explain everything, every time.
-
-Meanwhile, your actual life is scattered across thirty different tools. Your code lives in GitHub. Your tasks live in Linear. Your conversations live in Slack. Your money lives in Mercury. Your domains live in Namecheap. Your docs live in Google Drive. Your deployments live in Vercel. Your hiring lives in Deel. No single system sees all of it. No AI can act on what it can't see.
-
-The problem isn't that AI isn't smart enough. The problem is that AI is blind. It has no persistent memory, no access to your systems, no understanding of your context. It's a genius with amnesia sitting in an empty room.
-
-Kortix gives it the room. And everything in it.
+A toy or a cage. That's the actual choice on the table today, and it's a stupid one. Kortix is what you build when you refuse both.
 
 ---
 
-## The Idea
+## One company, one repo
 
-A Kortix instance is a full computer — Ubuntu, KDE desktop, bash, Python, Node.js, the whole stack — with an AI agent framework running on top. The agent has root access. It can install packages, write scripts, hit APIs, create files, run servers, deploy code. It has the same capabilities as a human sitting at a terminal, except it doesn't sleep, doesn't forget, and can run a hundred tasks in parallel.
+A Kortix **project** is a git repo, and that repo *is* the company. Configuration and accumulated state in the same place, all of it text, all of it under version control, all of it readable by a person and editable by an agent.
 
-It's three things layered together:
+The whole thing is defined by two files:
 
-**A computer.** Real operating system, real filesystem, real tools. Not a sandboxed API behind a chat window. A machine where code runs, files exist, and processes persist. The agent's home.
+- **`kortix.toml`** — the Kortix layer. The sandbox image, the cron and webhook triggers, the channels, the apps, the connectors, which secrets are required, where your agent config lives.
+- **OpenCode config** — the runtime your agents think in. Agents, skills, commands, tools, plugins, models, providers.
 
-**A cortex.** Persistent memory that survives across sessions, days, months. The agent remembers who you are, what you're working on, every decision that was made, every preference you've expressed. It connects to every tool and data source in your stack — email, code, finance, communication, infrastructure — and builds a living, unified understanding of your entire operation. It sees everything. It forgets nothing.
+Everything past that is files in the repo. You can `grep` your entire company. You can read any agent's instructions in plain markdown. You can open a memory file and see exactly what it believes about you. Nothing is hidden because there is nowhere to hide it.
 
-**A compounding workforce.** Not one agent — an army. A primary orchestrator that delegates to specialist workers, each running autonomously. Agents that write code, review PRs, process invoices, send emails, generate reports, manage deployments. Agents that create other agents. Agents that build their own tools. The instance gets more capable every single day because every agent can extend the system it runs on.
-
----
-
-## Everything Is Files. And Everything Else Too.
-
-The default shared state is the filesystem. Agents are markdown files. Skills are markdown files with scripts. Tools are TypeScript or Python. Commands are markdown files with frontmatter. Memory is markdown in a directory. Integrations are authenticated skills with CLI scripts. Code and text — all the way down.
-
-This means the base layer is human-readable, git-trackable, grep-searchable. You can inspect any agent's instructions, read any memory file, modify any skill, add any tool. There is no magic. There is no hidden state. The entire system is transparent and hackable.
-
-But it's a full computer. If an agent needs a SQLite database, it creates one. If it needs PostgreSQL, it installs it. If it needs a vector store for semantic search, it spins one up. If it needs Redis for caching, it runs it. The filesystem is the foundation — not the ceiling. The agent has root access to a full Linux machine with the entire software ecosystem available. Whatever it needs, it installs and uses.
-
-And because everything is just files, an agent can create anything:
-
-- An agent can write a new agent definition and it exists.
-- An agent can write a Python script, make it executable, and schedule it with cron.
-- An agent can create a new skill by writing a SKILL.md and a script directory.
-- An agent can build a new tool, register it, and start using it in the same session.
-- An agent can modify its own instructions to get better at its job.
-
-The computer builds itself.
+Drop into any directory, run `kortix init`, and it's a Kortix. Run `kortix ship` and it's live — it checks that the thing compiles, asks you for whatever secrets it's missing, pushes it up, and from then on it runs. The repo behaves the same on your laptop as it does in the cloud, because it's the same repo doing the same thing. Local development and the live system stopped being different categories.
 
 ---
 
-## The Five Pillars
+## How a session actually works
 
-### Total Connectivity
+Start a session and a sandbox boots from one generic snapshot already running our daemon — **kortix-sandbox-agent-server**. The daemon clones the repo, pulls latest, cuts a fresh branch for this session, reads `kortix.toml` and your OpenCode config into a live runtime, and hands you a machine that's ready. The agent does its work completely walled off from everything else. When it wants to keep something, it commits and opens a change request back toward `main`, and a human decides whether that lands.
 
-Every tool, every API, every data source you use — connected with full authenticated access. Your GitHub repos. Your Cloudflare zones. Your AWS infrastructure. Your Vercel deployments. Your Slack workspace. Your LinkedIn. Your Gmail. Your Google Drive. Your banking in Mercury. Your legal in Firstbase. Your payroll in Deel. Your tasks in Linear. Your social in X. Your domains in Namecheap.
+The daemon is one executable wrapped around the OpenCode server, and its job is to make sure the project simply runs. A client grabs a session, talks to the daemon, and gets the full API — prompting, streaming, files, a terminal — like it's all sitting on the desk in front of them.
 
-All of it wired in. All of it queryable. All of it actionable. You chat with your Kortix instance and it can pull data from any system, push changes to any system, and cross-reference information across all of them. One AI cortex that spans your entire digital footprint.
+Because a session is its own sandbox on its own branch, you can run fifty of them and they don't touch each other. Fifty coding agents. Fifty agents doing outreach. They can't corrupt a shared anything, and when two of them change the same file, that's a merge, which git has known how to handle for twenty years. The only thing genuinely shared is the world outside — the third-party accounts and the state that lives there. Inside our walls the loop is closed.
 
-### Perfect Memory
+A sync engine mirrors sessions and messages into a database so the interface is instant, but the truth of any session always lives in the sandbox that ran it.
 
-Four-tier persistent memory that grows over time:
-
-- **Core memory** — loaded every session. Who the agent is, who you are, what the project is, what's in progress right now.
-- **Long-term memory** — decisions, learnings, preferences, contacts. Retrieved on demand. Never lost.
-- **Episodic memory** — session journals. What happened, when, what was learned. A complete history of every interaction.
-- **Knowledge base** — research outputs, reference material, accumulated expertise. The agent's library.
-
-The agent also has full access to its own session history — every past conversation, every tool call, every result. It can search its own history, recall past approaches, and build on previous work. Nothing is ever truly out of context.
-
-The longer a Kortix instance runs, the more it knows. It compounds. Day one, it's a capable agent. Day thirty, it understands your entire operation. Day three hundred, it knows things about your business that you've forgotten.
-
-### Autonomous Workers
-
-This is the core of it. Agents aren't chatbots — they're workers.
-
-A Kortix agent runs code. It executes shell commands. It writes scripts. It hits APIs. It installs packages. It builds applications. It deploys services. It creates files, edits files, deletes files. It operates with the full power of a human developer sitting at a terminal — except it can run continuously, in parallel, without breaks.
-
-You can spin up a worker that reviews every pull request on your GitHub org. Another that processes incoming invoices from email and logs them in your accounting system. Another that monitors your infrastructure and pages you if something breaks. Another that writes and publishes your weekly newsletter from your notes. Another that handles customer support emails with full context of your product.
-
-Each worker is just an agent definition — a markdown file with instructions and permissions. Creating a new worker is as easy as writing a document that describes what it should do. The framework handles the rest.
-
-An agent can create other agents. An agent can build a new tool it needs, write the integration, and start using it — all in one session. The workforce grows itself.
-
-### Always On
-
-Kortix doesn't wait for you to type a message. It runs.
-
-Scheduled triggers fire agents on cron — every morning, every Monday, every first of the month. Event-based triggers fire on webhooks — a new PR opened, a payment received, an email arrived, a deploy failed. Background workers run continuously — monitoring, processing, reacting.
-
-While you sleep, your Kortix instance is working. It processed overnight emails, flagged what matters, auto-replied to routine ones. It reviewed and merged PRs that passed CI. It generated your weekly report. It posted your scheduled content. It renewed an expiring domain. You wake up to a scratchpad that says: here's what happened.
-
-### Everywhere at Once
-
-You reach your Kortix instance wherever you already are. Chat interface. Email. Slack. WhatsApp. SMS. Telegram. Microsoft Teams.
-
-It's not a single app you have to open. It's a presence across all your communication channels. Message it on WhatsApp from your phone. Email it a document to process. Tag it in a Slack thread to research something. It's always there, always in context, always ready.
+Run all of this on our cloud, on bare metal, on-prem, in a microVM. The environment is just more config — describe the box you want, with the libraries you need already on it, and the persistent files load into it.
 
 ---
 
-## A Company in a Computer
+## The pieces you work with
 
-One person with a Kortix instance has the operational capacity of a team.
+Every one of these is a real resource: spelled out in the repo, managed in an interface that doesn't make you feel stupid, and locked down by actual permissions.
 
-The agents handle email, code, deployments, finance, content, legal, research, data analysis, customer communication, infrastructure. Each agent has access to the full system — every integration, every memory file, every tool. They coordinate through the filesystem. They build on each other's work.
-
-This is not hypothetical. The architecture supports it today. An agent can:
-
-- Write a Python automation, schedule it, and let it run forever
-- Build a full-stack web application from scratch, test it, deploy it
-- Research a topic for hours, produce a cited report, save it to the knowledge base
-- Draft legal documents, generate invoices, send emails, file paperwork
-- Monitor competitors, analyze markets, generate strategy briefs
-- Manage your entire cloud infrastructure — domains, DNS, servers, deployments
-
-Creating a new capability is writing a skill. Creating a new worker is writing an agent. Creating a new automation is writing a command or a trigger. It's all just text files that become operational.
-
-A living, breathing company inside a computer. It grows with you.
+- **Agents** — markdown personas with a prompt and a tightly scoped reach into tools and resources. Installable in one click. Able to rewrite themselves.
+- **Skills** — the part that compounds. Markdown plus scripts that encode how the company gets specific work done. They live in the repo and ride into every session.
+- **Connectors** — wire up everything once: thousands of apps in a click, plus MCP, OpenAPI, GraphQL, raw HTTP. The sandbox sees all of it through a single proxy with one scoped token instead of a drawer full of keys.
+- **Secrets** — encrypted, scoped per person and per group, pushed into the sandbox without ever showing their face, enforceable down at the network. Keys, OAuth, model credentials, one governed place.
+- **Channels** — Slack, Teams, Telegram, WhatsApp, SMS, email. One click stands up a bot that starts sessions from wherever your people already are.
+- **Triggers** — cron and webhook. Fire a session every morning, or boot one the instant something happens.
+- **Sessions** — owned by whoever or whatever started them. You see yours; change the filter to see more. A real API and SDK underneath.
+- **Memory** — files for now, and a system that learns later: chew through every session and every connected source and keep a living picture of the company that sharpens by the day.
+- **Apps** — declarative, durable deployments. Define a service in config, get a real one you can reach, listed right under the project.
 
 ---
 
-## What Exists Today
+## What you actually get out of it
 
-The foundation is built. A Kortix instance is a Docker-based sandbox running a full KDE desktop with the OpenCode agent framework. Inside it:
+The company is versioned. Every change to an agent, a skill, a memory, an automation is a commit you can read, diff, revert, and prove. Nothing vanishes and nothing happens in the dark.
 
-- **7 agents** — one primary orchestrator plus specialists for research, browser automation, web development, presentations, spreadsheets, and image generation
-- **12 skills** — persistent memory, deep research, browser automation (agent-browser), email (agent's own inbox), documents (DOCX, PDF, XLSX), presentations, video (Remotion), text-to-speech (ElevenLabs), skill creation
-- **6 custom tools** — web search, web scraping, image search, image generation, video generation, presentation generation
-- **10 slash commands** — memory bootstrap, project init, journaling, research, email, presentations, spreadsheets, memory search/forget
-- **4-tier memory system** — core, long-term, episodic, knowledge — all filesystem-based, all persistent
-- **Session history access** — full access to past conversations, searchable and queryable
-- **4 background services** — OpenCode web UI, presentation viewer, browser viewport stream (WebSocket), browser viewer UI
-- **Real email identity** — the agent has its own inbox, sends and receives email as itself
+You connect a source once and the agent gets it through a single key, scoped to whoever started the box, with policies deciding what runs on its own and what waits for a human to say yes.
 
-The agent framework is OpenCode — open-source, provider-agnostic, with a TUI and web interface. It supports MCP (Model Context Protocol) for external tool integration, custom agents with granular permissions, custom tools in TypeScript/Python, and a plugin system for extensibility. Sessions are stored on disk and accessible programmatically via the OpenCode SDK.
+You can run thousands of agents on the same configuration at the same time, each one boxed off, each one feeding work back through change requests. This is the part nobody else has, and it's the only way an AI workforce is ever more than a slideshow.
 
----
+The thing runs without you. The main branch is always up. Triggers go off in the night. And any agent, on your laptop or in the cloud, can edit its own configuration and propose the change — so the system files patches against itself, all of it tracked, and the company gets better at being a company over time instead of staying frozen on the day you set it up.
 
-## Where It's Going
+It's built to survive a security review, not slip past one. MicroVM isolation. Egress and credentials controlled at the network. A real account/user/group model where every agent, skill, file, secret, trigger, channel, and connector answers to who is allowed to touch it. Hard gates that make an agent stop and wait for a person before it does something that matters.
 
-**Unified integration layer.** Every SaaS tool connected through a single, agnostic auth system. OAuth, API keys, CLI tokens — managed centrally, accessible by any agent, any tool, any script. Connect once, use everywhere.
-
-**Trigger system.** Cron-based and event-based triggers that fire agents automatically. Webhooks, schedules, filesystem watchers, email listeners. The infrastructure for always-on operation.
-
-**Communication channels.** WhatsApp, Slack, SMS, Teams, Telegram, email — all wired as input/output channels. The agent is reachable everywhere the user already communicates.
-
-**SDK.** Programmatic access to the full Kortix instance. Create sessions, send prompts, subscribe to events, inject context — from any application, any language, any platform. Build products on top of Kortix.
-
-**Self-improving agents.** Agents that monitor their own performance, identify gaps in their skills, and build new tools and automations to fill them. The compounding flywheel at the system level.
+And it's yours all the way down. Any model. Your own keys, or the ChatGPT, Claude, or Cursor subscription you already pay for. Our cloud, your servers, or fully on-prem. Everything is files, ready to walk out the door the day you want them to. The labs are paid to lock you in. We only make money if you'd stay anyway.
 
 ---
 
-## Principles
+## It has to feel easy
 
-**Will over skill.** The agent doesn't need to know how to do something to do it. It just needs to be willing to figure it out. And it always is.
+Anyone in the company should be able to open it and use it the first day, from the web, their phone, or a Slack thread, the same way they'd use any chat app. That's not a nice-to-have, it's the point. Most people will never see a `kortix.toml` and shouldn't have to.
 
-**Filesystem as foundation.** The base layer is files — human-readable, git-trackable, grep-searchable. No hidden state. No black boxes. But the agent has a full computer. If it needs a database, it runs one.
+Under that surface is as much depth as you can stand. The interface and the code are the same system from two angles, mapping cleanly both ways, so you can change something by clicking or by editing a file and it's the identical change either way. Simple enough that it disappears. Open enough that there's no floor.
 
-**Memory over repetition.** Learn once, remember forever. The agent never asks the same question twice. Every correction makes it permanently better.
+---
 
-**Context is everything.** The biggest unlock isn't a smarter model — it's a model that can see everything it needs to see. Kortix is a context engineering machine.
+## Who it's for
 
-**Everything is code and text.** Agents, skills, tools, commands, memory, integrations — all text files that become operational. Anyone can read them, edit them, create them.
+**Developers** get a managed cloud for OpenCode, Claude, and Codex agents. One `kortix.toml`, one config, one repo for the state that sticks, and you're running background coding agents. Every PR gets a preview you can actually click through. Bring the subscription you've already got. Have your local agent spin up cloud sessions and go wide. `kortix init`, `kortix ship`, that's the loop.
 
-**The agent that builds itself.** An agent can create agents, build tools, write skills, schedule automations. The system extends itself. The computer grows.
+**Companies** get a workforce they can actually manage. People talk to it through the web, Slack, or Teams. It picks up the business as it goes — its skills, its context, the specific way the work gets done — and it does so on infrastructure where the data, the config, and the model belong to the company instead of a vendor.
 
-**An AI company of one.** One person. One Kortix instance. The operational capacity of an entire team. That's the end state.
+**Agencies and consultancies** get the thing to bet on when they bring AI into their clients. One horizontal platform sold through verticalized partners with their own front ends and their own starter templates. They handle distribution and clients, we hand them the technology, the training, and the playbook. A franchise for the part of the economy that's about to get rebuilt.
+
+---
+
+## How this becomes a business
+
+By being the best version of it, and by running on it in public. We build our own companies on Kortix and let people watch: agents reviewing pull requests, preview environments per change, a Slack message turning into a shipped PR, outreach that runs itself, SEO that just happens. The platform is the proof of the platform.
+
+The money is clean. Open source and self-hostable underneath. A cloud where we charge for seats and compute. Single-tenant deployments for the customers who have to run it themselves, anywhere they want to put it. A marketplace of agents, skills, and whole importable projects. And **Platinum.dev** — the compute floor under all of it: CPU and GPU sandboxes, inference, training, built first because we needed millions of cheap, fast, microVM-isolated machines for ourselves, and then opened up to everyone else who needs the same thing on-prem or in a private cloud, for a fraction of what they're paying now.
+
+---
+
+## The end of it
+
+One repo that is a whole company. Thousands of agents on the same config at once, each isolated, each pushing work back into a main branch that never stops running and keeps improving itself. The equivalent of CI/CD, but for the work of an organization instead of just its code. Plain enough that anyone can run it, open enough that anyone can tear it apart and rebuild it, locked down enough that a serious company can stake itself on it.
+
+We're building the thing that takes a company from human to AGI, and lets it keep every byte of itself on the way there.

@@ -286,13 +286,6 @@ export function CommandPalette({
         onSelect: () => { onPageSelect('page:memory'); onClose(); },
       },
       {
-        id: 'page:marketplace',
-        label: 'Marketplace',
-        icon: 'sparkles-outline',
-        group: 'navigation',
-        onSelect: () => { onPageSelect('page:marketplace'); onClose(); },
-      },
-      {
         id: 'page:llm-providers',
         label: 'LLM Providers',
         icon: 'cube-outline',

@@ -16,7 +16,7 @@ export function createRpcRouter(): Hono {
 
   router.post('/:tunnelId', async (c: any) => {
     const userId = c.get('userId') as string;
-    const accountId = await resolveAccountId(userId);
+    const accountId = (c.get('accountId') as string | undefined) || await resolveAccountId(userId);
     const tunnelId = c.req.param('tunnelId');
 
     const rpcRateCheck = tunnelRateLimiter.check('rpc', tunnelId);

@@ -11,8 +11,11 @@ import { NewInstanceModal } from '@/components/billing/pricing/new-instance-moda
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
+import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
+import { isBillingEnabled } from '@/lib/config';
 import { SidebarLeft } from '@/components/sidebar/sidebar-left';
 import { SidebarRight } from '@/components/sidebar/sidebar-right';
+import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
 
 /**
  * Left sidebar slot — lives inside SidebarProvider so it can read the
@@ -76,7 +79,7 @@ function DeleteOperationEffectsWrapper({ children }: { children: React.ReactNode
   return <>{children}</>;
 }
 
-/** Store-driven NewInstanceModal — mounted once globally */
+/** Store-driven NewInstanceModal — mounted by legacy dashboard surfaces only. */
 function GlobalNewInstanceModal() {
   const { isOpen, title, closeNewInstanceModal } = useNewInstanceModalStore();
   return <NewInstanceModal open={isOpen} onOpenChange={(o) => !o && closeNewInstanceModal()} title={title} />;
@@ -95,30 +98,54 @@ function GlobalUserSettingsModal() {
   );
 }
 
+// Account-level settings (Overview, Billing, Transactions, Members, etc.)
+// now live at /accounts/[id]. The legacy modal mount + GlobalAccountSettingsModal
+// were removed; `openAccountSettings(...)` callers navigate to the page directly
+// via the store helper.
+
 interface AppProvidersProps {
   children: React.ReactNode;
   showSidebar?: boolean;
+  /**
+   * Right rail control. `true` (default) mounts the legacy `<SidebarRight />`
+   * with all the dashboard nav (Files, Terminal, Secrets, Triggers, etc.).
+   * Project routes pass `false` so the session view is just the conversation
+   * inside the project's own chrome — no extra dashboard noise.
+   */
+  showRightSidebar?: boolean;
   defaultSidebarOpen?: boolean;
   sidebarContent?: React.ReactNode;
   sidebarSiblings?: React.ReactNode;
+  showGlobalNewInstanceModal?: boolean;
+  showGlobalUserSettingsModal?: boolean;
 }
 
 export function AppProviders({
   children,
   showSidebar = true,
+  showRightSidebar = true,
   defaultSidebarOpen,
   sidebarContent,
-  sidebarSiblings
+  sidebarSiblings,
+  showGlobalNewInstanceModal = false,
+  showGlobalUserSettingsModal = false,
 }: AppProvidersProps) {
-  // Hydrate global default model from server on first mount
-  useModelHydration();
+  useModelHydration(showRightSidebar);
+
+  // One-time sweep on app load: reclaim localStorage left over from older builds
+  // that never evicted their per-sandbox caches. Ongoing growth is bounded by
+  // each cache's prune-on-write; this just heals existing bloat up front.
+  React.useEffect(() => {
+    pruneAllRegisteredCaches();
+  }, []);
 
   const content = (
     <DeleteOperationEffectsWrapper>
       <SubscriptionStoreSync>
         {children}
-        <GlobalNewInstanceModal />
-        <GlobalUserSettingsModal />
+        {showGlobalNewInstanceModal && <GlobalNewInstanceModal />}
+        {showGlobalUserSettingsModal && <GlobalUserSettingsModal />}
+        {isBillingEnabled() && <GlobalUpgradeDialog />}
       </SubscriptionStoreSync>
     </DeleteOperationEffectsWrapper>
   );
@@ -133,7 +160,7 @@ export function AppProviders({
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             {content}
           </div>
-          <SidebarRight />
+          {showRightSidebar && <SidebarRight />}
         </RightSidebarProvider>
       </SidebarInset>
       {sidebarSiblings}

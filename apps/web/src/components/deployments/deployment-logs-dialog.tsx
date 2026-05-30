@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import React, { useEffect, useRef } from 'react';
 import {
   Dialog,
@@ -11,6 +13,7 @@ import {
 import { ScrollText, Loader2 } from 'lucide-react';
 import { useDeploymentLogs } from '@/hooks/deployments/use-deployments';
 import type { Deployment } from '@/hooks/deployments/use-deployments';
+import { isDeploymentInProgress } from '@/hooks/deployments/deployment-status';
 import { cn } from '@/lib/utils';
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -26,9 +29,11 @@ export function DeploymentLogsDialog({
   open,
   onOpenChange,
 }: DeploymentLogsDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data, isLoading, error } = useDeploymentLogs(
     deployment?.deploymentId || '',
     open && !!deployment,
+    deployment ? isDeploymentInProgress(deployment.status) : false,
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -47,28 +52,24 @@ export function DeploymentLogsDialog({
       <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col" aria-describedby="logs-description">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ScrollText className="h-5 w-5" />
-            Deployment Logs
-          </DialogTitle>
-          <DialogDescription id="logs-description">
-            Logs for {domain}
+            <ScrollText className="h-5 w-5" />{tHardcodedUi.raw('componentsDeploymentsDeploymentLogsDialog.line51JsxTextDeploymentLogs')}</DialogTitle>
+          <DialogDescription id="logs-description">{tHardcodedUi.raw('componentsDeploymentsDeploymentLogsDialog.line54JsxTextLogsFor')}{' '}{domain}
           </DialogDescription>
         </DialogHeader>
 
         <div
           ref={scrollRef}
-          className="flex-1 min-h-0 overflow-y-auto rounded-lg bg-muted/30 border"
+          className="flex-1 min-h-0 overflow-y-auto rounded-2xl bg-muted/30 border"
         >
           {isLoading && (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">Loading logs...</span>
+              <span className="ml-2 text-sm text-muted-foreground">{tHardcodedUi.raw('componentsDeploymentsDeploymentLogsDialog.line65JsxTextLoadingLogs')}</span>
             </div>
           )}
 
           {error && (
-            <div className="p-4 text-sm text-red-500 dark:text-red-400">
-              Failed to load logs: {error instanceof Error ? error.message : 'Unknown error'}
+            <div className="p-4 text-sm text-red-500 dark:text-red-400">{tHardcodedUi.raw('componentsDeploymentsDeploymentLogsDialog.line71JsxTextFailedToLoadLogs')}{error instanceof Error ? error.message : 'Unknown error'}
             </div>
           )}
 

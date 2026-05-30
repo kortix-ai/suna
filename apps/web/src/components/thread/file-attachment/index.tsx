@@ -1,3 +1,4 @@
+import { useTranslations } from 'next-intl';
 /**
  * FileAttachment - Main file attachment component
  * Simplified: uses GridFileCard (FileThumbnail) for all file types.
@@ -144,6 +145,7 @@ export function FileAttachmentGrid({
     standalone = false,
     alignRight = false,
 }: FileAttachmentGridProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
     if (!attachments || attachments.length === 0) return null;
 
     // Separate URLs from file paths
@@ -207,7 +209,7 @@ export function FileAttachmentGrid({
                                 key={`url-${index}`}
                                 className={cn(
                                     "group relative w-full col-span-full min-w-0",
-                                    "rounded-xl border bg-card overflow-hidden pt-10",
+                                    "rounded-2xl border bg-card overflow-hidden pt-10",
                                     standalone ? "min-h-[300px] h-[400px]" : "!min-h-[200px] sm:min-h-0 sm:h-[400px] max-h-[600px] sm:!min-w-[300px]"
                                 )}
                             >
@@ -230,7 +232,7 @@ export function FileAttachmentGrid({
                                     <button
                                         onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
                                         className="cursor-pointer p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
-                                        title="Open in new tab"
+                                        title={tHardcodedUi.raw('componentsThreadFileAttachmentIndex.line233JsxAttrTitleOpenInNewTab')}
                                     >
                                         <svg className="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                                     </button>

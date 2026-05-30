@@ -288,7 +288,7 @@ export function MarkdownEditor({
       }),
       CodeBlock.configure({
         HTMLAttributes: {
-          class: 'my-5 p-4 rounded-xl overflow-x-auto bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[13px] font-mono leading-relaxed text-zinc-800 dark:text-zinc-200',
+          class: 'my-5 p-4 rounded-2xl overflow-x-auto bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-mono leading-relaxed text-zinc-800 dark:text-zinc-200',
         },
       }),
       HardBreak,
@@ -512,7 +512,7 @@ export function MarkdownEditor({
                   return selection && !selection.empty && selection.from !== selection.to;
                 }}
               >
-                <div className="flex items-center gap-1 bg-background border border-border rounded-lg shadow-lg p-1">
+                <div className="flex items-center gap-1 bg-background border border-border rounded-2xl shadow-lg p-1">
                   <MarkdownToolbar
                     editor={editor}
                     saveState={saveState}
@@ -535,7 +535,7 @@ export function MarkdownEditor({
                   return isEmpty && isRootDepth;
                 }}
               >
-                <div className="flex items-center gap-1 bg-background border border-border rounded-lg shadow-lg p-1">
+                <div className="flex items-center gap-1 bg-background border border-border rounded-2xl shadow-lg p-1">
                   <MarkdownToolbar
                     editor={editor}
                     saveState={saveState}

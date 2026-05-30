@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState } from 'react';
 import {
   Dialog,
@@ -17,6 +19,7 @@ interface DiffDialogProps {
 }
 
 export function DiffDialog({ sessionId, open, onOpenChange }: DiffDialogProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   return (
@@ -29,7 +32,7 @@ export function DiffDialog({ sessionId, open, onOpenChange }: DiffDialogProps) {
             : 'sm:max-w-4xl max-h-[80vh]',
         )}
       >
-        <VisuallyHidden><DialogTitle>File Changes</DialogTitle></VisuallyHidden>
+        <VisuallyHidden><DialogTitle>{tHardcodedUi.raw('componentsSessionDiffDialog.line32JsxTextFileChanges')}</DialogTitle></VisuallyHidden>
         <div className="flex-1 min-h-0 overflow-hidden">
           <SessionDiffViewer
             sessionId={sessionId}

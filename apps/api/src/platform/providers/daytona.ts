@@ -10,6 +10,9 @@ import { sandboxes } from '@kortix/db';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
 import { config, SANDBOX_VERSION } from '../../config';
+// (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
+// own per-project snapshot, resolved by the snapshot builder. Callers
+// must pass `opts.snapshot`; there is no shared platform-wide image.)
 import type {
   SandboxProvider,
   ProviderName,
@@ -36,50 +39,56 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
-    const snapshot = config.DAYTONA_SNAPSHOT;
+    // Every Daytona sandbox boots from its project's own per-project
+    // snapshot (`kortix-snap-…`), resolved by the snapshot builder before
+    // we get here (see platform/services/session-sandbox.ts +
+    // snapshots/builder.ts). There is intentionally no shared platform
+    // fallback: a missing snapshot means the project's first build
+    // hasn't finished, which is a session-creation error — not something
+    // we paper over with an unrelated image.
+    const snapshot = opts.snapshot;
     if (!snapshot) {
-      throw new Error('DAYTONA_SNAPSHOT is not configured — set it to the snapshot name (e.g. kortix-sandbox-v0.4.1)');
+      throw new Error(
+        'Daytona create() called without opts.snapshot. ' +
+        'Every sandbox must boot from a per-project snapshot built by ' +
+        'apps/api/src/snapshots/builder.ts. There is no shared fallback.',
+      );
     }
 
     const daytona = getDaytona();
 
-    // Use KORTIX_TOKEN as INTERNAL_SERVICE_KEY — one key for both directions.
-    // KORTIX_TOKEN (sandbox → api) is already in opts.envVars.
-    // INTERNAL_SERVICE_KEY (api → sandbox) is the same value so the proxy can auth.
-    const serviceKey = opts.envVars?.KORTIX_TOKEN || '';
+    // KORTIX_URL is the public API base URL the sandbox calls back on. Strip
+    // any route suffix so older env files that included /v1 or /v1/router still
+    // resolve to the bare origin.
+    const sandboxApiBase = config.KORTIX_URL
+      .replace(/\/+$/, '')
+      .replace(/\/v1\/router$/, '')
+      .replace(/\/v1$/, '');
 
-    // Strip /v1/router suffix — opencode.jsonc appends it already.
-    // KORTIX_URL may be "https://new-api.kortix.com/v1/router" but the
-    // sandbox expects the base: "https://new-api.kortix.com".
-    const sandboxApiBase = config.KORTIX_URL.replace(/\/v1\/router\/?$/, '');
-    const routerBase = `${sandboxApiBase}/v1/router`;
+    const createTimeoutSeconds = Math.max(
+      1,
+      Number.parseInt(process.env.KORTIX_DAYTONA_CREATE_TIMEOUT_SECONDS || '30', 10) || 30,
+    );
 
     const daytonaSandbox = await daytona.create(
       {
         snapshot,
         envVars: {
-          KORTIX_API_URL: sandboxApiBase,
-          ENV_MODE: 'cloud',
-          INTERNAL_SERVICE_KEY: serviceKey,
-          TUNNEL_API_URL: sandboxApiBase,
-          TUNNEL_TOKEN: serviceKey,
-          // Route tool SDK traffic through the Kortix router proxy for billing/key injection.
-          // If not set, sandbox tools fall back to hitting the real upstream APIs directly.
-          TAVILY_API_URL: `${routerBase}/tavily`,
-          REPLICATE_API_URL: `${routerBase}/replicate`,
-          SERPER_API_URL: `${routerBase}/serper`,
-          FIRECRAWL_API_URL: `${routerBase}/firecrawl`,
+          // Session identity, git context, KORTIX_API_URL + KORTIX_TOKEN, and
+          // the project's own secrets (incl. provider keys set via `kortix
+          // providers`, picked up by opencode at boot) — see
+          // buildSessionSandboxEnvVars() and provisionSessionSandbox().
           ...opts.envVars,
         },
         autoStopInterval: 15,
         autoArchiveInterval: 30,
         public: false,
       },
-      { timeout: 300 },
+      { timeout: createTimeoutSeconds },
     );
 
     const externalId = daytonaSandbox.id;
-    const apiBase = config.KORTIX_URL.replace(/\/v1\/router\/?$/, '').replace(/\/v1\/?$/, '');
+    const apiBase = sandboxApiBase;
     const baseUrl = `${apiBase}/v1/p/${externalId}/8000`;
 
     return {

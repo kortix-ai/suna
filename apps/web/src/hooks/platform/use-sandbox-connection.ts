@@ -31,13 +31,33 @@ const FAIL_THRESHOLD_RECONNECT = 2;
 
 /** Interval between health checks (ms) */
 const POLL_CONNECTED = 30_000; // 30s when healthy
-const POLL_FAILING = 3_000; // 3s when any failure detected (fast retry)
+// Tight cadence while a sandbox is booting/unhealthy. This is the gate between
+// "sandbox active" and "OpenCode healthy", so every extra interval is visible
+// dead time after the backend is already ready.
+const POLL_FAILING = 350;
 const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
 
 const CHECK_TIMEOUT = 20_000;
 
 function isImmediateOfflineStatus(status: number): boolean {
 	return status === 502 || status === 503 || status === 504;
+}
+
+type SandboxHealthResponse = {
+	status?: string;
+	runtimeReady?: boolean;
+	version?: string;
+	opencode?: string | boolean;
+	boot_error?: string | null;
+	reason?: string | null;
+	message?: string | null;
+};
+
+function isRuntimeReady(health: SandboxHealthResponse | null): boolean {
+	if (!health) return false;
+	if (health.runtimeReady !== undefined) return health.runtimeReady === true;
+	if (health.opencode !== undefined) return health.opencode === "ok" || health.opencode === true;
+	return health.status !== "starting" && health.status !== "down" && health.status !== "error";
 }
 
 /**
@@ -128,7 +148,11 @@ export function useSandboxConnection() {
 					}
 					resetSandboxFail();
 					setSandboxStatus("connected");
-					setOpenCodeHealth(false, parsed?.version);
+					setOpenCodeHealth(
+						false,
+						parsed?.version,
+						parsed?.boot_error ?? parsed?.message ?? parsed?.reason ?? null,
+					);
 					if (parsed?.version) {
 						setSandboxVersion(parsed.version);
 					}
@@ -149,10 +173,11 @@ export function useSandboxConnection() {
 
 				resetSandboxFail();
 				setSandboxStatus("connected");
-				const healthData = await res.json().catch(() => null) as { status?: string; runtimeReady?: boolean; version?: string } | null;
+				const healthData = await res.json().catch(() => null) as SandboxHealthResponse | null;
 				setOpenCodeHealth(
-					healthData?.runtimeReady !== false && healthData?.status !== "starting",
+					isRuntimeReady(healthData),
 					healthData?.version,
+					healthData?.boot_error ?? healthData?.message ?? healthData?.reason ?? null,
 				);
 				if (healthData?.version) {
 					setSandboxVersion(healthData.version);
@@ -213,7 +238,7 @@ export function useSandboxConnection() {
 			if (!alive) return;
 			if (timerRef.current) clearTimeout(timerRef.current);
 
-			const { status, failCount, healthy } = useSandboxConnectionStore.getState();
+			const { status, healthy } = useSandboxConnectionStore.getState();
 			let delay: number;
 			if (status === "connected" && healthy === false) {
 				delay = POLL_FAILING;
@@ -222,7 +247,10 @@ export function useSandboxConnection() {
 			} else if (status === "unreachable") {
 				delay = POLL_UNREACHABLE;
 			} else {
-				delay = failCount > 0 ? POLL_FAILING : POLL_UNREACHABLE;
+				// Initial "connecting" phase (sandbox just went active, opencode
+				// still booting) — poll fast so the runtime appears the moment it's
+				// healthy instead of waiting out a long interval.
+				delay = POLL_FAILING;
 			}
 			timerRef.current = setTimeout(check, delay);
 		}

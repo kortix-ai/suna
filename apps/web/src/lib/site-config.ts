@@ -2,23 +2,23 @@ export const siteConfig = {
   url: process.env.KORTIX_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_URL || 'http://localhost:3000',
   nav: {
     links: [
-      { id: 1, name: 'OS', href: '/' },
-      { id: 2, name: 'About', href: '/about' },
-      { id: 3, name: 'Careers', href: '/careers' },
-      // { id: 4, name: 'Partnerships', href: '/partnerships' },
+      { id: 2, name: 'Use cases', href: '/use-cases' },
+      { id: 3, name: 'Technology', href: '/technology' },
+      { id: 4, name: 'Pricing', href: '/pricing' },
     ],
   },
   hero: {
     description:
-      'Kortix – the open-source operating system for running autonomous companies.',
+      'Kortix – the open AI command center for your company.',
   },
   footerLinks: [
     {
-      title: 'Kortix',
+      title: 'Product',
       links: [
+        { id: 14, title: 'Use cases', url: '/use-cases' },
+        { id: 15, title: 'Technology', url: '/technology' },
         { id: 1, title: 'About', url: '/about' },
         { id: 2, title: 'Careers', url: '/careers' },
-        // { id: 3, title: 'Partnerships', url: '/partnerships' },
         { id: 4, title: 'Support', url: '/support' },
         { id: 5, title: 'Contact', url: 'mailto:hey@kortix.com' },
         { id: 13, title: 'Status', url: 'https://status.kortix.com' },

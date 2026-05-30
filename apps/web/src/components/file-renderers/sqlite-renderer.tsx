@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * SqliteRenderer — Full-featured SQLite database viewer & editor.
  *
@@ -92,9 +94,10 @@ const DataGrid = lazy(() =>
 );
 
 function GridFallback() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex items-center justify-center h-full w-full">
-      <div className="text-sm text-muted-foreground animate-pulse">Loading grid…</div>
+      <div className="text-sm text-muted-foreground animate-pulse">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line97JsxTextLoadingGrid')}</div>
     </div>
   );
 }
@@ -105,6 +108,7 @@ interface SqliteRendererProps {
   filePath: string;
   fileName: string;
   className?: string;
+  readOnly?: boolean;
 }
 
 interface TableInfo {
@@ -161,9 +165,14 @@ function sqlLiteral(value: unknown): string {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
+function quoteIdent(value: string): string {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
 // ── Component ────────────────────────────────────────────────────────────
 
-export function SqliteRenderer({ filePath, fileName, className }: SqliteRendererProps) {
+export function SqliteRenderer({ filePath, fileName, className, readOnly = false }: SqliteRendererProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   // State
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -212,13 +221,13 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
 
           let rowCount = 0;
           try {
-            const countResult = db.exec(`SELECT COUNT(*) FROM "${name}"`);
+            const countResult = db.exec(`SELECT COUNT(*) FROM ${quoteIdent(name)}`);
             if (countResult.length > 0) rowCount = Number(countResult[0].values[0][0]);
           } catch { /* ignore */ }
 
           const columns: ColumnInfo[] = [];
           try {
-            const pragmaResult = db.exec(`PRAGMA table_info("${name}")`);
+            const pragmaResult = db.exec(`PRAGMA table_info(${quoteIdent(name)})`);
             if (pragmaResult.length > 0) {
               for (const col of pragmaResult[0].values) {
                 columns.push({
@@ -284,13 +293,13 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
 
             let rowCount = 0;
             try {
-              const countResult = db.exec(`SELECT COUNT(*) FROM "${name}"`);
+              const countResult = db.exec(`SELECT COUNT(*) FROM ${quoteIdent(name)}`);
               if (countResult.length > 0) rowCount = Number(countResult[0].values[0][0]);
             } catch { /* ignore */ }
 
             const columns: ColumnInfo[] = [];
             try {
-              const pragmaResult = db.exec(`PRAGMA table_info("${name}")`);
+              const pragmaResult = db.exec(`PRAGMA table_info(${quoteIdent(name)})`);
               if (pragmaResult.length > 0) {
                 for (const col of pragmaResult[0].values) {
                   columns.push({
@@ -341,7 +350,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     if (!dbRef.current || !selectedTable) return { columns: [], rows: [] };
 
     try {
-      const result = dbRef.current.exec(`SELECT * FROM "${selectedTable}" LIMIT 10000`);
+      const result = dbRef.current.exec(`SELECT * FROM ${quoteIdent(selectedTable)} LIMIT 10000`);
       if (result.length === 0) return { columns: [], rows: [] };
 
       const columns: string[] = result[0].columns;
@@ -372,7 +381,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
   );
 
   // ── Column defs for AG Grid (editable for tables, not views) ──────────
-  const isEditable = selectedTableInfo?.type === 'table';
+  const isEditable = !readOnly && selectedTableInfo?.type === 'table';
   const columnDefs = useMemo((): ColDef[] => {
     if (!tableData.columns.length) return [];
     const pkColumns = new Set(
@@ -394,7 +403,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
   // ── Handle cell edit → run UPDATE ─────────────────────────────────────
   const handleCellValueChanged = useCallback((event: CellValueChangedEvent) => {
     const db = dbRef.current;
-    if (!db || !selectedTable || !selectedTableInfo) return;
+    if (readOnly || !db || !selectedTable || !selectedTableInfo) return;
 
     const colName = event.colDef.field;
     const newValue = event.newValue;
@@ -410,13 +419,13 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
         const val = event.data[c.name];
         // For the column being edited, use old value in WHERE
         if (c.name === colName) {
-          return `"${c.name}" IS ${sqlLiteral(oldValue)}`;
+          return `${quoteIdent(c.name)} IS ${sqlLiteral(oldValue)}`;
         }
-        return `"${c.name}" IS ${sqlLiteral(val)}`;
+        return `${quoteIdent(c.name)} IS ${sqlLiteral(val)}`;
       })
       .join(' AND ');
 
-    const sql = `UPDATE "${selectedTable}" SET "${colName}" = ${sqlLiteral(newValue)} WHERE ${whereClause}`;
+    const sql = `UPDATE ${quoteIdent(selectedTable)} SET ${quoteIdent(colName)} = ${sqlLiteral(newValue)} WHERE ${whereClause}`;
 
     try {
       db.exec(sql);
@@ -427,7 +436,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
       // Revert the cell
       event.node.setDataValue(colName, oldValue);
     }
-  }, [selectedTable, selectedTableInfo, refreshTableMeta]);
+  }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly]);
 
   // ── Cell double-click → expand long values ────────────────────────────
   const handleCellDoubleClicked = useCallback((event: CellDoubleClickedEvent) => {
@@ -453,7 +462,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
   // ── Save expanded cell edit ───────────────────────────────────────────
   const handleExpandedSave = useCallback(() => {
     const db = dbRef.current;
-    if (!db || !selectedTable || !selectedTableInfo || !expandedCell) return;
+    if (readOnly || !db || !selectedTable || !selectedTableInfo || !expandedCell) return;
 
     const newValue = expandedEditValue;
     const colName = expandedCell.column;
@@ -468,10 +477,10 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     const whereCols = pkCols.length > 0 ? pkCols : selectedTableInfo.columns;
 
     const whereClause = whereCols
-      .map((c) => `"${c.name}" IS ${sqlLiteral(rowNode.data[c.name])}`)
+      .map((c) => `${quoteIdent(c.name)} IS ${sqlLiteral(rowNode.data[c.name])}`)
       .join(' AND ');
 
-    const sql = `UPDATE "${selectedTable}" SET "${colName}" = ${sqlLiteral(newValue)} WHERE ${whereClause}`;
+    const sql = `UPDATE ${quoteIdent(selectedTable)} SET ${quoteIdent(colName)} = ${sqlLiteral(newValue)} WHERE ${whereClause}`;
 
     try {
       db.exec(sql);
@@ -483,7 +492,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     } catch (e: unknown) {
       toast.error(`Update failed: ${(e as Error)?.message || 'Unknown error'}`);
     }
-  }, [selectedTable, selectedTableInfo, expandedCell, expandedEditValue, refreshTableMeta]);
+  }, [selectedTable, selectedTableInfo, expandedCell, expandedEditValue, refreshTableMeta, readOnly]);
 
   // ── Row selection config ──────────────────────────────────────────────
   const rowSelection = useMemo((): RowSelectionOptions => ({
@@ -495,11 +504,11 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
   // ── Add new row ───────────────────────────────────────────────────────
   const handleAddRow = useCallback(() => {
     const db = dbRef.current;
-    if (!db || !selectedTable || !selectedTableInfo) return;
+    if (readOnly || !db || !selectedTable || !selectedTableInfo) return;
 
     // Build INSERT with default values
     const cols = selectedTableInfo.columns;
-    const colNames = cols.map((c) => `"${c.name}"`).join(', ');
+    const colNames = cols.map((c) => quoteIdent(c.name)).join(', ');
     const values = cols.map((c) => {
       if (c.dflt_value != null) return c.dflt_value;
       if (c.pk) return 'NULL'; // autoincrement
@@ -512,7 +521,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
       return 'NULL';
     }).join(', ');
 
-    const sql = `INSERT INTO "${selectedTable}" (${colNames}) VALUES (${values})`;
+    const sql = `INSERT INTO ${quoteIdent(selectedTable)} (${colNames}) VALUES (${values})`;
     try {
       db.exec(sql);
       setHasUnsavedChanges(true);
@@ -522,13 +531,13 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     } catch (e: unknown) {
       toast.error(`Insert failed: ${(e as Error)?.message || 'Unknown error'}`);
     }
-  }, [selectedTable, selectedTableInfo, refreshTableMeta]);
+  }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly]);
 
   // ── Delete selected rows ──────────────────────────────────────────────
   const handleDeleteSelected = useCallback(() => {
     const db = dbRef.current;
     const api = gridApiRef.current?.api;
-    if (!db || !api || !selectedTable || !selectedTableInfo) return;
+    if (readOnly || !db || !api || !selectedTable || !selectedTableInfo) return;
 
     const selectedRows = api.getSelectedRows();
     if (selectedRows.length === 0) {
@@ -542,11 +551,11 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     let deleted = 0;
     for (const row of selectedRows) {
       const whereClause = whereCols
-        .map((c) => `"${c.name}" IS ${sqlLiteral(row[c.name])}`)
+        .map((c) => `${quoteIdent(c.name)} IS ${sqlLiteral(row[c.name])}`)
         .join(' AND ');
 
       try {
-        db.exec(`DELETE FROM "${selectedTable}" WHERE ${whereClause} LIMIT 1`);
+        db.exec(`DELETE FROM ${quoteIdent(selectedTable)} WHERE ${whereClause} LIMIT 1`);
         deleted++;
       } catch { /* skip */ }
     }
@@ -557,12 +566,12 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
       refreshTableMeta();
       toast.success(`${deleted} row${deleted !== 1 ? 's' : ''} deleted`);
     }
-  }, [selectedTable, selectedTableInfo, refreshTableMeta]);
+  }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly]);
 
   // ── Save database back to file ────────────────────────────────────────
   const handleSave = useCallback(async () => {
     const db = dbRef.current;
-    if (!db) return;
+    if (readOnly || !db) return;
 
     setIsSaving(true);
     try {
@@ -579,7 +588,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     } finally {
       setIsSaving(false);
     }
-  }, [filePath, fileName]);
+  }, [filePath, fileName, readOnly]);
 
   // ── Discard changes (reload from disk) ────────────────────────────────
   const handleDiscard = useCallback(() => {
@@ -642,8 +651,12 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
 
       // Detect mutation queries → mark dirty + refresh
       const upper = sqlQuery.trim().toUpperCase();
-      if (upper.startsWith('INSERT') || upper.startsWith('UPDATE') || upper.startsWith('DELETE') ||
-          upper.startsWith('DROP') || upper.startsWith('ALTER') || upper.startsWith('CREATE')) {
+      const isMutation = upper.startsWith('INSERT') || upper.startsWith('UPDATE') || upper.startsWith('DELETE') ||
+          upper.startsWith('DROP') || upper.startsWith('ALTER') || upper.startsWith('CREATE');
+      if (readOnly && isMutation) {
+        throw new Error('Database is open read-only');
+      }
+      if (isMutation) {
         setHasUnsavedChanges(true);
         setDataVersion((v) => v + 1);
         refreshTableMeta();
@@ -676,7 +689,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     } finally {
       setIsQueryRunning(false);
     }
-  }, [sqlQuery, refreshTableMeta]);
+  }, [sqlQuery, refreshTableMeta, readOnly]);
 
   // ── Keyboard shortcut: Cmd+Enter to run query ─────────────────────────
   const handleQueryKeyDown = useCallback(
@@ -691,7 +704,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
 
   // ── Cmd+S to save ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (readOnly || !hasUnsavedChanges) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
@@ -700,7 +713,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [hasUnsavedChanges, handleSave]);
+  }, [hasUnsavedChanges, handleSave, readOnly]);
 
   // ── Copy SQL ──────────────────────────────────────────────────────────
   const handleCopySchema = useCallback(() => {
@@ -721,7 +734,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
       <div className={cn('w-full h-full flex items-center justify-center', className)}>
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/40" />
-          <span className="text-sm text-muted-foreground/60">Loading database…</span>
+          <span className="text-sm text-muted-foreground/60">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line733JsxTextLoadingDatabase')}</span>
         </div>
       </div>
     );
@@ -736,12 +749,12 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
             <Database className="h-8 w-8 text-muted-foreground" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">Failed to load database</h3>
+            <h3 className="text-lg font-medium text-foreground">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line748JsxTextFailedToLoadDatabase')}</h3>
             <p className="text-xs text-muted-foreground mt-1 max-w-sm">{error}</p>
           </div>
           <button
             onClick={() => window.location.reload()}
-            className="h-8 px-3 text-xs rounded-md border cursor-pointer inline-flex items-center gap-1.5 hover:bg-muted transition-colors"
+            className="h-8 px-3 text-xs rounded-2xl border cursor-pointer inline-flex items-center gap-1.5 hover:bg-muted transition-colors"
           >
             <RefreshCw className="w-3 h-3" />
             Retry
@@ -760,8 +773,8 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
             <Database className="h-8 w-8 text-muted-foreground" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">Empty Database</h3>
-            <p className="text-sm text-muted-foreground">No tables or views found in this database.</p>
+            <h3 className="text-lg font-medium text-foreground">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line772JsxTextEmptyDatabase')}</h3>
+            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line773JsxTextNoTablesOrViewsFoundInThisDatabase')}</p>
           </div>
         </div>
       </div>
@@ -774,7 +787,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
       {/* ── Top toolbar ──────────────────────────────────────────────── */}
       <div className="flex-shrink-0 border-b px-3 py-1.5 flex items-center gap-2 h-10">
         {/* Left: summary (no filename — parent header already shows it) */}
-        <span className="text-[11px] text-muted-foreground/60 tabular-nums">
+        <span className="text-xs text-muted-foreground/60 tabular-nums">
           {tables.filter((t) => t.type === 'table').length} table{tables.filter((t) => t.type === 'table').length !== 1 ? 's' : ''}
           {tables.some((t) => t.type === 'view') && (
             <> · {tables.filter((t) => t.type === 'view').length} view{tables.filter((t) => t.type === 'view').length !== 1 ? 's' : ''}</>
@@ -783,7 +796,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
         </span>
 
         {hasUnsavedChanges && (
-          <span className="h-1.5 w-1.5 rounded-full bg-yellow-500 shrink-0" title="Unsaved changes" />
+          <span className="h-1.5 w-1.5 rounded-full bg-yellow-500 shrink-0" title={tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line795JsxAttrTitleUnsavedChanges')} />
         )}
 
         <div className="ml-auto flex items-center gap-1">
@@ -794,7 +807,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                 variant="muted"
                 size="toolbar"
                 onClick={handleDiscard}
-                title="Discard changes"
+                title={tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line806JsxAttrTitleDiscardChanges')}
               >
                 <Undo2 className="h-3 w-3" />
                 Discard
@@ -804,7 +817,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                 size="toolbar"
                 onClick={handleSave}
                 disabled={isSaving}
-                title="Save to file (⌘S)"
+                title={tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line816JsxAttrTitleSaveToFileS')}
               >
                 {isSaving ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -822,7 +835,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
               <button
                 key={mode}
                 className={cn(
-                  'h-6 px-2 text-[11px] rounded-sm cursor-pointer inline-flex items-center gap-1 transition-colors',
+                  'h-6 px-2 text-xs rounded-sm cursor-pointer inline-flex items-center gap-1 transition-colors',
                   viewMode === mode
                     ? 'bg-background shadow-sm text-foreground'
                     : 'text-muted-foreground/60 hover:text-foreground',
@@ -848,7 +861,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/50" />
               <Input type="text"
-                placeholder="Filter tables…" autoComplete="off"
+                placeholder={tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line860JsxAttrPlaceholderFilterTables')} autoComplete="off"
                 value={tableSearch}
                 onChange={(e) => setTableSearch(e.target.value)}
                 className="h-7 pl-7 pr-7 text-xs"
@@ -873,7 +886,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                   setSelectedTable(table.name);
                   setSearchTerm('');
                   if (viewMode === 'query') {
-                    setSqlQuery(`SELECT * FROM "${table.name}" LIMIT 100`);
+                    setSqlQuery(`SELECT * FROM ${quoteIdent(table.name)} LIMIT 100`);
                   }
                 }}
                 className={cn(
@@ -889,7 +902,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                   <Table2 className="h-3.5 w-3.5 flex-shrink-0 text-blue-500/70" />
                 )}
                 <span className="truncate flex-1 text-xs font-medium">{table.name}</span>
-                <span className="text-[10px] tabular-nums text-muted-foreground/50 flex-shrink-0">
+                <span className="text-xs tabular-nums text-muted-foreground/50 flex-shrink-0">
                   {table.rowCount.toLocaleString()}
                 </span>
               </button>
@@ -897,7 +910,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
           </div>
 
           {/* Sidebar footer */}
-          <div className="border-t px-3 py-1.5 text-[10px] text-muted-foreground/30 tabular-nums">
+          <div className="border-t px-3 py-1.5 text-xs text-muted-foreground/30 tabular-nums">
             {filteredTables.length}/{tables.length} shown
           </div>
         </div>
@@ -917,7 +930,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                     <Table2 className="h-3.5 w-3.5 flex-shrink-0 text-blue-500/70" />
                   )}
                   <span className="text-xs font-medium text-foreground truncate">{selectedTableInfo.name}</span>
-                  <span className="text-[10px] text-muted-foreground/40 tabular-nums flex-shrink-0">
+                  <span className="text-xs text-muted-foreground/40 tabular-nums flex-shrink-0">
                     {selectedTableInfo.rowCount.toLocaleString()} × {selectedTableInfo.columns.length}
                   </span>
                 </div>
@@ -929,14 +942,14 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                       <button
                         className="h-7 w-7 rounded-md cursor-pointer inline-flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors"
                         onClick={handleAddRow}
-                        title="Insert row"
+                        title={tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line941JsxAttrTitleInsertRow')}
                       >
                         <Plus className="h-3.5 w-3.5" />
                       </button>
                       <button
                         className="h-7 w-7 rounded-md cursor-pointer inline-flex items-center justify-center text-muted-foreground/50 hover:text-red-500 hover:bg-red-500/10 transition-colors"
                         onClick={handleDeleteSelected}
-                        title="Delete selected rows"
+                        title={tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line948JsxAttrTitleDeleteSelectedRows')}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -949,7 +962,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                   <div className="relative">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/40" />
                     <Input type="text"
-                      placeholder="Filter…" autoComplete="off"
+                      placeholder={tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line961JsxAttrPlaceholderFilter')} autoComplete="off"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="h-7 pl-7 pr-7 text-xs w-40"
@@ -967,7 +980,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                   <button
                     className="h-7 w-7 rounded-md cursor-pointer inline-flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors"
                     onClick={handleExportCsv}
-                    title="Export as CSV"
+                    title={tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line979JsxAttrTitleExportAsCsv')}
                   >
                     <Download className="h-3.5 w-3.5" />
                   </button>
@@ -1023,13 +1036,11 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                           try { event.api.autoSizeAllColumns(); } catch { /* ignore */ }
                         }
                       }}
-                      overlayNoRowsTemplate='<span class="text-muted-foreground text-sm">No matching rows</span>'
+                      overlayNoRowsTemplate={tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line1035JsxAttrOverlaynorowstemplateSpanClassTextMutedForegroundTextSmNo')}
                     />
                   </div>
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
-                    No data in this table
-                  </div>
+                  <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line1040JsxTextNoDataInThisTable')}</div>
                 )}
               </div>
             </>
@@ -1041,9 +1052,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
               {/* CREATE statement */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    CREATE Statement
-                  </h3>
+                  <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line1054JsxTextCreateStatement')}</h3>
                   <Button
                     variant="muted"
                     size="xs"
@@ -1057,17 +1066,16 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                     {copied ? 'Copied' : 'Copy'}
                   </Button>
                 </div>
-                <pre className="bg-muted/50 rounded-lg p-4 text-xs font-mono text-foreground/80 overflow-x-auto whitespace-pre-wrap border select-text">
+                <pre className="bg-muted/50 rounded-2xl p-4 text-xs font-mono text-foreground/80 overflow-x-auto whitespace-pre-wrap border select-text">
                   {selectedTableInfo.sql || '-- No SQL available (system table or virtual table)'}
                 </pre>
               </div>
 
               {/* Column details */}
               <div className="space-y-2">
-                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Columns ({selectedTableInfo.columns.length})
+                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line1077JsxTextColumns')}{selectedTableInfo.columns.length})
                 </h3>
-                <div className="border rounded-lg overflow-hidden">
+                <div className="border rounded-2xl overflow-hidden">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-muted/50 border-b">
@@ -1075,7 +1083,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Name</th>
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Type</th>
                         <th className="text-center px-3 py-2 font-medium text-muted-foreground w-16">PK</th>
-                        <th className="text-center px-3 py-2 font-medium text-muted-foreground w-20">NOT NULL</th>
+                        <th className="text-center px-3 py-2 font-medium text-muted-foreground w-20">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line1087JsxTextNotNull')}</th>
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Default</th>
                       </tr>
                     </thead>
@@ -1100,14 +1108,14 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                           </td>
                           <td className="text-center px-3 py-2">
                             {col.pk && (
-                              <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-amber-500/10 text-amber-500 text-[10px] font-semibold">
+                              <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-amber-500/10 text-amber-500 text-xs font-semibold">
                                 ✓
                               </span>
                             )}
                           </td>
                           <td className="text-center px-3 py-2">
                             {col.notnull && (
-                              <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-red-500/10 text-red-500 text-[10px] font-semibold">
+                              <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-red-500/10 text-red-500 text-xs font-semibold">
                                 ✓
                               </span>
                             )}
@@ -1134,13 +1142,13 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                 </div>
                 {selectedTableInfo.columns.some((c) => c.pk) && (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-muted-foreground/50">Primary keys</span>
+                    <span className="text-muted-foreground/50">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line1146JsxTextPrimaryKeys')}</span>
                     <span className="font-medium tabular-nums">{selectedTableInfo.columns.filter((c) => c.pk).length}</span>
                   </div>
                 )}
                 {selectedTableInfo.columns.some((c) => c.notnull) && (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-muted-foreground/50">NOT NULL</span>
+                    <span className="text-muted-foreground/50">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line1152JsxTextNotNull')}</span>
                     <span className="font-medium tabular-nums">{selectedTableInfo.columns.filter((c) => c.notnull).length}</span>
                   </div>
                 )}
@@ -1154,14 +1162,13 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
               {/* Query input */}
               <div className="flex-shrink-0 border-b p-3 space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted-foreground/50">SQL</span>
+                  <span className="text-xs text-muted-foreground/50">SQL</span>
                   <div className="ml-auto flex items-center gap-1.5">
-                    <span className="text-[10px] text-muted-foreground/30">
-                      {typeof navigator !== 'undefined' && navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Enter
-                    </span>
+                    <span className="text-xs text-muted-foreground/30">
+                      {typeof navigator !== 'undefined' && navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line1169JsxTextEnter')}</span>
                     <button
                       className={cn(
-                        'h-7 px-2.5 text-[11px] rounded-md cursor-pointer inline-flex items-center gap-1 transition-colors',
+                        'h-7 px-2.5 text-xs rounded-md cursor-pointer inline-flex items-center gap-1 transition-colors',
                         sqlQuery.trim()
                           ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                           : 'bg-muted text-muted-foreground cursor-not-allowed',
@@ -1184,7 +1191,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                   onKeyDown={handleQueryKeyDown}
                   placeholder={`SELECT * FROM "${selectedTable || 'table_name'}" LIMIT 100`}
                   className={cn(
-                    'w-full h-24 px-3 py-2 rounded-md border bg-muted/30 font-mono text-xs cursor-text',
+                    'w-full h-24 px-3 py-2 rounded-2xl border bg-muted/30 font-mono text-xs cursor-text',
                     'resize-none focus:outline-none focus:ring-1 focus:ring-ring',
                     'placeholder:text-muted-foreground/30',
                   )}
@@ -1201,7 +1208,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                 )}
 
                 {queryResult && !queryResult.error && (
-                  <div className="flex-shrink-0 border-b px-3 py-1.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <div className="flex-shrink-0 border-b px-3 py-1.5 flex items-center gap-2 text-xs text-muted-foreground">
                     <span>{queryResult.rowCount.toLocaleString()} row{queryResult.rowCount !== 1 ? 's' : ''}</span>
                     <span className="text-muted-foreground/30">·</span>
                     <span>{queryResult.time.toFixed(1)}ms</span>
@@ -1224,17 +1231,14 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center space-y-2">
                       <Play className="h-8 w-8 mx-auto text-muted-foreground/20" />
-                      <p className="text-sm text-muted-foreground/40">
-                        Write a query and press Run
-                      </p>
+                      <p className="text-sm text-muted-foreground/40">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line1237JsxTextWriteAQueryAndPressRun')}</p>
                     </div>
                   </div>
                 )}
 
                 {queryResult && queryResult.rows.length === 0 && !queryResult.error && (
                   <div className="flex-1 flex items-center justify-center">
-                    <p className="text-sm text-muted-foreground/40">
-                      Query returned no rows ({queryResult.time.toFixed(1)}ms)
+                    <p className="text-sm text-muted-foreground/40">{tHardcodedUi.raw('componentsFileRenderersSqliteRenderer.line1246JsxTextQueryReturnedNoRows')}{queryResult.time.toFixed(1)}ms)
                     </p>
                   </div>
                 )}
@@ -1251,14 +1255,14 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
           onClick={() => setExpandedCell(null)}
         >
           <div
-            className="bg-background border border-border/60 rounded-lg shadow-xl w-full max-w-xl max-h-[70vh] flex flex-col overflow-hidden"
+            className="bg-background border border-border/60 rounded-2xl shadow-xl w-full max-w-xl max-h-[70vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-2.5 border-b">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-xs font-mono text-foreground/70 truncate">{expandedCell.column}</span>
-                <span className="text-[10px] text-muted-foreground/30 tabular-nums shrink-0">
+                <span className="text-xs text-muted-foreground/30 tabular-nums shrink-0">
                   row {expandedCell.rowIndex + 1}
                 </span>
               </div>
@@ -1306,7 +1310,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
             </div>
 
             {/* Footer */}
-            <div className="border-t px-4 py-1.5 text-[10px] text-muted-foreground/30 tabular-nums">
+            <div className="border-t px-4 py-1.5 text-xs text-muted-foreground/30 tabular-nums">
               {expandedEditValue.length.toLocaleString()} chars
             </div>
           </div>

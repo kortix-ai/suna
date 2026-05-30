@@ -1,0 +1,317 @@
+---
+title: CLI reference
+description: Every kortix command, the project-scoped token model, env vars, and exit codes.
+---
+
+The `kortix` CLI drives everything the dashboard can, from a terminal — laptop, coding agent, or session sandbox. For common workflows, see [Using the CLI](/docs/guides/using-the-cli).
+
+Always available inside a session sandbox, no setup:
+
+- Binary on `PATH` (`/usr/local/bin/kortix`).
+- `KORTIX_TOKEN` pre-injected, scoped to this project.
+- `KORTIX_API_URL` points at the platform you're running against.
+
+## Quickstart inside a session
+
+```sh
+kortix whoami                       # confirms what project + account this token has
+kortix projects info                # the project you're running inside
+kortix secrets ls                   # encrypted env vars + manifest [env] spec
+kortix sessions ls                  # every session on this project (incl. you)
+kortix cr ls                        # open change requests
+kortix cr open --title "..."        # propose merging your branch into main
+```
+
+The sandbox token is project-scoped: read+write anything on *this* project (secrets, sessions, triggers, change requests, apps), but it can't list other projects or touch account-level resources. See [Token scope](#token-scope).
+
+## On your laptop
+
+```sh
+curl -fsSL https://kortix.com/install | bash
+kortix login                        # opens browser, you click Authorize
+```
+
+The local CLI uses a user-scoped token at `~/.config/kortix/config.json` (mode 0600), which sees every project on every account you're a member of.
+
+## Command surface
+
+### Auth
+
+| Command | Effect |
+| --- | --- |
+| `kortix login [--token <pat>] [--host <name>] [--api <url>]` | Default: opens browser → click Authorize → token written. `--token` is the headless fallback. `--host` logs into a named host slot. |
+| `kortix logout [--host <name>]` | Remove the token for the active host (or named one). |
+| `kortix whoami [--host <name>]` | Print the user + active account on the chosen host. |
+
+### Hosts
+
+A host is one Kortix API endpoint. `cloud` and `local` are always available, and you can add more self-hosted endpoints. One host is active at a time; the CLI prints the active host before operational commands so Cloud/local actions are harder to mix up.
+
+| Command | Effect |
+| --- | --- |
+| `kortix hosts ls` | List configured hosts (`●` marks active). |
+| `kortix hosts use [<name>]` | Switch active host. No name → arrow-key picker. |
+| `kortix hosts add <name> --url <url> [--login]` | Register a new host. `--login` runs the browser flow right after. |
+| `kortix hosts rm <name>` | Remove a host (confirms when it's the last one). |
+| `kortix hosts info [<name>]` | Detailed view of one host. |
+| `kortix hosts current` | Print the active host name (script-friendly). |
+
+`--host <name>` overrides the active host for one invocation: `kortix projects ls --host local`.
+
+### Self-host
+
+`kortix self-host start` creates and starts a production-style local Kortix stack
+using Docker Compose. On first interactive setup it only asks for the product
+integrations you may need: Freestyle for managed git/deployments, a GitHub App
+or PAT for repo access, and Pipedream for app connectors. Local ports, Supabase,
+generated secrets, and Docker defaults are handled automatically.
+
+| Command | Effect |
+| --- | --- |
+| `kortix self-host start` | Create config if needed, start the local stack, and register the `local` host. |
+| `kortix self-host configure` | Re-run the Freestyle, GitHub, and Pipedream credential wizard. |
+| `kortix self-host env ls` | Show persistent self-host env values, masking populated secrets. |
+| `kortix self-host env set KEY=VALUE …` | Update advanced persistent env values before the next start. |
+| `kortix self-host logs [service]` | Tail Docker Compose logs. |
+| `kortix self-host stop` | Stop the stack. |
+
+### Projects
+
+| Command | Effect |
+| --- | --- |
+| `kortix projects ls` | Every project on the active account. |
+| `kortix projects info [<id-or-slug>]` | Show one project (defaults to the linked one). |
+| `kortix projects link [<id>]` | Bind cwd to a remote project. Writes `.kortix/link.json` with `project_id`, `account_id`, `host`, `host_url`. No arg → arrow-key picker. |
+| `kortix projects unlink` | Drop `.kortix/link.json`. |
+| `kortix projects open [<id>]` | Open the dashboard URL for a project in your browser. |
+
+#### How a command finds "the project"
+
+In strict order:
+
+1. `--project <id>` flag.
+2. `KORTIX_PROJECT_ID` env var.
+3. `.kortix/link.json` in cwd (or any ancestor — git-style).
+4. Inside a session sandbox: the sandbox's own `KORTIX_PROJECT_ID`.
+
+If none resolve, the command errors pointing to `projects link`.
+
+#### How a command finds "the host"
+
+1. `--host <name>` flag.
+2. `host` field in `.kortix/link.json` (so a repo always hits its home Kortix instance).
+3. The globally-active host.
+
+### Secrets
+
+Encrypted env vars stored on the project, injected as plain env into every session sandbox at boot.
+
+| Command | Effect |
+| --- | --- |
+| `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. |
+| `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). |
+| `kortix secrets unset NAME …` | Remove. |
+
+### Env — dotenv ↔ secrets
+
+| Command | Effect |
+| --- | --- |
+| `kortix env pull [--out .env] [--force]` | Write a `.env` skeleton (names only — plaintext can't leave the cloud). |
+| `kortix env push --from <path>` | Upload every `NAME=VALUE` from a dotenv file as a secret. Supports quoted values, `export NAME=…`, comment lines. |
+
+### Sessions
+
+Each session is an isolated sandbox VM on its own ephemeral branch.
+
+
+| Command | Effect |
+| --- | --- |
+| `kortix sessions ls` | All sessions on the project. |
+| `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. |
+| `kortix sessions new [--prompt "<text>"]` | Start a new session, optionally with an initial prompt. |
+| `kortix sessions restart <id>` | Re-provision a session in place. |
+| `kortix sessions rm <id>` | Stop + delete. |
+| `kortix sessions open <id>` | Open the dashboard URL for a session. |
+
+Inside a sandbox, `KORTIX_SESSION_ID` is your session; `kortix sessions info $KORTIX_SESSION_ID` is the live view of yourself.
+
+### Triggers
+
+Round-trip through `kortix.toml`'s `[[triggers]]`; the dashboard sees the same state.
+
+| Command | Effect |
+| --- | --- |
+| `kortix triggers ls` | List triggers + runtime state (`last_fired_at`). |
+| `kortix triggers info <slug>` | Show one trigger in full. |
+| `kortix triggers fire <slug>` | Manually fire a trigger now. |
+| `kortix triggers enable <slug>` | Set `enabled = true`. |
+| `kortix triggers disable <slug>` | Set `enabled = false`. |
+
+### Change requests (`cr`)
+
+Kortix-native PR layer for session work landing on `main` — merges one branch (`head_ref`) into another (`base_ref`) on any git host, no per-host integration. The only sanctioned way for an agent to land session-branch work on `main`. See [Change requests](/docs/reference/change-requests).
+
+| Command | Effect |
+| --- | --- |
+| `kortix cr ls [--status open\|merged\|closed\|all] [--project <id>]` | List CRs on the project. Default: `--status open`. |
+| `kortix cr show <cr> [--project <id>]` | Show one CR's metadata. Alias: `kortix cr info`. Includes the merge-preview (clean / fast-forward / conflicts) for open CRs. |
+| `kortix cr diff <cr> [--no-color] [--project <id>]` | Unified diff of the CR. Three-dot diff for open / closed CRs; for merged CRs it uses the SHAs captured at merge time. |
+| `kortix cr open --title "<text>" [--description "<text>"] [--head <ref>] [--base <ref>] [--session <id>] [--project <id>]` | Open a new CR. Aliases: `kortix cr new`, `kortix cr create`. Inside a sandbox, `--head` defaults to `$KORTIX_BRANCH_NAME` and `--session` defaults to `$KORTIX_SESSION_ID`. `--base` defaults to the project's default branch (usually `main`). `--title` is required. Aliases: `--from` (`--head`), `--into` (`--base`), `--body` (`--description`). |
+| `kortix cr merge <cr> [--message "<text>"] [--project <id>]` | Merge an open CR into its `base_ref`. Fast-forward when possible, three-way merge otherwise. Default message `Merge CR #<n>: <title>`. Fails with 409 if the CR is not `open` or there are conflicts. |
+| `kortix cr close <cr> [--project <id>]` | Close an open CR without merging. Cannot close a merged CR. |
+| `kortix cr reopen <cr> [--project <id>]` | Reopen a closed CR only — merged CRs are terminal. |
+
+`<cr>` accepts the short per-project number (`3`, `#3`) or the full UUID `cr_id`. Numbers are unique per project, monotonically increasing.
+
+#### Inside a sandbox — the typical agent flow
+
+```sh
+# 1. Commit on the session branch
+git add .
+git commit -m "Add release-notes skill"
+
+# 2. Push the branch (KORTIX_BRANCH_NAME)
+git push origin HEAD
+
+# 3. Open the CR — head and session are auto-detected
+kortix cr open \
+  --title  "Add release-notes skill" \
+  --description "Drafts release notes from merged commits. Tested against the last 5 tags."
+
+# 4. Confirm it's listed
+kortix cr ls
+
+# 5. (Optional) show the diff one more time
+kortix cr diff 3
+```
+
+The agent does not merge its own CR — that's the user's call, in the dashboard or via `kortix cr merge <n>`.
+
+### Install / update / uninstall
+
+| Command | Effect |
+| --- | --- |
+| `kortix update` | Re-runs the install script to pull the latest binary. |
+| `kortix uninstall` | Removes the binary, the `/usr/local/bin` shim, and `~/.config/kortix/`. `--keep-auth` keeps the token. |
+| `kortix version` | Print the CLI version. |
+
+### Project scaffold
+
+| Command | Effect |
+| --- | --- |
+| `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.toml`, `.kortix/Dockerfile`, and the OpenCode config dir (default agent + the kortix-system skill + tools), and wires the Kortix skill into any local coding agents it finds (`.opencode/`, `.claude/`, `AGENTS.md`, `.cursor/`). It does **not** write `.kortix/link.json` — that's created later by `projects link` or `ship`. |
+| `kortix <project-name>` | Same as `init` but scaffolds into a new directory next to cwd. |
+
+Other commands: `ship` (alias `deploy`) pushes your local commits to the project's cloud repo, provisioning a managed repo on first run — despite the alias, it's a git push, not app deployment. `channels` connects Slack to a project. Run `kortix help` for the full list.
+
+## Token scope
+
+Two token types, both with the `kortix_pat_…` prefix, distinguished by an internal `project_id` column on the token row.
+
+| Type | Scope | Issued by | Typical use |
+| --- | --- | --- | --- |
+| **User token** | All projects on accounts the user belongs to + account-level routes (`/v1/accounts/me`, billing, etc.) | `kortix login` browser flow → minted via `POST /v1/accounts/tokens` | The CLI on your laptop |
+| **Project token** | Read + write everything on one project — secrets, sessions, triggers, change requests, apps. Cannot list other projects or hit account-level routes. | Auto-minted at session create; surfaced via `POST /v1/projects/:id/cli-token` | The CLI inside a sandbox |
+
+Enforcement: every project route checks the token's `project_id` against the URL's `:projectId`. Mismatch → 403. Account routes (`/v1/accounts/*`) reject any project-scoped token outright.
+
+### Inside a sandbox
+
+The session bootstrap injects:
+
+```sh
+KORTIX_TOKEN=kortix_pat_…   # project-scoped, this project only
+KORTIX_API_URL=https://api.kortix.com
+KORTIX_PROJECT_ID=<uuid>
+KORTIX_SESSION_ID=<uuid>
+```
+
+The CLI reads `KORTIX_TOKEN` automatically (also accepts `KORTIX_CLI_TOKEN`) and uses `KORTIX_API_URL` as the host base. No config file needed.
+
+### Rotating
+
+A sandbox's project token is minted at session create and lives for that sandbox. Restarting re-provisions and issues a fresh token; an existing sandbox keeps its token until it restarts.
+
+## Common workflows
+
+### Spin up a fresh session with custom env
+
+```sh
+kortix secrets set OPENAI_API_KEY=sk-… ANTHROPIC_API_KEY=sk-…
+kortix sessions new --prompt "Audit the auth module and propose a fix"
+```
+
+### Inside a session: trigger another session
+
+```sh
+kortix sessions new --prompt "Verify migration 0048 by running pnpm test + opening a CR if anything fails"
+```
+
+### Run a trigger by hand for debugging
+
+```sh
+kortix triggers ls                      # confirm the slug + status
+kortix triggers fire daily-digest       # one-shot manual fire
+kortix sessions ls | head -3            # the new session that the trigger spawned
+```
+
+### Pull current secrets into a local `.env` for development
+
+```sh
+kortix env pull                         # names only, values left blank
+$EDITOR .env                            # fill in values locally
+# (don't push — local-only file)
+```
+
+### Bulk-upload local `.env` to the cloud project
+
+```sh
+kortix env push --from .env
+kortix secrets ls                       # confirm
+```
+
+### Land session work on `main` (the CR flow)
+
+The agent opens the CR; the user reviews and merges. No other path to `main` from inside a session.
+
+```sh
+# inside a session sandbox, on branch session-<id>
+git add .
+git commit -m "Add release-notes skill"
+git push origin HEAD
+
+kortix cr open \
+  --title       "Add release-notes skill" \
+  --description "Drafts release notes from merged commits. Tested against the last 5 tags."
+
+kortix cr ls                            # confirm
+```
+
+The user then runs `kortix cr show 3`, `kortix cr diff 3`, and `kortix cr merge 3` (or `kortix cr close 3`).
+
+## Environment variables the CLI reads
+
+| Variable | Purpose |
+| --- | --- |
+| `KORTIX_TOKEN` | Project-scoped CLI token (preferred name in sandboxes). |
+| `KORTIX_CLI_TOKEN` | Same — historical alias the CLI also accepts. |
+| `KORTIX_API_URL` | Override the API base URL (default: `https://api.kortix.com`). |
+| `KORTIX_PROJECT_ID` | Override the linked project for one command. |
+| `KORTIX_CONFIG_FILE` | Override `~/.config/kortix/config.json` location (useful for tests). |
+| `KORTIX_DASHBOARD_URL` | Override the dashboard URL the `login` flow opens (default: derived from API URL). |
+
+The `KORTIX_*` prefix is reserved for platform-injected values. Don't declare project secrets with it — the secrets-manager API rejects them and the manifest validator warns.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success. |
+| `1` | Operation failed (API error, missing project, etc.). Diagnostics printed to stderr. |
+| `2` | Bad flag, unknown subcommand, missing required arg. |
+
+## What the CLI is not
+
+- **Not a separate runtime.** Use `kortix self-host start` to run your own local Kortix Cloud stack, then switch between Cloud and local APIs with `kortix hosts use`.
+- **Not a `git` replacement.** `kortix cr` composes with `git` rather than wrapping it.
+- **Not the runtime.** OpenCode executes the agent in the sandbox; the CLI is the control plane. See [Kortix vs OpenCode config](/docs/reference/config-boundary).

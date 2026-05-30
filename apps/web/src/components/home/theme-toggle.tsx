@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import * as React from 'react';
 import { Moon, Sun, Monitor } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -19,6 +21,7 @@ interface ThemeToggleProps {
 }
 
 export function ThemeToggle({ variant = 'icon' }: ThemeToggleProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
   const themeId = useUserPreferencesStore((s) => s.preferences.themeId);
@@ -90,7 +93,7 @@ export function ThemeToggle({ variant = 'icon' }: ThemeToggleProps) {
       >
         <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-colors dark:-rotate-90 dark:scale-0 text-primary" />
         <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-colors dark:rotate-0 dark:scale-100 text-primary" />
-        <span className="sr-only">Toggle theme</span>
+        <span className="sr-only">{tHardcodedUi.raw('componentsHomeThemeToggle.line93JsxTextToggleTheme')}</span>
       </Button>
     </div>
   );

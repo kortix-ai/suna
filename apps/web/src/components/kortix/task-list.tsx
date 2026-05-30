@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 /**
  * Task List — compact rows grouped by status section.
  *
@@ -47,6 +49,7 @@ export function TaskList({
   onNewTask,
   onDeleteTask,
 }: TaskListProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const [deleteTarget, setDeleteTarget] = useState<KortixTask | null>(null);
 
   const planning = useMemo(() => tasks.filter((t) => t.status === 'todo'), [tasks]);
@@ -74,14 +77,12 @@ export function TaskList({
               Add
             </Button>
           }
-          emptyText="No planned tasks"
+          emptyText={tHardcodedUi.raw('componentsKortixTaskList.line77JsxAttrEmptytextNoPlannedTasks')}
           emptyAction={
             <button
               onClick={() => onNewTask('todo')}
-              className="w-full py-6 rounded-xl border border-dashed border-border/50 text-[13px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
-            >
-              + Create your first task
-            </button>
+              className="w-full py-6 rounded-2xl border border-dashed border-border/50 text-[13px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
+            >{tHardcodedUi.raw('componentsKortixTaskList.line83JsxTextCreateYourFirstTask')}</button>
           }
           items={planning}
           renderRow={(task) => (
@@ -110,7 +111,7 @@ export function TaskList({
           icon={<Loader2 className={`h-4 w-4 ${running.length > 0 ? 'text-blue-500 animate-spin' : 'text-muted-foreground/30'}`} />}
           label="Running"
           count={running.length}
-          emptyText="No active workers"
+          emptyText={tHardcodedUi.raw('componentsKortixTaskList.line113JsxAttrEmptytextNoActiveWorkers')}
           items={running}
           renderRow={(task) => (
             <TaskRow
@@ -143,9 +144,9 @@ export function TaskList({
         {/* ─── Review / Input ─────────────────────────────── */}
         <Section
           icon={<STATUS_META.awaiting_review.icon className="h-4 w-4 text-amber-500/50" />}
-          label="Review / Input"
+          label={tHardcodedUi.raw('componentsKortixTaskList.line146JsxAttrLabelReviewInput')}
           count={review.length}
-          emptyText="No tasks awaiting review or input"
+          emptyText={tHardcodedUi.raw('componentsKortixTaskList.line148JsxAttrEmptytextNoTasksAwaitingReviewOrInput')}
           items={review}
           renderRow={(task) => (
             <TaskRow
@@ -173,7 +174,7 @@ export function TaskList({
           icon={<STATUS_META.completed.icon className="h-4 w-4 text-emerald-500/50" />}
           label="Done"
           count={done.length}
-          emptyText="No completed tasks"
+          emptyText={tHardcodedUi.raw('componentsKortixTaskList.line176JsxAttrEmptytextNoCompletedTasks')}
           items={done}
           renderRow={(task) => (
             <TaskRow
@@ -191,8 +192,8 @@ export function TaskList({
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        title="Delete task"
-        description={<>Are you sure you want to delete <span className="font-semibold text-foreground">&quot;{deleteTarget?.title}&quot;</span>? This action cannot be undone.</>}
+        title={tHardcodedUi.raw('componentsKortixTaskList.line194JsxAttrTitleDeleteTask')}
+        description={<>{tHardcodedUi.raw('componentsKortixTaskList.line195JsxTextAreYouSureYouWantToDelete')}<span className="font-semibold text-foreground">{tHardcodedUi.raw('componentsKortixTaskList.line195JsxTextQuot')}{deleteTarget?.title}{tHardcodedUi.raw('componentsKortixTaskList.line195JsxTextQuot1c3ddf05')}</span>{tHardcodedUi.raw('componentsKortixTaskList.line195JsxTextThisActionCannotBeUndone')}</>}
         confirmLabel="Delete"
         onConfirm={() => { if (deleteTarget) { onDeleteTask(deleteTarget.id); setDeleteTarget(null); } }}
       />
@@ -230,13 +231,13 @@ function Section({
         {action && <div className="ml-auto">{action}</div>}
       </div>
       {items.length > 0 ? (
-        <div className="rounded-xl border border-border/40 overflow-hidden divide-y divide-border/30 bg-card">
+        <div className="rounded-2xl border border-border/40 overflow-hidden divide-y divide-border/30 bg-card">
           {items.map(renderRow)}
         </div>
       ) : emptyAction ? (
         emptyAction
       ) : (
-        <div className="py-4 text-center text-[12px] text-muted-foreground/25 rounded-xl border border-dashed border-border/30">
+        <div className="py-4 text-center text-[12px] text-muted-foreground/25 rounded-2xl border border-dashed border-border/30">
           {emptyText}
         </div>
       )}
@@ -263,6 +264,7 @@ function TaskRow({
   dimmed?: boolean;
   running?: boolean;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -304,9 +306,7 @@ function TaskRow({
       <ContextMenuContent className="w-48">
         <ContextMenuItem onClick={onSelect}>Open</ContextMenuItem>
         <ContextMenuItem onClick={() => navigator.clipboard.writeText(task.id)}>
-          <Copy className="mr-2 h-3.5 w-3.5" />
-          Copy ID
-        </ContextMenuItem>
+          <Copy className="mr-2 h-3.5 w-3.5" />{tHardcodedUi.raw('componentsKortixTaskList.line308JsxTextCopyId')}</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={onDelete}>
           <Trash2 className="mr-2 h-3.5 w-3.5" />

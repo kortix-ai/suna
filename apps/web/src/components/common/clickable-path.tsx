@@ -1,11 +1,9 @@
 'use client';
 
 import React, { useCallback, useMemo } from 'react';
-import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { splitTextByPaths } from '@/lib/utils/path-detection';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
 import { toast } from '@/lib/toast';
 
 // ---------------------------------------------------------------------------
@@ -61,43 +59,10 @@ export function ClickablePath({
         return;
       }
 
-      // Ctrl/Cmd + Click → open in new tab (navigates)
-      if (e.metaKey || e.ctrlKey) {
-        const fileName = filePath.split('/').pop() || filePath;
-        openTabAndNavigate({
-          id: `file:${filePath}`,
-          title: fileName,
-          type: 'file',
-          href: `/files/${encodeURIComponent(filePath)}`,
-        });
-        return;
-      }
-
-      // Default click → open preview modal (stays on current page)
+      // Open the in-place preview (stays on the current page).
       openPreview(filePath, lineNumber);
     },
     [filePath, lineNumber, openPreview],
-  );
-
-  const handleOpenNewTab = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (!isAbsolutePath(filePath)) {
-        toast.error(`Cannot open relative path: ${filePath}`);
-        return;
-      }
-
-      const fileName = filePath.split('/').pop() || filePath;
-      openTabAndNavigate({
-        id: `file:${filePath}`,
-        title: fileName,
-        type: 'file',
-        href: `/files/${encodeURIComponent(filePath)}`,
-      });
-    },
-    [filePath],
   );
 
   const isRelative = !isAbsolutePath(filePath);
@@ -105,8 +70,8 @@ export function ClickablePath({
   const title = isRelative
     ? `${filePath} — Relative path (cannot open)`
     : lineNumber
-      ? `${filePath}:${lineNumber}${column ? `:${column}` : ''} — Click to preview, Ctrl/Cmd+Click to open in tab`
-      : `${filePath} — Click to preview, Ctrl/Cmd+Click to open in tab`;
+      ? `${filePath}:${lineNumber}${column ? `:${column}` : ''} — Click to preview`
+      : `${filePath} — Click to preview`;
 
   if (variant === 'terminal') {
     return (
@@ -127,12 +92,6 @@ export function ClickablePath({
         {children || filePath}
         {lineNumber && (
           <span className="text-blue-400/60">:{lineNumber}{column ? `:${column}` : ''}</span>
-        )}
-        {!isRelative && (
-          <ExternalLink
-            className="size-2.5 opacity-0 group-hover/path:opacity-60 transition-opacity inline-block flex-shrink-0"
-            onClick={handleOpenNewTab}
-          />
         )}
       </span>
     );
@@ -159,12 +118,6 @@ export function ClickablePath({
       {lineNumber && (
         <span className="text-muted-foreground">:{lineNumber}{column ? `:${column}` : ''}</span>
       )}
-      {!isRelative && (
-        <ExternalLink
-          className="size-2.5 opacity-0 group-hover/path:opacity-50 transition-opacity inline-block flex-shrink-0"
-          onClick={handleOpenNewTab}
-        />
-      )}
     </span>
   );
 }
@@ -184,8 +137,7 @@ interface TextWithPathsProps {
 
 /**
  * Renders a string of text with all detected file paths made clickable.
- * Paths are rendered using ClickablePath which supports file preview
- * and "open in new tab" via Ctrl/Cmd+Click.
+ * Paths are rendered using ClickablePath, which opens the file preview on click.
  */
 export const TextWithPaths = React.memo<TextWithPathsProps>(({ text, className, variant = 'inline' }) => {
   const segments = useMemo(() => splitTextByPaths(text), [text]);
