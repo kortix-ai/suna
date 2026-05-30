@@ -1787,7 +1787,15 @@ export async function createProjectSession(input: {
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   const agentName = normalizeString(body.agent_name ?? body.agentName) ?? 'default';
-  const sandboxSlug = normalizeString(body.sandbox_slug ?? body.sandboxSlug) ?? undefined;
+  // Explicit request wins; otherwise fall back to the project's default sandbox
+  // template (`[sandbox] default` in kortix.toml, synced to project metadata),
+  // so EVERY session — UI, triggers, channels — inherits the project's chosen
+  // box without each caller passing `sandbox_slug`. Unset → platform default.
+  const projectDefaultSandboxSlug = normalizeString(
+    (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
+  );
+  const sandboxSlug =
+    normalizeString(body.sandbox_slug ?? body.sandboxSlug) ?? projectDefaultSandboxSlug ?? undefined;
   const requestedProvider = normalizeString(body.provider);
   let providerName: SandboxProviderName = config.getDefaultProvider();
   if (requestedProvider) {

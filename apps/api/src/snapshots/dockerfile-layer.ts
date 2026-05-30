@@ -330,6 +330,23 @@ export function extractSandboxTemplates(
   return out;
 }
 
+/**
+ * Read `[sandbox] default` — the project-wide default template slug that every
+ * session boots when the caller doesn't pass an explicit `sandbox_slug`.
+ * Returns null when unset (→ the platform default image). The reserved
+ * "default" is treated as "no override" since it IS the platform default.
+ */
+export function extractSandboxDefault(
+  manifestRaw: Record<string, unknown> | null | undefined,
+): string | null {
+  const sandbox = manifestRaw?.sandbox;
+  if (!sandbox || typeof sandbox !== 'object' || Array.isArray(sandbox)) return null;
+  const raw = (sandbox as Record<string, unknown>).default;
+  const slug = typeof raw === 'string' ? raw.trim() : '';
+  if (!slug || slug === DEFAULT_SANDBOX_SLUG || !SLUG_RE.test(slug)) return null;
+  return slug;
+}
+
 function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | null {
   const slugRaw = typeof row.slug === 'string' ? row.slug.trim() : '';
   if (!slugRaw || !SLUG_RE.test(slugRaw)) {

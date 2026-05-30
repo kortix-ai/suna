@@ -216,6 +216,40 @@ dockerfile = ".kortix/Dockerfile"
     expect(errorPaths).toContain('sandbox');
   });
 
+  test('accepts [sandbox] default pointing at a defined template', () => {
+    const { valid } = summarize(`
+kortix_version = 1
+[[sandbox.templates]]
+slug = "dev"
+image = "ubuntu:24.04"
+[sandbox]
+default = "dev"
+`);
+    expect(valid).toBe(true);
+  });
+
+  test('accepts [sandbox] default = "default" (the platform image)', () => {
+    const { valid } = summarize(`
+kortix_version = 1
+[sandbox]
+default = "default"
+`);
+    expect(valid).toBe(true);
+  });
+
+  test('rejects [sandbox] default that names no defined template', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version = 1
+[[sandbox.templates]]
+slug = "dev"
+image = "ubuntu:24.04"
+[sandbox]
+default = "ghost"
+`);
+    expect(valid).toBe(false);
+    expect(errorPaths).toContain('sandbox.default');
+  });
+
   test('rejects the renamed legacy [[sandboxes]] form with a migration error', () => {
     const { valid, errorPaths } = summarize(`
 kortix_version = 1

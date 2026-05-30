@@ -41,6 +41,11 @@ optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 # image = "python:3.12-slim"
 # cpu = 2
 # memory = 4
+#
+# Make one template the project-wide default — every session (UI, triggers,
+# channels) then boots it without passing a slug. Omit for the platform default.
+# [sandbox]
+# default = "python"
 
 # OpenCode runtime config dir. The agent daemon launches opencode with
 # OPENCODE_CONFIG_DIR pointed here, so agents/skills/commands/tools live

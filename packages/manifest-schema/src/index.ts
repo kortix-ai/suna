@@ -271,6 +271,34 @@ function validateSandbox(
     });
   }
   validateSandboxTemplates(node.templates, `${path}.templates`, issues);
+
+  // `default` selects which template EVERY session in the project boots
+  // (UI, triggers, channels) without passing `sandbox_slug`. It must name a
+  // template defined above, or the reserved "default" (the platform image).
+  if (node.default !== undefined) {
+    const want = typeof node.default === 'string' ? node.default.trim() : '';
+    if (!want) {
+      issues.push({
+        path: `${path}.default`,
+        message: '`default` must be a non-empty template slug.',
+        severity: 'error',
+      });
+    } else if (want !== RESERVED_SANDBOX_SLUG) {
+      const slugs = Array.isArray(node.templates)
+        ? node.templates
+            .filter(isTable)
+            .map((t) => (typeof (t as Record<string, unknown>).slug === 'string' ? ((t as Record<string, unknown>).slug as string).trim() : ''))
+            .filter(Boolean)
+        : [];
+      if (!slugs.includes(want)) {
+        issues.push({
+          path: `${path}.default`,
+          message: `\`default\` = "${want}" does not match any \`[[sandbox.templates]]\` slug (or the reserved "${RESERVED_SANDBOX_SLUG}").`,
+          severity: 'error',
+        });
+      }
+    }
+  }
 }
 
 function validateSandboxTemplates(

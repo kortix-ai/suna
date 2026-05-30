@@ -13,20 +13,32 @@ description = "A Kortix project."
 required = []
 optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 
-# Sandbox base image. Sessions run from a snapshot built off this
-# Dockerfile — the Kortix snapshot builder always layers the agent
-# daemon + opencode CLI on top automatically. Define whatever workspace
-# tooling you want in the Dockerfile; the Kortix runtime slots in on top.
+# ─── Sandbox templates ───────────────────────────────────────────────────
+# Sessions boot from a sandbox image. The platform default (Ubuntu + the
+# Kortix runtime layer) is always available; define named custom images as
+# `[[sandbox.templates]]` entries (a Dockerfile in the repo OR a public
+# image). The Kortix runtime layer is always added on top.
+#
+# `default` makes one of these the PROJECT-WIDE default, so every session —
+# UI, triggers, channels — boots it without passing a slug. Unset → the
+# platform default. Flip it to "dev" once the full-stack image is validated
+# to build, fit the disk cap, and boot the stack.
+#
+# Hardware is clamped to this Daytona account's ceiling: 6 vCPU / 12 GiB /
+# 20 GiB. cpu = cores; memory/disk in GiB.
 [sandbox]
+# default = "dev"
+
+# Full dev box: node + pnpm + bun + Docker + Supabase CLI, sized to run the
+# whole local stack (`supabase start` + API + web) in-sandbox like a human
+# would. Built from .kortix/Dockerfile.
+[[sandbox.templates]]
+slug = "dev"
+name = "Full dev box (suna stack)"
 dockerfile = ".kortix/Dockerfile"
-context = "."
-# Hardware spec. All optional — omit a field to take the provider default.
-# The spec is baked into the snapshot, so changing it rebuilds the image
-# (and applies on the next session). cpu = cores; memory/disk in GiB.
-# cpu = 2
-# memory = 4
-# disk = 20
-# gpu = 0
+cpu = 6
+memory = 12
+disk = 20
 
 # OpenCode runtime config dir. The agent daemon launches opencode with
 # OPENCODE_CONFIG_DIR pointed here, so agents/skills/commands/tools live

@@ -12,7 +12,7 @@
  */
 
 import { and, eq, isNull, or } from 'drizzle-orm';
-import { sandboxTemplates } from '@kortix/db';
+import { sandboxTemplates, projects } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { readManifest } from '../projects/triggers';
@@ -21,6 +21,7 @@ import { SANDBOX_VERSION } from '../config';
 import {
   buildDefaultSandboxTemplate,
   DEFAULT_SANDBOX_SLUG,
+  extractSandboxDefault,
   extractSandboxTemplates,
   normalizeUserDockerfileForSnapshot,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
@@ -546,6 +547,30 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
             updatedAt: new Date(),
           },
         });
+    }
+
+    // Persist `[sandbox] default` → projects.metadata.default_sandbox_slug, so
+    // session boot can cheaply pick the project's default template without a
+    // git fetch. Only honor a default that names a template we just synced
+    // (else it would point at nothing); clear it otherwise.
+    const wantedDefault = extractSandboxDefault(parsed?.raw ?? null);
+    const validDefault =
+      wantedDefault && tomlTemplates.some((t) => t.slug === wantedDefault) ? wantedDefault : null;
+    const [projectRow] = await db
+      .select({ metadata: projects.metadata })
+      .from(projects)
+      .where(eq(projects.projectId, project.projectId))
+      .limit(1);
+    const meta = (projectRow?.metadata ?? {}) as Record<string, unknown>;
+    const current = typeof meta.default_sandbox_slug === 'string' ? meta.default_sandbox_slug : null;
+    if (current !== validDefault) {
+      const nextMeta = { ...meta };
+      if (validDefault) nextMeta.default_sandbox_slug = validDefault;
+      else delete nextMeta.default_sandbox_slug;
+      await db
+        .update(projects)
+        .set({ metadata: nextMeta, updatedAt: new Date() })
+        .where(eq(projects.projectId, project.projectId));
     }
   } catch (err) {
     console.warn(
