@@ -134,25 +134,32 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
     rmSync(workDir, { recursive: true, force: true });
   }
 
-  // 4. Ship the db, drop stale WAL/shm, bounce opencode (supervisor respawns
-  //    `opencode serve`; the daemon is a separate process).
+  // 4. Replace opencode's db with ours. This is delicate: opencode holds the db
+  //    open, and on SIGTERM it flushes its WAL back, clobbering our write. So
+  //    SIGKILL it, replace AFTER it's dead, let the supervisor respawn onto our
+  //    db, and verify — retrying because the respawn can race the write.
   await sandbox.fs.uploadFile(dbBuf, '/tmp/opencode.db');
-  await sandbox.process.executeCommand(
-    [
-      `mkdir -p ${NEW_OPENCODE_STORE}`,
-      `rm -f ${NEW_OPENCODE_STORE}/opencode.db-wal ${NEW_OPENCODE_STORE}/opencode.db-shm`,
-      `mv /tmp/opencode.db ${NEW_OPENCODE_STORE}/opencode.db`,
-      `chown -R --reference=/opt/kortix/home ${NEW_OPENCODE_STORE} 2>/dev/null || true`,
-      "pkill -f 'opencode serve' || true",
-    ].join('; '),
-    undefined, undefined, 120,
-  );
+  const restore = [
+    `DEST=${NEW_OPENCODE_STORE}`,
+    'PORT=$(cat /var/run/kortix/opencode-port 2>/dev/null || echo 4096)',
+    'mkdir -p "$DEST"',
+    'cnt=0',
+    'for i in $(seq 1 8); do',
+    "  pkill -9 -f 'opencode serve' 2>/dev/null || true",
+    '  sleep 0.5',
+    '  rm -f "$DEST"/opencode.db-wal "$DEST"/opencode.db-shm "$DEST"/opencode.db',
+    '  cp /tmp/opencode.db "$DEST"/opencode.db',
+    '  chown -R --reference=/opt/kortix/home "$DEST" 2>/dev/null || true',
+    '  sleep 2.5',
+    `  cnt=$(curl -s "http://127.0.0.1:$PORT/session?directory=/workspace" 2>/dev/null | grep -o '"id"' | wc -l)`,
+    '  if [ "$cnt" -ge 10 ]; then echo "REHYDRATE_OK cnt=$cnt iter=$i"; rm -f /tmp/opencode.db; exit 0; fi',
+    'done',
+    'echo "REHYDRATE_INCOMPLETE last_cnt=$cnt"',
+  ].join('\n');
+  const restoreRes = await sandbox.process.executeCommand(restore, undefined, undefined, 120);
+  const restoreOut = ((restoreRes as { result?: string }).result ?? '').trim();
 
-  // 5. Wait for opencode to come back up so it's serving the restored sessions
-  //    before we let the caller mark the sandbox active.
-  await waitForOpencodeProjectId(sandbox, 120_000);
-
-  appLogger.info('[rehydrate] restored legacy chats before active', {
-    sessionId, newExternalId, newProjectId, bytes: dbBuf.length,
+  appLogger.info('[rehydrate] restore finished', {
+    sessionId, newExternalId, newProjectId, bytes: dbBuf.length, result: restoreOut.slice(-200),
   });
 }
