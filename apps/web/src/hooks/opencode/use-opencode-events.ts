@@ -776,6 +776,11 @@ export function useOpenCodeEventStream() {
 							prevStatus.type !== "idle"
 						) {
 							notifyTaskComplete(sessionID, getSessionTitle(sessionID));
+							// Agent finished editing files — refresh the Changes panel.
+							// Nothing else invalidates git status for agent-driven edits,
+							// so without this the panel shows stale diff state.
+							queryClient.invalidateQueries({ queryKey: gitStatusKeys.all, type: 'active' });
+							queryClient.invalidateQueries({ queryKey: fileListKeys.all, type: 'active' });
 						}
 					}
 					break;
@@ -788,6 +793,11 @@ export function useOpenCodeEventStream() {
 							useSyncStore.getState().sessionStatus[sessionID];
 						if (prevStatus && prevStatus.type !== "idle") {
 							notifyTaskComplete(sessionID, getSessionTitle(sessionID));
+							// Agent finished editing files — refresh the Changes panel.
+							// Nothing else invalidates git status for agent-driven edits,
+							// so without this the panel shows stale diff state.
+							queryClient.invalidateQueries({ queryKey: gitStatusKeys.all, type: 'active' });
+							queryClient.invalidateQueries({ queryKey: fileListKeys.all, type: 'active' });
 							// Persist final session state to IDB when streaming completes
 							const s = useSyncStore.getState();
 							const msgs = s.messages[sessionID] ?? [];

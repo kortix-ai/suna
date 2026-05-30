@@ -10,6 +10,7 @@ import {
   useOpenCodePtyList,
   useCreatePty,
 } from '@/hooks/opencode/use-opencode-pty';
+import { useOpenCodeRuntimeReady } from '@/hooks/opencode/use-opencode-sessions';
 
 // Lazy-load terminal components to avoid SSR issues with xterm.js
 const SSHTerminal = dynamic(
@@ -43,6 +44,14 @@ export function SessionTerminalPanel({ hidden }: { hidden?: boolean } = {}) {
     return server?.url ?? s.getActiveServerUrl();
   });
 
+  // The opencode runtime (in-sandbox daemon + opencode server) must be booted
+  // and healthy before any /pty REST call will resolve — otherwise the proxy
+  // 404s against a sandbox whose daemon isn't up yet. Every opencode hook gates
+  // on this same signal; the PTY list query does too (so it stays disabled, and
+  // `isLoading` reads false, until ready). We mirror it here so the lazy create
+  // effect below doesn't fire a doomed POST during boot.
+  const runtimeReady = useOpenCodeRuntimeReady();
+
   const { data: ptys, isLoading } = useOpenCodePtyList();
   const createPty = useCreatePty();
 
@@ -63,13 +72,14 @@ export function SessionTerminalPanel({ hidden }: { hidden?: boolean } = {}) {
 
   useEffect(() => {
     if (currentSandboxId) return; // sandbox mode uses SSHTerminal, no PTY needed
+    if (!runtimeReady) return; // wait for the sandbox runtime — a create now would 404
     if (isLoading) return;
     if (pty) {
       ensuringRef.current = false;
       return;
     }
     ensurePty();
-  }, [currentSandboxId, isLoading, pty, ensurePty]);
+  }, [currentSandboxId, runtimeReady, isLoading, pty, ensurePty]);
 
   // Sandbox mode — shared SSH terminal into the sandbox.
   if (currentSandboxId) {
@@ -80,8 +90,8 @@ export function SessionTerminalPanel({ hidden }: { hidden?: boolean } = {}) {
     );
   }
 
-  // Spinning up / loading the PTY list.
-  if (isLoading || (!pty && (createPty.isPending || ensuringRef.current))) {
+  // Waiting for the sandbox runtime, or spinning up / loading the PTY list.
+  if (!runtimeReady || isLoading || (!pty && (createPty.isPending || ensuringRef.current))) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center bg-[#0f0f14]">
         <CircleDashed className="h-4 w-4 text-muted-foreground animate-spin" />

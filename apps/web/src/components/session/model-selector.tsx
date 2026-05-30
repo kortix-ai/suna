@@ -7,6 +7,8 @@ import { useParams } from 'next/navigation';
 import {
   Check,
   ChevronDown,
+  Eye,
+  EyeOff,
   Plus,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -24,7 +26,9 @@ import {
   CommandList,
   CommandGroup,
   CommandItem,
+  CommandFooter,
 } from '@/components/ui/command';
+import { Switch } from '@/components/ui/switch';
 
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { FlatModel } from './session-chat-input';
@@ -112,6 +116,9 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  // Reveal models the "latest" filter hides by default (older releases /
+  // superseded models in a family). Off by default to keep the picker tidy.
+  const [showHidden, setShowHidden] = useState(false);
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const modelStore = useModelStore(models);
 
@@ -130,22 +137,34 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   );
   const displayName = current?.modelName || models[0]?.modelName || 'Model';
 
-  // Reset search when closing
+  // Reset search + collapse "older" reveal when closing
   useEffect(() => {
-    if (!open) setSearch('');
+    if (!open) {
+      setSearch('');
+      setShowHidden(false);
+    }
   }, [open]);
 
   // ── Filtered + grouped models ──
+
+  // Are there any models the "latest" filter is currently hiding? Drives the
+  // "Show older models" footer — no point showing it when nothing is hidden.
+  const hasHidden = useMemo(
+    () => models.some((m) => !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })),
+    [models, modelStore],
+  );
 
   const visibleModels = useMemo(() => {
     const q = search.toLowerCase();
     return models
       .filter((m) => {
-        if (!q && !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })) return false;
+        // A search query reveals everything; otherwise respect visibility
+        // unless the user expanded the "older models" section.
+        if (!q && !showHidden && !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })) return false;
         return !q || (m.modelName || '').toLowerCase().includes(q) || (m.modelID || '').toLowerCase().includes(q) || (m.providerName || '').toLowerCase().includes(q);
       })
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [models, search, modelStore]);
+  }, [models, search, showHidden, modelStore]);
 
   const grouped = useMemo(() => {
     const groups = new Map<string, { providerName: string; providerID: string; models: FlatModel[] }>();
@@ -277,12 +296,21 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                   {group.models.map((model) => {
                     const isSelected = selectedModel?.providerID === model.providerID && selectedModel?.modelID === model.modelID;
                     const isFree = model.providerID === 'opencode' && (!model.cost || model.cost.input === 0);
+                    const modelKey = { providerID: model.providerID, modelID: model.modelID };
+                    // "Latest" models are always shown; older ones get an
+                    // activation switch so they can be pinned into the picker.
+                    const isLatestModel = modelStore.isLatest(modelKey);
+                    const isModelVisible = modelStore.isVisible(modelKey);
 
                     return (
                       <CommandItem
                         key={`${model.providerID}:${model.modelID}`}
                         value={`model-${model.providerID}-${model.modelID}`}
-                        className={cn('!pl-3', isSelected && 'bg-foreground/[0.06]')}
+                        className={cn(
+                          '!pl-3',
+                          isSelected && 'bg-foreground/[0.06]',
+                          !isLatestModel && !isModelVisible && 'opacity-60',
+                        )}
                         onSelect={() => handleSelect(model)}
                       >
                         <div className="min-w-0 flex-1 py-0.5">
@@ -296,6 +324,26 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                         </div>
                         {isFree && <Tag variant="free">Free</Tag>}
                         {isSelected && <Check className="text-foreground shrink-0" />}
+                        {!isLatestModel && !isSelected && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div
+                                className="shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              >
+                                <Switch
+                                  checked={isModelVisible}
+                                  onCheckedChange={(checked) => modelStore.setVisibility(modelKey, checked)}
+                                  aria-label={`Show ${model.modelName} in the model picker`}
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="left" className="text-xs">
+                              {isModelVisible ? 'Showing in picker' : 'Show in picker'}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                       </CommandItem>
                     );
                   })}
@@ -306,6 +354,24 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
             <div className="py-8 text-center text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsSessionModelSelector.line304JsxTextNoModelsFound')}</div>
           )}
         </CommandList>
+
+        {hasHidden && !search && (
+          <CommandFooter
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowHidden((v) => !v)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setShowHidden((v) => !v);
+              }
+            }}
+            className="cursor-pointer select-none hover:bg-foreground/[0.04] hover:text-foreground transition-colors"
+          >
+            {showHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            <span>{showHidden ? 'Hide older models' : 'Show older models'}</span>
+          </CommandFooter>
+        )}
       </CommandPopoverContent>
     </CommandPopover>
     </>

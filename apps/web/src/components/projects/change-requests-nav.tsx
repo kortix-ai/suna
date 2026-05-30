@@ -201,10 +201,10 @@ function NavItemInner() {
               </SidebarMenuButton>
             </TooltipTrigger>
           </PopoverAnchor>
+          <TooltipContent side="right" sideOffset={12} className="max-w-[220px] text-xs">
+            {tooltipCopy(c.count)}
+          </TooltipContent>
         </Tooltip>
-        <TooltipContent side="right" sideOffset={12} className="max-w-[220px] text-xs">
-          {tooltipCopy(c.count)}
-        </TooltipContent>
         <PopoverContent
           side="right"
           align="end"
@@ -254,10 +254,10 @@ function RailItemInner() {
               </button>
             </TooltipTrigger>
           </PopoverAnchor>
+          <TooltipContent side="right" sideOffset={12} className="max-w-[220px] text-xs">
+            {tooltipCopy(c.count)}
+          </TooltipContent>
         </Tooltip>
-        <TooltipContent side="right" sideOffset={12} className="max-w-[220px] text-xs">
-          {tooltipCopy(c.count)}
-        </TooltipContent>
         <PopoverContent
           side="right"
           align="start"
