@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@icons-pack/react-simple-icons@>=13.11.2 <14': 13.11.1
   next@>=15.0.0 <15.5.18: 15.5.18
   axios@>=1.0.0 <1.15.2: 1.15.2
   protobufjs@>=7.0.0 <7.5.6: 7.5.6
@@ -587,8 +588,8 @@ importers:
         specifier: ^1.1.4
         version: 1.1.5(react@18.3.1)
       '@icons-pack/react-simple-icons':
-        specifier: ^13.7.0
-        version: 13.11.2(react@18.3.1)
+        specifier: 13.11.1
+        version: 13.11.1(react@18.3.1)
       '@kortix/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -5111,9 +5112,8 @@ packages:
       mlly: 1.8.0
     dev: false
 
-  /@icons-pack/react-simple-icons@13.11.2(react@18.3.1):
-    resolution: {integrity: sha512-IiYWH7Dlp4HvTxsL9Mh/1tjKKhLikKzL+578H1ngQkoREhfXaS9yNl1SXkjNGEAYqNH2w5/tBQc0uXLWAkcSFA==}
-    engines: {node: '>=24', pnpm: '>=10'}
+  /@icons-pack/react-simple-icons@13.11.1(react@18.3.1):
+    resolution: {integrity: sha512-WbwN/o7dUHEjDCJh2p3RvDZ4kZ8nhfUSkUSm0bWuPTXIsoKgDJpwD5UkMCG22R/5kZH6lHAZXwuHWsKNtX7fYA==}
     peerDependencies:
       react: ^16.13 || ^17 || ^18 || ^19
     dependencies:

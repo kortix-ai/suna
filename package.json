@@ -25,6 +25,7 @@
   "packageManager": "pnpm@8.11.0",
   "pnpm": {
     "overrides": {
+      "@icons-pack/react-simple-icons@>=13.11.2 <14": "13.11.1",
       "next@>=15.0.0 <15.5.18": "15.5.18",
       "axios@>=1.0.0 <1.15.2": "1.15.2",
       "protobufjs@>=7.0.0 <7.5.6": "7.5.6",
