@@ -34,14 +34,14 @@ const Footer = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between gap-4 md:justify-start">
             <div className="flex items-center gap-2">
               <Link
                 href="https://github.com/kortix-ai/suna"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="GitHub"
-                className="text-muted-foreground hover:text-foreground flex size-7 items-center justify-center rounded transition-colors [&>svg]:size-5"
+                className="text-foreground hover:text-foreground flex size-7 items-center justify-center rounded transition-colors [&>svg]:size-5"
               >
                 <Icon.Github />
               </Link>
