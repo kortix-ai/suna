@@ -63,7 +63,7 @@ jobs:
   build-api-amd64:
     name: API (amd64)
     needs: detect-changes
-    if: needs.detect-changes.outputs.api_changed == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.detect-changes.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -85,7 +85,7 @@ jobs:
   build-api-arm64:
     name: API (arm64)
     needs: detect-changes
-    if: needs.detect-changes.outputs.api_changed == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.detect-changes.result == 'success'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -135,7 +135,7 @@ jobs:
   build-frontend-amd64:
     name: Frontend (amd64)
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.detect-changes.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -172,7 +172,7 @@ jobs:
   build-frontend-arm64:
     name: Frontend (arm64)
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.detect-changes.result == 'success'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
