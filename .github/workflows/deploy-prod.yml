@@ -1,0 +1,401 @@
+name: Deploy Prod
+
+# PROD pipeline. Runs when `production` advances (via the promote.yml workflow)
+# or on manual dispatch. The root VERSION on `production` is the clean version
+# `X.Y.Z` being released.
+#
+#   1. Retag the dev images (kortix/kortix-*:dev-latest) → :X.Y.Z + :latest
+#      (multi-arch manifest copy, zero rebuilds).
+#   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
+#      installers and cut a single GitHub Release `vX.Y.Z`.
+#   3. [GATED] Roll the prod ECS service. DORMANT until `PROD_LIVE=true` AND the
+#      `production` GitHub Environment approval — stays off until terraform
+#      prod is applied.
+#
+# kortix.com (frontend) is served by Vercel, which auto-deploys from the
+# `production` branch — there is no frontend deploy step here.
+
+on:
+  push:
+    branches: [production]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Resolve the version from VERSION ────────────────────────────────────────
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read VERSION
+        id: v
+        run: |
+          set -euo pipefail
+          V="$(tr -d '[:space:]' < VERSION)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$V"
+
+  # ── Retag dev images → versioned + latest (no rebuild) ──────────────────────
+  retag-images:
+    name: Re-tag dev → v${{ needs.version.outputs.version }}
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Re-tag release images
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for IMAGE in kortix/kortix-api kortix/kortix-frontend; do
+            echo "Re-tagging $IMAGE:dev-latest → $IMAGE:${VERSION} + $IMAGE:latest"
+            docker buildx imagetools create \
+              --tag "$IMAGE:${VERSION}" \
+              --tag "$IMAGE:latest" \
+              "$IMAGE:dev-latest"
+            echo "✓ $IMAGE:${VERSION}"
+          done
+      - name: Summary
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          {
+            echo "### Re-tagged dev-latest → v${VERSION}"
+            echo "- \`kortix/kortix-api:${VERSION}\` (multi-arch)"
+            echo "- \`kortix/kortix-frontend:${VERSION}\` (multi-arch)"
+            echo ""
+            echo "_Zero rebuilds — re-tagged from dev-latest manifests._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Build prod CLI (4 targets on one Linux runner via Bun cross-compile) ────
+  build-cli:
+    name: Build prod CLI (all targets)
+    needs: version
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install workspace deps (pnpm)
+        # The repo's lockfile is pnpm format; `bun install` cannot migrate it
+        # ("PnpmLockfileTooOld"), so install deps with pnpm and compile with bun.
+        run: |
+          corepack enable && corepack prepare pnpm@latest --activate || true
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build every target (Bun cross-compile)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          API_BASE="https://api.kortix.com"
+          mkdir -p artifacts
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            echo "↻ building kortix-$t (cli $VERSION)"
+            bun build \
+              --compile \
+              --minify \
+              --target="bun-$t" \
+              --define="process.env.KORTIX_CLI_VERSION=\"${VERSION}\"" \
+              --define="process.env.KORTIX_DEFAULT_API_BASE=\"${API_BASE}\"" \
+              --outfile="artifacts/kortix-$t" \
+              apps/cli/src/index.ts
+          done
+          cd artifacts
+          chmod +x kortix-*
+          ls -lh
+
+      - name: Smoke test (native linux-x64)
+        run: ./artifacts/kortix-linux-x64 version
+
+      - name: Upload CLI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-binaries
+          path: |
+            artifacts/kortix-darwin-arm64
+            artifacts/kortix-darwin-x64
+            artifacts/kortix-linux-x64
+            artifacts/kortix-linux-arm64
+          if-no-files-found: error
+
+  # ── Build prod desktop installers (per-OS signed matrix) ────────────────────
+  build-desktop:
+    name: Build prod desktop ${{ matrix.target_pretty }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    env:
+      DESKTOP_URL: https://kortix.com/dashboard
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target_pretty: macos-arm64
+            runner: macos-14
+            bundles: dmg
+            artifact: desktop-macos-arm64
+            files: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          - target_pretty: macos-x64
+            runner: macos-13
+            bundles: dmg
+            artifact: desktop-macos-x64
+            files: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          - target_pretty: windows-x64
+            runner: windows-2022
+            bundles: msi
+            artifact: desktop-windows-x64
+            files: apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+          - target_pretty: linux-x64
+            runner: ubuntu-22.04
+            bundles: appimage
+            artifact: desktop-linux-x64
+            files: apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            file \
+            libgtk-3-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            wget
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install pnpm
+        run: corepack enable pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Validate signing secrets
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+        run: |
+          case "${{ runner.os }}" in
+            macOS)
+              test -n "$APPLE_CERTIFICATE" || { echo "Missing APPLE_CERTIFICATE"; exit 1; }
+              test -n "$APPLE_CERTIFICATE_PASSWORD" || { echo "Missing APPLE_CERTIFICATE_PASSWORD"; exit 1; }
+              if [ -n "$APPLE_API_ISSUER" ] || [ -n "$APPLE_API_KEY" ] || [ -n "$APPLE_API_KEY_P8" ]; then
+                test -n "$APPLE_API_ISSUER" || { echo "Missing APPLE_API_ISSUER"; exit 1; }
+                test -n "$APPLE_API_KEY" || { echo "Missing APPLE_API_KEY"; exit 1; }
+                test -n "$APPLE_API_KEY_P8" || { echo "Missing APPLE_API_KEY_P8"; exit 1; }
+              else
+                test -n "$APPLE_ID" || { echo "Missing APPLE_ID"; exit 1; }
+                test -n "$APPLE_PASSWORD" || { echo "Missing APPLE_PASSWORD"; exit 1; }
+                test -n "$APPLE_TEAM_ID" || { echo "Missing APPLE_TEAM_ID"; exit 1; }
+              fi
+              ;;
+            Windows)
+              test -n "$WINDOWS_CERTIFICATE" || { echo "Missing WINDOWS_CERTIFICATE"; exit 1; }
+              test -n "$WINDOWS_CERTIFICATE_PASSWORD" || { echo "Missing WINDOWS_CERTIFICATE_PASSWORD"; exit 1; }
+              test -n "$WINDOWS_CERTIFICATE_THUMBPRINT" || { echo "Missing WINDOWS_CERTIFICATE_THUMBPRINT"; exit 1; }
+              ;;
+          esac
+
+      - name: Prepare macOS notarization key
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+            printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH"
+            echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+          fi
+
+      - name: Import Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          New-Item -ItemType Directory -Force -Path certificate | Out-Null
+          Set-Content -Path certificate/tempCert.txt -Value $env:WINDOWS_CERTIFICATE
+          certutil -decode certificate/tempCert.txt certificate/certificate.pfx
+          Remove-Item certificate/tempCert.txt
+          Import-PfxCertificate `
+            -FilePath certificate/certificate.pfx `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -Password (ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText)
+
+      - name: Configure production desktop build
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'apps/desktop/src-tauri/tauri.conf.json';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.version = process.env.VERSION;
+          config.productName = 'Kortix';
+          config.identifier = 'com.kortix.desktop';
+          if (process.env.WINDOWS_CERTIFICATE_THUMBPRINT) {
+            config.bundle ||= {};
+            config.bundle.windows ||= {};
+            config.bundle.windows.certificateThumbprint = process.env.WINDOWS_CERTIFICATE_THUMBPRINT;
+            config.bundle.windows.digestAlgorithm = 'sha256';
+            config.bundle.windows.timestampUrl = process.env.WINDOWS_TIMESTAMP_URL || 'http://timestamp.digicert.com';
+          }
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          NODE
+
+      - name: Prepare desktop shell assets
+        run: pnpm --filter @kortix/desktop run prepare-assets
+
+      - name: Build desktop installer
+        run: pnpm --filter @kortix/desktop tauri build --bundles ${{ matrix.bundles }}
+        env:
+          KORTIX_DESKTOP_DEFAULT_URL: ${{ env.DESKTOP_URL }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  # ── Cut a single GitHub Release vX.Y.Z (CLI + desktop) ──────────────────────
+  github-release:
+    name: GitHub Release v${{ needs.version.outputs.version }}
+    needs: [version, retag-images, build-cli, build-desktop]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-binaries
+          path: artifacts/
+
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: desktop-artifacts/
+          pattern: desktop-*
+          merge-multiple: true
+
+      - name: Assemble release assets + checksums
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp -v artifacts/kortix-* release/
+          find desktop-artifacts -maxdepth 1 -type f -exec cp -v {} release/ \;
+          cd release
+          sha256sum * > SHA256SUMS
+          ls -lh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            release/*
+
+  # ── [GATED] Roll the prod ECS service ───────────────────────────────────────
+  # DORMANT until repo var PROD_LIVE=true AND the `production` GitHub Environment
+  # approval are both satisfied. Keep this OFF until terraform env/prod is
+  # applied (cluster/service `kortix-prod` must exist first).
+  deploy-api:
+    name: Deploy API to prod (ECS) [gated]
+    needs: [version, retag-images]
+    if: vars.PROD_LIVE == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write # assume the AWS role via GitHub OIDC
+      contents: read
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+          aws-region: us-west-2
+      - name: Roll the prod ECS service
+        run: |
+          set -euo pipefail
+          echo "Rolling ECS service kortix-prod onto v${{ needs.version.outputs.version }}…"
+          aws ecs update-service --cluster kortix-prod --service kortix-prod --force-new-deployment >/dev/null
+          aws ecs wait services-stable --cluster kortix-prod --services kortix-prod
+          aws ecs describe-services --cluster kortix-prod --services kortix-prod \
+            --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
+            --output table
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Deployed API → **prod** (ECS Fargate)"
+            echo "v${{ needs.version.outputs.version }} rolled onto ECS service \`kortix-prod\`"
+          } >> "$GITHUB_STEP_SUMMARY"

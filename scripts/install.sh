@@ -17,7 +17,9 @@ REPO="${KORTIX_REPO:-kortix-ai/suna}"
 INSTALL_HOME="${KORTIX_HOME:-$HOME/.kortix}"
 BINARY_NAME="kortix"
 CHANNEL="${KORTIX_CHANNEL:-prod}"
-TAG_PREFIX="cli-v"
+# Stable releases are tagged `vX.Y.Z` (unified version). The dev channel uses
+# the mutable `dev-latest` prerelease.
+DEV_TAG="dev-latest"
 
 # ─── Colors ───────────────────────────────────────────────────────────────────
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -71,17 +73,20 @@ detect_platform() {
 # ─── Resolve target version ──────────────────────────────────────────────────
 resolve_version() {
   if [ -n "${KORTIX_VERSION:-}" ]; then
-    VERSION="$KORTIX_VERSION"
+    # Tolerate either `0.9.0` or `v0.9.0`.
+    case "$KORTIX_VERSION" in
+      v*) VERSION="$KORTIX_VERSION" ;;
+      *)  VERSION="v${KORTIX_VERSION}" ;;
+    esac
     info "Pinned version (from \$KORTIX_VERSION): $VERSION"
     return
   fi
 
   case "$CHANNEL" in
     prod|"")
-      TAG_PREFIX="cli-v"
       ;;
     dev)
-      VERSION="cli-dev-latest"
+      VERSION="$DEV_TAG"
       info "Dev channel selected (from \$KORTIX_CHANNEL): $VERSION"
       return
       ;;
@@ -91,15 +96,15 @@ resolve_version() {
   esac
 
   info "Resolving latest release from GitHub…"
-  local api_url="https://api.github.com/repos/${REPO}/releases"
+  # The latest non-prerelease GitHub Release is the unified `vX.Y.Z` build.
+  local api_url="https://api.github.com/repos/${REPO}/releases/latest"
   local tag
   tag=$(curl -fsSL --connect-timeout 5 "$api_url" 2>/dev/null \
     | grep -E '"tag_name":' \
-    | grep -E "\"${TAG_PREFIX}" \
     | head -1 \
     | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' || true)
   if [ -z "$tag" ]; then
-    fatal "Could not find a ${TAG_PREFIX}* release on github.com/${REPO}. Pin one with \`KORTIX_VERSION=cli-v0.1.0 …\`."
+    fatal "Could not find a vX.Y.Z release on github.com/${REPO}. Pin one with \`KORTIX_VERSION=0.9.0 …\` or use the dev channel (\`KORTIX_CHANNEL=dev\`)."
   fi
   VERSION="$tag"
   ok "Latest release: $VERSION"
