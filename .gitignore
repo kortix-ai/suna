@@ -98,3 +98,10 @@ kortix-darwin-arm64
 kortix-darwin-x64
 kortix-linux-x64
 kortix-linux-arm64
+
+# Terraform — never commit local state, provider binaries, lockfile, or tfvars
+infra/terraform/**/.terraform/
+infra/terraform/**/.terraform.lock.hcl
+infra/terraform/**/*.tfstate
+infra/terraform/**/*.tfstate.*
+infra/terraform/**/*.tfvars
