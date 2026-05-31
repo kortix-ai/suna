@@ -27,12 +27,17 @@ resource "aws_lightsail_instance" "this" {
   }
 }
 
+# Static IP is optional — dev uses a Lightsail static IP (kortix-dev-ip);
+# prod currently rides the instance's plain public IP, so set
+# manage_static_ip = false there.
 resource "aws_lightsail_static_ip" "this" {
-  name = var.static_ip_name
+  count = var.manage_static_ip ? 1 : 0
+  name  = var.static_ip_name
 }
 
 resource "aws_lightsail_static_ip_attachment" "this" {
-  static_ip_name = aws_lightsail_static_ip.this.name
+  count          = var.manage_static_ip ? 1 : 0
+  static_ip_name = aws_lightsail_static_ip.this[0].name
   instance_name  = aws_lightsail_instance.this.name
 }
 

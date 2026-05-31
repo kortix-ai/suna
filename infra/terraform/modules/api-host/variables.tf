@@ -25,9 +25,16 @@ variable "key_pair_name" {
   default     = "LightsailDefaultKeyPair"
 }
 
+variable "manage_static_ip" {
+  description = "Whether to manage a Lightsail static IP for this instance. Dev=true; prod currently uses the plain public IP so false."
+  type        = bool
+  default     = true
+}
+
 variable "static_ip_name" {
-  description = "Name of the Lightsail static IP attached to the instance."
+  description = "Name of the Lightsail static IP attached to the instance (only used when manage_static_ip = true)."
   type        = string
+  default     = ""
 }
 
 variable "open_ports" {
