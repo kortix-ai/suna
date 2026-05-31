@@ -161,7 +161,6 @@ mock.module('../projects/github', () => ({
   verifyGitHubAppInstallStatePayload: (state: string) => state === 'valid-install-state'
     ? { accountId: ACCOUNT_ID, nonce: 'valid-install-nonce', issuedAt: Math.floor(Date.now() / 1000) }
     : null,
-  getGitHubPatAuthContext: () => null,
   deleteFile: async () => undefined,
   commitFile: async (input: any) => {
     commitCalls.push(input);
@@ -218,7 +217,6 @@ mock.module('../projects/github', () => ({
       }]
     : [],
   isGithubAppConfigured: () => true,
-  isGithubPatConfigured: () => false,
 }));
 
 mock.module('../platform/services/session-sandbox', () => ({
@@ -474,7 +472,6 @@ describe('create-repo starter scaffold contract', () => {
       installed: true,
       configured: true,
       requires_installation: false,
-      pat_fallback_available: false,
       installation_id: '42',
       owner_login: 'kortix-org',
       owner_type: 'Organization',

@@ -71,10 +71,6 @@ export interface CreateRepoInput {
   auth?: GitHubAuthContext;
 }
 
-function patToken() {
-  return process.env.KORTIX_GITHUB_TOKEN || process.env.GITHUB_TOKEN || null;
-}
-
 function githubAppId() {
   return process.env.KORTIX_GITHUB_APP_ID || process.env.GITHUB_APP_ID || null;
 }
@@ -87,20 +83,6 @@ export function githubAppSlug() {
   return process.env.KORTIX_GITHUB_APP_SLUG || process.env.GITHUB_APP_SLUG || null;
 }
 
-export function isGithubPatConfigured() {
-  return Boolean(patToken());
-}
-
-export function getGitHubPatAuthContext(): GitHubAuthContext | null {
-  const token = patToken();
-  if (!token) return null;
-  return {
-    token,
-    source: 'pat',
-    owner: process.env.KORTIX_GITHUB_OWNER?.trim() || undefined,
-  };
-}
-
 export function isGithubAppConfigured() {
   return Boolean(githubAppId() && githubAppPrivateKey());
 }
@@ -110,7 +92,6 @@ function githubAppStateSecret() {
     process.env.KORTIX_GITHUB_APP_STATE_SECRET ||
     process.env.SUPABASE_JWT_SECRET ||
     githubAppPrivateKey() ||
-    patToken() ||
     null
   );
 }
@@ -225,11 +206,7 @@ export function createGitHubAppJwt(nowMs = Date.now()) {
 
 function requestToken(auth?: Pick<GitHubAuthContext, 'token'>) {
   if (auth?.token) return auth.token;
-  const token = patToken();
-  if (!token) {
-    throw new Error('GitHub auth is not configured for this request');
-  }
-  return token;
+  throw new Error('GitHub auth is not configured for this request — a GitHub App installation token or a project credential is required');
 }
 
 function headers(auth?: Pick<GitHubAuthContext, 'token'>): Record<string, string> {
@@ -328,15 +305,8 @@ async function resolveDefaultOwner(auth?: GitHubAuthContext): Promise<{ owner: s
     return { owner: auth.owner, isOrg: auth.ownerType !== 'User' };
   }
 
-  const envOwner = process.env.KORTIX_GITHUB_OWNER?.trim();
-  if (envOwner) {
-    try {
-      await ghFetch<{ login: string; type?: string }>(`/orgs/${envOwner}`, undefined, auth);
-      return { owner: envOwner, isOrg: true };
-    } catch {
-      return { owner: envOwner, isOrg: false };
-    }
-  }
+  // App-only: the installation auth context carries the owner. Fall back to
+  // the token's authenticated account only if it somehow wasn't provided.
   const me = await ghFetch<{ login: string }>(`/user`, undefined, auth);
   return { owner: me.login, isOrg: false };
 }
