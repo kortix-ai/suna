@@ -115,7 +115,6 @@ write_env "apps/api/.env" \
   "$(kv INTERNAL_SERVICE_KEY)"
 
 write_env "apps/web/.env" \
-  "$(kv NEXT_PUBLIC_ENV_MODE "$(e ENV_MODE local)")" \
   "$(kv NEXT_PUBLIC_BILLING_ENABLED false)" \
   "" \
   "$(kv NEXT_PUBLIC_SUPABASE_URL "$(e SUPABASE_URL)")" \
