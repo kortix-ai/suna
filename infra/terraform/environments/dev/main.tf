@@ -29,7 +29,11 @@ provider "aws" {
 }
 
 provider "cloudflare" {
-  api_token = var.cloudflare_api_token
+  # Auth precedence: scoped API token → global API key (email+key) → format-valid
+  # dummy token (so HTTP-only applies with no creds don't reject an empty token).
+  api_token = var.cloudflare_api_token != "" ? var.cloudflare_api_token : (var.cloudflare_api_key != "" ? null : "0000000000000000000000000000000000000000")
+  email     = var.cloudflare_api_key != "" ? var.cloudflare_email : null
+  api_key   = var.cloudflare_api_key != "" ? var.cloudflare_api_key : null
 }
 
 locals {
@@ -55,6 +59,7 @@ module "network" {
 # ── TLS cert (ACM, validated via Cloudflare DNS) ──────────────────────────────
 module "acm" {
   source      = "../../modules/acm-cloudflare"
+  count       = var.enable_https ? 1 : 0
   domain_name = local.domain
   zone_id     = var.cloudflare_zone_id
   tags        = local.tags
@@ -76,7 +81,8 @@ module "api" {
 
   image           = var.api_image
   container_port  = var.container_port
-  certificate_arn = module.acm.certificate_arn
+  enable_https    = var.enable_https
+  certificate_arn = var.enable_https ? one(module.acm[*].certificate_arn) : ""
   environment     = var.api_environment
   secrets         = var.api_secrets
 
@@ -93,6 +99,7 @@ module "api" {
 # ── DNS: dev-api.kortix.com → the ALB (Cloudflare-proxied) ─────────────────────
 module "dns" {
   source  = "../../modules/cloudflare-dns"
+  count   = var.manage_dns ? 1 : 0
   zone_id = var.cloudflare_zone_id
 
   records = {

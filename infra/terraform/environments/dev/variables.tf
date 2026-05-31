@@ -11,7 +11,20 @@ variable "cloudflare_zone_id" {
 }
 
 variable "cloudflare_api_token" {
-  description = "Cloudflare API token (= CLOUDFLARE_API_TOKEN secret). Supply via TF_VAR_cloudflare_api_token."
+  description = "Cloudflare scoped API token (= CLOUDFLARE_API_TOKEN secret). Supply via TF_VAR_cloudflare_api_token."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "cloudflare_email" {
+  description = "Cloudflare account email (for global-API-key auth, when no scoped token is used)."
+  type        = string
+  default     = ""
+}
+
+variable "cloudflare_api_key" {
+  description = "Cloudflare global API key (alternative to a scoped token). Supply via TF_VAR_cloudflare_api_key."
   type        = string
   default     = ""
   sensitive   = true
@@ -39,4 +52,16 @@ variable "api_secrets" {
   description = "Secret env vars: name -> Secrets Manager/SSM ARN. Populate via tfvars; never inline secret values."
   type        = map(string)
   default     = {}
+}
+
+variable "enable_https" {
+  description = "Create the ACM cert + HTTPS listener (needs the Cloudflare token for DNS validation). false = HTTP-only ALB, e.g. for parallel validation."
+  type        = bool
+  default     = true
+}
+
+variable "manage_dns" {
+  description = "Manage the dev-api Cloudflare record (CNAME -> ALB). false = leave DNS untouched (no cutover)."
+  type        = bool
+  default     = true
 }
