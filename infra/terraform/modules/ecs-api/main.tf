@@ -1,7 +1,11 @@
-# ── ecs-api ──────────────────────────────────────────────────────────────────
-# kortix-api on ECS Fargate behind an ALB, with CPU target-tracking autoscaling.
-# SOC2 target: managed runtime (no OS to patch), ≥2 tasks across AZs, rolling
-# deploys, CloudWatch logs + alarms, secrets from SSM/Secrets Manager.
+# Reusable ECS Fargate service for the Kortix API, fronted by an ALB and
+# horizontally autoscaled (target-tracking on CPU + memory). Identical module
+# for dev and prod — only sizing/counts differ via variables, so prod is just
+# "the same thing with bigger numbers and min_capacity >= 2".
+#
+# Inputs: a VPC + subnets (from modules/network), a container image, env/secrets,
+# and an optional ACM cert. Outputs the ALB DNS name so the environment can point
+# Cloudflare DNS at it.
 
 terraform {
   required_providers {
@@ -12,14 +16,21 @@ terraform {
   }
 }
 
-# ── Logs ─────────────────────────────────────────────────────────────────────
+locals {
+  name = var.name
+  # PORT is always injected so the app binds the port the target group checks.
+  environment = merge(var.environment, { PORT = tostring(var.container_port) })
+  https       = var.certificate_arn != ""
+}
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
 resource "aws_cloudwatch_log_group" "this" {
-  name              = "/ecs/${var.name}"
+  name              = "/ecs/${local.name}"
   retention_in_days = var.log_retention_days
   tags              = var.tags
 }
 
-# ── IAM ──────────────────────────────────────────────────────────────────────
+# ── IAM ───────────────────────────────────────────────────────────────────────
 data "aws_iam_policy_document" "assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -30,59 +41,57 @@ data "aws_iam_policy_document" "assume" {
   }
 }
 
-# Execution role: pull image, write logs, read the secrets we inject.
 resource "aws_iam_role" "execution" {
-  name               = "${var.name}-exec"
+  name               = "${local.name}-exec"
   assume_role_policy = data.aws_iam_policy_document.assume.json
   tags               = var.tags
 }
 
-resource "aws_iam_role_policy_attachment" "execution_managed" {
+resource "aws_iam_role_policy_attachment" "execution" {
   role       = aws_iam_role.execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-resource "aws_iam_role_policy" "execution_secrets" {
-  count = length(var.container_secrets) > 0 ? 1 : 0
-  name  = "${var.name}-exec-secrets"
+# Let the execution role pull the values behind any injected secrets.
+resource "aws_iam_role_policy" "secrets" {
+  count = length(var.secrets) > 0 ? 1 : 0
+  name  = "${local.name}-secrets-read"
   role  = aws_iam_role.execution.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["ssm:GetParameters", "secretsmanager:GetSecretValue", "kms:Decrypt"]
-      Resource = values(var.container_secrets)
+      Action   = ["secretsmanager:GetSecretValue", "ssm:GetParameters"]
+      Resource = values(var.secrets)
     }]
   })
 }
 
-# Task role: the app's own AWS identity at runtime (empty by default).
 resource "aws_iam_role" "task" {
-  name               = "${var.name}-task"
+  name               = "${local.name}-task"
   assume_role_policy = data.aws_iam_policy_document.assume.json
   tags               = var.tags
 }
 
-# ── Security groups ──────────────────────────────────────────────────────────
+# ── Security groups ───────────────────────────────────────────────────────────
 resource "aws_security_group" "alb" {
-  name        = "${var.name}-alb"
-  description = "Ingress to the ${var.name} ALB"
+  name        = "${local.name}-alb"
+  description = "Ingress to the ${local.name} ALB"
   vpc_id      = var.vpc_id
-  tags        = var.tags
 
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = var.alb_ingress_cidrs
+  }
   ingress {
     description = "HTTPS"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  ingress {
-    description = "HTTP (redirect/ACME)"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.alb_ingress_cidrs
   }
   egress {
     from_port   = 0
@@ -90,16 +99,16 @@ resource "aws_security_group" "alb" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  tags = var.tags
 }
 
 resource "aws_security_group" "service" {
-  name        = "${var.name}-svc"
-  description = "Ingress to ${var.name} tasks from the ALB only"
+  name        = "${local.name}-svc"
+  description = "Ingress to the ${local.name} tasks (from the ALB only)"
   vpc_id      = var.vpc_id
-  tags        = var.tags
 
   ingress {
-    description     = "ALB → container port"
+    description     = "From ALB"
     from_port       = var.container_port
     to_port         = var.container_port
     protocol        = "tcp"
@@ -111,19 +120,21 @@ resource "aws_security_group" "service" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  tags = var.tags
 }
 
-# ── ALB ──────────────────────────────────────────────────────────────────────
+# ── Load balancer ─────────────────────────────────────────────────────────────
 resource "aws_lb" "this" {
-  name               = var.name
+  name               = "${local.name}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = var.alb_subnet_ids
+  subnets            = var.public_subnet_ids
+  idle_timeout       = var.alb_idle_timeout
   tags               = var.tags
 }
 
 resource "aws_lb_target_group" "this" {
-  name        = var.name
+  name        = "${local.name}-tg"
   port        = var.container_port
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
@@ -133,15 +144,44 @@ resource "aws_lb_target_group" "this" {
     path                = var.health_check_path
     healthy_threshold   = 2
     unhealthy_threshold = 3
-    timeout             = 5
     interval            = 15
-    matcher             = "200"
+    timeout             = 5
+    matcher             = "200-399"
   }
-  tags = var.tags
+
+  deregistration_delay = 30
+  tags                 = var.tags
+}
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.this.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  # With a cert, force HTTPS; without one, serve HTTP directly (e.g. behind a
+  # TLS-terminating proxy like Cloudflare in dev).
+  dynamic "default_action" {
+    for_each = local.https ? [1] : []
+    content {
+      type = "redirect"
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+  }
+  dynamic "default_action" {
+    for_each = local.https ? [] : [1]
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.this.arn
+    }
+  }
 }
 
 resource "aws_lb_listener" "https" {
-  count             = var.certificate_arn != "" ? 1 : 0
+  count             = local.https ? 1 : 0
   load_balancer_arn = aws_lb.this.arn
   port              = 443
   protocol          = "HTTPS"
@@ -154,57 +194,46 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-# Plain HTTP listener: redirect→HTTPS when a cert exists, else forward (dev).
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.this.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = var.certificate_arn != "" ? "redirect" : "forward"
-    target_group_arn = var.certificate_arn != "" ? null : aws_lb_target_group.this.arn
-
-    dynamic "redirect" {
-      for_each = var.certificate_arn != "" ? [1] : []
-      content {
-        port        = "443"
-        protocol    = "HTTPS"
-        status_code = "HTTP_301"
-      }
-    }
-  }
-}
-
-# ── ECS cluster + task + service ─────────────────────────────────────────────
+# ── ECS cluster + service ─────────────────────────────────────────────────────
 resource "aws_ecs_cluster" "this" {
-  name = var.name
+  name = local.name
   setting {
     name  = "containerInsights"
-    value = "enabled"
+    value = var.container_insights ? "enabled" : "disabled"
   }
   tags = var.tags
 }
 
+resource "aws_ecs_cluster_capacity_providers" "this" {
+  cluster_name       = aws_ecs_cluster.this.name
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
+
+  default_capacity_provider_strategy {
+    capacity_provider = var.use_fargate_spot ? "FARGATE_SPOT" : "FARGATE"
+    weight            = 1
+    base              = var.use_fargate_spot ? 0 : 1
+  }
+}
+
 resource "aws_ecs_task_definition" "this" {
-  family                   = var.name
+  family                   = local.name
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = var.cpu
-  memory                   = var.memory
+  cpu                      = var.task_cpu
+  memory                   = var.task_memory
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn
-  tags                     = var.tags
 
   container_definitions = jsonencode([{
-    name      = "kortix-api"
+    name      = "api"
     image     = var.image
     essential = true
     portMappings = [{
       containerPort = var.container_port
       protocol      = "tcp"
     }]
-    environment = [for k, v in var.environment : { name = k, value = v }]
-    secrets     = [for k, v in var.container_secrets : { name = k, valueFrom = v }]
+    environment = [for k, v in local.environment : { name = k, value = v }]
+    secrets     = [for k, v in var.secrets : { name = k, valueFrom = v }]
     logConfiguration = {
       logDriver = "awslogs"
       options = {
@@ -214,43 +243,52 @@ resource "aws_ecs_task_definition" "this" {
       }
     }
     healthCheck = {
-      command     = ["CMD-SHELL", "curl -fsS http://localhost:${var.container_port}${var.health_check_path} || exit 1"]
+      command     = ["CMD-SHELL", "curl -f http://localhost:${var.container_port}${var.health_check_path} || exit 1"]
       interval    = 30
       timeout     = 5
       retries     = 3
-      startPeriod = 30
+      startPeriod = 60
     }
   }])
+
+  tags = var.tags
 }
 
 resource "aws_ecs_service" "this" {
-  name            = var.name
+  name            = local.name
   cluster         = aws_ecs_cluster.this.id
   task_definition = aws_ecs_task_definition.this.arn
   desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+  launch_type     = null # capacity-provider strategy drives placement
 
-  # Rolling deploy with circuit breaker → auto-rollback on a bad release.
-  deployment_minimum_healthy_percent = 100
-  deployment_maximum_percent         = 200
-  deployment_circuit_breaker {
-    enable   = true
-    rollback = true
+  capacity_provider_strategy {
+    capacity_provider = var.use_fargate_spot ? "FARGATE_SPOT" : "FARGATE"
+    weight            = 1
+    base              = var.use_fargate_spot ? 0 : 1
   }
 
   network_configuration {
-    subnets          = var.subnet_ids
+    subnets          = var.private_subnet_ids
     security_groups  = [aws_security_group.service.id]
     assign_public_ip = var.assign_public_ip
   }
 
   load_balancer {
     target_group_arn = aws_lb_target_group.this.arn
-    container_name   = "kortix-api"
+    container_name   = "api"
     container_port   = var.container_port
   }
 
-  # CI updates the image out-of-band (new task def revision) → don't fight it.
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+
+  # Rolling deploy with circuit breaker → auto-rollback on a bad release.
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  # CI registers new task-def revisions out-of-band; autoscaling owns the count.
   lifecycle {
     ignore_changes = [task_definition, desired_count]
   }
@@ -259,7 +297,7 @@ resource "aws_ecs_service" "this" {
   tags       = var.tags
 }
 
-# ── Autoscaling (target-tracking on CPU) ─────────────────────────────────────
+# ── Autoscaling (target tracking on CPU + memory) ─────────────────────────────
 resource "aws_appautoscaling_target" "this" {
   max_capacity       = var.max_capacity
   min_capacity       = var.min_capacity
@@ -269,7 +307,7 @@ resource "aws_appautoscaling_target" "this" {
 }
 
 resource "aws_appautoscaling_policy" "cpu" {
-  name               = "${var.name}-cpu-target"
+  name               = "${local.name}-cpu"
   policy_type        = "TargetTrackingScaling"
   resource_id        = aws_appautoscaling_target.this.resource_id
   scalable_dimension = aws_appautoscaling_target.this.scalable_dimension
@@ -279,8 +317,25 @@ resource "aws_appautoscaling_policy" "cpu" {
     predefined_metric_specification {
       predefined_metric_type = "ECSServiceAverageCPUUtilization"
     }
-    target_value       = var.cpu_target_percent
-    scale_in_cooldown  = 300
-    scale_out_cooldown = 60
+    target_value       = var.cpu_target
+    scale_in_cooldown  = 120
+    scale_out_cooldown = 30
+  }
+}
+
+resource "aws_appautoscaling_policy" "memory" {
+  name               = "${local.name}-mem"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.this.resource_id
+  scalable_dimension = aws_appautoscaling_target.this.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.this.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+    }
+    target_value       = var.memory_target
+    scale_in_cooldown  = 120
+    scale_out_cooldown = 30
   }
 }

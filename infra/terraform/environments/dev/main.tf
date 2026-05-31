@@ -1,12 +1,14 @@
-# ── dev environment ──────────────────────────────────────────────────────────
-# The full dev.kortix.com / dev-api.kortix.com surface, as code.
+# ── dev environment — dev-api.kortix.com on ECS Fargate (autoscaled) ──────────
 #
-#   • dev-api.kortix.com → Lightsail box "kortix-dev" (us-west-2) behind nginx
-#     (blue/green 8008/8009), fronted by a proxied Cloudflare DNS record.
-#   • dev.kortix.com → Vercel (its own Git integration / DNS) — NOT managed here.
+#   dev-api.kortix.com → Cloudflare (proxied, Full strict) → ALB → ECS Fargate
+#   service (autoscaled on CPU/memory) in private subnets, egress via NAT.
+#   dev.kortix.com (frontend) stays on Vercel — not managed here.
 #
-# This config ADOPTS the existing live resources via import (see import.sh); it
-# never recreates the running box or repoints live DNS on first apply.
+# This is the SAME module set prod uses (../prod) — dev just runs smaller
+# numbers + Fargate Spot. App code still ships via CI; Terraform owns the infra.
+# Nothing here is applied automatically. See README.md for the Lightsail→ECS
+# cutover plan. (The legacy Lightsail box lives in modules/api-host, no longer
+# referenced here.)
 
 terraform {
   required_version = ">= 1.5"
@@ -26,24 +28,13 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Token from TF_VAR_cloudflare_api_token (the CLOUDFLARE_API_TOKEN GitHub
-# secret). Only needed for the DNS module; AWS-only runs can leave it empty.
 provider "cloudflare" {
   api_token = var.cloudflare_api_token
 }
 
-# ── Compute: the API host ────────────────────────────────────────────────────
-module "api_host" {
-  source = "../../modules/api-host"
-
-  instance_name     = "kortix-dev"
-  availability_zone = "us-west-2a"
-  blueprint_id      = "ubuntu_24_04"
-  bundle_id         = "small_3_0"
-  key_pair_name     = "kortix-lightsail"
-  manage_static_ip  = true
-  static_ip_name    = "kortix-dev-ip"
-
+locals {
+  name   = "kortix-dev"
+  domain = "dev-api.kortix.com"
   tags = {
     Environment = "dev"
     Service     = "kortix-api"
@@ -51,7 +42,55 @@ module "api_host" {
   }
 }
 
-# ── DNS: dev-api.kortix.com → the box (Cloudflare-proxied) ────────────────────
+# ── Network (VPC + public/private subnets + NAT) ──────────────────────────────
+module "network" {
+  source             = "../../modules/network"
+  name               = local.name
+  cidr               = "10.10.0.0/16"
+  az_count           = 2
+  single_nat_gateway = true # dev: one NAT to save cost
+  tags               = local.tags
+}
+
+# ── TLS cert (ACM, validated via Cloudflare DNS) ──────────────────────────────
+module "acm" {
+  source      = "../../modules/acm-cloudflare"
+  domain_name = local.domain
+  zone_id     = var.cloudflare_zone_id
+  tags        = local.tags
+  providers = {
+    aws        = aws
+    cloudflare = cloudflare
+  }
+}
+
+# ── ECS Fargate API service (autoscaled) ──────────────────────────────────────
+module "api" {
+  source     = "../../modules/ecs-api"
+  name       = local.name
+  aws_region = var.aws_region
+
+  vpc_id             = module.network.vpc_id
+  public_subnet_ids  = module.network.public_subnet_ids
+  private_subnet_ids = module.network.private_subnet_ids
+
+  image           = var.api_image
+  container_port  = var.container_port
+  certificate_arn = module.acm.certificate_arn
+  environment     = var.api_environment
+  secrets         = var.api_secrets
+
+  # dev sizing: small + spot, floor of 1
+  task_cpu         = 512
+  task_memory      = 1024
+  desired_count    = 1
+  min_capacity     = 1
+  max_capacity     = 3
+  use_fargate_spot = true
+  tags             = local.tags
+}
+
+# ── DNS: dev-api.kortix.com → the ALB (Cloudflare-proxied) ─────────────────────
 module "dns" {
   source  = "../../modules/cloudflare-dns"
   zone_id = var.cloudflare_zone_id
@@ -59,10 +98,10 @@ module "dns" {
   records = {
     dev-api = {
       name    = "dev-api"
-      type    = "A"
-      value   = module.api_host.public_ip
-      proxied = true # orange-cloud: CF terminates TLS, nginx uses the CF origin cert
-      ttl     = 1    # must be 1 (automatic) when proxied
+      type    = "CNAME"
+      value   = module.api.alb_dns_name
+      proxied = true
+      ttl     = 1
     }
   }
 }
