@@ -1,13 +1,20 @@
-output "public_ip" {
-  description = "dev-api.kortix.com origin IP (Lightsail static IP)."
-  value       = module.api_host.public_ip
+output "alb_dns_name" {
+  description = "ALB DNS name behind dev-api.kortix.com."
+  value       = module.api.alb_dns_name
 }
 
-output "instance_name" {
-  value = module.api_host.instance_name
+output "ecs_cluster" {
+  value = module.api.cluster_name
+}
+
+output "ecs_service" {
+  value = module.api.service_name
+}
+
+output "log_group" {
+  value = module.api.log_group
 }
 
 output "dns_records" {
-  description = "Managed Cloudflare record hostnames (empty until the DNS module is applied)."
-  value       = module.dns.record_hostnames
+  value = module.dns.record_hostnames
 }

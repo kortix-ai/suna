@@ -1,107 +1,125 @@
 variable "name" {
-  description = "Name prefix for all resources (e.g. kortix-api-prod)."
+  description = "Name prefix for all resources (e.g. kortix-dev / kortix-prod)."
   type        = string
 }
 
 variable "aws_region" {
-  description = "AWS region (used for the awslogs driver)."
+  description = "AWS region (used for the awslogs log driver)."
   type        = string
   default     = "us-west-2"
 }
 
-variable "image" {
-  description = "Full container image reference, e.g. kortix/kortix-api:0.8.31."
-  type        = string
-}
-
-variable "container_port" {
-  description = "Port the kortix-api listens on inside the container."
-  type        = number
-  default     = 8008
-}
-
-# ── Networking (bring your own VPC) ──────────────────────────────────────────
+# ── Networking (from modules/network) ─────────────────────────────────────────
 variable "vpc_id" {
-  description = "VPC the service + ALB live in."
-  type        = string
+  type = string
 }
 
-variable "subnet_ids" {
-  description = "Subnets for the Fargate tasks (≥2 AZs)."
+variable "public_subnet_ids" {
+  description = "Subnets for the ALB (public)."
   type        = list(string)
 }
 
-variable "alb_subnet_ids" {
-  description = "Public subnets for the ALB (≥2 AZs)."
+variable "private_subnet_ids" {
+  description = "Subnets for the Fargate tasks (private; egress via NAT)."
   type        = list(string)
 }
 
 variable "assign_public_ip" {
-  description = "Give tasks public IPs (true = public subnets, no NAT; false = private subnets + NAT)."
+  description = "Give tasks public IPs. Keep false when tasks run in private subnets with a NAT."
   type        = bool
   default     = false
 }
 
-variable "certificate_arn" {
-  description = "ACM certificate ARN for HTTPS on the ALB. Empty = HTTP-only listener (dev/testing)."
+# ── Container ─────────────────────────────────────────────────────────────────
+variable "image" {
+  description = "Container image (e.g. ghcr.io/kortix-ai/kortix-api:TAG)."
   type        = string
-  default     = ""
 }
 
-# ── Sizing / autoscaling ─────────────────────────────────────────────────────
-variable "cpu" {
-  description = "Fargate task CPU units (256,512,1024,2048,4096)."
+variable "container_port" {
+  description = "Port the API listens on inside the container (also injected as PORT)."
   type        = number
-  default     = 1024
+  default     = 8000
 }
 
-variable "memory" {
-  description = "Fargate task memory (MiB), valid pairing with cpu."
-  type        = number
-  default     = 2048
-}
-
-variable "desired_count" {
-  description = "Initial task count."
-  type        = number
-  default     = 2
-}
-
-variable "min_capacity" {
-  description = "Autoscaling floor (≥2 for HA across AZs)."
-  type        = number
-  default     = 2
-}
-
-variable "max_capacity" {
-  description = "Autoscaling ceiling."
-  type        = number
-  default     = 10
-}
-
-variable "cpu_target_percent" {
-  description = "Target-tracking CPU utilization % that scaling aims to hold."
-  type        = number
-  default     = 60
-}
-
-# ── App config ───────────────────────────────────────────────────────────────
 variable "environment" {
-  description = "Plain (non-secret) env vars for the container."
+  description = "Plain (non-secret) environment variables for the container."
   type        = map(string)
   default     = {}
 }
 
-variable "container_secrets" {
-  description = "Secret env vars: ENV_NAME => SSM Parameter or Secrets Manager ARN."
+variable "secrets" {
+  description = "Secret env vars: name -> Secrets Manager / SSM ARN. The execution role is granted read on these."
   type        = map(string)
   default     = {}
 }
 
 variable "health_check_path" {
-  description = "ALB target-group health check path."
+  description = "HTTP path for ALB + container health checks."
   type        = string
   default     = "/v1/health"
+}
+
+# ── Sizing ────────────────────────────────────────────────────────────────────
+variable "task_cpu" {
+  description = "Fargate task CPU units (256/512/1024/2048/4096)."
+  type        = number
+  default     = 512
+}
+
+variable "task_memory" {
+  description = "Fargate task memory (MiB), valid for the chosen CPU."
+  type        = number
+  default     = 1024
+}
+
+variable "desired_count" {
+  description = "Initial task count (autoscaling owns it afterward)."
+  type        = number
+  default     = 1
+}
+
+variable "min_capacity" {
+  description = "Autoscaling floor. Use >= 2 in prod for HA (SOC2 availability)."
+  type        = number
+  default     = 1
+}
+
+variable "max_capacity" {
+  description = "Autoscaling ceiling."
+  type        = number
+  default     = 4
+}
+
+variable "cpu_target" {
+  description = "Target average CPU %% for scaling."
+  type        = number
+  default     = 60
+}
+
+variable "memory_target" {
+  description = "Target average memory %% for scaling."
+  type        = number
+  default     = 70
+}
+
+# ── Options ───────────────────────────────────────────────────────────────────
+variable "certificate_arn" {
+  description = "ACM cert ARN for the HTTPS listener. Empty = HTTP-only listener (e.g. behind a TLS-terminating proxy)."
+  type        = string
+  default     = ""
+}
+
+variable "use_fargate_spot" {
+  description = "Run on FARGATE_SPOT (cheaper, interruptible). Good for dev; leave false in prod."
+  type        = bool
+  default     = false
+}
+
+variable "container_insights" {
+  description = "Enable CloudWatch Container Insights."
+  type        = bool
+  default     = false
 }
 
 variable "log_retention_days" {
@@ -110,8 +128,19 @@ variable "log_retention_days" {
   default     = 30
 }
 
+variable "alb_idle_timeout" {
+  description = "ALB idle timeout (s). Raise for long-lived/streaming requests."
+  type        = number
+  default     = 300
+}
+
+variable "alb_ingress_cidrs" {
+  description = "CIDRs allowed to hit the ALB. Lock to Cloudflare ranges in prod; 0.0.0.0/0 by default."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 variable "tags" {
-  description = "Tags applied to all resources."
-  type        = map(string)
-  default     = {}
+  type    = map(string)
+  default = {}
 }

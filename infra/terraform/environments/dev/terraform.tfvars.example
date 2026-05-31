@@ -1,0 +1,35 @@
+# Copy to terraform.tfvars (gitignored) and fill in. Secrets stay out of git.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Cloudflare creds are better supplied via the environment so they never touch
+# disk:
+#   export TF_VAR_cloudflare_api_token=...    # = CLOUDFLARE_API_TOKEN secret
+#   export TF_VAR_cloudflare_zone_id=$(curl -s \
+#     -H "Authorization: Bearer $TF_VAR_cloudflare_api_token" \
+#     'https://api.cloudflare.com/client/v4/zones?name=kortix.com' | jq -r '.result[0].id')
+
+aws_region = "us-west-2"
+
+# The image CI publishes (pin to a tag/sha for reproducible deploys).
+api_image      = "ghcr.io/kortix-ai/kortix-api:latest"
+container_port = 8000
+
+# Non-secret config (mirror the env-agnostic + dev-specific keys from .env).
+api_environment = {
+  ENV_MODE                  = "cloud"
+  KORTIX_URL                = "https://dev-api.kortix.com"
+  ALLOWED_SANDBOX_PROVIDERS = "daytona"
+  # DATABASE host, SUPABASE_URL, etc. (non-secret parts) ...
+}
+
+# Secret env vars -> Secrets Manager / SSM ARNs. Recommended: store the dev
+# secret bundle once in Secrets Manager and reference each key's ARN here.
+# Example single-key form:
+#   API_KEY_SECRET = "arn:aws:secretsmanager:us-west-2:ACCT:secret:kortix-dev/api-WXyz:API_KEY_SECRET::"
+api_secrets = {
+  # API_KEY_SECRET   = "arn:aws:secretsmanager:...:API_KEY_SECRET::"
+  # SUPABASE_SERVICE_ROLE_KEY = "arn:aws:secretsmanager:...:SUPABASE_SERVICE_ROLE_KEY::"
+  # FREESTYLE_API_KEY = "arn:aws:secretsmanager:...:FREESTYLE_API_KEY::"
+  # ... DAYTONA_API_KEY, OPENROUTER_API_KEY, STRIPE_*, PIPEDREAM_*, etc.
+}

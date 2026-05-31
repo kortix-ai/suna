@@ -1,63 +1,85 @@
-# dev environment — `dev-api.kortix.com`
-
-Infrastructure for the Kortix **dev** API, as code.
+# dev environment — `dev-api.kortix.com` on ECS Fargate (autoscaled)
 
 | Surface | Where it runs | Managed by |
 |---|---|---|
-| `dev-api.kortix.com` | AWS Lightsail box `kortix-dev` (us-west-2) behind nginx blue/green, fronted by Cloudflare | **this Terraform** |
-| `dev.kortix.com` (frontend) | Vercel | Vercel's own Git integration — **not** Terraform |
+| `dev-api.kortix.com` | Cloudflare (proxied) → ALB → **ECS Fargate** (autoscaled, private subnets, NAT egress) | **this Terraform** |
+| `dev.kortix.com` (frontend) | Vercel | Vercel's own Git integration |
 
-App code is shipped by CI (`.github/workflows/deploy-dev.yml`), not Terraform.
-Terraform owns the **box, its networking, and DNS** — not the running container.
+The **same module set prod uses** (`../prod`) — dev just runs smaller numbers
+and Fargate Spot. App code still ships via CI (`deploy-dev.yml`); Terraform owns
+the infra (network, ALB, ECS, DNS), not the running image.
 
-## What's here
+## Architecture
 
-- `module.api_host` → `../../modules/api-host` — the Lightsail instance, its
-  static IP, and open ports.
-- `module.dns` → `../../modules/cloudflare-dns` — the proxied `dev-api` A record
-  pointing at the box's static IP.
+```
+Cloudflare (proxied, Full strict)
+        │  TLS
+        ▼
+  ALB  (public subnets, ACM cert via Cloudflare DNS validation)
+        │  HTTP :PORT
+        ▼
+  ECS Fargate service  (private subnets, egress via NAT)
+   ├─ target-tracking autoscaling: CPU 60% + memory 70%
+   └─ desired 1, min 1, max 3, FARGATE_SPOT   (prod: 2 / 2 / 10, on-demand)
+```
 
-## First-time setup (adopt the live resources — no recreation)
+Modules: `network` (VPC + public/private subnets + NAT), `acm-cloudflare` (ACM
+cert validated via Cloudflare DNS), `ecs-api` (cluster + ALB + service +
+autoscaling), `cloudflare-dns` (the `dev-api` CNAME → ALB).
 
-The box and DNS record already exist. Import them into state instead of
-recreating:
+## Apply
 
 ```bash
 cd infra/terraform/environments/dev
 
-export AWS_PROFILE=...                       # creds for us-west-2
-export TF_VAR_cloudflare_api_token=...        # = CLOUDFLARE_API_TOKEN secret
+export AWS_PROFILE=...                          # us-west-2 creds
+export TF_VAR_cloudflare_api_token=...           # = CLOUDFLARE_API_TOKEN secret
 export TF_VAR_cloudflare_zone_id=$(curl -s \
   -H "Authorization: Bearer $TF_VAR_cloudflare_api_token" \
-  'https://api.cloudflare.com/client/v4/zones?name=kortix.com' \
-  | jq -r '.result[0].id')
+  'https://api.cloudflare.com/client/v4/zones?name=kortix.com' | jq -r '.result[0].id')
 
-./import.sh          # imports the Lightsail + Cloudflare resources
-terraform plan       # expect a near-empty diff
+cp terraform.tfvars.example terraform.tfvars     # fill in image + secret ARNs
+terraform init                                   # bootstrap S3 state first (../../scripts/bootstrap-state.sh)
+terraform plan
+terraform apply
 ```
 
-## Day to day
+### Secrets
 
-```bash
-terraform plan       # preview
-terraform apply      # apply infra changes (NOT app deploys)
-```
+App secrets are **not** in Terraform. Store the dev secret bundle in AWS Secrets
+Manager and reference each key's ARN in `api_secrets` (see
+`terraform.tfvars.example`). The execution role is granted read on exactly those
+ARNs. Non-secret config goes in `api_environment`. `container_port` must match
+the port the image binds (it's also injected as `PORT`).
 
-## Rebuilding the box from scratch
+### Image
 
-If the instance is lost/recycled:
+`api_image` defaults to `ghcr.io/kortix-ai/kortix-api:latest`. For a private
+GHCR image, add `repositoryCredentials` to the task def or mirror into ECR. Pin
+to a tag/sha for reproducible deploys.
 
-```bash
-terraform apply                              # recreate the Lightsail instance + IP + DNS
-scp modules/api-host/scripts/bootstrap-box.sh ubuntu@<ip>:
-ssh ubuntu@<ip> 'bash bootstrap-box.sh'      # docker + nginx + repo + slots
-# then write apps/api/.env on the box and let CI deploy
-```
+## Lightsail → ECS cutover (the current dev-api box)
+
+`dev-api.kortix.com` is **currently the Lightsail box** (`modules/api-host`,
+kept in-tree as legacy; this env no longer references it). This stack does
+**not** touch the box until you apply. Staged cutover (no downtime):
+
+1. `terraform apply` here — brings up the ECS stack. ACM validation adds a
+   temporary CNAME in Cloudflare; the `dev-api` record is **not** flipped yet.
+2. Smoke-test the ALB directly:
+   `curl -H 'Host: dev-api.kortix.com' https://<alb_dns_name>/v1/health`.
+3. The `module.dns` `dev-api` CNAME → ALB **replaces** the old A → box. Apply,
+   watch traffic shift.
+4. Once green, decommission the box and retire the SSH-based `deploy-dev.yml`
+   API deploy in favour of an ECS deploy (`aws ecs update-service
+   --force-new-deployment`, or bump `api_image` + apply).
+
+> ⚠️ `terraform apply` here creates real, billable AWS resources (ALB + NAT +
+> Fargate). Nothing applies automatically.
 
 ## Notes
 
-- `.terraform/`, `*.tfstate`, the lockfile, and `*.tfvars` are gitignored —
-  never commit them (state/secrets + huge provider binaries).
-- The Cloudflare record is **proxied** (orange cloud): Cloudflare terminates
-  TLS, the box serves plain HTTP on :80. Debug the origin directly with
-  `curl --resolve dev-api.kortix.com:443:<ip> -k ...` to bypass the CF edge.
+- `.terraform/`, `*.tfstate`, lockfile, and `*.tfvars` are gitignored
+  (`terraform.tfvars.example` is committed).
+- Logs: CloudWatch `/ecs/kortix-dev`. Scaling activity: the ECS service's
+  Deployments/events + Application Auto Scaling history.
