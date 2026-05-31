@@ -583,7 +583,7 @@ export default function Home() {
 
         <div
           className={cn(
-            'border-border bg-background/95 fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border px-1.5 py-1.5 backdrop-blur-md transition-[transform,opacity] duration-[600ms] ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform',
+            'border-border bg-background/95 fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full border px-1.5 py-1.5 backdrop-blur-md transition-[transform,opacity] duration-[600ms] ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform',
             showFloatingCta
               ? 'translate-y-0 opacity-100'
               : 'pointer-events-none translate-y-16 opacity-0',

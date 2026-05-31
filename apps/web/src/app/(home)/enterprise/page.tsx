@@ -49,7 +49,7 @@ const EnterprisePage = () => {
 
   return (
     <main className="bg-background relative py-28 antialiased sm:py-40">
-      <div className="mx-auto max-w-6xl px-6 md:px-0">
+      <div className="mx-auto max-w-6xl px-6 lg:px-0">
         <section className="col-span-5 w-full">
           <p className="text-muted-foreground font-kerning-normal font-mono text-xs tracking-[0.2em] uppercase">
             Enterprise
