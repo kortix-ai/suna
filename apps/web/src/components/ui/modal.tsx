@@ -44,6 +44,10 @@ const ModalVariants = cva(
   ),
   {
     variants: {
+      variant: {
+        default: 'bg-background border-border/40',
+        transparent: 'bg-transparent border-none p-0',
+      },
       side: {
         top: 'inset-x-0 top-0 border-b rounded-b-xl max-h-[90%] lg:h-fit data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top',
         bottom:
@@ -83,6 +87,7 @@ const ModalContentInner = React.forwardRef<
       className,
       modalClassName,
       closeClassName,
+      variant = 'default',
       children,
       showCloseButton = true,
       closeButtonChildren,
@@ -95,7 +100,7 @@ const ModalContentInner = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        ModalVariants({ side, className: modalClassName }),
+        ModalVariants({ side, className: modalClassName, variant }),
         className,
         'rounded-xl rounded-b-none lg:rounded-b-xl',
       )}

@@ -95,7 +95,7 @@ export function ProductMegaMenu() {
                   <NavigationMenuLink key={item.title} asChild>
                     <Link
                       href={item.href}
-                      className="group flex flex-row items-start gap-4 rounded-sm p-3 py-2 transition-colors hover:bg-muted/40 focus:bg-muted/40"
+                      className="group flex flex-row items-start gap-4 rounded-sm p-3 py-2 transition-colors "
                     >
                       <span className="shrink-0 mt-1">
                         <Icon className="size-6" />

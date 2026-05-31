@@ -163,12 +163,11 @@
 
   @keyframes orbit {
     0% {
-      transform: rotate(calc(var(--angle) * 1deg))
-        translateY(calc(var(--radius) * 1px)) rotate(calc(var(--angle) * -1deg));
+      transform: rotate(calc(var(--angle) * 1deg)) translateY(calc(var(--radius) * 1px))
+        rotate(calc(var(--angle) * -1deg));
     }
     100% {
-      transform: rotate(calc(var(--angle) * 1deg + 360deg))
-        translateY(calc(var(--radius) * 1px))
+      transform: rotate(calc(var(--angle) * 1deg + 360deg)) translateY(calc(var(--radius) * 1px))
         rotate(calc((var(--angle) * -1deg) - 360deg));
     }
   }
@@ -344,13 +343,11 @@
 
   @keyframes elliptical-orbit {
     from {
-      transform: rotate(var(--angle, 0) deg)
-        translate(var(--h-radius, 160px), 0)
+      transform: rotate(var(--angle, 0) deg) translate(var(--h-radius, 160px), 0)
         rotate(calc(var(--angle, 0) deg * -1));
     }
     to {
-      transform: rotate(calc(var(--angle, 0) deg + 360deg))
-        translate(var(--h-radius, 160px), 0)
+      transform: rotate(calc(var(--angle, 0) deg + 360deg)) translate(var(--h-radius, 160px), 0)
         rotate(calc((var(--angle, 0) deg + 360deg) * -1));
     }
   }
@@ -417,12 +414,11 @@
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0); */
 
-
-  --background: oklch(1.0000 0 0);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.1448 0 0);
-  --card: oklch(1.0000 0 0);
+  --card: oklch(1 0 0);
   --card-foreground: oklch(0.1448 0 0);
-  --popover: oklch(1.0000 0 0);
+  --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.1448 0 0);
   --primary: oklch(0.2046 0 0);
   --primary-foreground: oklch(0.9851 0 0);
@@ -432,15 +428,15 @@
   --muted-foreground: oklch(0.5555 0 0);
   --accent: oklch(0.9702 0 0);
   --accent-foreground: oklch(0.2046 0 0);
-  --destructive: oklch(0.5830 0.2387 28.4765);
+  --destructive: oklch(0.583 0.2387 28.4765);
   --destructive-foreground: oklch(0.9851 0 0);
   --border: oklch(0.9219 0 0);
   --input: oklch(0.9612 0 0);
-  --ring: oklch(0.7090 0 0);
+  --ring: oklch(0.709 0 0);
   --chart-1: oklch(0.8781 0.1688 91.8567);
-  --chart-2: oklch(0.7724 0.1728 65.3670);
+  --chart-2: oklch(0.7724 0.1728 65.367);
   --chart-3: oklch(0.6671 0.1685 53.3814);
-  --chart-4: oklch(0.5570 0.1583 45.3594);
+  --chart-4: oklch(0.557 0.1583 45.3594);
   --chart-5: oklch(0.4747 0.1358 44.9806);
   --sidebar: oklch(0.9851 0 0);
   --sidebar-foreground: oklch(0.1448 0 0);
@@ -449,7 +445,7 @@
   --sidebar-accent: oklch(0.9702 0 0);
   --sidebar-accent-foreground: oklch(0.2046 0 0);
   --sidebar-border: oklch(0.9219 0 0);
-  --sidebar-ring: oklch(0.7090 0 0);
+  --sidebar-ring: oklch(0.709 0 0);
 
   --radius: 0.625rem;
 
@@ -459,15 +455,25 @@
   --shadow-spread: 0px;
   --shadow-opacity: 0.04;
   --shadow-color: #1a1f2e;
-  
+
   --shadow-2xs: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.02);
   --shadow-xs: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.02);
-  --shadow-sm: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04), 0px 1px 2px -1px hsl(225 27.7778% 14.1176% / 0.04);
-  --shadow: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04), 0px 1px 2px -1px hsl(225 27.7778% 14.1176% / 0.04);
-  --shadow-md: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04), 0px 2px 4px -1px hsl(225 27.7778% 14.1176% / 0.04);
-  --shadow-lg: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04), 0px 4px 6px -1px hsl(225 27.7778% 14.1176% / 0.04);
-  --shadow-xl: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04), 0px 8px 10px -1px hsl(225 27.7778% 14.1176% / 0.04);
-  --shadow-2xl: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.10);
+  --shadow-sm:
+    0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04),
+    0px 1px 2px -1px hsl(225 27.7778% 14.1176% / 0.04);
+  --shadow:
+    0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04),
+    0px 1px 2px -1px hsl(225 27.7778% 14.1176% / 0.04);
+  --shadow-md:
+    0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04),
+    0px 2px 4px -1px hsl(225 27.7778% 14.1176% / 0.04);
+  --shadow-lg:
+    0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04),
+    0px 4px 6px -1px hsl(225 27.7778% 14.1176% / 0.04);
+  --shadow-xl:
+    0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04),
+    0px 8px 10px -1px hsl(225 27.7778% 14.1176% / 0.04);
+  --shadow-2xl: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.1);
 
   --tracking-normal: 0em;
   --spacing: 0.23rem;
@@ -525,7 +531,6 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0); */
 
-
   --background: oklch(0.1448 0 0);
   --foreground: oklch(0.9851 0 0);
   --card: oklch(0.2046 0 0);
@@ -537,18 +542,18 @@
   --secondary: oklch(0.2686 0 0);
   --secondary-foreground: oklch(0.9851 0 0);
   --muted: oklch(0.2686 0 0);
-  --muted-foreground: oklch(0.7090 0 0);
+  --muted-foreground: oklch(0.709 0 0);
   --accent: oklch(0.2686 0 0);
   --accent-foreground: oklch(0.9851 0 0);
   --destructive: oklch(0.7022 0.1892 22.2279);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.2740 0.0060 286.0330);
-  --input: oklch(1.0000 0 0);
+  --border: oklch(0.274 0.006 286.033);
+  --input: oklch(1 0 0);
   --ring: oklch(0.5555 0 0);
   --chart-1: oklch(0.8781 0.1688 91.8567);
-  --chart-2: oklch(0.7724 0.1728 65.3670);
+  --chart-2: oklch(0.7724 0.1728 65.367);
   --chart-3: oklch(0.6671 0.1685 53.3814);
-  --chart-4: oklch(0.5570 0.1583 45.3594);
+  --chart-4: oklch(0.557 0.1583 45.3594);
   --chart-5: oklch(0.4747 0.1358 44.9806);
   --sidebar: oklch(0.2046 0 0);
   --sidebar-foreground: oklch(0.9851 0 0);
@@ -556,11 +561,11 @@
   --sidebar-primary-foreground: oklch(0.9851 0 0);
   --sidebar-accent: oklch(0.2686 0 0);
   --sidebar-accent-foreground: oklch(0.9851 0 0);
-  --sidebar-border: oklch(1.0000 0 0);
+  --sidebar-border: oklch(1 0 0);
   --sidebar-ring: oklch(0.5555 0 0);
-  
+
   --radius: 0.625rem;
-  
+
   --shadow-x: 0px;
   --shadow-y: 1px;
   --shadow-blur: 2px;
@@ -575,7 +580,7 @@
   --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.04), 0px 2px 4px -1px hsl(0 0% 0% / 0.04);
   --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.04), 0px 4px 6px -1px hsl(0 0% 0% / 0.04);
   --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.04), 0px 8px 10px -1px hsl(0 0% 0% / 0.04);
-  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.10);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.1);
 
   --kortix-blue: oklch(0.652 0.177 252.624);
   --kortix-yellow: oklch(0.732 0.15 90.688);
@@ -650,10 +655,9 @@
   pre,
   .font-mono {
     font-family:
-      var(--font-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco,
-      Consolas, 'Liberation Mono', 'Courier New', monospace,
-      'Noto Sans Mono CJK JP', 'Noto Sans Mono CJK KR', 'Noto Sans Mono CJK SC',
-      'Noto Sans Mono CJK TC';
+      var(--font-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas,
+      'Liberation Mono', 'Courier New', monospace, 'Noto Sans Mono CJK JP', 'Noto Sans Mono CJK KR',
+      'Noto Sans Mono CJK SC', 'Noto Sans Mono CJK TC';
   }
 }
 
@@ -991,9 +995,7 @@ html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] {
 html[data-desktop='true'] [data-side='right'] [data-sidebar='header'] {
   height: 52px;
 }
-html[data-desktop-platform='macos']
-  [data-side='right']
-  [data-sidebar='header'] {
+html[data-desktop-platform='macos'] [data-side='right'] [data-sidebar='header'] {
   height: 40px !important;
 }
 /* Collapsed sidebar's icon-mode rail: bumped from 3.25rem (52px) to
@@ -1022,22 +1024,10 @@ html[data-desktop-platform='macos'] [role='tablist'] {
 html[data-desktop='true'] [role='tablist'] [role='tab'] {
   font-size: 12px;
 }
-html[data-desktop-platform='macos']
-  [data-side='left']
-  [data-sidebar='header']
-  button,
-html[data-desktop-platform='macos']
-  [data-side='left']
-  [data-sidebar='header']
-  a,
-html[data-desktop-platform='macos']
-  [data-side='left']
-  [data-sidebar='header']
-  input,
-html[data-desktop-platform='macos']
-  [data-side='left']
-  [data-sidebar='header']
-  [role='button'],
+html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] button,
+html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] a,
+html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] input,
+html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] [role='button'],
 html[data-desktop-platform='macos'] [role='tablist'] button,
 html[data-desktop-platform='macos'] [role='tablist'] a,
 html[data-desktop-platform='macos'] [role='tablist'] input,
@@ -1265,4 +1255,16 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-app-header {
     left: var(--hit-area-l, 0px);
     pointer-events: inherit;
   }
+}
+
+@utility font-kerning-none {
+  font-kerning: none;
+}
+
+@utility font-kerning-normal {
+  font-kerning: normal;
+}
+
+@utility font-kerning-auto {
+  font-kerning: auto;
 }

@@ -144,7 +144,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
       )}
     >
       <div className="flex items-center max-w-6xl mx-auto justify-between h-[52px]">
-        <div className="flex items-center gap-12 flex-1">
+        <div className="flex items-center gap-8 flex-1">
           <ContextMenu>
             <ContextMenuTrigger asChild>
               <Link href="/" className="flex items-center shrink-0">
