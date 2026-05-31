@@ -1,23 +1,22 @@
 name: Deploy Prod
 
-# PROD pipeline. Runs when `production` advances (via the promote.yml workflow)
-# or on manual dispatch. The root VERSION on `production` is the clean version
-# `X.Y.Z` being released.
+# PROD pipeline. Runs when `prod` advances (via the promote.yml workflow) or on
+# manual dispatch. The root VERSION on `prod` is the clean version `X.Y.Z`.
 #
 #   1. Retag the dev images (kortix/kortix-*:dev-latest) → :X.Y.Z + :latest
 #      (multi-arch manifest copy, zero rebuilds).
 #   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
 #      installers and cut a single GitHub Release `vX.Y.Z`.
-#   3. [GATED] Roll the prod ECS service. DORMANT until `PROD_LIVE=true` AND the
-#      `production` GitHub Environment approval — stays off until terraform
-#      prod is applied.
+#   3. Roll the `kortix-prod` ECS Fargate service onto the new image (OIDC).
+#   4. Deploy the prod frontend on Vercel (the `prod` branch → new.kortix.com,
+#      and kortix.com after the apex cutover).
 #
-# kortix.com (frontend) is served by Vercel, which auto-deploys from the
-# `production` branch — there is no frontend deploy step here.
+# The prod stack is api-prod.kortix.com (ECS) + new.kortix.com (Vercel) today;
+# after the apex DNS cutover it is api.kortix.com + kortix.com — same pipeline.
 
 on:
   push:
-    branches: [production]
+    branches: [prod]
   workflow_dispatch:
 
 concurrency:
@@ -374,16 +373,14 @@ jobs:
           files: |
             release/*
 
-  # ── [GATED] Roll the prod ECS service ───────────────────────────────────────
-  # DORMANT until repo var PROD_LIVE=true AND the `production` GitHub Environment
-  # approval are both satisfied. Keep this OFF until terraform env/prod is
-  # applied (cluster/service `kortix-prod` must exist first).
+  # ── Roll the prod ECS service onto the freshly-tagged image ─────────────────
+  # The kortix-prod task definition pins kortix/kortix-api:latest (retagged
+  # above), so force-new-deployment re-pulls it and rolls the service. Auth via
+  # OIDC (no long-lived keys). The stack is already applied + validated.
   deploy-api:
-    name: Deploy API to prod (ECS) [gated]
+    name: Deploy API to prod (ECS)
     needs: [version, retag-images]
-    if: vars.PROD_LIVE == 'true'
     runs-on: ubuntu-latest
-    environment: production
     permissions:
       id-token: write # assume the AWS role via GitHub OIDC
       contents: read
@@ -408,4 +405,20 @@ jobs:
           {
             echo "### Deployed API → **prod** (ECS Fargate)"
             echo "v${{ needs.version.outputs.version }} rolled onto ECS service \`kortix-prod\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Prod frontend (Vercel) ──────────────────────────────────────────────────
+  # No job here: the Vercel project is git-connected and auto-deploys the `prod`
+  # branch on every push (new.kortix.com today, kortix.com after the apex
+  # cutover) — the same way dev.kortix.com auto-deploys from `main`. The promote
+  # workflow's push to `prod` is what triggers it.
+  frontend-note:
+    name: Prod frontend (Vercel auto-deploys prod)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Note
+        run: |
+          {
+            echo "### Frontend → **prod** (Vercel)"
+            echo "Vercel auto-deploys the \`prod\` branch (new.kortix.com → api-prod; kortix.com after apex cutover). No action needed here."
           } >> "$GITHUB_STEP_SUMMARY"
