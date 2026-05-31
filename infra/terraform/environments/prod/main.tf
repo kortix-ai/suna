@@ -34,7 +34,11 @@ provider "cloudflare" {
 
 locals {
   name   = "kortix-prod"
-  domain = "api.kortix.com"
+  domain = var.api_domain
+  # Cloudflare record name = the subdomain label(s) before the zone apex. For
+  # "new-api.kortix.com" → "new-api"; for "api.kortix.com" → "api". (Single-label
+  # subdomain on the kortix.com zone, which is all we use here.)
+  dns_record_name = replace(var.api_domain, ".kortix.com", "")
   tags = {
     Environment = "prod"
     Service     = "kortix-api"
@@ -97,7 +101,7 @@ module "dns" {
 
   records = {
     api = {
-      name    = "api"
+      name    = local.dns_record_name
       type    = "CNAME"
       value   = module.api.alb_dns_name
       proxied = true
