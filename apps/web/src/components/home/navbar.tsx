@@ -1,38 +1,31 @@
 'use client';
 
-import { ThemeToggle } from '@/components/home/theme-toggle';
-import { siteConfig } from '@/lib/site-config';
-import { cn } from '@/lib/utils';
-import { X, Menu, Type, Layers, Gem, ChevronRight } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
-import Link from 'next/link';
-import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { useRouter, usePathname } from 'next/navigation';
+import { PRODUCT_ITEMS, ProductMegaMenu } from '@/components/home/product-menu';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { useTranslations } from 'next-intl';
-import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { AppDownloadQR } from '@/components/common/app-download-qr';
-import { Button } from '@/components/ui/marketing/button';
-import { useGitHubStars } from '@/hooks/utils/use-github-stars';
-import { ProductMegaMenu, PRODUCT_ITEMS } from '@/components/home/product-menu';
 import {
   ContextMenu,
-  ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSub,
-  ContextMenuSubTrigger,
   ContextMenuSubContent,
-  ContextMenuSeparator,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import { Button } from '@/components/ui/marketing/button';
 import { Icon } from '@/features/icon/icon';
-import {
-  Disclosure,
-  DisclosureContent,
-  DisclosureTrigger,
-} from '@/components/ui/disclosure';
 import { useIsMobile } from '@/hooks/utils';
+import { useGitHubStars } from '@/hooks/utils/use-github-stars';
+import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { siteConfig } from '@/lib/site-config';
+import { cn } from '@/lib/utils';
+import { ChevronRight, Layers, Menu, Type, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useTranslations } from 'next-intl';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const SCROLL_THRESHOLD_DOWN = 50;
 const SCROLL_THRESHOLD_UP = 20;
@@ -94,10 +87,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const isMobile = useIsMobile();
 
   const filteredNavLinks = siteConfig.nav.links;
-  const { formattedStars, loading: starsLoading } = useGitHubStars(
-    'kortix-ai',
-    'kortix',
-  );
+  const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
 
   const handleScroll = useCallback(() => {
     const currentScrollY = window.scrollY;
@@ -140,27 +130,22 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
       className={cn(
         'w-full px-5 pt-4 transition-colors duration-300',
         isAbsolute ? '' : 'sticky top-0 z-50',
-        hasScrolled && 'bg-background/80 backdrop-blur-xl pb-2',
+        hasScrolled && 'bg-background/80 pb-2 backdrop-blur-xl',
       )}
     >
-      <div className="flex items-center max-w-6xl mx-auto justify-between h-[52px]">
-        <div className="flex items-center gap-8 flex-1">
+      <div className="mx-auto flex h-[52px] max-w-6xl items-center justify-between">
+        <div className="flex flex-1 items-center gap-8">
           <ContextMenu>
             <ContextMenuTrigger asChild>
-              <Link href="/" className="flex items-center shrink-0">
-                <KortixLogo
-                  size={isMobile ? 24 : 18}
-                  variant={isMobile ? 'symbol' : 'logomark'}
-                />
+              <Link href="/" className="flex shrink-0 items-center">
+                <KortixLogo size={isMobile ? 24 : 18} variant={isMobile ? 'symbol' : 'logomark'} />
               </Link>
             </ContextMenuTrigger>
             <ContextMenuContent className="w-64">
               <ContextMenuSub>
                 <ContextMenuSubTrigger className="gap-2 text-sm">
                   <KortixLogo size={14} variant="symbol" />
-                  {tHardcodedUi.raw(
-                    'componentsHomeNavbar.line221JsxTextDownloadSymbol',
-                  )}
+                  {tHardcodedUi.raw('componentsHomeNavbar.line221JsxTextDownloadSymbol')}
                 </ContextMenuSubTrigger>
                 <ContextMenuSubContent className="w-40">
                   {[
@@ -193,7 +178,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                         a.download = d.file;
                         a.click();
                       }}
-                      className="text-sm cursor-pointer"
+                      className="cursor-pointer text-sm"
                     >
                       {d.label}
                     </ContextMenuItem>
@@ -203,9 +188,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               <ContextMenuSub>
                 <ContextMenuSubTrigger className="gap-2 text-sm">
                   <Type className="size-3.5 shrink-0" />
-                  {tHardcodedUi.raw(
-                    'componentsHomeNavbar.line239JsxTextDownloadWordmark',
-                  )}
+                  {tHardcodedUi.raw('componentsHomeNavbar.line239JsxTextDownloadWordmark')}
                 </ContextMenuSubTrigger>
                 <ContextMenuSubContent className="w-40">
                   {[
@@ -238,7 +221,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                         a.download = d.file;
                         a.click();
                       }}
-                      className="text-sm cursor-pointer"
+                      className="cursor-pointer text-sm"
                     >
                       {d.label}
                     </ContextMenuItem>
@@ -247,17 +230,15 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               </ContextMenuSub>
               <ContextMenuItem
                 onClick={() => router.push('/design-system')}
-                className="gap-2 text-sm cursor-pointer"
+                className="cursor-pointer gap-2 text-sm"
               >
                 <Layers className="size-3.5 shrink-0" />
-                {tHardcodedUi.raw(
-                  'componentsHomeNavbar.line259JsxTextDesignSystem',
-                )}
+                {tHardcodedUi.raw('componentsHomeNavbar.line259JsxTextDesignSystem')}
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
 
-          <nav className="hidden md:flex items-center justify-center gap-2  ">
+          <nav className="hidden items-center justify-center gap-2 md:flex">
             <ProductMegaMenu />
             {filteredNavLinks.map((item) => (
               <Button
@@ -278,7 +259,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           </nav>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
           <Button variant="ghost" asChild className="hidden sm:flex">
             <Link
               href="https://github.com/kortix-ai/suna"
@@ -286,12 +267,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               rel="noopener noreferrer"
             >
               <Icon.Github className="size-3.5" />
-              <span
-                className={cn(
-                  'font-medium tabular-nums',
-                  starsLoading && 'opacity-50',
-                )}
-              >
+              <span className={cn('font-medium tabular-nums', starsLoading && 'opacity-50')}>
                 {formattedStars}
               </span>
             </Link>
@@ -299,9 +275,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
 
           <Button asChild variant="ghost" className="hidden sm:inline-flex">
             <Link href="/enterprise">
-              {tHardcodedUi.raw(
-                'componentsHomeNavbar.line301JsxTextRequestDemo',
-              )}
+              {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
             </Link>
           </Button>
           {user ? (
@@ -315,9 +289,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 router.push(CTA_LINK);
               }}
             >
-              {tHardcodedUi.raw(
-                'componentsHomeNavbar.line312JsxTextGetStarted',
-              )}
+              {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
             </Button>
           )}
 
@@ -325,10 +297,8 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             onClick={toggleDrawer}
             variant="ghost"
             size="icon"
-            className="md:hidden rounded-full"
-            aria-label={tHardcodedUi.raw(
-              'componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu',
-            )}
+            className="rounded-full md:hidden"
+            aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
           >
             <Menu className="size-5" />
           </Button>
@@ -338,134 +308,129 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
       <AnimatePresence>
         {isDrawerOpen && isMobile && (
           <motion.div
-            className="fixed inset-0 bg-background z-50 flex flex-col pt-4 pb-5 px-5 md:hidden"
+            className="bg-background fixed inset-0 z-50 flex flex-col md:hidden"
             initial="hidden"
             animate="visible"
             exit="exit"
             variants={drawerVariants}
           >
-            <div className="flex h-[56px] items-center justify-end">
-              <Button
-                onClick={toggleDrawer}
-                variant="ghost"
-                size="icon"
-                className="rounded-full"
-                aria-label={tHardcodedUi.raw(
-                  'componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu',
-                )}
-              >
-                <X className="size-5" />
-              </Button>
-            </div>
+            <div className="bg-background flex min-h-dvh flex-1 flex-col px-5 pt-4 pb-5">
+              <div className="flex h-[56px] items-center justify-end">
+                <Button
+                  onClick={toggleDrawer}
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full"
+                  aria-label={tHardcodedUi.raw(
+                    'componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu',
+                  )}
+                >
+                  <X className="size-5" />
+                </Button>
+              </div>
 
-            <motion.nav
-              className="flex-1 p-2 space-y-6"
-              variants={drawerMenuContainerVariants}
-            >
-              <ul className="flex flex-col gap-6">
-                {filteredNavLinks.map((item) => (
-                  <motion.li key={item.id} variants={drawerMenuVariants}>
+              <motion.nav className="flex-1 space-y-6 p-2" variants={drawerMenuContainerVariants}>
+                <ul className="flex flex-col gap-6">
+                  {filteredNavLinks.map((item) => (
+                    <motion.li key={item.id} variants={drawerMenuVariants}>
+                      <Link
+                        href={item.href}
+                        onClick={(e) => {
+                          if (!item.href.startsWith('#')) {
+                            setIsDrawerOpen(false);
+                            return;
+                          }
+                          e.preventDefault();
+                          if (pathname !== '/') {
+                            router.push(`/${item.href}`);
+                            setIsDrawerOpen(false);
+                            return;
+                          }
+                          const element = document.getElementById(item.href.substring(1));
+                          element?.scrollIntoView({ behavior: 'smooth' });
+                          setIsDrawerOpen(false);
+                        }}
+                        className={cn(
+                          // 'block py-3 text-4xl font-medium tracking-tight transition-colors',
+                          'group flex items-center justify-between text-2xl',
+                          (item.href.startsWith('#') &&
+                            pathname === '/' &&
+                            activeSection === item.href.substring(1)) ||
+                            item.href === pathname
+                            ? 'text-foreground'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        {item.name}
+
+                        <ChevronRight className="size-8 shrink-0 opacity-0 transition-transform group-hover:opacity-100" />
+                      </Link>
+                    </motion.li>
+                  ))}
+                </ul>
+
+                <motion.div variants={drawerMenuVariants}>
+                  <Disclosure className="group">
+                    <DisclosureTrigger>
+                      <button
+                        type="button"
+                        className="group text-muted-foreground group-data-[state=open]:text-foreground flex w-full items-center justify-between text-2xl"
+                      >
+                        Product
+                        <ChevronRight className="size-8 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
+                      </button>
+                    </DisclosureTrigger>
+                    <DisclosureContent>
+                      <ul className="flex flex-col pt-2">
+                        {PRODUCT_ITEMS.map((item) => {
+                          const Icon = item.icon;
+                          return (
+                            <li key={item.title}>
+                              <Link
+                                href={item.href}
+                                onClick={() => setIsDrawerOpen(false)}
+                                className="text-muted-foreground hover:text-foreground flex items-center gap-3 py-2.5 text-xl font-medium transition-colors"
+                              >
+                                <Icon className="size-5 shrink-0" />
+                                {item.title}
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </DisclosureContent>
+                  </Disclosure>
+                </motion.div>
+              </motion.nav>
+
+              <motion.div
+                className="mt-auto flex flex-col gap-4"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3, duration: 0.3 }}
+              >
+                {user ? (
+                  <Button asChild size="xl" className="w-full text-lg">
+                    <Link href="/projects" onClick={() => setIsDrawerOpen(false)}>
+                      Projects
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button asChild size="xl" className="w-full text-lg">
                     <Link
-                      href={item.href}
-                      onClick={(e) => {
-                        if (!item.href.startsWith('#')) {
-                          setIsDrawerOpen(false);
-                          return;
-                        }
-                        e.preventDefault();
-                        if (pathname !== '/') {
-                          router.push(`/${item.href}`);
-                          setIsDrawerOpen(false);
-                          return;
-                        }
-                        const element = document.getElementById(
-                          item.href.substring(1),
-                        );
-                        element?.scrollIntoView({ behavior: 'smooth' });
+                      href={CTA_LINK}
+                      onClick={() => {
+                        trackCtaSignup();
                         setIsDrawerOpen(false);
                       }}
-                      className={cn(
-                        // 'block py-3 text-4xl font-medium tracking-tight transition-colors',
-                        'group text-2xl flex items-center justify-between',
-                        (item.href.startsWith('#') &&
-                          pathname === '/' &&
-                          activeSection === item.href.substring(1)) ||
-                          item.href === pathname
-                          ? 'text-foreground'
-                          : 'text-muted-foreground hover:text-foreground',
-                      )}
+                      suppressHydrationWarning
                     >
-                      {item.name}
-
-                      <ChevronRight className="size-8  shrink-0 transition-transform  opacity-0 group-hover:opacity-100 " />
+                      {t('tryFree')}
                     </Link>
-                  </motion.li>
-                ))}
-              </ul>
-
-              <motion.div variants={drawerMenuVariants}>
-                <Disclosure className="group">
-                  <DisclosureTrigger>
-                    <button
-                      type="button"
-                      className="group text-2xl flex items-center  w-full justify-between  text-muted-foreground group-data-[state=open]:text-foreground"
-                    >
-                      Product
-                      <ChevronRight className="size-8 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
-                    </button>
-                  </DisclosureTrigger>
-                  <DisclosureContent>
-                    <ul className="flex flex-col pt-2">
-                      {PRODUCT_ITEMS.map((item) => {
-                        const Icon = item.icon;
-                        return (
-                          <li key={item.title}>
-                            <Link
-                              href={item.href}
-                              onClick={() => setIsDrawerOpen(false)}
-                              className="flex items-center gap-3 py-2.5 text-xl font-medium text-muted-foreground transition-colors hover:text-foreground"
-                            >
-                              <Icon className="size-5 shrink-0" />
-                              {item.title}
-                            </Link>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </DisclosureContent>
-                </Disclosure>
+                  </Button>
+                )}
               </motion.div>
-            </motion.nav>
-
-            <motion.div
-              className="flex flex-col gap-4  mt-auto"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3, duration: 0.3 }}
-            >
-              <ThemeToggle />
-
-              {user ? (
-                <Button asChild size="xl" className="w-full text-lg">
-                  <Link href="/projects" onClick={() => setIsDrawerOpen(false)}>
-                    Projects
-                  </Link>
-                </Button>
-              ) : (
-                <Button asChild size="xl" className="w-full text-lg">
-                  <Link
-                    href={CTA_LINK}
-                    onClick={() => {
-                      trackCtaSignup();
-                      setIsDrawerOpen(false);
-                    }}
-                    suppressHydrationWarning
-                  >
-                    {t('tryFree')}
-                  </Link>
-                </Button>
-              )}
-            </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -10,23 +10,23 @@ const Footer = () => {
 
   return (
     <footer className="border-border w-full border-t">
-      <div className="mx-auto max-w-5xl px-6 py-8">
+      <div className="mx-auto max-w-6xl px-6 py-8 lg:px-0">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+          <div className="text-muted-foreground flex flex-row-reverse flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm sm:flex-row">
             <span>&copy; {currentYear} Kortix</span>
             <div className="*:text-muted-foreground *:hover:text-foreground flex items-center gap-x-4 *:transition-colors *:hover:no-underline">
-              <Button variant="link" asChild size="xs">
+              <Button variant="link" asChild size="xs" className="m-0 p-0">
                 <Link href="/support">Support</Link>
               </Button>
-              <Button variant="link" asChild size="xs">
+              <Button variant="link" asChild size="xs" className="m-0 p-0">
                 <Link href="/legal?tab=privacy">Privacy</Link>
               </Button>
 
-              <Button variant="link" asChild size="xs">
+              <Button variant="link" asChild size="xs" className="m-0 p-0">
                 <Link href="/legal?tab=terms">Terms</Link>
               </Button>
 
-              <Button variant="link" asChild size="xs">
+              <Button variant="link" asChild size="xs" className="m-0 p-0">
                 <Link href="https://status.kortix.com" target="_blank" rel="noopener noreferrer">
                   Status
                 </Link>
