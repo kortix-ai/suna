@@ -4,7 +4,8 @@ export const siteConfig = {
     links: [
       { id: 2, name: 'Use cases', href: '/use-cases' },
       { id: 3, name: 'Technology', href: '/technology' },
-      { id: 4, name: 'Pricing', href: '/pricing' },
+      { id: 4, name: 'Enterprise', href: '/enterprise' },
+      { id: 5, name: 'Pricing', href: '/pricing' },
     ],
   },
   hero: {
@@ -45,3 +46,4 @@ export const siteConfig = {
 };
 
 export type SiteConfig = typeof siteConfig;
+
