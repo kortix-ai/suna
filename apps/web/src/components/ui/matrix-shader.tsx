@@ -3,12 +3,18 @@
 import { memo } from 'react';
 import dynamic from 'next/dynamic';
 
-const Shader = dynamic(() => import('@/lib/shaders-react').then((m) => m.Shader), {
-  ssr: false,
-});
-const Ascii = dynamic(() => import('@/lib/shaders-react').then((m) => m.Ascii), {
-  ssr: false,
-});
+const Shader = dynamic(
+  () => import('@/lib/shaders-react').then((m) => m.Shader),
+  {
+    ssr: false,
+  },
+);
+const Ascii = dynamic(
+  () => import('@/lib/shaders-react').then((m) => m.Ascii),
+  {
+    ssr: false,
+  },
+);
 const CRTScreen = dynamic(
   () => import('@/lib/shaders-react').then((m) => m.CRTScreen),
   { ssr: false },

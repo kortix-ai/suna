@@ -167,7 +167,7 @@ updateUserContext({
 All components use Tailwind CSS with consistent design tokens:
 - Primary colors for actions and highlights
 - Muted colors for secondary information
-- Smooth animations with framer-motion
+- Smooth animations with motion/react
 - Responsive design patterns
 
 ## 🔧 Development
@@ -184,7 +184,7 @@ All components use Tailwind CSS with consistent design tokens:
 
 1. **Component Isolation**: Each step is self-contained
 2. **Type Safety**: Use TypeScript interfaces consistently
-3. **Animation**: Consistent motion patterns with framer-motion
+3. **Animation**: Consistent motion patterns with motion/react
 4. **Accessibility**: Keyboard navigation and ARIA labels
 5. **Performance**: Lazy loading and optimized re-renders
 

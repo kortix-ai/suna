@@ -14,7 +14,10 @@ export type CodeBlockProps = {
 
 function CodeBlock({ children, className, ...props }: CodeBlockProps) {
   return (
-    <div className={cn('w-px flex-grow min-w-0 overflow-hidden flex', className)} {...props}>
+    <div
+      className={cn('w-px flex-grow min-w-0 overflow-hidden flex', className)}
+      {...props}
+    >
       {children}
     </div>
   );
@@ -42,7 +45,9 @@ function CodeBlockCode({
   const themeName = propTheme || resolveShikiThemeName(resolvedTheme);
   const themeInput = propTheme
     ? propTheme
-    : (resolvedTheme === 'dark' ? SHIKI_THEMES.dark : SHIKI_THEMES.light);
+    : resolvedTheme === 'dark'
+      ? SHIKI_THEMES.dark
+      : SHIKI_THEMES.light;
 
   // Regular syntax highlighting effect
   useEffect(() => {
@@ -63,28 +68,28 @@ function CodeBlockCode({
           {
             pre(node) {
               if (node.properties.style) {
-                node.properties.style = (node.properties.style as string)
-                  .replace(/background-color:[^;]+;?/g, '');
+                node.properties.style = (
+                  node.properties.style as string
+                ).replace(/background-color:[^;]+;?/g, '');
               }
-            }
-          }
-        ]
+            },
+          },
+        ],
       });
       setHighlightedHtml(html);
     }
     highlight();
   }, [code, language, themeInput, themeName, mermaidFailed]);
 
-  const classNames = cn('[&_pre]:!bg-background/95 [&_pre]:rounded-2xl [&_pre]:p-4 [&_pre]:!overflow-x-auto [&_pre]:!w-px [&_pre]:!flex-grow [&_pre]:!min-w-0 [&_pre]:!box-border [&_.shiki]:!overflow-x-auto [&_.shiki]:!w-px [&_.shiki]:!flex-grow [&_.shiki]:!min-w-0 [&_code]:!min-w-0 [&_code]:!whitespace-pre', 'w-px flex-grow min-w-0 overflow-hidden flex w-full', className);
+  const classNames = cn(
+    '[&_pre]:!bg-background/95 [&_pre]:rounded-2xl [&_pre]:p-4 [&_pre]:!overflow-x-auto [&_pre]:!w-px [&_pre]:!flex-grow [&_pre]:!min-w-0 [&_pre]:!box-border [&_.shiki]:!overflow-x-auto [&_.shiki]:!w-px [&_.shiki]:!flex-grow [&_.shiki]:!min-w-0 [&_code]:!min-w-0 [&_code]:!whitespace-pre',
+    'w-px flex-grow min-w-0 overflow-hidden flex w-full',
+    className,
+  );
 
   // Handle Mermaid rendering
   if (language === 'mermaid' && !mermaidFailed) {
-    return (
-      <MermaidRenderer 
-        chart={code}
-        className={className}
-      />
-    );
+    return <MermaidRenderer chart={code} className={className} />;
   }
 
   // Regular code rendering (including failed Mermaid)

@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { usePathname, useRouter } from "next/navigation";
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import {

@@ -10,7 +10,7 @@ import { BackgroundAALChecker } from '@/components/auth/background-aal-checker';
 import { ArrowRight, Check, Copy, Globe, Smartphone, Bot, Sparkles, Terminal, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
+import { motion, useScroll, useTransform, useSpring } from 'motion/react';
 import { Reveal } from '@/components/home/reveal';
 import { GithubButton } from '@/components/home/github-button';
 import Image from 'next/image';

@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useState, useEffect } from 'react';
 import { Smartphone, Bell, Shield, Zap } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { AppDownloadQR, APP_DOWNLOAD_URL } from '@/components/common/app-download-qr';
 
 // Mobile users are redirected at the edge by middleware (hyper-fast)

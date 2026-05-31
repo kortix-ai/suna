@@ -47,12 +47,7 @@ export function UserRow({
         className,
       )}
     >
-      <UserAvatar
-        email={email}
-        name={name}
-        avatarUrl={avatarUrl}
-        size={size}
-      />
+      <UserAvatar email={email} name={name} avatarUrl={avatarUrl} size={size} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="text-foreground truncate text-sm font-medium">
@@ -66,13 +61,19 @@ export function UserRow({
         </div>
         {(showSecondary || subtitle) && (
           <div className="text-muted-foreground/80 flex items-center gap-2 truncate text-xs">
-            {showSecondary ? <span className="truncate">{showSecondary}</span> : null}
+            {showSecondary ? (
+              <span className="truncate">{showSecondary}</span>
+            ) : null}
             {showSecondary && subtitle ? <span>·</span> : null}
             {subtitle ? <span className="truncate">{subtitle}</span> : null}
           </div>
         )}
       </div>
-      {trailing ? <div className="ml-2 flex shrink-0 items-center gap-1.5">{trailing}</div> : null}
+      {trailing ? (
+        <div className="ml-2 flex shrink-0 items-center gap-1.5">
+          {trailing}
+        </div>
+      ) : null}
     </Comp>
   );
 }

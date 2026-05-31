@@ -25,7 +25,9 @@ function PopoverContent({
   container,
   style,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content> & { container?: HTMLElement }) {
+}: React.ComponentProps<typeof PopoverPrimitive.Content> & {
+  container?: HTMLElement;
+}) {
   const depth = useDialogDepth();
   return (
     <PopoverPrimitive.Portal container={container}>

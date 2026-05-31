@@ -3,8 +3,8 @@
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
-import { X, Menu, Type, Layers, Gem } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { X, Menu, Type, Layers, Gem, ChevronRight } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import Link from 'next/link';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
@@ -13,7 +13,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTranslations } from 'next-intl';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { AppDownloadQR } from '@/components/common/app-download-qr';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/marketing/button';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { ProductMegaMenu, PRODUCT_ITEMS } from '@/components/home/product-menu';
 import {
@@ -26,85 +26,18 @@ import {
   ContextMenuSubContent,
   ContextMenuSeparator,
 } from '@/components/ui/context-menu';
+import { Icon } from '@/features/icon/icon';
+import {
+  Disclosure,
+  DisclosureContent,
+  DisclosureTrigger,
+} from '@/components/ui/disclosure';
+import { useIsMobile } from '@/hooks/utils';
 
-
-// Apple logo SVG
-function AppleLogo({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-    </svg>
-  );
-}
-
-// Play icon SVG
-function PlayIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 406 455" fill="currentColor">
-      <path d="M382.634 187.308C413.301 205.014 413.301 249.277 382.634 266.983L69.0001 448.06C38.3334 465.765 3.84111e-05 443.633 3.9959e-05 408.222L5.57892e-05 46.0689C5.73371e-05 10.6581 38.3334 -11.4738 69.0001 6.23166L382.634 187.308Z"/>
-    </svg>
-  );
-}
-
-// macOS-style power button
-function PowerButton({ href, onClick, label = 'Launch Kortix' }: { href?: string; onClick?: () => void; label?: string }) {
-  const [hovered, setHovered] = useState(false);
-
-  const inner = (
-    <span
-      className="relative flex items-center justify-center size-[42px] rounded-full transition-colors duration-200 cursor-pointer select-none"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {/* Power icon */}
-      <svg
-        viewBox="0 0 24 24"
-        className={cn("size-[22px] transition-colors duration-200", hovered ? "text-foreground" : "text-muted-foreground")}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-      >
-        <path d="M7.19 5.54A8 8 0 1 0 16.83 5.5" />
-        <line x1="12" y1="2" x2="12" y2="12" />
-      </svg>
-
-      {/* Tooltip */}
-      <AnimatePresence>
-        {hovered && (
-          <motion.span
-            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-foreground bg-background border border-border rounded-2xl px-2 py-0.5 pointer-events-none z-50 shadow-sm"
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.15 }}
-          >
-            {label}
-          </motion.span>
-        )}
-      </AnimatePresence>
-    </span>
-  );
-
-  if (href) {
-    return (
-      <Link href={href} onClick={onClick} suppressHydrationWarning>
-        {inner}
-      </Link>
-    );
-  }
-  return <button onClick={onClick}>{inner}</button>;
-}
-
-// Scroll threshold with hysteresis to prevent flickering
 const SCROLL_THRESHOLD_DOWN = 50;
 const SCROLL_THRESHOLD_UP = 20;
 
-const overlayVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1 },
-  exit: { opacity: 0 },
-};
+const CTA_LINK = '/auth';
 
 const drawerVariants = {
   hidden: { opacity: 0 },
@@ -124,7 +57,7 @@ const drawerVariants = {
 
 const drawerMenuContainerVariants = {
   hidden: { opacity: 0 },
-  visible: { 
+  visible: {
     opacity: 1,
     transition: {
       staggerChildren: 0.06,
@@ -133,13 +66,13 @@ const drawerMenuContainerVariants = {
 };
 
 const drawerMenuVariants = {
-  hidden: { opacity: 0, x: -20 },
-  visible: { 
-    opacity: 1, 
+  hidden: { opacity: 0, x: -10 },
+  visible: {
+    opacity: 1,
     x: 0,
     transition: {
-      duration: 0.3,
-      ease: "easeOut" as const,
+      duration: 0,
+      ease: 'easeOut' as const,
     },
   },
 };
@@ -158,16 +91,17 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const pathname = usePathname();
   const t = useTranslations('common');
   const lastScrollY = useRef(0);
+  const isMobile = useIsMobile();
 
   const filteredNavLinks = siteConfig.nav.links;
-  const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
+  const { formattedStars, loading: starsLoading } = useGitHubStars(
+    'kortix-ai',
+    'kortix',
+  );
 
-  const ctaLink = '/auth';
-
-  // Single unified scroll handler with hysteresis
   const handleScroll = useCallback(() => {
     const currentScrollY = window.scrollY;
-    
+
     // Hysteresis: different thresholds for scrolling up vs down
     if (!hasScrolled && currentScrollY > SCROLL_THRESHOLD_DOWN) {
       setHasScrolled(true);
@@ -202,160 +136,236 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const handleOverlayClick = () => setIsDrawerOpen(false);
 
   return (
-    <header className={cn(
-      "w-full px-5 pt-4 transition-colors duration-300",
-      isAbsolute ? "" : "sticky top-0 z-50",
-      hasScrolled && "bg-background/80 backdrop-blur-xl pb-2"
-    )}>
-      <div className="flex items-center justify-between h-[52px]">
-        {/* Left — Logo (right-click for brand assets) */}
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <Link href="/" className="flex items-center shrink-0">
-              <KortixLogo size={18} variant='logomark' />
-            </Link>
-          </ContextMenuTrigger>
-          <ContextMenuContent className="w-48">
-            <ContextMenuSub>
-              <ContextMenuSubTrigger className="gap-2 text-sm">
-                <Gem className="size-3.5 shrink-0" />{tHardcodedUi.raw('componentsHomeNavbar.line221JsxTextDownloadSymbol')}</ContextMenuSubTrigger>
-              <ContextMenuSubContent className="w-40">
-                {[
-                  { label: 'Black · SVG', href: '/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg', file: 'kortix-symbol-black.svg' },
-                  { label: 'Black · PNG', href: '/brandkit/Logo/Brandmark/PNG/Brandmark Black.png', file: 'kortix-symbol-black.png' },
-                  { label: 'White · SVG', href: '/brandkit/Logo/Brandmark/SVG/Brandmark White.svg', file: 'kortix-symbol-white.svg' },
-                  { label: 'White · PNG', href: '/brandkit/Logo/Brandmark/PNG/Brandmark White.png', file: 'kortix-symbol-white.png' },
-                ].map((d) => (
-                  <ContextMenuItem key={d.file} onClick={() => { const a = document.createElement('a'); a.href = d.href; a.download = d.file; a.click(); }} className="text-sm cursor-pointer">
-                    {d.label}
-                  </ContextMenuItem>
-                ))}
-              </ContextMenuSubContent>
-            </ContextMenuSub>
-            <ContextMenuSub>
-              <ContextMenuSubTrigger className="gap-2 text-sm">
-                <Type className="size-3.5 shrink-0" />{tHardcodedUi.raw('componentsHomeNavbar.line239JsxTextDownloadWordmark')}</ContextMenuSubTrigger>
-              <ContextMenuSubContent className="w-40">
-                {[
-                  { label: 'Black · SVG', href: '/brandkit/Logo/Logomark/SVG/Logomark Black.svg', file: 'kortix-logo-black.svg' },
-                  { label: 'Black · PNG', href: '/brandkit/Logo/Logomark/PNG/Logomark Black.png', file: 'kortix-logo-black.png' },
-                  { label: 'White · SVG', href: '/brandkit/Logo/Logomark/SVG/Logomark White.svg', file: 'kortix-logo-white.svg' },
-                  { label: 'White · PNG', href: '/brandkit/Logo/Logomark/PNG/Logomark White.png', file: 'kortix-logo-white.png' },
-                ].map((d) => (
-                  <ContextMenuItem key={d.file} onClick={() => { const a = document.createElement('a'); a.href = d.href; a.download = d.file; a.click(); }} className="text-sm cursor-pointer">
-                    {d.label}
-                  </ContextMenuItem>
-                ))}
-              </ContextMenuSubContent>
-            </ContextMenuSub>
-            <ContextMenuItem
-              onClick={() => router.push('/design-system')}
-              className="gap-2 text-sm cursor-pointer"
-            >
-              <Layers className="size-3.5 shrink-0" />{tHardcodedUi.raw('componentsHomeNavbar.line259JsxTextDesignSystem')}</ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
+    <header
+      className={cn(
+        'w-full px-5 pt-4 transition-colors duration-300',
+        isAbsolute ? '' : 'sticky top-0 z-50',
+        hasScrolled && 'bg-background/80 backdrop-blur-xl pb-2',
+      )}
+    >
+      <div className="flex items-center max-w-6xl mx-auto justify-between h-[52px]">
+        <div className="flex items-center gap-12 flex-1">
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <Link href="/" className="flex items-center shrink-0">
+                <KortixLogo
+                  size={isMobile ? 24 : 18}
+                  variant={isMobile ? 'symbol' : 'logomark'}
+                />
+              </Link>
+            </ContextMenuTrigger>
+            <ContextMenuContent className="w-64">
+              <ContextMenuSub>
+                <ContextMenuSubTrigger className="gap-2 text-sm">
+                  <KortixLogo size={14} variant="symbol" />
+                  {tHardcodedUi.raw(
+                    'componentsHomeNavbar.line221JsxTextDownloadSymbol',
+                  )}
+                </ContextMenuSubTrigger>
+                <ContextMenuSubContent className="w-40">
+                  {[
+                    {
+                      label: 'Black · SVG',
+                      href: '/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg',
+                      file: 'kortix-symbol-black.svg',
+                    },
+                    {
+                      label: 'Black · PNG',
+                      href: '/brandkit/Logo/Brandmark/PNG/Brandmark Black.png',
+                      file: 'kortix-symbol-black.png',
+                    },
+                    {
+                      label: 'White · SVG',
+                      href: '/brandkit/Logo/Brandmark/SVG/Brandmark White.svg',
+                      file: 'kortix-symbol-white.svg',
+                    },
+                    {
+                      label: 'White · PNG',
+                      href: '/brandkit/Logo/Brandmark/PNG/Brandmark White.png',
+                      file: 'kortix-symbol-white.png',
+                    },
+                  ].map((d) => (
+                    <ContextMenuItem
+                      key={d.file}
+                      onClick={() => {
+                        const a = document.createElement('a');
+                        a.href = d.href;
+                        a.download = d.file;
+                        a.click();
+                      }}
+                      className="text-sm cursor-pointer"
+                    >
+                      {d.label}
+                    </ContextMenuItem>
+                  ))}
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+              <ContextMenuSub>
+                <ContextMenuSubTrigger className="gap-2 text-sm">
+                  <Type className="size-3.5 shrink-0" />
+                  {tHardcodedUi.raw(
+                    'componentsHomeNavbar.line239JsxTextDownloadWordmark',
+                  )}
+                </ContextMenuSubTrigger>
+                <ContextMenuSubContent className="w-40">
+                  {[
+                    {
+                      label: 'Black · SVG',
+                      href: '/brandkit/Logo/Logomark/SVG/Logomark Black.svg',
+                      file: 'kortix-logo-black.svg',
+                    },
+                    {
+                      label: 'Black · PNG',
+                      href: '/brandkit/Logo/Logomark/PNG/Logomark Black.png',
+                      file: 'kortix-logo-black.png',
+                    },
+                    {
+                      label: 'White · SVG',
+                      href: '/brandkit/Logo/Logomark/SVG/Logomark White.svg',
+                      file: 'kortix-logo-white.svg',
+                    },
+                    {
+                      label: 'White · PNG',
+                      href: '/brandkit/Logo/Logomark/PNG/Logomark White.png',
+                      file: 'kortix-logo-white.png',
+                    },
+                  ].map((d) => (
+                    <ContextMenuItem
+                      key={d.file}
+                      onClick={() => {
+                        const a = document.createElement('a');
+                        a.href = d.href;
+                        a.download = d.file;
+                        a.click();
+                      }}
+                      className="text-sm cursor-pointer"
+                    >
+                      {d.label}
+                    </ContextMenuItem>
+                  ))}
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+              <ContextMenuItem
+                onClick={() => router.push('/design-system')}
+                className="gap-2 text-sm cursor-pointer"
+              >
+                <Layers className="size-3.5 shrink-0" />
+                {tHardcodedUi.raw(
+                  'componentsHomeNavbar.line259JsxTextDesignSystem',
+                )}
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
 
-        {/* Center — Nav Links (desktop only) */}
-        <nav className="hidden md:flex items-center justify-center gap-1 absolute left-1/2 -translate-x-1/2">
-          <ProductMegaMenu />
-          {filteredNavLinks.map((item) => (
+          <nav className="hidden md:flex items-center justify-center gap-2  ">
+            <ProductMegaMenu />
+            {filteredNavLinks.map((item) => (
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                className={cn(
+                  pathname === item.href
+                    ? 'text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <Link key={item.id} href={item.href}>
+                  {item.name}
+                </Link>
+              </Button>
+            ))}
+          </nav>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="ghost" asChild className="hidden sm:flex">
             <Link
-              key={item.id}
-              href={item.href}
-              className={cn(
-                "px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap",
-                pathname === item.href
-                  ? "text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
+              href="https://github.com/kortix-ai/suna"
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              {item.name}
+              <Icon.Github className="size-3.5" />
+              <span
+                className={cn(
+                  'font-medium tabular-nums',
+                  starsLoading && 'opacity-50',
+                )}
+              >
+                {formattedStars}
+              </span>
             </Link>
-          ))}
-        </nav>
+          </Button>
 
-        {/* Right — Actions */}
-        <div className="flex items-center gap-1 shrink-0">
-          {/* GitHub stars (hidden on mobile) */}
-          <a
-            href="https://github.com/kortix-ai/suna"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
-          >
-            <svg viewBox="0 0 24 24" className="size-4" fill="currentColor">
-              <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z" />
-            </svg>
-            <span className={cn("font-medium tabular-nums", starsLoading && "opacity-50")}>
-              {formattedStars}
-            </span>
-          </a>
-
-          <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-            <Link href="/enterprise">{tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}</Link>
+          <Button asChild variant="ghost" className="hidden sm:inline-flex">
+            <Link href="/enterprise">
+              {tHardcodedUi.raw(
+                'componentsHomeNavbar.line301JsxTextRequestDemo',
+              )}
+            </Link>
           </Button>
           {user ? (
-            <Button asChild size="sm">
+            <Button asChild>
               <Link href="/projects">Projects</Link>
             </Button>
           ) : (
             <Button
-              onClick={() => { trackCtaSignup(); router.push(ctaLink); }}
-              size="sm"
-            >{tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}</Button>
+              onClick={() => {
+                trackCtaSignup();
+                router.push(CTA_LINK);
+              }}
+            >
+              {tHardcodedUi.raw(
+                'componentsHomeNavbar.line312JsxTextGetStarted',
+              )}
+            </Button>
           )}
 
-          {/* Mobile Menu Button */}
           <Button
             onClick={toggleDrawer}
             variant="ghost"
             size="icon"
-            className="md:hidden"
-            aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
+            className="md:hidden rounded-full"
+            aria-label={tHardcodedUi.raw(
+              'componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu',
+            )}
           >
             <Menu className="size-5" />
           </Button>
         </div>
       </div>
 
-      {/* Mobile Drawer - Full Screen */}
       <AnimatePresence>
-        {isDrawerOpen && (
+        {isDrawerOpen && isMobile && (
           <motion.div
-            className="fixed inset-0 bg-background z-50 flex flex-col pt-4"
+            className="fixed inset-0 bg-background z-50 flex flex-col pt-4 pb-5 px-5 md:hidden"
             initial="hidden"
             animate="visible"
             exit="exit"
             variants={drawerVariants}
           >
-            {/* Header - matches navbar positioning */}
-            <div className="flex h-[56px] items-center justify-between px-6 py-2">
-              <Link href="/" className="flex items-center gap-3" onClick={() => setIsDrawerOpen(false)}>
-                <KortixLogo size={18} variant='logomark' />
-              </Link>
+            <div className="flex h-[56px] items-center justify-end">
               <Button
                 onClick={toggleDrawer}
-                variant="outline"
+                variant="ghost"
                 size="icon"
-                aria-label={tHardcodedUi.raw('componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu')}
+                className="rounded-full"
+                aria-label={tHardcodedUi.raw(
+                  'componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu',
+                )}
               >
                 <X className="size-5" />
               </Button>
             </div>
 
-            {/* Navigation Links - Big Typography, Left Aligned */}
             <motion.nav
-              className="flex-1 px-6 pt-8"
+              className="flex-1 p-2 space-y-6"
               variants={drawerMenuContainerVariants}
             >
-              <ul className="flex flex-col gap-1">
+              <ul className="flex flex-col gap-6">
                 {filteredNavLinks.map((item) => (
-                  <motion.li
-                    key={item.id}
-                    variants={drawerMenuVariants}
-                  >
-                    <a
+                  <motion.li key={item.id} variants={drawerMenuVariants}>
+                    <Link
                       href={item.href}
                       onClick={(e) => {
                         if (!item.href.startsWith('#')) {
@@ -368,98 +378,94 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                           setIsDrawerOpen(false);
                           return;
                         }
-                        const element = document.getElementById(item.href.substring(1));
+                        const element = document.getElementById(
+                          item.href.substring(1),
+                        );
                         element?.scrollIntoView({ behavior: 'smooth' });
                         setIsDrawerOpen(false);
                       }}
-                      className={cn('block py-3 text-4xl font-medium tracking-tight transition-colors', 
-                        (item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
+                      className={cn(
+                        // 'block py-3 text-4xl font-medium tracking-tight transition-colors',
+                        'group text-2xl flex items-center justify-between',
+                        (item.href.startsWith('#') &&
+                          pathname === '/' &&
+                          activeSection === item.href.substring(1)) ||
+                          item.href === pathname
                           ? 'text-foreground'
-                          : 'text-muted-foreground hover:text-foreground'
+                          : 'text-muted-foreground hover:text-foreground',
                       )}
                     >
                       {item.name}
-                    </a>
+
+                      <ChevronRight className="size-8  shrink-0 transition-transform  opacity-0 group-hover:opacity-100 " />
+                    </Link>
                   </motion.li>
                 ))}
-                {/* Mobile App Link — commented out for now
-                <motion.li variants={drawerMenuVariants}>
-                  <Link
-                    href="/app"
-                    onClick={() => setIsDrawerOpen(false)}
-                    className={cn('block py-3 text-4xl font-medium tracking-tight transition-colors', 
-                      pathname === '/app'
-                        ? 'text-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    Mobile
-                  </Link>
-                </motion.li>
-                */}
               </ul>
 
-              {/* Product group */}
-              <motion.div variants={drawerMenuVariants} className="mt-10">
-                <div className="pb-3 text-xs font-mono uppercase tracking-wider text-muted-foreground">Product</div>
-                <ul className="flex flex-col">
-                  {PRODUCT_ITEMS.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <li key={item.title}>
-                        <Link
-                          href={item.href}
-                          onClick={() => setIsDrawerOpen(false)}
-                          className="flex items-center gap-3 py-2.5 text-xl font-medium text-muted-foreground transition-colors hover:text-foreground"
-                        >
-                          <Icon className="size-5 shrink-0" />
-                          {item.title}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
+              <motion.div variants={drawerMenuVariants}>
+                <Disclosure className="group">
+                  <DisclosureTrigger>
+                    <button
+                      type="button"
+                      className="group text-2xl flex items-center  w-full justify-between  text-muted-foreground group-data-[state=open]:text-foreground"
+                    >
+                      Product
+                      <ChevronRight className="size-8 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
+                    </button>
+                  </DisclosureTrigger>
+                  <DisclosureContent>
+                    <ul className="flex flex-col pt-2">
+                      {PRODUCT_ITEMS.map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <li key={item.title}>
+                            <Link
+                              href={item.href}
+                              onClick={() => setIsDrawerOpen(false)}
+                              className="flex items-center gap-3 py-2.5 text-xl font-medium text-muted-foreground transition-colors hover:text-foreground"
+                            >
+                              <Icon className="size-5 shrink-0" />
+                              {item.title}
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </DisclosureContent>
+                </Disclosure>
               </motion.div>
             </motion.nav>
 
-            {/* Footer Actions */}
-            <div className="px-6 pb-8 mt-auto">
-              <motion.div 
-                className="flex flex-col gap-4"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3, duration: 0.3 }}
-              >
-                {user ? (
-                  <Button asChild size="lg" className="w-full h-14 text-lg">
-                    <Link
-                      href="/projects"
-                      onClick={() => setIsDrawerOpen(false)}
-                    >
-                      Projects
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button asChild size="lg" className="w-full h-14 text-lg">
-                    <Link
-                      href={ctaLink}
-                      onClick={() => {
-                        trackCtaSignup();
-                        setIsDrawerOpen(false);
-                      }}
-                      suppressHydrationWarning
-                    >
-                      {t('tryFree')}
-                    </Link>
-                  </Button>
-                )}
-                
-                {/* Theme Toggle */}
-                <div className="flex items-center justify-between">
-                  <ThemeToggle />
-                </div>
-              </motion.div>
-            </div>
+            <motion.div
+              className="flex flex-col gap-4  mt-auto"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3, duration: 0.3 }}
+            >
+              <ThemeToggle />
+
+              {user ? (
+                <Button asChild size="xl" className="w-full text-lg">
+                  <Link href="/projects" onClick={() => setIsDrawerOpen(false)}>
+                    Projects
+                  </Link>
+                </Button>
+              ) : (
+                <Button asChild size="xl" className="w-full text-lg">
+                  <Link
+                    href={CTA_LINK}
+                    onClick={() => {
+                      trackCtaSignup();
+                      setIsDrawerOpen(false);
+                    }}
+                    suppressHydrationWarning
+                  >
+                    {t('tryFree')}
+                  </Link>
+                </Button>
+              )}
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -93,10 +93,6 @@ export {
   Tag as IconTag,
   Hash as IconHash,
   Inbox as IconInbox,
-
-  // ── Apps & deploy ───────────────────────────────────────────
-  AppWindow as IconApp,
-  Rocket as IconDeploy,
 } from 'lucide-react';
 
 export type { LucideIcon as Icon } from 'lucide-react';

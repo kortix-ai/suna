@@ -20,7 +20,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'motion/react';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -43,7 +43,10 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { OpenCodeSettingsDialog, type OpenCodeSettingsTab } from '@/components/session/opencode-settings-dialog';
+import {
+  OpenCodeSettingsDialog,
+  type OpenCodeSettingsTab,
+} from '@/components/session/opencode-settings-dialog';
 import {
   useCreateOpenCodeSession,
   useOpenCodeAgents,
@@ -76,13 +79,33 @@ interface WorkspaceItem {
   kind: ItemKind;
   scope: ItemScope;
   meta?: string;
-  raw?: Agent | Skill | Command | { toolId: string; server?: string } | { serverName: string; status: McpStatus };
+  raw?:
+    | Agent
+    | Skill
+    | Command
+    | { toolId: string; server?: string }
+    | { serverName: string; status: McpStatus };
 }
 
-const COMPOSER_PRESETS: Record<WorkspaceComposerKind, { title: string; prompt: string }> = {
-  agent:   { title: 'New agent',   prompt: "HEY let's build a new agent. Ask what job it should own, then scaffold it in the right workspace location and wire up any supporting skills." },
-  skill:   { title: 'New skill',   prompt: "HEY let's build a new skill. Ask what should trigger it, then create the SKILL.md and any supporting files in the right workspace location." },
-  command: { title: 'New command', prompt: "HEY let's build a new slash command. Ask what the command should do, then add it in the right workspace location and connect it to the correct agent." },
+const COMPOSER_PRESETS: Record<
+  WorkspaceComposerKind,
+  { title: string; prompt: string }
+> = {
+  agent: {
+    title: 'New agent',
+    prompt:
+      "HEY let's build a new agent. Ask what job it should own, then scaffold it in the right workspace location and wire up any supporting skills.",
+  },
+  skill: {
+    title: 'New skill',
+    prompt:
+      "HEY let's build a new skill. Ask what should trigger it, then create the SKILL.md and any supporting files in the right workspace location.",
+  },
+  command: {
+    title: 'New command',
+    prompt:
+      "HEY let's build a new slash command. Ask what the command should do, then add it in the right workspace location and connect it to the correct agent.",
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -106,17 +129,17 @@ function mcpServerName(id: string): string | undefined {
 // ---------------------------------------------------------------------------
 
 const KIND_CONFIG: Record<ItemKind, { icon: typeof Bot; label: string }> = {
-  agent:     { icon: Bot,        label: 'Agent' },
-  skill:     { icon: Sparkles,   label: 'Skill' },
-  command:   { icon: Terminal,    label: 'Command' },
-  tool:      { icon: Wrench,     label: 'Tool' },
-  mcp:       { icon: Plug,       label: 'MCP' },
+  agent: { icon: Bot, label: 'Agent' },
+  skill: { icon: Sparkles, label: 'Skill' },
+  command: { icon: Terminal, label: 'Command' },
+  tool: { icon: Wrench, label: 'Tool' },
+  mcp: { icon: Plug, label: 'MCP' },
 };
 
 const SCOPE_LABEL: Record<ItemScope, string> = {
-  project:    'Workspace',
-  global:     'Global',
-  external:   'External',
+  project: 'Workspace',
+  global: 'Global',
+  external: 'External',
   'built-in': 'Built-in',
 };
 
@@ -149,11 +172,18 @@ function DetailSheet({
 
   if (item?.kind === 'agent' && item.raw) {
     const a = item.raw as Agent;
-    if (a.model) rows.push({ label: 'Model', value: `${a.model.providerID}/${a.model.modelID}`, mono: true });
+    if (a.model)
+      rows.push({
+        label: 'Model',
+        value: `${a.model.providerID}/${a.model.modelID}`,
+        mono: true,
+      });
     rows.push({ label: 'Mode', value: a.mode });
     if (a.variant) rows.push({ label: 'Variant', value: a.variant });
-    if (a.temperature !== undefined) rows.push({ label: 'Temperature', value: String(a.temperature) });
-    if (a.steps !== undefined) rows.push({ label: 'Max Steps', value: String(a.steps) });
+    if (a.temperature !== undefined)
+      rows.push({ label: 'Temperature', value: String(a.temperature) });
+    if (a.steps !== undefined)
+      rows.push({ label: 'Max Steps', value: String(a.steps) });
     if (a.prompt) content = a.prompt;
   }
   if (item?.kind === 'skill' && item.raw) {
@@ -166,7 +196,8 @@ function DetailSheet({
     if (c.source) rows.push({ label: 'Source', value: c.source });
     if (c.agent) rows.push({ label: 'Agent', value: c.agent });
     if (c.model) rows.push({ label: 'Model', value: c.model, mono: true });
-    if (c.hints?.length) rows.push({ label: 'Hints', value: c.hints.join(', ') });
+    if (c.hints?.length)
+      rows.push({ label: 'Hints', value: c.hints.join(', ') });
     if (c.template) content = c.template;
   }
   if (item?.kind === 'tool' && item.raw) {
@@ -179,14 +210,20 @@ function DetailSheet({
     rows.push({ label: 'Server', value: m.serverName });
     rows.push({ label: 'Status', value: m.status.status });
     if (m.status.status === 'failed' && 'error' in m.status) {
-      rows.push({ label: 'Error', value: (m.status as { error: string }).error });
+      rows.push({
+        label: 'Error',
+        value: (m.status as { error: string }).error,
+      });
     }
   }
   const contentLabel =
-    item?.kind === 'skill'     ? 'SKILL.md' :
-    item?.kind === 'command'   ? 'template' :
-    item?.kind === 'agent'     ? 'system prompt' :
-    'content';
+    item?.kind === 'skill'
+      ? 'SKILL.md'
+      : item?.kind === 'command'
+        ? 'template'
+        : item?.kind === 'agent'
+          ? 'system prompt'
+          : 'content';
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -200,16 +237,33 @@ function DetailSheet({
             <SheetHeader className="px-6 pt-6 pb-4 border-b border-border/50 gap-0 space-y-0">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <SheetTitle className={cn('text-sm break-all', item.kind === 'command' && 'font-mono')}>
+                  <SheetTitle
+                    className={cn(
+                      'text-sm break-all',
+                      item.kind === 'command' && 'font-mono',
+                    )}
+                  >
                     {item.name}
                   </SheetTitle>
                   <SheetDescription className="sr-only">
-                    {kindCfg.label}{tHardcodedUi.raw('componentsPagesWorkspacePage.line204JsxTextDetailsFor')}{' '}{item.name}
+                    {kindCfg.label}
+                    {tHardcodedUi.raw(
+                      'componentsPagesWorkspacePage.line204JsxTextDetailsFor',
+                    )}{' '}
+                    {item.name}
                   </SheetDescription>
                   <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                    <Badge variant="secondary" className="text-xs">{kindCfg.label}</Badge>
-                    <Badge variant="secondary" className="text-xs">{SCOPE_LABEL[item.scope]}</Badge>
-                    {item.meta && <span className="text-xs text-muted-foreground/50">{item.meta}</span>}
+                    <Badge variant="secondary" className="text-xs">
+                      {kindCfg.label}
+                    </Badge>
+                    <Badge variant="secondary" className="text-xs">
+                      {SCOPE_LABEL[item.scope]}
+                    </Badge>
+                    {item.meta && (
+                      <span className="text-xs text-muted-foreground/50">
+                        {item.meta}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <Button
@@ -218,16 +272,24 @@ function DetailSheet({
                   className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground shrink-0 gap-1"
                   onClick={() => copy(item.name, 'name')}
                 >
-                  {copied === 'name'
-                    ? <><Check className="h-3 w-3" />Copied</>
-                    : <><Copy className="h-3 w-3" />Copy</>
-                  }
+                  {copied === 'name' ? (
+                    <>
+                      <Check className="h-3 w-3" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" />
+                      Copy
+                    </>
+                  )}
                 </Button>
               </div>
               {item.description && (
-                <p className="text-xs text-muted-foreground leading-relaxed mt-3">{item.description}</p>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-3">
+                  {item.description}
+                </p>
               )}
-
             </SheetHeader>
 
             {/* Scrollable body */}
@@ -235,12 +297,24 @@ function DetailSheet({
               {/* Properties */}
               {rows.length > 0 && (
                 <div className="px-6 py-5">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60 mb-3">Properties</p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60 mb-3">
+                    Properties
+                  </p>
                   <div className="space-y-3">
                     {rows.map((row) => (
-                      <div key={row.label} className="grid grid-cols-[100px_1fr] gap-2">
-                        <span className="text-xs text-muted-foreground">{row.label}</span>
-                        <span className={cn('text-xs text-foreground break-all', row.mono && 'font-mono')}>
+                      <div
+                        key={row.label}
+                        className="grid grid-cols-[100px_1fr] gap-2"
+                      >
+                        <span className="text-xs text-muted-foreground">
+                          {row.label}
+                        </span>
+                        <span
+                          className={cn(
+                            'text-xs text-foreground break-all',
+                            row.mono && 'font-mono',
+                          )}
+                        >
                           {row.value}
                         </span>
                       </div>
@@ -255,7 +329,9 @@ function DetailSheet({
                   <div className="flex items-center justify-between px-6 py-3 border-y border-border/50 bg-muted/30">
                     <div className="flex items-center gap-2">
                       <FileText className="h-3 w-3 text-muted-foreground/50" />
-                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">{contentLabel}</span>
+                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">
+                        {contentLabel}
+                      </span>
                     </div>
                     <Button
                       variant="ghost"
@@ -263,10 +339,17 @@ function DetailSheet({
                       className="h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
                       onClick={() => copy(content!, 'content')}
                     >
-                      {copied === 'content'
-                        ? <><Check className="h-2.5 w-2.5" />Copied</>
-                        : <><Copy className="h-2.5 w-2.5" />Copy</>
-                      }
+                      {copied === 'content' ? (
+                        <>
+                          <Check className="h-2.5 w-2.5" />
+                          Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-2.5 w-2.5" />
+                          Copy
+                        </>
+                      )}
                     </Button>
                   </div>
                   <div className="px-6 py-4">
@@ -280,7 +363,11 @@ function DetailSheet({
               {/* Empty fallback */}
               {rows.length === 0 && !content && (
                 <div className="flex flex-col items-center justify-center py-20 text-muted-foreground/30">
-                  <p className="text-xs">{tHardcodedUi.raw('componentsPagesWorkspacePage.line280JsxTextNoAdditionalDetails')}</p>
+                  <p className="text-xs">
+                    {tHardcodedUi.raw(
+                      'componentsPagesWorkspacePage.line280JsxTextNoAdditionalDetails',
+                    )}
+                  </p>
                 </div>
               )}
             </div>
@@ -315,41 +402,46 @@ function LoadingSkeleton() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Filter pill
-// ---------------------------------------------------------------------------
-
-function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <Button
-      onClick={onClick}
-      variant={active ? 'outline' : 'ghost'}
-      size="sm"
-      className={cn(!active && 'text-muted-foreground hover:text-foreground')}
-    >
-      {children}
-    </Button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Empty state
-// ---------------------------------------------------------------------------
-
-function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () => void }) {
+function EmptyState({
+  hasFilters,
+  onClear,
+}: {
+  hasFilters: boolean;
+  onClear: () => void;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   if (hasFilters) {
     return (
-      <div className="py-12 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesWorkspacePage.line340JsxTextNoItemsMatchYourFilters')}{' '}
-        <Button onClick={onClear} variant="link" size="sm" className="h-auto p-0 ">{tHardcodedUi.raw('componentsPagesWorkspacePage.line342JsxTextClearFilters')}</Button>
+      <div className="py-12 text-center text-sm text-muted-foreground">
+        {tHardcodedUi.raw(
+          'componentsPagesWorkspacePage.line340JsxTextNoItemsMatchYourFilters',
+        )}{' '}
+        <Button
+          onClick={onClear}
+          variant="link"
+          size="sm"
+          className="h-auto p-0 "
+        >
+          {tHardcodedUi.raw(
+            'componentsPagesWorkspacePage.line342JsxTextClearFilters',
+          )}
+        </Button>
       </div>
     );
   }
   return (
     <div className="flex flex-col items-center justify-center py-20 rounded-2xl border border-dashed border-border/50">
       <Blocks className="h-7 w-7 text-muted-foreground/30 mb-3" />
-      <p className="text-sm font-medium text-foreground mb-1">{tHardcodedUi.raw('componentsPagesWorkspacePage.line350JsxTextNothingHereYet')}</p>
-      <p className="text-xs text-muted-foreground text-center max-w-xs">{tHardcodedUi.raw('componentsPagesWorkspacePage.line352JsxTextUseTheActionsAboveToAddAgentsSkills')}</p>
+      <p className="text-sm font-medium text-foreground mb-1">
+        {tHardcodedUi.raw(
+          'componentsPagesWorkspacePage.line350JsxTextNothingHereYet',
+        )}
+      </p>
+      <p className="text-xs text-muted-foreground text-center max-w-xs">
+        {tHardcodedUi.raw(
+          'componentsPagesWorkspacePage.line352JsxTextUseTheActionsAboveToAddAgentsSkills',
+        )}
+      </p>
     </div>
   );
 }
@@ -364,7 +456,8 @@ export default function WorkspacePage() {
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<OpenCodeSettingsTab>('general');
+  const [settingsTab, setSettingsTab] =
+    useState<OpenCodeSettingsTab>('general');
   const [selectedItem, setSelectedItem] = useState<WorkspaceItem | null>(null);
   const createSession = useCreateOpenCodeSession();
 
@@ -373,78 +466,165 @@ export default function WorkspacePage() {
     setSettingsOpen(true);
   }, []);
 
-  const openComposer = useCallback(async (kind: WorkspaceComposerKind) => {
-    const preset = COMPOSER_PRESETS[kind];
-    try {
-      const session = await createSession.mutateAsync({ title: preset.title });
-      sessionStorage.setItem(`opencode_pending_prompt:${session.id}`, preset.prompt);
-      openTabAndNavigate({
-        id: session.id,
-        title: preset.title,
-        type: 'session',
-        href: `/sessions/${session.id}`,
-        serverId: useServerStore.getState().activeServerId,
-      });
-      requestAnimationFrame(() => window.dispatchEvent(new CustomEvent('focus-session-textarea')));
-    } catch {
-      toast.error('Failed to create session');
-    }
-  }, [createSession]);
+  const openComposer = useCallback(
+    async (kind: WorkspaceComposerKind) => {
+      const preset = COMPOSER_PRESETS[kind];
+      try {
+        const session = await createSession.mutateAsync({
+          title: preset.title,
+        });
+        sessionStorage.setItem(
+          `opencode_pending_prompt:${session.id}`,
+          preset.prompt,
+        );
+        openTabAndNavigate({
+          id: session.id,
+          title: preset.title,
+          type: 'session',
+          href: `/sessions/${session.id}`,
+          serverId: useServerStore.getState().activeServerId,
+        });
+        requestAnimationFrame(() =>
+          window.dispatchEvent(new CustomEvent('focus-session-textarea')),
+        );
+      } catch {
+        toast.error('Failed to create session');
+      }
+    },
+    [createSession],
+  );
 
   // Data — workspace-global registries only. Historical projects stay in the
   // backend DB for compatibility, but the UI does not expose projects.
-  const { data: agents,    isLoading: lAgents    } = useOpenCodeAgents();
-  const { data: skills,    isLoading: lSkills    } = useSkills();
-  const { data: commands,  isLoading: lCommands  } = useOpenCodeCommands();
-  const { data: toolIds,   isLoading: lTools     } = useOpenCodeToolIds();
-  const { data: mcpStatus, isLoading: lMcp       } = useOpenCodeMcpStatus();
+  const { data: agents, isLoading: lAgents } = useOpenCodeAgents();
+  const { data: skills, isLoading: lSkills } = useSkills();
+  const { data: commands, isLoading: lCommands } = useOpenCodeCommands();
+  const { data: toolIds, isLoading: lTools } = useOpenCodeToolIds();
+  const { data: mcpStatus, isLoading: lMcp } = useOpenCodeMcpStatus();
 
   const isLoading = lAgents || lSkills || lCommands || lTools || lMcp;
 
   const allItems = useMemo<WorkspaceItem[]>(() => {
     const items: WorkspaceItem[] = [];
 
-    agents?.filter((a) => !a.hidden).forEach((a) => {
-      items.push({ id: `agent:${a.name}`, name: a.name, description: a.description, kind: 'agent', scope: 'project', meta: a.model?.modelID, raw: a });
-    });
+    agents
+      ?.filter((a) => !a.hidden)
+      .forEach((a) => {
+        items.push({
+          id: `agent:${a.name}`,
+          name: a.name,
+          description: a.description,
+          kind: 'agent',
+          scope: 'project',
+          meta: a.model?.modelID,
+          raw: a,
+        });
+      });
 
-    skills?.filter((s) => !(s as any).hidden).forEach((s) => {
-      const src = getSkillSource(s.location);
-      const scope: ItemScope = src === 'project' ? 'project' : src === 'global' ? 'global' : 'external';
-      items.push({ id: `skill:${s.name}`, name: s.name, description: s.description, kind: 'skill', scope, raw: s });
-    });
+    skills
+      ?.filter((s) => !(s as any).hidden)
+      .forEach((s) => {
+        const src = getSkillSource(s.location);
+        const scope: ItemScope =
+          src === 'project'
+            ? 'project'
+            : src === 'global'
+              ? 'global'
+              : 'external';
+        items.push({
+          id: `skill:${s.name}`,
+          name: s.name,
+          description: s.description,
+          kind: 'skill',
+          scope,
+          raw: s,
+        });
+      });
 
-    commands?.filter((c) => !(c as any).hidden && !c.subtask).forEach((c) => {
-      const cs = commandScope(c.source);
-      items.push({ id: `command:${c.name}`, name: `/${c.name}`, description: c.description, kind: 'command', scope: cs === 'project' ? 'project' : cs, meta: c.agent, raw: c });
-    });
+    commands
+      ?.filter((c) => !(c as any).hidden && !c.subtask)
+      .forEach((c) => {
+        const cs = commandScope(c.source);
+        items.push({
+          id: `command:${c.name}`,
+          name: `/${c.name}`,
+          description: c.description,
+          kind: 'command',
+          scope: cs === 'project' ? 'project' : cs,
+          meta: c.agent,
+          raw: c,
+        });
+      });
 
     if (toolIds) {
-      [...new Set(toolIds)].filter((id) => !id.startsWith('_') && !id.startsWith('.')).forEach((id) => {
-        const isMcp = id.startsWith('mcp_');
-        items.push({ id: `tool:${id}`, name: isMcp ? mcpToolName(id) : id, kind: 'tool', scope: isMcp ? 'external' : 'built-in', meta: isMcp ? mcpServerName(id) : undefined, raw: { toolId: id, server: isMcp ? mcpServerName(id) : undefined } });
-      });
+      [...new Set(toolIds)]
+        .filter((id) => !id.startsWith('_') && !id.startsWith('.'))
+        .forEach((id) => {
+          const isMcp = id.startsWith('mcp_');
+          items.push({
+            id: `tool:${id}`,
+            name: isMcp ? mcpToolName(id) : id,
+            kind: 'tool',
+            scope: isMcp ? 'external' : 'built-in',
+            meta: isMcp ? mcpServerName(id) : undefined,
+            raw: { toolId: id, server: isMcp ? mcpServerName(id) : undefined },
+          });
+        });
     }
 
     if (mcpStatus) {
-      Object.entries(mcpStatus).filter(([, s]) => s.status !== 'disabled').forEach(([name, status]) => {
-        const label = status.status === 'connected' ? 'Connected' : status.status === 'failed' ? 'Failed' : status.status === 'needs_auth' ? 'Needs Auth' : 'Pending';
-        items.push({ id: `mcp:${name}`, name, description: status.status === 'failed' ? (status as any).error : undefined, kind: 'mcp', scope: 'external', meta: label, raw: { serverName: name, status } });
-      });
+      Object.entries(mcpStatus)
+        .filter(([, s]) => s.status !== 'disabled')
+        .forEach(([name, status]) => {
+          const label =
+            status.status === 'connected'
+              ? 'Connected'
+              : status.status === 'failed'
+                ? 'Failed'
+                : status.status === 'needs_auth'
+                  ? 'Needs Auth'
+                  : 'Pending';
+          items.push({
+            id: `mcp:${name}`,
+            name,
+            description:
+              status.status === 'failed' ? (status as any).error : undefined,
+            kind: 'mcp',
+            scope: 'external',
+            meta: label,
+            raw: { serverName: name, status },
+          });
+        });
     }
 
     return items;
   }, [agents, skills, commands, toolIds, mcpStatus]);
 
   const kindCounts = useMemo(() => {
-    const c: Record<KindFilter, number> = { all: allItems.length, agent: 0, skill: 0, command: 0, tool: 0, mcp: 0 };
+    const c: Record<KindFilter, number> = {
+      all: allItems.length,
+      agent: 0,
+      skill: 0,
+      command: 0,
+      tool: 0,
+      mcp: 0,
+    };
     allItems.forEach((i) => c[i.kind]++);
     return c;
   }, [allItems]);
 
   const scopeCounts = useMemo(() => {
-    const c: Record<ScopeFilter, number> = { all: 0, project: 0, global: 0, external: 0, 'built-in': 0 };
-    const base = kindFilter === 'all' ? allItems : allItems.filter((i) => i.kind === kindFilter);
+    const c: Record<ScopeFilter, number> = {
+      all: 0,
+      project: 0,
+      global: 0,
+      external: 0,
+      'built-in': 0,
+    };
+    const base =
+      kindFilter === 'all'
+        ? allItems
+        : allItems.filter((i) => i.kind === kindFilter);
     c.all = base.length;
     base.forEach((i) => c[i.scope]++);
     return c;
@@ -456,36 +636,69 @@ export default function WorkspacePage() {
     if (scopeFilter !== 'all') r = r.filter((i) => i.scope === scopeFilter);
     if (search.trim()) {
       const q = search.toLowerCase().trim();
-      r = r.filter((i) => i.name.toLowerCase().includes(q) || i.description?.toLowerCase().includes(q) || i.meta?.toLowerCase().includes(q));
+      r = r.filter(
+        (i) =>
+          i.name.toLowerCase().includes(q) ||
+          i.description?.toLowerCase().includes(q) ||
+          i.meta?.toLowerCase().includes(q),
+      );
     }
     return r;
   }, [allItems, kindFilter, scopeFilter, search]);
 
   const activeScopeTabs = useMemo(() => {
-    const tabs: { value: ScopeFilter; label: string }[] = [{ value: 'all', label: 'All' }];
-    if (scopeCounts.project > 0)    tabs.push({ value: 'project',    label: 'Workspace' });
-    if (scopeCounts.global > 0)     tabs.push({ value: 'global',     label: 'Global' });
-    if (scopeCounts.external > 0)   tabs.push({ value: 'external',   label: 'External' });
-    if (scopeCounts['built-in'] > 0) tabs.push({ value: 'built-in',  label: 'Built-in' });
+    const tabs: { value: ScopeFilter; label: string }[] = [
+      { value: 'all', label: 'All' },
+    ];
+    if (scopeCounts.project > 0)
+      tabs.push({ value: 'project', label: 'Workspace' });
+    if (scopeCounts.global > 0) tabs.push({ value: 'global', label: 'Global' });
+    if (scopeCounts.external > 0)
+      tabs.push({ value: 'external', label: 'External' });
+    if (scopeCounts['built-in'] > 0)
+      tabs.push({ value: 'built-in', label: 'Built-in' });
     return tabs;
   }, [scopeCounts]);
 
-  const hasFilters = search.trim() !== '' || kindFilter !== 'all' || scopeFilter !== 'all';
-  const clearFilters = () => { setSearch(''); setKindFilter('all'); setScopeFilter('all'); };
+  const hasFilters =
+    search.trim() !== '' || kindFilter !== 'all' || scopeFilter !== 'all';
+  const clearFilters = () => {
+    setSearch('');
+    setKindFilter('all');
+    setScopeFilter('all');
+  };
 
   const quickActions = [
-    { title: 'New agent',   desc: 'Scaffold a new agent in your workspace',              meta: `${kindCounts.agent} live`,    icon: Bot,      kind: 'agent'   as WorkspaceComposerKind },
-    { title: 'New skill',   desc: 'Build a skill with the right trigger and file layout', meta: `${kindCounts.skill} live`,    icon: Sparkles, kind: 'skill'   as WorkspaceComposerKind },
-    { title: 'New command', desc: 'Create a slash command and wire it to an agent',       meta: `${kindCounts.command} live`,  icon: Terminal, kind: 'command' as WorkspaceComposerKind },
+    {
+      title: 'New agent',
+      desc: 'Scaffold a new agent in your workspace',
+      meta: `${kindCounts.agent} live`,
+      icon: Bot,
+      kind: 'agent' as WorkspaceComposerKind,
+    },
+    {
+      title: 'New skill',
+      desc: 'Build a skill with the right trigger and file layout',
+      meta: `${kindCounts.skill} live`,
+      icon: Sparkles,
+      kind: 'skill' as WorkspaceComposerKind,
+    },
+    {
+      title: 'New command',
+      desc: 'Create a slash command and wire it to an agent',
+      meta: `${kindCounts.command} live`,
+      icon: Terminal,
+      kind: 'command' as WorkspaceComposerKind,
+    },
   ];
 
   const kindTabs = [
-    { value: 'all'       as KindFilter, label: 'All' },
-    { value: 'agent'     as KindFilter, label: 'Agents' },
-    { value: 'skill'     as KindFilter, label: 'Skills' },
-    { value: 'command'   as KindFilter, label: 'Commands' },
-    { value: 'tool'      as KindFilter, label: 'Tools' },
-    { value: 'mcp'       as KindFilter, label: 'MCP' },
+    { value: 'all' as KindFilter, label: 'All' },
+    { value: 'agent' as KindFilter, label: 'Agents' },
+    { value: 'skill' as KindFilter, label: 'Skills' },
+    { value: 'command' as KindFilter, label: 'Commands' },
+    { value: 'tool' as KindFilter, label: 'Tools' },
+    { value: 'mcp' as KindFilter, label: 'MCP' },
   ] as const;
   return (
     <>
@@ -497,12 +710,20 @@ export default function WorkspacePage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-lg sm:text-xl font-semibold">Workspace</h1>
-              <p className="mt-1 text-sm text-muted-foreground">{tHardcodedUi.raw('componentsPagesWorkspacePage.line501JsxTextAgentsSkillsCommandsToolsAndMcpServers')}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {tHardcodedUi.raw(
+                  'componentsPagesWorkspacePage.line501JsxTextAgentsSkillsCommandsToolsAndMcpServers',
+                )}
+              </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" disabled={createSession.isPending}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={createSession.isPending}
+                  >
                     {createSession.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
@@ -536,7 +757,11 @@ export default function WorkspacePage() {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => openSettings('mcp')}>
-                    <Plug className="mr-2 h-3.5 w-3.5" />{tHardcodedUi.raw('componentsPagesWorkspacePage.line542JsxTextMcpServer')}<span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
+                    <Plug className="mr-2 h-3.5 w-3.5" />
+                    {tHardcodedUi.raw(
+                      'componentsPagesWorkspacePage.line542JsxTextMcpServer',
+                    )}
+                    <span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
                       {kindCounts.mcp}
                     </span>
                   </DropdownMenuItem>
@@ -571,12 +796,19 @@ export default function WorkspacePage() {
                   <FilterBarItem
                     key={tab.value}
                     value={tab.value}
-                    onClick={() => { setKindFilter(tab.value); setScopeFilter('all'); }}
-                    data-state={kindFilter === tab.value ? 'active' : 'inactive'}
+                    onClick={() => {
+                      setKindFilter(tab.value);
+                      setScopeFilter('all');
+                    }}
+                    data-state={
+                      kindFilter === tab.value ? 'active' : 'inactive'
+                    }
                   >
                     {tab.label}
                     {kindCounts[tab.value] > 0 && (
-                      <span className="ml-1 opacity-50 tabular-nums">{kindCounts[tab.value]}</span>
+                      <span className="ml-1 opacity-50 tabular-nums">
+                        {kindCounts[tab.value]}
+                      </span>
                     )}
                   </FilterBarItem>
                 ))}
@@ -584,11 +816,16 @@ export default function WorkspacePage() {
 
               <select
                 value={kindFilter}
-                onChange={(e) => { setKindFilter(e.target.value as KindFilter); setScopeFilter('all'); }}
+                onChange={(e) => {
+                  setKindFilter(e.target.value as KindFilter);
+                  setScopeFilter('all');
+                }}
                 className="lg:hidden h-9 rounded-2xl border border-input bg-card px-3 text-sm cursor-pointer"
               >
                 {kindTabs.map((tab) => (
-                  <option key={tab.value} value={tab.value}>{tab.label} ({kindCounts[tab.value]})</option>
+                  <option key={tab.value} value={tab.value}>
+                    {tab.label} ({kindCounts[tab.value]})
+                  </option>
                 ))}
               </select>
             </div>
@@ -600,17 +837,25 @@ export default function WorkspacePage() {
                     key={tab.value}
                     value={tab.value}
                     onClick={() => setScopeFilter(tab.value)}
-                    data-state={scopeFilter === tab.value ? 'active' : 'inactive'}
+                    data-state={
+                      scopeFilter === tab.value ? 'active' : 'inactive'
+                    }
                   >
                     {tab.label}{' '}
-                    <span className="ml-1 opacity-50 tabular-nums">{scopeCounts[tab.value]}</span>
+                    <span className="ml-1 opacity-50 tabular-nums">
+                      {scopeCounts[tab.value]}
+                    </span>
                   </FilterBarItem>
                 ))}
               </FilterBar>
             )}
           </div>
 
-          <OpenCodeSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} initialTab={settingsTab} />
+          <OpenCodeSettingsDialog
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+            initialTab={settingsTab}
+          />
 
           {/* Grid */}
           <div className="pb-8">
@@ -663,7 +908,9 @@ export default function WorkspacePage() {
       <DetailSheet
         item={selectedItem}
         open={Boolean(selectedItem)}
-        onOpenChange={(open) => { if (!open) setSelectedItem(null); }}
+        onOpenChange={(open) => {
+          if (!open) setSelectedItem(null);
+        }}
       />
     </>
   );

@@ -362,16 +362,16 @@ function CommandShortcut({
   // Split "Ctrl+J" → ["Ctrl", "J"] so each key renders as its own chip.
   const tokens =
     typeof children === 'string'
-      ? children.split('+').map((t) => t.trim()).filter(Boolean)
+      ? children
+          .split('+')
+          .map((t) => t.trim())
+          .filter(Boolean)
       : null;
 
   return (
     <span
       data-slot="command-shortcut"
-      className={cn(
-        'ml-auto inline-flex items-center gap-1',
-        className,
-      )}
+      className={cn('ml-auto inline-flex items-center gap-1', className)}
       {...props}
     >
       {tokens
