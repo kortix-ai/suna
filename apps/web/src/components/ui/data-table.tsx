@@ -47,8 +47,12 @@ export function DataTable<T>({
   getItemId,
   headerActions,
 }: DataTableProps<T>) {
-  const isAllSelected = selectable && data.length > 0 && selectedItems.length === data.length;
-  const isSomeSelected = selectable && selectedItems.length > 0 && selectedItems.length < data.length;
+  const isAllSelected =
+    selectable && data.length > 0 && selectedItems.length === data.length;
+  const isSomeSelected =
+    selectable &&
+    selectedItems.length > 0 &&
+    selectedItems.length < data.length;
 
   const handleSelectAll = () => {
     if (!selectable || !onSelectionChange) return;
@@ -64,10 +68,16 @@ export function DataTable<T>({
     if (!selectable || !onSelectionChange || !getItemId) return;
 
     const itemId = getItemId(item);
-    const isSelected = selectedItems.some(selectedItem => getItemId(selectedItem) === itemId);
+    const isSelected = selectedItems.some(
+      (selectedItem) => getItemId(selectedItem) === itemId,
+    );
 
     if (isSelected) {
-      onSelectionChange(selectedItems.filter(selectedItem => getItemId(selectedItem) !== itemId));
+      onSelectionChange(
+        selectedItems.filter(
+          (selectedItem) => getItemId(selectedItem) !== itemId,
+        ),
+      );
     } else {
       onSelectionChange([...selectedItems, item]);
     }
@@ -76,7 +86,9 @@ export function DataTable<T>({
   const isItemSelected = (item: T): boolean => {
     if (!selectable || !getItemId) return false;
     const itemId = getItemId(item);
-    return selectedItems.some(selectedItem => getItemId(selectedItem) === itemId);
+    return selectedItems.some(
+      (selectedItem) => getItemId(selectedItem) === itemId,
+    );
   };
 
   return (
@@ -84,11 +96,10 @@ export function DataTable<T>({
       {selectable && selectedItems.length > 0 && headerActions && (
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <span className="text-sm text-muted-foreground">
-            {selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''} selected
+            {selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''}{' '}
+            selected
           </span>
-          <div className="flex items-center gap-2">
-            {headerActions}
-          </div>
+          <div className="flex items-center gap-2">{headerActions}</div>
         </div>
       )}
       <Table>
@@ -106,7 +117,11 @@ export function DataTable<T>({
             {columns.map((column) => (
               <TableHead
                 key={column.id}
-                className={cn(column.headerClassName, column.width, 'text-muted-foreground font-semibold')}
+                className={cn(
+                  column.headerClassName,
+                  column.width,
+                  'text-muted-foreground font-semibold',
+                )}
               >
                 {column.header}
               </TableHead>
@@ -116,7 +131,10 @@ export function DataTable<T>({
         <TableBody>
           {data.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={columns.length + (selectable ? 1 : 0)} className="text-center py-8 text-muted-foreground">
+              <TableCell
+                colSpan={columns.length + (selectable ? 1 : 0)}
+                className="text-center py-8 text-muted-foreground"
+              >
                 {emptyMessage}
               </TableCell>
             </TableRow>
@@ -126,7 +144,7 @@ export function DataTable<T>({
                 key={getItemId ? getItemId(item) : index}
                 className={cn(
                   onRowClick && 'cursor-pointer hover:bg-muted/50',
-                  selectable && isItemSelected(item) && 'bg-muted/50'
+                  selectable && isItemSelected(item) && 'bg-muted/50',
                 )}
                 onClick={(e) => {
                   if ((e.target as HTMLElement).closest('[role="checkbox"]')) {
@@ -153,8 +171,7 @@ export function DataTable<T>({
                       ? column.cell(item)
                       : column.accessorKey
                         ? String(item[column.accessorKey] || '')
-                        : ''
-                    }
+                        : ''}
                   </TableCell>
                 ))}
               </TableRow>
@@ -164,4 +181,4 @@ export function DataTable<T>({
       </Table>
     </div>
   );
-} 
+}

@@ -519,7 +519,7 @@ importers:
         version: 3.8.1
       prettier-plugin-tailwindcss:
         specifier: ^0.6.14
-        version: 0.6.14(prettier@3.8.1)
+        version: 0.6.14(prettier-plugin-organize-imports@4.3.0)(prettier@3.8.1)
       react-native-svg-transformer:
         specifier: ^1.5.1
         version: 1.5.3(react-native-svg@15.12.1)(react-native@0.81.5)(typescript@5.9.3)
@@ -1006,9 +1006,6 @@ importers:
       flags:
         specifier: ^4.0.2
         version: 4.0.2(@opentelemetry/api@1.9.0)(next@15.5.18)(react-dom@18.3.1)(react@18.3.1)
-      framer-motion:
-        specifier: ^12.6.5
-        version: 12.38.0(react-dom@18.3.1)(react@18.3.1)
       fumadocs-core:
         specifier: 15.8.5
         version: 15.8.5(@types/react@18.3.28)(lucide-react@0.479.0)(next@15.5.18)(react-dom@18.3.1)(react@18.3.1)
@@ -1078,6 +1075,9 @@ importers:
       mermaid:
         specifier: 11.15.0
         version: 11.15.0
+      motion:
+        specifier: ^12.40.0
+        version: 12.40.0(react-dom@18.3.1)(react@18.3.1)
       next:
         specifier: 15.5.18
         version: 15.5.18(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.58.2)(react-dom@18.3.1)(react@18.3.1)
@@ -1286,6 +1286,12 @@ importers:
       prettier:
         specifier: ^3.5.3
         version: 3.8.1
+      prettier-plugin-organize-imports:
+        specifier: ^4.3.0
+        version: 4.3.0(prettier@3.8.1)(typescript@5.9.3)
+      prettier-plugin-tailwindcss:
+        specifier: ^0.6.14
+        version: 0.6.14(prettier-plugin-organize-imports@4.3.0)(prettier@3.8.1)
       shiki:
         specifier: ^3.12.0
         version: 3.23.0
@@ -21581,8 +21587,8 @@ packages:
     resolution: {integrity: sha512-ZsDfxO51wGAXREY55a7la9LScWpwv9RxIrYABrlvOFBlH/ShPnrtsXeuUIfXKKOVicNxQ+o8JTbJvjS4M89yew==}
     dev: false
 
-  /framer-motion@12.38.0(react-dom@18.3.1)(react@18.3.1):
-    resolution: {integrity: sha512-rFYkY/pigbcswl1XQSb7q424kSTQ8q6eAC+YUsSKooHQYuLdzdHjrt6uxUC+PRAO++q5IS7+TamgIw1AphxR+g==}
+  /framer-motion@12.40.0(react-dom@18.3.1)(react@18.3.1):
+    resolution: {integrity: sha512-uaBd3qC1v3KQqBEjwTUd183K6PbS+j0yR9w9VmEOLWA/tnUcSn8Xa3uck7t4dgpDoUss8xQTcj8W2L07lrnLFg==}
     peerDependencies:
       '@emotion/is-prop-valid': '*'
       react: ^18.0.0 || ^19.0.0
@@ -21595,8 +21601,8 @@ packages:
       react-dom:
         optional: true
     dependencies:
-      motion-dom: 12.38.0
-      motion-utils: 12.36.0
+      motion-dom: 12.40.0
+      motion-utils: 12.39.0
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
       tslib: 2.8.1
@@ -25046,14 +25052,34 @@ packages:
     resolution: {integrity: sha512-EGWKgxALGMgzvxYF1UyGTy0HXX/2vHLkw6+NvDKW2jypWbHpjQuj4UMcqQWXHERJhVGKikolT06G3bcKe4fi7w==}
     dev: false
 
-  /motion-dom@12.38.0:
-    resolution: {integrity: sha512-pdkHLD8QYRp8VfiNLb8xIBJis1byQ9gPT3Jnh2jqfFtAsWUA3dEepDlsWe/xMpO8McV+VdpKVcp+E+TGJEtOoA==}
+  /motion-dom@12.40.0:
+    resolution: {integrity: sha512-HxU3ZaBwNPVQUBQf1xxgq+7JrPNZvjLVxgbpEZL7RrWJnsxOf0/OM+yrHG9ogLQ31Do/r57Oz2gQWPK+6q62mg==}
     dependencies:
-      motion-utils: 12.36.0
+      motion-utils: 12.39.0
     dev: false
 
-  /motion-utils@12.36.0:
-    resolution: {integrity: sha512-eHWisygbiwVvf6PZ1vhaHCLamvkSbPIeAYxWUuL3a2PD/TROgE7FvfHWTIH4vMl798QLfMw15nRqIaRDXTlYRg==}
+  /motion-utils@12.39.0:
+    resolution: {integrity: sha512-8nadJAJjTtqRkmRF36FoJTrywK9nnFmnPwnSMyxaOCU7GDjN9RTMJIxx9De8ErM+vpPhMccr/6fo5WciyQLnMQ==}
+    dev: false
+
+  /motion@12.40.0(react-dom@18.3.1)(react@18.3.1):
+    resolution: {integrity: sha512-yjrHUrBFW6kQvjJwRsoiPSAhC5tRwRqNGJWmiJ4CrGnbKp0V88AdzkhBmDoqIsIPfarOe0Uddd37Xq43/gIocA==}
+    peerDependencies:
+      '@emotion/is-prop-valid': '*'
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      '@emotion/is-prop-valid':
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
+    dependencies:
+      framer-motion: 12.40.0(react-dom@18.3.1)(react@18.3.1)
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+      tslib: 2.8.1
     dev: false
 
   /ms@2.0.0:
@@ -26211,7 +26237,21 @@ packages:
     engines: {node: '>= 0.8.0'}
     dev: true
 
-  /prettier-plugin-tailwindcss@0.6.14(prettier@3.8.1):
+  /prettier-plugin-organize-imports@4.3.0(prettier@3.8.1)(typescript@5.9.3):
+    resolution: {integrity: sha512-FxFz0qFhyBsGdIsb697f/EkvHzi5SZOhWAjxcx2dLt+Q532bAlhswcXGYB1yzjZ69kW8UoadFBw7TyNwlq96Iw==}
+    peerDependencies:
+      prettier: '>=2.0'
+      typescript: '>=2.9'
+      vue-tsc: ^2.1.0 || 3
+    peerDependenciesMeta:
+      vue-tsc:
+        optional: true
+    dependencies:
+      prettier: 3.8.1
+      typescript: 5.9.3
+    dev: true
+
+  /prettier-plugin-tailwindcss@0.6.14(prettier-plugin-organize-imports@4.3.0)(prettier@3.8.1):
     resolution: {integrity: sha512-pi2e/+ZygeIqntN+vC573BcW5Cve8zUB0SSAGxqpB4f96boZF4M3phPVoOFCeypwkpRYdi7+jQ5YJJUwrkGUAg==}
     engines: {node: '>=14.21.3'}
     peerDependencies:
@@ -26273,6 +26313,7 @@ packages:
         optional: true
     dependencies:
       prettier: 3.8.1
+      prettier-plugin-organize-imports: 4.3.0(prettier@3.8.1)(typescript@5.9.3)
     dev: true
 
   /prettier@3.8.1:

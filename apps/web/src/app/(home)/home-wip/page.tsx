@@ -36,7 +36,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion, useScroll, useTransform } from 'motion/react';
 import { useAuth } from '@/components/AuthProvider';
 import { Reveal } from '@/components/home/reveal';
 

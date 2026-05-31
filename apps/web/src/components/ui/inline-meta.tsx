@@ -37,7 +37,7 @@ export function InlineMeta({ className, children }: InlineMetaProps) {
       )}
     >
       {items.map((child, i) => (
-        <Fragment key={isValidElement(child) ? child.key ?? i : i}>
+        <Fragment key={isValidElement(child) ? (child.key ?? i) : i}>
           {i > 0 && <span className="text-muted-foreground/30">·</span>}
           <span className="truncate">{child}</span>
         </Fragment>

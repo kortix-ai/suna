@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAccountState, accountStateSelectors } from '@/hooks/billing';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { usePathname } from 'next/navigation';
 import { useWelcomeBannerStore } from '@/stores/welcome-banner-store';

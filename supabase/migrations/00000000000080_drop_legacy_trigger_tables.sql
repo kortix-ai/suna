@@ -15,3 +15,8 @@ DROP TABLE IF EXISTS kortix.project_triggers;
 
 DROP TYPE IF EXISTS kortix.project_trigger_event_status;
 DROP TYPE IF EXISTS kortix.project_trigger_type;
+
+-- Bootstrap-grants on account invitations: lets a project admin invite a
+-- non-Kortix-user "into project X as Editor" in a single step.
+ALTER TABLE kortix.account_invitations
+  ADD COLUMN IF NOT EXISTS bootstrap_grants jsonb;

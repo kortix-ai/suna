@@ -16,12 +16,12 @@ const THINKING_MESSAGES = [
   'Building on context...',
 ];
 
-const TYPING_SPEED = 24;       // ms per character
-const SHIMMER_DURATION = 900;  // ms per shimmer sweep
-const SHIMMER_COUNT = 2;       // number of shimmer sweeps
-const SHIMMER_GAP = 400;       // ms gap between shimmer sweeps
+const TYPING_SPEED = 24; // ms per character
+const SHIMMER_DURATION = 900; // ms per shimmer sweep
+const SHIMMER_COUNT = 2; // number of shimmer sweeps
+const SHIMMER_GAP = 400; // ms gap between shimmer sweeps
 const SHIMMER_CYCLE = SHIMMER_DURATION + SHIMMER_GAP;
-const CLEAR_DURATION = 300;    // ms for fade-out
+const CLEAR_DURATION = 300; // ms for fade-out
 const PAUSE_AFTER_CLEAR = 150; // ms pause before next message
 
 type Phase = 'typing' | 'shimmer' | 'clearing';
@@ -34,7 +34,10 @@ interface AnimatedThinkingTextProps {
   className?: string;
 }
 
-function AnimatedThinkingTextComponent({ statusText, className }: AnimatedThinkingTextProps) {
+function AnimatedThinkingTextComponent({
+  statusText,
+  className,
+}: AnimatedThinkingTextProps) {
   // ── core state ──
   const [msgIdx, setMsgIdx] = useState(() =>
     Math.floor(Math.random() * THINKING_MESSAGES.length),
@@ -60,7 +63,8 @@ function AnimatedThinkingTextComponent({ statusText, className }: AnimatedThinki
   // Resolve the target message for the *current* render.
   // We keep it in a ref so the single‑effect loop always reads the latest.
   const resolveText = useCallback(
-    (idx: number) => statusText || THINKING_MESSAGES[idx % THINKING_MESSAGES.length],
+    (idx: number) =>
+      statusText || THINKING_MESSAGES[idx % THINKING_MESSAGES.length],
     [statusText],
   );
 
@@ -136,7 +140,10 @@ function AnimatedThinkingTextComponent({ statusText, className }: AnimatedThinki
           timerRef.current = setTimeout(runSweep, SHIMMER_GAP);
         } else {
           // ambient → clear and move on
-          timerRef.current = setTimeout(() => setPhase('clearing'), SHIMMER_GAP);
+          timerRef.current = setTimeout(
+            () => setPhase('clearing'),
+            SHIMMER_GAP,
+          );
         }
       }, SHIMMER_DURATION);
     };
@@ -173,7 +180,7 @@ function AnimatedThinkingTextComponent({ statusText, className }: AnimatedThinki
 
   // ── shimmer background styles (matches TextShimmer gradient approach) ──
   const shimmerStyle: React.CSSProperties = shimmerActive
-    ? {
+    ? ({
         backgroundImage:
           'linear-gradient(90deg, transparent calc(50% - var(--spread)), var(--highlight-soft) calc(50% - var(--spread-soft)), var(--highlight), var(--highlight-soft) calc(50% + var(--spread-soft)), transparent calc(50% + var(--spread))), linear-gradient(var(--base), var(--base))',
         backgroundSize: '220% 100%, auto',
@@ -190,7 +197,7 @@ function AnimatedThinkingTextComponent({ statusText, className }: AnimatedThinki
         '--base': 'var(--shimmer-base)',
         '--highlight': 'var(--shimmer-highlight)',
         '--highlight-soft': 'var(--shimmer-highlight-soft)',
-      } as React.CSSProperties
+      } as React.CSSProperties)
     : {};
 
   return (
@@ -212,7 +219,8 @@ function AnimatedThinkingTextComponent({ statusText, className }: AnimatedThinki
         style={{
           opacity,
           filter: `blur(${blur}px)`,
-          transitionDuration: phase === 'clearing' ? `${CLEAR_DURATION}ms` : '0ms',
+          transitionDuration:
+            phase === 'clearing' ? `${CLEAR_DURATION}ms` : '0ms',
           ...shimmerStyle,
         }}
       >

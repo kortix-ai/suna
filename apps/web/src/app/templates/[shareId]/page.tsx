@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { motion, useScroll } from 'framer-motion';
+import { motion, useScroll } from 'motion/react';
 import { backendApi } from '@/lib/api-client';
 import { getEnv } from '@/lib/env-config';
 import {
