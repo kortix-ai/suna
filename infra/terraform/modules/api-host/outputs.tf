@@ -3,8 +3,8 @@ output "instance_name" {
 }
 
 output "public_ip" {
-  description = "Static public IP attached to the instance (DNS target)."
-  value       = aws_lightsail_static_ip.this.ip_address
+  description = "Public IP (DNS target): the managed static IP if any, else the instance's public IP."
+  value       = var.manage_static_ip ? aws_lightsail_static_ip.this[0].ip_address : aws_lightsail_instance.this.public_ip_address
 }
 
 output "private_ip" {
