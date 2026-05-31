@@ -5,9 +5,9 @@ name: CodeQL
 
 on:
   push:
-    branches: [newer-kortix, main]
+    branches: [main, production]
   pull_request:
-    branches: [newer-kortix, main]
+    branches: [main, production]
   schedule:
     - cron: "27 3 * * 1" # weekly, Monday 03:27 UTC
 

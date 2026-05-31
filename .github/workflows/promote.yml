@@ -1,0 +1,130 @@
+name: Promote to Production
+
+# Manual promotion: bumps the unified root VERSION, commits it to `main`, tags
+# `vX.Y.Z`, and fast-forwards the `production` branch to that commit. The push
+# to `production` is what triggers deploy-prod.yml (image retag + GH Release +
+# the gated prod ECS roll).
+#
+# This is the ONLY way a clean version `X.Y.Z` enters production. Dev builds on
+# `main` are always `X.Y.Z-dev.<sha8>`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Semver bump (ignored if an explicit version is given)'
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      version:
+        description: 'Explicit version override (e.g. 0.9.1) — optional'
+        required: false
+        type: string
+      ref:
+        description: 'Source ref to promote (default main)'
+        required: false
+        default: main
+        type: string
+
+concurrency:
+  group: promote
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    name: Bump VERSION, tag, fast-forward production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ${{ inputs.ref }} (full history)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Compute new version
+        id: ver
+        run: |
+          set -euo pipefail
+          CURRENT="$(tr -d '[:space:]' < VERSION)"
+          echo "Current VERSION: $CURRENT"
+
+          EXPLICIT="${{ inputs.version }}"
+          if [ -n "$EXPLICIT" ]; then
+            NEW="${EXPLICIT#v}"  # tolerate a leading v
+          else
+            # Parse X.Y.Z and bump.
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+            : "${MAJOR:=0}"; : "${MINOR:=0}"; : "${PATCH:=0}"
+            case "${{ inputs.bump }}" in
+              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+              patch) PATCH=$((PATCH + 1)) ;;
+            esac
+            NEW="${MAJOR}.${MINOR}.${PATCH}"
+          fi
+
+          # Validate semver X.Y.Z.
+          if ! echo "$NEW" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Computed version '$NEW' is not valid X.Y.Z semver" >&2
+            exit 1
+          fi
+
+          echo "New VERSION: $NEW"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
+
+      - name: Write VERSION + commit to ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          NEW="${{ steps.ver.outputs.new }}"
+          TAG="${{ steps.ver.outputs.tag }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Idempotent-ish: only write+commit if VERSION actually changed.
+          printf '%s\n' "$NEW" > VERSION
+          if git diff --quiet -- VERSION; then
+            echo "VERSION already at $NEW — no commit needed."
+          else
+            git add VERSION
+            git commit -m "chore(release): $TAG"
+            git push origin "HEAD:${{ inputs.ref }}"
+          fi
+
+          # Create/replace the annotated tag at the current commit.
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists locally — re-pointing."
+          fi
+          git tag -fa "$TAG" -m "Release $TAG"
+          git push -f origin "$TAG"
+
+      - name: Fast-forward production to this commit
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse HEAD)"
+          echo "Pushing $SHA → refs/heads/production"
+          # Force-push the exact commit onto production. Since production only
+          # ever receives promotions, this is a clean fast-forward in practice.
+          git push -f origin "$SHA:refs/heads/production"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Promoted to production"
+            echo ""
+            echo "- Previous VERSION: \`${{ steps.ver.outputs.current }}\`"
+            echo "- New VERSION: \`${{ steps.ver.outputs.new }}\`"
+            echo "- Tag: \`${{ steps.ver.outputs.tag }}\`"
+            echo "- Source ref: \`${{ inputs.ref }}\`"
+            echo ""
+            echo "_The push to \`production\` triggers **deploy-prod.yml** (image retag + GitHub Release; prod ECS roll stays gated until \`PROD_LIVE=true\`)._"
+          } >> "$GITHUB_STEP_SUMMARY"

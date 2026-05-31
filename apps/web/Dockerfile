@@ -13,7 +13,6 @@
 #   docker build -f apps/web/Dockerfile -t kortix/kortix-frontend:cloud .
 #
 # Build-time env vars (baked into the image):
-#   NEXT_PUBLIC_ENV_MODE       - "local" or "cloud"
 #   NEXT_PUBLIC_BILLING_ENABLED - "true" for cloud, "false" for self-hosted
 #   NEXT_PUBLIC_BACKEND_URL   - API URL
 #   NEXT_PUBLIC_URL           - Frontend URL

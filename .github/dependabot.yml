@@ -6,10 +6,8 @@ updates:
   # JS/TS dependencies (pnpm uses the npm ecosystem).
   - package-ecosystem: "npm"
     directory: "/"
-    # Active development happens on newer-kortix, not the default branch (main).
-    # PRs must target it so they land on the trunk AND get CI-gated (the
-    # typecheck/gitleaks/codeql workflows live on newer-kortix).
-    target-branch: "newer-kortix"
+    # main is the dev trunk; PRs target it so they get CI-gated before merge.
+    target-branch: "main"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -24,7 +22,7 @@ updates:
   # Keep GitHub Actions pinned and current (supply-chain hygiene).
   - package-ecosystem: "github-actions"
     directory: "/"
-    target-branch: "newer-kortix"
+    target-branch: "main"
     schedule:
       interval: "weekly"
       day: "monday"

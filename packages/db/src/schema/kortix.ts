@@ -145,6 +145,13 @@ export const accountMembers = kortixSchema.table(
     joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    // Composite primary key — REQUIRED so `INSERT ... ON CONFLICT (user_id,
+    // account_id)` (invite accept, member add, YOLO seat mgmt) has a matching
+    // constraint. Declared as a table-level primaryKey (not just a uniqueIndex)
+    // so `drizzle-kit push` materializes a real constraint; a bare uniqueIndex
+    // was silently skipped by push, leaving the table constraint-less and
+    // every ON CONFLICT path 500ing with 42P10. See migration 105.
+    primaryKey({ columns: [table.userId, table.accountId] }),
     index('idx_account_members_user_id').on(table.userId),
     index('idx_account_members_account_id').on(table.accountId),
     uniqueIndex('idx_account_members_user_account').on(table.userId, table.accountId),

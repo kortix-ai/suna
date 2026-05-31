@@ -40,10 +40,14 @@ export const RESOLVE_WS_OC_SH = [
   '[ -d "$WS" ] || WS="${KORTIX_WORKSPACE:-/workspace}"',
   'if [ -n "${OPENCODE_STORAGE_BASE:-}" ] && [ -d "$OPENCODE_STORAGE_BASE" ]; then OC="$OPENCODE_STORAGE_BASE";',
   'elif [ -d "$WS/.local/share/opencode" ]; then OC="$WS/.local/share/opencode";',
+  // Newer image: canonical store is /persistent/opencode, which is the volume's
+  // .persistent-system/opencode on the host (the container's ~/.local/share and
+  // /persistent are symlinks that dangle when viewed from the host).
+  'elif [ -d "$WS/.persistent-system/opencode" ]; then OC="$WS/.persistent-system/opencode";',
   'elif [ -n "${KORTIX_PERSISTENT_ROOT:-}" ] && [ -d "$KORTIX_PERSISTENT_ROOT/opencode" ]; then OC="$KORTIX_PERSISTENT_ROOT/opencode";',
   'elif [ -d /persistent/opencode ]; then OC=/persistent/opencode;',
-  'elif [ -d "$HOME/.local/share/opencode" ]; then OC="$HOME/.local/share/opencode";',
-  'else OC="$(ls -d /var/lib/docker/volumes/*/_data/.local/share/opencode /home/*/.local/share/opencode 2>/dev/null | head -1)"; fi',
+  'elif [ -n "${HOME:-}" ] && [ -d "$HOME/.local/share/opencode" ]; then OC="$HOME/.local/share/opencode";',
+  'else OC="$(ls -d /var/lib/docker/volumes/*/_data/.persistent-system/opencode /var/lib/docker/volumes/*/_data/.local/share/opencode /home/*/.local/share/opencode 2>/dev/null | head -1)"; fi',
 ].join('\n');
 
 export interface LegacyExecResult {

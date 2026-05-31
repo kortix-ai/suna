@@ -74,9 +74,7 @@ import {
   getFileSha,
   getRepo,
   getGitHubAppInstallation,
-  getGitHubPatAuthContext,
   isGithubAppConfigured,
-  isGithubPatConfigured,
   listInstallationRepositories,
   type GitHubAuthContext,
   type GitHubRepo,
@@ -602,21 +600,16 @@ function serializeGitHubInstallation(
   installUrl: string | null,
 ) {
   const installed = Boolean(row);
-  const kortixDefaultAvailable = isGithubPatConfigured();
   const metadata = normalizeJsonObject(row?.metadata);
-  // requires_installation is now only true when neither a per-account
-  // install nor a Kortix-owned default exists. The default Create flow
-  // always uses the Kortix org via PAT when one is configured, so users
-  // don't need to install anything to get started.
-  const requiresInstallation = isGithubAppConfigured() && !installed && !kortixDefaultAvailable;
+  // GitHub backing is App-only: a per-account App installation is required
+  // whenever the App is configured and this account hasn't installed it yet.
+  const requiresInstallation = isGithubAppConfigured() && !installed;
   return {
     account_id: accountId,
     installation_row_id: row?.installationRowId ?? null,
     installed,
     configured: isGithubAppConfigured(),
     requires_installation: requiresInstallation,
-    kortix_default_available: kortixDefaultAvailable,
-    pat_fallback_available: !isGithubAppConfigured() && kortixDefaultAvailable,
     install_url: installed ? null : installUrl,
     installation_id: row?.installationId ?? null,
     owner_login: row?.ownerLogin ?? null,
@@ -638,7 +631,7 @@ function serializeGitHubInstallations(
   return {
     ...base,
     installed: rows.length > 0,
-    requires_installation: isGithubAppConfigured() && rows.length === 0 && !isGithubPatConfigured(),
+    requires_installation: isGithubAppConfigured() && rows.length === 0,
     install_url: installUrl,
     installations: rows.map((row) => serializeGitHubInstallation(row, accountId, null)),
   };
@@ -804,7 +797,7 @@ class GitHubInstallationRequiredError extends Error {
 
 async function resolveGitHubRepoAuth(accountId: string, installationId?: string | null): Promise<{
   auth?: GitHubAuthContext;
-  authSource: 'app_installation' | 'pat';
+  authSource: 'app_installation';
   installation?: typeof accountGithubInstallations.$inferSelect;
 }> {
   const installation = await getAccountGitHubInstallation(accountId, installationId);
@@ -826,39 +819,14 @@ async function resolveGitHubRepoAuth(accountId: string, installationId?: string 
     throw new Error('Selected GitHub installation is not connected to this account');
   }
 
-  // No per-account installation. Default Create flow puts the repo under the
-  // Kortix-owned org via PAT — users don't have to install anything to get
-  // started. Per-account App install remains an opt-in for "use my own org".
-  if (isGithubPatConfigured()) {
-    return { authSource: 'pat' };
-  }
-
+  // GitHub backing is App-only: a per-account App installation is required.
+  // (Linking an existing repo with a user-supplied token is a separate flow
+  // that stores a project_credential — see resolveGitHubImportWithPat.)
   if (isGithubAppConfigured()) {
     throw new GitHubInstallationRequiredError(accountId);
   }
 
   throw new Error('GitHub is not configured on the server');
-}
-
-function projectCreatedWithServerPat(project: ProjectRow): boolean {
-  const metadata = normalizeJsonObject(project.metadata);
-  const github = normalizeJsonObject(metadata.github);
-  if (github.auth_source !== 'pat') return false;
-
-  const repo = parseGitHubRepoUrl(project.repoUrl);
-  if (!repo) return false;
-
-  const fullName = normalizeString(github.full_name);
-  if (fullName && fullName.toLowerCase() !== `${repo.owner}/${repo.repo}`.toLowerCase()) {
-    return false;
-  }
-
-  const configuredOwner = process.env.KORTIX_GITHUB_OWNER?.trim();
-  if (configuredOwner && repo.owner.toLowerCase() !== configuredOwner.toLowerCase()) {
-    return false;
-  }
-
-  return true;
 }
 
 interface ProjectGitRemote {
@@ -1063,7 +1031,7 @@ async function hasServerManagedGitAuth(project: ProjectRow): Promise<boolean> {
   if (remote.provider === 'github' && remote.authMethod === 'github_app') {
     return true;
   }
-  return projectCreatedWithServerPat(project);
+  return false;
 }
 
 async function resolveProjectGitAuth(project: ProjectRow): Promise<{
@@ -1127,21 +1095,6 @@ async function resolveProjectGitAuth(project: ProjectRow): Promise<{
         authSource: 'project_credential',
       };
     }
-  }
-
-  if (remote.provider === 'github' && remote.authMethod === 'pat' && projectCreatedWithServerPat(project)) {
-    const auth = getGitHubPatAuthContext();
-    if (auth) {
-      return {
-        auth,
-        authSource: 'pat',
-      };
-    }
-  }
-
-  if (projectCreatedWithServerPat(project)) {
-    const auth = getGitHubPatAuthContext();
-    if (auth) return { auth, authSource: 'pat' };
   }
 
   return { authSource: 'none' };
@@ -3303,7 +3256,7 @@ projectsApp.post('/create-repo', async (c) => {
       repoUrl: row.repoUrl,
       defaultBranch: row.defaultBranch,
       manifestPath: row.manifestPath,
-      gitAuthToken: githubAuth.auth?.token ?? (githubAuth.authSource === 'pat' ? getGitHubPatAuthContext()?.token ?? null : null),
+      gitAuthToken: githubAuth.auth?.token ?? null,
     },
     { accountId: scope.accountId, source: 'project-create' },
   );

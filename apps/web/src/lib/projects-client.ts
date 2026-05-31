@@ -289,8 +289,6 @@ export interface GitHubInstallationStatus {
   installed: boolean;
   configured: boolean;
   requires_installation: boolean;
-  kortix_default_available: boolean;
-  pat_fallback_available: boolean;
   install_url: string | null;
   installation_id: string | null;
   owner_login: string | null;

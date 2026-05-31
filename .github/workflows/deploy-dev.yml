@@ -1,22 +1,28 @@
 name: Deploy Dev
 
-# Builds multi-arch Docker images using native runners (amd64 + arm64 in parallel),
-# deploys API + frontend to dev VPS. Path-filtered — only builds what changed.
+# DEV pipeline. `main` is the dev branch: every push auto-deploys the things that
+# change on most commits — API, frontend, CLI — as a DEV build versioned
+# `$(cat VERSION)-dev.<sha8>`.
 #
-# Auto-deploy on push is controlled by the repo variable AUTO_DEPLOY_DEV.
-# Set to 'true' to enable, anything else to disable. Manual dispatch always works.
+#   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest, then rolled onto
+#                   the ECS Fargate dev service (kortix-dev) via GitHub OIDC.
+#   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest (image is for
+#                   self-hosters). dev.kortix.com itself is deployed by Vercel
+#                   from `main` via Vercel's own Git integration — no deploy step.
+#   - CLI         → 4 cross-compiled binaries published to the mutable
+#                   `dev-latest` GitHub prerelease (default API base dev-api).
+#
+# Desktop is intentionally NOT here — it's a Tauri webview shell that changes
+# rarely and needs slow signed macOS/Windows runners, so it lives in its own
+# workflow (desktop.yml: only on apps/desktop/** changes or manual dispatch) and
+# never blocks the CLI/API/frontend dev deploy.
+#
+# Promotion to production is a separate, manual workflow (promote.yml), which cuts
+# the single unified vX.Y.Z release bundling API + frontend + CLI + desktop.
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'apps/api/**'
-      - 'apps/kortix-sandbox-agent-server/**'
-      - 'apps/sandbox/**'
-      - 'apps/web/**'
-      - 'packages/**'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
   workflow_dispatch:
 
 concurrency:
@@ -24,27 +30,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Gate: skip on push if auto-deploy is off ─────────────────────────────
-  gate:
-    name: Check auto-deploy
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || vars.AUTO_DEPLOY_DEV == 'true'
-    steps:
-      - run: echo "Auto-deploy enabled or manual trigger"
-
-  # ── Detect what changed ──────────────────────────────────────────────────
+  # ── Detect what changed (so unrelated surfaces are skipped) ─────────────────
   detect-changes:
     name: Detect changes
-    needs: gate
     runs-on: ubuntu-latest
     outputs:
-      api_changed: ${{ steps.filter.outputs.api }}
-      frontend_changed: ${{ steps.filter.outputs.frontend }}
+      api: ${{ steps.filter.outputs.api }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      cli: ${{ steps.filter.outputs.cli }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Path filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -55,244 +53,280 @@ jobs:
               - 'packages/**'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
+              - 'VERSION'
             frontend:
               - 'apps/web/**'
               - 'packages/**'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
+              - 'VERSION'
+            cli:
+              - 'apps/cli/**'
+              - 'packages/starter/**'
+              - 'scripts/install.sh'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - 'VERSION'
       - name: Summary
         run: |
-          echo "### Changes detected" >> "$GITHUB_STEP_SUMMARY"
-          echo "- API: ${{ steps.filter.outputs.api }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Frontend: ${{ steps.filter.outputs.frontend }}" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Changes detected"
+            echo "- API: ${{ steps.filter.outputs.api }}"
+            echo "- Frontend: ${{ steps.filter.outputs.frontend }}"
+            echo "- CLI: ${{ steps.filter.outputs.cli }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Build API (amd64 + arm64 in parallel) ──────────────────────────────────
-  build-api-amd64:
-    name: API (amd64)
+  # ── Build + push the multi-arch API image ───────────────────────────────────
+  build-api:
+    name: Build API image (multi-arch)
     needs: detect-changes
-    if: needs.detect-changes.outputs.api_changed == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.detect-changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push
-        run: |
-          SHA8="${GITHUB_SHA::8}"
-          docker build --file apps/api/Dockerfile --build-arg SERVICE=apps/api \
-            --tag "kortix/kortix-api:dev-${SHA8}-amd64" \
-            --tag "kortix/kortix-api:dev-latest-amd64" .
-          docker push "kortix/kortix-api:dev-${SHA8}-amd64"
-          docker push "kortix/kortix-api:dev-latest-amd64"
-
-  build-api-arm64:
-    name: API (arm64)
-    needs: detect-changes
-    if: needs.detect-changes.outputs.api_changed == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: false }
-      - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: docker/login-action@v3
+      - name: Build and push (amd64 + arm64)
+        # The Dockerfile has no KORTIX_VERSION ARG, so the dev version is not
+        # injected into the image — the artifact is identified by its :dev-<sha8>
+        # tag (created in the tag-api job below).
+        uses: docker/build-push-action@v7
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push
-        run: |
-          SHA8="${GITHUB_SHA::8}"
-          docker build --file apps/api/Dockerfile --build-arg SERVICE=apps/api \
-            --tag "kortix/kortix-api:dev-${SHA8}-arm64" \
-            --tag "kortix/kortix-api:dev-latest-arm64" .
-          docker push "kortix/kortix-api:dev-${SHA8}-arm64"
-          docker push "kortix/kortix-api:dev-latest-arm64"
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            SERVICE=apps/api
+          tags: |
+            kortix/kortix-api:dev-latest
 
-  merge-api:
-    name: API manifest
-    needs: [build-api-amd64, build-api-arm64]
+  # docker/build-push-action's `tags` does not support shell slicing, so we
+  # retag the published :dev-latest to the :dev-<sha8> immutable tag here.
+  tag-api:
+    name: Tag API dev-<sha8>
+    needs: [detect-changes, build-api]
+    if: needs.detect-changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     outputs:
-      image: ${{ steps.meta.outputs.image }}
+      image: ${{ steps.tag.outputs.image }}
     steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Create multi-arch manifest
-        id: meta
+      - name: Retag :dev-latest → :dev-<sha8> (multi-arch manifest)
+        id: tag
         run: |
+          set -euo pipefail
           SHA8="${GITHUB_SHA::8}"
-          docker manifest create "kortix/kortix-api:dev-${SHA8}" \
-            "kortix/kortix-api:dev-${SHA8}-amd64" \
-            "kortix/kortix-api:dev-${SHA8}-arm64"
-          docker manifest push "kortix/kortix-api:dev-${SHA8}"
-
-          docker manifest create "kortix/kortix-api:dev-latest" \
-            "kortix/kortix-api:dev-latest-amd64" \
-            "kortix/kortix-api:dev-latest-arm64"
-          docker manifest push "kortix/kortix-api:dev-latest"
-
+          docker buildx imagetools create \
+            --tag "kortix/kortix-api:dev-${SHA8}" \
+            "kortix/kortix-api:dev-latest"
           echo "image=kortix/kortix-api:dev-${SHA8}" >> "$GITHUB_OUTPUT"
 
-  # ── Build Frontend (amd64 + arm64 in parallel) ─────────────────────────────
-  build-frontend-amd64:
-    name: Frontend (amd64)
-    needs: detect-changes
-    if: needs.detect-changes.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: false }
-      - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      - run: corepack enable pnpm
-      - run: pnpm install --frozen-lockfile
-        env:
-          npm_config_engine_strict: "false"
-      - name: Build frontend standalone output
-        run: pnpm --filter ./apps/web build
-        env:
-          NEXT_PUBLIC_ENV_MODE: local
-          NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
-          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
-          NEXT_PUBLIC_BILLING_ENABLED: "false"
-          NEXT_OUTPUT: standalone
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push
-        run: |
-          SHA8="${GITHUB_SHA::8}"
-          docker build --file apps/web/Dockerfile \
-            --tag "kortix/kortix-frontend:dev-${SHA8}-amd64" \
-            --tag "kortix/kortix-frontend:dev-latest-amd64" .
-          docker push "kortix/kortix-frontend:dev-${SHA8}-amd64"
-          docker push "kortix/kortix-frontend:dev-latest-amd64"
-
-  build-frontend-arm64:
-    name: Frontend (arm64)
-    needs: detect-changes
-    if: needs.detect-changes.outputs.frontend_changed == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: false }
-      - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      - run: corepack enable pnpm
-      - run: pnpm install --frozen-lockfile
-        env:
-          npm_config_engine_strict: "false"
-      - name: Build frontend standalone output
-        run: pnpm --filter ./apps/web build
-        env:
-          NEXT_PUBLIC_ENV_MODE: local
-          NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
-          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
-          NEXT_PUBLIC_BILLING_ENABLED: "false"
-          NEXT_OUTPUT: standalone
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push
-        run: |
-          SHA8="${GITHUB_SHA::8}"
-          docker build --file apps/web/Dockerfile \
-            --tag "kortix/kortix-frontend:dev-${SHA8}-arm64" \
-            --tag "kortix/kortix-frontend:dev-latest-arm64" .
-          docker push "kortix/kortix-frontend:dev-${SHA8}-arm64"
-          docker push "kortix/kortix-frontend:dev-latest-arm64"
-
-  merge-frontend:
-    name: Frontend manifest
-    needs: [build-frontend-amd64, build-frontend-arm64]
-    runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.meta.outputs.image }}
-    steps:
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Create multi-arch manifest
-        id: meta
-        run: |
-          SHA8="${GITHUB_SHA::8}"
-          docker manifest create "kortix/kortix-frontend:dev-${SHA8}" \
-            "kortix/kortix-frontend:dev-${SHA8}-amd64" \
-            "kortix/kortix-frontend:dev-${SHA8}-arm64"
-          docker manifest push "kortix/kortix-frontend:dev-${SHA8}"
-
-          docker manifest create "kortix/kortix-frontend:dev-latest" \
-            "kortix/kortix-frontend:dev-latest-amd64" \
-            "kortix/kortix-frontend:dev-latest-arm64"
-          docker manifest push "kortix/kortix-frontend:dev-latest"
-
-          echo "image=kortix/kortix-frontend:dev-${SHA8}" >> "$GITHUB_OUTPUT"
-
-  # ── Deploy API to dev VPS ──────────────────────────────────────────────────
+  # ── Roll the dev ECS service onto the freshly-built image ───────────────────
+  # The task definition pins kortix/kortix-api:dev-latest; force-new-deployment
+  # re-pulls that tag and rolls the service. Auth via OIDC (no long-lived keys).
   deploy-api:
-    name: Deploy API to dev
-    needs: merge-api
+    name: Deploy API to dev (ECS)
+    needs: [detect-changes, tag-api]
+    if: needs.detect-changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     environment: dev
+    permissions:
+      id-token: write # assume the AWS role via GitHub OIDC
+      contents: read
     steps:
-      - name: Zero-downtime deploy via SSH
-        uses: appleboy/ssh-action@v1
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.AWS_DEV_KEY }}
-          port: 22
-          timeout: 300s
-          script: |
-            set -e
-            cd ~/suna
-            git -c fetch.recurseSubmodules=false fetch origin main
-            git reset --hard origin/main
-            git submodule sync --recursive
-            git submodule update --init --recursive --remote
-            PREBUILT_IMAGE="${{ needs.merge-api.outputs.image }}" bash scripts/deploy-zero-downtime.sh
-
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+          aws-region: us-west-2
+      - name: Roll the ECS service onto the freshly-built image
+        run: |
+          set -euo pipefail
+          echo "Rolling ECS service kortix-dev (image ${{ needs.tag-api.outputs.image }} via :dev-latest)…"
+          aws ecs update-service --cluster kortix-dev --service kortix-dev --force-new-deployment >/dev/null
+          aws ecs wait services-stable --cluster kortix-dev --services kortix-dev
+          aws ecs describe-services --cluster kortix-dev --services kortix-dev \
+            --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
+            --output table
       - name: Summary
         if: always()
         run: |
-          echo "### Deployed API → **dev**" >> "$GITHUB_STEP_SUMMARY"
-          echo "Image: \`${{ needs.merge-api.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Deployed API → **dev** (ECS Fargate)"
+            echo "Image: \`${{ needs.tag-api.outputs.image }}\` rolled onto ECS service \`kortix-dev\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  deploy-frontend:
-    name: Deploy frontend to dev
-    needs: merge-frontend
+  # ── Build + push the multi-arch frontend image ──────────────────────────────
+  # dev.kortix.com is served by Vercel (auto-deploys from `main`); this image is
+  # for self-hosters, so there is no deploy step here.
+  build-frontend:
+    name: Build frontend image (multi-arch)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    environment: dev
     steps:
-      - name: Zero-downtime deploy via SSH
-        uses: appleboy/ssh-action@v1
+      - uses: actions/checkout@v4
+        with: { submodules: false }
+      - run: git submodule sync --recursive && git submodule update --init --recursive --remote
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+      - name: Build frontend standalone output
+        run: pnpm --filter ./apps/web build
+        env:
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
+          NEXT_PUBLIC_BILLING_ENABLED: "false"
+          NEXT_OUTPUT: standalone
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.AWS_DEV_KEY }}
-          port: 22
-          timeout: 300s
-          script: |
-            set -e
-            cd ~/suna
-            git -c fetch.recurseSubmodules=false fetch origin main
-            git reset --hard origin/main
-            PREBUILT_IMAGE="${{ needs.merge-frontend.outputs.image }}" bash scripts/deploy-frontend-zero-downtime.sh
-
-      - name: Summary
-        if: always()
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push (amd64 + arm64)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            kortix/kortix-frontend:dev-latest
+      - name: Retag :dev-latest → :dev-<sha8>
         run: |
-          echo "### Deployed frontend → **dev.kortix.com**" >> "$GITHUB_STEP_SUMMARY"
-          echo "Image: \`${{ needs.merge-frontend.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          SHA8="${GITHUB_SHA::8}"
+          docker buildx imagetools create \
+            --tag "kortix/kortix-frontend:dev-${SHA8}" \
+            "kortix/kortix-frontend:dev-latest"
+          echo "Pushed kortix/kortix-frontend:dev-${SHA8} + :dev-latest"
+
+  # ── Build dev CLI (4 targets on one Linux runner via Bun cross-compile) ─────
+  build-cli:
+    name: Build dev CLI (all targets)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.cli == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install workspace deps (pnpm)
+        # The repo's lockfile is pnpm format; `bun install` cannot migrate it
+        # ("PnpmLockfileTooOld"), so install deps with pnpm and compile with bun.
+        run: |
+          corepack enable && corepack prepare pnpm@latest --activate || true
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build every target (Bun cross-compile)
+        run: |
+          set -euo pipefail
+          CLI_VERSION="$(cat VERSION)-dev.${GITHUB_SHA::8}"
+          API_BASE="https://dev-api.kortix.com"
+          mkdir -p artifacts
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            echo "↻ building kortix-$t (cli $CLI_VERSION)"
+            bun build \
+              --compile \
+              --minify \
+              --target="bun-$t" \
+              --define="process.env.KORTIX_CLI_VERSION=\"${CLI_VERSION}\"" \
+              --define="process.env.KORTIX_DEFAULT_API_BASE=\"${API_BASE}\"" \
+              --outfile="artifacts/kortix-$t" \
+              apps/cli/src/index.ts
+          done
+          cd artifacts
+          chmod +x kortix-*
+          sha256sum kortix-* > SHA256SUMS
+          ls -lh
+
+      - name: Smoke test (native linux-x64)
+        run: ./artifacts/kortix-linux-x64 version
+
+      - name: Upload CLI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-binaries
+          path: |
+            artifacts/kortix-darwin-arm64
+            artifacts/kortix-darwin-x64
+            artifacts/kortix-linux-x64
+            artifacts/kortix-linux-arm64
+            artifacts/SHA256SUMS
+          if-no-files-found: error
+
+  # ── Publish/refresh the mutable `dev-latest` prerelease (CLI binaries) ──────
+  # CLI-only and depends solely on build-cli, so a slow/scarce desktop runner can
+  # never block the dev CLI channel (`kortix update` --dev).
+  publish-dev-release:
+    name: Publish dev-latest prerelease
+    needs: [detect-changes, build-cli]
+    if: needs.detect-changes.outputs.cli == 'true' && needs.build-cli.result == 'success'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-binaries
+          path: release/
+
+      - name: List assets
+        run: ls -lh release/
+
+      - name: Move dev-latest tag to this commit
+        run: |
+          git tag -f dev-latest "$GITHUB_SHA"
+          git push -f origin dev-latest
+
+      - name: Publish GitHub prerelease (dev-latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev-latest
+          name: dev-latest
+          prerelease: true
+          make_latest: false
+          generate_release_notes: false
+          body: |
+            Mutable DEV CLI build for `${{ github.sha }}`.
+
+            Install: `curl -fsSL https://kortix.com/install | KORTIX_CHANNEL=dev bash`
+            Defaults to `https://dev-api.kortix.com`.
+          files: |
+            release/*
