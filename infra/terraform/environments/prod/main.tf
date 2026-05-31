@@ -99,8 +99,14 @@ module "api" {
   tags               = local.tags
 }
 
+# DNS for the public API hostname. Gated by manage_dns so the stack (VPC/ALB/
+# ECS/cert) can be built and validated WITHOUT touching the live api.kortix.com
+# record — the cutover (repoint api.kortix.com → this ALB) is done deliberately
+# once the new stack is verified against the prod DB, and is instantly
+# reversible. ACM validation records (in module.acm) are unique and always created.
 module "dns" {
   source  = "../../modules/cloudflare-dns"
+  count   = var.manage_dns ? 1 : 0
   zone_id = var.cloudflare_zone_id
 
   records = {

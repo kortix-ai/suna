@@ -10,6 +10,17 @@ variable "cloudflare_zone_id" {
   default     = ""
 }
 
+variable "manage_dns" {
+  description = <<-EOT
+    Whether terraform creates the public api.kortix.com CNAME. Keep false during
+    bring-up so the live record (pointing at the old prod box) is untouched —
+    the stack builds + validates first. The cutover repoints api.kortix.com at
+    this ALB out-of-band (reversible). ACM validation records are always created.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "api_domain" {
   description = <<-EOT
     Public FQDN for the prod API. Defaults to the final api.kortix.com, but the

@@ -16,5 +16,7 @@ output "log_group" {
 }
 
 output "dns_records" {
-  value = module.dns.record_hostnames
+  # When manage_dns is off the api.kortix.com record is NOT terraform-managed
+  # (cutover is done out-of-band); expose the ALB DNS as the cutover target.
+  value = var.manage_dns ? one(module.dns[*].record_hostnames) : { alb_dns_name = module.api.alb_dns_name }
 }
