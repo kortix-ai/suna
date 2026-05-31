@@ -1,7 +1,8 @@
 name: Deploy Dev
 
 # Builds multi-arch Docker images using native runners (amd64 + arm64 in parallel),
-# deploys API + frontend to dev VPS. Path-filtered — only builds what changed.
+# deploys API + frontend to dev VPS. Always builds BOTH on every push to main
+# (when AUTO_DEPLOY_DEV=true) or on manual dispatch.
 #
 # Auto-deploy on push is controlled by the repo variable AUTO_DEPLOY_DEV.
 # Set to 'true' to enable, anything else to disable. Manual dispatch always works.
@@ -9,14 +10,6 @@ name: Deploy Dev
 on:
   push:
     branches: [main]
-    paths:
-      - 'apps/api/**'
-      - 'apps/kortix-sandbox-agent-server/**'
-      - 'apps/sandbox/**'
-      - 'apps/web/**'
-      - 'packages/**'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
   workflow_dispatch:
 
 concurrency:
