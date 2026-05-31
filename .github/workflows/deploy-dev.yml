@@ -102,7 +102,7 @@ jobs:
         # The Dockerfile has no KORTIX_VERSION ARG, so the dev version is not
         # injected into the image — the artifact is identified by its :dev-<sha8>
         # tag (created in the tag-api job below).
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
@@ -209,7 +209,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64 + arm64)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/web/Dockerfile
