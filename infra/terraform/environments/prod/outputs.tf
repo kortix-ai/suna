@@ -20,3 +20,8 @@ output "dns_records" {
   # (cutover is done out-of-band); expose the ALB DNS as the cutover target.
   value = var.manage_dns ? one(module.dns[*].record_hostnames) : { alb_dns_name = module.api.alb_dns_name }
 }
+
+output "extra_api_hostnames" {
+  description = "Unlocked public API hostnames pointing at the new ALB."
+  value       = var.extra_api_hostnames
+}

@@ -10,6 +10,17 @@ variable "cloudflare_zone_id" {
   default     = ""
 }
 
+variable "extra_api_hostnames" {
+  description = <<-EOT
+    Additional public API hostnames to expose the ALB under (proxied CNAMEs),
+    also added as ACM SANs so Cloudflare Full-strict works. Use to serve the new
+    stack under an unlocked name (e.g. ["api-prod.kortix.com"]) while the
+    canonical api.kortix.com record stays tunnel-locked on the old box.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "manage_dns" {
   description = <<-EOT
     Whether terraform creates the public api.kortix.com CNAME. Keep false during

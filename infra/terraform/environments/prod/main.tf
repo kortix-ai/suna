@@ -60,10 +60,11 @@ module "network" {
 }
 
 module "acm" {
-  source      = "../../modules/acm-cloudflare"
-  domain_name = local.domain
-  zone_id     = var.cloudflare_zone_id
-  tags        = local.tags
+  source                    = "../../modules/acm-cloudflare"
+  domain_name               = local.domain
+  subject_alternative_names = var.extra_api_hostnames
+  zone_id                   = var.cloudflare_zone_id
+  tags                      = local.tags
   providers = {
     aws        = aws
     cloudflare = cloudflare
@@ -112,6 +113,26 @@ module "dns" {
   records = {
     api = {
       name    = local.dns_record_name
+      type    = "CNAME"
+      value   = module.api.alb_dns_name
+      proxied = true
+      ttl     = 1
+    }
+  }
+}
+
+# Extra public API hostnames → the ALB. Used to expose the new stack under an
+# UNLOCKED hostname (e.g. api-prod.kortix.com) while the canonical
+# api.kortix.com record stays tunnel-locked on the old box. Each is a proxied
+# CNAME and is covered by the cert via var.extra_api_hostnames (the ACM SANs).
+module "dns_extra" {
+  source  = "../../modules/cloudflare-dns"
+  count   = length(var.extra_api_hostnames) > 0 ? 1 : 0
+  zone_id = var.cloudflare_zone_id
+
+  records = {
+    for h in var.extra_api_hostnames : replace(h, ".kortix.com", "") => {
+      name    = replace(h, ".kortix.com", "")
       type    = "CNAME"
       value   = module.api.alb_dns_name
       proxied = true
