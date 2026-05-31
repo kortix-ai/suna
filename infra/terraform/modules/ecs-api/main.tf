@@ -20,7 +20,9 @@ locals {
   name = var.name
   # PORT is always injected so the app binds the port the target group checks.
   environment = merge(var.environment, { PORT = tostring(var.container_port) })
-  https       = var.certificate_arn != ""
+  # Gate the HTTPS listener on a STATIC flag (count can't depend on the ACM
+  # cert ARN, which is unknown until apply).
+  https = var.enable_https
 }
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
@@ -60,9 +62,10 @@ resource "aws_iam_role_policy" "secrets" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["secretsmanager:GetSecretValue", "ssm:GetParameters"]
-      Resource = values(var.secrets)
+      Effect = "Allow"
+      Action = ["secretsmanager:GetSecretValue", "ssm:GetParameters"]
+      # Grant on the base secret/parameter ARN (strip any :json-key::version suffix from valueFrom).
+      Resource = distinct([for v in values(var.secrets) : join(":", slice(split(":", v), 0, 7))])
     }]
   })
 }
@@ -242,13 +245,9 @@ resource "aws_ecs_task_definition" "this" {
         "awslogs-stream-prefix" = "api"
       }
     }
-    healthCheck = {
-      command     = ["CMD-SHELL", "curl -f http://localhost:${var.container_port}${var.health_check_path} || exit 1"]
-      interval    = 30
-      timeout     = 5
-      retries     = 3
-      startPeriod = 60
-    }
+    # No container-level healthCheck: the Bun image has no curl/wget, and the
+    # ALB target group health check (HTTP GET health_check_path) is the
+    # authoritative gate for routing + the deployment circuit breaker.
   }])
 
   tags = var.tags

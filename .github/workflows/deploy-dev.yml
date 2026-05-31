@@ -235,32 +235,37 @@ jobs:
 
           echo "image=kortix/kortix-frontend:dev-${SHA8}" >> "$GITHUB_OUTPUT"
 
-  # ── Deploy API to dev VPS ──────────────────────────────────────────────────
+  # ── Deploy API to dev (ECS Fargate, via GitHub OIDC) ───────────────────────
+  # The dev API runs on ECS Fargate (cluster/service "kortix-dev"). The task
+  # definition pins kortix/kortix-api:dev-latest, which merge-api just pushed,
+  # so a force-new-deployment re-pulls that tag and rolls the service. Auth is
+  # via OIDC (role kortix-gha-ecs-deploy) — no long-lived AWS keys.
   deploy-api:
-    name: Deploy API to dev
+    name: Deploy API to dev (ECS)
     needs: merge-api
     runs-on: ubuntu-latest
     environment: dev
+    permissions:
+      id-token: write # assume the AWS role via GitHub OIDC
+      contents: read
     steps:
-      - name: Zero-downtime deploy via SSH
-        uses: appleboy/ssh-action@v1
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.AWS_DEV_KEY }}
-          port: 22
-          timeout: 300s
-          script: |
-            set -e
-            cd ~/suna
-            git -c fetch.recurseSubmodules=false fetch origin main
-            git reset --hard origin/main
-            git submodule sync --recursive
-            git submodule update --init --recursive --remote
-            PREBUILT_IMAGE="${{ needs.merge-api.outputs.image }}" bash scripts/deploy-zero-downtime.sh
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+          aws-region: us-west-2
+      - name: Roll the ECS service onto the freshly-built image
+        run: |
+          set -euo pipefail
+          echo "Rolling ECS service kortix-dev (image ${{ needs.merge-api.outputs.image }} via :dev-latest)…"
+          aws ecs update-service --cluster kortix-dev --service kortix-dev --force-new-deployment >/dev/null
+          aws ecs wait services-stable --cluster kortix-dev --services kortix-dev
+          aws ecs describe-services --cluster kortix-dev --services kortix-dev \
+            --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
+            --output table
 
       - name: Summary
         if: always()
         run: |
-          echo "### Deployed API → **dev**" >> "$GITHUB_STEP_SUMMARY"
-          echo "Image: \`${{ needs.merge-api.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Deployed API → **dev** (ECS Fargate)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image: \`${{ needs.merge-api.outputs.image }}\` rolled onto ECS service \`kortix-dev\`" >> "$GITHUB_STEP_SUMMARY"

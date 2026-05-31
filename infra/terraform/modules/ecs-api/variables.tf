@@ -105,9 +105,15 @@ variable "memory_target" {
 
 # ── Options ───────────────────────────────────────────────────────────────────
 variable "certificate_arn" {
-  description = "ACM cert ARN for the HTTPS listener. Empty = HTTP-only listener (e.g. behind a TLS-terminating proxy)."
+  description = "ACM cert ARN for the HTTPS listener (used when enable_https = true)."
   type        = string
   default     = ""
+}
+
+variable "enable_https" {
+  description = "Create the HTTPS :443 listener (certificate_arn) and make :80 redirect to it. false = HTTP-only :80 forward. Must be a static value (gates count)."
+  type        = bool
+  default     = false
 }
 
 variable "use_fargate_spot" {
