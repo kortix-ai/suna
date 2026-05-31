@@ -28,7 +28,8 @@ provider "aws" {
 }
 
 provider "cloudflare" {
-  api_token = var.cloudflare_api_token
+  # CF token is only used when managing DNS/ACM. Format-valid dummy when absent.
+  api_token = var.cloudflare_api_token != "" ? var.cloudflare_api_token : "0000000000000000000000000000000000000000"
 }
 
 locals {
@@ -72,6 +73,7 @@ module "api" {
 
   image           = var.api_image
   container_port  = var.container_port
+  enable_https    = true
   certificate_arn = module.acm.certificate_arn
   environment     = var.api_environment
   secrets         = var.api_secrets

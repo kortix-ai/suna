@@ -16,5 +16,5 @@ output "log_group" {
 }
 
 output "dns_records" {
-  value = module.dns.record_hostnames
+  value = try(one(module.dns[*].record_hostnames), null)
 }
