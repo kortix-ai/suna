@@ -1,8 +1,12 @@
 name: Deploy Dev
 
-# Builds multi-arch Docker images using native runners (amd64 + arm64 in parallel),
-# deploys API + frontend to dev VPS. Always builds BOTH on every push to main
-# (when AUTO_DEPLOY_DEV=true) or on manual dispatch.
+# Builds multi-arch Docker images (amd64 + arm64) for BOTH the API and the
+# frontend on every push to main (when AUTO_DEPLOY_DEV=true) or manual dispatch.
+#
+# The API is deployed to the dev VPS (blue/green over SSH). The frontend IMAGE
+# is built + published for self-hosters, but NOT deployed to the VPS:
+# dev.kortix.com runs on Vercel, which auto-deploys it from main via Vercel's
+# own Git integration. (Hence there is no deploy-frontend job here.)
 #
 # Auto-deploy on push is controlled by the repo variable AUTO_DEPLOY_DEV.
 # Set to 'true' to enable, anything else to disable. Manual dispatch always works.
@@ -262,30 +266,3 @@ jobs:
         run: |
           echo "### Deployed API → **dev**" >> "$GITHUB_STEP_SUMMARY"
           echo "Image: \`${{ needs.merge-api.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
-
-  deploy-frontend:
-    name: Deploy frontend to dev
-    needs: merge-frontend
-    runs-on: ubuntu-latest
-    environment: dev
-    steps:
-      - name: Zero-downtime deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.AWS_DEV_KEY }}
-          port: 22
-          timeout: 300s
-          script: |
-            set -e
-            cd ~/suna
-            git -c fetch.recurseSubmodules=false fetch origin main
-            git reset --hard origin/main
-            PREBUILT_IMAGE="${{ needs.merge-frontend.outputs.image }}" bash scripts/deploy-frontend-zero-downtime.sh
-
-      - name: Summary
-        if: always()
-        run: |
-          echo "### Deployed frontend → **dev.kortix.com**" >> "$GITHUB_STEP_SUMMARY"
-          echo "Image: \`${{ needs.merge-frontend.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
