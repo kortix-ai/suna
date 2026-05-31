@@ -28,8 +28,12 @@ provider "aws" {
 }
 
 provider "cloudflare" {
-  # CF token is only used when managing DNS/ACM. Format-valid dummy when absent.
-  api_token = var.cloudflare_api_token != "" ? var.cloudflare_api_token : "0000000000000000000000000000000000000000"
+  # Auth precedence (mirrors ../dev): scoped API token → global API key
+  # (email + key) → format-valid dummy token (so an apply with no CF creds, e.g.
+  # plan-only, doesn't reject an empty token). DNS/ACM validation needs real creds.
+  api_token = var.cloudflare_api_token != "" ? var.cloudflare_api_token : (var.cloudflare_api_key != "" ? null : "0000000000000000000000000000000000000000")
+  email     = var.cloudflare_api_key != "" ? var.cloudflare_email : null
+  api_key   = var.cloudflare_api_key != "" ? var.cloudflare_api_key : null
 }
 
 locals {

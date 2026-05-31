@@ -24,7 +24,20 @@ variable "api_domain" {
 }
 
 variable "cloudflare_api_token" {
-  description = "Cloudflare API token (= CLOUDFLARE_API_TOKEN secret). Supply via TF_VAR_cloudflare_api_token."
+  description = "Cloudflare scoped API token (= CLOUDFLARE_API_TOKEN secret). Supply via TF_VAR_cloudflare_api_token."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "cloudflare_email" {
+  description = "Cloudflare account email (for global-API-key auth, when no scoped token is used)."
+  type        = string
+  default     = ""
+}
+
+variable "cloudflare_api_key" {
+  description = "Cloudflare global API key (alternative to a scoped token). Supply via TF_VAR_cloudflare_api_key."
   type        = string
   default     = ""
   sensitive   = true
