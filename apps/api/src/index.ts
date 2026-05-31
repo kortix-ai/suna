@@ -574,6 +574,41 @@ export function isSchemaReady() { return schemaReady; }
 
 // Ensure DB schema exists before starting services that depend on it.
 // This is idempotent — safe to run on every startup.
+// Start background services after the schema is ready. The access-control cache
+// and tunnel service are always on (they serve request-path needs, not shared
+// background work). The rest are background WORKERS — gated behind
+// KORTIX_WORKERS_ENABLED so a parallel API-only node (e.g. a new ECS prod stack
+// sharing the live DB during cutover) can serve HTTP without double-firing
+// crons/queues/maintenance. Flip the switch (and stop the old node) at cutover.
+async function startBackgroundServices() {
+  startAccessControlCache();
+  startTunnelService();
+
+  if (!config.KORTIX_WORKERS_ENABLED) {
+    console.warn(
+      '[startup] KORTIX_WORKERS_ENABLED=false — running API-only: trigger scheduler, ' +
+        'queue drainer, project maintenance, legacy-migration worker, startup pre-build, ' +
+        'and grant-expiry sweeper are DISABLED on this node.',
+    );
+    return;
+  }
+
+  startDrainer();
+  startProjectMaintenance();
+  startProjectTriggerScheduler();
+  // Mint the global platform-default sandbox image once per boot so the first
+  // session anywhere lands on a cache hit. Idempotent + best-effort; the
+  // session-boot graceful path is the lazy fallback if this is skipped.
+  kickStartupPreBuild();
+  startLegacyMigrationWorker();
+  // IAM V2 time-bounded grants: tick every 60s, emit one audit event
+  // per row that just transitioned to expired. Engine already filters
+  // expired rows out of authorize() so correctness doesn't depend on
+  // this — it's purely for the audit trail.
+  const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
+  startGrantExpirySweeper();
+}
+
 ensureSchema()
   .then(async () => {
     schemaReady = true;
@@ -581,35 +616,12 @@ ensureSchema()
     // boot-time system-role seed + membership-policy backfill from V1
     // are no longer needed. Permissions resolve directly from
     // account_members.account_role and project_members.project_role.
-    startAccessControlCache();
-    startDrainer();
-    startTunnelService();
-    startProjectMaintenance();
-    startProjectTriggerScheduler();
-    // Mint the global platform-default sandbox image once per boot so the first
-    // session anywhere lands on a cache hit. Idempotent + best-effort; the
-    // session-boot graceful path is the lazy fallback if this is skipped.
-    kickStartupPreBuild();
-    startLegacyMigrationWorker();
-    // IAM V2 time-bounded grants: tick every 60s, emit one audit event
-    // per row that just transitioned to expired. Engine already filters
-    // expired rows out of authorize() so correctness doesn't depend on
-    // this — it's purely for the audit trail.
-    {
-      const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
-      startGrantExpirySweeper();
-    }
+    await startBackgroundServices();
   })
   .catch(async (err) => {
     console.error('[startup] ensureSchema failed, starting services anyway:', err);
     schemaReady = true;
-    startAccessControlCache();
-    startDrainer();
-    startTunnelService();
-    startProjectMaintenance();
-    startProjectTriggerScheduler();
-    kickStartupPreBuild();
-    startLegacyMigrationWorker();
+    await startBackgroundServices();
   });
 
 // Graceful shutdown

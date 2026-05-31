@@ -208,6 +208,13 @@ const envSchema = z.object({
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED:        optBoolTrue,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS:    optInt(60_000),
+  // Master switch for ALL background workers (trigger scheduler, queue drainer,
+  // project maintenance, legacy-migration worker, startup pre-build, grant
+  // expiry sweeper). Default on. Set false to run an API-only node that serves
+  // HTTP but does NO background work — used to stand up a second API (e.g. a new
+  // ECS prod stack) against a shared DB in parallel with the live node WITHOUT
+  // double-firing crons/queues, until cutover flips this on and the old node off.
+  KORTIX_WORKERS_ENABLED:                  optBoolTrue,
 
   // ── Version / GitHub (optional) ───────────────────────────────────────────
   SANDBOX_VERSION:             optStr,  // dev override: skip npm registry lookup for latest version
@@ -535,6 +542,7 @@ export const config = {
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
   KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: env.KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS,
+  KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
 
   // ─── Version / GitHub ──────────────────────────────────────────────────────
   /** Dev override: force a specific sandbox version via env var. */
