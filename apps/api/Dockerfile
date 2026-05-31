@@ -124,6 +124,16 @@ COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/agent-cli ./apps/sandbox/agent-cli
 COPY packages/executor-sdk ./packages/executor-sdk
 
+# Source the layered-snapshot builder fingerprints at RUNTIME. It hashes the
+# SOURCE (not the compiled binaries above, which `bun build --compile` produces
+# non-deterministically — see apps/api/src/snapshots/templates.ts), so these
+# trees + package.json must be present in the image. Without them the Sandbox
+# panel throws "Failed to list sandbox templates: ENOENT … package.json".
+COPY apps/kortix-sandbox-agent-server/package.json ./apps/kortix-sandbox-agent-server/package.json
+COPY apps/kortix-sandbox-agent-server/src ./apps/kortix-sandbox-agent-server/src
+COPY apps/cli/package.json ./apps/cli/package.json
+COPY apps/cli/src ./apps/cli/src
+
 # Copy the app (source + its node_modules if any)
 COPY --from=deps /app/${SERVICE} ./${SERVICE}
 
