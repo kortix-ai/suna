@@ -15,11 +15,14 @@ A branch-based dev→prod model with one unified version.
 ## Version flow
 
 The root [`VERSION`](../VERSION) file is the single source of truth for the API,
-web, CLI, and desktop.
+web, CLI, **and** desktop — they share **one** version, never separate ones. A
+promotion cuts a single `vX.Y.Z` GitHub Release that bundles the latest
+API + frontend + CLI + desktop together.
 
-- **Dev** (on `main`): artifacts are stamped `$(cat VERSION)-dev.<sha8>`.
+- **Dev** (on `main`): artifacts are stamped `$(cat VERSION)-dev.<sha8>` and land
+  on rolling channels (`dev-latest`, `desktop-dev-latest`) — no version ceremony.
 - **Promoted** (on `production`): artifacts are the clean `$(cat VERSION)` =
-  `X.Y.Z`.
+  `X.Y.Z`, the one number shared by every component.
 
 [`scripts/version.sh`](../scripts/version.sh) computes these:
 
@@ -41,16 +44,31 @@ DEV=1 scripts/version.sh    # X.Y.Z-dev.<sha8>
    retags the dev images to `:X.Y.Z` + `:latest` and cuts the GitHub Release
    `vX.Y.Z`. The prod ECS roll stays gated (see below).
 
-## The 6 workflows
+## The 7 workflows
 
 | Workflow            | Trigger                          | Purpose                                                                                  |
 | ------------------- | -------------------------------- | ---------------------------------------------------------------------------------------- |
-| `ci.yml`            | PR → `main`                      | Typecheck/build gates (API, frontend, sandbox agent, CLI, desktop).                      |
+| `ci.yml`            | PR → `main`,`production`          | Typecheck/build gates (API, frontend, sandbox agent, CLI, desktop).                      |
 | `codeql.yml`        | push/PR → `main`,`production` + weekly | CodeQL SAST (SOC 2 CC7.1/CC8.1).                                                     |
 | `secret-scan.yml`   | PR → `main`,`production`          | gitleaks secret scan.                                                                     |
-| `deploy-dev.yml`    | push → `main` + dispatch         | Build+push dev images, roll dev ECS, publish dev CLI + desktop to the `dev-latest` prerelease. |
+| `deploy-dev.yml`    | push → `main` + dispatch         | Build+push dev API+frontend images, roll dev ECS, publish dev **CLI** to `dev-latest`. Desktop is NOT here. |
+| `desktop.yml`       | push → `main` (`apps/desktop/**` only) + dispatch | Build signed desktop installers → `desktop-dev-latest` prerelease. Only runs when desktop code changes. |
 | `promote.yml`       | dispatch                         | Bump VERSION, tag `vX.Y.Z`, fast-forward `production`.                                    |
-| `deploy-prod.yml`   | push → `production` + dispatch   | Retag images → `vX.Y.Z`+`latest`, cut GitHub Release `vX.Y.Z`, [gated] roll prod ECS.    |
+| `deploy-prod.yml`   | push → `production` + dispatch   | Retag images → `vX.Y.Z`+`latest`, build prod CLI + desktop, cut GitHub Release `vX.Y.Z`, [gated] roll prod ECS. |
+
+### Why desktop is separate
+
+The desktop app is a Tauri webview shell that changes rarely and needs slow,
+scarce, **signed** macOS/Windows runners. Building it on every `main` push would
+waste runner time and — worse — gate the fast API/frontend/CLI path on a mac
+runner being free. So:
+
+- On `main`, desktop builds **only** when `apps/desktop/**` changes (or via manual
+  dispatch). The CLI dev channel (`dev-latest`) is published by `deploy-dev.yml`
+  independently and is never blocked by desktop.
+- On `production`, desktop is built into the unified `vX.Y.Z` release but is
+  **best-effort**: a desktop signing failure does not abort the
+  API/frontend/CLI release (re-run desktop and re-attach later).
 
 ### Artifacts
 
@@ -62,8 +80,9 @@ DEV=1 scripts/version.sh    # X.Y.Z-dev.<sha8>
   - Dev → `dev-latest` prerelease (defaults to `dev-api.kortix.com`).
   - Prod → `vX.Y.Z` release (defaults to `api.kortix.com`).
   - Installed via `scripts/install.sh` (served at `kortix.com/install`).
-- **Desktop:** signed installers (.dmg/.msi/.AppImage) attached to the same
-  releases as the CLI.
+- **Desktop:** signed installers (.dmg/.msi/.AppImage).
+  - Dev → `desktop-dev-latest` prerelease (built only when desktop code changes).
+  - Prod → bundled into the `vX.Y.Z` release alongside the CLI.
 - **Frontend (hosted):** `dev.kortix.com` and `kortix.com` are deployed by
   Vercel from `main` and `production` respectively — not by these workflows.
 

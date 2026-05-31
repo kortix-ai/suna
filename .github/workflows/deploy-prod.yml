@@ -321,9 +321,14 @@ jobs:
           if-no-files-found: error
 
   # ── Cut a single GitHub Release vX.Y.Z (CLI + desktop) ──────────────────────
+  # CLI is required (it gates the release); desktop is best-effort — if signing
+  # fails on some/all desktop targets the release still ships with whatever
+  # installers built (or none), so a desktop cert problem never blocks the
+  # API/frontend/CLI release. Re-run desktop + re-dispatch later to attach them.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
     needs: [version, retag-images, build-cli, build-desktop]
+    if: always() && needs.build-cli.result == 'success' && needs.retag-images.result == 'success'
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -338,8 +343,9 @@ jobs:
           name: cli-binaries
           path: artifacts/
 
-      - name: Download desktop artifacts
+      - name: Download desktop artifacts (best-effort)
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           path: desktop-artifacts/
           pattern: desktop-*
@@ -350,7 +356,11 @@ jobs:
           set -euo pipefail
           mkdir -p release
           cp -v artifacts/kortix-* release/
-          find desktop-artifacts -maxdepth 1 -type f -exec cp -v {} release/ \;
+          if [ -d desktop-artifacts ]; then
+            find desktop-artifacts -maxdepth 1 -type f -exec cp -v {} release/ \;
+          else
+            echo "::warning::No desktop installers attached (build-desktop did not succeed) — release ships CLI + images only."
+          fi
           cd release
           sha256sum * > SHA256SUMS
           ls -lh
