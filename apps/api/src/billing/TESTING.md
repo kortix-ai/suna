@@ -21,7 +21,7 @@ stripe listen --forward-to localhost:8008/v1/billing/webhooks/stripe
 # Keep this terminal open during all tests
 
 # 3. API running with the right env
-# - NEXT_PUBLIC_ENV_MODE=cloud in apps/web/.env
+# - NEXT_PUBLIC_BILLING_ENABLED=true in apps/web/.env
 # - STRIPE_SECRET_KEY=sk_test_* in apps/api/.env
 # - STRIPE_WEBHOOK_SECRET matches what `stripe listen` printed
 
@@ -167,7 +167,7 @@ stripe listen --forward-to localhost:8008/v1/billing/webhooks/stripe
 | I3 | Balance display matches DB                                              | Display "$X.XX" matches `credit_accounts.balance`       | UI vs SQL           |
 | I4 | Compute usage bar updates after sandbox stops                           | Spin sandbox, stop it, refresh Billing tab              | Bar shows non-zero $$ | UI               |
 | I5 | LLM usage bar updates after a chat                                      | (Once router wires `deductForLlmUsage`)                 | Bar reflects token spend | Not yet wired — known gap |
-| I6 | Settings → User menu → Billing item visible only in cloud mode          | Set `NEXT_PUBLIC_ENV_MODE=local` → hide; `=cloud` → show | Toggle env, restart, check menu |
+| I6 | Settings → User menu → Billing item visible only when billing enabled    | Set `NEXT_PUBLIC_BILLING_ENABLED=false` → hide; `=true` → show | Toggle env, restart, check menu |
 | I7 | Subscribe button disabled while pending                                  | Click Subscribe → loading state                         | Button shows "Starting…", disabled | UI |
 | I8 | Error toast on Stripe failure                                            | Cancel checkout, return to app                          | Error message shown, no DB changes | UI |
 
@@ -283,7 +283,7 @@ Before flipping `INTERNAL_KORTIX_ENV=prod`:
 - [ ] Verify `INTERNAL_KORTIX_ENV=prod` → `ensureSchema()` is a no-op (managed externally)
 - [ ] Apply all migrations (88-92) via your prod migration pipeline (NOT auto-push)
 - [ ] Verify no schema collisions with prod's actual migration state
-- [ ] Set `NEXT_PUBLIC_ENV_MODE=cloud` on the prod web build
+- [ ] Set `NEXT_PUBLIC_BILLING_ENABLED=true` on the prod web build
 - [ ] Confirm legacy customer cohort sample: their `billing_model='legacy'` is preserved after migration runs
 - [ ] Smoke test in staging: full subscribe + member add cycle works end-to-end
 - [ ] Document the legacy → per_seat manual migration procedure for support
