@@ -15,13 +15,16 @@ import { isPlatformAdmin } from '../../shared/platform-roles';
 import Stripe from 'stripe';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 
-export async function getOrCreateStripeCustomer(
-  accountId: string,
-  email: string,
-): Promise<string> {
-  const existing = await getCustomerByAccountId(accountId);
-  if (existing) return existing.id;
+function isMissingStripeResource(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: unknown }).code === 'resource_missing'
+  );
+}
 
+async function createAndPersistStripeCustomer(accountId: string, email: string): Promise<string> {
   const stripe = getStripe();
   const customer = await stripe.customers.create({
     email,
@@ -34,9 +37,32 @@ export async function getOrCreateStripeCustomer(
     email,
     provider: 'stripe',
     active: true,
+    replaceExisting: true,
   });
 
   return customer.id;
+}
+
+export async function getOrCreateStripeCustomer(
+  accountId: string,
+  email: string,
+): Promise<string> {
+  const existing = await getCustomerByAccountId(accountId);
+  const stripe = getStripe();
+  if (existing) {
+    try {
+      const stripeCustomer = await stripe.customers.retrieve(existing.id);
+      if (!('deleted' in stripeCustomer) || !stripeCustomer.deleted) {
+        return existing.id;
+      }
+      console.warn(`[Billing] Stripe customer ${existing.id} is deleted; creating a replacement for account ${accountId}`);
+    } catch (err) {
+      if (!isMissingStripeResource(err)) throw err;
+      console.warn(`[Billing] Stripe customer ${existing.id} is missing in the active Stripe account; creating a replacement for account ${accountId}`);
+    }
+  }
+
+  return createAndPersistStripeCustomer(accountId, email);
 }
 
 async function getUsableCustomerPaymentMethod(customerId: string): Promise<string | null> {

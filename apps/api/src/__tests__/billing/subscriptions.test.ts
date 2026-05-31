@@ -96,6 +96,23 @@ describe('getOrCreateStripeCustomer', () => {
     expect(customerId).toBe('cus_test_123');
   });
 
+  test('replaces stale customer ID when missing from active Stripe account', async () => {
+    mockRegistry.stripeClient.customers.retrieve = async () => {
+      throw Object.assign(new Error("No such customer: 'cus_test_123'"), {
+        code: 'resource_missing',
+      });
+    };
+
+    const customerId = await getOrCreateStripeCustomer('acc_test_123', 'test@example.com');
+
+    expect(customerId).toBe('cus_new_123');
+    expect(upsertCustomerCalls.length).toBe(1);
+    expect(upsertCustomerCalls[0]).toEqual(expect.objectContaining({
+      id: 'cus_new_123',
+      replaceExisting: true,
+    }));
+  });
+
   test('creates new customer when not found', async () => {
     mockRegistry.getCustomerByAccountId = async () => null;
 

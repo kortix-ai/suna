@@ -180,6 +180,51 @@ describe('billing customer repository', () => {
     expect(kortixRows.find((row) => row.id === 'cus_old')?.active).toBe(true);
   });
 
+  test('upsertCustomer can force replace stale customer mapping', async () => {
+    kortixRows.push({
+      accountId: 'acc_5',
+      id: 'cus_old',
+      email: 'user@example.com',
+      provider: 'stripe',
+      active: true,
+    });
+
+    const replaced = await upsertCustomer({
+      accountId: 'acc_5',
+      id: 'cus_new',
+      email: 'user@example.com',
+      provider: 'stripe',
+      active: true,
+      replaceExisting: true,
+    });
+
+    expect(replaced?.id).toBe('cus_new');
+    expect(kortixRows.find((row) => row.id === 'cus_new')?.active).toBe(true);
+    expect(kortixRows.find((row) => row.id === 'cus_old')?.active).toBe(false);
+  });
+
+  test('forced replacement also deactivates stale legacy customer mapping', async () => {
+    basejumpRows.push({
+      accountId: 'acc_6',
+      id: 'cus_legacy_stale',
+      email: 'user@example.com',
+      provider: 'stripe',
+      active: true,
+    });
+
+    await upsertCustomer({
+      accountId: 'acc_6',
+      id: 'cus_new',
+      email: 'user@example.com',
+      provider: 'stripe',
+      active: true,
+      replaceExisting: true,
+    });
+
+    expect(basejumpRows.find((row) => row.id === 'cus_legacy_stale')?.active).toBe(false);
+    expect(kortixRows.find((row) => row.id === 'cus_new')?.active).toBe(true);
+  });
+
   test('falls back by stripe id to legacy customer and lazy-migrates it', async () => {
     basejumpRows.push({
       accountId: 'acc_4',

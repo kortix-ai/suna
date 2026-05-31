@@ -66,6 +66,24 @@ async function deactivateConflictingCustomers(accountId: string, canonicalId: st
     .update(billingCustomers)
     .set({ active: false })
     .where(and(...conditions));
+
+  try {
+    const legacyConditions = [
+      eq(billingCustomersInBasejump.accountId, accountId),
+      ne(billingCustomersInBasejump.id, canonicalId),
+    ];
+
+    if (provider) {
+      legacyConditions.push(eq(billingCustomersInBasejump.provider, provider));
+    }
+
+    await db
+      .update(billingCustomersInBasejump)
+      .set({ active: false })
+      .where(and(...legacyConditions));
+  } catch {
+    // Some local/dev schemas do not have the legacy basejump table.
+  }
 }
 
 async function syncLegacyCustomerToKortix(legacy: {
@@ -138,9 +156,11 @@ export async function upsertCustomer(data: {
   email?: string | null;
   provider?: string | null;
   active?: boolean | null;
+  replaceExisting?: boolean;
 }) {
+  const { replaceExisting = false, ...customerData } = data;
   const existing = await getCustomerByAccountId(data.accountId);
-  if (existing && existing.id !== data.id && existing.provider === (data.provider ?? existing.provider)) {
+  if (existing && existing.id !== data.id && existing.provider === (data.provider ?? existing.provider) && !replaceExisting) {
     await db
       .update(billingCustomers)
       .set({
@@ -155,7 +175,7 @@ export async function upsertCustomer(data: {
 
   await db
     .insert(billingCustomers)
-    .values(data)
+    .values(customerData)
     .onConflictDoUpdate({
       target: billingCustomers.id,
       set: {
