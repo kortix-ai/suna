@@ -105,6 +105,11 @@ COPY --from=deps /app/packages/agent-tunnel/package.json ./packages/agent-tunnel
 COPY --from=deps /app/packages/starter/src ./packages/starter/src
 COPY --from=deps /app/packages/starter/package.json ./packages/starter/package.json
 COPY --from=deps /app/packages/starter/tsconfig.json ./packages/starter/tsconfig.json
+# Project-scaffold templates read at runtime: packages/starter/src/index.ts
+# resolves BASE_TEMPLATE_DIR = join(import.meta.dir,'..','templates','base').
+# Without this the "Create project" seed path throws
+# ENOENT scandir packages/starter/templates/base → 502.
+COPY --from=deps /app/packages/starter/templates ./packages/starter/templates
 COPY --from=deps /app/packages/manifest-schema/src ./packages/manifest-schema/src
 COPY --from=deps /app/packages/manifest-schema/package.json ./packages/manifest-schema/package.json
 COPY --from=deps /app/packages/manifest-schema/tsconfig.json ./packages/manifest-schema/tsconfig.json
