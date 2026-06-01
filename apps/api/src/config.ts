@@ -12,7 +12,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type SandboxProviderName = 'daytona' | 'local_docker';
-export type InternalKortixEnv = 'dev' | 'staging' | 'prod';
+type InternalKortixEnv = 'dev' | 'staging' | 'prod';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
 
@@ -33,13 +33,6 @@ const optUrl = (def: string) =>
 const optInt = (def: number) =>
   z.string().optional().default(String(def)).transform((v) => {
     const n = parseInt(v, 10);
-    return Number.isNaN(n) ? def : n;
-  });
-
-/** Optional float with a default. */
-const optFloat = (def: number) =>
-  z.string().optional().default(String(def)).transform((v) => {
-    const n = parseFloat(v);
     return Number.isNaN(n) ? def : n;
   });
 
@@ -103,6 +96,28 @@ const envSchema = z.object({
   FREESTYLE_API_URL:           optUrl('https://api.freestyle.sh'),
   FREESTYLE_API_KEY:           optStr,
 
+  // ── Managed git (provider-agnostic via the git proxy) ────────────────────
+  // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
+  // ('github' default | 'freestyle'). The GitHub backend creates repos under
+  // MANAGED_GIT_GITHUB_OWNER (a Kortix-owned org) via the Kortix App installed
+  // there (MANAGED_GIT_GITHUB_INSTALL_ID). Reuses KORTIX_GITHUB_APP_* for the
+  // App JWT. Each backend's isConfigured() checks its own vars, so leaving
+  // these blank keeps the GitHub backend inert (Freestyle stays the default).
+  MANAGED_GIT_PROVIDER:            optStr,
+  MANAGED_GIT_GITHUB_OWNER:        optStr,
+  MANAGED_GIT_GITHUB_INSTALL_ID:   optStr,
+  // Optional straight org PAT for the managed org (the "one server-side key"
+  // model, 1:1 with the old FREESTYLE_API_KEY). When set it takes precedence
+  // over the GitHub App for managed-org admin ops (create/delete repo, invite
+  // collaborator). Leave blank to use the App installation instead.
+  MANAGED_GIT_GITHUB_TOKEN:        optStr,
+  // When true, runtime clients (sandbox + `kortix` CLI) use the Kortix git
+  // proxy as their git origin (auth = KORTIX_TOKEN) instead of the real host —
+  // so a real GitHub/Freestyle credential never reaches a sandbox. Requires a
+  // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
+  // OFF leaves the direct clone-credential token flow untouched).
+  KORTIX_GIT_PROXY:                optBoolFalse,
+
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
   // back them up. VMs are reachable via the CF proxy at {slug}.{proxy domain};
@@ -122,10 +137,8 @@ const envSchema = z.object({
   SLACK_CLIENT_ID:             optStr,
   SLACK_CLIENT_SECRET:         optStr,
   SLACK_REDIRECT_URI:          optStr,
-  // Must stay in sync with the bot scopes declared in
-  // apps/api/src/channels/slack-app-manifest.json — anything narrower here
-  // means the OAuth flow grants fewer scopes than the manifest advertises
-  // and tools like `slack channels`/`slack users` fail with missing_scope.
+  // Must stay in sync with the Slack app manifest used during channel setup;
+  // anything narrower here means OAuth grants fewer scopes than the bot needs.
   SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,channels:history,channels:read,channels:join,chat:write,chat:write.public,files:read,files:write,groups:history,groups:read,im:history,im:read,im:write,mpim:history,mpim:read,reactions:read,reactions:write,users:read'),
   // Optional banner image rendered at the top of the App Home tab. Must be a
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
@@ -421,6 +434,13 @@ export const config = {
   FREESTYLE_API_URL: env.FREESTYLE_API_URL,
   FREESTYLE_API_KEY: env.FREESTYLE_API_KEY,
 
+  // ─── Managed git ──────────────────────────────────────────────────────────
+  MANAGED_GIT_PROVIDER: env.MANAGED_GIT_PROVIDER,
+  MANAGED_GIT_GITHUB_OWNER: env.MANAGED_GIT_GITHUB_OWNER,
+  MANAGED_GIT_GITHUB_INSTALL_ID: env.MANAGED_GIT_GITHUB_INSTALL_ID,
+  MANAGED_GIT_GITHUB_TOKEN: env.MANAGED_GIT_GITHUB_TOKEN,
+  KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
+
   // ─── Legacy migration ─────────────────────────────────────────────────────
   JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
   JUSTAVPS_API_URL: env.JUSTAVPS_API_URL,
@@ -609,13 +629,13 @@ export const PLATFORM_FEE_MARKUP = 0.1;
 
 // ─── Tool Pricing (Router) ──────────────────────────────────────────────────
 
-export interface ToolPricing {
+interface ToolPricing {
   baseCost: number;
   perResultCost: number;
   markupMultiplier: number;
 }
 
-export const TOOL_PRICING: Record<string, ToolPricing> = {
+const TOOL_PRICING: Record<string, ToolPricing> = {
   web_search_basic: {
     baseCost: 0.005,
     perResultCost: 0,
@@ -694,62 +714,4 @@ export function getToolCost(toolName: string, resultCount: number = 0): number {
   const base = pricing.baseCost * pricing.markupMultiplier;
   const perResult = pricing.perResultCost * pricing.markupMultiplier * resultCount;
   return base + perResult;
-}
-
-// ─── LLM Pricing (Router) ───────────────────────────────────────────────────
-
-export interface LLMPricing {
-  inputCostPer1M: number;
-  outputCostPer1M: number;
-  markupMultiplier: number;
-}
-
-export const LLM_PRICING: Record<string, LLMPricing> = {
-  openrouter: {
-    inputCostPer1M: 0,
-    outputCostPer1M: 0,
-    markupMultiplier: 1.2,
-  },
-  anthropic: {
-    inputCostPer1M: 3.0,
-    outputCostPer1M: 15.0,
-    markupMultiplier: 1.2,
-  },
-  openai: {
-    inputCostPer1M: 2.5,
-    outputCostPer1M: 10.0,
-    markupMultiplier: 1.2,
-  },
-  xai: {
-    inputCostPer1M: 2.0,
-    outputCostPer1M: 10.0,
-    markupMultiplier: 1.2,
-  },
-  groq: {
-    inputCostPer1M: 0.05,
-    outputCostPer1M: 0.08,
-    markupMultiplier: 1.2,
-  },
-  gemini: {
-    inputCostPer1M: 1.25,
-    outputCostPer1M: 5.0,
-    markupMultiplier: 1.2,
-  },
-};
-
-export function calculateLLMCost(
-  provider: string,
-  inputTokens: number,
-  outputTokens: number,
-  providerReportedCost?: number
-): number {
-  const pricing = LLM_PRICING[provider] || LLM_PRICING['openrouter'];
-
-  if (provider === 'openrouter' && providerReportedCost !== undefined) {
-    return providerReportedCost * pricing.markupMultiplier;
-  }
-
-  const inputCost = (inputTokens / 1_000_000) * pricing.inputCostPer1M;
-  const outputCost = (outputTokens / 1_000_000) * pricing.outputCostPer1M;
-  return (inputCost + outputCost) * pricing.markupMultiplier;
 }

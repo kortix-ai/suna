@@ -479,6 +479,37 @@ export async function getProject(projectId: string) {
   return unwrap(await backendApi.get<KortixProject>(`/projects/${projectId}`));
 }
 
+export interface RepoCollaboratorInvite {
+  username: string;
+  permission: string;
+  /** Pending-invitation URL to accept on GitHub, or null if already a collaborator. */
+  invitationUrl: string | null;
+  alreadyCollaborator: boolean;
+}
+
+/**
+ * Invite a GitHub user as a collaborator on a MANAGED repo — lets the project
+ * creator pull "their" Kortix-managed repo into their own GitHub account.
+ */
+export async function inviteRepoCollaborator(
+  projectId: string,
+  githubUsername: string,
+  permission: 'read' | 'write' = 'write',
+) {
+  return unwrap(
+    await backendApi.post<RepoCollaboratorInvite>(
+      `/projects/${projectId}/git/collaborators`,
+      { github_username: githubUsername, permission },
+    ),
+  );
+}
+
+/** True when this project's repo is a Kortix-managed GitHub repo (invitable). */
+export function isManagedGithubProject(project: { metadata?: Record<string, unknown> | null }): boolean {
+  const git = (project.metadata as { git?: { provider?: string; managed?: boolean } } | undefined)?.git;
+  return git?.provider === 'github' && git?.managed === true;
+}
+
 export async function getProjectDetail(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`),

@@ -56,7 +56,6 @@ import {
   previewMerge,
   readRepoFile,
   resolveBranchTip,
-  resolveCommitSha,
   grepRepoFiles,
   searchRepoFileNames,
 } from './git';
@@ -70,7 +69,6 @@ import {
   commitFile,
   createInstallationToken,
   createRepo,
-  deleteFile,
   getFileSha,
   getRepo,
   getGitHubAppInstallation,
@@ -82,12 +80,15 @@ import {
 } from './github';
 import { buildStarterFiles, normalizeStarterTemplateId } from './starter';
 import {
-  createManagedRepo,
-  mintRepoPushToken,
-  deleteManagedRepo,
-  seedRepoWithFiles,
-  isFreestyleGitConfigured,
-} from './freestyle-git';
+  getBackend,
+  hasBackend,
+  managedGithubInstallId,
+  managedGithubToken,
+  type GitConnectionRef,
+  type GitScope,
+  type UpstreamGit,
+} from './git-backends';
+import { seedRepoViaGitPush } from './git-backends/seed';
 import { lookupUserIdByEmail } from '../shared/users';
 import {
   ACCOUNT_ACTIONS,
@@ -166,7 +167,6 @@ import {
   MANIFEST_FILENAME,
   extractTriggers,
   loadProjectTriggers,
-  parseManifestString,
   readManifest,
   serializeManifest,
   triggerSpecToTomlEntry,
@@ -192,7 +192,6 @@ import { relayTurnStep, relayTurnAnswer, postQuestionAndWait, type QuestionInfo 
 import { buildSlackInstallUrl } from '../channels/slack-oauth';
 import { slackOauthMode } from '../channels/slack-oauth-mode';
 import {
-  buildDeploymentRequest,
   deployAppSpec,
   getLatestDeployment,
   runProjectAppSweep,
@@ -203,7 +202,10 @@ import {
   createAccountToken,
   listAccountTokens,
   revokeAccountToken,
+  validateAccountToken,
 } from '../repositories/account-tokens';
+import { validateSecretKey } from '../repositories/api-keys';
+import { isAccountToken, isKortixToken } from '../shared/crypto';
 
 export const projectsApp = new Hono<AppEnv>();
 export const projectWebhooksApp = new Hono<AppEnv>();
@@ -330,6 +332,10 @@ function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole |
     account_id: row.accountId,
     name: row.name,
     repo_url: row.repoUrl,
+    // Universal client-facing git origin. When the proxy is enabled, runtime
+    // clients (CLI `ship`, web) clone/push this with a Kortix token instead of
+    // the real host URL. Falls back to repo_url so callers can always use it.
+    git_origin_url: config.KORTIX_GIT_PROXY ? proxyGitUrl(row.projectId) : row.repoUrl,
     default_branch: row.defaultBranch,
     manifest_path: row.manifestPath,
     status: row.status,
@@ -665,12 +671,6 @@ function normalizeJsonObject(value: unknown): Record<string, unknown> {
   return isPlainObject(value) ? value : {};
 }
 
-function parseProjectTriggerType(value: unknown): 'cron' | 'webhook' | null {
-  const type = normalizeString(value);
-  if (type === 'cron' || type === 'webhook') return type;
-  return null;
-}
-
 function normalizeRepoUrl(value: unknown): string | null {
   const repoUrl = normalizeString(value);
   if (!repoUrl) return null;
@@ -848,6 +848,10 @@ interface ProjectGitRemote {
   repoOwner: string | null;
   repoName: string | null;
   externalRepoId: string | null;
+  /** Real upstream host git URL, distinct from the client-facing proxy URL. */
+  upstreamUrl: string | null;
+  /** True when Kortix provisioned the repo. */
+  managed: boolean;
 }
 
 async function getProjectGitConnection(projectId: string): Promise<ProjectGitConnectionRow | null> {
@@ -864,6 +868,10 @@ async function upsertProjectGitConnection(input: {
   projectId: string;
   provider: string;
   repoUrl: string;
+  /** Real upstream host git URL (distinct from the client-facing repoUrl). */
+  upstreamUrl?: string | null;
+  /** True when Kortix provisioned the repo. */
+  managed?: boolean;
   repoOwner?: string | null;
   repoName?: string | null;
   externalRepoId?: string | number | null;
@@ -886,6 +894,8 @@ async function upsertProjectGitConnection(input: {
     projectId: input.projectId,
     provider: input.provider,
     repoUrl: input.repoUrl,
+    upstreamUrl: input.upstreamUrl ?? null,
+    managed: input.managed ?? false,
     repoOwner: input.repoOwner ?? null,
     repoName: input.repoName ?? null,
     externalRepoId: input.externalRepoId == null ? null : String(input.externalRepoId),
@@ -967,6 +977,8 @@ function emptyGitRemote(): ProjectGitRemote {
     repoOwner: null,
     repoName: null,
     externalRepoId: null,
+    upstreamUrl: null,
+    managed: false,
   };
 }
 
@@ -981,6 +993,8 @@ function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnect
       repoOwner: connection.repoOwner,
       repoName: connection.repoName,
       externalRepoId: connection.externalRepoId,
+      upstreamUrl: connection.upstreamUrl ?? null,
+      managed: connection.managed ?? false,
     };
   }
 
@@ -997,6 +1011,8 @@ function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnect
       repoOwner: git.owner ?? null,
       repoName: git.name ?? null,
       externalRepoId: git.external_repo_id ?? git.repo_id ?? null,
+      upstreamUrl: typeof git.upstream_url === 'string' ? git.upstream_url : null,
+      managed: git.managed === true || method === 'managed',
     };
   }
   if (meta.git_provider === 'freestyle' || meta.freestyle) {
@@ -1010,6 +1026,8 @@ function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnect
       repoOwner: null,
       repoName: null,
       externalRepoId: fs.repo_id ?? null,
+      upstreamUrl: null,
+      managed: true,
     };
   }
   if (meta.github) {
@@ -1024,9 +1042,44 @@ function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnect
       repoOwner: repo?.owner ?? null,
       repoName: repo?.repo ?? null,
       externalRepoId: normalizeString(github.repo_id),
+      upstreamUrl: null,
+      managed: false,
     };
   }
   return emptyGitRemote();
+}
+
+/**
+ * Real upstream host git URL for a project. Prefers the explicit `upstreamUrl`
+ * (set once the git-proxy refactor lands), then derives it from the provider's
+ * coordinates, and finally falls back to `project.repoUrl` — correct for every
+ * pre-refactor project, where repoUrl IS the real URL.
+ */
+function resolveUpstreamUrl(project: ProjectRow, remote: ProjectGitRemote): string {
+  if (remote.upstreamUrl) return remote.upstreamUrl;
+  if (remote.provider === 'freestyle' && remote.externalRepoId) {
+    return `https://git.freestyle.sh/${remote.externalRepoId}`;
+  }
+  if (remote.provider === 'github' && remote.repoOwner && remote.repoName) {
+    return `https://github.com/${remote.repoOwner}/${remote.repoName}.git`;
+  }
+  return project.repoUrl;
+}
+
+/** Provider-neutral connection ref consumed by git backends. */
+function buildConnectionRef(project: ProjectRow, remote: ProjectGitRemote): GitConnectionRef {
+  return {
+    provider: remote.provider,
+    upstreamUrl: resolveUpstreamUrl(project, remote),
+    externalRepoId: remote.externalRepoId,
+    repoOwner: remote.repoOwner,
+    repoName: remote.repoName,
+    installationId: remote.installationId,
+    credentialRef: remote.ref,
+    defaultBranch: project.defaultBranch,
+    managed: remote.managed,
+    metadata: {},
+  };
 }
 
 async function hasServerManagedGitAuth(project: ProjectRow): Promise<boolean> {
@@ -1044,23 +1097,45 @@ async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   auth?: GitHubAuthContext;
   authSource: 'app_installation' | 'pat' | 'managed' | 'project_credential' | 'none';
 }> {
-  // Managed Freestyle repos: mint a fresh scoped token from the project's
-  // stored identity so the backend can clone/push (snapshot builds, session
-  // branches, CR merges). Without this it hits git.freestyle.sh unauthed (403).
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
-  if (remote.provider === 'freestyle' && remote.authMethod === 'managed' && remote.repoId) {
-    if (!(await isFreestyleGitConfigured())) return { authSource: 'none' };
+
+  // Managed GitHub repos (Kortix-provisioned, under the managed org). Two
+  // server-side credential models:
+  //   - PAT  (MANAGED_GIT_GITHUB_TOKEN): the "one server-side key" model — used
+  //     directly (org-wide; never leaves the API).
+  //   - App  (installation): mint a token scoped to THIS repo only (least
+  //     privilege) so a project's sandbox can never touch another managed repo.
+  if (remote.provider === 'github' && remote.managed) {
+    const pat = managedGithubToken();
+    if (pat) {
+      return {
+        auth: { token: pat, source: 'pat', owner: remote.repoOwner ?? undefined, ownerType: 'Organization' },
+        authSource: 'pat',
+      };
+    }
+    const installId = remote.installationId ?? managedGithubInstallId();
+    if (!installId) return { authSource: 'none' };
+    const repoName = remote.repoName ?? parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl)?.repo;
     try {
-      const push = await mintRepoPushToken({ repoId: remote.repoId, identityId: remote.ref });
-      return { auth: { token: push.token, source: 'managed' }, authSource: 'managed' };
+      const token = await createInstallationToken(installId, repoName ? [repoName] : undefined);
+      return {
+        auth: {
+          token: token.token,
+          source: 'app_installation',
+          owner: remote.repoOwner ?? undefined,
+          ownerType: 'Organization',
+          installationId: installId,
+        },
+        authSource: 'app_installation',
+      };
     } catch (err) {
-      console.warn(`[projects] failed to mint Freestyle token for ${project.projectId}:`, err);
+      console.warn(`[projects] failed to mint managed GitHub token for ${project.projectId}:`, err);
       return { authSource: 'none' };
     }
   }
 
   if (remote.provider === 'github' && remote.authMethod === 'github_app') {
-    const repo = parseGitHubRepoUrl(project.repoUrl);
+    const repo = parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl);
     if (!repo) return { authSource: 'none' };
     const installation = remote.installationId
       ? await getAccountGitHubInstallation(project.accountId, remote.installationId)
@@ -1077,7 +1152,8 @@ async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     if (remote.repoName && remote.repoName.toLowerCase() !== repo.repo.toLowerCase()) {
       return { authSource: 'none' };
     }
-    const token = await createInstallationToken(installation.installationId);
+    // Scope the BYO token to the single linked repo too.
+    const token = await createInstallationToken(installation.installationId, [repo.repo]);
     return {
       auth: {
         token: token.token,
@@ -1112,6 +1188,114 @@ export async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRo
     ...project,
     gitAuthToken: gitAuth.auth?.token ?? null,
   };
+}
+
+/**
+ * Resolve a project to a real upstream git endpoint + short-lived host auth
+ * headers — the single seam consumed by the Kortix git proxy (and, post-M2,
+ * server-side git). Token resolution reuses `resolveProjectGitAuth` (managed
+ * Freestyle / managed + BYO GitHub / project credential); the backend formats
+ * the URL + headers for the provider. Returns null when no upstream is
+ * resolvable (no git connection / unauthenticated).
+ */
+export async function resolveProjectUpstream(
+  project: ProjectRow,
+  scope: GitScope = 'read',
+): Promise<UpstreamGit | null> {
+  const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
+  if (remote.authMethod === 'none' && remote.provider === 'generic' && !remote.upstreamUrl) {
+    // No git connection at all.
+    if (!project.repoUrl) return null;
+  }
+  const gitAuth = await resolveProjectGitAuth(project);
+  const ref = buildConnectionRef(project, remote);
+  if (!ref.upstreamUrl) return null;
+  const backend = getBackend(ref.provider);
+  return backend.buildUpstream(ref, gitAuth.auth?.token ?? null, scope);
+}
+
+export type GitProxyAuth =
+  | { ok: true; project: ProjectRow }
+  | { ok: false; status: number; message: string };
+
+/**
+ * Authorize a Kortix git-proxy request: a bare credential (extracted from the
+ * git Basic/Bearer header) + the target project + the operation scope.
+ *
+ * The owning account is the trust boundary:
+ *  - sandbox runtime token → must be scoped to an active sandbox of THIS
+ *    project (read + write);
+ *  - account API key (kortix_…) → the account must own the project;
+ *  - CLI PAT (kortix_pat_…) → account must own the project; a project-scoped
+ *    PAT must match this project.
+ *
+ * (Finer per-project role gating for account-level PAT writes lands with M2 —
+ * for now account ownership grants write, which is safe since only account
+ * members can mint these tokens.)
+ */
+export async function authorizeGitProxy(
+  token: string,
+  projectId: string,
+  _scope: GitScope,
+): Promise<GitProxyAuth> {
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (!project || project.status === 'archived') {
+    return { ok: false, status: 404, message: 'Not found' };
+  }
+
+  // CLI PAT first — `isKortixToken` also matches the `kortix_pat_` prefix, so
+  // the account-token check MUST run before the API-key check (mirrors the auth
+  // middleware ordering).
+  if (isAccountToken(token)) {
+    const result = await validateAccountToken(token);
+    if (!result.isValid || !result.accountId) {
+      return { ok: false, status: 401, message: result.error || 'Invalid PAT' };
+    }
+    if (result.projectId && result.projectId !== projectId) {
+      return { ok: false, status: 403, message: 'token is scoped to a different project' };
+    }
+    if (result.accountId !== project.accountId) {
+      return { ok: false, status: 403, message: 'token does not own this project' };
+    }
+    return { ok: true, project };
+  }
+
+  if (isKortixToken(token)) {
+    const result = await validateSecretKey(token);
+    if (!result.isValid || !result.accountId) {
+      return { ok: false, status: 401, message: result.error || 'Invalid token' };
+    }
+    if (result.type === 'sandbox') {
+      if (!result.sandboxId) {
+        return { ok: false, status: 403, message: 'sandbox token missing a sandbox scope' };
+      }
+      const [sandbox] = await db
+        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .from(sessionSandboxes)
+        .where(and(
+          eq(sessionSandboxes.sandboxId, result.sandboxId),
+          eq(sessionSandboxes.projectId, projectId),
+          eq(sessionSandboxes.accountId, result.accountId),
+          inArray(sessionSandboxes.status, ['provisioning', 'active']),
+        ))
+        .limit(1);
+      if (!sandbox) {
+        return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
+      }
+      return { ok: true, project };
+    }
+    // Account-scoped user API key.
+    if (result.accountId !== project.accountId) {
+      return { ok: false, status: 403, message: 'token does not own this project' };
+    }
+    return { ok: true, project };
+  }
+
+  return { ok: false, status: 401, message: 'git proxy requires a Kortix token' };
 }
 
 async function getProjectMemberRole(projectId: string, userId: string): Promise<ProjectRole | null> {
@@ -1181,7 +1365,6 @@ function parseExpiresAtBody(
 async function ensureOrgMembership(
   accountId: string,
   userId: string,
-  grantedBy: string,
 ): Promise<AccountRole> {
   const existing = await getAccountMembership(userId, accountId);
   if (existing) return existing.accountRole as AccountRole;
@@ -1670,7 +1853,11 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     KORTIX_PROJECT_AUTO_CLONE: '1',
-    KORTIX_REPO_URL: input.repoUrl,
+    // Universal proxy origin: when enabled, the sandbox clones via the Kortix
+    // git proxy with its own KORTIX_TOKEN — a real host credential never lands
+    // in the sandbox. The daemon's credential helper returns KORTIX_TOKEN for
+    // the proxy host. OFF → direct clone of the real repo (legacy token flow).
+    KORTIX_REPO_URL: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : input.repoUrl,
     KORTIX_DEFAULT_BRANCH: input.baseRef,
     KORTIX_BASE_REF: input.baseRef,
     KORTIX_BRANCH_NAME: input.sessionId,
@@ -1694,6 +1881,15 @@ async function buildSessionSandboxEnvVars(input: {
 /** Derive the API v1 base URL sandboxes call as `$KORTIX_API_URL`. */
 function deriveKortixApiBase(): string {
   return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1`;
+}
+
+/**
+ * The Kortix git-proxy origin for a project — the UNIVERSAL client-facing git
+ * URL. Clients clone/push this with a Kortix token; the API resolves the real
+ * upstream + mints the host credential server-side.
+ */
+function proxyGitUrl(projectId: string): string {
+  return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1/git/${projectId}.git`;
 }
 
 /**
@@ -2187,7 +2383,7 @@ function triggerSchedulerIntervalMs() {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 60_000;
 }
 
-export function nextCronRun(schedule: string, from: Date, timezone?: string): Date | null {
+function nextCronRun(schedule: string, from: Date, timezone?: string): Date | null {
   const job = new Cron(schedule, { paused: true, ...(timezone ? { timezone } : {}) });
   return job.nextRun(from);
 }
@@ -2227,7 +2423,7 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
  * behind the mirror refresh throttle). `syncProjectConnectors` is hash-aware,
  * so unchanged connectors cost a manifest read, not a catalog re-fetch.
  */
-export async function runProjectConnectorSweep(): Promise<{ scanned: number; synced: number; errors: number }> {
+async function runProjectConnectorSweep(): Promise<{ scanned: number; synced: number; errors: number }> {
   if (connectorSweepRunning) return { scanned: 0, synced: 0, errors: 0 };
   connectorSweepRunning = true;
   const out = { scanned: 0, synced: 0, errors: 0 };
@@ -2672,13 +2868,19 @@ projectsApp.post('/provision', async (c) => {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
-  const provider = normalizeString(body.provider) ?? 'freestyle';
-  if (provider !== 'freestyle') {
+  // Managed-git provider, provider-agnostic via the backend registry. GitHub is
+  // the default + only active managed backend (Freestyle was never in prod and
+  // has been ripped out). Forgejo / Artifacts slot in here as drop-ins.
+  const provider =
+    normalizeString(body.provider) ??
+    (process.env.MANAGED_GIT_PROVIDER?.trim() || 'github');
+  if (!hasBackend(provider)) {
     return c.json({ error: `Unsupported managed git provider "${provider}"` }, 400);
   }
-  if (!(await isFreestyleGitConfigured())) {
+  const backend = getBackend(provider);
+  if (!(await backend.isConfigured())) {
     return c.json(
-      { error: 'Managed git is not configured on this server (FREESTYLE_API_KEY missing)' },
+      { error: `Managed git provider "${provider}" is not configured on this server` },
       503,
     );
   }
@@ -2691,74 +2893,65 @@ projectsApp.post('/provision', async (c) => {
       400,
     );
   }
-  // Freestyle repo names are slug-ish; derive a safe slug from the display name.
-  const repoSlug =
+  // Managed repo name = a readable slug from the display name + the project's
+  // UUID, so managed repos under the shared org NEVER collide (two projects can
+  // share a name). We generate the project id up front to bake it into the repo
+  // name and reuse it as the project row id.
+  const projectId = randomUUID();
+  const baseSlug = (
     name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
-    'kortix-project';
+    'kortix-project'
+  ).slice(0, 40);
+  const repoSlug = `${baseSlug}-${projectId}`;
   const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
 
-  let repo: Awaited<ReturnType<typeof createManagedRepo>>;
-  let push: Awaited<ReturnType<typeof mintRepoPushToken>>;
+  let provisioned: Awaited<ReturnType<typeof backend.createRepo>>;
   try {
-    // Managed repos are always private (createManagedRepo defaults isPublic:false).
-    repo = await createManagedRepo({ name: repoSlug, defaultBranch });
-    push = await mintRepoPushToken({ repoId: repo.repoId });
+    provisioned = await backend.createRepo({
+      accountId: scope.accountId,
+      projectId,
+      slug: repoSlug,
+      defaultBranch,
+      isPrivate: true,
+    });
   } catch (error) {
     return c.json({ error: (error as Error).message || 'Failed to provision managed repo' }, 502);
   }
 
-  // Seed the starter into the empty repo when the caller has no local working
-  // tree to push (web "Create project"). The CLI leaves this false and pushes
-  // its own files on first `kortix ship`. If seeding fails we roll back the
-  // orphan repo so we never leave a half-created project behind.
-  const seedStarter = body.seed_starter === true || body.seedStarter === true;
-  const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
-  let seeded = false;
-  if (seedStarter) {
-    try {
-      const starter = buildStarterFiles({
-        projectName: name,
-        repoFullName: repoSlug,
-        template: starterTemplate,
-      });
-      await seedRepoWithFiles({
-        repoId: repo.repoId,
-        token: push.token,
-        files: starter,
-        branch: repo.defaultBranch,
-        commitMessage: 'chore: scaffold Kortix project',
-      });
-      seeded = true;
-    } catch (error) {
-      try { await deleteManagedRepo(repo.repoId); } catch { /* best effort */ }
-      return c.json({ error: (error as Error).message || 'Failed to seed project repo' }, 502);
-    }
-  }
-
+  const authMethod = provider === 'github' ? 'github_app' : 'managed';
   const now = new Date();
   const [row] = await db
     .insert(projects)
     .values({
+      projectId,
       accountId: scope.accountId,
       name,
-      repoUrl: repo.gitUrl,
-      defaultBranch: repo.defaultBranch,
+      repoUrl: provisioned.upstreamUrl,
+      defaultBranch: provisioned.defaultBranch,
       manifestPath: 'kortix.toml',
       status: 'active',
       metadata: {
         git: {
-          url: repo.gitUrl,
-          default_branch: repo.defaultBranch,
-          provider: 'freestyle',
-          auth: { method: 'managed', ref: push.identityId },
-          repo_id: repo.repoId,
+          url: provisioned.upstreamUrl,
+          upstream_url: provisioned.upstreamUrl,
+          default_branch: provisioned.defaultBranch,
+          provider,
+          managed: true,
+          auth: {
+            method: authMethod,
+            ref: provisioned.credentialRef,
+            installation_id: provisioned.installationId,
+          },
+          repo_id: provisioned.externalRepoId,
+          owner: provisioned.repoOwner,
+          name: provisioned.repoName,
         },
       },
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: [projects.accountId, projects.repoUrl],
-      set: { name, defaultBranch: repo.defaultBranch, status: 'active', updatedAt: now },
+      set: { name, defaultBranch: provisioned.defaultBranch, status: 'active', updatedAt: now },
     })
     .returning();
 
@@ -2772,16 +2965,62 @@ projectsApp.post('/provision', async (c) => {
   await upsertProjectGitConnection({
     accountId: scope.accountId,
     projectId: row.projectId,
-    provider: 'freestyle',
-    repoUrl: repo.gitUrl,
-    externalRepoId: repo.repoId,
-    defaultBranch: repo.defaultBranch,
-    authMethod: 'managed',
-    credentialRef: push.identityId,
+    provider,
+    repoUrl: provisioned.upstreamUrl,
+    upstreamUrl: provisioned.upstreamUrl,
+    managed: true,
+    repoOwner: provisioned.repoOwner,
+    repoName: provisioned.repoName,
+    externalRepoId: provisioned.externalRepoId,
+    defaultBranch: provisioned.defaultBranch,
+    authMethod,
+    installationId: provisioned.installationId,
+    credentialRef: provisioned.credentialRef,
     visibility: 'private',
     status: 'connected',
-    metadata: { seeded },
+    metadata: { seeded: false },
   });
+
+  // Resolve a push credential for seeding / the CLI's first push. Freestyle
+  // mints one at create time; GitHub mints an installation token now.
+  let pushToken = provisioned.initialToken;
+  if (!pushToken) {
+    pushToken = (await resolveProjectGitAuth(row)).auth?.token ?? null;
+  }
+
+  // Seed the starter into the empty repo when the caller has no local working
+  // tree to push (web "Create project"). The CLI leaves this false and pushes
+  // its own files on first `kortix ship`. If seeding fails we roll back the
+  // orphan repo + project so we never leave a half-created project behind.
+  const seedStarter = body.seed_starter === true || body.seedStarter === true;
+  const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
+  let seeded = false;
+  if (seedStarter) {
+    const connRef = buildConnectionRef(row, getProjectGitRemote(row, await getProjectGitConnection(row.projectId)));
+    try {
+      if (!pushToken) throw new Error('no push credential resolved for seeding');
+      const starter = buildStarterFiles({ projectName: name, repoFullName: repoSlug, template: starterTemplate });
+      if (backend.seedFiles) {
+        await backend.seedFiles(connRef, pushToken, starter, {
+          branch: provisioned.defaultBranch,
+          message: 'chore: scaffold Kortix project',
+        });
+      } else {
+        await seedRepoViaGitPush({
+          upstreamUrl: connRef.upstreamUrl,
+          token: pushToken,
+          files: starter,
+          branch: provisioned.defaultBranch,
+          commitMessage: 'chore: scaffold Kortix project',
+        });
+      }
+      seeded = true;
+    } catch (error) {
+      try { await backend.deleteRepo(connRef); } catch { /* best effort */ }
+      await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch(() => {});
+      return c.json({ error: (error as Error).message || 'Failed to seed project repo' }, 502);
+    }
+  }
 
   if (seeded) {
     kickProjectTemplatePrebuilds(
@@ -2790,7 +3029,7 @@ projectsApp.post('/provision', async (c) => {
         repoUrl: row.repoUrl,
         defaultBranch: row.defaultBranch,
         manifestPath: row.manifestPath,
-        gitAuthToken: push.token,
+        gitAuthToken: pushToken,
       },
       { accountId: scope.accountId, source: 'project-create' },
     );
@@ -2799,8 +3038,8 @@ projectsApp.post('/provision', async (c) => {
   return c.json(
     {
       ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
-      push_token: push.token,
-      repo_id: repo.repoId,
+      push_token: pushToken,
+      repo_id: provisioned.externalRepoId,
       seeded,
     },
     201,
@@ -2816,53 +3055,60 @@ projectsApp.post('/:projectId/git-token', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
   const connection = await getProjectGitConnection(projectId);
   const remote = getProjectGitRemote(loaded.row, connection);
-  if (remote.provider !== 'freestyle' || remote.authMethod !== 'managed' || !remote.repoId) {
-    return c.json({ error: 'Project is not a managed Freestyle repo' }, 409);
-  }
-  if (!(await isFreestyleGitConfigured())) {
-    return c.json({ error: 'Managed git is not configured on this server' }, 503);
+  if (!remote.managed) {
+    return c.json({ error: 'Project is not a managed repo' }, 409);
   }
 
-  let push: Awaited<ReturnType<typeof mintRepoPushToken>>;
+  // Provider-agnostic: resolve a fresh push credential through the backend seam
+  // (Freestyle mints a scoped identity token; GitHub mints an installation
+  // token). Never persisted in the sandbox/CLI git config.
+  const gitAuth = await resolveProjectGitAuth(loaded.row);
+  if (!gitAuth.auth?.token) {
+    return c.json({ error: 'Managed git is not configured / unavailable for this project' }, 503);
+  }
+  const upstream = await resolveProjectUpstream(loaded.row, 'write');
+
+  return c.json({
+    push_token: gitAuth.auth.token,
+    repo_id: remote.externalRepoId,
+    repo_url: upstream?.url ?? loaded.row.repoUrl,
+  });
+});
+
+// POST /v1/projects/:projectId/git/collaborators
+// Invite a GitHub user as a collaborator on a MANAGED repo — lets the project
+// creator pull "their" Kortix-managed repo into their own GitHub account and
+// work on it on github.com directly. Managed repos only (the user already owns
+// BYO repos). GitHub sends a pending invite the user accepts.
+projectsApp.post('/:projectId/git/collaborators', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const body = await readBody(c);
+  const username = normalizeString(body.github_username ?? body.username ?? body.login);
+  if (!username) return c.json({ error: 'github_username is required' }, 400);
+  const permission = normalizeString(body.permission);
+  const scope: GitScope = permission === 'read' || permission === 'pull' ? 'read' : 'write';
+
+  const remote = getProjectGitRemote(loaded.row, await getProjectGitConnection(projectId));
+  if (remote.provider !== 'github' || !remote.managed) {
+    return c.json({ error: 'Collaborator invites are only available for managed GitHub repos' }, 409);
+  }
+  const ref = buildConnectionRef(loaded.row, remote);
+  const backend = getBackend(remote.provider);
+  if (!backend.inviteCollaborator) {
+    return c.json({ error: 'This git backend does not support collaborator invites' }, 400);
+  }
+
   try {
-    push = await mintRepoPushToken({ repoId: remote.repoId, identityId: remote.ref });
+    const result = await backend.inviteCollaborator(ref, username, scope);
+    return c.json(result);
   } catch (error) {
-    return c.json({ error: (error as Error).message || 'Failed to mint push token' }, 502);
+    return c.json({ error: (error as Error).message || 'Failed to invite collaborator' }, 502);
   }
-
-  if (push.identityId !== remote.ref) {
-    const nextGit = {
-      url: loaded.row.repoUrl,
-      default_branch: loaded.row.defaultBranch,
-      provider: 'freestyle',
-      auth: { method: 'managed', ref: push.identityId },
-      repo_id: remote.repoId,
-    };
-    await db
-      .update(projects)
-      .set({ metadata: { ...meta, git: nextGit }, updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId));
-    if (connection) {
-      await upsertProjectGitConnection({
-        accountId: loaded.row.accountId,
-        projectId,
-        provider: 'freestyle',
-        repoUrl: loaded.row.repoUrl,
-        externalRepoId: remote.repoId,
-        defaultBranch: loaded.row.defaultBranch,
-        authMethod: 'managed',
-        credentialRef: push.identityId,
-        visibility: connection.visibility,
-        status: connection.status,
-        metadata: normalizeJsonObject(connection.metadata),
-      });
-    }
-  }
-
-  return c.json({ push_token: push.token, repo_id: remote.repoId, repo_url: loaded.row.repoUrl });
 });
 
 // GET /v1/projects/github/installation?account_id=...
@@ -6061,7 +6307,7 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
     );
   }
 
-  const targetAccountRole = await ensureOrgMembership(loaded.row.accountId, targetUserId, loaded.userId);
+  const targetAccountRole = await ensureOrgMembership(loaded.row.accountId, targetUserId);
   if (isAccountManager(targetAccountRole)) {
     return c.json({
       user_id: targetUserId,

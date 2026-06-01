@@ -158,6 +158,14 @@ export function __clearCloneTokenCacheForTests(): void {
 
 async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
   if (!cfg.apiUrl || !cfg.projectId || !cfg.kortixToken) return undefined
+  // Universal proxy origin: when the repo is served by the Kortix git proxy
+  // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
+  // credential IS our own KORTIX_TOKEN — the proxy authenticates it and resolves
+  // the real upstream + host credential server-side. No clone-credential round
+  // trip, and a real GitHub/Freestyle token never enters the sandbox.
+  if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
+    return cfg.kortixToken
+  }
   const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.kortixToken}`
   if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
 

@@ -283,6 +283,15 @@ export const projectGitConnections = kortixSchema.table(
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     provider: varchar('provider', { length: 32 }).notNull(),
     repoUrl: text('repo_url').notNull(),
+    /**
+     * Real upstream git URL on the host (github.com/…, git.freestyle.sh/…).
+     * Distinct from repoUrl, which is the client-facing Kortix git-proxy URL.
+     * Server-side git + the proxy resolve the real host through this; clients
+     * never see it. Null on legacy rows (defaults to repoUrl).
+     */
+    upstreamUrl: text('upstream_url'),
+    /** True when Kortix provisioned this repo (vs a BYO/linked repo). */
+    managed: boolean('managed').default(false).notNull(),
     repoOwner: varchar('repo_owner', { length: 255 }),
     repoName: varchar('repo_name', { length: 255 }),
     externalRepoId: text('external_repo_id'),
@@ -1019,9 +1028,8 @@ export const kortixApiKeys = kortixSchema.table(
   'api_keys',
   {
     keyId: uuid('key_id').defaultRandom().primaryKey(),
-    // No FK constraint: sandbox_id can point at either `sandboxes` (legacy
-    // /instances) or `session_sandboxes` (project-session sandboxes). Both
-    // tables share the UUID space so the lookup keeps working.
+    // No FK constraint: session_sandboxes is not guaranteed to exist before
+    // older api_keys migrations replay, but API keys are now session-scoped.
     sandboxId: uuid('sandbox_id').notNull(),
     accountId: uuid('account_id').notNull(),
     publicKey: varchar('public_key', { length: 64 }).notNull(),

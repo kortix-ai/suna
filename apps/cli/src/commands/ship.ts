@@ -431,8 +431,16 @@ async function shipFirstTime(
       account_id: accountId,
     });
     project = prov;
-    repoUrl = prov.repo_url;
-    pushToken = prov.push_token;
+    // Universal proxy origin: when the server returns a git-proxy origin, push
+    // THROUGH the proxy with our own Kortix token (the proxy resolves the real
+    // upstream + host credential server-side) — never the upstream push token.
+    if (prov.git_origin_url && /\/v1\/git\//.test(prov.git_origin_url)) {
+      repoUrl = prov.git_origin_url;
+      pushToken = auth.token;
+    } else {
+      repoUrl = prov.repo_url;
+      pushToken = prov.push_token;
+    }
     setOrigin(repoUrl);
   }
 
@@ -472,12 +480,19 @@ async function shipExisting(
     if (handled !== null) return handled;
     throw err;
   }
-  const repoUrl = project.repo_url;
+  // Universal proxy origin: push THROUGH the Kortix git proxy with our own
+  // Kortix token when the server advertises one (the proxy resolves the real
+  // upstream + host credential server-side).
+  const proxyOrigin =
+    project.git_origin_url && /\/v1\/git\//.test(project.git_origin_url)
+      ? project.git_origin_url
+      : null;
+  const repoUrl = proxyOrigin ?? project.repo_url;
   const meta = (project.metadata ?? {}) as Record<string, any>;
-  // Canonical: metadata.git.{provider,auth.method}. Fallback: git_provider.
-  const git = meta.git as { provider?: string; auth?: { method?: string } } | undefined;
+  // Canonical: metadata.git.{provider,managed,auth.method}. Fallback: git_provider.
+  const git = meta.git as { provider?: string; managed?: boolean; auth?: { method?: string } } | undefined;
   const managed = git
-    ? git.provider === 'freestyle' && (git.auth?.method ?? 'managed') === 'managed'
+    ? git.managed === true || (git.provider === 'freestyle' && (git.auth?.method ?? 'managed') === 'managed')
     : meta.git_provider === 'freestyle';
 
   process.stdout.write(
@@ -493,10 +508,13 @@ async function shipExisting(
     return 0;
   }
 
-  // Managed repos get a fresh, scoped, write-only token per ship — we never
-  // persist credentials in .git/config.
+  // Push credential: through the proxy we authenticate with our own Kortix
+  // token; otherwise managed repos get a fresh scoped push token per ship (never
+  // persisted in .git/config).
   let pushToken: string | null = null;
-  if (managed) {
+  if (proxyOrigin) {
+    pushToken = auth.token;
+  } else if (managed) {
     const tok = await client.post<GitTokenResponse>(`/projects/${projectId}/git-token`);
     pushToken = tok.push_token;
   }
@@ -631,17 +649,20 @@ function pushCurrentBranch(repoUrl: string, pushToken: string | null): string | 
   return branch;
 }
 
-/** `-c http.https://<host>/.extraheader=AUTHORIZATION: basic <b64>` — mirrors
- *  the backend's git auth scheme (projects/git.ts). */
+/** `-c http.<scheme>://<host>/.extraheader=AUTHORIZATION: basic <b64>` —
+ *  mirrors the backend's git auth scheme (projects/git.ts). The extraheader
+ *  key MUST carry the remote's actual scheme (http for a localhost proxy,
+ *  https in prod) or git won't apply it (scheme-scoped config). */
 function authHeaderArgs(repoUrl: string, token: string): string[] {
-  let host = 'git.freestyle.sh';
+  let origin = 'https://github.com';
   try {
-    host = new URL(repoUrl).host;
+    const u = new URL(repoUrl);
+    origin = `${u.protocol}//${u.host}`;
   } catch {
     /* keep default */
   }
   const enc = Buffer.from(`x-access-token:${token}`).toString('base64');
-  return ['-c', `http.https://${host}/.extraheader=AUTHORIZATION: basic ${enc}`];
+  return ['-c', `http.${origin}/.extraheader=AUTHORIZATION: basic ${enc}`];
 }
 
 function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): void {

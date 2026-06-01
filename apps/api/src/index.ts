@@ -11,7 +11,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
 import { HTTPException } from 'hono/http-exception';
-import { config, SANDBOX_VERSION } from './config';
+import { config } from './config';
 import { BillingError } from './errors';
 
 // ─── Sub-Service Imports ──────────────────────────────────────────────────── 
@@ -23,7 +23,6 @@ import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
 import { queueApp, startDrainer, stopDrainer } from './queue';
 import { serversApp } from './servers';
-// WoA is now mounted under the router at /v1/router/woa (see router/index.ts)
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
@@ -373,6 +372,14 @@ app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/ve
 registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 
+// Universal git smart-HTTP proxy — every git-backed project's client origin.
+// Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
+// so it is intentionally NOT wrapped in combinedAuth.
+{
+  const { gitProxyApp } = await import('./git-proxy');
+  app.route('/v1/git', gitProxyApp); // /v1/git/:projectId(.git)/{info/refs,git-upload-pack,git-receive-pack}
+}
+
 // Executor — unified connector layer. Gateway routes (/connectors, /call) use
 // KORTIX_EXECUTOR_TOKEN (validated inside the router); admin routes
 // (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
@@ -428,8 +435,6 @@ app.use('/v1/tunnel/*', async (c, next) => {
   return combinedAuth(c, next);
 });
 app.route('/v1/tunnel', tunnelApp);
-
-// WoA moved to /v1/router/woa — see router/index.ts
 
 // Preview Proxy — unified route for both cloud (Daytona) and local mode.
 // Pattern: /v1/p/{sandboxId}/{port}/* for ALL modes.
@@ -541,7 +546,7 @@ console.log(`
 ║  Services:                                                ║
 ║    /v1/router     (search, LLM, proxy)                    ║
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
-║    /v1/platform   (sandbox lifecycle)                      ║
+║    /v1/platform   (api keys, sandbox version)               ║
 ${config.KORTIX_DEPLOYMENTS_ENABLED ? '║    /v1/deployments (deploy lifecycle)                      ║\n' : ''}║    /v1/projects   (Git-backed projects)                    ║
 ${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n' : ''}
 ║    /v1/setup      (setup & env management)                 ║
