@@ -69,6 +69,14 @@ export interface GitHostBackend {
    * admin-capable credential; only meaningful for managed repos.
    */
   inviteCollaborator?(ref: GitConnectionRef, username: string, scope: GitScope): Promise<InviteResult>;
+  /**
+   * Mint a short-lived, credential-embedded git URL for pushing to this repo
+   * from an EXTERNAL context (e.g. a legacy-migration VM) where `buildUpstream`'s
+   * header-based auth can't be threaded into a remote `git push`. The credential
+   * is baked into the URL, so the result is a SECRET — never log it. Optional;
+   * only managed backends implement it.
+   */
+  authedPushUrl?(ref: GitConnectionRef): Promise<string>;
 }
 
 export interface InviteResult {

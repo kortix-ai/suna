@@ -38,6 +38,30 @@ function managedGithubToken(): string | null {
   return process.env.MANAGED_GIT_GITHUB_TOKEN?.trim() || null;
 }
 
+/** Embed an `x-access-token:<token>` basic credential into an https git URL. */
+function injectGitCredential(upstreamUrl: string, token: string): string {
+  const u = new URL(upstreamUrl);
+  u.username = 'x-access-token';
+  u.password = token;
+  return u.toString();
+}
+
+/**
+ * Resolve a repo-scoped RUNTIME write token for a managed repo — the same
+ * credential model as `resolveProjectGitAuth`'s managed-GitHub branch: the org
+ * PAT when set, else a least-privilege installation token scoped to this repo.
+ */
+async function mintManagedWriteToken(ref: GitConnectionRef): Promise<string> {
+  const pat = managedGithubToken();
+  if (pat) return pat;
+  const installId = ref.installationId ?? managedGithubInstallId();
+  if (!installId) {
+    throw new Error('Managed GitHub git not configured (set MANAGED_GIT_GITHUB_TOKEN or _INSTALL_ID)');
+  }
+  const minted = await createInstallationToken(installId, ref.repoName ? [ref.repoName] : undefined);
+  return minted.token;
+}
+
 /**
  * Admin-capable credential for managed-org operations that need org/repo-admin
  * scope (create repo, delete repo, add collaborator). PAT first, else an App
@@ -143,6 +167,11 @@ export const githubBackend: GitHostBackend = {
       invitationUrl: invitation?.html_url ?? null,
       alreadyCollaborator: invitation === null,
     };
+  },
+
+  async authedPushUrl(ref: GitConnectionRef): Promise<string> {
+    const token = await mintManagedWriteToken(ref);
+    return injectGitCredential(ref.upstreamUrl, token);
   },
 };
 
