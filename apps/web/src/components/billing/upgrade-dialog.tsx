@@ -91,8 +91,7 @@ export function GlobalUpgradeDialog() {
           <DialogHeader>
             <DialogTitle className="text-center text-xl">Out of credits</DialogTitle>
             <DialogDescription className="text-center">
-              {message ||
-                `Your wallet is at $${balance.toFixed(2)}. Top up or enable auto-refill to keep going.`}
+              {`Your wallet is at $${balance.toFixed(2)}. Top up or enable auto-refill to keep going.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-col-reverse sm:flex-col-reverse gap-2 sm:gap-2">
