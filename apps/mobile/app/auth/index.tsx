@@ -149,10 +149,10 @@ export default function AuthScreen() {
           );
           return;
         }
-        if (res.data?.session) {
-          router.replace('/home');
-        } else {
+        if (res.requiresEmailConfirmation) {
           setInfo('Check your email to confirm your account.');
+        } else {
+          router.replace('/home');
         }
         return;
       }

@@ -290,34 +290,61 @@ export function useAuth() {
         setError(null);
         setAuthState((prev) => ({ ...prev, isLoading: true }));
 
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
+        const normalizedEmail = email.trim().toLowerCase();
+
+        const { error: signUpError } = await supabase.auth.signUp({
+          email: normalizedEmail,
           password,
           options: {
-            data: {
-              full_name: fullName,
-            },
+            data: fullName ? { full_name: fullName } : undefined,
             emailRedirectTo: await createAuthCallbackRedirect(),
           },
         });
 
-        if (signUpError) {
+        const alreadyExists =
+          !!signUpError &&
+          (/already registered|already exists/i.test(signUpError.message) ||
+            signUpError.status === 422);
+
+        if (signUpError && !alreadyExists) {
           log.error('❌ Sign up error:', signUpError.message);
           setError({ message: signUpError.message, status: signUpError.status });
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           return { success: false, error: signUpError };
         }
 
-        log.log('✅ Sign up successful:', data.user?.email);
-        
-        // If user is auto-logged in after signup, invalidate cache to fetch fresh account state
-        if (data.session) {
-          log.log('🔄 User auto-logged in after signup - invalidating cache to fetch fresh account state');
-          queryClient.invalidateQueries({ queryKey: ['account-state'] });
+        // Mirror web signUpWithPassword: immediately establish a session. When
+        // Supabase email confirmations are off (local default) this signs the
+        // user in; when on (cloud) it reports "email not confirmed" and we
+        // surface that instead.
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password,
+        });
+
+        if (signInError) {
+          if (/not confirmed|email_not_confirmed/i.test(signInError.message)) {
+            setAuthState((prev) => ({ ...prev, isLoading: false }));
+            return { success: true, requiresEmailConfirmation: true };
+          }
+          if (alreadyExists) {
+            const error = {
+              message: 'An account with this email already exists. Try signing in instead.',
+            };
+            setError(error);
+            setAuthState((prev) => ({ ...prev, isLoading: false }));
+            return { success: false, error };
+          }
+          log.error('❌ Sign up sign-in error:', signInError.message);
+          setError({ message: signInError.message, status: signInError.status });
+          setAuthState((prev) => ({ ...prev, isLoading: false }));
+          return { success: false, error: signInError };
         }
-        
+
+        log.log('✅ Sign up successful:', signInData.user?.email);
+        queryClient.invalidateQueries({ queryKey: ['account-state'] });
         setAuthState((prev) => ({ ...prev, isLoading: false }));
-        return { success: true, data };
+        return { success: true, data: signInData };
       } catch (err: any) {
         log.error('❌ Sign up exception:', err);
         const error = { message: err.message || 'An unexpected error occurred' };
@@ -326,7 +353,7 @@ export function useAuth() {
         return { success: false, error };
       }
     },
-    []
+    [queryClient]
   );
 
   /**
