@@ -1693,7 +1693,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
   blocks.push({
     type: 'image',
     image_url: heroUrl,
-    alt_text: 'Kortix — your coding teammate in Slack',
+    alt_text: 'Kortix — AI command center for your company',
   });
   blocks.push({
     type: 'header',
@@ -1704,7 +1704,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
     text: {
       type: 'mrkdwn',
       text: [
-        '*Your coding teammate, right here in Slack.*',
+        '*Your AI command center, right here in Slack.*',
         '',
         "`@`-mention me in any channel with a task and I'll read the repo, run the work in an isolated sandbox, and reply in the thread. Follow-ups stay in context.",
       ].join('\n'),
