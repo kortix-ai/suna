@@ -50,7 +50,9 @@ jobs:
               - 'apps/api/**'
               - 'apps/kortix-sandbox-agent-server/**'
               - 'apps/sandbox/**'
+              - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
               - 'packages/**'
+              - 'supabase/migrations/**' # run by ensureSchema at boot — must redeploy to apply
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'VERSION'
