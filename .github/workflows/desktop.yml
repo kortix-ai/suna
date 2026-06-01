@@ -94,44 +94,35 @@ jobs:
         shell: bash
         run: echo "version=$(cat VERSION)-dev.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
 
-      - name: Validate signing secrets
+      # Decide whether this platform can SIGN. We never hard-fail on missing
+      # certs — a release should always ship an installer. If the platform's
+      # signing secrets are present we sign (+ notarize on macOS); otherwise we
+      # build UNSIGNED (users get a Gatekeeper/SmartScreen warning, right-click →
+      # Open / "Run anyway" to bypass). `steps.sign.outputs.enabled` gates it.
+      - name: Decide signing
+        id: sign
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
         run: |
+          enabled=false
           case "${{ runner.os }}" in
-            macOS)
-              test -n "$APPLE_CERTIFICATE" || { echo "Missing APPLE_CERTIFICATE"; exit 1; }
-              test -n "$APPLE_CERTIFICATE_PASSWORD" || { echo "Missing APPLE_CERTIFICATE_PASSWORD"; exit 1; }
-              if [ -n "$APPLE_API_ISSUER" ] || [ -n "$APPLE_API_KEY" ] || [ -n "$APPLE_API_KEY_P8" ]; then
-                test -n "$APPLE_API_ISSUER" || { echo "Missing APPLE_API_ISSUER"; exit 1; }
-                test -n "$APPLE_API_KEY" || { echo "Missing APPLE_API_KEY"; exit 1; }
-                test -n "$APPLE_API_KEY_P8" || { echo "Missing APPLE_API_KEY_P8"; exit 1; }
-              else
-                test -n "$APPLE_ID" || { echo "Missing APPLE_ID"; exit 1; }
-                test -n "$APPLE_PASSWORD" || { echo "Missing APPLE_PASSWORD"; exit 1; }
-                test -n "$APPLE_TEAM_ID" || { echo "Missing APPLE_TEAM_ID"; exit 1; }
-              fi
-              ;;
-            Windows)
-              test -n "$WINDOWS_CERTIFICATE" || { echo "Missing WINDOWS_CERTIFICATE"; exit 1; }
-              test -n "$WINDOWS_CERTIFICATE_PASSWORD" || { echo "Missing WINDOWS_CERTIFICATE_PASSWORD"; exit 1; }
-              test -n "$WINDOWS_CERTIFICATE_THUMBPRINT" || { echo "Missing WINDOWS_CERTIFICATE_THUMBPRINT"; exit 1; }
-              ;;
+            macOS)   [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && enabled=true ;;
+            Windows) [ -n "$WINDOWS_CERTIFICATE" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ] && enabled=true ;;
+            *)       enabled=true ;;  # Linux AppImage isn't code-signed anyway
           esac
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          if [ "$enabled" = true ]; then
+            echo "::notice::${{ runner.os }} signing ENABLED."
+          else
+            echo "::warning::${{ runner.os }} signing secrets absent — building UNSIGNED."
+          fi
 
       - name: Prepare macOS notarization key
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.sign.outputs.enabled == 'true'
         shell: bash
         env:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
@@ -143,7 +134,7 @@ jobs:
           fi
 
       - name: Import Windows signing certificate
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.sign.outputs.enabled == 'true'
         shell: pwsh
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
@@ -162,6 +153,7 @@ jobs:
         shell: bash
         env:
           DESKTOP_VERSION: ${{ steps.ver.outputs.version }}
+          SIGN_ENABLED: ${{ steps.sign.outputs.enabled }}
           WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
           WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
         run: |
@@ -175,7 +167,9 @@ jobs:
           config.version = (process.env.DESKTOP_VERSION || '0.0.0').split('-')[0];
           config.productName = process.env.DESKTOP_PRODUCT_NAME;
           config.identifier = process.env.DESKTOP_IDENTIFIER;
-          if (process.env.WINDOWS_CERTIFICATE_THUMBPRINT) {
+          // Only wire Windows code-signing when signing is enabled AND a
+          // thumbprint is set — otherwise build unsigned (no certificateThumbprint).
+          if (process.env.SIGN_ENABLED === 'true' && process.env.WINDOWS_CERTIFICATE_THUMBPRINT) {
             config.bundle ||= {};
             config.bundle.windows ||= {};
             config.bundle.windows.certificateThumbprint = process.env.WINDOWS_CERTIFICATE_THUMBPRINT;
@@ -188,18 +182,20 @@ jobs:
       - name: Prepare desktop shell assets
         run: pnpm --filter @kortix/desktop run prepare-assets
 
+      # When signing is enabled, the Apple env vars trigger Tauri's sign +
+      # notarize. When disabled, they're empty → Tauri builds an unsigned bundle.
       - name: Build desktop installer
         run: pnpm --filter @kortix/desktop tauri build --bundles ${{ matrix.bundles }}
         env:
           KORTIX_DESKTOP_DEFAULT_URL: ${{ env.DESKTOP_URL }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_API_ISSUER: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_API_KEY: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_API_KEY || '' }}
+          APPLE_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && (secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD) || '' }}
+          APPLE_TEAM_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
