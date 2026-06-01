@@ -29,7 +29,7 @@ import { sandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { getStripe } from '../../shared/stripe';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
-import { getCustomerByAccountId } from '../repositories/customers';
+import { resolveLiveStripeCustomerId } from './subscriptions';
 import { countActiveMembers } from './seat-management';
 import { grantCredits } from './credits';
 import { resolvePerSeatPriceId, defaultAutoTopupForSeats, MAX_SEATS_PER_ACCOUNT } from './tiers';
@@ -85,13 +85,17 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
       return defaultResult('skipped:already_per_seat');
     }
 
-    const customer = await getCustomerByAccountId(accountId);
+    // Resolve a LIVE customer in the current Stripe account (drops a stale
+    // mapping from a different account and returns null). A stale/absent customer
+    // means no reachable subs → it falls through to the no-subs path below rather
+    // than 500ing on "No such customer".
+    const customerId = await resolveLiveStripeCustomerId(accountId);
     const stripe = getStripe();
     const now = Math.floor(Date.now() / 1000);
 
     // 1. Inventory active Stripe subs (may be none if the user is on free tier)
-    const activeSubs: Stripe.Subscription[] = customer
-      ? (await stripe.subscriptions.list({ customer: customer.id, status: 'active', limit: 100 })).data
+    const activeSubs: Stripe.Subscription[] = customerId
+      ? (await stripe.subscriptions.list({ customer: customerId, status: 'active', limit: 100 })).data
       : [];
 
     if (activeSubs.length === 0) {
@@ -110,7 +114,7 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
       console.error(`[lazy-migrate] refusing migration for ${accountId}: per-seat price not configured`);
       return defaultResult('failed', 'per-seat price not configured');
     }
-    if (!customer) {
+    if (!customerId) {
       console.error(`[lazy-migrate] refusing migration for ${accountId}: no Stripe customer record`);
       return defaultResult('failed', 'no Stripe customer for account with active subs');
     }
@@ -122,7 +126,7 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
     let newSubscription: Stripe.Subscription;
     try {
       newSubscription = await stripe.subscriptions.create({
-        customer: customer.id,
+        customer: customerId,
         items: [{ price: priceId, quantity: seatCount }],
         collection_method: 'charge_automatically',
         metadata: {
