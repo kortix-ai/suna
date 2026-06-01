@@ -155,7 +155,7 @@ describe('gateway — reasoning injection', () => {
     const app = createLlmGateway(defaultConfig, hooks);
     await app.fetch(
       jsonReq(
-        { model: 'anthropic/claude-sonnet-4-5', messages: [{ role: 'user', content: 'hi' }] },
+        { model: 'anthropic/claude-sonnet-4.6', messages: [{ role: 'user', content: 'hi' }] },
         { Authorization: 'Bearer good' },
       ),
     );
@@ -193,7 +193,7 @@ describe('gateway — reasoning injection', () => {
     await app.fetch(
       jsonReq(
         {
-          model: 'anthropic/claude-opus-4-7',
+          model: 'anthropic/claude-opus-4.8',
           messages: [{ role: 'user', content: 'hi' }],
           reasoning_effort: 'high',
         },

@@ -43,6 +43,12 @@ export interface LlmProviderEntry {
   models: LlmProviderModel[];
   /** True for the curated popular set — pinned to the top of the catalog. */
   featured: boolean;
+  /**
+   * Platform-managed provider (the Kortix gateway). Injected into every sandbox
+   * automatically — no API key, no connect/disconnect flow. Rendered as an
+   * always-connected "Managed" row rather than a BYO credential entry.
+   */
+  managed?: boolean;
 }
 
 interface RawProvider {

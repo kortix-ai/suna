@@ -74,11 +74,11 @@ describe('buildExecutorMcpConfigContent — Kortix LLM gateway provider', () => 
   })
 
   test('preserves user-set default model from pre-existing config', () => {
-    const existing = JSON.stringify({ model: 'anthropic/claude-sonnet-4-5' })
+    const existing = JSON.stringify({ model: 'anthropic/claude-sonnet-4.6' })
     const config = JSON.parse(
       buildExecutorMcpConfigContent({ ...GATEWAY_ENV, OPENCODE_CONFIG_CONTENT: existing })!,
     )
-    expect(config.model).toBe('anthropic/claude-sonnet-4-5')
+    expect(config.model).toBe('anthropic/claude-sonnet-4.6')
   })
 
   test('coexists with the executor MCP server in one config', () => {
@@ -100,13 +100,13 @@ describe('buildExecutorMcpConfigContent — Kortix LLM gateway provider', () => 
   test('declares reasoning + tool_call + attachment on capable Kortix models', () => {
     const config = JSON.parse(buildExecutorMcpConfigContent(GATEWAY_ENV)!)
     const models = config.provider.kortix.models
-    expect(models['anthropic/claude-sonnet-4-5'].reasoning).toBe(true)
-    expect(models['anthropic/claude-haiku-4-5'].reasoning).toBe(true)
-    expect(models['anthropic/claude-opus-4-7'].reasoning).toBe(true)
-    expect(models['anthropic/claude-sonnet-4-5'].tool_call).toBe(true)
-    expect(models['anthropic/claude-sonnet-4-5'].attachment).toBe(true)
-    expect(models['openai/gpt-4o'].reasoning).toBeUndefined()
-    expect(models['openai/gpt-4o'].tool_call).toBe(true)
+    expect(models['anthropic/claude-opus-4.8'].reasoning).toBe(true)
+    expect(models['anthropic/claude-sonnet-4.6'].reasoning).toBe(true)
+    expect(models['deepseek/deepseek-v4-flash'].reasoning).toBe(true)
+    expect(models['anthropic/claude-opus-4.8'].tool_call).toBe(true)
+    expect(models['anthropic/claude-opus-4.8'].attachment).toBe(true)
+    expect(models['x-ai/grok-4.3'].tool_call).toBe(true)
+    expect(models['minimax/minimax-m3'].tool_call).toBe(true)
   })
 
   test('merges provider onto pre-existing inline provider block', () => {

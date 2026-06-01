@@ -87,7 +87,7 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
   return JSON.stringify(out)
 }
 
-const DEFAULT_KORTIX_MODEL = 'kortix/anthropic/claude-haiku-4-5'
+const DEFAULT_KORTIX_MODEL = 'kortix/anthropic/claude-opus-4.8'
 
 type KortixGatewayModel = {
   name: string
@@ -99,65 +99,93 @@ type KortixGatewayModel = {
 }
 
 const KORTIX_GATEWAY_MODELS: Record<string, KortixGatewayModel> = {
-  'anthropic/claude-sonnet-4-5': {
-    name: 'Claude Sonnet 4.5',
+  'anthropic/claude-opus-4.8': {
+    name: 'Claude Opus 4.8',
     reasoning: true,
     tool_call: true,
     attachment: true,
     temperature: true,
-    limit: { context: 200_000, output: 64_000 },
+    limit: { context: 1_000_000, output: 64_000 },
   },
-  'anthropic/claude-haiku-4-5': {
-    name: 'Claude Haiku 4.5',
+  'anthropic/claude-sonnet-4.6': {
+    name: 'Claude Sonnet 4.6',
     reasoning: true,
     tool_call: true,
     attachment: true,
     temperature: true,
-    limit: { context: 200_000, output: 64_000 },
+    limit: { context: 1_000_000, output: 64_000 },
   },
-  'anthropic/claude-opus-4-7': {
-    name: 'Claude Opus 4.7',
+  'openai/gpt-5.5': {
+    name: 'GPT-5.5',
     reasoning: true,
     tool_call: true,
     attachment: true,
     temperature: true,
-    limit: { context: 200_000, output: 32_000 },
+    limit: { context: 1_050_000, output: 64_000 },
   },
-  'openai/gpt-4o': {
-    name: 'GPT-4o',
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 128_000, output: 16_384 },
-  },
-  'openai/gpt-4o-mini': {
-    name: 'GPT-4o mini',
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 128_000, output: 16_384 },
-  },
-  'google/gemini-2.0-flash-lite-001': {
-    name: 'Gemini 2.0 Flash Lite',
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_000_000, output: 8_192 },
-  },
-  'google/gemini-2.5-flash-lite-preview-09-2025': {
-    name: 'Gemini 2.5 Flash Lite',
+  'google/gemini-3.5-flash': {
+    name: 'Gemini 3.5 Flash',
     reasoning: true,
     tool_call: true,
     attachment: true,
     temperature: true,
-    limit: { context: 1_000_000, output: 65_536 },
+    limit: { context: 1_048_576, output: 65_536 },
   },
-  'x-ai/grok-2': {
-    name: 'Grok 2',
+  'google/gemini-3.1-pro-preview': {
+    name: 'Gemini 3.1 Pro',
+    reasoning: true,
     tool_call: true,
     attachment: true,
     temperature: true,
-    limit: { context: 131_072, output: 8_192 },
+    limit: { context: 1_048_576, output: 65_536 },
+  },
+  'deepseek/deepseek-v4-flash': {
+    name: 'DeepSeek V4 Flash',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 1_048_576, output: 64_000 },
+  },
+  'deepseek/deepseek-v4-pro': {
+    name: 'DeepSeek V4 Pro',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 1_048_576, output: 64_000 },
+  },
+  'minimax/minimax-m3': {
+    name: 'MiniMax M3',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 1_048_576, output: 64_000 },
+  },
+  'moonshotai/kimi-k2.6': {
+    name: 'Kimi K2.6',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 262_144, output: 64_000 },
+  },
+  'z-ai/glm-5.1': {
+    name: 'GLM 5.1',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 202_752, output: 64_000 },
+  },
+  'x-ai/grok-4.3': {
+    name: 'Grok 4.3',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 1_000_000, output: 64_000 },
   },
 }
 

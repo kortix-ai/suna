@@ -132,20 +132,17 @@ interface ModelPricing {
 }
 
 const MODEL_PRICING: Record<string, ModelPricing> = {
-  'claude-3-5-sonnet': { inputPricePerMillion: 3, outputPricePerMillion: 15 },
-  'claude-3-5-haiku': { inputPricePerMillion: 0.25, outputPricePerMillion: 1.25 },
-  'claude-sonnet-4-5': { inputPricePerMillion: 3, outputPricePerMillion: 15 },
-  'claude-haiku-4-5': { inputPricePerMillion: 0.25, outputPricePerMillion: 1.25 },
-  'gpt-4o': { inputPricePerMillion: 2.5, outputPricePerMillion: 10 },
-  'gpt-4o-mini': { inputPricePerMillion: 0.15, outputPricePerMillion: 0.6 },
-  'o1': { inputPricePerMillion: 15, outputPricePerMillion: 60 },
-  'o1-mini': { inputPricePerMillion: 1.1, outputPricePerMillion: 4.4 },
-  'o3-mini': { inputPricePerMillion: 1.1, outputPricePerMillion: 4.4 },
-  'grok-2': { inputPricePerMillion: 2, outputPricePerMillion: 10 },
-  'gemini-2.0-flash': { inputPricePerMillion: 0.1, outputPricePerMillion: 0.4 },
-  'gemini-2.0-pro': { inputPricePerMillion: 1.25, outputPricePerMillion: 10 },
-  'deepseek-r1': { inputPricePerMillion: 3, outputPricePerMillion: 8 },
-  'deepseek-v3': { inputPricePerMillion: 0.5, outputPricePerMillion: 1.5 },
+  'claude-opus-4.8': { inputPricePerMillion: 5, outputPricePerMillion: 25 },
+  'claude-sonnet-4.6': { inputPricePerMillion: 3, outputPricePerMillion: 15 },
+  'gpt-5.5': { inputPricePerMillion: 5, outputPricePerMillion: 30 },
+  'gemini-3.5-flash': { inputPricePerMillion: 1.5, outputPricePerMillion: 9 },
+  'gemini-3.1-pro': { inputPricePerMillion: 2, outputPricePerMillion: 12 },
+  'deepseek-v4-flash': { inputPricePerMillion: 0.0983, outputPricePerMillion: 0.1966 },
+  'deepseek-v4-pro': { inputPricePerMillion: 0.435, outputPricePerMillion: 0.87 },
+  'minimax-m3': { inputPricePerMillion: 0.3, outputPricePerMillion: 1.2 },
+  'kimi-k2.6': { inputPricePerMillion: 0.684, outputPricePerMillion: 3.42 },
+  'glm-5.1': { inputPricePerMillion: 0.98, outputPricePerMillion: 3.08 },
+  'grok-4.3': { inputPricePerMillion: 1.25, outputPricePerMillion: 2.5 },
 };
 
 function getModelPricing(model: string): ModelPricing {

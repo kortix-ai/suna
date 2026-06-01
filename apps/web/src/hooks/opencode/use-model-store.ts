@@ -147,6 +147,18 @@ export function setGlobalDefaultModel(model: ModelKey | undefined): void {
 // Latest logic — direct port from SolidJS reference
 // ============================================================================
 
+/**
+ * Models shown in the picker out of the box when their provider carries no
+ * release-date metadata (the managed Kortix gateway case). Everything else is
+ * opt-in via "Manage models". Kept to the flagship default so the picker stays
+ * minimal — "by default only the latest one is enabled".
+ */
+const DEFAULT_VISIBLE_MODEL_IDS = new Set<string>(['anthropic/claude-opus-4.8']);
+
+function isDefaultVisible(model: ModelKey): boolean {
+  return DEFAULT_VISIBLE_MODEL_IDS.has(model.modelID);
+}
+
 function isWithinMonths(dateStr: string | undefined, months: number): boolean {
   if (!dateStr) return false;
   try {
@@ -232,16 +244,19 @@ export function useModelStore(allModels: FlatModel[]) {
       if (state === 'hide') return false;
       if (state === 'show') return true;
       if (latestSet.has(key)) return true;
-      // If no release_date or invalid, show by default
       const m = allModels.find(
         (x) => x.providerID === model.providerID && x.modelID === model.modelID,
       );
-      if (!m?.releaseDate) return true;
+      // No (or invalid) release metadata — the managed Kortix gateway case.
+      // Default to showing only the flagship; every other model is opt-in via
+      // "Manage models". Providers that DO carry release dates keep the
+      // newest-per-family "latest" behaviour handled above.
+      if (!m?.releaseDate) return isDefaultVisible(model);
       try {
         const d = new Date(m.releaseDate);
-        if (isNaN(d.getTime())) return true;
+        if (isNaN(d.getTime())) return isDefaultVisible(model);
       } catch {
-        return true;
+        return isDefaultVisible(model);
       }
       return false;
     },
@@ -273,6 +288,14 @@ export function useModelStore(allModels: FlatModel[]) {
     },
     [],
   );
+
+  // Clear every visibility override so all models revert to their default
+  // (shown). Leaves recent/variant/selection state untouched.
+  const resetVisibility = useCallback(() => {
+    const s = getStore();
+    if (s.user.length === 0) return;
+    setStore({ ...s, user: [] });
+  }, []);
 
   // Recent models
   const recentModels = useMemo(() => store.recent, [store.recent]);
@@ -384,6 +407,7 @@ export function useModelStore(allModels: FlatModel[]) {
     isVisible,
     isLatest,
     setVisibility,
+    resetVisibility,
     recent: recentModels,
     pushRecent,
     getVariant,

@@ -109,7 +109,7 @@ mock.module('../router/services/llm', () => ({
   }),
   getAllModels: () => [
     {
-      id: 'anthropic/claude-sonnet-4-5',
+      id: 'anthropic/claude-sonnet-4.6',
       owned_by: 'anthropic',
       context_window: 200000,
       pricing: { input: 3, output: 15 },
@@ -193,7 +193,7 @@ describe('session-scoped LLM router', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.object).toBe('list');
-    expect(body.data[0].id).toBe('anthropic/claude-sonnet-4-5');
+    expect(body.data[0].id).toBe('anthropic/claude-sonnet-4.6');
   });
 
   test('proxies chat with the project secret instead of exposing provider keys to the sandbox', async () => {
@@ -205,7 +205,7 @@ describe('session-scoped LLM router', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-sonnet-4-5',
+        model: 'anthropic/claude-sonnet-4.6',
         messages: [{ role: 'user', content: 'hello' }],
       }),
     });
@@ -216,7 +216,7 @@ describe('session-scoped LLM router', () => {
       name: 'OPENROUTER_API_KEY',
     });
     expect(lastProxyCall?.apiKey).toBe('sk-project-openrouter');
-    expect(lastProxyCall?.body.model).toBe('anthropic/claude-sonnet-4-5');
+    expect(lastProxyCall?.body.model).toBe('anthropic/claude-sonnet-4.6');
     expect(lastDeductCall?.[0]).toBe(ACCOUNT_ID);
     expect(lastDeductCall?.[5]).toBe(SESSION_ID);
     expect(usageEvents[0]).toMatchObject({
@@ -225,7 +225,7 @@ describe('session-scoped LLM router', () => {
       sessionId: SESSION_ID,
       actorUserId: USER_ID,
       provider: 'openrouter',
-      model: 'anthropic/claude-sonnet-4-5',
+      model: 'anthropic/claude-sonnet-4.6',
       inputTokens: 10,
       outputTokens: 5,
       costUsd: 0.001,
@@ -246,7 +246,7 @@ describe('session-scoped LLM router', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-sonnet-4-5',
+        model: 'anthropic/claude-sonnet-4.6',
         messages: [{ role: 'user', content: 'hello' }],
       }),
     });
@@ -265,7 +265,7 @@ describe('session-scoped LLM router', () => {
         traceparent: '00-33333333333333333333333333333333-4444444444444444-01',
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-sonnet-4-5',
+        model: 'anthropic/claude-sonnet-4.6',
         messages: [{ role: 'user', content: 'hello' }],
       }),
     });
@@ -286,7 +286,7 @@ describe('session-scoped LLM router', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-sonnet-4-5',
+        model: 'anthropic/claude-sonnet-4.6',
         messages: [{ role: 'user', content: 'hello' }],
       }),
     });
@@ -306,7 +306,7 @@ describe('session-scoped LLM router', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-sonnet-4-5',
+        model: 'anthropic/claude-sonnet-4.6',
         messages: [{ role: 'user', content: 'hello' }],
       }),
     });
@@ -324,7 +324,7 @@ describe('session-scoped LLM router', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-sonnet-4-5',
+        model: 'anthropic/claude-sonnet-4.6',
         stream: true,
         messages: [{ role: 'user', content: 'hello' }],
       }),
