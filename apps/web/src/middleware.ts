@@ -33,6 +33,8 @@ const PUBLIC_ROUTES = [
   '/support', // Support page should be public
   '/help', // Help center and documentation should be public
   '/credits-explained', // Credits explained page should be public
+  '/about', // About page should be public
+  '/careers', // Careers page should be public
   '/install',
   '/install.sh',
   '/design-system', // Living design system / brand guidelines should be public
