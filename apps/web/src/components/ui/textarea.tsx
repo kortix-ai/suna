@@ -91,7 +91,7 @@ export type AutosizeTextAreaRef = {
   focus: () => void;
 };
 
-type AutosizeTextAreaProps = {
+export type AutosizeTextAreaProps = {
   maxHeight?: number;
   minHeight?: number;
   variant?: 'default' | 'secondary';
