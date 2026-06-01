@@ -154,9 +154,23 @@ export async function extractStep(ctx: MigrationContext): Promise<void> {
       'BUNDLE=/tmp/kortix-migration-bundle.tar.gz',
       // basename of WS becomes "workspace" and of OC becomes "opencode" for the
       // canonical paths; tar stores them as those top-level dirs.
-      'tar czf "$BUNDLE" --exclude=node_modules --exclude=.git --warning=no-file-changed' +
+      'tar czf "$BUNDLE" --warning=no-file-changed --warning=no-file-ignored' +
+        // Lean safety copy of the workspace + opencode store, NOT a full disk
+        // image: drop regenerable caches/build dirs, secrets, and big browser
+        // state. A full-home tar of a live machine is ~1GB and times out the
+        // CF proxy (502). The opencode store is captured by its own -C below.
+        // .persistent-system holds the browser profile, runtime sockets and
+        // redundant opencode snapshots (often >1G); the LIVE opencode store under
+        // it is captured separately by the -C below (stored as "opencode/..."),
+        // so excluding the dir here drops the weight without losing the chat.
+        ' --exclude=node_modules --exclude=.git --exclude=.persistent-system' +
+        ' --exclude=.cache --exclude=.local --exclude=.config --exclude=.browser-profile' +
+        ' --exclude=.npm --exclude=.bun --exclude=.cargo --exclude=.ssh --exclude=.gnupg' +
         ' -C "$(dirname "$WS")" "$(basename "$WS")"' +
-        ' ${OC:+-C "$(dirname "$OC")" "$(basename "$OC")"}',
+        ' ${OC:+-C "$(dirname "$OC")" "$(basename "$OC")"}' +
+        // tar exits 1 on ignored sockets / files that change mid-read (both normal
+        // on a live machine); only a fatal error (exit >= 2) should fail the backup.
+        ' || [ $? -le 1 ]',
       `curl -fsS -X PUT -H 'x-upsert: true' -H 'Content-Type: application/octet-stream' --data-binary @"$BUNDLE" ${sq(target.url)}`,
       'rm -f "$BUNDLE"',
       'echo OK',
