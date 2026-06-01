@@ -20,8 +20,11 @@ function prefersHtml(request: NextRequest): boolean {
   return accept.includes('text/html');
 }
 
-function scriptHeaders(upstreamHeaders: Headers): Headers {
-  const headers = new Headers(upstreamHeaders);
+// Build fresh response headers. We deliberately do NOT copy upstream headers:
+// fetch() already decompresses the body, so a copied content-encoding/
+// content-length would mismatch the bytes and clients would get an empty body.
+function scriptHeaders(): Headers {
+  const headers = new Headers();
   headers.set('Content-Type', 'text/x-shellscript; charset=utf-8');
   headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
   headers.set('Access-Control-Allow-Origin', '*');
@@ -47,8 +50,8 @@ export async function GET(request: NextRequest) {
     return new NextResponse(`Failed to fetch installer from ${RAW_SCRIPT_URL}`, { status: 502 });
   }
 
-  return new NextResponse(upstream.body, {
-    status: upstream.status,
-    headers: scriptHeaders(upstream.headers),
-  });
+  // Read the full text and return it with clean headers — avoids the
+  // proxied-stream content-encoding mismatch that yielded an empty body.
+  const script = await upstream.text();
+  return new NextResponse(script, { status: 200, headers: scriptHeaders() });
 }
