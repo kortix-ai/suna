@@ -36,15 +36,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macOS Apple Silicon only. Intel Macs (macos-13 runners) are scarce on
+          # GitHub-hosted and routinely sit queued for 20+ min, blocking the
+          # publish job for everyone. Apple Silicon covers all modern Macs; the
+          # arm64 .dmg is signed + notarized. Re-add an Intel leg only if needed.
           - target_pretty: macos-arm64
             runner: macos-14
             bundles: dmg
             artifact: desktop-macos-arm64
-            files: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
-          - target_pretty: macos-x64
-            runner: macos-13
-            bundles: dmg
-            artifact: desktop-macos-x64
             files: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
           - target_pretty: windows-x64
             runner: windows-2022
