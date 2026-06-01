@@ -135,7 +135,7 @@ export default function PricingPage() {
     <div className="bg-background relative pt-28 sm:pt-40">
       <div className="mx-auto max-w-5xl px-2 md:px-0">
         <div className="mx-auto text-center">
-          <h2 className="text-3xl font-semibold text-balance md:text-4xl lg:text-5xl lg:tracking-tight">
+          <h2 className="text-3xl font-medium text-balance md:text-4xl lg:text-5xl lg:tracking-tight">
             {tHardcodedUi.raw('appHomePricingPage.line107JsxTextStartFreeScaleWhenYouAposReReady')}
           </h2>
           <p className="text-muted-foreground mx-auto mt-4 max-w-4xl text-lg text-balance">

@@ -40,8 +40,7 @@ export const useAutosizeTextArea = ({
 
     resizeTimeoutRef.current = setTimeout(() => {
       const contentLengthChanged =
-        Math.abs(previousContentRef.current.length - triggerAutoSize.length) >
-        5;
+        Math.abs(previousContentRef.current.length - triggerAutoSize.length) > 5;
       const contentIsEmpty = triggerAutoSize.trim() === '';
 
       if (!contentLengthChanged && !contentIsEmpty && !init) {
@@ -82,14 +81,7 @@ export const useAutosizeTextArea = ({
         clearTimeout(resizeTimeoutRef.current);
       }
     };
-  }, [
-    textAreaRef.current,
-    triggerAutoSize,
-    minHeight,
-    maxHeight,
-    currentHeight,
-    init,
-  ]);
+  }, [textAreaRef.current, triggerAutoSize, minHeight, maxHeight, currentHeight, init]);
 };
 
 export type AutosizeTextAreaRef = {
@@ -99,16 +91,13 @@ export type AutosizeTextAreaRef = {
   focus: () => void;
 };
 
-type AutosizeTextAreaProps = {
+export type AutosizeTextAreaProps = {
   maxHeight?: number;
   minHeight?: number;
   variant?: 'default' | 'secondary';
 } & React.TextareaHTMLAttributes<HTMLTextAreaElement>;
 
-export const Textarea = React.forwardRef<
-  AutosizeTextAreaRef,
-  AutosizeTextAreaProps
->(
+export const Textarea = React.forwardRef<AutosizeTextAreaRef, AutosizeTextAreaProps>(
   (
     {
       maxHeight = Number.MAX_SAFE_INTEGER,
@@ -116,7 +105,7 @@ export const Textarea = React.forwardRef<
       className,
       onChange,
       value,
-      variant = 'secondary',
+      variant = 'default',
       ...props
     }: AutosizeTextAreaProps,
     ref: React.Ref<AutosizeTextAreaRef>,
@@ -148,11 +137,9 @@ export const Textarea = React.forwardRef<
         value={value}
         ref={textAreaRef}
         className={cn(
-          'border-input bg-background ring-offset-background placeholder:text-muted-foreground flex w-full rounded-lg border px-3 py-2 text-sm focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
-          // 'focus:ring-kortix-blue focus:ring-[0.6px]',
-          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-          variant === 'secondary' &&
-            'bg-input text-secondary-foreground resize-none border-none shadow-xs',
+          'border-border bg-input text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground flex w-full rounded-lg border px-3 py-2 text-sm font-medium transition-[color] outline-none disabled:cursor-not-allowed disabled:opacity-50',
+          'focus:ring-primary/50 resize-none focus:ring-1 focus:outline-none',
+          variant === 'secondary' && 'bg-input text-secondary-foreground resize-none border-none',
           className,
         )}
         onChange={(e) => {

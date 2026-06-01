@@ -733,14 +733,14 @@ function McpServersSection() {
                 type="button"
                 onClick={() => setAddForm((f) => ({ ...f, transportType: 'stdio' }))}
                 size="toolbar"
-                variant={addForm.transportType === 'stdio' ? 'subtle' : 'muted'}
+                variant={addForm.transportType === 'stdio' ? 'secondary' : 'muted'}
                 className={cn(addForm.transportType === 'stdio' && 'border border-primary/20')}
               >{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line762JsxTextStdioCommand')}</Button>
               <Button
                 type="button"
                 onClick={() => setAddForm((f) => ({ ...f, transportType: 'http' }))}
                 size="toolbar"
-                variant={addForm.transportType === 'http' ? 'subtle' : 'muted'}
+                variant={addForm.transportType === 'http' ? 'secondary' : 'muted'}
                 className={cn(addForm.transportType === 'http' && 'border border-primary/20')}
               >{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line771JsxTextHttpUrl')}</Button>
             </div>

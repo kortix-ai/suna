@@ -138,7 +138,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           <ContextMenu>
             <ContextMenuTrigger asChild>
               <Link href="/" className="flex shrink-0 items-center">
-                <KortixLogo size={isMobile ? 24 : 18} variant={isMobile ? 'symbol' : 'logomark'} />
+                <KortixLogo size={18} variant="logomark" />
               </Link>
             </ContextMenuTrigger>
             <ContextMenuContent className="w-64">
@@ -242,6 +242,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             <ProductMegaMenu />
             {filteredNavLinks.map((item) => (
               <Button
+                key={item.id}
                 variant="ghost"
                 size="sm"
                 asChild
@@ -259,19 +260,21 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           </nav>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="ghost" asChild className="hidden sm:flex">
-            <Link
-              href="https://github.com/kortix-ai/suna"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Icon.Github className="size-3.5" />
-              <span className={cn('font-medium tabular-nums', starsLoading && 'opacity-50')}>
-                {formattedStars}
-              </span>
-            </Link>
-          </Button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {formattedStars && !starsLoading && (
+            <Button variant="ghost" asChild className="hidden sm:flex">
+              <Link
+                href="https://github.com/kortix-ai/suna"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Icon.Github className="size-3.5" />
+                <span className={cn('font-medium tabular-nums', starsLoading && 'opacity-50')}>
+                  {formattedStars}
+                </span>
+              </Link>
+            </Button>
+          )}
 
           <Button asChild variant="ghost" className="hidden sm:inline-flex">
             <Link href="/enterprise">

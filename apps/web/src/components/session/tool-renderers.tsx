@@ -456,7 +456,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
               <Button
                 type="button"
                 onClick={navigateToPreviewTab}
-                variant="subtle"
+                variant="secondary"
                 size="xs"
                 disabled={!navigationEnabled}
               >
@@ -5181,7 +5181,7 @@ function ShowTool({ part, sessionId }: ToolProps) {
                 <Button
                   type="button"
                   onClick={preview.navigateToPreviewTab}
-                  variant="subtle"
+                  variant="secondary"
                   size="xs"
                   disabled={!navigationEnabled || !preview.proxy}
                   className="ml-0.5"
