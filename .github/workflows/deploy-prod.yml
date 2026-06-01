@@ -320,14 +320,15 @@ jobs:
           if-no-files-found: error
 
   # ── Cut a single GitHub Release vX.Y.Z (CLI + desktop) ──────────────────────
-  # CLI is required (it gates the release); desktop is best-effort — if signing
-  # fails on some/all desktop targets the release still ships with whatever
-  # installers built (or none), so a desktop cert problem never blocks the
-  # API/frontend/CLI release. Re-run desktop + re-dispatch later to attach them.
+  # Cut the release as soon as the CLI + images are ready — it does NOT wait on
+  # desktop. Desktop builds on slow, scarce, signed macOS/Windows runners that
+  # can get stuck queued for ~50min (or fail on a cert problem); waiting on them
+  # would block every release. Desktop installers are attached afterward by the
+  # separate `attach-desktop` job, best-effort. So a desktop problem can never
+  # delay or block the API/frontend/CLI release.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
-    needs: [version, retag-images, build-cli, build-desktop]
-    if: always() && needs.build-cli.result == 'success' && needs.retag-images.result == 'success'
+    needs: [version, retag-images, build-cli]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -342,24 +343,11 @@ jobs:
           name: cli-binaries
           path: artifacts/
 
-      - name: Download desktop artifacts (best-effort)
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          path: desktop-artifacts/
-          pattern: desktop-*
-          merge-multiple: true
-
       - name: Assemble release assets + checksums
         run: |
           set -euo pipefail
           mkdir -p release
           cp -v artifacts/kortix-* release/
-          if [ -d desktop-artifacts ]; then
-            find desktop-artifacts -maxdepth 1 -type f -exec cp -v {} release/ \;
-          else
-            echo "::warning::No desktop installers attached (build-desktop did not succeed) — release ships CLI + images only."
-          fi
           cd release
           sha256sum * > SHA256SUMS
           ls -lh
@@ -372,6 +360,39 @@ jobs:
           generate_release_notes: true
           files: |
             release/*
+
+  # ── Attach desktop installers to the release (best-effort, non-blocking) ─────
+  # Runs after the release is already cut. Uploads whatever desktop installers
+  # built; if desktop failed entirely it's a no-op and the release simply ships
+  # without installers (re-run desktop + this job later to add them).
+  attach-desktop:
+    name: Attach desktop installers
+    needs: [version, github-release, build-desktop]
+    if: always() && needs.github-release.result == 'success'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          path: desktop-artifacts/
+          pattern: desktop-*
+          merge-multiple: true
+
+      - name: Upload installers to the release (if any built)
+        run: |
+          set -euo pipefail
+          if [ ! -d desktop-artifacts ] || [ -z "$(ls -A desktop-artifacts 2>/dev/null)" ]; then
+            echo "::warning::No desktop installers built — release ships CLI + images only."
+            exit 0
+          fi
+          cd desktop-artifacts
+          sha256sum * > DESKTOP-SHA256SUMS
+          gh release upload "${{ needs.version.outputs.tag }}" * --clobber --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── Roll the prod ECS service onto the freshly-tagged image ─────────────────
   # The kortix-prod task definition pins kortix/kortix-api:latest (retagged
@@ -390,13 +411,43 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
           aws-region: us-west-2
-      - name: Roll the prod ECS service
+      - name: Roll the prod ECS service (with clean version stamped)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          echo "Rolling ECS service kortix-prod onto v${{ needs.version.outputs.version }}…"
-          aws ecs update-service --cluster kortix-prod --service kortix-prod --force-new-deployment >/dev/null
-          aws ecs wait services-stable --cluster kortix-prod --services kortix-prod
-          aws ecs describe-services --cluster kortix-prod --services kortix-prod \
+          CLUSTER=kortix-prod; SERVICE=kortix-prod
+
+          # The image is retagged (not rebuilt), so it carries the promoted DEV
+          # build's KORTIX_VERSION default. Register a new task-def revision that
+          # sets the container env KORTIX_VERSION to the clean X.Y.Z, so prod
+          # /v1/health reports e.g. 0.9.1 (not 0.9.1-dev.<sha>). Everything else
+          # in the task def is preserved verbatim.
+          echo "Stamping KORTIX_VERSION=$VERSION onto a new kortix-prod task-def revision…"
+          CURRENT_TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --task-definition "$CURRENT_TD" \
+            --query 'taskDefinition' --output json > td.json
+
+          # Drop read-only fields, then upsert KORTIX_VERSION into each container's
+          # env (jq — no heredoc, robust inside the YAML run block).
+          jq --arg v "$VERSION" '
+            del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+            | .containerDefinitions |= map(
+                .environment = ((.environment // []) | map(select(.name != "KORTIX_VERSION"))
+                                 + [{name: "KORTIX_VERSION", value: $v}]))
+          ' td.json > td-new.json
+
+          NEW_TD=$(aws ecs register-task-definition --cli-input-json file://td-new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_TD"
+
+          echo "Rolling $SERVICE onto v$VERSION…"
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+            --task-definition "$NEW_TD" --force-new-deployment >/dev/null
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
             --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
             --output table
       - name: Summary

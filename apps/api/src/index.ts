@@ -20,21 +20,15 @@ import { router } from './router';
 import { billingApp, accountDeletionApp } from './billing';
 import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
-import { isKortixToken } from './shared/crypto';
-import { getSupabase } from './shared/supabase';
-import { verifySupabaseJwt } from './shared/jwt-verify';
-import { canAccessPreviewSandbox } from './shared/preview-ownership';
 import { setupApp } from './setup';
 import { queueApp, startDrainer, stopDrainer } from './queue';
 import { serversApp } from './servers';
 // WoA is now mounted under the router at /v1/router/woa (see router/index.ts)
 import { supabaseAuth, combinedAuth } from './middleware/auth';
-import { validateSecretKey } from './repositories/api-keys';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
-// import { cloudGatewayApp } from './cloud-gateway/routes'; // TODO: restore once cloud-gateway routes land
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { oauthApp } from './oauth';
 import {
@@ -234,10 +228,12 @@ app.use('/v1/*', auditStateChangingRequest);
 
 // === Top-Level Health Check (no auth) ===
 
-// API version is injected at container start by deploy-zero-downtime.sh,
-// which extracts it from the Docker image tag (e.g. kortix/kortix-api:0.8.29 → 0.8.29).
+// Unified platform version (the root VERSION file). Baked into the image via the
+// Dockerfile ARG KORTIX_VERSION (dev builds → 0.9.0-dev.<sha8>) and overridden by
+// the prod ECS task-def env to the clean X.Y.Z. Deliberately NOT SANDBOX_VERSION —
+// that drives snapshot content-hashing and must stay constant across releases.
 // Falls back to 'dev' for local development.
-const API_VERSION = process.env.SANDBOX_VERSION || 'dev';
+const API_VERSION = process.env.KORTIX_VERSION || 'dev';
 
 app.get('/health', (c) => {
   return c.json({
@@ -570,7 +566,6 @@ initModelPricing().catch((err) =>
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
 let schemaReady = false;
-export function isSchemaReady() { return schemaReady; }
 
 // Ensure DB schema exists before starting services that depend on it.
 // This is idempotent — safe to run on every startup.
@@ -794,14 +789,3 @@ export default {
     },
   },
 };
-
-// Mark intentionally-unused imports so TS won't complain in cases the helpers
-// are referenced only by deleted code paths.
-void isKortixToken;
-void getSupabase;
-void verifySupabaseJwt;
-void canAccessPreviewSandbox;
-void validateSecretKey;
-void supabaseAuth;
-void combinedAuth;
- 

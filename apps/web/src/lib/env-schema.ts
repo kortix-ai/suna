@@ -14,6 +14,8 @@ const RuntimeEnvSchema = z.object({
   AUTH_PROVIDERS: z.string().optional().default(''),
   /** Comma-separated list of email auth methods to surface on the auth page (e.g. "magic,password"). */
   AUTH_METHODS: z.string().optional().default('magic,password'),
+  /** Unified platform version (root VERSION file) — surfaced for the UI footer / about. */
+  VERSION: z.string().optional().default('dev'),
 })
 
 export type RuntimeEnv = z.infer<typeof RuntimeEnvSchema>

@@ -75,7 +75,14 @@ WORKDIR /app
 
 ARG SERVICE
 
+# Unified platform version (root VERSION file). Baked as a default; prod overrides
+# it with the clean X.Y.Z via the ECS task-def env. Deliberately SEPARATE from
+# SANDBOX_VERSION (which is load-bearing for snapshot content-hashing — changing
+# that on every release would rebuild every project's sandbox image).
+ARG KORTIX_VERSION=dev
+
 ENV NODE_ENV=production
+ENV KORTIX_VERSION=${KORTIX_VERSION}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

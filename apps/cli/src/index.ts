@@ -27,7 +27,10 @@ import { printBanner } from './banner.ts';
 import { activeHostEntry } from './api/config.ts';
 import { C, header, pad, rule } from './style.ts';
 
-const VERSION = process.env.KORTIX_CLI_VERSION ?? '0.1.0';
+// CI bakes the real version via --define process.env.KORTIX_CLI_VERSION (the
+// unified X.Y.Z on release, X.Y.Z-dev.<sha> on dev). This fallback only applies
+// to a bare `bun run src/index.ts` during local dev.
+const VERSION = process.env.KORTIX_CLI_VERSION ?? 'dev';
 
 interface Command {
   name: string;

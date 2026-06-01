@@ -1,11 +1,31 @@
 import type { NextConfig } from 'next';
+import fs from 'fs';
 import path from 'path';
 import { createMDX } from 'fumadocs-mdx/next';
 import { withSentryConfig } from '@sentry/nextjs';
 import { withBetterStack } from '@logtail/next';
 
+// Unified platform version. Prefer the explicit build env (CI passes
+// NEXT_PUBLIC_KORTIX_VERSION = 0.9.0-dev.<sha> on dev, clean X.Y.Z on prod);
+// otherwise read the root VERSION file so Vercel builds (which don't pass the
+// build-arg) still report the version. Falls back to 'dev' locally.
+function resolveKortixVersion(): string {
+  if (process.env.NEXT_PUBLIC_KORTIX_VERSION) return process.env.NEXT_PUBLIC_KORTIX_VERSION;
+  try {
+    return fs.readFileSync(path.join(__dirname, '../../VERSION'), 'utf8').trim();
+  } catch {
+    return 'dev';
+  }
+}
+const KORTIX_VERSION = resolveKortixVersion();
+
 const nextConfig = (): NextConfig => ({
   output: 'standalone',
+  // Inline the resolved version so NEXT_PUBLIC_KORTIX_VERSION is available in
+  // both the server (runtime-config) and client bundles, even on Vercel.
+  env: {
+    NEXT_PUBLIC_KORTIX_VERSION: KORTIX_VERSION,
+  },
   // Hide Next.js's persistent dev badge in the corner. It only ever
   // really matters when there's a build error / route compile issue —
   // the error overlay still shows in those cases.
