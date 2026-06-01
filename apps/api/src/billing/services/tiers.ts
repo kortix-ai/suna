@@ -251,8 +251,11 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
     pro:  { monthly: 'price_1T7yiuG6CaZppiKc7VsgnlKI' },
-    // Billing v2 — $20/month recurring under product prod_UAFOsPU765hNnu (test mode).
-    per_seat: { monthly: 'price_1TbQv8G6l1KZGqIrdRLsUnCz' },
+    // Billing v2 — $20/month per-seat in the staging Stripe account (acct_…G6CaZppiKc),
+    // the same account the staging customers + their legacy subs live in (so the
+    // migration can actually find/cancel them). The old …G6l1KZGqIr price was in a
+    // different account and is being deprecated.
+    per_seat: { monthly: 'price_1TdSdvG6CaZppiKctAZXPPY0' },
   },
   credits: {
     10:  'price_1RxXOvG6l1KZGqIrMqsiYQvk',
