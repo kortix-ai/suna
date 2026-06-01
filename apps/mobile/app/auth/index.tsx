@@ -60,8 +60,15 @@ export default function AuthScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, signIn, signInWithMagicLink, signInWithOAuth, resetPassword } =
-    useAuthContext();
+  const {
+    isAuthenticated,
+    signIn,
+    signInWithMagicLink,
+    signInWithOAuth,
+    resetPassword,
+    oauthRejection,
+    clearOauthRejection,
+  } = useAuthContext();
 
   const [method, setMethod] = React.useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
 
@@ -91,6 +98,15 @@ export default function AuthScreen() {
   React.useEffect(() => {
     if (isAuthenticated) router.replace('/projects');
   }, [isAuthenticated, router]);
+
+  // A brand-new OAuth account was rejected (mobile is login-only) — surface it.
+  React.useEffect(() => {
+    if (!oauthRejection) return;
+    setOauthLoading(null);
+    setInfo(null);
+    setErrorMessage(oauthRejection);
+    clearOauthRejection();
+  }, [oauthRejection, clearOauthRejection]);
 
   const resetTransient = React.useCallback(() => {
     setErrorMessage(null);
@@ -209,9 +225,9 @@ export default function AuthScreen() {
         setOauthLoading(provider);
         setErrorMessage(null);
         const res = await signInWithOAuth(provider);
-        if (res?.success) {
-          router.replace('/projects');
-        } else if (res?.error?.message && !/cancel/i.test(res.error.message)) {
+        // Existing users are navigated by the isAuthenticated effect; a brand-new
+        // account is rejected via oauthRejection (registration is web-only).
+        if (!res?.success && res?.error?.message && !/cancel/i.test(res.error.message)) {
           setErrorMessage(res.error.message);
         }
       } catch (err: any) {
@@ -220,7 +236,7 @@ export default function AuthScreen() {
         setOauthLoading(null);
       }
     },
-    [signInWithOAuth, router],
+    [signInWithOAuth],
   );
 
   const submitLabel = method === 'magic' ? 'Email me a sign-in code' : 'Sign in';

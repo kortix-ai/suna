@@ -14,6 +14,8 @@ interface AuthContextType extends AuthState {
   updatePassword: (newPassword: string) => Promise<any>;
   signOut: () => Promise<any>;
   error: any;
+  oauthRejection: string | null;
+  clearOauthRejection: () => void;
   isSigningOut: boolean;
 }
 
