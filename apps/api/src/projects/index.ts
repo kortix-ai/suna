@@ -178,6 +178,7 @@ import {
   extractApps,
   loadProjectApps,
   manifestHashForApp,
+  resolveAppDomains,
   type AppBuildSpec,
   type AppSourceSpec,
   type AppSpec,
@@ -5092,15 +5093,20 @@ function parseAppDraft(
 
   const enabled = normalizeBoolean((body as any).enabled) ?? true;
 
+  // Domains are optional — omit them and the platform auto-issues a free
+  // `*.style.dev` URL at deploy time (see defaultAppDomain). When present,
+  // each entry must be a non-empty string.
   const domainsRaw = (body as any).domains;
-  if (!Array.isArray(domainsRaw) || domainsRaw.length === 0) {
-    return { error: 'domains must be a non-empty array of strings' };
-  }
   const domains: string[] = [];
-  for (const d of domainsRaw) {
-    const s = normalizeString(d);
-    if (!s) return { error: 'domains entries must be non-empty strings' };
-    domains.push(s);
+  if (domainsRaw !== undefined && domainsRaw !== null) {
+    if (!Array.isArray(domainsRaw)) {
+      return { error: 'domains must be an array of strings when set' };
+    }
+    for (const d of domainsRaw) {
+      const s = normalizeString(d);
+      if (!s) return { error: 'domains entries must be non-empty strings' };
+      domains.push(s);
+    }
   }
 
   const framework = normalizeString((body as any).framework);
@@ -5239,6 +5245,10 @@ async function loadAppsForResponse(projectId: string, project: ProjectRow) {
         ...specToAppBody(spec),
         path: spec.path,
         manifest_hash: desiredHash,
+        // The domains the app will actually serve on — its declared domains,
+        // or the auto-issued free *.style.dev URL when it declared none. Lets
+        // the UI show the target address before the first deploy.
+        effective_domains: resolveAppDomains(projectId, spec),
         latest_deployment: latest ? serializeDeploymentRow(latest) : null,
         drift: latest ? currentHash !== desiredHash : true,
       };

@@ -357,7 +357,7 @@ domains = ["x.style.dev"]
     expect(specs[0]).not.toHaveProperty('provider');
   });
 
-  test('missing domains', () => {
+  test('missing domains is allowed (auto-issued *.style.dev at deploy)', () => {
     const { specs, errors } = parseAndExtract(`
 [[apps]]
 slug = "x"
@@ -366,11 +366,12 @@ slug = "x"
   type = "git"
   repo = "https://github.com/me/x"
 `);
-    expect(specs).toEqual([]);
-    expect(errors[0]!.error).toMatch(/domains must be a non-empty array/);
+    expect(errors).toEqual([]);
+    expect(specs).toHaveLength(1);
+    expect(specs[0]!.domains).toEqual([]);
   });
 
-  test('empty domains array', () => {
+  test('empty domains array is allowed', () => {
     const { specs, errors } = parseAndExtract(`
 [[apps]]
 slug = "x"
@@ -380,8 +381,23 @@ domains = []
   type = "git"
   repo = "https://github.com/me/x"
 `);
+    expect(errors).toEqual([]);
+    expect(specs).toHaveLength(1);
+    expect(specs[0]!.domains).toEqual([]);
+  });
+
+  test('non-array domains is still rejected', () => {
+    const { specs, errors } = parseAndExtract(`
+[[apps]]
+slug = "x"
+domains = "nope.style.dev"
+
+  [apps.source]
+  type = "git"
+  repo = "https://github.com/me/x"
+`);
     expect(specs).toEqual([]);
-    expect(errors[0]!.error).toMatch(/non-empty array/);
+    expect(errors[0]!.error).toMatch(/domains must be an array/);
   });
 
   test('missing source block', () => {

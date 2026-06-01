@@ -9,12 +9,18 @@
  */
 
 import { useState } from 'react';
+import { formatDistanceToNowStrict } from 'date-fns';
 import { toast } from '@/lib/toast';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,11 +31,15 @@ import {
 import {
   IconAdd,
   IconApp,
+  IconCheck,
   IconChevronDown,
+  IconClock,
+  IconCopy,
   IconDelete,
   IconDeploy,
   IconEdit,
   IconExternal,
+  IconLink,
   IconLoader,
   IconStop,
   IconTerminal,
@@ -80,8 +90,9 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
         title="Ship a website from this project"
         description={
           <>
-            Add an app and we&apos;ll handle the build and a public URL — no
-            hosting setup to do.
+            Point an app at a folder in your repo and Kortix handles the build
+            and a free <code className="font-mono">*.style.dev</code> URL — no
+            hosting setup. Or just ask your agent to build one and add it.
           </>
         }
         action={
@@ -96,11 +107,18 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-5 py-3">
-        <p className="text-xs text-muted-foreground">
-          {apps.length} {apps.length === 1 ? 'app' : 'apps'}
-        </p>
-        <Button size="sm" onClick={onAdd}>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-5 py-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">
+            {apps.length} {apps.length === 1 ? 'app' : 'apps'}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            Websites deployed from this project. Defined in{' '}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">kortix.toml</code>
+            {' '}— changes here commit to your repo.
+          </p>
+        </div>
+        <Button size="sm" onClick={onAdd} className="shrink-0">
           <IconAdd className="size-3.5" />
           Add app
         </Button>
@@ -136,7 +154,11 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
                 try {
                   const res = await deployMut.mutateAsync(app.slug);
                   if (res.status === 'active') {
-                    toast.success(`Deploying ${app.slug}`);
+                    const url = res.deployment?.live_url;
+                    toast.success(
+                      `${app.name} is live`,
+                      url ? { description: url.replace(/^https?:\/\//, '') } : undefined,
+                    );
                   } else {
                     toast.error(`Deploy failed: ${res.deployment?.error ?? 'unknown error'}`);
                   }
@@ -212,6 +234,56 @@ function statusBadge(app: ProjectApp): React.ReactNode {
   }
 }
 
+/** Human label for an app's source — "this project", a repo, or a tarball. */
+function sourceLabel(app: ProjectApp): string {
+  const src = app.source;
+  if (src.type === 'tar') return 'tarball';
+  // git
+  const folder = src.root_path ? `/${src.root_path}` : '';
+  if (!src.repo) return `this project${folder}`;
+  const repo = src.repo.replace(/^https?:\/\//, '').replace(/\.git$/, '');
+  const branch = src.branch ? `@${src.branch}` : '';
+  return `${repo}${branch}${folder}`;
+}
+
+/** "deployed 3m ago" for the latest deployment, best-effort. */
+function deployedAgo(dep: ProjectApp['latest_deployment']): string | null {
+  if (!dep) return null;
+  try {
+    return formatDistanceToNowStrict(new Date(dep.updated_at || dep.created_at), { addSuffix: true });
+  } catch {
+    return null;
+  }
+}
+
+/** Copy-to-clipboard chip with a brief check confirmation. */
+function CopyUrlButton({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label="Copy URL"
+          onClick={() => {
+            navigator.clipboard?.writeText(url).then(
+              () => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1400);
+              },
+              () => toast.error('Could not copy'),
+            );
+          }}
+          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {copied ? <IconCheck className="size-3.5 text-emerald-500" /> : <IconCopy className="size-3.5" />}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="text-xs">{copied ? 'Copied' : 'Copy URL'}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 interface AppCardProps {
   app: ProjectApp;
   busySlug: 'deploy' | 'stop' | null;
@@ -224,62 +296,69 @@ interface AppCardProps {
 
 function AppCard({ app, busySlug, onDeploy, onStop, onLogs, onEdit, onDelete }: AppCardProps) {
   const dep = app.latest_deployment;
+  const isLive = dep?.status === 'active' && !!dep.live_url;
+  const isDeploying = dep?.status === 'pending' || dep?.status === 'building' || dep?.status === 'deploying';
+  // Where this app serves: the live URL once deployed, else where it WILL go.
+  const liveUrl = dep?.live_url ?? null;
+  const targetDomain = app.effective_domains?.[0] ?? app.domains?.[0] ?? null;
+  const displayUrl = liveUrl ?? (targetDomain ? `https://${targetDomain}` : null);
+  const ago = deployedAgo(dep);
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background px-4 py-3.5">
+    <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background px-4 py-3.5 transition-colors hover:border-border">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <div className="flex items-center gap-2">
             <h4 className="truncate text-sm font-medium text-foreground">{app.name}</h4>
             {statusBadge(app)}
-            {!app.enabled && (
-              <Badge size="sm" variant="outline">
-                Disabled
-              </Badge>
-            )}
-            {app.drift && app.enabled && (
-              <Badge size="sm" variant="warning">
-                Out of date
-              </Badge>
-            )}
+            {!app.enabled && <Badge size="sm" variant="outline">Disabled</Badge>}
+            {app.drift && app.enabled && dep && <Badge size="sm" variant="warning">Out of date</Badge>}
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
             <span className="font-mono">{app.slug}</span>
+            <span className="text-muted-foreground/40">·</span>
+            <span className="inline-flex items-center gap-1" title="Source">
+              <IconLink className="size-3" />
+              {sourceLabel(app)}
+            </span>
             {app.framework && (
               <>
                 <span className="text-muted-foreground/40">·</span>
                 <span>{app.framework}</span>
               </>
             )}
-            {dep?.live_url && (
+            {ago && (
               <>
                 <span className="text-muted-foreground/40">·</span>
-                <a
-                  href={dep.live_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-0.5 text-foreground/80 hover:text-foreground hover:underline"
-                >
-                  {dep.live_url.replace(/^https?:\/\//, '')}
-                  <IconExternal className="size-3" />
-                </a>
+                <span className="inline-flex items-center gap-1">
+                  <IconClock className="size-3" />
+                  {ago}
+                </span>
               </>
             )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {isLive && (
+            <Button size="sm" variant="outline" asChild>
+              <a href={liveUrl!} target="_blank" rel="noopener noreferrer">
+                <IconExternal className="size-3.5" />
+                Open
+              </a>
+            </Button>
+          )}
           <Button
             size="sm"
             variant={app.drift && app.enabled ? 'default' : 'outline'}
             onClick={onDeploy}
-            disabled={busySlug === 'deploy'}
+            disabled={busySlug === 'deploy' || isDeploying}
           >
-            {busySlug === 'deploy' ? (
+            {busySlug === 'deploy' || isDeploying ? (
               <IconLoader className="size-3.5 animate-spin" />
             ) : (
               <IconDeploy className="size-3.5" />
             )}
-            Deploy
+            {isDeploying ? 'Deploying' : dep ? 'Redeploy' : 'Deploy'}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -312,6 +391,29 @@ function AppCard({ app, busySlug, onDeploy, onStop, onLogs, onEdit, onDelete }: 
           </DropdownMenu>
         </div>
       </div>
+
+      {/* URL row — the address this app serves on, with a copy button. Muted
+          (not a link) until it's actually live. */}
+      {displayUrl && (
+        <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 px-2.5 py-1.5">
+          {isLive ? (
+            <a
+              href={liveUrl!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-w-0 flex-1 items-center gap-1 truncate font-mono text-xs text-foreground/90 hover:text-foreground hover:underline"
+            >
+              {displayUrl.replace(/^https?:\/\//, '')}
+              <IconExternal className="size-3 shrink-0" />
+            </a>
+          ) : (
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title="Deploys here">
+              {displayUrl.replace(/^https?:\/\//, '')}
+            </span>
+          )}
+          <CopyUrlButton url={displayUrl} />
+        </div>
+      )}
 
       {dep?.error && (
         <p className="rounded-md bg-destructive/5 px-3 py-2 font-mono text-xs text-destructive">

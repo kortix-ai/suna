@@ -19,6 +19,7 @@ import type { DeploymentRequest } from '../deployments/providers';
 import {
   loadProjectApps,
   manifestHashForApp,
+  resolveAppDomains,
   type AppSpec,
 } from './apps';
 
@@ -159,7 +160,9 @@ export function buildDeploymentRequest(input: {
     projectId: project.projectId,
     appSlug: spec.slug,
     source,
-    domains: spec.domains,
+    // No declared domains → auto-issue a stable free *.style.dev URL so the
+    // zero-config deploy path actually serves somewhere.
+    domains: resolveAppDomains(project.projectId, spec),
     build: spec.build
       ? {
           command: spec.build.command ?? undefined,
