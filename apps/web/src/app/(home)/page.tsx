@@ -4,7 +4,6 @@ import { useAuth } from '@/components/AuthProvider';
 import { CodeWindow } from '@/components/home/code-window';
 import { InteractiveDemo } from '@/components/home/interactive-demo';
 import { Reveal } from '@/components/home/reveal';
-import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/kortix/kortix-asterisk';
 import {
   Item,
   ItemActions,
@@ -14,6 +13,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item';
+import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { Icon } from '@/features/icon/icon';

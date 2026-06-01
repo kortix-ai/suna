@@ -1,6 +1,6 @@
 'use client';
 
-import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/kortix/kortix-asterisk';
+import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
 import { EnterpriseCalModal } from '@/features/enterprise/cal-modal';
 import { cn } from '@/lib/utils';
