@@ -4,7 +4,7 @@ import { memo } from 'react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { getWallpaperById, DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
+import { getWallpaperById, DEFAULT_WALLPAPER_ID, Wallpaper } from '@/lib/wallpapers';
 import { AnimatedBg } from '@/components/ui/animated-bg';
 import { ShaderWallpaper } from '@/components/ui/shader-wallpaper';
 import { AsciiTunnelShader } from '@/components/ui/ascii-tunnel-shader';
@@ -12,7 +12,7 @@ import { MatrixShader } from '@/components/ui/matrix-shader';
 
 interface WallpaperBackgroundProps {
   /** Override the active wallpaper (e.g. for preview thumbnails). When omitted, reads from the user preferences store. */
-  wallpaperId?: "brandmark" | "symbol" | "aurora" | "shader" | "image";
+  wallpaperId?: Wallpaper['id'];
   /** Render in preview mode (settings picker thumbnails). Centers the
    *  logo dead-center since there's no chat input below to balance. */
   preview?: boolean;

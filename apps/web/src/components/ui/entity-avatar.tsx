@@ -1,6 +1,5 @@
 'use client';
 
-import * as React from 'react';
 import type { Icon } from '@/components/ui/kortix-icons';
 import { cn } from '@/lib/utils';
 
@@ -37,13 +36,12 @@ export interface EntityAvatarProps {
 
 export function EntityAvatar({
   label,
-  icon,
+  icon: IconComponent,
   size = 'md',
   className,
 }: EntityAvatarProps) {
   const sizes = SIZE_MAP[size];
   const initial = (label?.trim()?.charAt(0) || '?').toUpperCase();
-  const IconComponent = icon as React.ElementType | undefined;
 
   return (
     <span

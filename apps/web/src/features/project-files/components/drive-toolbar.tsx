@@ -357,7 +357,7 @@ export function DriveToolbar({
             <div className="h-4 w-px bg-border/50 mx-1 shrink-0" />
             <Button
               type="button"
-              variant={checkpointsToggle.open ? 'subtle' : 'ghost'}
+              variant={checkpointsToggle.open ? 'secondary' : 'ghost'}
               size="sm"
               onClick={checkpointsToggle.onToggle}
               title={tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line366JsxAttrTitleToggleCheckpointsPanel')}
@@ -381,7 +381,7 @@ export function DriveToolbar({
           return (
             <Button
               type="button"
-              variant={changeRequestsToggle.open ? 'subtle' : 'ghost'}
+              variant={changeRequestsToggle.open ? 'secondary' : 'ghost'}
               size="sm"
               onClick={changeRequestsToggle.onToggle}
               title={

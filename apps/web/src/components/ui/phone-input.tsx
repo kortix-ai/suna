@@ -12,7 +12,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import { Input } from '@/components/ui/input';
+import { Input, type InputProps } from '@/components/ui/input';
 import {
   Popover,
   PopoverContent,
@@ -59,17 +59,16 @@ const PhoneInput: React.ForwardRefExoticComponent<PhoneInputProps> =
 
 PhoneInput.displayName = 'PhoneInput';
 
-const InputComponent = React.forwardRef<
-  HTMLInputElement,
-  React.ComponentProps<'input'>
->(({ className, ...props }, ref) => (
-  <Input
-    type="text"
-    className={cn('rounded-e-lg rounded-s-none', className)}
-    {...props}
-    ref={ref}
-  />
-));
+const InputComponent = React.forwardRef<HTMLInputElement, InputProps>(
+  ({ className, ...props }, ref) => (
+    <Input
+      type="text"
+      className={cn('rounded-e-lg rounded-s-none', className)}
+      {...props}
+      ref={ref}
+    />
+  ),
+);
 
 InputComponent.displayName = 'InputComponent';
 

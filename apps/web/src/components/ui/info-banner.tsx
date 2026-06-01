@@ -57,14 +57,13 @@ export interface InfoBannerProps
 
 export function InfoBanner({
   tone = 'neutral',
-  icon,
+  icon: IconComponent,
   title,
   action,
   className,
   children,
   ...props
 }: InfoBannerProps) {
-  const IconComponent = icon as React.ElementType | undefined;
   const safeTone = tone ?? 'neutral';
   return (
     <div className={cn(bannerVariants({ tone }), className)} {...props}>

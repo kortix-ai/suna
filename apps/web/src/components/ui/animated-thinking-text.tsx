@@ -52,7 +52,9 @@ function AnimatedThinkingTextComponent({
   const shimmerNodeRef = useRef<HTMLSpanElement>(null);
 
   // refs that survive across renders
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const charRef = useRef(0);
   const shimmersDone = useRef(0);
   const prevStatus = useRef(statusText);
