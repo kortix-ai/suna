@@ -57,7 +57,7 @@ const marketingButtonVariants = cva(
         base: "h-7 gap-1 px-2.5   in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         sm: 'h-9  px-4 has-[>svg]:px-3',
         lg: 'h-10  px-6 has-[>svg]:px-4',
-        xl: 'h-12  px-8 has-[>svg]:px-6',
+        xl: 'h-12 text-base px-8 has-[>svg]:px-6',
         icon: 'size-10 ',
         'icon-xs': 'size-6 rounded-sm',
         'icon-sm': 'size-7 ',

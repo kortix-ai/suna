@@ -12,7 +12,7 @@ import { MatrixShader } from '@/components/ui/matrix-shader';
 
 interface WallpaperBackgroundProps {
   /** Override the active wallpaper (e.g. for preview thumbnails). When omitted, reads from the user preferences store. */
-  wallpaperId?: string;
+  wallpaperId?: "brandmark" | "symbol" | "aurora" | "shader" | "image";
   /** Render in preview mode (settings picker thumbnails). Centers the
    *  logo dead-center since there's no chat input below to balance. */
   preview?: boolean;

@@ -616,6 +616,9 @@ importers:
       '@opencode-ai/sdk':
         specifier: ^1.14.28
         version: 1.14.28
+      '@paper-design/shaders-react':
+        specifier: ^0.0.76
+        version: 0.0.76(@types/react@18.3.28)(react@18.3.1)
       '@pierre/diffs':
         specifier: 1.1.22
         version: 1.1.22(react-dom@18.3.1)(react@18.3.1)
@@ -7183,6 +7186,24 @@ packages:
   /@orama/orama@3.1.18:
     resolution: {integrity: sha512-a61ljmRVVyG5MC/698C8/FfFDw5a8LOIvyOLW5fztgUXqUpc1jOfQzOitSCbge657OgXXThmY3Tk8fpiDb4UcA==}
     engines: {node: '>= 20.0.0'}
+    dev: false
+
+  /@paper-design/shaders-react@0.0.76(@types/react@18.3.28)(react@18.3.1):
+    resolution: {integrity: sha512-uPJWrYRf6cJdO2H+fuXlahaqz0QjYglNAyUTaRfIInpzCa/d6guxBIK003soAZQFuQ035yg9FhtfFzKNWm+a5A==}
+    peerDependencies:
+      '@types/react': ^18 || ^19
+      react: ^18 || ^19
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+    dependencies:
+      '@paper-design/shaders': 0.0.76
+      '@types/react': 18.3.28
+      react: 18.3.1
+    dev: false
+
+  /@paper-design/shaders@0.0.76:
+    resolution: {integrity: sha512-AcNDY4J66YQHUfQYFInkCP7M9VOje0od7wLpOR7LtCmc532opJy6ll+h1W9zBovz8tt9U7OADUmJ/qKEXyOX/A==}
     dev: false
 
   /@parcel/watcher-android-arm64@2.5.6:

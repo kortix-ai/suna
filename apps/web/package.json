@@ -47,6 +47,7 @@
     "@novu/notification-center": "^2.0.0",
     "@number-flow/react": "^0.5.7",
     "@opencode-ai/sdk": "^1.14.28",
+    "@paper-design/shaders-react": "^0.0.76",
     "@pierre/diffs": "1.1.22",
     "@pierre/theme": "0.0.28",
     "@pierre/trees": "1.0.0-beta.3",
