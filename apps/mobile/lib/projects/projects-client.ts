@@ -140,6 +140,10 @@ export function listProjectsForAccount(accountId?: string) {
   return apiFetch<KortixProject[]>(`/projects${query}`);
 }
 
+export function getProject(projectId: string) {
+  return apiFetch<KortixProject>(`/projects/${encodeURIComponent(projectId)}`);
+}
+
 export function archiveProject(projectId: string) {
   return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',

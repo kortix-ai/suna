@@ -6,6 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   archiveProject,
+  getProject,
   linkRepository,
   listAccounts,
   listGitHubInstallations,
@@ -17,6 +18,7 @@ import {
 export const projectKeys = {
   accounts: ['accounts'] as const,
   projects: (accountId: string | null | undefined) => ['projects', accountId] as const,
+  project: (projectId: string | null | undefined) => ['project', projectId] as const,
   githubInstallations: (accountId: string | null | undefined) =>
     ['github-installations', accountId] as const,
   githubRepositories: (accountId: string | null | undefined, installationId: string | null | undefined) =>
@@ -37,6 +39,15 @@ export function useProjects(accountId: string | null) {
     queryKey: projectKeys.projects(accountId),
     queryFn: () => listProjectsForAccount(accountId || undefined),
     enabled: !!accountId,
+    staleTime: 20_000,
+  });
+}
+
+export function useProject(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.project(projectId),
+    queryFn: () => getProject(projectId!),
+    enabled: !!projectId,
     staleTime: 20_000,
   });
 }
