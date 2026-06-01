@@ -21,6 +21,7 @@ import {
   isPerSeatAccount,
   defaultAutoTopupForSeats,
   MAX_SEATS_PER_ACCOUNT,
+  resolvePerSeatPriceId,
 } from './tiers';
 
 export async function countActiveMembers(accountId: string): Promise<number> {
@@ -29,6 +30,35 @@ export async function countActiveMembers(accountId: string): Promise<number> {
     .from(accountMembers)
     .where(eq(accountMembers.accountId, accountId));
   return rows.length;
+}
+
+/**
+ * Resolve (and persist) the per-seat subscription item id for a per_seat account
+ * whose `seat_subscription_item_id` was never recorded. Looks up the live
+ * subscription and finds the item on the per-seat price. Returns null — and
+ * leaves the account untouched — when the subscription has no per-seat item (the
+ * account isn't really on a seat plan) or the lookup fails; the caller then skips
+ * the Stripe sync rather than acting on a wrong item.
+ */
+async function resolveSeatSubscriptionItemId(
+  accountId: string,
+  subscriptionId: string,
+): Promise<string | null> {
+  const priceId = resolvePerSeatPriceId();
+  if (!priceId) return null;
+  try {
+    const sub = await getStripe().subscriptions.retrieve(subscriptionId);
+    const item = sub.items.data.find((i) => i.price?.id === priceId);
+    if (!item) return null;
+    await updateCreditAccount(accountId, { seatSubscriptionItemId: item.id } as any);
+    return item.id;
+  } catch (err) {
+    console.error(
+      `[seat-management] failed to resolve seat item for ${accountId} (sub ${subscriptionId}):`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return null;
+  }
 }
 
 /**
@@ -52,7 +82,22 @@ export async function syncSeatQuantity(accountId: string): Promise<{
   if (!account?.stripeSubscriptionId) {
     return { synced: false, seatCount: 0, skipped: 'no-subscription' };
   }
-  if (!account.seatSubscriptionItemId) {
+  // seat_subscription_item_id can be missing if the account reached per_seat via
+  // a path that never recorded it — the lazy-migration "flip the flag" shortcut,
+  // or before the subscription.updated webhook landed. Self-heal: resolve the
+  // per-seat item from the live subscription and persist it, so seat changes
+  // actually propagate to Stripe instead of silently no-op'ing.
+  let seatItemId = account.seatSubscriptionItemId;
+  if (!seatItemId) {
+    seatItemId = await resolveSeatSubscriptionItemId(accountId, account.stripeSubscriptionId);
+  }
+  if (!seatItemId) {
+    // per_seat + has a subscription, but it carries no per-seat item — the
+    // account is half-migrated (flipped to per_seat without a real seat sub).
+    // Surface it; it needs a per-seat subscription before seats can bill.
+    console.warn(
+      `[seat-management] ${accountId} is per_seat but its subscription ${account.stripeSubscriptionId} has no per-seat item; seat sync skipped`,
+    );
     return { synced: false, seatCount: 0, skipped: 'no-item' };
   }
 
@@ -60,7 +105,7 @@ export async function syncSeatQuantity(accountId: string): Promise<{
 
   const stripe = getStripe();
   try {
-    await stripe.subscriptionItems.update(account.seatSubscriptionItemId, {
+    await stripe.subscriptionItems.update(seatItemId, {
       quantity: seatCount,
       // proration_behavior defaults to 'create_prorations' which is what we
       // want — Stripe creates an invoice line item for the delta on next bill.
