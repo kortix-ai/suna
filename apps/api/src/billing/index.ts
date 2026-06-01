@@ -43,57 +43,6 @@ billingApp.use('*', async (c, next) => {
   return next();
 });
 
-// Setup initialize endpoint.
-//
-// Billing v2 — every new account is born on the per-seat plan. There is no
-// free tier for new signups. We seed credit_accounts with
-// billing_model='per_seat', tier='per_seat', seat_count=1, balance=$0.
-// The user then completes Stripe Checkout (Settings → Billing → Subscribe)
-// to activate their first seat and land the $20 wallet grant.
-//
-// Existing rows (tier='free', billing_model='legacy') are preserved untouched.
-billingApp.post('/setup/initialize', async (c: any) => {
-  const userId = c.get('userId') as string;
-  void c.get('userEmail');
-  await c.req.json().catch(() => ({}));
-  const { upsertCreditAccount, getCreditAccount } = await import('./repositories/credit-accounts');
-  const { defaultAutoTopupForSeats } = await import('./services/tiers');
-  const { resolveAccountId } = await import('../shared/resolve-account');
-
-  const accountId = await resolveAccountId(userId);
-
-  const existing = await getCreditAccount(accountId);
-  let subscriptionStatus: 'already_initialized' | 'initialized' = 'initialized';
-
-  if (existing) {
-    // Pre-existing account — leave alone. Legacy customers stay legacy;
-    // per-seat customers keep whatever subscription state they have.
-    subscriptionStatus = 'already_initialized';
-  } else {
-    // Fresh account — seed as per-seat with no subscription yet. The user
-    // will land at $0 balance and see the "Subscribe to Team plan" CTA.
-    const defaults = defaultAutoTopupForSeats(1);
-    await upsertCreditAccount(accountId, {
-      tier: 'per_seat',
-      billingModel: 'per_seat',
-      seatCount: 1,
-      provider: 'stripe',
-      balance: '0',
-      dailyCreditsBalance: '0',
-      autoTopupEnabled: false,
-      autoTopupThreshold: String(defaults.threshold),
-      autoTopupAmount: String(defaults.amount),
-    });
-    console.log(`[setup/initialize] Seeded per_seat account ${accountId} (awaiting Stripe checkout)`);
-  }
-
-  return c.json({
-    status: subscriptionStatus,
-    tier: existing?.tier ?? 'per_seat',
-    sandbox: 'skipped' as const,
-  });
-});
-
 // Billing routes — subscriptions, payments, credits (all require billing enabled)
 billingApp.route('/', subscriptionsRouter);
 billingApp.route('/', paymentsRouter);
