@@ -16,6 +16,9 @@ export interface KortixProject {
   updated_at: string;
   project_role?: ProjectRole | null;
   effective_project_role?: ProjectRole | null;
+  /** Whether the experimental [[apps]] deployment surface is enabled
+   *  platform-wide (driven by the API's KORTIX_APPS_EXPERIMENTAL flag). */
+  apps_enabled?: boolean;
 }
 
 export interface KortixAccount {

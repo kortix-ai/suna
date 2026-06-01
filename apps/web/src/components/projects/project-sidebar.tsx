@@ -45,6 +45,10 @@ import {
   ProjectChangeRequestsRailItem,
 } from '@/components/projects/change-requests-nav';
 import {
+  ProjectAppsNavItem,
+  ProjectAppsRailItem,
+} from '@/components/projects/apps/apps-nav';
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -541,6 +545,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <div className="mt-auto w-full space-y-0.5">
             <ProjectSandboxAlertRailItem projectId={projectId} />
             <ProjectChangeRequestsRailItem projectId={projectId} />
+            <ProjectAppsRailItem projectId={projectId} />
             <ProjectSetupRailItem projectId={projectId} />
             <CollapsedIconButton
               icon={<SlidersHorizontal className="h-4 w-4" />}
@@ -605,6 +610,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <SidebarMenu>
               <ProjectSandboxAlertNavItem projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
+              <ProjectAppsNavItem projectId={projectId} />
               <ProjectSetupNavItem projectId={projectId} />
               <SidebarMenuItem>
                 <SidebarMenuButton
