@@ -11,17 +11,29 @@
  */
 
 import * as React from 'react';
-import { View, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import {
+  View,
+  ScrollView,
+  Pressable,
+  ActivityIndicator,
+  RefreshControl,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, MessageSquare, ChevronRight, GitBranch } from 'lucide-react-native';
+import { ChevronLeft, MessageSquare, ChevronRight, GitBranch, ArrowUp } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
+import { useToast } from '@/components/ui/toast-provider';
 import { useProject } from '@/lib/projects/hooks';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useSessions } from '@/lib/platform/hooks';
+import { useSessions, useCreateSession } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
+import { useThemeColors } from '@/lib/theme-colors';
+import { getAuthToken } from '@/api/config';
 import { haptics } from '@/lib/haptics';
 
 function ago(ms?: number) {
@@ -49,6 +61,11 @@ export default function ProjectDetailScreen() {
   const { sandboxUrl } = useSandboxContext();
   const sessionsQuery = useSessions(sandboxUrl);
   const sessions = sessionsQuery.data ?? [];
+  const createSession = useCreateSession(sandboxUrl);
+  const theme = useThemeColors();
+  const toast = useToast();
+  const [prompt, setPrompt] = React.useState('');
+  const [starting, setStarting] = React.useState(false);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const subtle = isDark ? '#a1a1aa' : '#71717a';
@@ -65,9 +82,39 @@ export default function ProjectDetailScreen() {
     [router],
   );
 
+  const handleStart = React.useCallback(async () => {
+    const text = prompt.trim();
+    if (!text || !sandboxUrl || starting) return;
+    setStarting(true);
+    try {
+      haptics.medium();
+      const session = await createSession.mutateAsync({ title: project?.name });
+      useTabStore.getState().navigateToSession(session.id);
+      const token = await getAuthToken();
+      await fetch(`${sandboxUrl}/session/${session.id}/prompt_async`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ parts: [{ type: 'text', text }] }),
+      });
+      router.replace('/home');
+    } catch (err: any) {
+      haptics.warning();
+      toast.error(err?.message || 'Failed to start session');
+      setStarting(false);
+    }
+  }, [prompt, sandboxUrl, starting, createSession, project?.name, router, toast]);
+
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
       <Stack.Screen options={{ headerShown: false }} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={insets.top}
+      >
 
       {/* Header */}
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 8 }}>
@@ -105,6 +152,60 @@ export default function ProjectDetailScreen() {
             </Text>
           </View>
         )}
+
+        {/* Composer — start a session */}
+        <View
+          style={{
+            marginTop: 20,
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: border,
+            backgroundColor: cardBg,
+            padding: 12,
+          }}
+        >
+          <TextInput
+            value={prompt}
+            onChangeText={setPrompt}
+            placeholder="Describe a task to start a session…"
+            placeholderTextColor={faint}
+            multiline
+            editable={!starting}
+            style={{
+              minHeight: 48,
+              maxHeight: 140,
+              fontSize: 15,
+              fontFamily: 'Roobert',
+              color: fg,
+              paddingHorizontal: 4,
+              paddingTop: 4,
+            }}
+          />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: faint }}>
+              {sandboxUrl ? '' : 'Preparing workspace…'}
+            </Text>
+            <Pressable
+              onPress={handleStart}
+              disabled={starting || !sandboxUrl || !prompt.trim()}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: theme.primary,
+                opacity: starting || !sandboxUrl || !prompt.trim() ? 0.4 : 1,
+              }}
+            >
+              {starting ? (
+                <ActivityIndicator size="small" color={theme.primaryForeground} />
+              ) : (
+                <ArrowUp size={18} color={theme.primaryForeground} />
+              )}
+            </Pressable>
+          </View>
+        </View>
 
         {/* Recent sessions */}
         <Text
@@ -168,6 +269,7 @@ export default function ProjectDetailScreen() {
           </Pressable>
         ))}
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
