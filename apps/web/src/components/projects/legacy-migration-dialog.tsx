@@ -54,7 +54,7 @@ export function LegacyMigrationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Migrate legacy machines</DialogTitle>
           <DialogDescription>
@@ -63,7 +63,7 @@ export function LegacyMigrationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-2.5">
+        <div className="flex max-h-[60vh] min-w-0 flex-col gap-2.5 overflow-y-auto">
           {isLoading && (
             <div className="flex items-center justify-center py-10 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -120,7 +120,7 @@ function MachineRow({
   const failed = migration?.status === 'failed';
 
   return (
-    <div className="flex items-center gap-3 rounded-2xl border bg-card p-3">
+    <div className="flex min-w-0 items-center gap-3 rounded-2xl border bg-card p-3">
       <div
         className={cn(
           'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
@@ -149,7 +149,7 @@ function MachineRow({
           )}
         </div>
         {failed && migration?.error && (
-          <div className="mt-1 truncate text-xs text-destructive/80" title={migration.error}>
+          <div className="mt-1 line-clamp-2 break-words text-xs text-destructive/80" title={migration.error}>
             {migration.error}
           </div>
         )}
