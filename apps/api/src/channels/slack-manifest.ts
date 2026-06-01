@@ -59,7 +59,7 @@ export function generateSlackManifest(input: GenerateManifestInput): SlackManife
   return {
     display_information: {
       name: input.appName ?? 'Kortix',
-      description: input.description ?? 'Run Kortix project sessions from Slack',
+      description: input.description ?? 'Your AI workforce, in Slack — @-mention an agent and it does the real work.',
       background_color: '#0a0a0a',
     },
     features: {

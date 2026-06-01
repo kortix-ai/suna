@@ -23,6 +23,7 @@ import { db } from '../shared/db';
 import { getDaytona } from '../shared/daytona';
 import { logger as appLogger } from '../lib/logger';
 import { RESOLVE_WS_OC_SH, execOnLegacyVm, resolveLegacyVmEndpoint } from './legacy-vm-access';
+import { downloadOpencodeArchive } from './legacy-migration-storage';
 
 const NEW_OPENCODE_STORE = '/opt/kortix/home/.local/share/opencode';
 
@@ -78,36 +79,43 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
   }
 
   // 2. Get the legacy OpenCode store. Prefer the archive captured at migration
-  //    time (no live JustAVPS key needed — those keys expire). Fall back to a
-  //    live VM pull only if the migration never captured one.
-  let b64: string | null = null;
-  const [mig] = await db
-    .select({ archive: legacySandboxMigrations.opencodeArchive })
-    .from(legacySandboxMigrations)
-    .where(and(
-      eq(legacySandboxMigrations.sandboxId, legacySandboxId),
-      isNotNull(legacySandboxMigrations.opencodeArchive),
-    ))
-    .limit(1);
-  if (mig?.archive) {
-    b64 = mig.archive;
-    appLogger.info('[rehydrate] using chat store captured at migration', { sessionId, legacySandboxId });
+  //    time (no live JustAVPS key needed — those keys expire):
+  //      a) object storage (current path — captured by the extract phase),
+  //      b) the legacy Postgres column (rows migrated before the storage move),
+  //      c) a last-resort live VM pull.
+  let tarball: Buffer | null = await downloadOpencodeArchive(legacySandboxId);
+  if (tarball) {
+    appLogger.info('[rehydrate] using chat store from storage', { sessionId, legacySandboxId });
   } else {
-    const [legacy] = await db.select().from(sandboxes).where(eq(sandboxes.sandboxId, legacySandboxId)).limit(1);
-    if (!legacy) {
-      appLogger.warn('[rehydrate] no captured archive and legacy sandbox row missing', { legacySandboxId });
-      return;
+    const [mig] = await db
+      .select({ archive: legacySandboxMigrations.opencodeArchive })
+      .from(legacySandboxMigrations)
+      .where(and(
+        eq(legacySandboxMigrations.sandboxId, legacySandboxId),
+        isNotNull(legacySandboxMigrations.opencodeArchive),
+      ))
+      .limit(1);
+    if (mig?.archive) {
+      tarball = Buffer.from(mig.archive, 'base64');
+      appLogger.info('[rehydrate] using chat store from legacy column', { sessionId, legacySandboxId });
+    } else {
+      const [legacy] = await db.select().from(sandboxes).where(eq(sandboxes.sandboxId, legacySandboxId)).limit(1);
+      if (!legacy) {
+        appLogger.warn('[rehydrate] no captured archive and legacy sandbox row missing', { legacySandboxId });
+        return;
+      }
+      const endpoint = await resolveLegacyVmEndpoint(legacy);
+      const pullScript = [
+        RESOLVE_WS_OC_SH,
+        '[ -z "$OC" ] && exit 0',
+        'cd "$OC" && tar czf - opencode.db opencode.db-wal opencode.db-shm 2>/dev/null | base64 | tr -d "\\n"',
+      ].join('\n');
+      const pulled = await execOnLegacyVm(endpoint, `bash -c ${sq(pullScript)}`, 180);
+      const b64 = pulled.stdout.trim();
+      tarball = b64 ? Buffer.from(b64, 'base64') : null;
     }
-    const endpoint = await resolveLegacyVmEndpoint(legacy);
-    const pullScript = [
-      RESOLVE_WS_OC_SH,
-      '[ -z "$OC" ] && exit 0',
-      'cd "$OC" && tar czf - opencode.db opencode.db-wal opencode.db-shm 2>/dev/null | base64 | tr -d "\\n"',
-    ].join('\n');
-    const pulled = await execOnLegacyVm(endpoint, `bash -c ${sq(pullScript)}`, 180);
-    b64 = pulled.stdout.trim() || null;
   }
-  if (!b64) {
+  if (!tarball) {
     appLogger.warn('[rehydrate] legacy opencode store empty / not found', { legacySandboxId });
     return;
   }
@@ -117,7 +125,7 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
   const workDir = mkdtempSync(join(tmpdir(), 'kortix-rehydrate-'));
   let dbBuf: Buffer;
   try {
-    writeFileSync(join(workDir, 'oc.tar.gz'), Buffer.from(b64, 'base64'));
+    writeFileSync(join(workDir, 'oc.tar.gz'), tarball);
     const untar = Bun.spawnSync(['tar', 'xzf', join(workDir, 'oc.tar.gz'), '-C', workDir]);
     if (untar.exitCode !== 0) throw new Error(`unpack failed: ${new TextDecoder().decode(untar.stderr)}`);
     const local = new Database(join(workDir, 'opencode.db'));

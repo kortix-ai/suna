@@ -47,6 +47,7 @@ import {
   backupExists,
   backupObjectPath,
   createBackupUploadTarget,
+  uploadOpencodeArchive,
 } from './legacy-migration-storage';
 import {
   execOnLegacyVm,
@@ -163,13 +164,16 @@ export async function extractStep(ctx: MigrationContext): Promise<void> {
 
   if (!Array.isArray(ctx.progress.opencode_sessions)) {
     const { sessions, archiveB64 } = await enumerateOpencodeSessions(ctx);
+    let archivePath: string | null = null;
     if (archiveB64) {
-      await ctx.database.update(legacySandboxMigrations)
-        .set({ opencodeArchive: archiveB64, updatedAt: new Date() })
-        .where(eq(legacySandboxMigrations.migrationId, ctx.migrationId));
+      // Store the chat store in object storage keyed by sandbox id — NOT a
+      // Postgres column. At fleet scale (~600 machines × 1-4MB) the column would
+      // be GBs of base64 TOAST in a hot operational table. rehydrate downloads
+      // it from here on first open.
+      archivePath = await uploadOpencodeArchive(ctx.legacy.sandboxId, Buffer.from(archiveB64, 'base64'));
     }
-    await ctx.checkpoint({ opencode_sessions: sessions });
-    ctx.log('extract: enumerated opencode sessions', { count: sessions.length, captured: Boolean(archiveB64) });
+    await ctx.checkpoint({ opencode_sessions: sessions, opencode_archive_path: archivePath });
+    ctx.log('extract: enumerated opencode sessions', { count: sessions.length, archived_to: archivePath ?? 'none' });
   }
 }
 
