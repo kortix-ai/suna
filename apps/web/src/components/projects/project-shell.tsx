@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/components/AuthProvider';
 import { AppProviders } from '@/components/layout/app-providers';
+import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
@@ -183,6 +184,12 @@ export function ProjectShell({
       {/* Customize — a full-screen overlay floating over the active page, so
           opening config never swaps the content area or spawns a tab. */}
       <CustomizeOverlay projectId={projectId} />
+
+      {/* Apps — sibling overlay for the experimental [[apps]] deploy surface.
+          Self-gates on the platform flag (the store only opens when the
+          sidebar's flag-gated Apps button fires), so mounting it here is inert
+          when KORTIX_APPS_EXPERIMENTAL is off. */}
+      <AppsOverlay projectId={projectId} />
 
       {/* Guided onboarding wizard — auto-opens for new projects, fades out
           when customize is on top, dismissed forever once user clicks Skip. */}

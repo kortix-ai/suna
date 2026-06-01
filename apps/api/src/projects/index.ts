@@ -339,6 +339,11 @@ function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole |
     project_role: access?.projectRole ?? null,
     effective_project_role: access?.effectiveRole ?? null,
     dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
+    // Single source of truth for the experimental [[apps]] surface. Threading
+    // it onto the project payload lets the web client gate the Apps section +
+    // sidebar shortcut off the SAME platform flag that gates the API routes —
+    // flip KORTIX_APPS_EXPERIMENTAL on the API and both light up together.
+    apps_enabled: config.KORTIX_APPS_EXPERIMENTAL,
   };
 }
 
