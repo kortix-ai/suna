@@ -129,6 +129,18 @@ async function createSessionFromUrl(url: string) {
   return data.session;
 }
 
+/**
+ * Mobile is login-only. A user whose account was created moments ago (as part of
+ * the OAuth flow that just completed) must not be allowed in — registration only
+ * happens on the web. Password sign-up is web-only and magic link uses
+ * `shouldCreateUser: false`, so OAuth is the only path that can mint a new user.
+ */
+function isNewlyCreatedUser(user: User): boolean {
+  const created = user.created_at ? new Date(user.created_at).getTime() : 0;
+  if (!created) return false;
+  return Date.now() - created < 30_000;
+}
+
 export function useAuth() {
   const queryClient = useQueryClient();
   const trackingState = useTracking ? useTracking() : { canTrack: false, isLoading: false };
@@ -141,6 +153,7 @@ export function useAuth() {
   });
 
   const [error, setError] = useState<AuthError | null>(null);
+  const [oauthRejection, setOauthRejection] = useState<string | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const initializedUserIdRef = useRef<string | null>(null);
   const initializedCanTrackRef = useRef<boolean | null>(null);
@@ -197,7 +210,19 @@ export function useAuth() {
         if (_event === 'SIGNED_IN' || _event === 'SIGNED_OUT' || _event === 'TOKEN_REFRESHED') {
           log.log('🔄 Auth state changed:', _event);
         }
-        
+
+        // Login-only gate: a brand-new account signing in here came from OAuth
+        // (the only remaining create path on mobile). Reject it before it's ever
+        // marked authenticated so no redirect fires, and tell the user to
+        // register on the web. The signOut below emits SIGNED_OUT which keeps
+        // the state cleared.
+        if (_event === 'SIGNED_IN' && session?.user && isNewlyCreatedUser(session.user)) {
+          log.warn('🚫 New OAuth user on mobile — signing out (register on the web)');
+          setOauthRejection('No account found. Create an account on the web first.');
+          await supabase.auth.signOut().catch(() => {});
+          return;
+        }
+
         setAuthState({
           user: session?.user ?? null,
           session,
@@ -939,9 +964,13 @@ export function useAuth() {
     }
   }, [queryClient, isSigningOut]);
 
+  const clearOauthRejection = useCallback(() => setOauthRejection(null), []);
+
   return {
     ...authState,
     error,
+    oauthRejection,
+    clearOauthRejection,
     isSigningOut,
     signIn,
     signUp,
