@@ -717,7 +717,7 @@ export function useAuth() {
         email: email.trim().toLowerCase(),
         options: {
           emailRedirectTo,
-          shouldCreateUser: true, // Auto-create account if doesn't exist
+          shouldCreateUser: false, // Login only — new accounts are created on the web
         },
       });
 

@@ -1,9 +1,9 @@
 /**
- * Auth Screen — unified Sign in / Register, mirroring the web frontend.
+ * Auth Screen — login only.
  *
- * One screen, a Sign in / Register toggle, and an email auth method (magic link
- * or password) plus social providers. Which methods and providers render is
- * driven entirely by env (see lib/auth/auth-config), never hardcoded:
+ * Mobile supports sign-in only; new accounts are created on the web. The email
+ * auth method (magic link or password) and social providers render based on env
+ * (see lib/auth/auth-config), never hardcoded:
  *   EXPO_PUBLIC_AUTH_METHODS    "magic" / "password"
  *   EXPO_PUBLIC_AUTH_PROVIDERS  "google" / "apple"
  */
@@ -16,6 +16,7 @@ import {
   Platform,
   TouchableOpacity,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
@@ -29,6 +30,7 @@ import { AuthButton } from '@/components/auth/AuthButton';
 import { AuthInput } from '@/components/auth/AuthInput';
 import { useAuthContext } from '@/contexts';
 import { supabase } from '@/api/supabase';
+import { getFrontendUrl } from '@/api/config';
 import { log } from '@/lib/logger';
 import {
   magicLinkEnabled,
@@ -38,12 +40,18 @@ import {
   type AuthMethod,
 } from '@/lib/auth/auth-config';
 
-type Mode = 'signin' | 'signup';
-
 const friendlySignInError = (msg?: string): string => {
   if (!msg) return 'Could not sign in';
   if (msg.includes('Invalid login credentials')) return 'Invalid email or password. Please try again.';
   if (msg.includes('Email not confirmed')) return 'Please confirm your email before signing in.';
+  return msg;
+};
+
+const friendlyMagicError = (msg?: string): string => {
+  if (!msg) return 'Could not send verification code.';
+  if (/signups? not allowed|not allowed for otp|user not found|no user/i.test(msg)) {
+    return 'No account found for that email. Create one on the web first.';
+  }
   return msg;
 };
 
@@ -52,15 +60,13 @@ export default function AuthScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, signIn, signUp, signInWithMagicLink, signInWithOAuth, resetPassword } =
+  const { isAuthenticated, signIn, signInWithMagicLink, signInWithOAuth, resetPassword } =
     useAuthContext();
 
-  const [mode, setMode] = React.useState<Mode>('signin');
   const [method, setMethod] = React.useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
 
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
-  const [confirmPassword, setConfirmPassword] = React.useState('');
 
   const [loading, setLoading] = React.useState(false);
   const [oauthLoading, setOauthLoading] = React.useState<'google' | 'apple' | null>(null);
@@ -73,7 +79,6 @@ export default function AuthScreen() {
   const [verifying, setVerifying] = React.useState(false);
 
   const passwordRef = React.useRef<TextInput>(null);
-  const confirmRef = React.useRef<TextInput>(null);
 
   const awaitingCode = method === 'magic' && !!sentEmail;
   const showProviders = googleEnabled || (appleEnabled && Platform.OS === 'ios');
@@ -94,13 +99,10 @@ export default function AuthScreen() {
     setOtpCode('');
   }, []);
 
-  const switchMode = React.useCallback(
-    (next: Mode) => {
-      setMode(next);
-      resetTransient();
-    },
-    [resetTransient],
-  );
+  const openWebRegister = React.useCallback(() => {
+    const base = getFrontendUrl().replace(/\/$/, '');
+    Linking.openURL(`${base}/auth`).catch(() => {});
+  }, []);
 
   // ── Submit (email methods) ────────────────────────────────────────────────
   const handleSubmit = React.useCallback(async () => {
@@ -116,9 +118,9 @@ export default function AuthScreen() {
 
     try {
       if (method === 'magic') {
-        const res = await signInWithMagicLink({ email: trimmedEmail, acceptedTerms: true });
+        const res = await signInWithMagicLink({ email: trimmedEmail });
         if (!res?.success) {
-          setErrorMessage(res?.error?.message || 'Could not send verification code.');
+          setErrorMessage(friendlyMagicError(res?.error?.message));
           return;
         }
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -128,36 +130,11 @@ export default function AuthScreen() {
         return;
       }
 
-      // password
+      // password sign-in
       if (!password || password.length < 6) {
         setErrorMessage('Password must be at least 6 characters.');
         return;
       }
-
-      if (mode === 'signup') {
-        if (password !== confirmPassword) {
-          setErrorMessage('Passwords do not match.');
-          return;
-        }
-        const res = await signUp({ email: trimmedEmail, password });
-        if (!res?.success) {
-          const msg = res?.error?.message || 'Could not create account.';
-          setErrorMessage(
-            /already registered|already exists/i.test(msg)
-              ? 'An account with this email already exists. Try signing in instead.'
-              : msg,
-          );
-          return;
-        }
-        if (res.requiresEmailConfirmation) {
-          setInfo('Check your email to confirm your account.');
-        } else {
-          router.replace('/projects');
-        }
-        return;
-      }
-
-      // password sign-in
       const res = await signIn({ email: trimmedEmail, password });
       if (!res?.success) {
         setErrorMessage(friendlySignInError(res?.error?.message));
@@ -170,7 +147,7 @@ export default function AuthScreen() {
     } finally {
       setLoading(false);
     }
-  }, [email, password, confirmPassword, method, mode, signIn, signUp, signInWithMagicLink, router]);
+  }, [email, password, method, signIn, signInWithMagicLink, router]);
 
   // ── Verify OTP code ───────────────────────────────────────────────────────
   const handleVerifyOtp = React.useCallback(async () => {
@@ -246,14 +223,8 @@ export default function AuthScreen() {
     [signInWithOAuth, router],
   );
 
-  const submitLabel =
-    method === 'magic'
-      ? 'Email me a sign-in code'
-      : mode === 'signup'
-        ? 'Create account'
-        : 'Sign in';
-  const submitLoadingLabel =
-    method === 'magic' ? 'Sending code...' : mode === 'signup' ? 'Creating account...' : 'Signing in...';
+  const submitLabel = method === 'magic' ? 'Email me a sign-in code' : 'Sign in';
+  const submitLoadingLabel = method === 'magic' ? 'Sending code...' : 'Signing in...';
 
   return (
     <>
@@ -270,55 +241,12 @@ export default function AuthScreen() {
           <View className="items-start mb-8">
             <KortixLogo variant="symbol" size={36} color={isDark ? 'dark' : 'light'} />
             <Text className="text-[28px] font-roobert-semibold text-foreground mt-5 leading-tight">
-              {awaitingCode
-                ? 'Check your\nemail'
-                : mode === 'signup'
-                  ? 'Create your\naccount'
-                  : 'Sign in to\nKortix'}
+              {awaitingCode ? 'Check your\nemail' : 'Sign in to\nKortix'}
             </Text>
             <Text className="text-[15px] text-muted-foreground mt-2 font-roobert">
               {awaitingCode ? `We sent a code to ${(sentEmail ?? email).trim()}` : 'Your AI Computer'}
             </Text>
           </View>
-
-          {/* Sign in / Register toggle */}
-          {!awaitingCode && (
-            <View
-              style={{
-                flexDirection: 'row',
-                alignSelf: 'flex-start',
-                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-                borderRadius: 999,
-                padding: 4,
-                marginBottom: 20,
-              }}
-            >
-              {(['signin', 'signup'] as Mode[]).map((m) => (
-                <TouchableOpacity
-                  key={m}
-                  onPress={() => switchMode(m)}
-                  activeOpacity={0.8}
-                  style={{
-                    paddingHorizontal: 20,
-                    paddingVertical: 7,
-                    borderRadius: 999,
-                    backgroundColor:
-                      mode === m ? (isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF') : 'transparent',
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontFamily: 'Roobert-Medium',
-                      color: mode === m ? fg : muted,
-                    }}
-                  >
-                    {m === 'signin' ? 'Sign in' : 'Register'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
 
           {/* Banners */}
           {errorMessage && (
@@ -391,34 +319,17 @@ export default function AuthScreen() {
               </View>
 
               {method === 'password' && (
-                <>
-                  <View className="mb-3">
-                    <AuthInput
-                      value={password}
-                      onChangeText={setPassword}
-                      placeholder="Password"
-                      secureTextEntry
-                      autoComplete={mode === 'signup' ? 'password-new' : 'password'}
-                      returnKeyType={mode === 'signup' ? 'next' : 'go'}
-                      onSubmitEditing={() =>
-                        mode === 'signup' ? confirmRef.current?.focus() : handleSubmit()
-                      }
-                    />
-                  </View>
-                  {mode === 'signup' && (
-                    <View className="mb-3">
-                      <AuthInput
-                        value={confirmPassword}
-                        onChangeText={setConfirmPassword}
-                        placeholder="Confirm password"
-                        secureTextEntry
-                        autoComplete="password-new"
-                        returnKeyType="go"
-                        onSubmitEditing={handleSubmit}
-                      />
-                    </View>
-                  )}
-                </>
+                <View className="mb-3">
+                  <AuthInput
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Password"
+                    secureTextEntry
+                    autoComplete="password"
+                    returnKeyType="go"
+                    onSubmitEditing={handleSubmit}
+                  />
+                </View>
               )}
 
               <View className="mt-2">
@@ -447,8 +358,8 @@ export default function AuthScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* Forgot password (sign-in + password only) */}
-              {mode === 'signin' && method === 'password' && (
+              {/* Forgot password (password method only) */}
+              {method === 'password' && (
                 <TouchableOpacity onPress={handleForgotPassword} style={{ marginTop: 12, alignSelf: 'center' }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>
                     Forgot your password?
@@ -504,6 +415,16 @@ export default function AuthScreen() {
                   )}
                 </>
               )}
+
+              {/* Register lives on the web */}
+              <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 24, gap: 5 }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>New to Kortix?</Text>
+                <TouchableOpacity onPress={openWebRegister}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>
+                    Register on the web
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </View>
