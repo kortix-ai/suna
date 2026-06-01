@@ -559,7 +559,7 @@
   --destructive: oklch(0.7022 0.1892 22.2279);
   --destructive-foreground: oklch(0.9851 0 0);
   --border: oklch(0.274 0.006 286.033);
-  --input: oklch(1 0 0);
+  --input: oklch(0.2686 0 0);
   --ring: oklch(0.5555 0 0);
   --chart-1: oklch(0.8781 0.1688 91.8567);
   --chart-2: oklch(0.7724 0.1728 65.367);
@@ -630,6 +630,14 @@
       'ss14' on,
       'palt';
   }
+  :root {
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+
   body {
     /* stylelint-disable-next-line at-rule-no-unknown */
     @apply bg-background text-foreground;

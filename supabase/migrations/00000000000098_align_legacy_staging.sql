@@ -1147,7 +1147,7 @@ CREATE INDEX IF NOT EXISTS idx_legacy_sandbox_migrations_sandbox ON kortix.legac
 CREATE INDEX IF NOT EXISTS idx_legacy_sandbox_migrations_status ON kortix.legacy_sandbox_migrations USING btree (status);
 CREATE INDEX IF NOT EXISTS idx_legacy_sandbox_migrations_account ON kortix.legacy_sandbox_migrations USING btree (account_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_legacy_sandbox_migrations_active_sandbox ON kortix.legacy_sandbox_migrations USING btree (sandbox_id) WHERE ((status)::text = ANY ((ARRAY['planned'::character varying, 'running'::character varying, 'applied'::character varying, 'verified'::character varying, 'completed'::character varying])::text[]));
-CREATE INDEX IF NOT EXISTS idx_legacy_sandbox_migrations_heartbeat ON kortix.legacy_sandbox_migrations USING btree (status, heartbeat_at);
+-- heartbeat_at index is created in 00000000000101_legacy_migration_durable.sql after the column is added
 CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_access_token_hash ON kortix.oauth_access_tokens USING btree (token_hash);
 CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_client ON kortix.oauth_access_tokens USING btree (client_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_access_tokens_user ON kortix.oauth_access_tokens USING btree (user_id);
