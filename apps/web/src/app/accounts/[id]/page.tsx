@@ -75,6 +75,7 @@ import { GroupsTab } from '@/components/iam/groups-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { BillingTab, TransactionsTab } from '@/components/settings/user-settings-modal';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -325,6 +326,11 @@ export default function AccountSettingsPage() {
                       }
                       isActive={initialTab === 'billing'}
                     />
+                    {/* The "Subscribe to Team plan" button opens the global
+                        upgrade-dialog store; mount its renderer here (the global
+                        one lives only on share pages) so the dialog actually
+                        appears, scoped to THIS account via the provider above. */}
+                    <GlobalUpgradeDialog />
                   </BillingAccountProvider>
                 </TabsContent>
               )}
