@@ -43,6 +43,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { billingApi } from '@/lib/api/billing';
+import { invalidateAccountState } from '@/hooks/billing';
 
 function relativeTime(input: string) {
   const date = new Date(input);
@@ -160,6 +162,35 @@ export default function ProjectsPage() {
       window.history.replaceState(null, '', url.toString());
     }
   }, [searchParams]);
+
+  // Return from the Team plan Stripe Checkout (?team_signup=success). Reconcile
+  // the subscription from Stripe so the account reflects the new plan + credits
+  // immediately — don't depend on the webhook landing first. Then refresh
+  // account state and strip the param so reloads don't re-fire.
+  useEffect(() => {
+    if (searchParams.get('team_signup') !== 'success') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await billingApi.syncSubscription();
+        if (cancelled) return;
+        await invalidateAccountState(queryClient);
+        toast.success('Subscription activated', {
+          description: 'Your team is on Kortix Team. Compute and LLM credits are ready.',
+        });
+      } catch {
+        // Webhook will reconcile shortly; just refresh what we can.
+        invalidateAccountState(queryClient);
+      } finally {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('team_signup');
+        window.history.replaceState(null, '', url.toString());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, queryClient]);
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],

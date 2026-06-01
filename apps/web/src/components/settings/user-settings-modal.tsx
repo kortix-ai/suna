@@ -58,11 +58,12 @@ import { useAuth } from '@/components/AuthProvider';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { AutoTopupCard } from '@/components/billing/auto-topup-card';
 import { SeatManagementCard } from '@/components/billing/seat-management-card';
+import { AccountOverviewTab } from '@/components/billing/account-overview';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
     accountStateKeys,
     accountStateSelectors,
     useCreatePortalSession,
-    useCreatePerSeatCheckout,
     invalidateAccountState,
 } from '@/hooks/billing';
 import { billingApi } from '@/lib/api/billing';
@@ -1210,6 +1211,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
   const tHardcodedUi = useTranslations('hardcodedUi');
     const { session, isLoading: authLoading } = useAuth();
     const highlight = useUserSettingsModalStore((s) => s.highlight);
+    const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
     const [selectedPackage, setSelectedPackage] = useState<(typeof CREDIT_PACKAGES)[number] | null>(null);
     const [isPurchasing, setIsPurchasing] = useState(false);
     const [purchaseError, setPurchaseError] = useState<string | null>(null);
@@ -1295,15 +1297,6 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
     const monthlyCredits = accountStateSelectors.monthlyCredits(accountState);
     const nonExpiringCredits = accountStateSelectors.extraCredits(accountState);
     const totalCredits = accountStateSelectors.totalCredits(accountState);
-    
-    console.log('[BillingTab] Credit breakdown:', { 
-        accountState: accountState?.credits,
-        dailyCreditsInfo, 
-        dailyCredits, 
-        monthlyCredits, 
-        nonExpiringCredits, 
-        totalCredits
-    });
 
     // Refetch billing info whenever the billing tab becomes active (only once per activation)
     const prevIsActiveRef = useRef(false);
@@ -1424,11 +1417,15 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
     }
 
     const subscription = accountState?.subscription;
-    const subStatus = subscription?.status;
-    const isSubscribed = subStatus === 'active' || subStatus === 'trialing';
-    const isFreeTier = subscription?.tier_key === 'free' || subscription?.tier_key === 'none';
-    const isCancelled = subscription?.is_cancelled || subscription?.cancel_at_period_end;
     const canPurchaseCredits = subscription?.can_purchase_credits || false;
+
+    // Subscription state drives the whole tab. When billing is on and there's
+    // no active subscription, the team-plan checkout IS the page — everything
+    // else (wallet, limits, top-up) is noise until they're on a plan.
+    const isPerSeat = accountState?.billing_model === 'per_seat';
+    const hasActiveSubscription = Boolean(subscription?.subscription_id);
+    const subscribedToTeam = isPerSeat && hasActiveSubscription;
+    const showTeamCheckout = isBillingEnabled() && !hasActiveSubscription;
 
     return (
         <div className="p-4 sm:p-6 space-y-6 min-w-0 max-w-full overflow-x-hidden">
@@ -1436,185 +1433,136 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
             {/* ── Header ── */}
             <div>
                 <h1 className="text-lg font-medium tracking-tight">Billing</h1>
-                <p className="text-sm text-muted-foreground mt-0.5">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1551JsxTextCreditsInstancesAndSubscription')}</p>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                    {showTeamCheckout
+                        ? 'Put your whole team on Kortix.'
+                        : 'Your plan, wallet, and usage.'}
+                </p>
             </div>
 
-            {/* ── Insufficient credits alert (routed here from 402 errors) ── */}
-            {highlight === 'credits' && totalCredits <= 0 && (
-                <InfoBanner tone="warning" icon={AlertTriangle} title={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1556JsxAttrTitleYouRanOutOfCredits')}>
-                    {canPurchaseCredits
-                        ? 'Buy credits below or enable auto top-up so it never happens again.'
-                        : 'Subscribe to continue using the assistant.'}
-                </InfoBanner>
-            )}
-
-            {/* ── Credit Balance ── */}
-            <div>
-                <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">Credits</p>
-                <div className="flex items-baseline gap-1">
-                    <span className={cn(
-                        "text-3xl font-medium tabular-nums tracking-tight",
-                        totalCredits <= 0 && "text-amber-600 dark:text-amber-500"
-                    )}>
-                        ${(totalCredits / 100).toFixed(2)}
-                    </span>
-                </div>
-            </div>
-
-            {/* ── Team plan (Billing v2) — only when billing is enabled on this deploy ── */}
-            {isBillingEnabled() && <TeamPlanSection accountState={accountState} />}
-
-            {/* ── Auto top-up (primary — recommended first so users avoid this altogether) ── */}
-            {canPurchaseCredits && (
-                <div className="border-t border-border pt-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                        <p className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                            <Zap className="size-3" />{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1621JsxTextAutoTopUp')}</p>
-                        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1623JsxTextNeverRunOutAgain')}</p>
+            {showTeamCheckout ? (
+                /* ── Not subscribed: a compact CTA that opens the one Team plan
+                       modal. The full pricing/checkout lives ONLY in that modal. */
+                <>
+                    <div className="flex flex-col items-start gap-4 rounded-2xl border bg-card p-6 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h3 className="text-base font-semibold">Kortix Team</h3>
+                            <p className="mt-0.5 text-sm text-muted-foreground">
+                                Subscribe to put your whole team on Kortix — LLM compute and AI Computers, one wallet.
+                            </p>
+                        </div>
+                        <Button
+                            onClick={() => openUpgradeDialog({ reason: 'subscription_required' })}
+                            className="w-full shrink-0 sm:w-auto"
+                        >
+                            Subscribe to Team plan
+                        </Button>
                     </div>
-                    <AutoTopupCard fetchSettings showSaveButton />
-                </div>
-            )}
-
-            {/* ── Buy credits (secondary — one-time) ── */}
-            {canPurchaseCredits && (
-                <div className="border-t border-border pt-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                        <p className="text-xs uppercase tracking-widest text-muted-foreground">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1633JsxTextBuyCredits')}</p>
-                        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1634JsxTextOneTimeTopUp')}</p>
+                    <div className="flex justify-center">
+                        <Button
+                            variant="link"
+                            size="sm"
+                            className="text-muted-foreground hover:text-foreground"
+                            onClick={handleManageSubscription}
+                            disabled={createPortalSessionMutation.isPending}
+                        >
+                            {createPortalSessionMutation.isPending ? 'Loading…' : 'Manage billing'}
+                        </Button>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
-                        {CREDIT_PACKAGES.map((pkg) => {
-                            const isSelected = selectedPackage?.price === pkg.price;
-                            return (
-                                <Button
-                                    key={pkg.price}
-                                    type="button"
-                                    onClick={() => setSelectedPackage(pkg)}
-                                    disabled={isPurchasing}
-                                    variant="outline"
-                                    className={cn(
-                                        'h-auto p-3 flex-col rounded-2xl text-center',
-                                        isSelected && 'border-foreground bg-foreground/5',
-                                    )}
-                                >
-                                    <span className="text-lg font-semibold tabular-nums">${pkg.price}</span>
-                                    <span className="text-xs text-muted-foreground">{formatCredits(pkg.credits)} credits</span>
-                                </Button>
-                            );
-                        })}
-                    </div>
-                    {purchaseError && (
-                        <Alert variant="destructive">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertDescription>{purchaseError}</AlertDescription>
-                        </Alert>
+                </>
+            ) : (
+                /* ── Subscribed: plan + wallet + spend + top-up + manage ── */
+                <>
+                    {/* Insufficient credits alert (routed here from 402 errors) */}
+                    {highlight === 'credits' && totalCredits <= 0 && (
+                        <InfoBanner tone="warning" icon={AlertTriangle} title="You ran out of credits">
+                            {canPurchaseCredits
+                                ? 'Buy credits below or turn on auto top-up so it never happens again.'
+                                : 'Top up your wallet to keep your agents running.'}
+                        </InfoBanner>
                     )}
-                    <Button
-                        onClick={handlePurchaseCredits}
-                        disabled={isPurchasing || !selectedPackage}
-                        className="w-full"
-                    >
-                        {isPurchasing
-                            ? 'Processing...'
-                            : selectedPackage
-                                ? `Buy $${selectedPackage.price} in credits`
-                                : 'Select a package'}
-                    </Button>
-                </div>
+
+                    {/* Plan / wallet / spend / limits */}
+                    <AccountOverviewTab accountId={billingAccountId} />
+
+                    {/* Team seats — when on the per-seat plan */}
+                    {subscribedToTeam && <SeatManagementCard accountState={accountState} />}
+
+                    {/* Auto top-up (primary — recommended first so users avoid running dry) */}
+                    {canPurchaseCredits && (
+                        <div className="border-t border-border pt-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <p className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                                    <Zap className="size-3" />Auto top-up</p>
+                                <p className="text-xs text-muted-foreground/60">Never run out again</p>
+                            </div>
+                            <AutoTopupCard fetchSettings showSaveButton />
+                        </div>
+                    )}
+
+                    {/* Buy credits (secondary — one-time) */}
+                    {canPurchaseCredits && (
+                        <div className="border-t border-border pt-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <p className="text-xs uppercase tracking-widest text-muted-foreground">Buy credits</p>
+                                <p className="text-xs text-muted-foreground/60">One-time top-up</p>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                                {CREDIT_PACKAGES.map((pkg) => {
+                                    const isSelected = selectedPackage?.price === pkg.price;
+                                    return (
+                                        <Button
+                                            key={pkg.price}
+                                            type="button"
+                                            onClick={() => setSelectedPackage(pkg)}
+                                            disabled={isPurchasing}
+                                            variant="outline"
+                                            className={cn(
+                                                'h-auto p-3 flex-col rounded-2xl text-center',
+                                                isSelected && 'border-foreground bg-foreground/5',
+                                            )}
+                                        >
+                                            <span className="text-lg font-semibold tabular-nums">${pkg.price}</span>
+                                            <span className="text-xs text-muted-foreground">{formatCredits(pkg.credits)} credits</span>
+                                        </Button>
+                                    );
+                                })}
+                            </div>
+                            {purchaseError && (
+                                <Alert variant="destructive">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    <AlertDescription>{purchaseError}</AlertDescription>
+                                </Alert>
+                            )}
+                            <Button
+                                onClick={handlePurchaseCredits}
+                                disabled={isPurchasing || !selectedPackage}
+                                className="w-full"
+                            >
+                                {isPurchasing
+                                    ? 'Processing...'
+                                    : selectedPackage
+                                        ? `Buy $${selectedPackage.price} in credits`
+                                        : 'Select a package'}
+                            </Button>
+                        </div>
+                    )}
+
+                    {/* Manage */}
+                    <div className="border-t border-border pt-4">
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs"
+                            onClick={handleManageSubscription}
+                            disabled={createPortalSessionMutation.isPending}
+                        >
+                            {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage billing'}
+                        </Button>
+                    </div>
+                </>
             )}
 
-            {/* ── Manage ── */}
-            <div className="border-t border-border pt-4">
-                <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs"
-                    onClick={handleManageSubscription}
-                    disabled={createPortalSessionMutation.isPending}
-                >
-                    {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage billing'}
-                </Button>
-            </div>
-
-        </div>
-    );
-}
-
-// Billing v2 — Team plan section.
-// Two states:
-//   - per-seat already active → render SeatManagementCard with usage breakdown.
-//   - any other tier → CTA card pitching the plan + "Subscribe" button.
-// "Subscribe" calls /billing/create-per-seat-checkout. If a card is on file
-// the API instant-creates the sub; otherwise it returns a Stripe Checkout URL
-// and the hook redirects the browser there.
-function TeamPlanSection({ accountState }: { accountState: AccountState | undefined }) {
-    const createPerSeat = useCreatePerSeatCheckout();
-
-    if (!accountState) return null;
-
-    const isPerSeat = accountState.billing_model === 'per_seat';
-    const isLegacy = accountState.billing_model === 'legacy';
-    // New signups are seeded with billing_model='per_seat' but no subscription
-    // until they complete Stripe checkout. Use subscription_id as the activation
-    // gate so we still show the CTA for fresh accounts.
-    const hasActiveSubscription = Boolean(accountState.subscription?.subscription_id);
-
-    if (isPerSeat && hasActiveSubscription) {
-        return (
-            <div className="border-t border-border pt-4">
-                <SeatManagementCard accountState={accountState} />
-            </div>
-        );
-    }
-
-    // Legacy customers with an active subscription are already paying via
-    // their grandfathered tier plan. Pitching "Subscribe to Team plan" to
-    // them is confusing and wrong — their billing is rendered elsewhere
-    // and they'd need an explicit migration flow to opt into per-seat.
-    if (isLegacy && hasActiveSubscription) {
-        return null;
-    }
-
-    // Fresh account (per_seat with no sub yet, or legacy on free tier) — pitch the team plan.
-    const handleSubscribe = () => {
-        const origin = typeof window !== 'undefined' ? window.location.origin : '';
-        createPerSeat.mutate({
-            success_url: `${origin}/?team_signup=success`,
-            cancel_url: `${origin}/?team_signup=cancelled`,
-        });
-    };
-
-    return (
-        <div className="border-t border-border pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-                <p className="text-xs uppercase tracking-widest text-muted-foreground">Team plan</p>
-                <p className="text-xs text-muted-foreground/60">$20 / teammate / month</p>
-            </div>
-            <div className="rounded-2xl border bg-card p-4 space-y-3">
-                <div>
-                    <h3 className="text-sm font-semibold">Activate your seat</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        $20 per teammate gives your account $20 of usage credits each month.
-                        Spend on sandbox compute, LLM calls, or both — one wallet, auto-topup.
-                    </p>
-                </div>
-                <Button
-                    onClick={handleSubscribe}
-                    disabled={createPerSeat.isPending}
-                    className="w-full"
-                >
-                    {createPerSeat.isPending ? 'Starting…' : 'Subscribe to Team plan'}
-                </Button>
-                {createPerSeat.isError && (
-                    <Alert variant="destructive">
-                        <AlertTriangle className="h-4 w-4" />
-                        <AlertDescription>
-                            {(createPerSeat.error as Error)?.message ?? 'Could not start checkout.'}
-                        </AlertDescription>
-                    </Alert>
-                )}
-            </div>
         </div>
     );
 }

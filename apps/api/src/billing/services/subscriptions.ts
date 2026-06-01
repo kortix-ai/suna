@@ -8,8 +8,8 @@ import {
 } from '../repositories/credit-accounts';
 import { getCustomerByAccountId, upsertCustomer } from '../repositories/customers';
 import { BillingError, SubscriptionError } from '../../errors';
-import { getTier, isUpgrade, resolvePriceId, getComputeDisplayPriceCents, getComputeProductId, getComputeDescription, resolvePerSeatPriceId, defaultAutoTopupForSeats, MAX_SEATS_PER_ACCOUNT } from './tiers';
-import { countActiveMembers, mintYoloTokensForAllMembers } from './seat-management';
+import { getTier, isUpgrade, resolvePriceId, getComputeDisplayPriceCents, getComputeProductId, getComputeDescription, resolvePerSeatPriceId, MAX_SEATS_PER_ACCOUNT } from './tiers';
+import { countActiveMembers } from './seat-management';
 import { grantCredits, resetExpiringCredits } from './credits';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import Stripe from 'stripe';
@@ -259,7 +259,6 @@ export async function createPerSeatCheckoutSession(params: {
   const seatCount = Math.min(MAX_SEATS_PER_ACCOUNT, Math.max(1, await countActiveMembers(accountId)));
   const customerId = await getOrCreateStripeCustomer(accountId, email);
   const stripe = getStripe();
-  const account = await getCreditAccount(accountId);
 
   const metadata = {
     account_id: accountId,
@@ -268,55 +267,16 @@ export async function createPerSeatCheckoutSession(params: {
     initial_seat_count: String(seatCount),
   };
 
-  // If a card is on file, create the subscription directly with the right
-  // quantity. Webhook then sets seat_subscription_item_id + grants credits.
-  const savedPaymentMethodId = await getUsableCustomerPaymentMethod(customerId);
-  if (savedPaymentMethodId) {
-    try {
-      const subscription = await stripe.subscriptions.create({
-        customer: customerId,
-        items: [{ price: priceId, quantity: seatCount }],
-        collection_method: 'charge_automatically',
-        default_payment_method: savedPaymentMethodId,
-        payment_behavior: 'error_if_incomplete',
-        payment_settings: { save_default_payment_method: 'on_subscription' },
-        metadata,
-      });
-
-      if (subscription.status === 'active' || subscription.status === 'trialing') {
-        const seatItem = subscription.items.data[0];
-        const defaults = defaultAutoTopupForSeats(seatCount);
-        await upsertCreditAccount(accountId, {
-          tier: 'per_seat',
-          billingModel: 'per_seat',
-          seatCount,
-          seatSubscriptionItemId: seatItem?.id ?? null,
-          provider: 'stripe',
-          stripeSubscriptionId: subscription.id,
-          stripeSubscriptionStatus: subscription.status,
-          paymentStatus: 'active',
-          autoTopupEnabled: true,
-          autoTopupThreshold: String(account?.autoTopupCustomized ? account.autoTopupThreshold : defaults.threshold),
-          autoTopupAmount: String(account?.autoTopupCustomized ? account.autoTopupAmount : defaults.amount),
-        });
-        // Mint YOLO tokens for everyone already on the account (the owner +
-        // any pre-subscription members). New post-subscription adds go through
-        // onMemberAdded which handles minting per member.
-        void mintYoloTokensForAllMembers(accountId).catch(() => {});
-        return {
-          status: 'subscription_created' as const,
-          subscription_id: subscription.id,
-          seat_count: seatCount,
-        };
-      }
-    } catch (err) {
-      console.warn(
-        `[Billing] Direct per-seat subscription creation failed for ${accountId}, falling back to Checkout:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-
+  // Always hand off to Stripe's hosted Checkout for per-seat activation.
+  //
+  // We used to instant-create the subscription when a card was already on file
+  // (returning the `subscription_created` shape with no redirect). That short-
+  // circuit produced a "Subscription activated" toast without ever showing the
+  // real Stripe checkout — and any hiccup in the off-session charge left the
+  // account looking activated when it wasn't. Routing every subscribe through
+  // Checkout makes activation real and webhook-driven (single source of truth:
+  // seat item + credit grant are applied by customer.subscription.* webhooks).
+  // Returning customers still get a fast, card-prefilled Checkout page.
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     mode: 'subscription',
