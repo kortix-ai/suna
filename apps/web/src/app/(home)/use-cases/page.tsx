@@ -617,7 +617,7 @@ export default function UseCasesPage() {
                   </h4>
                   <div className="flex flex-wrap items-center gap-2">
                     {breakdown.integrations.map((d) => (
-                      <Badge variant="outline" className="px-2 py-3.5">
+                      <Badge key={d} variant="outline" className="px-2 py-3.5">
                         <img
                           src={favicon(d)}
                           alt={d}
