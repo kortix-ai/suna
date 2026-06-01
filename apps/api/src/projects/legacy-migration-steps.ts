@@ -243,7 +243,13 @@ export async function repoStep(ctx: MigrationContext): Promise<void> {
 // via .git/info/exclude (local, never committed) AND a committed .gitignore (so
 // future sessions in the new project don't re-add the junk).
 const PUSH_EXCLUDES = [
-  // Caches / regenerable
+  // Caches / regenerable. .persistent-system is the big one (often >1G of browser
+  // profile + runtime sockets + redundant opencode snapshots); the chat store is
+  // rehydrated separately, so the project repo never needs any of it.
+  // .kortix/services + backups are runtime service state/logs (can be 100M+); the
+  // new sandbox regenerates them. Keep the small, meaningful .kortix/* (config,
+  // memory, triggers, kortix.db, agent-triggers).
+  '.persistent-system', '.kortix/services', '.kortix/backups',
   'node_modules', '.cache', '.npm', '.npm-global', '.bun', '.cargo', '.rustup',
   '.pnpm-store', '.local', '.config', '.mozilla', '.browser-profile',
   '.cursor-server', '.vscode-server', '.dbus', '.XDG', '__pycache__', '.venv', 'venv',
