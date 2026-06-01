@@ -144,6 +144,56 @@ export function getProject(projectId: string) {
   return apiFetch<KortixProject>(`/projects/${encodeURIComponent(projectId)}`);
 }
 
+// ── Project sessions (one branch + sandbox per row; web-aligned) ────────────
+
+export type ProjectSessionStatus =
+  | 'queued'
+  | 'branching'
+  | 'provisioning'
+  | 'running'
+  | 'stopped'
+  | 'failed'
+  | 'completed';
+
+export interface ProjectSession {
+  session_id: string;
+  account_id: string;
+  project_id: string;
+  branch_name: string;
+  base_ref: string;
+  sandbox_provider: string | null;
+  sandbox_id: string;
+  sandbox_url: string | null;
+  opencode_session_id: string | null;
+  name: string | null;
+  agent_name: string | null;
+  status: ProjectSessionStatus;
+  error: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateProjectSessionInput {
+  session_id?: string;
+  name?: string;
+  initial_prompt?: string;
+  base_ref?: string;
+  agent_name?: string;
+  sandbox_slug?: string;
+}
+
+export function listProjectSessions(projectId: string) {
+  return apiFetch<ProjectSession[]>(`/projects/${encodeURIComponent(projectId)}/sessions`);
+}
+
+export function createProjectSession(projectId: string, input: CreateProjectSessionInput = {}) {
+  return apiFetch<ProjectSession>(`/projects/${encodeURIComponent(projectId)}/sessions`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 export function archiveProject(projectId: string) {
   return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',
