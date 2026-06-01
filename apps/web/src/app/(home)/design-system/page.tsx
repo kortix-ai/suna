@@ -245,6 +245,30 @@ const LOGO_ASSETS: LogoAsset[] = [
   },
 ];
 
+interface SocialAsset {
+  id: string;
+  variant: string;
+  /** Square 1:1 profile-picture style PNG — symbol centred on a solid field. */
+  pngSrc: string;
+  dark: boolean;
+}
+
+/** Ready-to-use social avatars: the symbol centred on a solid field, square 1:1. */
+const SOCIAL_ASSETS: SocialAsset[] = [
+  {
+    id: 'social-black',
+    variant: 'Black',
+    pngSrc: '/brandkit/Profile Picture/Avatar Black.png',
+    dark: true,
+  },
+  {
+    id: 'social-white',
+    variant: 'White',
+    pngSrc: '/brandkit/Profile Picture/Avatar White.png',
+    dark: false,
+  },
+];
+
 const TYPE_SCALE = [
   { token: 'text-xs', size: '0.75rem', px: '~12px', twClass: 'text-xs', use: 'Secondary labels, tooltips, KBD' },
   { token: 'text-sm', size: '0.875rem', px: '~14px', twClass: 'text-sm', use: 'Body text, menu items' },
@@ -427,6 +451,45 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
         <span className="text-xs font-medium text-foreground">
           {asset.label}
         </span>
+        <span className="text-xs font-mono text-muted-foreground">
+          {asset.variant}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SocialCard({ asset }: { asset: SocialAsset }) {
+  const downloadName = `kortix-avatar-${asset.variant.toLowerCase()}.png`;
+
+  return (
+    <div className="group relative">
+      <div
+        className={cn(
+          'aspect-square rounded-lg overflow-hidden ring-1 relative',
+          asset.dark ? 'ring-white/[0.06]' : 'ring-black/[0.06]'
+        )}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={asset.pngSrc}
+          alt={`Kortix avatar ${asset.variant}`}
+          className="size-full object-cover"
+        />
+
+        <a
+          href={asset.pngSrc}
+          download={downloadName}
+          className="absolute inset-0 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity bg-black/[0.04] dark:bg-white/[0.04] cursor-pointer"
+        >
+          <span className="flex items-center gap-1.5 text-xs font-medium bg-background ring-1 ring-border rounded-full px-3 py-1.5 shadow-sm">
+            <Download className="size-3" /> PNG
+          </span>
+        </a>
+      </div>
+
+      <div className="mt-2 flex items-baseline gap-1.5 px-0.5">
+        <span className="text-xs font-medium text-foreground">Avatar</span>
         <span className="text-xs font-mono text-muted-foreground">
           {asset.variant}
         </span>
@@ -727,6 +790,21 @@ export default function BrandPage() {
                   ))}
                 </div>
                 <p className="text-sm text-muted-foreground leading-relaxed mt-6">{tHardcodedUi.raw('appHomeDesignSystemPage.line737JsxTextTheSymbolIsDerivedFromTheLetterK')}{"'"}{tHardcodedUi.raw('appHomeDesignSystemPage.line739JsxTextTPracticalNeverStretchRotateOrRecolorIt')}</p>
+
+                {/* Social avatars — symbol centred on a solid field, square 1:1 */}
+                <div className="mt-10">
+                  <h3 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
+                    Social Avatar
+                  </h3>
+                  <p className="text-base text-muted-foreground leading-relaxed mb-6">
+                    The symbol centred on a solid field, square 1:1 — drop it straight into a profile picture or social handle. Hover to download the ready-made PNG (1000&times;1000, &lt;1&nbsp;MB).
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {SOCIAL_ASSETS.map((a) => (
+                      <SocialCard key={a.id} asset={a} />
+                    ))}
+                  </div>
+                </div>
             </section>
 
             {/* ═══════════════ Colors ═══════════════ */}
