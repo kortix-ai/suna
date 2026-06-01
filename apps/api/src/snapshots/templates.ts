@@ -29,6 +29,7 @@ import {
 } from './dockerfile-layer';
 import { computeSnapshotHash } from './hash';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
+import { RUNTIME_ARTIFACT_EXCLUDE_NAMES } from './runtime-artifact-filter';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,11 +53,11 @@ const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
 const CLI_SRC_DIR = resolve(REPO_ROOT, 'apps/cli/src');
 const CLI_PKG_JSON = resolve(REPO_ROOT, 'apps/cli/package.json');
 const MANIFEST_SCHEMA_SRC_DIR = resolve(REPO_ROOT, 'packages/manifest-schema/src');
-const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
+const FINGERPRINT_EXCLUDES = RUNTIME_ARTIFACT_EXCLUDE_NAMES;
 
 const OPENCODE_VERSION = '1.15.10';
 const AGENT_BROWSER_VERSION = '0.27.0';
-const RUNTIME_LAYER_VERSION = 'workspace-less-v1';
+const RUNTIME_LAYER_VERSION = 'workspace-less-v2-pruned-runtime';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { Image } from '@daytonaio/sdk';
 import { getDaytona, isDaytonaConfigured } from '../../shared/daytona';
 import { buildLayeredDockerfile } from '../dockerfile-layer';
+import { shouldIncludeRuntimeArtifactPath } from '../runtime-artifact-filter';
 import type {
   BuildableTemplate,
   BuildLogTap,
@@ -195,8 +196,14 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
     await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
     await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
-    await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
-    await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), { recursive: true });
+    await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), {
+      recursive: true,
+      filter: shouldIncludeRuntimeArtifactPath,
+    });
+    await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), {
+      recursive: true,
+      filter: shouldIncludeRuntimeArtifactPath,
+    });
 
     const composedPath = join(contextDir, '.kortix-snapshot.Dockerfile');
     const composed = buildLayeredDockerfile({

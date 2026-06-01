@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { buildRuntimeArtifactFingerprint } from '../snapshots/runtime-fingerprint';
+import { RUNTIME_ARTIFACT_EXCLUDE_NAMES } from '../snapshots/runtime-artifact-filter';
 
 describe('buildRuntimeArtifactFingerprint', () => {
   test('is deterministic for the same runtime artifacts', async () => {
@@ -55,6 +56,43 @@ describe('buildRuntimeArtifactFingerprint', () => {
       });
 
       await writeFile(join(root, 'pkg', 'node_modules', 'lockfile-shim'), 'pnpm-state-v2');
+
+      const after = await buildRuntimeArtifactFingerprint({
+        sandboxVersion: 'dev-test',
+        opencodeVersion: '1.2.3',
+        artifacts,
+      });
+
+      expect(after).toBe(before);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('runtime artifact excludes skip tests, docs, caches, and install state', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'kortix-runtime-fingerprint-'));
+    try {
+      await mkdir(join(root, 'pkg'));
+      await writeFile(join(root, 'pkg', 'index.ts'), 'src-v1');
+      await mkdir(join(root, 'pkg', '__tests__'));
+      await writeFile(join(root, 'pkg', '__tests__', 'index.test.ts'), 'test-v1');
+      await mkdir(join(root, 'pkg', 'node_modules'));
+      await writeFile(join(root, 'pkg', 'node_modules', 'shim'), 'install-v1');
+      await writeFile(join(root, 'pkg', 'README.md'), 'docs-v1');
+
+      const artifacts = [
+        { label: 'pkg', path: join(root, 'pkg'), excludeNames: RUNTIME_ARTIFACT_EXCLUDE_NAMES },
+      ];
+
+      const before = await buildRuntimeArtifactFingerprint({
+        sandboxVersion: 'dev-test',
+        opencodeVersion: '1.2.3',
+        artifacts,
+      });
+
+      await writeFile(join(root, 'pkg', '__tests__', 'index.test.ts'), 'test-v2');
+      await writeFile(join(root, 'pkg', 'node_modules', 'shim'), 'install-v2');
+      await writeFile(join(root, 'pkg', 'README.md'), 'docs-v2');
 
       const after = await buildRuntimeArtifactFingerprint({
         sandboxVersion: 'dev-test',

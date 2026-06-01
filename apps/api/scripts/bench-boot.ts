@@ -15,10 +15,14 @@
  *
  * Env:
  *   BACKEND_URL        default http://localhost:8008
+ *   BENCH_ACCOUNT_ID   account to mint the PAT for / create the fresh project under
+ *   BENCH_USER_ID      user for the minted PAT (defaults to the account owner)
  *   BENCH_PROJECT_ID   project to boot. If unset and BENCH_CREATE=1, a fresh
  *                      project is provisioned first (and its create time logged).
  *   BENCH_CREATE=1     provision a new project (Freestyle + seed starter) first
  *   BENCH_ITERS        number of boots to run (default 2: 1 cold-ish + 1 warm)
+ *   ACTIVE_POLL_MS     DB poll interval while waiting for provider active (default 100)
+ *   READY_POLL_MS      sandbox health poll interval while waiting runtimeReady (default 150)
  *   READY_TIMEOUT_MS   default 300000 (5m)
  *   KEEP=1             don't delete sessions / archive the created project
  */
@@ -27,6 +31,7 @@ import {
   accountMembers,
   accountTokens,
   projects,
+  projectSessions,
   sessionSandboxes,
 } from '@kortix/db';
 import { db } from '../src/shared/db';
@@ -34,6 +39,8 @@ import { createAccountToken } from '../src/repositories/account-tokens';
 
 const BACKEND = (process.env.BACKEND_URL || 'http://localhost:8008').replace(/\/+$/, '');
 const READY_TIMEOUT_MS = Number(process.env.READY_TIMEOUT_MS || 300_000);
+const ACTIVE_POLL_MS = Number(process.env.ACTIVE_POLL_MS || 100);
+const READY_POLL_MS = Number(process.env.READY_POLL_MS || 150);
 const ITERS = Number(process.env.BENCH_ITERS || 2);
 const PAT_NAME = 'bench-boot';
 
@@ -47,6 +54,7 @@ async function api(method: string, path: string, token: string, body?: unknown) 
     method,
     headers: {
       Authorization: `Bearer ${token}`,
+      'X-Kortix-Bench': '1',
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -54,7 +62,7 @@ async function api(method: string, path: string, token: string, body?: unknown) 
   const text = await res.text();
   let json: any = null;
   try { json = text ? JSON.parse(text) : null; } catch { json = text; }
-  return { status: res.status, json };
+  return { status: res.status, json, headers: res.headers };
 }
 
 interface BootResult {
@@ -66,6 +74,7 @@ interface BootResult {
   imageCached: boolean;
   marks: Array<{ label: string; atMs: number; deltaMs: number }>;
   inboxTimeline: Array<{ label: string; atMs: number }>;
+  sessionCreateTimeline: string;
 }
 
 async function bootOnce(projectId: string, token: string, iter: number): Promise<BootResult> {
@@ -76,6 +85,7 @@ async function bootOnce(projectId: string, token: string, iter: number): Promise
   }
   const sessionId = sess.json?.session_id ?? sess.json?.id ?? '';
   const httpMs = Date.now() - tHttp;
+  const sessionCreateTimeline = sess.headers.get('x-kortix-session-create-timeline') ?? '';
   log(`  iter ${iter}: session ${sessionId.slice(0, 8)} created (HTTP ${httpMs}ms)`);
 
   const tCreate = Date.now();
@@ -83,7 +93,16 @@ async function bootOnce(projectId: string, token: string, iter: number): Promise
   let marks: Array<{ label: string; atMs: number; deltaMs: number }> = [];
   let externalId = '';
   for (;;) {
-    const [row] = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sessionId)).limit(1);
+    const [[row], [sessionRow]] = await Promise.all([
+      db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sessionId)).limit(1),
+      db.select({ status: projectSessions.status, metadata: projectSessions.metadata })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1),
+    ]);
+    if (sessionRow?.status && ['failed', 'stopped', 'archived'].includes(sessionRow.status)) {
+      throw new Error(`session moved to ${sessionRow.status}: ${JSON.stringify(sessionRow.metadata ?? {})}`);
+    }
     const md = (row?.metadata ?? {}) as Record<string, any>;
     if (row?.status === 'error') {
       throw new Error(`provision errored: ${JSON.stringify(md.errorMessage ?? md.lastProvisioningError ?? md)}`);
@@ -95,7 +114,7 @@ async function bootOnce(projectId: string, token: string, iter: number): Promise
       break;
     }
     if (Date.now() - tCreate > READY_TIMEOUT_MS) throw new Error('timed out waiting for active');
-    await sleep(400);
+    await sleep(ACTIVE_POLL_MS);
   }
   const createToActiveMs = activeAt - tCreate;
   const imageCached = marks.some((m) => m.label === 'image-cached');
@@ -107,11 +126,12 @@ async function bootOnce(projectId: string, token: string, iter: number): Promise
   for (;;) {
     const r = await fetch(healthUrl, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
     const body = r ? await r.json().catch(() => null) : null;
-    if (Array.isArray(body?.timeline) && body.timeline.length) inboxTimeline = body.timeline;
+    if (Array.isArray(body?.boot_timeline) && body.boot_timeline.length) inboxTimeline = body.boot_timeline;
+    else if (Array.isArray(body?.timeline) && body.timeline.length) inboxTimeline = body.timeline;
     if (body?.runtimeReady === true) { readyAt = Date.now(); break; }
     if (body?.boot_error) throw new Error(`boot_error: ${body.boot_error}`);
     if (Date.now() - activeAt > READY_TIMEOUT_MS) throw new Error('timed out waiting for runtimeReady');
-    await sleep(800);
+    await sleep(READY_POLL_MS);
   }
   const activeToReadyMs = readyAt - activeAt;
 
@@ -129,6 +149,7 @@ async function bootOnce(projectId: string, token: string, iter: number): Promise
     imageCached,
     marks,
     inboxTimeline,
+    sessionCreateTimeline,
   };
 }
 
@@ -146,16 +167,30 @@ async function main() {
   if (projectId) {
     const [p] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
     if (!p) throw new Error(`project ${projectId} not found`);
+    ownerAccountId = process.env.BENCH_ACCOUNT_ID || p.accountId;
     const [m] = await db.select().from(accountMembers)
-      .where(and(eq(accountMembers.accountId, p.accountId), eq(accountMembers.accountRole, 'owner'))).limit(1);
+      .where(and(eq(accountMembers.accountId, ownerAccountId), eq(accountMembers.accountRole, 'owner'))).limit(1);
     if (!m) throw new Error(`no owner for account ${p.accountId}`);
-    ownerAccountId = m.accountId; ownerUserId = m.userId;
+    ownerUserId = process.env.BENCH_USER_ID || m.userId;
     log(`project: ${p.name} (${projectId}) branch=${p.defaultBranch}`);
   } else {
-    const owner = (await db.select().from(accountMembers).limit(50)).find((m) => m.accountRole === 'owner');
+    let owner: typeof accountMembers.$inferSelect | undefined;
+    if (process.env.BENCH_ACCOUNT_ID) {
+      owner = (await db
+        .select()
+        .from(accountMembers)
+        .where(and(
+          eq(accountMembers.accountId, process.env.BENCH_ACCOUNT_ID),
+          eq(accountMembers.accountRole, 'owner'),
+        ))
+        .limit(1))[0];
+    } else {
+      owner = (await db.select().from(accountMembers).limit(50)).find((m) => m.accountRole === 'owner');
+    }
     if (!owner) throw new Error('no owner account');
-    ownerAccountId = owner.accountId; ownerUserId = owner.userId;
+    ownerAccountId = owner.accountId; ownerUserId = process.env.BENCH_USER_ID || owner.userId;
   }
+  log(`account: ${ownerAccountId} user=${ownerUserId}`);
 
   const token = (await createAccountToken({ accountId: ownerAccountId, userId: ownerUserId, name: PAT_NAME })).secretKey;
 
@@ -185,6 +220,7 @@ async function main() {
         ? '    create→active marks: ' + r.marks.map((m) => `${m.label}=+${m.deltaMs}ms`).join('  ')
         : '';
       log(`  iter ${i} DONE: http=${r.httpMs}ms create→active=${(r.createToActiveMs / 1000).toFixed(1)}s active→ready=${(r.activeToReadyMs / 1000).toFixed(1)}s TOTAL=${(r.totalMs / 1000).toFixed(1)}s ${r.imageCached ? '[cache hit]' : '[BUILT]'}`);
+      if (r.sessionCreateTimeline) console.log(`    session-create header: ${r.sessionCreateTimeline}`);
       if (tl) console.log(tl);
       if (r.inboxTimeline.length) {
         // Print in-box marks as deltas between consecutive marks.
