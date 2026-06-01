@@ -307,10 +307,10 @@ export function CodeWindow({ className }: { className?: string }) {
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              'hit-area-3 rounded px-3 py-1.5 font-mono text-xs transition-colors',
+              'rounded px-3 py-1.5 text-left text-sm font-medium transition-colors',
               tab === t.id
-                ? 'bg-primary/10 dark:bg-muted text-foreground'
-                : 'text-muted-foreground hover:bg-primary/5 dark:hover:bg-muted/80 hover:text-foreground',
+                ? 'bg-foreground text-background'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
             )}
           >
             {t.label}
