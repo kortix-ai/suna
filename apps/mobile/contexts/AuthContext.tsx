@@ -9,6 +9,7 @@ interface AuthContextType extends AuthState {
   signIn: (credentials: SignInCredentials) => Promise<any>;
   signUp: (credentials: SignUpCredentials) => Promise<any>;
   signInWithOAuth: (provider: OAuthProvider) => Promise<any>;
+  signInWithMagicLink: (data: { email: string; acceptedTerms?: boolean }) => Promise<any>;
   resetPassword: (data: { email: string }) => Promise<any>;
   updatePassword: (newPassword: string) => Promise<any>;
   signOut: () => Promise<any>;
