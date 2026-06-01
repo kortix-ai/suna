@@ -175,3 +175,12 @@ export async function upsertCustomer(data: {
     active: data.active ?? null,
   };
 }
+
+/**
+ * Remove a stored Stripe customer row by its id. Used to drop a stale mapping —
+ * a customer id created under a different Stripe account (e.g. after the key was
+ * repointed) that no longer exists, so a fresh one can be created and persisted.
+ */
+export async function deleteCustomerByStripeId(stripeCustomerId: string): Promise<void> {
+  await db.delete(billingCustomers).where(eq(billingCustomers.id, stripeCustomerId));
+}

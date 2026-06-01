@@ -6,7 +6,7 @@ import {
   updateCreditAccount,
   upsertCreditAccount,
 } from '../repositories/credit-accounts';
-import { getCustomerByAccountId, upsertCustomer } from '../repositories/customers';
+import { getCustomerByAccountId, upsertCustomer, deleteCustomerByStripeId } from '../repositories/customers';
 import { BillingError, SubscriptionError } from '../../errors';
 import { getTier, isUpgrade, resolvePriceId, getComputeDisplayPriceCents, getComputeProductId, getComputeDescription, resolvePerSeatPriceId, MAX_SEATS_PER_ACCOUNT } from './tiers';
 import { countActiveMembers } from './seat-management';
@@ -19,10 +19,32 @@ export async function getOrCreateStripeCustomer(
   accountId: string,
   email: string,
 ): Promise<string> {
-  const existing = await getCustomerByAccountId(accountId);
-  if (existing) return existing.id;
-
   const stripe = getStripe();
+
+  const existing = await getCustomerByAccountId(accountId);
+  if (existing) {
+    // Verify the stored customer still exists in the CURRENT Stripe account. The
+    // env key can point at a different account than the one the id was created
+    // in (e.g. after the key is repointed), leaving a stale id that 500s every
+    // downstream call (checkout, subscription create, …) with "No such customer".
+    // If it's gone, drop the stale mapping and recreate below.
+    try {
+      const cust = await stripe.customers.retrieve(existing.id);
+      if (!('deleted' in cust) || !cust.deleted) return existing.id;
+    } catch (err) {
+      const code = (err as { code?: string; raw?: { code?: string } })?.code
+        ?? (err as { raw?: { code?: string } })?.raw?.code;
+      const missing = (err as { statusCode?: number })?.statusCode === 404
+        || code === 'resource_missing'
+        || /no such customer/i.test((err as Error)?.message ?? '');
+      if (!missing) throw err;
+      console.warn(
+        `[billing] Stripe customer ${existing.id} for ${accountId} not found in the current Stripe account; recreating`,
+      );
+      await deleteCustomerByStripeId(existing.id);
+    }
+  }
+
   const customer = await stripe.customers.create({
     email,
     metadata: { account_id: accountId },
