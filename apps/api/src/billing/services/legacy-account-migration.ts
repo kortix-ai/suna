@@ -115,41 +115,43 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
       return defaultResult('failed', 'no Stripe customer for account with active subs');
     }
 
-    // 2. Compute prorated remaining-period value for every active sub
+    // 2. Create the per-seat sub FIRST — BEFORE cancelling anything. This is the
+    //    critical safety property: if the charge can't be set up (no payment
+    //    method, card declined, Stripe error, …) we abort with the customer's
+    //    legacy subs still intact, never leaving them with no subscription at all.
+    let newSubscription: Stripe.Subscription;
+    try {
+      newSubscription = await stripe.subscriptions.create({
+        customer: customer.id,
+        items: [{ price: priceId, quantity: seatCount }],
+        collection_method: 'charge_automatically',
+        metadata: {
+          account_id: accountId,
+          billing_model: 'per_seat',
+          initial_seat_count: String(seatCount),
+          source: 'lazy_migration',
+        },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[lazy-migrate] failed to create per-seat sub for ${accountId} (legacy subs left untouched): ${msg}`);
+      return defaultResult('failed', `create per-seat sub: ${msg}`);
+    }
+
+    // 3. The seat sub is now active — cancel the legacy subs and sum their
+    //    prorated remainder. A cancel failure here is non-fatal: the replacement
+    //    is already in place, so we log it for manual cleanup and continue rather
+    //    than stranding the account.
     let totalProratedUsd = 0;
     const cancelledSubIds: string[] = [];
     for (const sub of activeSubs) {
-      const remainingUsd = computeProratedRemaining(sub, now);
-      totalProratedUsd += remainingUsd;
+      totalProratedUsd += computeProratedRemaining(sub, now);
       try {
         await stripe.subscriptions.cancel(sub.id, { prorate: false } as any);
         cancelledSubIds.push(sub.id);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[lazy-migrate] failed to cancel sub ${sub.id} for ${accountId}: ${msg}`);
-        return defaultResult('failed', `cancel ${sub.id}: ${msg}`);
-      }
-    }
-
-    // 3. Create the per-seat sub (quantity = active member count, capped)
-    let newSubscription: Stripe.Subscription | null = null;
-    {
-      try {
-        newSubscription = await stripe.subscriptions.create({
-          customer: customer.id,
-          items: [{ price: priceId, quantity: seatCount }],
-          collection_method: 'charge_automatically',
-          metadata: {
-            account_id: accountId,
-            billing_model: 'per_seat',
-            initial_seat_count: String(seatCount),
-            source: 'lazy_migration',
-          },
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[lazy-migrate] failed to create per-seat sub for ${accountId}: ${msg}`);
-        return defaultResult('failed', `create per-seat sub: ${msg}`);
+        console.error(`[lazy-migrate] failed to cancel legacy sub ${sub.id} for ${accountId} (seat sub ${newSubscription.id} is active; legacy sub left for manual cleanup): ${msg}`);
       }
     }
 
