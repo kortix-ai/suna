@@ -19,6 +19,7 @@ export function SimpleFooter() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
             <span>© {currentYear} Kortix</span>
+            <Link href="/docs" className="hover:text-foreground transition-colors">Docs</Link>
             <Link href="/support" className="hover:text-foreground transition-colors">Support</Link>
             <Link href="/legal?tab=privacy" className="hover:text-foreground transition-colors">Privacy</Link>
             <Link href="/legal?tab=terms" className="hover:text-foreground transition-colors">Terms</Link>

@@ -35,14 +35,14 @@ function TomlBody() {
     <>
       <Line><span className={C.c}>[project]</span></Line>
       <Line><span className={C.f}>name</span> = <span className={C.s}>{tHardcodedUi.raw('componentsHomeCodeWindow.line34JsxTextQuotAcmeAgiQuot')}</span></Line>
-      <Line>{tHardcodedUi.raw('componentsHomeCodeWindow.line35JsxTextNbsp')}</Line>
+      <Line>&nbsp;</Line>
       <Line><span className={C.c}>[[triggers.cron]]</span></Line>
       <Line><span className={C.f}>agent</span> = <span className={C.s}>{tHardcodedUi.raw('componentsHomeCodeWindow.line37JsxTextQuotBriefingQuot')}</span></Line>
       <Line><span className={C.f}>schedule</span> = <span className={C.s}>{tHardcodedUi.raw('componentsHomeCodeWindow.line38JsxTextQuot08Quot')}</span></Line>
-      <Line>{tHardcodedUi.raw('componentsHomeCodeWindow.line39JsxTextNbsp')}</Line>
+      <Line>&nbsp;</Line>
       <Line><span className={C.c}>[[channels]]</span></Line>
       <Line><span className={C.f}>type</span> = <span className={C.s}>{tHardcodedUi.raw('componentsHomeCodeWindow.line41JsxTextQuotSlackQuot')}</span> · <span className={C.f}>agent</span> = <span className={C.s}>{tHardcodedUi.raw('componentsHomeCodeWindow.line41JsxTextQuotSupportQuot')}</span></Line>
-      <Line>{tHardcodedUi.raw('componentsHomeCodeWindow.line42JsxTextNbsp')}</Line>
+      <Line>&nbsp;</Line>
       <Line><span className={C.c}>[connectors]</span></Line>
       <Line><span className={C.f}>required</span> = [<span className={C.s}>{tHardcodedUi.raw('componentsHomeCodeWindow.line44JsxTextQuotGmailQuot')}</span>, <span className={C.s}>{tHardcodedUi.raw('componentsHomeCodeWindow.line44JsxTextQuotStripeQuot')}</span>, <span className={C.s}>{tHardcodedUi.raw('componentsHomeCodeWindow.line44JsxTextQuotSlackQuot')}</span>]</Line>
     </>
@@ -60,7 +60,7 @@ function AgentBody() {
       <Line><span className={C.f}>skills</span>: [<span className={C.s}>refund-policy</span>, <span className={C.s}>ticket-triage</span>]</Line>
       <Line><span className={C.f}>tools</span>: [<span className={C.s}>gmail</span>, <span className={C.s}>stripe</span>, <span className={C.s}>slack</span>]</Line>
       <Line><span className={C.c}>---</span></Line>
-      <Line>{tHardcodedUi.raw('componentsHomeCodeWindow.line59JsxTextNbsp')}</Line>
+      <Line>&nbsp;</Line>
       <Line><span className={C.f}>{tHardcodedUi.raw('componentsHomeCodeWindow.line60JsxTextYouAreTheSupportAgentForAcmeResolve')}</span></Line>
       <Line><span className={C.f}>{tHardcodedUi.raw('componentsHomeCodeWindow.line61JsxTextTicketsWithFullProductContextAndEscalate')}</span></Line>
       <Line><span className={C.f}>{tHardcodedUi.raw('componentsHomeCodeWindow.line62JsxTextAnythingOver500ForHumanApproval')}</span></Line>
@@ -76,7 +76,7 @@ function DeployBody() {
       <Line><span className={C.s}>✓</span> <span className={C.f}>{tHardcodedUi.raw('componentsHomeCodeWindow.line71JsxTextPushedToMain')}</span></Line>
       <Line><span className={C.s}>✓</span> <span className={C.f}>{tHardcodedUi.raw('componentsHomeCodeWindow.line72JsxTextSandboxSnapshotBooted')}</span></Line>
       <Line><span className={C.s}>✓</span> <span className={C.f}>{tHardcodedUi.raw('componentsHomeCodeWindow.line73JsxTextTriggersScheduledChannelsLive')}</span></Line>
-      <Line>{tHardcodedUi.raw('componentsHomeCodeWindow.line74JsxTextNbsp')}</Line>
+      <Line>&nbsp;</Line>
       <Line><span className="inline-flex items-center gap-2 text-foreground"><span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />{tHardcodedUi.raw('componentsHomeCodeWindow.line75JsxTextAcmeAgiIsRunning247')}</span></Line>
       <Line><span className={C.f}>$ </span><span className="inline-block h-3.5 w-1.5 animate-pulse bg-muted-foreground/40 align-middle" /></Line>
     </>

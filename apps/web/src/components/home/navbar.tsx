@@ -15,7 +15,6 @@ import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { AppDownloadQR } from '@/components/common/app-download-qr';
 import { Button } from '@/components/ui/button';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
-import { ProductMegaMenu, PRODUCT_ITEMS } from '@/components/home/product-menu';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -258,7 +257,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
 
         {/* Center — Nav Links (desktop only) */}
         <nav className="hidden md:flex items-center justify-center gap-1 absolute left-1/2 -translate-x-1/2">
-          <ProductMegaMenu />
           {filteredNavLinks.map((item) => (
             <Link
               key={item.id}
@@ -398,28 +396,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 </motion.li>
                 */}
               </ul>
-
-              {/* Product group */}
-              <motion.div variants={drawerMenuVariants} className="mt-10">
-                <div className="pb-3 text-xs font-mono uppercase tracking-wider text-muted-foreground">Product</div>
-                <ul className="flex flex-col">
-                  {PRODUCT_ITEMS.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <li key={item.title}>
-                        <Link
-                          href={item.href}
-                          onClick={() => setIsDrawerOpen(false)}
-                          className="flex items-center gap-3 py-2.5 text-xl font-medium text-muted-foreground transition-colors hover:text-foreground"
-                        >
-                          <Icon className="size-5 shrink-0" />
-                          {item.title}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </motion.div>
             </motion.nav>
 
             {/* Footer Actions */}
