@@ -260,7 +260,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          {formattedStars && (
+          {formattedStars && !starsLoading && (
             <Button variant="ghost" asChild className="hidden sm:flex">
               <Link
                 href="https://github.com/kortix-ai/suna"

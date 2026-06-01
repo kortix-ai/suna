@@ -9,15 +9,7 @@ import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { Icon } from '@/features/icon/icon';
 import { YOUTUBE_IFRAME_ALLOW } from '@/lib/security/iframe-sandbox';
 import * as SheetPrimitive from '@radix-ui/react-dialog';
-import {
-  ArrowRight,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  GitBranch,
-  Play,
-  Sparkles,
-} from 'lucide-react';
+import { ArrowRight, Check, GitBranch, Play, Sparkles } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -232,14 +224,6 @@ function buildBreakdown(agent: Agent, industry: string) {
   };
 }
 
-function Eyebrow({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-      {children}
-    </span>
-  );
-}
-
 function AgentCard({
   agent,
   industry,
@@ -252,7 +236,7 @@ function AgentCard({
   return (
     <button
       onClick={onOpen}
-      className="group bg-muted/60 cursor-pointer overflow-hidden rounded p-2 text-left"
+      className="group bg-muted dark:bg-muted/60 cursor-pointer overflow-hidden rounded p-2 text-left"
     >
       <div className="bg-muted/30 relative aspect-video overflow-hidden rounded-[calc(var(--spacing)*0.5)]">
         <Image
@@ -262,7 +246,7 @@ function AgentCard({
           sizes="(max-width: 768px) 100vw, 33vw"
           className="object-cover object-top"
         />
-        <div className="group-hover:from-kortix-green/30 absolute inset-0 bg-linear-0 from-black/40 to-transparent opacity-60 transition-opacity group-hover:opacity-80" />
+        <div className="absolute inset-0 bg-linear-0 from-black/40 to-transparent opacity-60 transition-opacity group-hover:from-black/30 group-hover:opacity-80" />
         <div className="absolute inset-0 flex items-center justify-center">
           <span className="bg-primary text-background border-primary flex size-11 items-center justify-center rounded-full border">
             <Play className="size-4 fill-current" />
@@ -503,33 +487,6 @@ export default function UseCasesPage() {
             className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
           >
             <SheetBody className="relative p-0">
-              <div className="sticky top-4 left-4 z-50 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="border-input bg-background text-primary ring-offset-background hover:bg-background/95 hover:text-primary focus:ring-ring data-[state=open]:bg-secondary inline-flex size-8 items-center justify-center rounded-md border p-0 text-xs font-medium focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
-                    onClick={() => go(-1)}
-                    aria-label={tHardcodedUi.raw(
-                      'appHomeUseCasesPage.line437JsxAttrAriaLabelPreviousUseCase',
-                    )}
-                  >
-                    <ChevronLeft className="size-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="border-input bg-background text-primary ring-offset-background hover:bg-background/95 hover:text-primary focus:ring-ring data-[state=open]:bg-secondary inline-flex size-8 items-center justify-center rounded-md border p-0 text-xs font-medium disabled:pointer-events-none"
-                    onClick={() => go(1)}
-                    aria-label={tHardcodedUi.raw(
-                      'appHomeUseCasesPage.line440JsxAttrAriaLabelNextUseCase',
-                    )}
-                  >
-                    <ChevronRight className="size-4" />
-                  </Button>
-                </div>
-              </div>
-
               <div className="relative aspect-video w-full shrink-0 border-b bg-black">
                 {playing ? (
                   <iframe
@@ -561,7 +518,7 @@ export default function UseCasesPage() {
                 )}
               </div>
 
-              <div className="px-6 sm:px-8">
+              <div className="p-6 px-6 sm:px-8">
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
                     {selected.industry}
