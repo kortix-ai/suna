@@ -221,13 +221,11 @@ interface StripePriceConfig {
 //   - Replace the PLACEHOLDER below with the resulting price IDs before deploy.
 //   - Webhook handler for customer.subscription.updated (services/webhooks.ts)
 //     reconciles the `quantity` field on this price item into credit_accounts.seat_count.
-export const PER_SEAT_STRIPE_PRICE_ID_PLACEHOLDER = 'price_PLACEHOLDER_PER_SEAT';
-
 const STRIPE_PRICES_PROD: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
     pro:  { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO' }, // TODO: create prod Pro price and replace
-    per_seat: { monthly: PER_SEAT_STRIPE_PRICE_ID_PLACEHOLDER }, // TODO(ops): fill in prod per-seat price ID
+    per_seat: { monthly: 'price_1TcrQJG6l1KZGqIry1K1cqZY' }, // live "Kortix seat" $20/mo
     // Legacy price → tier mappings (for webhook resolution of existing subs)
     tier_2_20:     { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO', yearly: 'price_1ReHB5G6l1KZGqIrD70I1xqM', yearlyCommitment: 'price_1RqtqiG6l1KZGqIrhjVPtE1s' },
     tier_6_50:     { monthly: 'price_1RILb4G6l1KZGqIr5q0sybWn', yearly: 'price_1ReHAsG6l1KZGqIrlAog487C', yearlyCommitment: 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi' },
