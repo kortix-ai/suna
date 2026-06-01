@@ -84,7 +84,7 @@ export default function AuthScreen() {
 
   // Already-signed-in users never see auth.
   React.useEffect(() => {
-    if (isAuthenticated) router.replace('/home');
+    if (isAuthenticated) router.replace('/projects');
   }, [isAuthenticated, router]);
 
   const resetTransient = React.useCallback(() => {
@@ -152,7 +152,7 @@ export default function AuthScreen() {
         if (res.requiresEmailConfirmation) {
           setInfo('Check your email to confirm your account.');
         } else {
-          router.replace('/home');
+          router.replace('/projects');
         }
         return;
       }
@@ -163,7 +163,7 @@ export default function AuthScreen() {
         setErrorMessage(friendlySignInError(res?.error?.message));
         return;
       }
-      router.replace('/home');
+      router.replace('/projects');
     } catch (err: any) {
       log.error('Auth submit exception:', err);
       setErrorMessage(err?.message || 'An unexpected error occurred.');
@@ -195,7 +195,7 @@ export default function AuthScreen() {
         );
         return;
       }
-      if (data.session) router.replace('/home');
+      if (data.session) router.replace('/projects');
     } catch (err: any) {
       setErrorMessage(err?.message || 'Verification failed.');
     } finally {
@@ -233,7 +233,7 @@ export default function AuthScreen() {
         setErrorMessage(null);
         const res = await signInWithOAuth(provider);
         if (res?.success) {
-          router.replace('/home');
+          router.replace('/projects');
         } else if (res?.error?.message && !/cancel/i.test(res.error.message)) {
           setErrorMessage(res.error.message);
         }
