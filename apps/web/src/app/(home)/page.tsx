@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { motion } from 'framer-motion';
+import { motion, useScroll, useTransform } from 'framer-motion';
 import {
   ArrowRight,
   Check,
@@ -195,43 +195,64 @@ export default function Home() {
     setTimeout(() => setCopied(false), 2000);
   }, []);
 
+  // Scroll-linked hero fade + drawer that rises over it (legacy layout).
+  const { scrollY } = useScroll();
+  const heroOpacity = useTransform(scrollY, [0, 400], [1, 0]);
+  const heroScale = useTransform(scrollY, [0, 400], [1, 0.96]);
+  const drawerRadius = useTransform(scrollY, [200, 600], [28, 0]);
+
   return (
     <BackgroundAALChecker>
       <div className="relative bg-background">
 
-        {/* ═══════════════ HERO ═══════════════ */}
-        <section className="relative overflow-hidden px-6 pt-32 pb-12 sm:pt-36">
-          <div className="absolute inset-0 z-0"><WallpaperBackground wallpaperId="brandmark" /></div>
-          <div className="relative z-10 mx-auto flex max-w-3xl flex-col items-center text-center">
-            <h1 className="text-4xl font-medium leading-[1.04] tracking-tight text-foreground sm:text-5xl md:text-6xl">
-              The AI command center<br />
-              <span className="text-muted-foreground">for your company</span>
-            </h1>
-            <p className="mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-              Run every team on AI agents that do real work across your tools — and own all of it as code. Open, self-hostable, and bring your own models.
-            </p>
-            <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
-              <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={handleLaunch}>
-                Get started<ArrowRight className="ml-1.5 size-3.5" />
-              </Button>
-              <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm">
-                <Link href={DEMO_URL}>Request demo</Link>
-              </Button>
+        {/* ═══════════════ HERO — sticky, fades + scales on scroll ═══════════════ */}
+        <div className="sticky top-0 z-0 h-dvh overflow-hidden">
+          <WallpaperBackground wallpaperId="brandmark" />
+          <motion.div className="relative z-[1] flex h-full flex-col" style={{ opacity: heroOpacity, scale: heroScale }}>
+            <div className="flex flex-1 flex-col items-center justify-center px-6 pt-24 text-center">
+              <h1 className="text-4xl font-medium leading-[1.04] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-7xl">
+                The AI command center<br />
+                <span className="text-muted-foreground">for your company</span>
+              </h1>
+              <p className="mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+                Run every team on AI agents that do real work — and own all of it as code.
+              </p>
+              <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
+                <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={handleLaunch}>
+                  Launch Your Kortix<ArrowRight className="ml-1.5 size-3.5" />
+                </Button>
+                <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm">
+                  <Link href={DEMO_URL}>Request demo</Link>
+                </Button>
+              </div>
+              <button onClick={copyInstall} className="group mt-6 inline-flex h-9 items-center gap-2.5 rounded-full border border-border bg-background/70 px-4 backdrop-blur-sm transition-colors hover:border-foreground/20 cursor-pointer">
+                <span className="select-none font-mono text-[11px] text-muted-foreground">$</span>
+                <code className="font-mono text-[11px] tracking-tight text-foreground">{INSTALL_CMD}</code>
+                <span className="border-l border-border pl-2.5">
+                  {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3 text-muted-foreground transition-colors group-hover:text-foreground" />}
+                </span>
+              </button>
             </div>
-            <button onClick={copyInstall} className="group mt-6 inline-flex items-center gap-2.5 h-9 px-4 rounded-full bg-foreground/[0.03] border border-border hover:border-foreground/20 transition-colors cursor-pointer">
-              <span className="font-mono text-xs text-muted-foreground select-none">$</span>
-              <code className="text-xs font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
-              <span className="pl-2.5 border-l border-border">
-                {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3 text-muted-foreground group-hover:text-foreground transition-colors" />}
-              </span>
-            </button>
+            <div className="flex justify-center pb-10">
+              <motion.div animate={{ y: [0, 6, 0] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}>
+                <div className="flex h-8 w-5 items-start justify-center rounded-full border-2 border-muted-foreground/20 p-1">
+                  <motion.div className="h-1.5 w-1 rounded-full bg-muted-foreground/40" animate={{ y: [0, 8, 0] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }} />
+                </div>
+              </motion.div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* ═══════════════ DRAWER — rises over the hero, holds everything ═══════════════ */}
+        <motion.div className="relative z-10 bg-background" style={{ borderTopLeftRadius: drawerRadius, borderTopRightRadius: drawerRadius }}>
+          <div className="flex justify-center pt-5 pb-3">
+            <div className="h-[3px] w-8 rounded-full bg-muted-foreground/40" />
           </div>
 
           {/* the command center — real product */}
-          <div className="relative z-10 mx-auto mt-14 max-w-5xl sm:mt-20">
+          <section className="mx-auto max-w-5xl px-6 pt-4 pb-14 sm:pb-20">
             <StepMedia src={SHOT('01-command-center.png')} alt="The Kortix command center" priority />
-          </div>
-        </section>
+          </section>
 
         {/* ═══════════════ INTEGRATIONS ═══════════════ */}
         <section className="border-y border-border/60 bg-muted/20 py-10">
@@ -364,37 +385,28 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ═══════════════ START FREE — INSTALL & LAUNCH ═══════════════ */}
-        <section id="pricing" className="mx-auto max-w-6xl scroll-mt-24 px-6 py-16 sm:py-24">
+        {/* ═══════════════ CLOSING CTA ═══════════════ */}
+        <section id="pricing" className="mx-auto max-w-5xl scroll-mt-24 px-6 py-24 text-center sm:py-32">
           <Reveal>
-            <div className="relative overflow-hidden rounded-[28px] border border-border bg-card px-6 py-20 text-center sm:py-28">
-              <div className="absolute inset-0 z-0 opacity-50"><WallpaperBackground wallpaperId="brandmark" /></div>
-              <div className="relative z-10 flex flex-col items-center">
-                <Eyebrow>Start free</Eyebrow>
-                <h2 className="mx-auto mt-3 max-w-2xl text-3xl font-medium leading-tight tracking-tight text-foreground sm:text-4xl md:text-5xl">Give your company a workforce</h2>
-                <p className="mx-auto mt-4 max-w-xl text-base text-muted-foreground sm:text-lg">
-                  Self-host the whole platform for free — bring your own models, keys, or subscriptions. Or launch it managed on Kortix cloud, from $20 a seat.
-                </p>
-                <div className="mt-8 flex flex-col items-center gap-4">
-                  <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={handleLaunch}>Launch Your Kortix<ArrowRight className="ml-1.5 size-3.5" /></Button>
-                  <button onClick={copyInstall} className="group flex items-center gap-2.5 h-9 px-4 rounded-full bg-background/70 border border-border hover:bg-background/90 hover:border-foreground/20 transition-colors cursor-pointer backdrop-blur-sm">
-                    <span className="font-mono text-xs text-muted-foreground select-none">$</span>
-                    <code className="text-xs font-mono text-foreground tracking-tight">{INSTALL_CMD}</code>
-                    <span className="pl-2.5 border-l border-border">{copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3 text-muted-foreground group-hover:text-foreground transition-colors" />}</span>
-                  </button>
-                </div>
-                <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
-                  <Link href={DEMO_URL} className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground transition-all hover:gap-2.5">Request demo<ArrowRight className="size-4" /></Link>
-                  <Link href={DOCS_URL} className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"><BookOpen className="size-4" />Read the docs</Link>
-                  <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"><Github className="size-4" />View on GitHub</a>
-                </div>
-                <p className="mt-7 inline-flex items-center gap-2 text-xs text-muted-foreground"><GitBranch className="size-3.5" /> Open · SSO · roles · on-prem · no lock-in</p>
-              </div>
+            <Eyebrow>Start free</Eyebrow>
+            <h2 className="mx-auto mt-3 max-w-2xl text-3xl font-medium leading-tight tracking-tight text-foreground sm:text-4xl md:text-5xl">Give your company a workforce</h2>
+            <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+              Self-host the whole platform for free — bring your own models. Or launch it managed on Kortix cloud, from $20 a seat.
+            </p>
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={handleLaunch}>Launch Your Kortix<ArrowRight className="ml-1.5 size-3.5" /></Button>
+              <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm"><Link href={DEMO_URL}>Request demo</Link></Button>
             </div>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+              <Link href={DOCS_URL} className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"><BookOpen className="size-4" />Read the docs</Link>
+              <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"><Github className="size-4" />View on GitHub</a>
+            </div>
+            <p className="mt-7 inline-flex items-center gap-2 text-xs text-muted-foreground"><GitBranch className="size-3.5" /> Open · SSO · roles · on-prem · no lock-in</p>
           </Reveal>
         </section>
 
-        <div className="h-24 sm:h-28" />
+          <div className="h-20 sm:h-24" />
+        </motion.div>
 
         {/* ═══════════════ FLOATING CTA BAR ═══════════════ */}
         <div className={cn('fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-background/95 px-1.5 py-1.5 backdrop-blur-md transition-[transform,opacity] duration-[600ms] ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform', showFloatingCta ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-16 opacity-0')}>
