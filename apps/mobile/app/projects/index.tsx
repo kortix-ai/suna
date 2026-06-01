@@ -14,18 +14,24 @@ import {
   TextInput,
   Pressable,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, X, FolderPlus, ChevronRight, AlertCircle } from 'lucide-react-native';
+import { Search, X, FolderPlus, ChevronRight, ChevronDown, Plus, AlertCircle } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/ui/Avatar';
 import { KortixLogo } from '@/components/ui/KortixLogo';
+import { useToast } from '@/components/ui/toast-provider';
+import { AccountSwitcherSheet } from '@/components/projects/AccountSwitcherSheet';
+import { NewProjectSheet } from '@/components/projects/NewProjectSheet';
 import { useAuthContext } from '@/contexts';
-import { useAccounts, useProjects } from '@/lib/projects/hooks';
+import { useAccounts, useArchiveProject, useProjects } from '@/lib/projects/hooks';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useThemeColors } from '@/lib/theme-colors';
+import { haptics } from '@/lib/haptics';
 import type { KortixProject } from '@/lib/projects/projects-client';
 
 function relativeTime(input?: string) {
@@ -48,12 +54,17 @@ export default function ProjectsScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const theme = useThemeColors();
+  const toast = useToast();
   const { user } = useAuthContext();
 
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const [query, setQuery] = React.useState('');
+  const [accountSheetOpen, setAccountSheetOpen] = React.useState(false);
+  const [newProjectOpen, setNewProjectOpen] = React.useState(false);
 
   const accountsQuery = useAccounts(!!user);
+  const archive = useArchiveProject();
 
   // Reconcile the persisted account against what the user actually has access
   // to; fall back to the first account (mirrors web).
@@ -100,6 +111,54 @@ export default function ProjectsScreen() {
     [router],
   );
 
+  const canCreate =
+    activeAccount?.account_role === 'owner' || activeAccount?.account_role === 'admin';
+  const accountCount = accountsQuery.data?.length ?? 0;
+
+  const confirmArchive = React.useCallback(
+    (p: KortixProject) => {
+      Alert.alert('Archive project', `Archive "${p.name}"?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Archive',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              haptics.medium();
+              await archive.mutateAsync(p.project_id);
+              haptics.success();
+              toast.success('Project archived');
+            } catch (e: any) {
+              haptics.warning();
+              toast.error(e?.message || 'Failed to archive project');
+            }
+          },
+        },
+      ]);
+    },
+    [archive, toast],
+  );
+
+  const onCardLongPress = React.useCallback(
+    (p: KortixProject) => {
+      const canManage = p.effective_project_role === 'manager' || !p.effective_project_role;
+      const buttons: any[] = [{ text: 'Open', onPress: () => openProject(p) }];
+      if (canManage) buttons.push({ text: 'Archive', style: 'destructive', onPress: () => confirmArchive(p) });
+      buttons.push({ text: 'Cancel', style: 'cancel' });
+      haptics.selection();
+      Alert.alert(p.name, undefined, buttons);
+    },
+    [openProject, confirmArchive],
+  );
+
+  const handleCreated = React.useCallback(
+    (project: KortixProject) => {
+      setNewProjectOpen(false);
+      router.push(`/projects/${project.project_id}`);
+    },
+    [router],
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -115,11 +174,43 @@ export default function ProjectsScreen() {
           justifyContent: 'space-between',
         }}
       >
-        <KortixLogo variant="symbol" size={28} color={isDark ? 'dark' : 'light'} />
-        {!!activeAccount && (
-          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: subtle }} numberOfLines={1}>
-            {activeAccount.name}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+          <KortixLogo variant="symbol" size={28} color={isDark ? 'dark' : 'light'} />
+          {!!activeAccount && (
+            <Pressable
+              onPress={() => {
+                haptics.selection();
+                setAccountSheetOpen(true);
+              }}
+              disabled={accountCount < 2}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 }}
+            >
+              <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: subtle, maxWidth: 160 }}>
+                {activeAccount.name}
+              </Text>
+              {accountCount > 1 && <ChevronDown size={14} color={subtle} />}
+            </Pressable>
+          )}
+        </View>
+        {canCreate && (
+          <Pressable
+            onPress={() => {
+              haptics.selection();
+              setNewProjectOpen(true);
+            }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 14,
+              height: 36,
+              borderRadius: 9999,
+              backgroundColor: theme.primary,
+            }}
+          >
+            <Plus size={16} color={theme.primaryForeground} />
+            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>New</Text>
+          </Pressable>
         )}
       </View>
 
@@ -222,6 +313,29 @@ export default function ProjectsScreen() {
             <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, textAlign: 'center' }}>
               A project is a dedicated space for one company, product, or idea.
             </Text>
+            {canCreate && (
+              <Pressable
+                onPress={() => {
+                  haptics.selection();
+                  setNewProjectOpen(true);
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginTop: 16,
+                  paddingHorizontal: 16,
+                  height: 40,
+                  borderRadius: 9999,
+                  backgroundColor: theme.primary,
+                }}
+              >
+                <Plus size={16} color={theme.primaryForeground} />
+                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>
+                  Create your first project
+                </Text>
+              </Pressable>
+            )}
           </View>
         )}
 
@@ -241,6 +355,8 @@ export default function ProjectsScreen() {
           <Pressable
             key={project.project_id}
             onPress={() => openProject(project)}
+            onLongPress={() => onCardLongPress(project)}
+            delayLongPress={300}
             style={({ pressed }) => ({
               backgroundColor: cardBg,
               borderRadius: 16,
@@ -267,6 +383,21 @@ export default function ProjectsScreen() {
           </Pressable>
         ))}
       </ScrollView>
+
+      <AccountSwitcherSheet
+        open={accountSheetOpen}
+        accounts={accountsQuery.data ?? []}
+        selectedAccountId={activeAccountId}
+        onSelect={(id) => setSelectedAccountId(id)}
+        onClose={() => setAccountSheetOpen(false)}
+      />
+
+      <NewProjectSheet
+        open={newProjectOpen}
+        accountId={activeAccountId}
+        onClose={() => setNewProjectOpen(false)}
+        onCreated={handleCreated}
+      />
     </View>
   );
 }
