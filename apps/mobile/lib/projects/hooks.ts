@@ -6,19 +6,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   archiveProject,
+  createProjectSession,
   getProject,
   linkRepository,
   listAccounts,
   listGitHubInstallations,
   listGitHubRepositories,
+  listProjectSessions,
   listProjectsForAccount,
   provisionProject,
+  type CreateProjectSessionInput,
 } from './projects-client';
 
 export const projectKeys = {
   accounts: ['accounts'] as const,
   projects: (accountId: string | null | undefined) => ['projects', accountId] as const,
   project: (projectId: string | null | undefined) => ['project', projectId] as const,
+  projectSessions: (projectId: string | null | undefined) => ['project-sessions', projectId] as const,
   githubInstallations: (accountId: string | null | undefined) =>
     ['github-installations', accountId] as const,
   githubRepositories: (accountId: string | null | undefined, installationId: string | null | undefined) =>
@@ -49,6 +53,33 @@ export function useProject(projectId: string | null) {
     queryFn: () => getProject(projectId!),
     enabled: !!projectId,
     staleTime: 20_000,
+  });
+}
+
+export function useProjectSessions(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.projectSessions(projectId),
+    queryFn: () => listProjectSessions(projectId!),
+    enabled: !!projectId,
+    staleTime: 10_000,
+    // Poll so freshly-provisioning session sandboxes flip to running in the list.
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      const pending = data?.some((s) =>
+        ['queued', 'branching', 'provisioning'].includes(s.status),
+      );
+      return pending ? 3_000 : false;
+    },
+  });
+}
+
+export function useCreateProjectSession(projectId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateProjectSessionInput) => createProjectSession(projectId!, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+    },
   });
 }
 
