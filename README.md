@@ -143,8 +143,10 @@ pnpm build          # build all packages
 pnpm nuke           # tear down the local Docker environment
 ```
 
-Apps live under `apps/` (`web`, `api`, `cli`, `mobile`, `sandbox`); the
-documentation source is in `apps/web/content/docs`.
+Apps live under `apps/` (`web`, `api`, `cli`, `desktop`, `mobile`, `sandbox`); the
+documentation source is in `apps/web/content/docs`. The whole platform ships under
+one version (root `VERSION` file) — API, frontend, CLI, and desktop are released
+together as `vX.Y.Z`.
 
 ## License
 
