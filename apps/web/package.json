@@ -280,5 +280,8 @@
     "tw-animate-css": "^1.2.4",
     "typescript": "^5",
     "vscode-jsonrpc": "8.2.0"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }

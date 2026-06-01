@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
  * Unified auth — wallpaper + lock-screen UX, password-based register + login.
  *
  * Identical in local and cloud. The only mode-dependent piece is whether
- * Supabase requires email confirmation (Supabase config, not ENV_MODE).
+ * Supabase requires email confirmation (Supabase config, not a billing flag).
  * Email auth methods and social providers render only when listed in
  * `NEXT_PUBLIC_AUTH_METHODS` / `NEXT_PUBLIC_AUTH_PROVIDERS` — never as a
  * hardcoded surface.

@@ -5,7 +5,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, production]
   workflow_dispatch:
 
 concurrency:
@@ -72,7 +72,6 @@ jobs:
       - name: Build standalone frontend
         run: pnpm --filter ./apps/web build
         env:
-          NEXT_PUBLIC_ENV_MODE: local
           NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key

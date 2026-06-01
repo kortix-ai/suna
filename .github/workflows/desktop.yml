@@ -1,36 +1,37 @@
-name: Desktop dev release
+name: Desktop
 
-# Publishes mutable dev desktop installers from main.
+# Desktop (Tauri) build — kept OUT of Deploy Dev on purpose. The desktop app is a
+# thin webview shell that changes rarely and needs slow, signed macOS/Windows
+# runners, so building it on every main push would be wasteful and would gate the
+# fast API/frontend/CLI path on scarce runners.
+#
+# It builds only when desktop code actually changes (push to main touching
+# apps/desktop/**) or when manually dispatched. Signed installers are published
+# to the mutable `desktop-dev-latest` prerelease.
+#
+# Production desktop installers are built separately by deploy-prod.yml and
+# bundled into the unified vX.Y.Z release.
 
 on:
   push:
     branches: [main]
     paths:
       - 'apps/desktop/**'
-      - '.github/workflows/desktop-dev.yml'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'package.json'
+      - '.github/workflows/desktop.yml'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 concurrency:
-  group: desktop-dev-release
+  group: desktop-dev
   cancel-in-progress: true
-
-env:
-  DESKTOP_TAG: desktop-dev-latest
-  DESKTOP_VERSION: 0.0.0
-  DESKTOP_PRODUCT_NAME: Kortix Dev
-  DESKTOP_IDENTIFIER: com.kortix.desktop.dev
-  DESKTOP_URL: https://dev.kortix.com/dashboard
 
 jobs:
   build:
-    name: Build ${{ matrix.target_pretty }}
+    name: Build dev desktop ${{ matrix.target_pretty }}
     runs-on: ${{ matrix.runner }}
+    env:
+      DESKTOP_PRODUCT_NAME: Kortix Dev
+      DESKTOP_IDENTIFIER: com.kortix.desktop.dev
+      DESKTOP_URL: https://dev.kortix.com/dashboard
     strategy:
       fail-fast: false
       matrix:
@@ -87,6 +88,11 @@ jobs:
         run: pnpm install --frozen-lockfile --filter @kortix/desktop
         env:
           npm_config_engine_strict: "false"
+
+      - name: Compute dev version
+        id: ver
+        shell: bash
+        run: echo "version=$(cat VERSION)-dev.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
 
       - name: Validate signing secrets
         shell: bash
@@ -155,6 +161,7 @@ jobs:
       - name: Configure dev desktop build
         shell: bash
         env:
+          DESKTOP_VERSION: ${{ steps.ver.outputs.version }}
           WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
           WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
         run: |
@@ -162,7 +169,10 @@ jobs:
           const fs = require('node:fs');
           const path = 'apps/desktop/src-tauri/tauri.conf.json';
           const config = JSON.parse(fs.readFileSync(path, 'utf8'));
-          config.version = process.env.DESKTOP_VERSION;
+          // Tauri requires a strict semver version; dev builds use the clean
+          // X.Y.Z so the bundler accepts it (the -dev.<sha> suffix is not valid
+          // for Windows MSI/macOS bundle versions).
+          config.version = (process.env.DESKTOP_VERSION || '0.0.0').split('-')[0];
           config.productName = process.env.DESKTOP_PRODUCT_NAME;
           config.identifier = process.env.DESKTOP_IDENTIFIER;
           if (process.env.WINDOWS_CERTIFICATE_THUMBPRINT) {
@@ -198,42 +208,56 @@ jobs:
           path: ${{ matrix.files }}
           if-no-files-found: error
 
-  release:
-    name: Publish dev desktop release
+  # ── Publish/refresh the mutable `desktop-dev-latest` prerelease ─────────────
+  publish:
+    name: Publish desktop-dev-latest
     needs: build
+    # Publish whatever installers built — a single OS's signing failure shouldn't
+    # discard the others.
+    if: always() && needs.build.result != 'cancelled'
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v4
         with:
-          path: artifacts/
+          path: desktop-artifacts/
+          pattern: desktop-*
           merge-multiple: true
 
-      - name: Compute checksums
+      - name: Assemble assets + checksums
         run: |
-          cd artifacts
-          find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+          set -euo pipefail
+          mkdir -p release
+          find desktop-artifacts -maxdepth 1 -type f -exec cp -v {} release/ \;
+          cd release
+          if [ -z "$(ls -A)" ]; then
+            echo "No desktop installers were produced (all targets failed)." >&2
+            exit 1
+          fi
+          sha256sum * > SHA256SUMS
           ls -lh
 
-      - name: Move dev tag
+      - name: Move desktop-dev-latest tag to this commit
         run: |
-          git tag -f "${{ env.DESKTOP_TAG }}" "$GITHUB_SHA"
-          git push -f origin "${{ env.DESKTOP_TAG }}"
+          git tag -f desktop-dev-latest "$GITHUB_SHA"
+          git push -f origin desktop-dev-latest
 
-      - name: Publish GitHub Release
+      - name: Publish GitHub prerelease (desktop-dev-latest)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.DESKTOP_TAG }}
-          name: ${{ env.DESKTOP_TAG }}
+          tag_name: desktop-dev-latest
+          name: desktop-dev-latest
           prerelease: true
           make_latest: false
-          overwrite_files: true
           generate_release_notes: false
           body: |
-            Mutable dev desktop build for `${{ github.sha }}`.
-
-            Defaults to `${{ env.DESKTOP_URL }}`.
-          files: artifacts/*
+            Mutable DEV desktop build for `${{ github.sha }}`.
+            Defaults to `https://dev.kortix.com/dashboard`.
+          files: |
+            release/*

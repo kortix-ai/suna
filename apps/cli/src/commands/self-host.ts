@@ -756,7 +756,6 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
       KORTIX_PUBLIC_SUPABASE_ANON_KEY: \${SUPABASE_ANON_KEY}
       KORTIX_PUBLIC_BACKEND_URL: \${API_PUBLIC_URL}/v1
       KORTIX_PUBLIC_BILLING_ENABLED: "false"
-      KORTIX_PUBLIC_ENV_MODE: local
       KORTIX_PUBLIC_APP_URL: \${PUBLIC_URL}
       SUPABASE_URL: \${SUPABASE_PUBLIC_URL}
       SUPABASE_SERVER_URL: http://supabase-kong:8000

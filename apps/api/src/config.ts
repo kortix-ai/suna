@@ -114,16 +114,8 @@ const envSchema = z.object({
   // Supabase Storage bucket holding the durable per-sandbox backup bundle
   // (workspace files + OpenCode chat-history store). Source for rehydrate.
   LEGACY_MIGRATION_BACKUP_BUCKET: optStrDefault('legacy-migrations'),
-  // Base image written into a synthesized .kortix/Dockerfile when a migrated
-  // legacy workspace has none. TODO: set to the canonical Kortix base image.
-  LEGACY_MIGRATION_DEFAULT_IMAGE: optStrDefault('ubuntu:24.04'),
 
   // ── Channels — Slack adapter (optional) ──────────────────────────────────
-  // KORTIX_CHANNELS_MODE: 'auto' (default) honors whatever Slack env is set —
-  // SLACK_BOT_TOKEN → single, SLACK_CLIENT_ID+SECRET → multi, both → both.
-  // 'single' forces BYO-app mode (requires SLACK_BOT_TOKEN). 'multi' forces
-  // Kortix-managed-app mode (requires SLACK_CLIENT_ID+SECRET+REDIRECT_URI).
-  KORTIX_CHANNELS_MODE:        z.enum(['auto', 'single', 'multi']).optional().default('auto'),
   SLACK_BOT_TOKEN:             optStr,
   SLACK_SIGNING_SECRET:        optStr,
   SLACK_TEAM_ID:               optStr,
@@ -138,7 +130,6 @@ const envSchema = z.object({
   // Optional banner image rendered at the top of the App Home tab. Must be a
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
   SLACK_HOME_HERO_URL:         optStr,
-  KORTIX_API_KEY_ENC_KEY:      optStr,
   KORTIX_DASHBOARD_URL:        optStr,
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
@@ -148,12 +139,11 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY:           optStr,
   OPENAI_API_URL:              optUrl('https://api.openai.com/v1'),
   OPENAI_API_KEY:              optStr,
+  // xAI / Gemini / Groq route through OpenRouter (see router/config/proxy-services.ts),
+  // so only their base URLs are read — no per-provider API keys.
   XAI_API_URL:                 optUrl('https://api.x.ai/v1'),
-  XAI_API_KEY:                 optStr,
   GEMINI_API_URL:              optUrl('https://generativelanguage.googleapis.com/v1beta'),
-  GEMINI_API_KEY:              optStr,
   GROQ_API_URL:                optUrl('https://api.groq.com/openai/v1'),
-  GROQ_API_KEY:                optStr,
   // ── Billing — Stripe (optional, only for cloud billing) ──────────────────
   STRIPE_SECRET_KEY:           optStr,
   STRIPE_WEBHOOK_SECRET:       optStr,
@@ -204,8 +194,6 @@ const envSchema = z.object({
   TUNNEL_HEARTBEAT_INTERVAL_MS:      optInt(30_000),
   TUNNEL_HEARTBEAT_MAX_MISSED:       optInt(3),
   TUNNEL_RPC_TIMEOUT_MS:             optInt(30_000),
-  TUNNEL_MAX_FILE_SIZE:              optInt(10 * 1024 * 1024),
-  TUNNEL_PERMISSION_REQUEST_TTL_MS:  optInt(300_000),
   TUNNEL_RATE_LIMIT_RPC:             optInt(100),
   TUNNEL_RATE_LIMIT_PERM_REQUEST:    optInt(20),
   TUNNEL_RATE_LIMIT_WS_CONNECT:      optInt(5),
@@ -217,8 +205,6 @@ const envSchema = z.object({
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE:    optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID:    optInt(600),
   KORTIX_PROXY_REQS_PER_MIN:              optInt(600),
-  KORTIX_MAX_CONCURRENT_SESSIONS_FREE:    optInt(1),
-  KORTIX_MAX_CONCURRENT_SESSIONS_PAID:    optInt(5),
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED:        optBoolTrue,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS:    optInt(60_000),
@@ -433,10 +419,8 @@ export const config = {
   JUSTAVPS_API_URL: env.JUSTAVPS_API_URL,
   JUSTAVPS_API_KEY: env.JUSTAVPS_API_KEY,
   LEGACY_MIGRATION_BACKUP_BUCKET: env.LEGACY_MIGRATION_BACKUP_BUCKET,
-  LEGACY_MIGRATION_DEFAULT_IMAGE: env.LEGACY_MIGRATION_DEFAULT_IMAGE,
 
   // ─── Channels (Slack) ─────────────────────────────────────────────────────
-  KORTIX_CHANNELS_MODE: env.KORTIX_CHANNELS_MODE,
   SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
   SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
   SLACK_TEAM_ID: env.SLACK_TEAM_ID,
@@ -455,11 +439,8 @@ export const config = {
   OPENAI_API_URL: env.OPENAI_API_URL,
   OPENAI_API_KEY: env.OPENAI_API_KEY,
   XAI_API_URL: env.XAI_API_URL,
-  XAI_API_KEY: env.XAI_API_KEY,
   GEMINI_API_URL: env.GEMINI_API_URL,
-  GEMINI_API_KEY: env.GEMINI_API_KEY,
   GROQ_API_URL: env.GROQ_API_URL,
-  GROQ_API_KEY: env.GROQ_API_KEY,
   // ─── Stripe (Billing) ─────────────────────────────────────────────────────
   STRIPE_SECRET_KEY: env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: env.STRIPE_WEBHOOK_SECRET,
@@ -540,8 +521,6 @@ export const config = {
   TUNNEL_HEARTBEAT_INTERVAL_MS: env.TUNNEL_HEARTBEAT_INTERVAL_MS,
   TUNNEL_HEARTBEAT_MAX_MISSED: env.TUNNEL_HEARTBEAT_MAX_MISSED,
   TUNNEL_RPC_TIMEOUT_MS: env.TUNNEL_RPC_TIMEOUT_MS,
-  TUNNEL_MAX_FILE_SIZE: env.TUNNEL_MAX_FILE_SIZE,
-  TUNNEL_PERMISSION_REQUEST_TTL_MS: env.TUNNEL_PERMISSION_REQUEST_TTL_MS,
   TUNNEL_RATE_LIMIT_RPC: env.TUNNEL_RATE_LIMIT_RPC,
   TUNNEL_RATE_LIMIT_PERM_REQUEST: env.TUNNEL_RATE_LIMIT_PERM_REQUEST,
   TUNNEL_RATE_LIMIT_WS_CONNECT: env.TUNNEL_RATE_LIMIT_WS_CONNECT,
@@ -553,8 +532,6 @@ export const config = {
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
-  KORTIX_MAX_CONCURRENT_SESSIONS_FREE: env.KORTIX_MAX_CONCURRENT_SESSIONS_FREE,
-  KORTIX_MAX_CONCURRENT_SESSIONS_PAID: env.KORTIX_MAX_CONCURRENT_SESSIONS_PAID,
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
   KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: env.KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS,

@@ -47,7 +47,7 @@ printf "[build-local-images] Building frontend standalone output...\n"
 (
   cd "$REPO_ROOT/apps/web"
   rm -rf .next
-  NEXT_PUBLIC_ENV_MODE=local \
+  NEXT_PUBLIC_BILLING_ENABLED=false \
   NEXT_PUBLIC_BACKEND_URL=http://localhost:8008/v1 \
   NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co \
   NEXT_PUBLIC_SUPABASE_ANON_KEY=local-build-placeholder-anon-key \

@@ -370,7 +370,7 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
  *
  * Cloud and local share this function. The only configuration-dependent
  * behavior is whether the inner signIn succeeds — driven by Supabase's
- * `enable_confirmations`, not by ENV_MODE.
+ * `enable_confirmations`, not by any billing flag.
  */
 export async function signUpWithPassword(prevState: any, formData: FormData) {
   const email = (formData.get('email') as string | null)?.trim().toLowerCase();
@@ -501,7 +501,7 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   // For new cloud users with no plan yet, land in account management. The
   // repo-first app surface starts from /projects; the old plan route is not v1.
   const runtimeEnv = getServerPublicEnv();
-  const billingEnabled = runtimeEnv.ENV_MODE === 'cloud';
+  const billingEnabled = runtimeEnv.BILLING_ENABLED;
   let finalDestination = returnUrl;
 
   if (billingEnabled && isNewUser && data.session?.access_token) {

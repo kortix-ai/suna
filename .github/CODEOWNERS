@@ -2,8 +2,8 @@
 #
 # Purpose: enforce peer review of changes (SOC 2 CC8.1, change management).
 # When a PR touches a path below, the listed owner is automatically requested
-# for review. Combined with branch protection on `newer-kortix`, this ensures
-# no code reaches the protected branch without review.
+# for review. Combined with branch protection on `main` (and `production`),
+# this ensures no code reaches a protected branch without review.
 #
 # Syntax: <path pattern>  <@owner ...>  (last matching rule wins)
 # Add teammates' GitHub handles as the team grows so PRs need a *peer* review

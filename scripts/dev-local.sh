@@ -296,7 +296,7 @@ EOF
   # exposed backend port, no token in client env. BACKEND_URL stays absolute for
   # server-side (SSR) fetches, which talk to the in-sandbox API directly.
   cat > "$ROOT_DIR/apps/web/.env" <<EOF
-NEXT_PUBLIC_ENV_MODE=local
+NEXT_PUBLIC_BILLING_ENABLED=false
 NEXT_PUBLIC_SUPABASE_URL=${SB_API_URL}
 NEXT_PUBLIC_SUPABASE_ANON_KEY=${SB_ANON_KEY}
 NEXT_PUBLIC_BACKEND_URL=/v1
