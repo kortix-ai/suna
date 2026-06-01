@@ -111,3 +111,37 @@ export function getEnv(key: string): string | undefined {
 
   return undefined;
 }
+
+/**
+ * Base URL for a Kortix router-proxied upstream service, derived from
+ * KORTIX_API_URL. The sandbox only ever holds KORTIX_API_URL + KORTIX_TOKEN;
+ * tools build their proxy endpoint from those two. Normalizes so it works
+ * whether KORTIX_API_URL is a bare origin or already ends in /v1 or /v1/router.
+ * Returns null when KORTIX_API_URL is unset.
+ */
+export function getKortixRouterBase(service: string): string | null {
+  const raw = getEnv("KORTIX_API_URL");
+  if (!raw) return null;
+  const root = raw
+    .replace(/\/+$/, "")
+    .replace(/\/v1\/router$/, "")
+    .replace(/\/v1$/, "");
+  return `${root}/v1/router/${service}`;
+}
+
+/**
+ * Base URL for a Kortix router-proxied upstream service, derived from
+ * KORTIX_API_URL. The sandbox only ever holds KORTIX_API_URL + KORTIX_TOKEN;
+ * tools build their proxy endpoint from those two. Normalizes so it works
+ * whether KORTIX_API_URL is a bare origin or already ends in /v1 or /v1/router.
+ * Returns null when KORTIX_API_URL is unset.
+ */
+export function getKortixRouterBase(service: string): string | null {
+  const raw = getEnv("KORTIX_API_URL");
+  if (!raw) return null;
+  const root = raw
+    .replace(/\/+$/, "")
+    .replace(/\/v1\/router$/, "")
+    .replace(/\/v1$/, "");
+  return `${root}/v1/router/${service}`;
+}

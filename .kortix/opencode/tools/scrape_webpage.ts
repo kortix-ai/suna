@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin";
 import FirecrawlApp from "@mendable/firecrawl-js";
-import { getEnv } from "./lib/get-env";
+import { getEnv, getKortixRouterBase } from "./lib/get-env";
 
 interface ScrapeResult {
   url: string;
@@ -78,10 +78,10 @@ export default tool({
       .describe("Include raw HTML alongside markdown. Default: false"),
   },
   async execute(args, _context) {
-    const apiBaseURL = getEnv("FIRECRAWL_API_URL");
-    // When routed through the Kortix proxy (FIRECRAWL_API_URL is set), use KORTIX_TOKEN
-    // for auth — the proxy validates it and injects the real Firecrawl API key.
-    // When hitting the real Firecrawl API directly, use the user's own FIRECRAWL_API_KEY.
+    // Route through the Kortix router (derived from KORTIX_API_URL) and auth with
+    // KORTIX_TOKEN; the router injects the real upstream key. Fall back to a raw
+    // FIRECRAWL_API_KEY only when KORTIX_API_URL is unset (self-host/direct).
+    const apiBaseURL = getKortixRouterBase("firecrawl") ?? undefined;
     const apiKey = apiBaseURL
       ? getEnv("KORTIX_TOKEN")
       : getEnv("FIRECRAWL_API_KEY");
