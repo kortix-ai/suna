@@ -661,6 +661,10 @@ export const sessionSandboxes = kortixSchema.table(
     status: sessionSandboxStatusEnum('status').default('provisioning').notNull(),
     config: jsonb('config').default({}).$type<Record<string, unknown>>(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    // Warm-pool lifecycle. NULL for a normal session sandbox; for a pre-booted
+    // pool sandbox: 'booting' → 'parked' (claimable) → 'claimed'. A parked
+    // sandbox has no project_sessions row yet. See docs/specs/warm-pool.md.
+    poolState: text('pool_state'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -671,6 +675,8 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+    // Hot path for the atomic warm-sandbox claim (WHERE project_id, pool_state).
+    index('idx_session_sandboxes_pool').on(table.projectId, table.poolState),
   ],
 );
 

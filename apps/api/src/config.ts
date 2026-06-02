@@ -117,6 +117,15 @@ const envSchema = z.object({
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
   // OFF leaves the direct clone-credential token flow untouched).
   KORTIX_GIT_PROXY:                optBoolFalse,
+  // Warm sandbox pool (docs/specs/warm-pool.md). Default OFF — when enabled,
+  // keep N pre-booted sandboxes per project to claim instantly.
+  KORTIX_WARM_POOL_ENABLED:        optBoolFalse,
+  // Global cap on total warm (pre-booted, unclaimed) sandboxes across all
+  // projects — bounds idle cost + the Daytona quota.
+  KORTIX_WARM_POOL_MAX_TOTAL:      optInt(50),
+  // Only keep a warm pool for projects with a session in the last N days, so we
+  // don't hold idle sandboxes for dormant projects.
+  KORTIX_WARM_POOL_ACTIVE_DAYS:    optInt(7),
 
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
@@ -440,6 +449,9 @@ export const config = {
   MANAGED_GIT_GITHUB_INSTALL_ID: env.MANAGED_GIT_GITHUB_INSTALL_ID,
   MANAGED_GIT_GITHUB_TOKEN: env.MANAGED_GIT_GITHUB_TOKEN,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
+  KORTIX_WARM_POOL_ENABLED: env.KORTIX_WARM_POOL_ENABLED,
+  KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
+  KORTIX_WARM_POOL_ACTIVE_DAYS: env.KORTIX_WARM_POOL_ACTIVE_DAYS,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
   JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
