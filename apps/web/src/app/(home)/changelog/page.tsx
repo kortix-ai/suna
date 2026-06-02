@@ -141,69 +141,73 @@ export default async function ChangelogPage() {
 
         {/* Releases */}
         {releases.length === 0 ? (
-          <Reveal delay={0.1}>
-            <div className="mt-16 text-sm text-muted-foreground">
-              Couldn&apos;t load releases right now.{' '}
-              <a
-                href={`https://github.com/${REPO}/releases`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50"
-              >
-                See the full changelog on GitHub
-              </a>
-              .
-            </div>
-          </Reveal>
+          <div className="mt-16 text-sm text-muted-foreground">
+            Couldn&apos;t load releases right now.{' '}
+            <a
+              href={`https://github.com/${REPO}/releases`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50"
+            >
+              See the full changelog on GitHub
+            </a>
+            .
+          </div>
         ) : (
-          <div className="mt-14 sm:mt-20 space-y-16 sm:space-y-20">
+          // Single column with hairline dividers. NOTE: deliberately no per-release
+          // Reveal/IntersectionObserver wrapper — a very long release body (v0.9.0
+          // is ~60KB) is taller than the observer's threshold can ever satisfy, so
+          // it would stay at opacity:0 forever and read as a huge blank gap.
+          <div className="mt-12 sm:mt-16 divide-y divide-border/60">
             {releases.map((release, i) => {
               const isLatest = i === 0 && !release.prerelease;
+              // Huge auto-generated bodies (v0.9.0 is ~800 PR lines) would swallow
+              // the whole page — clamp with a CSS-only fade and point to GitHub.
+              const isLong = (release.body?.length ?? 0) > 6000;
               return (
-                <Reveal key={release.tag_name} delay={Math.min(i, 3) * 0.05}>
-                  <article className="grid grid-cols-1 sm:grid-cols-[10rem_1fr] gap-3 sm:gap-8">
-                    {/* Left rail: version + date */}
-                    <div className="sm:text-right">
-                      <div className="flex items-center gap-2 sm:justify-end">
-                        <h2 className="text-lg font-medium tracking-tight text-foreground">
-                          {release.tag_name}
-                        </h2>
-                        {isLatest && (
-                          <Badge size="sm" variant="highlight">
-                            Latest
-                          </Badge>
-                        )}
-                        {release.prerelease && (
-                          <Badge size="sm" variant="outline">
-                            Pre-release
-                          </Badge>
-                        )}
-                      </div>
-                      <time className="mt-1 block text-xs text-muted-foreground">
-                        {formatDate(release.published_at)}
-                      </time>
-                    </div>
+                <article key={release.tag_name} className="py-10 first:pt-0 last:pb-0">
+                  <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <h2 className="text-xl font-medium tracking-tight text-foreground">
+                      {release.tag_name}
+                    </h2>
+                    {isLatest && (
+                      <Badge size="sm" variant="highlight">
+                        Latest
+                      </Badge>
+                    )}
+                    {release.prerelease && (
+                      <Badge size="sm" variant="outline">
+                        Pre-release
+                      </Badge>
+                    )}
+                    <time className="text-xs text-muted-foreground">
+                      {formatDate(release.published_at)}
+                    </time>
+                  </div>
 
-                    {/* Right: notes */}
-                    <div className="sm:border-l sm:border-border/60 sm:pl-8">
-                      {release.body?.trim() ? (
-                        <ReleaseNotes body={release.body} />
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          No notes for this release.
-                        </p>
-                      )}
-                      <a
-                        href={release.html_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-4 inline-block text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors"
-                      >
-                        Release on GitHub →
-                      </a>
+                  {release.body?.trim() ? (
+                    <div
+                      className={
+                        isLong
+                          ? 'relative max-h-[34rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_72%,transparent)]'
+                          : undefined
+                      }
+                    >
+                      <ReleaseNotes body={release.body} />
                     </div>
-                  </article>
-                </Reveal>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No notes for this release.</p>
+                  )}
+
+                  <a
+                    href={release.html_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 inline-block text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors"
+                  >
+                    {isLong ? 'Read the full release on GitHub →' : 'Release on GitHub →'}
+                  </a>
+                </article>
               );
             })}
           </div>
