@@ -18,6 +18,7 @@ import {
   Modal,
   Platform,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 import { captureScreen } from 'react-native-view-shot';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -96,6 +97,8 @@ import type { BottomBarMenuItem } from '@/components/session/BottomBar';
 import { log } from '@/lib/logger';
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import { PageHeader } from '@/components/ui/page-header';
+import BrandmarkBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
+import BrandmarkWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 import { useTabScreenshotStore, validatePersistedScreenshots } from '@/stores/tab-screenshot-store';
 
 // Safe import of react-native-view-shot — requires native rebuild.
@@ -661,6 +664,7 @@ export default function ProjectSessionScreen() {
   // new API onto.
   const { id: projectId } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const { colorScheme, setColorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
@@ -2006,6 +2010,22 @@ export default function ProjectSessionScreen() {
                 }}
                 className="items-center justify-center px-8 bg-background"
               >
+                {/* Kortix brandmark wallpaper — faded symbol behind the hero,
+                    clipped by the card (web parity: ProjectHome brandmark). */}
+                <View
+                  pointerEvents="none"
+                  style={[
+                    StyleSheet.absoluteFill,
+                    { alignItems: 'center', justifyContent: 'center', opacity: isDark ? 0.55 : 0.65 },
+                  ]}
+                >
+                  {(() => {
+                    const Brandmark = isDark ? BrandmarkWhite : BrandmarkBlack;
+                    const brandW = windowWidth * 1.15;
+                    return <Brandmark width={brandW} height={brandW * (462 / 393)} />;
+                  })()}
+                </View>
+
                 <Avatar variant="custom" size={64} fallbackText={projectName} />
                 <Text
                   className="mt-4 text-2xl font-bold text-foreground text-center"
