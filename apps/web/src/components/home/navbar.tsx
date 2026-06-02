@@ -88,6 +88,12 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const filteredNavLinks = siteConfig.nav.links;
   const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
 
+  const isNavActive = useCallback(
+    (href: string) =>
+      href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/'),
+    [pathname],
+  );
+
   const handleScroll = useCallback(() => {
     const currentScrollY = window.scrollY;
 
@@ -342,10 +348,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                         className={cn(
                           // 'block py-3 text-4xl font-medium tracking-tight transition-colors',
                           'group flex items-center justify-between text-2xl',
-                          (item.href.startsWith('#') &&
-                            pathname === '/' &&
-                            activeSection === item.href.substring(1)) ||
-                            item.href === pathname
+                          isNavActive(item.href)
                             ? 'text-foreground'
                             : 'text-muted-foreground hover:text-foreground',
                         )}

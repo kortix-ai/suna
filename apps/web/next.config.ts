@@ -1,9 +1,9 @@
-import type { NextConfig } from 'next';
-import fs from 'fs';
-import path from 'path';
-import { createMDX } from 'fumadocs-mdx/next';
-import { withSentryConfig } from '@sentry/nextjs';
 import { withBetterStack } from '@logtail/next';
+import { withSentryConfig } from '@sentry/nextjs';
+import fs from 'fs';
+import { createMDX } from 'fumadocs-mdx/next';
+import type { NextConfig } from 'next';
+import path from 'path';
 
 // Unified platform version. Prefer the explicit build env (CI passes
 // NEXT_PUBLIC_KORTIX_VERSION = 0.9.0-dev.<sha> on dev, clean X.Y.Z on prod);
@@ -83,17 +83,6 @@ const nextConfig = (): NextConfig => ({
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
     imageSizes: [16, 32, 48, 64, 96, 128, 256],
     qualities: [75, 100],
-  },
-
-  async redirects() {
-    return [
-      // /enterprise was renamed to /contact — keep old links alive.
-      {
-        source: '/enterprise',
-        destination: '/contact',
-        permanent: true,
-      },
-    ];
   },
 
   async rewrites() {

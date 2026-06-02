@@ -43,6 +43,9 @@ const PUBLIC_ROUTES = [
   '/contact', // Request-a-demo / contact page should be public
   '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
+  '/enterprise', // Enterprise page should be public
+  '/pricing', // Pricing page should be public
+  '/use-cases', // Use cases page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
