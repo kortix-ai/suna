@@ -318,11 +318,11 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
     '/v1/llm',
     createLlmGateway(
       {
-        enabled: process.env.LLM_GATEWAY_ENABLED === 'true',
-        openrouterApiKey: process.env.KORTIX_OPENROUTER_API_KEY ?? '',
+        enabled: config.LLM_GATEWAY_ENABLED,
+        openrouterApiKey: config.OPENROUTER_API_KEY,
         markup: llmPriceMarkup(),
         appName: 'Kortix',
-        appReferer: process.env.KORTIX_URL,
+        appReferer: config.KORTIX_URL,
       },
       {
         authenticateToken: (token) => attributeYoloToken(token),
