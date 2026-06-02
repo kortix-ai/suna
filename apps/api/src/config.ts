@@ -122,7 +122,7 @@ const envSchema = z.object({
   KORTIX_WARM_POOL_ENABLED:        optBoolFalse,
   // Default warm sandboxes per active project (operator default; the per-project
   // UI value overrides it).
-  KORTIX_WARM_POOL_SIZE:           optInt(2),
+  KORTIX_WARM_POOL_SIZE:           optInt(1),
   // Global cap on total warm (pre-booted, unclaimed) sandboxes across all
   // projects — bounds idle cost + the Daytona quota.
   KORTIX_WARM_POOL_MAX_TOTAL:      optInt(50),

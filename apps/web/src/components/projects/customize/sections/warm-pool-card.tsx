@@ -28,7 +28,7 @@ export function WarmPoolCard({
 }) {
   const queryClient = useQueryClient();
   const serverEnabled = project?.warm_pool?.enabled ?? true;
-  const serverSize = project?.warm_pool?.size ?? 2;
+  const serverSize = project?.warm_pool?.size ?? 1;
 
   const [enabled, setEnabled] = useState(serverEnabled);
   const [size, setSize] = useState(serverSize);
