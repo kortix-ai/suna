@@ -10,13 +10,15 @@ Cut session create→usable by keeping N pre-booted sandboxes per project, ready
 to **claim** instantly instead of calling `daytona.create()` + clone + opencode
 boot on the request path.
 
-**This is a cloud/operator setting, not a per-project one** — there is no
-`kortix.toml` config and no UI. The operator turns it on and sizes it via env:
+The **operator** turns the feature on and sets the default size + cost bounds
+via env; **per project**, the user opts in/out and picks a size from the UI
+(Customize → Sandbox). There is deliberately **no `kortix.toml` config** — warm
+pool isn't project-as-code, so it's DB-only (`projects.metadata.warm_pool`).
 
 ```
-KORTIX_WARM_POOL_ENABLED=true       # off by default
-KORTIX_WARM_POOL_SIZE=1             # warm boxes kept per active project
-KORTIX_WARM_POOL_MAX_TOTAL=50       # global cap (idle cost + Daytona quota)
+KORTIX_WARM_POOL_ENABLED=true        # master switch (off by default)
+KORTIX_WARM_POOL_SIZE=1              # default boxes per project (UI overrides)
+KORTIX_WARM_POOL_MAX_TOTAL=50        # global cap (idle cost + Daytona quota)
 KORTIX_WARM_POOL_PRESENCE_MINUTES=15 # only warm projects a user is present in
 ```
 
@@ -101,10 +103,15 @@ per-sandbox `KORTIX_TOKEN`, mint it at claim and have the daemon adopt it.
 
 ## Config
 
-Operator env only (see top). No per-project `kortix.toml` config, no UI — warm
-pool is infra, not project authoring. `projects.metadata.warm_pool_seen_at` is
-the only project-level field, and it's a runtime *presence* timestamp written by
-`notePoolPresence`, not user config.
+- **Operator env** (see top): master flag, default size, global cap, presence window.
+- **Per-project UI** (Customize → Sandbox `WarmPoolCard`): toggle + size stepper,
+  gated on `warm_pool_available` (the platform flag). Persists via
+  `PATCH /projects/:id/warm-pool` → `projects.metadata.warm_pool = { enabled, size }`.
+  `resolveWarmConfig(metadata)` resolves the UI value over the operator default.
+- **No `kortix.toml`** — warm pool is not project-as-code. `serializeProject`
+  exposes `warm_pool` (effective) + `warm_pool_available`.
+- `projects.metadata.warm_pool_seen_at` is a runtime *presence* timestamp written
+  by `notePoolPresence`, not user config.
 
 ## Data model
 

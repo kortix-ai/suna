@@ -25,10 +25,34 @@ const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle
 const READY_PROBE_TIMEOUT_MS = 5 * 60 * 1000;
 const READY_PROBE_INTERVAL_MS = 3000;
 
-// Warm pool is a cloud/infra setting, not a per-project one: a single global
-// flag + size, set by the operator. See docs/specs/warm-pool.md.
+// The operator turns the whole feature on (KORTIX_WARM_POOL_ENABLED) and sets
+// the default size (KORTIX_WARM_POOL_SIZE). Within that, each project can opt
+// in/out and pick a size from the UI (Customize → Sandbox), stored in
+// projects.metadata.warm_pool — DB only, never in kortix.toml.
 export const warmPoolEnabled = (): boolean => config.KORTIX_WARM_POOL_ENABLED === true;
-const warmPoolSize = (): number => Math.max(0, config.KORTIX_WARM_POOL_SIZE);
+
+const MAX_WARM_SIZE = 10;
+export interface WarmPoolConfig {
+  enabled: boolean;
+  size: number;
+}
+
+/** Effective per-project warm config: the UI value (projects.metadata.warm_pool)
+ * over the operator default (enabled / KORTIX_WARM_POOL_SIZE). */
+export function resolveWarmConfig(metadata: unknown): WarmPoolConfig {
+  const defaultSize = Math.max(0, config.KORTIX_WARM_POOL_SIZE);
+  const wp = (metadata as Record<string, unknown> | null | undefined)?.warm_pool;
+  if (wp && typeof wp === 'object' && !Array.isArray(wp)) {
+    const raw = wp as Record<string, unknown>;
+    const enabled = typeof raw.enabled === 'boolean' ? raw.enabled : true;
+    const size =
+      typeof raw.size === 'number' && Number.isInteger(raw.size) && raw.size >= 0
+        ? Math.min(raw.size, MAX_WARM_SIZE)
+        : defaultSize;
+    return { enabled, size };
+  }
+  return { enabled: true, size: defaultSize };
+}
 
 /**
  * Why a parked/booting box should be reaped, or null to keep it. Pure so it's
@@ -210,14 +234,15 @@ async function reapWarmSandbox(row: { sandboxId: string; externalId: string | nu
 export async function refillProjectPool(projectId: string): Promise<void> {
   if (!warmPoolEnabled()) return;
   try {
-    const desired = warmPoolSize();
-    if (desired <= 0) return;
     const [project] = await db
-      .select({ projectId: projects.projectId, accountId: projects.accountId, repoUrl: projects.repoUrl, defaultBranch: projects.defaultBranch, manifestPath: projects.manifestPath })
+      .select({ projectId: projects.projectId, accountId: projects.accountId, repoUrl: projects.repoUrl, defaultBranch: projects.defaultBranch, manifestPath: projects.manifestPath, metadata: projects.metadata })
       .from(projects)
       .where(eq(projects.projectId, projectId))
       .limit(1);
     if (!project) return;
+    const cfg = resolveWarmConfig(project.metadata);
+    if (!cfg.enabled || cfg.size <= 0) return;
+    const desired = cfg.size;
     const live = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(sessionSandboxes)
@@ -273,7 +298,7 @@ export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: num
   let reaped = 0;
   const presenceCutoff = new Date(now.getTime() - config.KORTIX_WARM_POOL_PRESENCE_MINUTES * 60_000);
   const present = await db
-    .select({ projectId: projects.projectId })
+    .select({ projectId: projects.projectId, metadata: projects.metadata })
     .from(projects)
     .where(sql`(${projects.metadata} ->> 'warm_pool_seen_at')::timestamptz > ${presenceCutoff.toISOString()}::timestamptz`);
   const presentIds = new Set(present.map((p) => p.projectId));
@@ -291,9 +316,14 @@ export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: num
     }
   }
 
-  // 2. Refill projects where a user is present right now (size is the global op knob).
+  // 2. Refill projects where a user is present right now and the pool is enabled
+  //    (per-project, set from the UI).
+  let refilled = 0;
   for (const p of present) {
-    await refillProjectPool(p.projectId);
+    if (resolveWarmConfig(p.metadata).enabled) {
+      await refillProjectPool(p.projectId);
+      refilled++;
+    }
   }
-  return { reaped, projects: present.length };
+  return { reaped, projects: refilled };
 }

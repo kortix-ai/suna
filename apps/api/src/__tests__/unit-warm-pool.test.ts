@@ -1,5 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import { warmBoxReapReason } from '../platform/services/warm-pool';
+import { resolveWarmConfig, warmBoxReapReason } from '../platform/services/warm-pool';
+
+describe('resolveWarmConfig', () => {
+  // Default size comes from KORTIX_WARM_POOL_SIZE (operator default), so just
+  // assert the per-project UI value is honored over it.
+  test('honors the per-project UI value', () => {
+    expect(resolveWarmConfig({ warm_pool: { enabled: false, size: 3 } })).toEqual({ enabled: false, size: 3 });
+    expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 0 } })).toEqual({ enabled: true, size: 0 });
+  });
+  test('clamps oversized size', () => {
+    expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 999 } })).toEqual({ enabled: true, size: 10 });
+  });
+  test('defaults to enabled when unset', () => {
+    expect(resolveWarmConfig(null).enabled).toBe(true);
+    expect(resolveWarmConfig({}).enabled).toBe(true);
+  });
+});
 
 describe('warmBoxReapReason', () => {
   const base = { status: 'active', createdAt: new Date(1000), updatedAt: new Date(1000) };

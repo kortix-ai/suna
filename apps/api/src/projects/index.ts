@@ -131,7 +131,7 @@ import {
 import { getSandboxProvider } from '../snapshots/providers';
 import { classifySnapshotError, describeSnapshotError } from '../snapshots/error-classify';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
-import { claimWarmSandbox, notePoolPresence, refillProjectPool, warmPoolEnabled } from '../platform/services/warm-pool';
+import { claimWarmSandbox, notePoolPresence, refillProjectPool, resolveWarmConfig, warmPoolEnabled } from '../platform/services/warm-pool';
 import { rehydrateSessionChat } from './legacy-migration-rehydrate';
 import { ProvisionTimeline } from '../platform/services/provision-timeline';
 import { getProvider } from '../platform/providers';
@@ -352,6 +352,11 @@ function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole |
     // sidebar shortcut off the SAME platform flag that gates the API routes —
     // flip KORTIX_APPS_EXPERIMENTAL on the API and both light up together.
     apps_enabled: config.KORTIX_APPS_EXPERIMENTAL,
+    // Warm sandbox pool (Customize → Sandbox). `warm_pool` is the effective
+    // per-project config (UI value over the operator default); `warm_pool_available`
+    // gates the UI control off the platform feature flag.
+    warm_pool: resolveWarmConfig(row.metadata),
+    warm_pool_available: config.KORTIX_WARM_POOL_ENABLED,
   };
 }
 
@@ -6063,6 +6068,42 @@ projectsApp.patch('/:projectId', async (c) => {
     projectRole: loaded.projectRole,
     effectiveRole: loaded.effectiveRole,
   }));
+});
+
+// PATCH /v1/projects/:projectId/warm-pool
+// Per-project warm pool config (Customize → Sandbox). DB-only — stored in
+// projects.metadata.warm_pool, never in kortix.toml. Applies immediately by
+// kicking a refill toward the new desired size.
+projectsApp.patch('/:projectId/warm-pool', async (c) => {
+  const projectId = c.req.param('projectId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
+  const prev = (meta.warm_pool && typeof meta.warm_pool === 'object' && !Array.isArray(meta.warm_pool)
+    ? meta.warm_pool
+    : {}) as Record<string, unknown>;
+  const enabled =
+    typeof body.enabled === 'boolean' ? body.enabled : typeof prev.enabled === 'boolean' ? prev.enabled : true;
+  let size =
+    body.size !== undefined && Number.isFinite(Number(body.size))
+      ? Math.floor(Number(body.size))
+      : typeof prev.size === 'number'
+        ? prev.size
+        : config.KORTIX_WARM_POOL_SIZE;
+  if (size < 0) size = 0;
+  if (size > 10) size = 10;
+  const warm_pool = { enabled, size };
+
+  const [row] = await db
+    .update(projects)
+    .set({ metadata: { ...meta, warm_pool }, updatedAt: new Date() })
+    .where(eq(projects.projectId, projectId))
+    .returning();
+  if (!row) return c.json({ error: 'Not found' }, 404);
+  void refillProjectPool(projectId).catch(() => {});
+  return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 });
 
 // PATCH /v1/projects/:projectId/onboarding
