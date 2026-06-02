@@ -2051,20 +2051,26 @@ export async function createProjectSession(input: {
   };
 
   // ── Warm-pool fast path ───────────────────────────────────────────────────
-  // If a pre-booted sandbox is parked for this project+owner, claim it and skip
-  // provisioning entirely — the box already cloned base, created branch W, and
-  // warmed opencode. The session id IS the warm sandbox's id (W), preserving the
-  // session_id == sandbox_id == branch invariant. Guards keep this to the
-  // interactive default path; everything else falls through to the cold path:
-  //   - default sandbox template + default provider (warm boxes boot default)
-  //   - no server-side initial_prompt (it flows via the post-nav chat path)
-  // The claim SQL additionally matches only boxes booted for this user (owner),
+  // ALWAYS try to claim a warm sandbox first — parked (instant) or, failing
+  // that, one already booting (it has a head start, so the session reaches
+  // ready far sooner than a fresh cold boot). Claiming skips provisioning: the
+  // box already cloned base, created branch W, and is warming opencode. The
+  // session id IS the warm box's id (W), preserving session_id==sandbox_id==
+  // branch. Guards keep this to the interactive default path (everything else
+  // falls through to cold): default template + provider (warm boxes boot the
+  // default), no server-side initial_prompt (it flows via the post-nav chat
+  // path). The claim SQL also matches only boxes booted for this user (owner),
   // so per-user executor/LLM tokens stay correct.
   if (warmPoolEnabled() && providerName === config.getDefaultProvider() && !sandboxSlug && !initialPrompt) {
     const claimed = await claimWarmSandbox({ projectId, userId }).catch((err) => {
       console.warn(`[warm-pool] claim failed for ${projectId}:`, err instanceof Error ? err.message : err);
       return null;
     });
+    if (!claimed) {
+      // Pool was empty (cold miss) — start warming one now so the *next* create
+      // rides it. Fire-and-forget; the cold path below handles this session.
+      void refillProjectPool(projectId).catch(() => {});
+    }
     if (claimed) {
       const W = claimed.sandboxId;
       try {

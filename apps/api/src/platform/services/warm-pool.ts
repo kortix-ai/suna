@@ -108,29 +108,36 @@ export async function getWarmPoolCounts(projectId: string): Promise<{ ready: num
 }
 
 /**
- * Atomically claim a parked warm sandbox for `projectId` on behalf of `userId`.
- * Only claims boxes booted for that same user (owner) — the box carries that
- * user's executor/LLM tokens. Returns the claimed sandbox or null (→ cold path).
+ * Atomically claim a warm sandbox for `projectId` on behalf of `userId`.
+ *
+ * GREEDY: prefer a fully-parked box (instant), but if none is ready yet, claim
+ * one that's still `booting` — it already has a head start (clone + opencode in
+ * flight), so the session rides it to ready far faster than a fresh cold boot.
+ * This is what makes "every create assumes a warm one" hold even during the
+ * ~25s warm-up window right after a user opens a project. Only claims boxes
+ * booted for the same user (owner), which carry that user's executor/LLM tokens.
+ * Returns the claimed sandbox, or null (→ cold path).
  */
 export async function claimWarmSandbox(input: {
   projectId: string;
   userId: string;
 }): Promise<{ sandboxId: string; externalId: string | null; accountId: string } | null> {
   if (!warmPoolEnabled()) return null;
-  // Single-statement atomic claim: pick one parked box for this project+owner,
-  // lock it (SKIP LOCKED so concurrent claims never collide), and clear
-  // pool_state — the box is now an ordinary session sandbox (so the idle sweep
-  // hibernates it normally once the session goes quiet).
+  // Single statement, locked with SKIP LOCKED so concurrent claims never
+  // collide. Prefer parked over booting, and oldest-first (= most booted).
+  // Clearing pool_state hands the box to the session (the idle sweep then
+  // hibernates it normally; promoteWhenReady sees it's no longer 'booting' and
+  // stops without reaping). status='error' boxes are never claimed.
   const claimed = await db.execute(sql`
     UPDATE kortix.session_sandboxes
     SET pool_state = NULL, updated_at = now()
     WHERE sandbox_id = (
       SELECT s.sandbox_id FROM kortix.session_sandboxes s
       WHERE s.project_id = ${input.projectId}
-        AND s.pool_state = 'parked'
-        AND s.status = 'active'
+        AND s.pool_state IN ('parked', 'booting')
+        AND s.status <> 'error'
         AND (s.metadata->'warmPool'->>'ownerUserId') = ${input.userId}
-      ORDER BY s.created_at ASC
+      ORDER BY (s.pool_state = 'parked') DESC, s.created_at ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
