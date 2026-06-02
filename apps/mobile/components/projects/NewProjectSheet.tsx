@@ -190,18 +190,21 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
         keyboardShouldPersistTaps="handled"
       >
         <Text style={{ fontSize: 20, fontFamily: 'Roobert-SemiBold', color: fg, marginBottom: 2 }}>New project</Text>
-        <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, marginBottom: 20 }}>
-          Start with a private managed repo or import an existing GitHub repo.
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, marginBottom: 20, lineHeight: 18 }}>
+          A dedicated space for one company, product, or idea — set up for you.
         </Text>
 
         {mode === 'managed' ? (
           <>
             {/* Managed info */}
-            <View style={{ flexDirection: 'row', gap: 10, padding: 14, borderRadius: 14, backgroundColor: fieldBg, marginBottom: 18 }}>
-              <Icon as={Sparkles} size={18} color={theme.primary} />
-              <Text style={{ flex: 1, fontSize: 13, fontFamily: 'Roobert', color: muted, lineHeight: 18 }}>
-                Creates a private managed repo and seeds the Kortix starter so sessions can boot.
-              </Text>
+            <View style={{ flexDirection: 'row', gap: 12, padding: 14, borderRadius: 14, backgroundColor: fieldBg, marginBottom: 18 }}>
+              <Icon as={Sparkles} size={18} color={theme.primary} style={{ marginTop: 1 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Start fresh</Text>
+                <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, lineHeight: 18, marginTop: 2 }}>
+                  We set up your project with starter skills, ready to use. Nothing to configure.
+                </Text>
+              </View>
             </View>
 
             <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg, marginBottom: 8 }}>Project name</Text>
@@ -229,9 +232,9 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
             {/* GKW skills toggle */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: border, marginBottom: 20 }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>General Knowledge Worker skills</Text>
+                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Starter skills</Text>
                 <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 2, lineHeight: 16 }}>
-                  Include preconfigured skills for research, audit, support, and brand work.
+                  Comes with ready-made skills for research, writing, documents, slides, data, and the web.
                 </Text>
               </View>
               <Switch
@@ -245,17 +248,28 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
 
             <Pressable onPress={() => setMode('github')} disabled={submitting} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: 20 }}>
               <Icon as={Github} size={14} color={muted} />
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted }}>Import an existing GitHub repo</Text>
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted }}>Already have code on GitHub? Import it</Text>
             </Pressable>
 
-            <PrimaryButton
-              label="Create project"
-              icon={<Icon as={Plus} size={18} color={theme.primaryForeground} />}
-              loading={provision.isPending}
-              disabled={submitting || !accountId}
-              onPress={handleCreateManaged}
-              theme={theme}
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Pressable
+                onPress={() => sheetRef.current?.dismiss()}
+                disabled={submitting}
+                style={{ height: 52, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: muted }}>Cancel</Text>
+              </Pressable>
+              <View style={{ flex: 1 }}>
+                <PrimaryButton
+                  label="Create project"
+                  icon={<Icon as={Plus} size={18} color={theme.primaryForeground} />}
+                  loading={provision.isPending}
+                  disabled={submitting || !accountId}
+                  onPress={handleCreateManaged}
+                  theme={theme}
+                />
+              </View>
+            </View>
           </>
         ) : (
           <>
@@ -356,14 +370,25 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
                   style={{ backgroundColor: fieldBg, borderWidth: 1, borderColor: border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontFamily: 'Roobert', color: fg, marginBottom: 20 }}
                 />
 
-                <PrimaryButton
-                  label="Import repo"
-                  icon={<Icon as={Github} size={16} color={theme.primaryForeground} />}
-                  loading={link.isPending}
-                  disabled={submitting || !accountId || !selectedInstallationId || !selectedRepo}
-                  onPress={handleLinkGitHub}
-                  theme={theme}
-                />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <Pressable
+                    onPress={() => sheetRef.current?.dismiss()}
+                    disabled={submitting}
+                    style={{ height: 52, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: muted }}>Cancel</Text>
+                  </Pressable>
+                  <View style={{ flex: 1 }}>
+                    <PrimaryButton
+                      label="Import repo"
+                      icon={<Icon as={Github} size={16} color={theme.primaryForeground} />}
+                      loading={link.isPending}
+                      disabled={submitting || !accountId || !selectedInstallationId || !selectedRepo}
+                      onPress={handleLinkGitHub}
+                      theme={theme}
+                    />
+                  </View>
+                </View>
 
                 {installationsQuery.data?.install_url ? (
                   <Pressable onPress={handleConnectGitHub} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 }}>
