@@ -100,10 +100,11 @@ export function WarmPoolCard({
               <div className="text-xs text-muted-foreground">
                 How many to keep warm and ready to claim ({0}–{MAX_SIZE}).
               </div>
-              <div className="mt-1 text-xs text-amber-600 dark:text-amber-500/90">
-                Each ready sandbox runs continuously and uses compute (billed to your
-                credits) — that&apos;s the trade for instant sessions. Kept low by default
-                to preserve credits; raise it for more speed.
+              <div className="mt-1 text-xs text-muted-foreground/70">
+                Ready sandboxes use compute (billed to your credits) while running — the
+                trade for instant sessions. They only run while you&apos;re active in the
+                dashboard, so you&apos;re not billed when you&apos;re away. Kept low by
+                default to preserve credits; raise for more speed.
               </div>
               {status.data && (
                 <div className="mt-1.5 flex items-center gap-3 text-xs">
