@@ -226,8 +226,11 @@ export default function ProjectsPage() {
   // Legacy machines live right in the projects grid as cards with a "must be
   // migrated" badge, so they're impossible to miss and feel like everything
   // else. The query only runs for users who actually have any.
-  const legacyMachinesQuery = useLegacyMachines({ enabled: !!user });
-  const startMigration = useStartLegacyMigration();
+  const legacyMachinesQuery = useLegacyMachines({
+    enabled: !!user && !!activeAccountId,
+    accountId: activeAccountId,
+  });
+  const startMigration = useStartLegacyMigration(activeAccountId);
 
   const handleMigrate = (sandboxId: string) =>
     startMigration.mutate(sandboxId, {

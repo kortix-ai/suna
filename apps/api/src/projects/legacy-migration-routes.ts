@@ -11,7 +11,7 @@ import type { Hono } from 'hono';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { legacySandboxMigrations, sandboxes } from '@kortix/db';
 import { db } from '../shared/db';
-import { resolveAccountId } from '../shared/resolve-account';
+import { resolveScopedAccountId } from '../shared/resolve-account';
 import type { AppEnv } from '../types';
 import { startMigration, PHASE_ORDER } from './legacy-migration-runner';
 
@@ -65,8 +65,10 @@ async function latestMigration(sandboxId: string): Promise<MigrationRow | null> 
 export function registerLegacyMigrationRoutes(app: Hono<AppEnv>): void {
   // Eligibility + current state — what the /projects page calls on load.
   app.get('/legacy-migration/eligibility', async (c) => {
-    const userId = c.get('userId') as string;
-    const accountId = await resolveAccountId(userId);
+    // Scope to the account the UI currently has selected (?account_id=), not the
+    // user's primary membership — otherwise the same legacy machines (and their
+    // "Migrated → Open" cards) would surface on every account's projects grid.
+    const accountId = await resolveScopedAccountId(c, 'query');
 
     const legacy = await db
       .select({
@@ -112,8 +114,7 @@ export function registerLegacyMigrationRoutes(app: Hono<AppEnv>): void {
   // Start (or return the in-flight) migration for one legacy sandbox. Idempotent
   // and uncancellable: there is intentionally no DELETE/cancel route.
   app.post('/legacy-migration/start', async (c) => {
-    const userId = c.get('userId') as string;
-    const accountId = await resolveAccountId(userId);
+    const accountId = await resolveScopedAccountId(c, 'body');
     const body = await c.req.json().catch(() => ({}));
     const sandboxId = typeof body?.sandbox_id === 'string' ? body.sandbox_id : null;
     if (!sandboxId) return c.json({ error: 'sandbox_id is required' }, 400);
@@ -136,8 +137,7 @@ export function registerLegacyMigrationRoutes(app: Hono<AppEnv>): void {
 
   // Poll a single sandbox's migration progress.
   app.get('/legacy-migration/status', async (c) => {
-    const userId = c.get('userId') as string;
-    const accountId = await resolveAccountId(userId);
+    const accountId = await resolveScopedAccountId(c, 'query');
     const sandboxId = c.req.query('sandbox_id');
     if (!sandboxId) return c.json({ error: 'sandbox_id is required' }, 400);
 
