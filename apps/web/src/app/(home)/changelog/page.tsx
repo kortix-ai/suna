@@ -41,7 +41,10 @@ interface GitHubRelease {
 
 // Only real, published version releases — never the mutable dev-latest /
 // desktop-dev-latest prereleases or drafts.
-const SEMVER_TAG = /^v\d+\.\d+\.\d+$/;
+// Only stable releases from 1.0.0 onward. The v0.x line was an entirely
+// different architecture and is not part of this product's changelog — 1.0.0
+// is where the maintained changelog begins.
+const STABLE_TAG = /^v(\d+)\.\d+\.\d+$/;
 
 async function getReleases(): Promise<GitHubRelease[]> {
   const headers: Record<string, string> = {
@@ -59,7 +62,10 @@ async function getReleases(): Promise<GitHubRelease[]> {
     if (!res.ok) return [];
     const data = (await res.json()) as GitHubRelease[];
     return (data ?? [])
-      .filter((r) => !r.draft && SEMVER_TAG.test(r.tag_name))
+      .filter((r) => {
+        const m = STABLE_TAG.exec(r.tag_name);
+        return !r.draft && m !== null && Number(m[1]) >= 1;
+      })
       .sort((a, b) => (b.published_at ?? '').localeCompare(a.published_at ?? ''));
   } catch {
     return [];
