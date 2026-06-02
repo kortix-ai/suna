@@ -69,6 +69,9 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
   const faint = isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
   const fieldBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
+  const amberBg = isDark ? 'rgba(245,158,11,0.10)' : 'rgba(245,158,11,0.08)';
+  const amberBorder = isDark ? 'rgba(245,158,11,0.28)' : 'rgba(245,158,11,0.30)';
+  const amberIcon = isDark ? '#fbbf24' : '#d97706';
 
   useEffect(() => {
     if (open) sheetRef.current?.present();
@@ -282,15 +285,55 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
                 <ActivityIndicator color={muted} />
               </View>
             ) : installations.length === 0 ? (
-              <View style={{ padding: 16, borderRadius: 14, borderWidth: 1, borderColor: border, alignItems: 'flex-start', gap: 10 }}>
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Connect the Kortix GitHub App</Text>
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, lineHeight: 18 }}>
-                  Kortix uses the GitHub App to list repositories you can import.
-                </Text>
-                <Pressable onPress={handleConnectGitHub} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 9999, backgroundColor: theme.primary }}>
-                  <Icon as={Github} size={16} color={theme.primaryForeground} />
-                  <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Connect</Text>
-                </Pressable>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  gap: 12,
+                  padding: 16,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: amberBorder,
+                  backgroundColor: amberBg,
+                }}
+              >
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 10,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: isDark ? 'rgba(245,158,11,0.16)' : 'rgba(245,158,11,0.14)',
+                  }}
+                >
+                  <Icon as={Github} size={17} color={amberIcon} />
+                </View>
+                <View style={{ flex: 1, alignItems: 'flex-start', gap: 8 }}>
+                  <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>
+                    Connect the Kortix GitHub App
+                  </Text>
+                  <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, lineHeight: 18 }}>
+                    Kortix uses the GitHub App to list repositories you can import.
+                  </Text>
+                  <Pressable
+                    onPress={handleConnectGitHub}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      paddingHorizontal: 16,
+                      height: 38,
+                      borderRadius: 9999,
+                      backgroundColor: theme.primary,
+                      marginTop: 2,
+                    }}
+                  >
+                    <Icon as={Github} size={15} color={theme.primaryForeground} />
+                    <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>
+                      Connect
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
             ) : (
               <>
