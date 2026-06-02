@@ -82,6 +82,7 @@ import { SetupWizard } from '@/components/setup/SetupWizard';
 import { InstanceOnboarding } from '@/components/setup/InstanceOnboarding';
 import { ProvisioningProgress } from '@/components/provisioning/ProvisioningProgress';
 import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
+import type { SandboxProviderName } from '@/lib/platform/client';
 import { useProjectSessions, useCreateProjectSession, useProject } from '@/lib/projects/hooks';
 import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
 import { Avatar } from '@/components/ui/Avatar';
@@ -666,6 +667,7 @@ export default function ProjectSessionScreen() {
   const {
     sandboxUrl, sandboxId, isLoading: sandboxLoading, error: sandboxError,
     provisioningSandboxId, provisioningExternalId, provisioningProvider, onProvisioningComplete,
+    switchSandbox,
   } = useSandboxContext();
   // Project view (web model): never gate on a global sandbox. Sandboxes are
   // resolved per session, so the screen renders immediately.
@@ -931,9 +933,16 @@ export default function ProjectSessionScreen() {
   const { data: projectSessions = [], isLoading: projectSessionsLoading } =
     useProjectSessions(projectId);
   const [activeProjectSessionId, setActiveProjectSessionId] = useState<string | null>(null);
+  // A project session that's provisioning — the middle pane shows a connecting
+  // state and the project-sessions poll opens it once its sandbox is ready.
+  const [connectingProjectSessionId, setConnectingProjectSessionId] = useState<string | null>(null);
   const createProjectSession = useCreateProjectSession(projectId);
   const { data: project } = useProject(projectId);
   const projectName = project?.name || 'Your project';
+  const connectingStatusLabel = useMemo(() => {
+    const ps = projectSessions.find((s) => s.session_id === connectingProjectSessionId);
+    return `${(ps && PROJECT_SESSION_STATUS_META[ps.status]?.label) || 'Provisioning'}…`;
+  }, [projectSessions, connectingProjectSessionId]);
 
   // Legacy OpenCode sessions (global sandbox) — still backs tabs/overview until
   // the per-session sandbox wiring lands (Stage 4-5).
@@ -1076,14 +1085,56 @@ export default function ProjectSessionScreen() {
     setDrawerOpen(false);
   }, [navigateToSession]);
 
-  // Open a project session from the drawer. Stage 2 marks it active + closes the
-  // drawer; Stage 4-5 will switch the SandboxContext to ps.sandbox_url and open
-  // ps.opencode_session_id so the middle pane renders that session's chat.
+  // Resolve a running project session's sandbox + opencode session, switch the
+  // SandboxContext to it, and render its chat in the middle pane. Returns false
+  // when the session isn't ready yet (caller should enter the connecting state).
+  const connectToProjectSession = useCallback((ps: ProjectSession) => {
+    if (ps.status !== 'running' || !ps.sandbox_url || !ps.opencode_session_id) return false;
+    const externalId =
+      ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
+    switchSandbox({
+      sandbox_id: ps.sandbox_id || ps.session_id,
+      external_id: externalId,
+      name: ps.name || 'Session',
+      provider: (ps.sandbox_provider as SandboxProviderName) || 'daytona',
+      base_url: ps.sandbox_url,
+      status: 'running',
+      created_at: ps.created_at,
+      updated_at: ps.updated_at,
+    });
+    setConnectingProjectSessionId(null);
+    setActiveProjectSessionId(ps.session_id);
+    navigateToSession(ps.opencode_session_id);
+    return true;
+  }, [switchSandbox, navigateToSession]);
+
+  // Open a project session from the drawer. Running sessions connect straight
+  // away; sessions still provisioning enter the connecting state — the poll
+  // effect below opens them once their sandbox + opencode session are ready.
   const handleOpenProjectSession = useCallback((ps: ProjectSession) => {
     haptics.tap();
     setActiveProjectSessionId(ps.session_id);
     setDrawerOpen(false);
-  }, []);
+    if (!connectToProjectSession(ps)) {
+      navigateToSession(null);
+      setConnectingProjectSessionId(ps.session_id);
+    }
+  }, [connectToProjectSession, navigateToSession]);
+
+  // Drive the connecting state: useProjectSessions polls every 3s while a
+  // session is pending, so open it the moment it flips to running, or surface
+  // a failure.
+  useEffect(() => {
+    if (!connectingProjectSessionId) return;
+    const ps = projectSessions.find((s) => s.session_id === connectingProjectSessionId);
+    if (!ps) return;
+    if (ps.status === 'running' && ps.sandbox_url && ps.opencode_session_id) {
+      connectToProjectSession(ps);
+    } else if (ps.status === 'failed') {
+      setConnectingProjectSessionId(null);
+      Alert.alert('Session failed to start', ps.error || 'The sandbox could not be provisioned.');
+    }
+  }, [connectingProjectSessionId, projectSessions, connectToProjectSession]);
 
   const handleProjectPress = useCallback((project: KortixProject) => {
     const pageId = `page:project:${project.id}`;
@@ -1161,6 +1212,12 @@ export default function ProjectSessionScreen() {
           ...(options.agent ? { agent_name: options.agent } : {}),
         });
         setActiveProjectSessionId(session.session_id);
+        // Enter the connecting state — the poll effect opens the chat once the
+        // session's sandbox finishes provisioning (or connects now if running).
+        if (!connectToProjectSession(session)) {
+          navigateToSession(null);
+          setConnectingProjectSessionId(session.session_id);
+        }
       } catch (err: any) {
         log.error('❌ [Project] Dashboard send failed:', err?.message || err);
         Alert.alert('Error', err?.message || 'Failed to start session');
@@ -1168,7 +1225,7 @@ export default function ProjectSessionScreen() {
         setIsDashboardSending(false);
       }
     },
-    [projectId, isDashboardSending, createProjectSession],
+    [projectId, isDashboardSending, createProjectSession, connectToProjectSession, navigateToSession],
   );
 
   // Capture a screenshot of the current tab before showing tabs overview.
@@ -1870,6 +1927,38 @@ export default function ProjectSessionScreen() {
           /* Active session */
           ) : activeSessionId && !showTabsOverview ? (
             <SessionPage sessionId={activeSessionId} onBack={handleBack} onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen} onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen} isDrawerOpen={drawerOpen} isRightDrawerOpen={rightDrawerOpen} />
+
+          /* Connecting — a project session is provisioning */
+          ) : connectingProjectSessionId && !showTabsOverview ? (
+            <View style={{ flex: 1 }} className="bg-background">
+              <PageHeader
+                title={projectName}
+                onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                isDrawerOpen={drawerOpen}
+                onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+                isRightDrawerOpen={rightDrawerOpen}
+              />
+              <View
+                style={{
+                  flex: 1,
+                  marginTop: -24,
+                  borderTopLeftRadius: 28,
+                  borderTopRightRadius: 28,
+                  overflow: 'hidden',
+                  borderTopWidth: 2,
+                  borderLeftWidth: 2,
+                  borderRightWidth: 2,
+                  borderColor: isDark ? '#222222' : '#e6e6e5',
+                }}
+                className="items-center justify-center px-8 bg-background"
+              >
+                <ActivityIndicator size="large" color={isDark ? '#999999' : '#6e6e6e'} />
+                <Text className="mt-4 text-base font-medium text-foreground">Starting session…</Text>
+                <Text className="mt-1 text-sm text-center text-muted-foreground">
+                  {connectingStatusLabel}
+                </Text>
+              </View>
+            </View>
 
           /* Tabs overview */
           ) : showTabsOverview ? (
