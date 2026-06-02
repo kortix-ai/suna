@@ -2061,7 +2061,11 @@ export async function createProjectSession(input: {
   // default), no server-side initial_prompt (it flows via the post-nav chat
   // path). The claim SQL also matches only boxes booted for this user (owner),
   // so per-user executor/LLM tokens stay correct.
-  if (warmPoolEnabled() && providerName === config.getDefaultProvider() && !sandboxSlug && !initialPrompt) {
+  // Warm boxes boot from the platform default snapshot, so a session targeting
+  // the default template (unset OR the reserved "default" slug — the UI's "New
+  // session" button sends "default") can claim them. A *custom* template can't.
+  const wantsDefaultSandbox = !sandboxSlug || sandboxSlug === DEFAULT_SANDBOX_SLUG;
+  if (warmPoolEnabled() && providerName === config.getDefaultProvider() && wantsDefaultSandbox && !initialPrompt) {
     const claimed = await claimWarmSandbox({ projectId, userId }).catch((err) => {
       console.warn(`[warm-pool] claim failed for ${projectId}:`, err instanceof Error ? err.message : err);
       return null;
