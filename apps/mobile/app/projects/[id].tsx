@@ -82,8 +82,9 @@ import { SetupWizard } from '@/components/setup/SetupWizard';
 import { InstanceOnboarding } from '@/components/setup/InstanceOnboarding';
 import { ProvisioningProgress } from '@/components/provisioning/ProvisioningProgress';
 import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
-import { useProjectSessions, useCreateProjectSession } from '@/lib/projects/hooks';
+import { useProjectSessions, useCreateProjectSession, useProject } from '@/lib/projects/hooks';
 import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
+import { Avatar } from '@/components/ui/Avatar';
 import {
   Eye, EyeOff, RefreshCw, Upload, Image, FolderPlus, LayoutGrid, List,
   FileText, Copy, Pencil, Trash2,
@@ -426,6 +427,54 @@ function SessionListItem({
     </TouchableOpacity>
   );
 }
+
+// Quick-start suggestions for the project home composer. Mirrors the web's
+// STARTER_PROMPTS (apps/web/src/lib/starter-prompts.ts); tapping a chip starts
+// a session with that prompt. Lucide icons → nearest Ionicons equivalents.
+const STARTER_PROMPTS: { id: string; icon: string; label: string; prompt: string }[] = [
+  {
+    id: 'company-memory',
+    icon: 'business-outline',
+    label: 'Onboard your agent',
+    prompt:
+      "Onboard me. Ask about my company — what we do, who our customers are, who's on the team, our products, our top priorities. Save what you learn into project memory so you remember it in every future session, and open a change request when you're done so I can review.",
+  },
+  {
+    id: 'landing-page',
+    icon: 'globe-outline',
+    label: 'Build a landing page',
+    prompt:
+      'Build a sales-ready landing page for my product. Ask for the product name, the audience, and the key value props, then design and ship the page.',
+  },
+  {
+    id: 'competitor-brief',
+    icon: 'search-outline',
+    label: 'Research competitors',
+    prompt:
+      'Research my top 3 competitors and write a one-page brief — positioning, pricing, what they do better, what they do worse, and where we can win.',
+  },
+  {
+    id: 'pitch-deck',
+    icon: 'easel-outline',
+    label: 'Create a pitch deck',
+    prompt:
+      "Create a 5-slide pitch deck for a topic I'll tell you. Ask what it's about, who it's for, and what the one takeaway should be.",
+  },
+  {
+    id: 'contract-draft',
+    icon: 'document-text-outline',
+    label: 'Draft a contract',
+    prompt:
+      'Draft a contract for me. Ask what kind (NDA, MSA, ToS, etc.), the parties involved, and any special terms, then produce a clean DOCX with proper citations.',
+  },
+  {
+    id: 'data-analysis',
+    icon: 'bar-chart-outline',
+    label: 'Analyze a spreadsheet',
+    prompt:
+      "I'll share a spreadsheet — analyze it, find the patterns and outliers, and write me a short summary with the takeaways I should act on.",
+  },
+];
 
 // ─── Project session list item (repo-first model) ──────────────────────────
 // The project detail drawer lists the project's sessions (GET /projects/:id/
@@ -883,6 +932,8 @@ export default function ProjectSessionScreen() {
     useProjectSessions(projectId);
   const [activeProjectSessionId, setActiveProjectSessionId] = useState<string | null>(null);
   const createProjectSession = useCreateProjectSession(projectId);
+  const { data: project } = useProject(projectId);
+  const projectName = project?.name || 'Your project';
 
   // Legacy OpenCode sessions (global sandbox) — still backs tabs/overview until
   // the per-session sandbox wiring lands (Stage 4-5).
@@ -1843,7 +1894,7 @@ export default function ProjectSessionScreen() {
           ) : (
             <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" className="bg-background">
               <PageHeader
-                title="Kortix"
+                title={projectName}
                 onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
                 isDrawerOpen={drawerOpen}
                 onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
@@ -1866,18 +1917,52 @@ export default function ProjectSessionScreen() {
                 }}
                 className="items-center justify-center px-8 bg-background"
               >
-                <Text className="text-2xl font-bold mb-2 text-foreground">
-                  What can I help with?
+                <Avatar variant="custom" size={64} fallbackText={projectName} />
+                <Text
+                  className="mt-4 text-2xl font-bold text-foreground text-center"
+                  numberOfLines={2}
+                >
+                  {projectName}
                 </Text>
-                <Text className="text-sm text-center text-muted-foreground">
-                  Start a conversation or select a session from the menu.
+                <Text
+                  className="mt-2 text-sm text-center text-muted-foreground"
+                  style={{ maxWidth: 320 }}
+                >
+                  Describe a task and your agent gets to work.
                 </Text>
               </Animated.View>
+
+              {/* Quick-start suggestion chips (web parity) — tap to start a session */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                style={{ flexGrow: 0 }}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 10, gap: 8 }}
+              >
+                {STARTER_PROMPTS.map((p) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    onPress={() => { haptics.tap(); handleDashboardSend(p.prompt, {}); }}
+                    disabled={isDashboardSending}
+                    activeOpacity={0.7}
+                    className="flex-row items-center rounded-full border border-border bg-card px-3 py-1.5"
+                  >
+                    <Ionicons
+                      name={p.icon as any}
+                      size={13}
+                      color={isDark ? '#999999' : '#6e6e6e'}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text className="text-xs text-muted-foreground">{p.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
 
               <View>
                 <SessionChatInput
                   onSend={handleDashboardSend}
-                  placeholder="Ask anything..."
+                  placeholder="Describe a task to start a session…"
                   disabled={isDashboardSending}
                   agent={resolved.agent}
                   agents={resolved.agents}
