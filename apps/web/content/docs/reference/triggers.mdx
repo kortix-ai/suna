@@ -61,10 +61,12 @@ The secret value lives in `project_secrets`; the manifest references it by name.
 
 | Status | Meaning |
 | --- | --- |
-| 200 | Signature valid, session queued. |
+| 202 | Signature valid — the session was fired or queued. The body is `{ "status": "fired", "session_id": … }` or `{ "status": "queued", "reason": … }` (queued when you're at a concurrency cap). |
+| 400 | Malformed project id or slug in the URL. |
 | 401 | Signature missing or mismatched. |
-| 404 | Trigger not found, disabled, or not a webhook. |
+| 404 | Trigger not found, disabled, or not a webhook (also when the project isn't active). |
 | 409 | `secret_env` value is not configured in Secrets Manager. |
+| 500 | The signature was valid but the session failed to fire. |
 
 ## Field reference
 

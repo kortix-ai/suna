@@ -18,7 +18,7 @@ A session row (`project_sessions`) carries a `status`. The enum defines `queued`
 | `stopped` | On explicit stop, or by the idle sweep that hibernates inactive sandboxes. |
 | `failed` | If provisioning errors out. |
 
-`queued` and `branching` exist in the enum but are not part of the live session flow; `completed` is defined but not currently written. The sandbox itself is tracked in a separate `session_sandboxes` row with its own states (`provisioning → active → stopped | error`).
+`queued` and `branching` exist in the enum but are not part of the live session flow; `completed` is defined but not currently written. The sandbox itself is tracked in a separate `session_sandboxes` row with its own states (`provisioning → active → stopped | error | archived`).
 
 Concurrent-session caps are enforced per account; exceeding your tier returns `429`.
 
@@ -65,11 +65,13 @@ Injected at boot, alongside your project's [secrets](/docs/reference/secrets) (w
 | `KORTIX_PROJECT_AUTO_CLONE` | `1` — tells the daemon to clone the repo on boot. |
 | `KORTIX_PROJECT_SECRET_NAMES` | Comma-separated names of the project's secrets. |
 | `KORTIX_PROJECT_SECRETS_REVISION` | Revision marker for the secret set. |
-| `KORTIX_TOKEN` | Project-scoped token. The `kortix` CLI reads it; the daemon also signs proxy requests with it. |
-| `KORTIX_EXECUTOR_TOKEN` | Acts as the launching user, scoped to the project (used by the Executor). |
-| `ENV_MODE` | `cloud` on Daytona-provisioned sandboxes. |
+| `KORTIX_TOKEN` | The sandbox **service key**. The daemon signs and validates its own control-surface requests with it. It is *not* a project API token, and the `kortix` CLI does not read it — the project-scoped API routes reject it. |
+| `KORTIX_CLI_TOKEN` | The project-scoped PAT the in-sandbox `kortix` CLI authenticates with (same value as `KORTIX_EXECUTOR_TOKEN`). |
+| `KORTIX_EXECUTOR_TOKEN` | The same project-scoped PAT — acts as the launching user, scoped to the project. Also backs the `kortix-executor` MCP gateway. |
+| `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | `1` when the session was created with an initial prompt — tells the daemon to open the OpenCode session at boot. |
+| `KORTIX_LLM_API_KEY` · `KORTIX_LLM_BASE_URL` | Managed LLM-gateway key + base URL, injected only on plans that use Kortix's bundled model access. `KORTIX_YOLO_API_KEY` / `KORTIX_YOLO_URL` are aliases for the same pair. |
 
-Not injected: `KORTIX_WORKSPACE` (`/workspace`) is baked into the image, not per session. No `KORTIX_GITHUB_TOKEN` — git credentials are fetched just-in-time by the daemon (below). No LLM routing variable — model provider keys travel as ordinary project secrets OpenCode reads at boot.
+Not injected: `KORTIX_WORKSPACE` (`/workspace`) is baked into the image, not per session. No `KORTIX_GITHUB_TOKEN` — git credentials are fetched just-in-time by the daemon (below). When a project brings its own model keys they travel as ordinary project secrets OpenCode reads at boot; the `KORTIX_LLM_*` pair above appears only on plans that use Kortix's managed model access.
 
 The `KORTIX_*` prefix is reserved for platform variables; a user secret using it is rejected ([Secrets](/docs/reference/secrets)).
 
