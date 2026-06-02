@@ -159,6 +159,20 @@ export default function ProjectsScreen() {
     [router],
   );
 
+  const [refreshing, setRefreshing] = React.useState(false);
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // Refetch accounts first (the list is gated on having an account); once
+      // it resolves, the active-account effect re-enables the projects query.
+      const tasks: Promise<unknown>[] = [accountsQuery.refetch()];
+      if (activeAccountId) tasks.push(projectsQuery.refetch());
+      await Promise.all(tasks);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [accountsQuery, projectsQuery, activeAccountId]);
+
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -256,15 +270,16 @@ export default function ProjectsScreen() {
       {/* List */}
       <ScrollView
         style={{ flex: 1 }}
+        alwaysBounceVertical
         refreshControl={
           <RefreshControl
-            refreshing={projectsQuery.isRefetching}
-            onRefresh={() => projectsQuery.refetch()}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
             tintColor={subtle}
           />
         }
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 }}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 }}
       >
         {loading && (
           <View style={{ padding: 40, alignItems: 'center' }}>
