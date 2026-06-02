@@ -131,6 +131,7 @@ import {
 import { getSandboxProvider } from '../snapshots/providers';
 import { classifySnapshotError, describeSnapshotError } from '../snapshots/error-classify';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
+import { claimWarmSandbox, refillProjectPool, warmPoolEnabled } from '../platform/services/warm-pool';
 import { rehydrateSessionChat } from './legacy-migration-rehydrate';
 import { ProvisionTimeline } from '../platform/services/provision-timeline';
 import { getProvider } from '../platform/providers';
@@ -1816,7 +1817,7 @@ function isReservedSandboxEnvName(name: string): boolean {
   );
 }
 
-async function buildSessionSandboxEnvVars(input: {
+export async function buildSessionSandboxEnvVars(input: {
   accountId: string;
   projectId: string;
   sessionId: string;
@@ -2035,6 +2036,57 @@ export async function createProjectSession(input: {
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(input.metadata ?? {}),
   };
+
+  // ── Warm-pool fast path ───────────────────────────────────────────────────
+  // If a pre-booted sandbox is parked for this project+owner, claim it and skip
+  // provisioning entirely — the box already cloned base, created branch W, and
+  // warmed opencode. The session id IS the warm sandbox's id (W), preserving the
+  // session_id == sandbox_id == branch invariant. Guards keep this to the
+  // interactive default path; everything else falls through to the cold path:
+  //   - default sandbox template + default provider (warm boxes boot default)
+  //   - no server-side initial_prompt (it flows via the post-nav chat path)
+  // The claim SQL additionally matches only boxes booted for this user (owner),
+  // so per-user executor/LLM tokens stay correct.
+  if (warmPoolEnabled() && providerName === config.getDefaultProvider() && !sandboxSlug && !initialPrompt) {
+    const claimed = await claimWarmSandbox({ projectId, userId }).catch((err) => {
+      console.warn(`[warm-pool] claim failed for ${projectId}:`, err instanceof Error ? err.message : err);
+      return null;
+    });
+    if (claimed) {
+      const W = claimed.sandboxId;
+      try {
+        const [row] = await db
+          .insert(projectSessions)
+          .values({
+            sessionId: W,
+            accountId,
+            projectId,
+            branchName: W,
+            baseRef,
+            sandboxProvider: providerName,
+            sandboxId: W,
+            agentName,
+            status: 'provisioning',
+            createdBy: userId,
+            visibility: 'private',
+            metadata: { ...metadata, warm_pool_claimed: true },
+            updatedAt: new Date(),
+          })
+          .returning();
+        // Refill the pool to replace the box we just took (fire-and-forget).
+        void refillProjectPool(projectId).catch(() => {});
+        return { row, headers: responseHeaders };
+      } catch (err) {
+        // Insert raced/failed — recycle the box and fall through to cold path.
+        await db
+          .update(sessionSandboxes)
+          .set({ poolState: 'reap', updatedAt: new Date() })
+          .where(eq(sessionSandboxes.sandboxId, W))
+          .catch(() => {});
+        console.warn(`[warm-pool] claimed-session insert failed; recycling ${W.slice(0, 8)}:`, err instanceof Error ? err.message : err);
+      }
+    }
+  }
 
   let sessionRow: ProjectSessionRow;
   try {

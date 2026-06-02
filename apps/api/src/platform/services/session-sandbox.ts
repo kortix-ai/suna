@@ -114,6 +114,12 @@ export async function provisionSessionSandbox(opts: {
    */
   gitProject: GitBackedProject;
   resolveGitAuthToken?: () => Promise<string | null>;
+  /**
+   * Warm-pool lifecycle state for the inserted row. Pass 'booting' to provision
+   * a pre-booted pool sandbox (no project_sessions row); leave undefined for a
+   * normal session sandbox. See docs/specs/warm-pool.md.
+   */
+  poolState?: string;
   baseRef?: string;
   /**
    * Slug of the sandbox template to boot from. Resolves against the project's
@@ -183,6 +189,7 @@ export async function provisionSessionSandbox(opts: {
         provider: providerName,
         externalId: null,
         status: 'provisioning',
+        poolState: opts.poolState ?? null,
         baseUrl: null,
         config: {},
         metadata: {
@@ -262,6 +269,9 @@ export async function provisionSessionSandbox(opts: {
           }
         : {}),
     },
+    // Warm-pool boxes disable provider auto-stop so they stay ready until
+    // claimed; once claimed (pool_state cleared) our idle sweep hibernates them.
+    ...(opts.poolState ? { autoStopInterval: 0 } : {}),
   };
 
   // Detach the actual provisioning — the API caller navigates immediately

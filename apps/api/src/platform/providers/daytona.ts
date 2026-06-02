@@ -89,7 +89,7 @@ export class DaytonaProvider implements SandboxProvider {
       {
         snapshot,
         envVars,
-        autoStopInterval: 15,
+        autoStopInterval: opts.autoStopInterval ?? 15,
         autoArchiveInterval: 30,
         public: false,
       },

@@ -6,6 +6,7 @@ import { invalidateProviderCache } from '../sandbox-proxy';
 import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
 import { pauseComputeSession, tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { reconcileStaleBuilds } from '../snapshots/builder';
+import { reconcileWarmPool } from '../platform/services/warm-pool';
 
 const DEFAULT_IDLE_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
@@ -98,6 +99,10 @@ export async function hibernateIdleSessionSandboxes(now = new Date()): Promise<{
     .where(and(
       eq(sessionSandboxes.status, 'active'),
       isNotNull(sessionSandboxes.externalId),
+      // Never hibernate an unclaimed warm-pool box (pool_state set) — it has no
+      // session activity by design. Claimed boxes have pool_state cleared and
+      // hibernate normally. See docs/specs/warm-pool.md.
+      sql`${sessionSandboxes.poolState} IS NULL`,
       sql`coalesce(${sessionSandboxes.lastUsedAt}, ${sessionSandboxes.updatedAt}, ${sessionSandboxes.createdAt}) < ${cutoffParam}::timestamptz`,
     ))
     .limit(GC_BATCH_SIZE);
@@ -250,7 +255,7 @@ export async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, branches, computeTick, staleBuilds] = await Promise.all([
+    const [idle, branches, computeTick, staleBuilds, warmPool] = await Promise.all([
       hibernateIdleSessionSandboxes(),
       sweepExpiredSessionBranches(),
       // Billing v2 — partial-bill any active compute sessions that haven't
@@ -265,12 +270,18 @@ export async function runProjectMaintenance(): Promise<void> {
         console.warn('[project-maintenance] stale-build reconcile failed:', err instanceof Error ? err.message : err);
         return { checked: 0, closedReady: 0, closedFailed: 0 };
       }),
+      // Keep each enabled project's warm sandbox pool at its desired size and
+      // reap dead/aged boxes. No-op unless KORTIX_WARM_POOL_ENABLED.
+      reconcileWarmPool().catch((err) => {
+        console.warn('[project-maintenance] warm-pool reconcile failed:', err instanceof Error ? err.message : err);
+        return { reaped: 0, projects: 0 };
+      }),
     ]);
     if (
       idle.stopped || idle.errors || branches.deleted || branches.errors ||
-      computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed
+      computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed || warmPool.reaped
     ) {
-      console.log('[project-maintenance] completed', { idle, branches, computeTick, staleBuilds });
+      console.log('[project-maintenance] completed', { idle, branches, computeTick, staleBuilds, warmPool });
     }
   } finally {
     maintenanceRunning = false;

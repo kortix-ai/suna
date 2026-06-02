@@ -51,14 +51,15 @@ export default function ProjectIndexPage() {
       }
 
       setBusy(true);
-      const sessionId = crypto.randomUUID();
       try {
         // Create FIRST. If the account has no plan, this 402s and we bail —
-        // no navigation, no dead session page.
-        await createProjectSession(projectId, {
-          session_id: sessionId,
+        // no navigation, no dead session page. Use the id the SERVER returns
+        // (not a client-generated one): with the warm pool, create may hand
+        // back a pre-booted sandbox whose id is server-authoritative.
+        const created = await createProjectSession(projectId, {
           ...(options?.sandbox_slug ? { sandbox_slug: options.sandbox_slug } : {}),
         });
+        const sessionId = created.session_id;
         sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
         queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
         router.push(`/projects/${projectId}/sessions/${sessionId}`);
