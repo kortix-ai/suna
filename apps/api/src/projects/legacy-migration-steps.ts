@@ -24,9 +24,9 @@
  */
 import { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import {
   accountMembers,
@@ -43,12 +43,14 @@ import {
   getBackend,
   getDefaultManagedBackend,
 } from './git-backends';
+import { buildStarterFiles } from './starter';
 import { uploadOpencodeArchive } from './legacy-migration-storage';
 import {
   execOnLegacyVm,
   execOnLegacyVmOrThrow,
   RESOLVE_WS_OC_SH,
   resolveLegacyVmEndpoint,
+  type LegacyVmEndpoint,
 } from './legacy-vm-access';
 import type { MigrationContext } from './legacy-migration-runner';
 
@@ -125,21 +127,10 @@ export class MigrationStepNotImplemented extends Error {
 }
 
 export async function extractStep(ctx: MigrationContext): Promise<void> {
-  // The legacy workspace is preserved the two ways the migration actually reads
-  // back: the FILES are pushed to git (push phase) and the OpenCode chat STORE is
-  // uploaded as its own small object below (rehydrate downloads it on first open).
-  // We deliberately do NOT tar+upload a full-workspace `bundle.tar.gz` — nothing
-  // ever restored from it, and on big machines it blew past the object-store
-  // upload cap (HTTP 400) and dead-lettered the whole migration. So extract is
-  // just: enumerate the OpenCode sessions + upload the (small) chat archive.
   if (!Array.isArray(ctx.progress.opencode_sessions)) {
     const { sessions, archiveB64 } = await enumerateOpencodeSessions(ctx);
     let archivePath: string | null = null;
     if (archiveB64) {
-      // Store the chat store in object storage keyed by sandbox id — NOT a
-      // Postgres column. At fleet scale (~600 machines × 1-4MB) the column would
-      // be GBs of base64 TOAST in a hot operational table. rehydrate downloads
-      // it from here on first open.
       archivePath = await uploadOpencodeArchive(ctx.legacy.sandboxId, Buffer.from(archiveB64, 'base64'));
     }
     await ctx.checkpoint({ opencode_sessions: sessions, opencode_archive_path: archivePath });
@@ -192,6 +183,48 @@ const PUSH_EXCLUDES = [
   '.cursor-server', '.vscode-server', '.dbus', '.XDG', '__pycache__', '.venv', 'venv',
   '.ssh', '.gnupg', 'ssl', '.secrets', '.kortix/secrets', '*.pem', '*.key', '*.log',
 ];
+
+const STARTER_TEMPLATE = 'general-knowledge-worker';
+const STARTER_REMOTE_B64 = '/tmp/kortix-starter.tar.gz.b64';
+const STARTER_B64_CHUNK = 96 * 1024;
+
+function buildStarterTarB64(projectName: string, repoFullName?: string): string {
+  const files = buildStarterFiles({ projectName, repoFullName, template: STARTER_TEMPLATE });
+  const dir = mkdtempSync(join(tmpdir(), 'kortix-starter-'));
+  try {
+    for (const f of files) {
+      const full = join(dir, f.path);
+      mkdirSync(dirname(full), { recursive: true });
+      writeFileSync(full, f.content);
+    }
+    const tar = Bun.spawnSync(['tar', 'czf', '-', '-C', dir, '.']);
+    if (tar.exitCode !== 0) {
+      throw new Error(`starter: tar failed: ${new TextDecoder().decode(tar.stderr)}`);
+    }
+    return Buffer.from(tar.stdout).toString('base64');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function shipStarterToVm(
+  ctx: MigrationContext,
+  endpoint: LegacyVmEndpoint,
+  b64: string,
+): Promise<void> {
+  const total = Math.ceil(b64.length / STARTER_B64_CHUNK);
+  for (let n = 0; n * STARTER_B64_CHUNK < b64.length; n++) {
+    const chunk = b64.slice(n * STARTER_B64_CHUNK, (n + 1) * STARTER_B64_CHUNK);
+    const op = n === 0 ? '>' : '>>';
+    await execOnLegacyVmOrThrow(
+      endpoint,
+      `bash -c ${sq(`printf %s '${chunk}' ${op} ${STARTER_REMOTE_B64}`)}`,
+      60,
+    );
+    await ctx.heartbeat();
+  }
+  ctx.log('push: shipped starter base config to VM', { bytes_b64: b64.length, chunks: total });
+}
 export async function pushStep(ctx: MigrationContext): Promise<void> {
   if (ctx.progress.pushed === true) {
     ctx.log('push: already pushed, skipping');
@@ -208,13 +241,22 @@ export async function pushStep(ctx: MigrationContext): Promise<void> {
   const authedUrl = await backend.authedPushUrl(ref);
   const excludeLine = PUSH_EXCLUDES.map(sq).join(' ');
 
+  const endpoint = await resolveLegacyVmEndpoint(ctx.legacy);
+
+  const repoFullName = ref.repoOwner && ref.repoName ? `${ref.repoOwner}/${ref.repoName}` : undefined;
+  await shipStarterToVm(ctx, endpoint, buildStarterTarB64(ctx.plan.project_name, repoFullName));
+
   const script = [
     'set -euo pipefail',
     RESOLVE_WS_OC_SH,
     'cd "$WS"',
     'export HOME="$(mktemp -d)"',
     `git config --global --add safe.directory ${sq('*')}`,
-    `[ -f kortix.toml ] || printf '%s\\n' ${sq('[project]')} ${sq(`name = "${ctx.plan.project_name.replace(/"/g, "'")}"`)} ${sq('description = "Migrated from a legacy Kortix sandbox."')} > kortix.toml`,
+    'rm -rf .kortix/opencode kortix.toml',
+    '__ST="$(mktemp -d)"',
+    `base64 -d ${sq(STARTER_REMOTE_B64)} | tar xzf - -C "$__ST"`,
+    'cp -a -n "$__ST"/. .',
+    `rm -rf "$__ST" ${sq(STARTER_REMOTE_B64)}`,
     `printf '%s\\n' ${excludeLine} > .gitignore`,
     'rm -rf .git',
     'git init -q',
@@ -226,7 +268,6 @@ export async function pushStep(ctx: MigrationContext): Promise<void> {
     'echo "PUSH_OK files=$(git ls-files | wc -l) bytes=$(git ls-files -z | du -ch --files0-from=- 2>/dev/null | tail -1 | cut -f1)"',
   ].join('\n');
 
-  const endpoint = await resolveLegacyVmEndpoint(ctx.legacy);
   ctx.log('push: pushing workspace to managed repo', { provider: ref.provider, repo: ref.repoName });
   const out = await execOnLegacyVmOrThrow(endpoint, `bash -c ${sq(script)}`, 900);
   ctx.log('push: done', { summary: out.trim().split('\n').pop() });
