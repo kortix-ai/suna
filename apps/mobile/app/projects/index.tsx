@@ -458,13 +458,10 @@ export default function ProjectsScreen() {
 
       <AccountMenuSheet
         open={accountMenuOpen}
+        name={(user?.user_metadata?.full_name as string | undefined) ?? undefined}
         email={user?.email}
         accountName={activeAccount?.name}
         isSigningOut={isSigningOut}
-        onSettings={() => {
-          setAccountMenuOpen(false);
-          router.push('/(settings)');
-        }}
         onSignOut={handleSignOut}
         onClose={() => setAccountMenuOpen(false)}
       />
