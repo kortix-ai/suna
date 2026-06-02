@@ -120,9 +120,9 @@ const envSchema = z.object({
   // Warm sandbox pool (docs/specs/warm-pool.md). Default OFF — when enabled,
   // keep N pre-booted sandboxes per project to claim instantly.
   KORTIX_WARM_POOL_ENABLED:        optBoolFalse,
-  // How many warm sandboxes to keep per active project (operator-set; this is
-  // a cloud/infra knob, not a per-project setting).
-  KORTIX_WARM_POOL_SIZE:           optInt(1),
+  // Default warm sandboxes per active project (operator default; the per-project
+  // UI value overrides it).
+  KORTIX_WARM_POOL_SIZE:           optInt(2),
   // Global cap on total warm (pre-booted, unclaimed) sandboxes across all
   // projects — bounds idle cost + the Daytona quota.
   KORTIX_WARM_POOL_MAX_TOTAL:      optInt(50),
