@@ -85,7 +85,8 @@ import { ProvisioningProgress } from '@/components/provisioning/ProvisioningProg
 import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
 import type { SandboxProviderName } from '@/lib/platform/client';
 import { useProjectSessions, useCreateProjectSession, useProject } from '@/lib/projects/hooks';
-import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
+import { ensureOpencodeSession } from '@/lib/projects/projects-client';
+import type { ProjectSession, ProjectSessionStatus, EnsureOpencodeResult } from '@/lib/projects/projects-client';
 import { Avatar } from '@/components/ui/Avatar';
 import {
   Eye, EyeOff, RefreshCw, Upload, Image, FolderPlus, LayoutGrid, List,
@@ -1089,11 +1090,10 @@ export default function ProjectSessionScreen() {
     setDrawerOpen(false);
   }, [navigateToSession]);
 
-  // Resolve a running project session's sandbox + opencode session, switch the
-  // SandboxContext to it, and render its chat in the middle pane. Returns false
-  // when the session isn't ready yet (caller should enter the connecting state).
+  // Switch the SandboxContext to a session's sandbox and render its chat. Needs
+  // both the sandbox URL and the resolved OpenCode pin (opencode_session_id).
   const connectToProjectSession = useCallback((ps: ProjectSession) => {
-    if (ps.status !== 'running' || !ps.sandbox_url || !ps.opencode_session_id) return false;
+    if (!ps.sandbox_url || !ps.opencode_session_id) return false;
     const externalId =
       ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
     switchSandbox({
@@ -1112,9 +1112,43 @@ export default function ProjectSessionScreen() {
     return true;
   }, [switchSandbox, navigateToSession]);
 
-  // Open a project session from the drawer. Running sessions connect straight
-  // away; sessions still provisioning enter the connecting state — the poll
-  // effect below opens them once their sandbox + opencode session are ready.
+  // Resolve the session's canonical OpenCode root (web parity: POST
+  // ensure-opencode is the sole authority that writes opencode_session_id), then
+  // open the chat. The sandbox/runtime can still be warming, so retry on
+  // not_ready/unreachable with backoff — mirrors useCanonicalOpenCodeSession.
+  const ensuringRef = useRef<string | null>(null);
+  const ensureAndOpen = useCallback(async (ps: ProjectSession) => {
+    if (!projectId || ensuringRef.current === ps.session_id) return;
+    ensuringRef.current = ps.session_id;
+    try {
+      for (let attempt = 0; attempt < 8; attempt++) {
+        let updated: EnsureOpencodeResult | null = null;
+        try {
+          updated = await ensureOpencodeSession(projectId, ps.session_id);
+        } catch {
+          // network / sandbox unreachable — fall through to backoff + retry
+        }
+        if (updated?.opencode_session_id) {
+          connectToProjectSession({
+            ...ps,
+            ...updated,
+            opencode_session_id: updated.opencode_session_id,
+            sandbox_url: updated.sandbox_url || ps.sandbox_url,
+          });
+          return;
+        }
+        await new Promise((r) => setTimeout(r, Math.min(800 * 2 ** attempt, 8_000)));
+      }
+      setConnectingProjectSessionId(null);
+      Alert.alert('Could not start session', 'The session runtime did not become ready. Please try again.');
+    } finally {
+      ensuringRef.current = null;
+    }
+  }, [projectId, connectToProjectSession]);
+
+  // Open a project session from the drawer. Already-resolved sessions connect
+  // straight away; otherwise enter the connecting state — the effect below waits
+  // for the sandbox, resolves the OpenCode pin, and opens the chat.
   const handleOpenProjectSession = useCallback((ps: ProjectSession) => {
     haptics.tap();
     setActiveProjectSessionId(ps.session_id);
@@ -1125,20 +1159,24 @@ export default function ProjectSessionScreen() {
     }
   }, [connectToProjectSession, navigateToSession]);
 
-  // Drive the connecting state: useProjectSessions polls every 3s while a
-  // session is pending, so open it the moment it flips to running, or surface
-  // a failure.
+  // Drive the connecting state. useProjectSessions polls every 3s while a
+  // session is provisioning; once the sandbox is running we resolve the
+  // OpenCode pin (ensure-opencode, with its own retry) and open the chat.
   useEffect(() => {
     if (!connectingProjectSessionId) return;
     const ps = projectSessions.find((s) => s.session_id === connectingProjectSessionId);
     if (!ps) return;
-    if (ps.status === 'running' && ps.sandbox_url && ps.opencode_session_id) {
-      connectToProjectSession(ps);
-    } else if (ps.status === 'failed') {
+    if (ps.status === 'failed') {
       setConnectingProjectSessionId(null);
       Alert.alert('Session failed to start', ps.error || 'The sandbox could not be provisioned.');
+      return;
     }
-  }, [connectingProjectSessionId, projectSessions, connectToProjectSession]);
+    if (ps.opencode_session_id && ps.sandbox_url) {
+      connectToProjectSession(ps);
+    } else if (ps.status === 'running' && ps.sandbox_url) {
+      void ensureAndOpen(ps);
+    }
+  }, [connectingProjectSessionId, projectSessions, connectToProjectSession, ensureAndOpen]);
 
   const handleProjectPress = useCallback((project: KortixProject) => {
     const pageId = `page:project:${project.id}`;
