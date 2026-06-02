@@ -271,7 +271,7 @@ export async function runProjectMaintenance(): Promise<void> {
         return { checked: 0, closedReady: 0, closedFailed: 0 };
       }),
       // Keep each enabled project's warm sandbox pool at its desired size and
-      // reap dead/aged boxes. No-op unless KORTIX_WARM_POOL_ENABLED.
+      // reap dead/aged boxes. No-op when KORTIX_WARM_POOL_MAX_TOTAL=0.
       reconcileWarmPool().catch((err) => {
         console.warn('[project-maintenance] warm-pool reconcile failed:', err instanceof Error ? err.message : err);
         return { reaped: 0, projects: 0 };

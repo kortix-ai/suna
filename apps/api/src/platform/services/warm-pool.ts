@@ -9,8 +9,8 @@
  * opencode, then waits in `pool_state='parked'`.
  *
  * Claim is a pure DB op (no call into the sandbox): flip parked→claimed and
- * insert the project_sessions row. Everything is gated behind
- * KORTIX_WARM_POOL_ENABLED (default off).
+ * insert the project_sessions row. On by default; the fleet kill switch is
+ * KORTIX_WARM_POOL_MAX_TOTAL=0.
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -25,11 +25,11 @@ const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle
 const READY_PROBE_TIMEOUT_MS = 5 * 60 * 1000;
 const READY_PROBE_INTERVAL_MS = 3000;
 
-// The operator turns the whole feature on (KORTIX_WARM_POOL_ENABLED) and sets
-// the default size (KORTIX_WARM_POOL_SIZE). Within that, each project can opt
-// in/out and pick a size from the UI (Customize → Sandbox), stored in
+// Warm pool is ON by default — there's no enable flag. The fleet-wide kill
+// switch is KORTIX_WARM_POOL_MAX_TOTAL=0. Each project can still opt in/out and
+// pick a size from the UI (Customize → Sandbox), stored in
 // projects.metadata.warm_pool — DB only, never in kortix.toml.
-export const warmPoolEnabled = (): boolean => config.KORTIX_WARM_POOL_ENABLED === true;
+export const warmPoolEnabled = (): boolean => config.KORTIX_WARM_POOL_MAX_TOTAL > 0;
 
 // Per-project sanity cap on warm size. The real fleet bound is the operator's
 // KORTIX_WARM_POOL_MAX_TOTAL; this just stops a typo from warming a huge pool.

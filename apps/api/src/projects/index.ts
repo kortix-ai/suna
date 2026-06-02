@@ -356,7 +356,7 @@ function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole |
     // per-project config (UI value over the operator default); `warm_pool_available`
     // gates the UI control off the platform feature flag.
     warm_pool: resolveWarmConfig(row.metadata),
-    warm_pool_available: config.KORTIX_WARM_POOL_ENABLED,
+    warm_pool_available: warmPoolEnabled(),
   };
 }
 

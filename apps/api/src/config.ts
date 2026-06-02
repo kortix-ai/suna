@@ -117,14 +117,13 @@ const envSchema = z.object({
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
   // OFF leaves the direct clone-credential token flow untouched).
   KORTIX_GIT_PROXY:                optBoolFalse,
-  // Warm sandbox pool (docs/specs/warm-pool.md). Default OFF — when enabled,
-  // keep N pre-booted sandboxes per project to claim instantly.
-  KORTIX_WARM_POOL_ENABLED:        optBoolFalse,
+  // Warm sandbox pool (docs/specs/warm-pool.md). ON by default — no enable flag.
   // Default warm sandboxes per active project (operator default; the per-project
   // UI value overrides it).
   KORTIX_WARM_POOL_SIZE:           optInt(1),
   // Global cap on total warm (pre-booted, unclaimed) sandboxes across all
-  // projects — bounds idle cost + the Daytona quota.
+  // projects — bounds idle cost + the Daytona quota. Doubles as the kill switch:
+  // set to 0 to disable the warm pool fleet-wide.
   KORTIX_WARM_POOL_MAX_TOTAL:      optInt(50),
   // Presence window: only keep a warm pool while a user has touched the project
   // (authenticated portal activity) within this many minutes. Closing the tab
@@ -446,7 +445,6 @@ export const config = {
   MANAGED_GIT_GITHUB_INSTALL_ID: env.MANAGED_GIT_GITHUB_INSTALL_ID,
   MANAGED_GIT_GITHUB_TOKEN: env.MANAGED_GIT_GITHUB_TOKEN,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
-  KORTIX_WARM_POOL_ENABLED: env.KORTIX_WARM_POOL_ENABLED,
   KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
   KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
   KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
