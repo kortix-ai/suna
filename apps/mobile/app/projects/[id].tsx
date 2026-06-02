@@ -1867,7 +1867,7 @@ export default function ProjectSessionScreen() {
 
           /* Dashboard */
           ) : (
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" className="bg-chrome-background">
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" className="bg-background">
               <PageHeader
                 title="Kortix"
                 onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
