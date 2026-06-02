@@ -93,11 +93,13 @@ export function registerLegacyMigrationRoutes(app: Hono<AppEnv>): void {
         created_at: s.createdAt,
         // Only JustAVPS machines can be migrated — the pipeline reaches the live
         // VM through the JustAVPS proxy (legacy-vm-access). Already migrated
-        // (archived) or in-flight machines aren't re-offered; a failed one is.
+        // (archived) or in-flight machines aren't re-offered; a failed OR
+        // rolled-back one is (a rollback returns the machine to a clean
+        // not-migrated state, so it must be migratable again).
         migratable:
           s.provider === MIGRATABLE_PROVIDER &&
           s.status !== 'archived' &&
-          (!migration || migration.status === 'failed'),
+          (!migration || migration.status === 'failed' || migration.status === 'rolled_back'),
         migration,
       };
     }))).filter((i): i is NonNullable<typeof i> => i !== null);
