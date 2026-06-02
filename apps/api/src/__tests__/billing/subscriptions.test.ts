@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import {
   createMockCreditAccount,
   createMockStripeSubscription,
@@ -12,6 +12,12 @@ import {
 // Register global mocks + credits service mock (stubs grantCredits/resetExpiringCredits)
 registerGlobalMocks();
 registerCreditsMock();
+
+// Per-seat checkout reads the active member count for the Stripe quantity.
+// Stub it so the unit test doesn't reach for the DB.
+mock.module('../../billing/services/seat-management', () => ({
+  countActiveMembers: async () => 1,
+}));
 
 // ─── Track calls ──────────────────────────────────────────────────────────────
 
@@ -79,6 +85,7 @@ beforeEach(() => {
 const {
   getOrCreateStripeCustomer,
   createCheckoutSession,
+  createPerSeatCheckoutSession,
   createInlineCheckout,
   confirmInlineCheckout,
   cancelSubscription,
@@ -162,6 +169,42 @@ describe('createCheckoutSession', () => {
     expect(capturedParams).not.toBeNull();
     expect(capturedParams.line_items[0].price_data.unit_amount).toBe(2000);
     expect(capturedParams.line_items[0].price_data.recurring.interval).toBe('month');
+  });
+});
+
+describe('createPerSeatCheckoutSession', () => {
+  test('always opens hosted Checkout — never instant-creates the subscription', async () => {
+    // Account already has a card/subscription on file — the old code path would
+    // have short-circuited to a direct subscriptions.create here.
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ billingModel: 'per_seat' });
+
+    let directSubCreateCalled = false;
+    mockRegistry.stripeClient.subscriptions.create = async () => {
+      directSubCreateCalled = true;
+      return createMockStripeSubscription();
+    };
+    let checkoutParams: any = null;
+    mockRegistry.stripeClient.checkout.sessions.create = async (params: any) => {
+      checkoutParams = params;
+      return { id: 'cs_perseat_123', url: 'https://checkout.stripe.com/perseat' };
+    };
+
+    const result = await createPerSeatCheckoutSession({
+      accountId: 'acc_test_123',
+      email: 'test@example.com',
+      successUrl: 'https://example.com/projects?team_signup=success',
+      cancelUrl: 'https://example.com/cancel',
+    });
+
+    // The actual Stripe checkout starts — no phantom "subscription_created".
+    expect((result as any).status).toBe('checkout_created');
+    expect((result as any).checkout_url).toBe('https://checkout.stripe.com/perseat');
+    expect(directSubCreateCalled).toBe(false);
+    // Subscription-mode checkout with the per-seat quantity = member count.
+    expect(checkoutParams.mode).toBe('subscription');
+    expect(checkoutParams.line_items[0].quantity).toBe(1);
+    expect(checkoutParams.payment_method_collection).toBe('always');
   });
 });
 

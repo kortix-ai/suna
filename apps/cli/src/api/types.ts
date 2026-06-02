@@ -20,6 +20,8 @@ export interface ProjectSummary {
   account_id: string;
   name: string;
   repo_url: string;
+  /** Universal Kortix git-proxy origin (auth = Kortix token). Falls back to repo_url. */
+  git_origin_url?: string;
   default_branch: string;
   manifest_path: string;
   status: 'active' | 'archived';

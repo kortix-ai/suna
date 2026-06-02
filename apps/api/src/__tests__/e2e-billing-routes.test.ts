@@ -310,7 +310,7 @@ describe('Billing: deduct', () => {
       body: JSON.stringify({
         prompt_tokens: 1000,
         completion_tokens: 500,
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-4.6',
       }),
     });
     expect(res.status).toBe(200);
@@ -347,7 +347,7 @@ describe('Billing: deduct', () => {
       body: JSON.stringify({
         prompt_tokens: 10000000,
         completion_tokens: 10000000,
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-4.6',
       }),
     });
     expect(res.status).toBe(402);
@@ -361,7 +361,7 @@ describe('Billing: deduct', () => {
       body: JSON.stringify({
         prompt_tokens: 1000,
         completion_tokens: 500,
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-4.6',
       }),
     });
     expect(res.status).toBe(200);

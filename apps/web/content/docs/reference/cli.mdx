@@ -8,7 +8,7 @@ The `kortix` CLI drives everything the dashboard can, from a terminal — laptop
 Always available inside a session sandbox, no setup:
 
 - Binary on `PATH` (`/usr/local/bin/kortix`).
-- `KORTIX_TOKEN` pre-injected, scoped to this project.
+- `KORTIX_CLI_TOKEN` pre-injected — the project-scoped token the CLI authenticates with. (`KORTIX_TOKEN` is also present, but it's the sandbox *service* key, not a CLI token.)
 - `KORTIX_API_URL` points at the platform you're running against.
 
 ## Quickstart inside a session
@@ -132,6 +132,8 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | `kortix sessions restart <id>` | Re-provision a session in place. |
 | `kortix sessions rm <id>` | Stop + delete. |
 | `kortix sessions open <id>` | Open the dashboard URL for a session. |
+| `kortix sessions chat [<id>] [--prompt "<text>"] [--new]` | Talk to a session's agent — interactive REPL, or one-shot with `--prompt`. Alias: `talk`. |
+| `kortix sessions preview <id> [port]` | Print a clickable preview URL for a port in the session's sandbox (default `3000`). |
 
 Inside a sandbox, `KORTIX_SESSION_ID` is your session; `kortix sessions info $KORTIX_SESSION_ID` is the live view of yourself.
 
@@ -192,7 +194,7 @@ The agent does not merge its own CR — that's the user's call, in the dashboard
 | Command | Effect |
 | --- | --- |
 | `kortix update` | Re-runs the install script to pull the latest binary. |
-| `kortix uninstall` | Removes the binary, the `/usr/local/bin` shim, and `~/.config/kortix/`. `--keep-auth` keeps the token. |
+| `kortix uninstall` | Removes the `kortix` binary and its `/usr/local/bin` shim, the `~/.kortix` home dir, and the stored auth token. `--keep-home` preserves `~/.kortix`; `--keep-auth` preserves the token. |
 | `kortix version` | Print the CLI version. |
 
 ### Project scaffold
@@ -217,16 +219,17 @@ Enforcement: every project route checks the token's `project_id` against the URL
 
 ### Inside a sandbox
 
-The session bootstrap injects:
+The session bootstrap injects (among other [runtime vars](/docs/reference/session-runtime#injected-environment)):
 
 ```sh
-KORTIX_TOKEN=kortix_pat_…   # project-scoped, this project only
+KORTIX_CLI_TOKEN=…          # project-scoped PAT — the CLI authenticates with this
+KORTIX_TOKEN=…              # sandbox service key (daemon control surface) — NOT a CLI token
 KORTIX_API_URL=https://api.kortix.com
 KORTIX_PROJECT_ID=<uuid>
 KORTIX_SESSION_ID=<uuid>
 ```
 
-The CLI reads `KORTIX_TOKEN` automatically (also accepts `KORTIX_CLI_TOKEN`) and uses `KORTIX_API_URL` as the host base. No config file needed.
+The CLI reads `KORTIX_CLI_TOKEN` automatically (falling back to `KORTIX_EXECUTOR_TOKEN`, the same value) and uses `KORTIX_API_URL` as the host base. No config file needed. Don't reach for `KORTIX_TOKEN` — it's the daemon's service key, and the project-scoped API routes the CLI hits reject it.
 
 ### Rotating
 
@@ -293,8 +296,8 @@ The user then runs `kortix cr show 3`, `kortix cr diff 3`, and `kortix cr merge 
 
 | Variable | Purpose |
 | --- | --- |
-| `KORTIX_TOKEN` | Project-scoped CLI token (preferred name in sandboxes). |
-| `KORTIX_CLI_TOKEN` | Same — historical alias the CLI also accepts. |
+| `KORTIX_CLI_TOKEN` | The project-scoped PAT the CLI authenticates with in a sandbox (pre-injected). The primary token name the CLI reads. |
+| `KORTIX_EXECUTOR_TOKEN` | Same value as `KORTIX_CLI_TOKEN`; the CLI falls back to it if the former is unset. |
 | `KORTIX_API_URL` | Override the API base URL (default: `https://api.kortix.com`). |
 | `KORTIX_PROJECT_ID` | Override the linked project for one command. |
 | `KORTIX_CONFIG_FILE` | Override `~/.config/kortix/config.json` location (useful for tests). |

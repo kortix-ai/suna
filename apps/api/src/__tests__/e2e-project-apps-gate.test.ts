@@ -91,6 +91,11 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickProjectTemplatePrebuilds: () => {},
+  reconcileProjectTemplates: async () => {},
+  kickStartupPreBuild: () => {},
+  reconcileStaleBuilds: async () => ({ healed: 0 }),
+  ensurePlatformDefaultImage: async () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
@@ -148,6 +153,7 @@ mock.module('../projects/secrets', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: () => ({
       from: (table: unknown) => ({

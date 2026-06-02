@@ -16,10 +16,6 @@ export const siteConfig = {
     {
       title: 'Product',
       links: [
-        { id: 14, title: 'Use cases', url: '/use-cases' },
-        { id: 15, title: 'Technology', url: '/technology' },
-        { id: 1, title: 'About', url: '/about' },
-        { id: 2, title: 'Careers', url: '/careers' },
         { id: 4, title: 'Support', url: '/support' },
         { id: 5, title: 'Contact', url: 'mailto:hey@kortix.com' },
         { id: 13, title: 'Status', url: 'https://status.kortix.com' },
@@ -28,7 +24,6 @@ export const siteConfig = {
     {
       title: 'Resources',
       links: [
-        { id: 6, title: 'Tutorials', url: '/tutorials' },
         { id: 7, title: 'Documentation', url: '/docs' },
         { id: 8, title: 'Discord', url: 'https://discord.com/invite/RvFhXUdZ9H' },
         { id: 9, title: 'GitHub', url: 'https://github.com/kortix-ai/suna' },

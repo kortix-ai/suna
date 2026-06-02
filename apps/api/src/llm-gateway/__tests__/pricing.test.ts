@@ -21,15 +21,15 @@ describe('calculateCost — upstream hint', () => {
   });
 
   test('ignores zero-or-negative hint and falls back to local pricing', () => {
-    const result = calculateCost('openai/gpt-4o-mini', usage(1_000_000, 0), 1, 0);
-    expect(result.upstreamCost).toBeCloseTo(0.15, 6);
+    const result = calculateCost('anthropic/claude-sonnet-4.6', usage(1_000_000, 0), 1, 0);
+    expect(result.upstreamCost).toBeCloseTo(3, 6);
   });
 });
 
 describe('calculateCost — fallback catalog', () => {
   test('known model uses its prices', () => {
-    const result = calculateCost('openai/gpt-4o', usage(1_000_000, 1_000_000), 1);
-    expect(result.upstreamCost).toBeCloseTo(2.5 + 10, 6);
+    const result = calculateCost('anthropic/claude-sonnet-4.6', usage(1_000_000, 1_000_000), 1);
+    expect(result.upstreamCost).toBeCloseTo(3 + 15, 6);
   });
 
   test('unknown model uses default pricing', () => {
@@ -38,36 +38,36 @@ describe('calculateCost — fallback catalog', () => {
   });
 
   test('model variant with suffix matches base entry', () => {
-    const result = calculateCost('anthropic/claude-sonnet-4-5:beta', usage(1_000_000, 1_000_000), 1);
+    const result = calculateCost('anthropic/claude-sonnet-4.6:beta', usage(1_000_000, 1_000_000), 1);
     expect(result.upstreamCost).toBeCloseTo(3 + 15, 6);
   });
 
   test('cached tokens billed at 10% of input rate by default', () => {
-    const result = calculateCost('openai/gpt-4o', usage(1_000_000, 0, 1_000_000), 1);
-    expect(result.upstreamCost).toBeCloseTo(0.25, 6);
+    const result = calculateCost('anthropic/claude-sonnet-4.6', usage(1_000_000, 0, 1_000_000), 1);
+    expect(result.upstreamCost).toBeCloseTo(0.3, 6);
   });
 
   test('partial cached tokens split correctly', () => {
-    const result = calculateCost('openai/gpt-4o', usage(1_000_000, 0, 500_000), 1);
-    const expectedFresh = (500_000 / 1_000_000) * 2.5;
-    const expectedCached = (500_000 / 1_000_000) * 0.25;
+    const result = calculateCost('anthropic/claude-sonnet-4.6', usage(1_000_000, 0, 500_000), 1);
+    const expectedFresh = (500_000 / 1_000_000) * 3;
+    const expectedCached = (500_000 / 1_000_000) * 0.3;
     expect(result.upstreamCost).toBeCloseTo(expectedFresh + expectedCached, 6);
   });
 });
 
 describe('calculateCost — markup', () => {
   test('markup of 1.0 leaves cost unchanged', () => {
-    const result = calculateCost('openai/gpt-4o', usage(1_000_000, 0), 1);
+    const result = calculateCost('anthropic/claude-sonnet-4.6', usage(1_000_000, 0), 1);
     expect(result.finalCost).toBeCloseTo(result.upstreamCost, 6);
   });
 
   test('markup of 1.2 adds 20%', () => {
-    const result = calculateCost('openai/gpt-4o', usage(1_000_000, 0), 1.2);
+    const result = calculateCost('anthropic/claude-sonnet-4.6', usage(1_000_000, 0), 1.2);
     expect(result.finalCost).toBeCloseTo(result.upstreamCost * 1.2, 6);
   });
 
   test('zero usage yields zero cost', () => {
-    const result = calculateCost('openai/gpt-4o', usage(0, 0), 1.5);
+    const result = calculateCost('anthropic/claude-sonnet-4.6', usage(0, 0), 1.5);
     expect(result.upstreamCost).toBe(0);
     expect(result.finalCost).toBe(0);
   });

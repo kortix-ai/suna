@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
@@ -158,21 +159,27 @@ function ConnectedTabBody({
                 </>
               }
               rightSlot={
-                <Button
-                  type="button"
-                  onClick={() => setConfirmDisconnect(provider.id)}
-                  disabled={isDisconnecting}
-                  variant="ghost"
-                  size="icon-sm"
-                  className="ml-auto shrink-0 text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive"
-                  title="Disconnect"
-                >
-                  {isDisconnecting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Unplug className="h-3.5 w-3.5" />
-                  )}
-                </Button>
+                provider.id === 'kortix' ? (
+                  <Badge size="sm" variant="secondary" className="ml-auto shrink-0">
+                    Managed
+                  </Badge>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={() => setConfirmDisconnect(provider.id)}
+                    disabled={isDisconnecting}
+                    variant="ghost"
+                    size="icon-sm"
+                    className="ml-auto shrink-0 text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive"
+                    title="Disconnect"
+                  >
+                    {isDisconnecting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Unplug className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                )
               }
             />
           </div>
@@ -213,6 +220,16 @@ function ConnectedTabBody({
 
 // ─── Models tab ─────────────────────────────────────────────────────────────
 
+/** "1M ctx" / "256K ctx" — compact context-window label for a model row. */
+function formatContext(tokens?: number): string | null {
+  if (!tokens || tokens <= 0) return null;
+  if (tokens >= 1_000_000) {
+    const m = tokens / 1_000_000;
+    return `${Number.isInteger(m) ? m : m.toFixed(1)}M ctx`;
+  }
+  return `${Math.round(tokens / 1000)}K ctx`;
+}
+
 function ModelsTabBody({
   models,
   modelStore,
@@ -222,6 +239,15 @@ function ModelsTabBody({
   modelStore: ReturnType<typeof useModelStore>;
   search: string;
 }) {
+  const enabledCount = useMemo(
+    () =>
+      models.filter((m) =>
+        modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }),
+      ).length,
+    [models, modelStore],
+  );
+  const hasOverrides = modelStore.userPrefs.length > 0;
+
   const grouped = useMemo(() => {
     const q = search.trim().toLowerCase();
     const filtered = models.filter(
@@ -264,50 +290,79 @@ function ModelsTabBody({
   }
 
   return (
-    <div className="space-y-3 px-3 pb-4 pt-3">
-      {grouped.map(([providerID, list]) => (
-        <div key={providerID}>
-          <div className="flex items-center gap-2 px-1 pb-1">
-            <ProviderLogo
-              providerID={providerID}
-              name={list[0]?.providerName || providerID}
-              size="small"
-            />
-            <span className="text-xs font-medium text-foreground/70">
-              {PROVIDER_LABELS[providerID] || list[0]?.providerName || providerID}
-            </span>
-            <span className="ml-auto text-xs text-muted-foreground/40">
-              {list.length}
-            </span>
-          </div>
-          <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/40">
-            {list.map((m, i) => {
-              const key = { providerID: m.providerID, modelID: m.modelID };
-              const visible = modelStore.isVisible(key);
-              return (
-                <label
-                  key={`${m.providerID}:${m.modelID}`}
-                  className={cn(
-                    'flex cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-muted/30',
-                    i > 0 && 'border-t border-border/20',
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm text-foreground">{m.modelName}</div>
-                    <div className="mt-0.5 truncate text-xs text-muted-foreground/50">
-                      {m.modelID}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={visible}
-                    onCheckedChange={(c) => modelStore.setVisibility(key, c)}
-                  />
-                </label>
-              );
-            })}
-          </div>
+    <div className="px-3 pb-4 pt-3">
+      {!search && (
+        <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
+          <p className="text-xs text-muted-foreground/60">
+            {enabledCount} of {models.length} shown in the model picker
+          </p>
+          {hasOverrides && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => modelStore.resetVisibility()}
+            >
+              Reset to defaults
+            </Button>
+          )}
         </div>
-      ))}
+      )}
+      <div className="space-y-3">
+        {grouped.map(([providerID, list]) => (
+          <div key={providerID}>
+            <div className="flex items-center gap-2 px-1 pb-1">
+              <ProviderLogo
+                providerID={providerID}
+                name={list[0]?.providerName || providerID}
+                size="small"
+              />
+              <span className="text-xs font-medium text-foreground/70">
+                {PROVIDER_LABELS[providerID] || list[0]?.providerName || providerID}
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground/40">
+                {list.length}
+              </span>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/40">
+              {list.map((m, i) => {
+                const key = { providerID: m.providerID, modelID: m.modelID };
+                const visible = modelStore.isVisible(key);
+                const ctx = formatContext(m.contextWindow);
+                return (
+                  <label
+                    key={`${m.providerID}:${m.modelID}`}
+                    className={cn(
+                      'flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/30',
+                      i > 0 && 'border-t border-border/20',
+                      !visible && 'opacity-60',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm text-foreground">{m.modelName}</span>
+                        {m.capabilities?.reasoning && (
+                          <Badge size="sm" variant="outline" className="shrink-0">
+                            Reasoning
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground/50">
+                        <span className="truncate">{m.modelID}</span>
+                        {ctx && <span className="shrink-0">· {ctx}</span>}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={visible}
+                      onCheckedChange={(c) => modelStore.setVisibility(key, c)}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

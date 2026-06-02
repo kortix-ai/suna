@@ -32,28 +32,17 @@ const PUBLIC_ROUTES = [
   '/checkout', // Public checkout wrapper for Apple compliance
   '/support', // Support page should be public
   '/help', // Help center and documentation should be public
+  '/docs', // Product documentation (Fumadocs) should be public
   '/credits-explained', // Credits explained page should be public
   '/about', // About page should be public
-  '/milano', // Milano page should be public
-  '/berlin', // Berlin page should be public
-  '/app', // App download page should be public,
+  '/careers', // Careers page should be public
+  '/changelog', // Public release notes (sourced from GitHub Releases)
   '/install',
   '/install.sh',
-  '/careers',
-  '/partnerships', // Partnerships page should be public
-  '/brand', // Legacy brand path — redirects to /design-system
   '/design-system', // Living design system / brand guidelines should be public
-  '/pricing', // Pricing page should be public
-  '/tutorials', // Tutorials page should be public
-  '/enterprise', // Enterprise page should be public
-  '/use-cases', // Use-cases / solutions page should be public
-  '/technology', // Technology / framework page should be public
-  '/exploration', // Exploration page should be public
+  '/contact', // Request-a-demo / contact page should be public
+  '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
-  '/landing', // Three.js landing page should be public
-  '/variant-2', // Landing page variant should be public
-  '/home-wip', // WIP landing page draft should be public
-  '/home2', // Design-system homepage draft should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),

@@ -1,120 +1,60 @@
 <div align="center">
 
-<img src="apps/web/public/Logomark.svg" alt="Kortix" width="96" />
+<img src="apps/web/public/Logomark.svg" alt="Kortix" width="76" />
 
 # Kortix
 
 **The AI command center for your company**
 
-[![License: Elastic-2.0](https://img.shields.io/badge/License-Elastic--2.0-005571?style=for-the-badge&logo=elastic&logoColor=white)](LICENSE)
-[![pnpm](https://img.shields.io/badge/pnpm-8.11-222?style=for-the-badge&logo=pnpm&logoColor=f69220)](package.json)
-[![Next.js](https://img.shields.io/badge/Next.js-15-000?style=for-the-badge&logo=next.js&logoColor=white)](apps/web)
-[![Bun](https://img.shields.io/badge/API-Bun-fbf0df?style=for-the-badge&logo=bun&logoColor=000)](apps/api)
-[![OpenCode](https://img.shields.io/badge/Runtime-OpenCode-6366f1?style=for-the-badge)](.kortix/opencode)
+**One repo. One config. A workforce of AI agents that does the real work — and everything is code you own.**
 
-One place where your context, agents, triggers, integrations, and memory live —  
-and a workforce of AI agents does real work across your tools, around the clock.
+[![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
+[![Version](https://img.shields.io/badge/version-0.9.5-111111.svg)](VERSION)
+[![Docs](https://img.shields.io/badge/Docs-kortix.com%2Fdocs-111111.svg)](https://kortix.com/docs)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-111111.svg)](#contributing)
 
-[Website](https://kortix.com) · [Documentation](https://kortix.com/docs) · [Cloud](https://kortix.com) · [Pricing](https://kortix.com/pricing)
+[Website](https://kortix.com) · [Documentation](https://kortix.com/docs) · [Cloud](https://kortix.com) · [Manifesto](MANIFESTO.md)
 
+<br />
+
+<img src="apps/web/public/images/landing-showcase/platform/01-command-center.png" alt="The Kortix command center" width="900" />
 
 </div>
 
 ---
 
-## Table of contents
-
-- [What is Kortix?](#what-is-kortix)
-- [What's in the command center](#whats-in-the-command-center)
-- [How it works](#how-it-works)
-- [Quickstart](#quickstart)
-- [Monorepo layout](#monorepo-layout)
-- [Apps](#apps)
-- [Packages](#packages)
-- [Infrastructure & data](#infrastructure--data)
-- [Develop locally](#develop-locally)
-- [Test & verify](#test--verify)
-- [Self-host](#self-host)
-- [Enterprise & security](#enterprise--security)
-- [License](#license)
-
----
-
-## What is Kortix?
-
-Most AI tools give you a chat box. Kortix gives you a **command center**: one place where your agents, skills, integrations, automations, and memory all live — and a workforce of AI agents that produces real output (decks, reports, code, replies, deployed work), not just chat.
-
-It is **not** a chatbot, a copilot, or a single "AI employee." It's the operating layer for an AI-native company — accessible to anyone, owned by you.
-
-## What's in the command center
-
-| | |
-| --- | --- |
-| **Agents** | Your AI coworkers — one per role or task. |
-| **Skills & workflows** | Reusable know-how that does a job your way. |
-| **Integrations** | 3,000+ tools, connected once and shared across the org. |
-| **Chat & sessions** | Where you and your team work with agents, live. |
-| **Automations** | Triggers on a schedule, a webhook, or a chat message. |
-| **Memory** | A living company brain that compounds over time. |
-
-Work runs three ways: **on-demand** (ask in chat, get it now), **human-assisted** (the agent works and checks in for the calls that matter), and **automated** (runs on a schedule or trigger, end to end).
-
-## How it works
-
-A **Kortix project is one git repository** with a `kortix.toml` manifest at its root — the single source of truth for the whole company.
-
-```
-project  (git repo + kortix.toml)
-   └─ session ──> isolated cloud sandbox on a branch named after the session
-                     └─ agent (OpenCode) works, commits, pushes
-                           └─ change request ──> you review & merge ──> main
-```
-
-| Concept | What it means |
-| --- | --- |
-| **Session** | One conversation = one disposable Linux sandbox on its own git branch. The VM dies when the session ends; the branch persists. |
-| **Change request (CR)** | The only path from session work to `main`. Agents commit on the branch; you review and merge. |
-| **Triggers** | Cron schedules and signed webhooks that spawn sessions automatically. |
-| **Channels** | Slack (and more) connected to a project — the bot listens where you invite it. |
-| **Connectors** | Server-brokered tool access (Pipedream, MCP, OpenAPI, GraphQL, HTTP) with per-user credentials. |
-| **OpenCode runtime** | Engine- and provider-agnostic coding agent inside every sandbox. Config lives in `.kortix/opencode/`. |
-
-Two configuration surfaces, strict ownership:
-
-| Surface | Owner | Location |
-| --- | --- | --- |
-| Kortix config | Platform | `kortix.toml` + `.kortix/` |
-| OpenCode config | Runtime | `.kortix/opencode/` (`opencode.jsonc`, agents, skills, commands, tools) |
-
-Learn the model: **[Concepts](https://kortix.com/docs/concepts)** · **[Reference](https://kortix.com/docs/reference)** · **[Quickstart](https://kortix.com/docs/quickstart)**
-
 ## Quickstart
 
-### Kortix Cloud — managed
-
-Sign up at **[kortix.com](https://kortix.com)**, create a project, and start a session. Nothing to install.
-
-### From the terminal — for builders
+Three commands. Build your company like a codebase, then bring it live.
 
 ```bash
-curl -fsSL https://kortix.com/install | bash   # install the kortix CLI
-kortix login                                   # authorize in your browser
+# 1 · Install the CLI
+curl -fsSL https://kortix.com/install | bash
 
-kortix init                                    # scaffold a project (kortix.toml + agent config)
-kortix ship                                    # create the cloud project and push your repo
-kortix sessions new --prompt "Summarize this week's commits and open a change request"
-kortix cr ls                                   # review what the agent proposes — then merge to keep it
+# 2 · Scaffold a project — creates kortix.toml + your agents, skills and runtime config
+kortix init
+
+# 3 · Ship it — pushes your repo and brings the whole thing live in the cloud
+kortix ship
 ```
 
-Full command surface: **[CLI reference](https://kortix.com/docs/reference/cli)**.
+That's the loop. From here:
+
+```bash
+kortix sessions new --prompt "Summarize this week's commits and open a change request"
+kortix cr ls          # review what an agent proposes — merge to keep it
+kortix chat           # talk to a session's agent from your terminal
+```
+
+Prefer zero setup? Sign up at **[kortix.com](https://kortix.com)**, create a project, and start a session — nothing to install. Full command surface: **[CLI reference](https://kortix.com/docs/reference/cli)**.
 
 ---
 
-## Monorepo layout
+## A company is going to be a git repository
 
-This repository (`suna/`) is the **Kortix platform monorepo** — the web dashboard, API, CLI, sandbox runtime, shared libraries, and infrastructure. It is also a dogfood Kortix project (see root `kortix.toml`).
+Not as a metaphor — literally something you can clone. Inside it: your agents, the skills they've built up, the way the work actually gets done, every fact the company has learned, and the definition of the machines it all runs on. **Versioned. Diffable. Owned outright.** Running on its own around the clock, opening pull requests against itself, getting better at being your company while everyone's asleep.
 
-Managed with **pnpm 8** workspaces. Docker and cloud credentials are required for full sandbox flows.
+Most AI tools give you a chat box. Kortix gives you a **command center** — one place where your agents, skills, integrations, automations and memory all live, and a workforce of agents that produces real output (decks, reports, code, replies, deployed work), not just chat. It feels as simple as a chat app. Underneath, everything is code you own.
 
 ```
 suna/
@@ -141,243 +81,83 @@ suna/
 └── kortix.toml                     # Platform dogfood manifest (triggers, sandbox, connectors)
 ```
 
+- Every **session** runs in its own disposable Linux sandbox on its own branch — the agent can install, run and break anything; only what it commits survives.
+- Work reaches `main` only through a **change request** you approve, so the company self-improves one reviewed change at a time.
+- Run **thousands of agents in parallel** on the same config, each fully isolated, each feeding work back through change requests.
+
 ---
 
-## Apps
+## What's in the command center
+
+| | |
+| --- | --- |
+| **Agents** | Markdown personas with a scoped reach into tools — one per role or task. Installable in a click, able to rewrite themselves. |
+| **Skills** | Reusable know-how that encodes how your company does a job. Written once, shared into every session. |
+| **Connectors** | 3,000+ apps in a click — plus MCP, OpenAPI, GraphQL and raw HTTP — brokered server-side through one scoped token. |
+| **Secrets** | Encrypted, scoped per person and group, injected into sandboxes at runtime, never exposed to the model or logs. |
+| **Channels** | Slack and chat surfaces — one click stands up a bot that starts sessions where your team already works. |
+| **Triggers** | Cron and signed webhooks that spawn sessions automatically — every morning, or the instant something happens. |
+| **Memory** | A living company brain — plain files today, a system that compounds what it learns over time. |
+
+Work runs three ways: **on-demand** (ask in chat, get it now), **human-assisted** (the agent works and checks in for the calls that matter), and **automated** (runs on a schedule or trigger, end to end).
+
+---
 
 ### [`apps/web/`](apps/web/) — Dashboard & marketing
 
-The primary user-facing surface. **Next.js 15** (Turbopack) on port **3000**.
-
-| Area | Path / notes |
-| --- | --- |
-| Marketing & landing | `src/app/(home)/` — home, pricing, about |
-| Authenticated app | `src/app/dashboard/`, `src/app/projects/`, `src/app/accounts/` |
-| Session UI | Real-time chat, tool views, file browser, terminal, previews |
-| Docs (MDX) | `content/docs/` — rendered at `/docs` |
-| Design system | `src/components/ui/` + live `/design-system` page |
-| i18n | `next-intl` — locale files under `src/i18n/` |
-
-```bash
-pnpm dev:web          # http://localhost:3000
-pnpm --filter Kortix-Computer-Frontend build
-pnpm --filter Kortix-Computer-Frontend test:e2e
-```
-
-Env: `apps/web/.env` — Supabase anon key, `NEXT_PUBLIC_BACKEND_URL=http://localhost:8008/v1`.
-
----
-
-### [`apps/api/`](apps/api/) — Unified API
-
-**Bun + Hono** monolith on port **8008**. One process handles routing, billing, projects, sandboxes, triggers, and more.
-
-| Module | Route prefix | Responsibility |
-| --- | --- | --- |
-| Projects | `/v1/projects` | Git-backed projects, sessions, CRs, provisioning |
-| Router / LLM | `/v1/router` | Chat completions, models, web search, provider routing |
-| Sandbox proxy | `/v1/p/:ext/...` | Reverse-proxy into Daytona sandboxes (OpenCode SSE at `…/8000/event`) |
-| Billing | `/v1/billing` | Stripe, credits, account state |
-| Executor | `/v1/executor` | Connector calls (GitHub, Pipedream, MCP, OpenAPI) |
-| Webhooks | `/v1/webhooks` | Project triggers, Slack, Telegram |
-| Tunnel | `/v1/tunnel` | Agent tunnel relay (local machine access) |
-| Accounts / IAM | `/v1/accounts`, `/v1/access` | Orgs, invites, RBAC, SCIM |
-| Platform | `/v1/platform` | Health, sandbox version, ops |
-
-```bash
-pnpm dev:api          # hot reload via bun --hot
-pnpm --filter kortix-api test
-curl -s localhost:8008/v1/health
-```
-
-Env: `apps/api/.env` — Supabase service role, `DAYTONA_API_KEY`, Stripe, provider keys.
-
-Background workers started at boot: trigger scheduler, snapshot builder, legacy migration, queue drainer, tunnel service, access-control cache.
-
----
-
-### [`apps/cli/`](apps/cli/) — `kortix` CLI
-
-The developer-facing control plane. Scaffold projects, manage secrets, spawn sessions, open change requests, and run self-hosted stacks.
-
-```bash
-kortix init                    # new project from template
-kortix ship                    # push repo → cloud project
-kortix sessions new --prompt "…"
-kortix secrets set KEY=val
-kortix cr open --title "…"
-kortix self-host start         # Docker-based local cloud
-kortix hosts use local|cloud
-```
-
-Build: `pnpm cli:bundle` · Docs: [`apps/cli/README.md`](apps/cli/README.md)
-
----
-
-### [`apps/sandbox/`](apps/sandbox/) + [`apps/kortix-sandbox-agent-server/`](apps/kortix-sandbox-agent-server/)
-
-The **session runtime stack**.
-
-| Piece | Role |
-| --- | --- |
-| `apps/sandbox/Dockerfile` | Reference image: git, OpenCode CLI, `kortix-agent` binary |
-| `kortix-sandbox-agent-server` | Daemon: supervises `opencode serve`, reverse-proxies `:8000`, serves static previews on `:3211` |
-| Snapshot builder (`apps/api/src/snapshots/`) | Layers each project's `.kortix/Dockerfile` onto the Kortix runtime → per-project Daytona snapshot |
-
-```bash
-pnpm dev:sandbox    # docker build -f apps/sandbox/Dockerfile -t kortix/kortix-sandbox:dev .
-```
-
-Each session: `session_id == sandbox_id`. OpenCode is reached via API proxy at `http://localhost:8008/v1/p/<external_id>/8000/…`.
-
----
-
-### [`apps/mobile/`](apps/mobile/) — Mobile app
-
-**React Native / Expo** companion for chat, sessions, triggers, billing, and settings on iOS and Android.
-
-```bash
-pnpm dev:mobile
-```
-
----
-
-### [`apps/desktop/`](apps/desktop/) — Desktop shell
-
-**Tauri 2** WebView wrapper around the web app. Detects `KortixDesktop/` user-agent and renders a native titlebar. No separate frontend bundle.
-
-```bash
-pnpm dev:web          # terminal 1
-pnpm dev:desktop      # terminal 2 — loads http://localhost:3000
-```
-
-See [`apps/desktop/README.md`](apps/desktop/README.md) for signing, icons, and release builds.
-
----
-
-## Packages
-
-| Package | Name | Purpose |
-| --- | --- | --- |
-| [`packages/db/`](packages/db/) | `@kortix/db` | Drizzle schemas, Postgres client, migration helpers |
-| [`packages/shared/`](packages/shared/) | `@kortix/shared` | Shared utils, LLM model catalog, tool icon keys |
-| [`packages/starter/`](packages/starter/) | `@kortix/starter` | Project templates (`base`, `general-knowledge-worker`) for `kortix init` |
-| [`packages/manifest-schema/`](packages/manifest-schema/) | `@kortix/manifest-schema` | Canonical `kortix.toml` parser + validator |
-| [`packages/executor-sdk/`](packages/executor-sdk/) | `@kortix/executor-sdk` | Client SDK for connector executor calls |
-| [`packages/agent-tunnel/`](packages/agent-tunnel/) | `@kortix/agent-tunnel` | WebSocket tunnel relay (cloud agents ↔ local machines) |
-
----
-
-## Infrastructure & data
-
-| Layer | Location | Notes |
-| --- | --- | --- |
-| **Database** | `supabase/` + `@kortix/db` | Local Supabase on `http://127.0.0.1:54321` (Docker). Migrations in `supabase/migrations/`. |
-| **Sandboxes** | Daytona (cloud) | Real VMs per session. Requires `DAYTONA_API_KEY` in `apps/api/.env`. |
-| **Dev tunnel** | `scripts/dev-local.sh` | Auto-starts cloudflared so sandboxes can call back to local API (`KORTIX_URL`). |
-| **Terraform** | `infra/terraform/` | AWS Lightsail API boxes (dev/prod). Frontend on Vercel. See [`infra/terraform/README.md`](infra/terraform/README.md). |
-| **OpenCode config** | `.kortix/opencode/` | Agents (`pr-bot`, `kortix`), skills, commands, MCP servers for this repo |
-
----
-
-## Develop locally
-
-### Prerequisites
-
-- **Node.js 20+** and **pnpm 8**
-- **Bun** (API runtime)
-- **Docker** (local Supabase + optional sandbox builds)
-- **cloudflared** (auto-installed by dev script for Daytona callback tunnel)
-- **`DAYTONA_API_KEY`** in `apps/api/.env` for real cloud sandboxes
-
-### One command
-
-```bash
-pnpm install
-pnpm dev            # web :3000 + API :8008 + Supabase + cloudflared tunnel
-```
-
-`scripts/dev-local.sh` loads `apps/api/.env` + `apps/web/.env`, starts Supabase, the API, the web app, and a public tunnel so cloud sandboxes can reach your local API.
-
-### Individual services
-
-```bash
-pnpm dev:web        # Next.js only
-pnpm dev:api        # Bun API only
-pnpm dev:sandbox    # build sandbox Docker image
-pnpm dev:mobile     # Expo dev server
-pnpm dev:desktop    # Tauri shell (needs dev:web running)
-pnpm build          # build all workspace packages
-pnpm nuke           # tear down local Docker / Supabase
-pnpm nuke:start     # nuke then restart fresh
-```
-
-### Environment setup
-
-```bash
-./scripts/setup-env.sh    # generates per-app .env from root .env template
-```
-
-Key URLs when running locally:
-
-| Service | URL |
-| --- | --- |
-| Web | http://localhost:3000 |
-| API | http://localhost:8008/v1 |
-| API health | http://localhost:8008/v1/health |
-| Supabase | http://127.0.0.1:54321 |
-| Sandbox proxy | http://localhost:8008/v1/p/<external_id>/8000/… |
-
-### API auth (scripts & tests)
-
-Mint a JWT against local Supabase, then call the API with `Authorization: Bearer <token>`. See `tests/e2e/helpers/auth.ts` and [`AGENTS.md`](AGENTS.md) for the exact flow.
-
----
-
-## Test & verify
-
-| Harness | Command | What it covers |
-| --- | --- | --- |
-| Session smoke | `bun tests/e2e/scripts/session-smoke.ts` | Full provision → sandbox → prompt → assistant reply |
-| Multi-session | `bun tests/e2e/scripts/multi-session-stream-smoke.ts` | Two concurrent SSE streams |
-| Playwright UI | `tests/e2e/specs/*.spec.ts` | Browser E2E (see `tests/e2e/end-to-end.md`) |
-| API unit tests | `pnpm --filter kortix-api test` | Billing, projects, access control |
-| Self-hosted E2E | `bash tests/e2e/self-hosted-e2e.sh` | Full install → browser golden paths |
-
-Provisioning is slow (snapshot build up to ~9 min, sandbox up to ~5 min) — run long checks in the background.
-
-See [`tests/README.md`](tests/README.md) for the full test matrix.
+- **Open & yours.** Open source and self-hostable — your data, your models, your infrastructure. No lock-in, fully auditable.
+- **A workforce, not one assistant.** Org-scale specialist agents that run in parallel and compound a shared memory.
+- **Real work, not chat.** Agents run on real computers and return finished deliverables — and take real actions in your tools.
+- **Everything is code.** Versioned, reviewable, portable, governable — never a black box. `grep` your entire company.
+- **Bring your own models.** Any provider, your own keys — or the ChatGPT, Claude, or Cursor subscription you already pay for.
 
 ---
 
 ## Self-host
 
-Kortix is source-available and runs on your own infrastructure — laptop, VPS, your VPC, or air-gapped.
+Kortix runs on your own infrastructure — laptop, VPS, your VPC, or fully air-gapped. Start a production-style local instance from Docker images, then switch the CLI between Cloud and your own hosts:
 
 ```bash
 kortix self-host start
-kortix hosts ls
-kortix hosts use local
-kortix hosts use cloud
+kortix hosts use local     # ↔  kortix hosts use cloud
 ```
 
-The first interactive setup asks only for integration credentials (Freestyle, GitHub, Pipedream). Ports, local URLs, Supabase keys, and Docker Compose defaults are generated for you.
+The first interactive setup asks only for the integration credentials that unlock managed git, GitHub access, and Pipedream connectors — ports, local URLs, keys and Docker Compose defaults are generated for you.
 
-Managed hosting: **[Kortix Cloud](https://kortix.com)** · **[Pricing](https://kortix.com/pricing)**
+Managed hosting is **[Kortix Cloud](https://kortix.com)**.
+
+---
 
 ## Enterprise & security
 
-Members, groups & roles that match your org · per-resource permissions for people **and** agents · encrypted secrets manager (injected at runtime, never exposed) · full audit trail · human approval gates on sensitive actions · on-prem, VPC, or air-gapped deployment.
+Built to survive a security review, not slip past one: microVM isolation · members, groups & roles that match your org · per-resource permissions for people **and** agents · a secrets manager (encrypted, injected at runtime, never exposed) · a full audit trail · human approval gates on sensitive actions · on-prem, VPC, or air-gapped deployment.
 
-## Why Kortix
+---
+
+## Contributing
 
 - **Open & yours.** Source-available and self-hostable — your data, your models, your infrastructure. No lock-in, fully auditable.
 - **A workforce, not one assistant.** Org-scale specialist agents that run in parallel and compound a shared memory.
 - **Real work, not chat.** Agents run on real computers and return finished deliverables — and take real actions in your tools.
 - **Everything is code.** Versioned, reviewable, portable, governable — never a black box.
 
+```bash
+pnpm install
+pnpm dev            # web + API (scripts/dev-local.sh)
+pnpm dev:web        # web app only
+pnpm dev:api        # API only
+pnpm dev:sandbox    # build the local sandbox image
+pnpm build          # build all packages
+pnpm nuke           # tear down the local Docker environment
+```
+
+Apps live under `apps/` (`web`, `api`, `cli`, `desktop`, `mobile`, `sandbox`); documentation source is in `apps/web/content/docs`. The whole platform ships under one version (root `VERSION`) — API, frontend, CLI and desktop release together as `vX.Y.Z`. Issues and pull requests are welcome.
+
 ---
 
-## License
-
-[Elastic License 2.0](LICENSE) — source-available. You can use, modify, and self-host; production use as a managed service for third parties requires a commercial license from Kortix.
+<div align="center">
+<br />
+<strong>We're building the thing that takes a company from human to AGI — and lets it keep every byte of itself on the way there.</strong>
+<br /><br />
+<a href="https://kortix.com">kortix.com</a>
+</div>

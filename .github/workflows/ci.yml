@@ -5,7 +5,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, production]
+    branches: [main, prod]
   workflow_dispatch:
 
 concurrency:

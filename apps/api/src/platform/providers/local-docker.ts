@@ -5,6 +5,7 @@ import { resolve } from 'path';
 import { config, SANDBOX_VERSION } from '../../config';
 import { generateSandboxKeyPair } from '../../shared/crypto';
 import { getAuthCandidates, getSandboxServiceKeyByExternalId } from '../services/sandbox-auth';
+import { isForbiddenSandboxEnv } from '../sandbox-env';
 import type {
   SandboxProvider,
   ProviderName,
@@ -572,16 +573,9 @@ export class LocalDockerProvider implements SandboxProvider {
     }
 
     const sandboxApiBase = getSandboxInternalApiUrl();
-    const routerBase = `${sandboxApiBase}/v1/router`;
     const desired: Record<string, string> = {
       KORTIX_API_URL: sandboxApiBase,
       TUNNEL_API_URL: sandboxApiBase,
-      // Tool proxy URLs — route through kortix-api router so sandbox tools
-      // auth with KORTIX_TOKEN and the router injects real upstream API keys.
-      TAVILY_API_URL: `${routerBase}/tavily`,
-      REPLICATE_API_URL: `${routerBase}/replicate`,
-      SERPER_API_URL: `${routerBase}/serper`,
-      FIRECRAWL_API_URL: `${routerBase}/firecrawl`,
     };
 
     // Read current state from the live master env (s6 env dir) — NOT from
@@ -858,26 +852,40 @@ export class LocalDockerProvider implements SandboxProvider {
 
     const serviceKey = authToken;
 
+    // Vars we set explicitly below — don't let the forwarded .env duplicate them.
     const MANAGED_VARS = new Set([
       'KORTIX_TOKEN',
       'KORTIX_API_URL',
+      'TUNNEL_API_URL',
+      'TUNNEL_TOKEN',
       'SANDBOX_ID',
+      'SANDBOX_VERSION',
       'INTERNAL_SERVICE_KEY',
       'PROJECT_ID',
       'CORS_ALLOWED_ORIGINS',
-      'TAVILY_API_URL',
-      'REPLICATE_API_URL',
-      'SERPER_API_URL',
-      'FIRECRAWL_API_URL',
     ]);
 
+    // Forward the developer's non-secret env, but NEVER a real provider secret.
+    // The sandbox reaches every upstream (LLM gateway, Tavily, …) through the
+    // kortix-api router with its KORTIX_TOKEN — it must not hold raw keys.
+    const droppedSecrets: string[] = [];
     const filteredSandboxEnv = sandboxEnvVars.filter((entry) => {
       const varName = entry.split('=')[0];
-      return !MANAGED_VARS.has(varName);
+      if (MANAGED_VARS.has(varName)) return false;
+      if (isForbiddenSandboxEnv(varName)) {
+        droppedSecrets.push(varName);
+        return false;
+      }
+      return true;
     });
+    if (droppedSecrets.length > 0) {
+      console.log(
+        `[LOCAL-DOCKER] Not injecting ${droppedSecrets.length} secret(s) into sandbox ` +
+        `(reached via router with KORTIX_TOKEN): ${droppedSecrets.join(', ')}`,
+      );
+    }
 
     const sandboxApiBase = getSandboxInternalApiUrl();
-    const routerBase = `${sandboxApiBase}/v1/router`;
 
     const env = [
       'PUID=911',
@@ -907,13 +915,6 @@ export class LocalDockerProvider implements SandboxProvider {
       // All components share one version (set by deploy-zero-downtime.sh from image tag).
       `SANDBOX_VERSION=${SANDBOX_VERSION}`,
       'PROJECT_ID=local',
-      // ── Tool proxy URLs — route through kortix-api router ─────────────
-      // Sandbox tools use KORTIX_TOKEN to auth; the router injects the real
-      // upstream API key. Matches managed-provider env injection.
-      `TAVILY_API_URL=${routerBase}/tavily`,
-      `REPLICATE_API_URL=${routerBase}/replicate`,
-      `SERPER_API_URL=${routerBase}/serper`,
-      `FIRECRAWL_API_URL=${routerBase}/firecrawl`,
       ...(config.KORTIX_LOCAL_IMAGES ? ['KORTIX_LOCAL_SOURCE=1'] : []),
       `CORS_ALLOWED_ORIGINS=${[config.FRONTEND_URL, config.KORTIX_URL].filter(Boolean).join(',')}`,
       ...filteredSandboxEnv,

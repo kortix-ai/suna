@@ -48,14 +48,27 @@ export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 12;
 /** Display-only: rough indication for pricing-page copy. */
 export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 8;
 
-// Per-second pricing for reserved sandbox spec (declared in kortix.toml [sandbox]).
-// Numbers are pre-markup; debit emitter multiplies by COMPUTE_PRICE_MARKUP.
-//   $0.04 / core-hour  → 0.04 / 3600 ≈ 0.0000111 per core-second
-//   $0.005 / GB-hour   → 0.005 / 3600 ≈ 0.00000139 per GB-second
-//   $0.0001 / GB-hour  → 0.0001 / 3600 ≈ 0.0000000278 per GB-second
-export const COMPUTE_CPU_PRICE_PER_CORE_SECOND   = 0.0000111;
-export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND  = 0.00000139;
-export const COMPUTE_DISK_PRICE_PER_GB_SECOND    = 0.0000000278;
+// Per-second sandbox compute pricing, keyed off the reserved spec (kortix.toml
+// [sandbox]). The constants below are Daytona's PUBLISHED LIST rates (kept as
+// list so they're easy to re-sync from the pricing page). Our ACTUAL cost is
+// list × the volume discount Daytona gives us (DAYTONA_DISCOUNT). The debit
+// emitter charges:
+//     cost = spec × list_rate × DAYTONA_DISCOUNT × COMPUTE_PRICE_MARKUP
+// i.e. we pass the discount through (cheaper for users) and keep a margin on top.
+// Daytona list (https://www.daytona.io/pricing, as of 2026-06):
+//   vCPU  $0.0504 / core-hour → 0.000014   per core-second
+//   RAM   $0.0162 / GiB-hour  → 0.0000045  per GB-second
+//   disk  $0.000108 / GiB-hour→ 0.00000003 per GB-second
+// We bill the full reserved spec — Daytona's first-5-GiB-free RAM/disk allowance
+// is an ORG-level promo to us, not a per-sandbox grant, so passing it per sandbox
+// would under-bill.
+export const COMPUTE_CPU_PRICE_PER_CORE_SECOND   = 0.000014;
+export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND  = 0.0000045;
+export const COMPUTE_DISK_PRICE_PER_GB_SECOND    = 0.00000003;
+/** Volume discount Daytona gives us off list (≈50%) → our real cost = list ×
+ *  this. Applied before the markup so users are billed on our actual (discounted)
+ *  cost, not Daytona's list. Bump toward 1.0 if the discount shrinks. */
+export const DAYTONA_DISCOUNT = 0.5;
 /** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
 export const COMPUTE_ARCHIVE_DISK_MULTIPLIER     = 0.25;
 
@@ -221,13 +234,11 @@ interface StripePriceConfig {
 //   - Replace the PLACEHOLDER below with the resulting price IDs before deploy.
 //   - Webhook handler for customer.subscription.updated (services/webhooks.ts)
 //     reconciles the `quantity` field on this price item into credit_accounts.seat_count.
-export const PER_SEAT_STRIPE_PRICE_ID_PLACEHOLDER = 'price_PLACEHOLDER_PER_SEAT';
-
 const STRIPE_PRICES_PROD: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
     pro:  { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO' }, // TODO: create prod Pro price and replace
-    per_seat: { monthly: PER_SEAT_STRIPE_PRICE_ID_PLACEHOLDER }, // TODO(ops): fill in prod per-seat price ID
+    per_seat: { monthly: 'price_1TcrQJG6l1KZGqIry1K1cqZY' }, // live "Kortix seat" $20/mo
     // Legacy price → tier mappings (for webhook resolution of existing subs)
     tier_2_20:     { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO', yearly: 'price_1ReHB5G6l1KZGqIrD70I1xqM', yearlyCommitment: 'price_1RqtqiG6l1KZGqIrhjVPtE1s' },
     tier_6_50:     { monthly: 'price_1RILb4G6l1KZGqIr5q0sybWn', yearly: 'price_1ReHAsG6l1KZGqIrlAog487C', yearlyCommitment: 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi' },
@@ -253,8 +264,11 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
     pro:  { monthly: 'price_1T7yiuG6CaZppiKc7VsgnlKI' },
-    // Billing v2 — $20/month recurring under product prod_UAFOsPU765hNnu (test mode).
-    per_seat: { monthly: 'price_1TbQv8G6l1KZGqIrdRLsUnCz' },
+    // Billing v2 — $20/month per-seat in the staging Stripe account (acct_…G6CaZppiKc),
+    // the same account the staging customers + their legacy subs live in (so the
+    // migration can actually find/cancel them). The old …G6l1KZGqIr price was in a
+    // different account and is being deprecated.
+    per_seat: { monthly: 'price_1TdSdvG6CaZppiKctAZXPPY0' },
   },
   credits: {
     10:  'price_1RxXOvG6l1KZGqIrMqsiYQvk',

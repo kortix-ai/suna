@@ -14,8 +14,8 @@
  * Pipeline: extract -> repo -> push -> db
  *   extract: SSH the JustAVPS VM, tar /workspace files + .kortix + the OpenCode
  *            store, upload the bundle to object storage, record session ids.
- *   repo:    create the Freestyle managed repo (+ identity/permission) that
- *            becomes the project's durable file home.
+ *   repo:    create the managed repo (via the configured git backend — GitHub)
+ *            that becomes the project's durable file home.
  *   push:    materialize the extracted files, synthesize kortix.toml/Dockerfile/
  *            .gitignore if absent, push to the repo's default branch.
  *   db:      one transaction — create project + project_members + one
@@ -24,9 +24,9 @@
  */
 import { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import {
   accountMembers,
@@ -37,31 +37,23 @@ import {
   projectSessions,
   projects,
   sandboxes,
-  sessionSandboxes,
 } from '@kortix/db';
-import { provisionSessionSandbox } from '../platform/services/session-sandbox';
 import {
-  createIdentity,
-  createManagedRepo,
-  freestyleAuthedGitUrl,
-  grantRepoPermission,
-  isFreestyleGitConfigured,
-  mintIdentityToken,
-} from './freestyle-git';
-import {
-  backupExists,
-  backupObjectPath,
-  createBackupUploadTarget,
-} from './legacy-migration-storage';
+  type GitConnectionRef,
+  getBackend,
+  getDefaultManagedBackend,
+} from './git-backends';
+import { buildStarterFiles } from './starter';
+import { uploadOpencodeArchive } from './legacy-migration-storage';
 import {
   execOnLegacyVm,
   execOnLegacyVmOrThrow,
   RESOLVE_WS_OC_SH,
   resolveLegacyVmEndpoint,
+  type LegacyVmEndpoint,
 } from './legacy-vm-access';
 import type { MigrationContext } from './legacy-migration-runner';
 
-/** Shell-safe single-quote wrap for embedding a value in a VM command. */
 function sq(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -71,15 +63,30 @@ function safeBranch(title: string, id: string): string {
   return `${slug || 'session'}-${id.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
 }
 
+function progressStr(ctx: MigrationContext, key: string): string | null {
+  const v = ctx.progress[key];
+  return typeof v === 'string' && v ? v : null;
+}
+
+function gitRefFromProgress(ctx: MigrationContext): GitConnectionRef {
+  const upstreamUrl = progressStr(ctx, 'git_url');
+  if (!upstreamUrl) throw new Error('git: repo phase did not record git_url');
+  return {
+    provider: progressStr(ctx, 'git_provider') ?? 'github',
+    upstreamUrl,
+    externalRepoId: progressStr(ctx, 'git_external_repo_id'),
+    repoOwner: progressStr(ctx, 'git_repo_owner'),
+    repoName: progressStr(ctx, 'git_repo_name'),
+    installationId: progressStr(ctx, 'git_installation_id'),
+    credentialRef: progressStr(ctx, 'git_credential_ref'),
+    defaultBranch: progressStr(ctx, 'default_branch') ?? 'main',
+    managed: true,
+    metadata: {},
+  };
+}
+
 export interface LegacyOpencodeSession { id: string; title: string }
 
-/**
- * Enumerate the legacy machine's OpenCode conversations. This build stores
- * sessions inside opencode.db (SQLite, no storage/message tree) and sqlite3
- * isn't on the host, so we pull the db (it's small, ~1-5MB incl. WAL) over the
- * toolbox as base64 and read it locally with bun:sqlite. Returns top-level,
- * non-archived sessions newest-first.
- */
 async function enumerateOpencodeSessions(ctx: MigrationContext): Promise<{ sessions: LegacyOpencodeSession[]; archiveB64: string | null }> {
   const endpoint = await resolveLegacyVmEndpoint(ctx.legacy);
   const script = [
@@ -112,8 +119,6 @@ async function enumerateOpencodeSessions(ctx: MigrationContext): Promise<{ sessi
   }
 }
 
-/** Thrown by steps whose external wiring is not yet implemented. Distinct type
- *  so we can tell "not built yet" from a genuine runtime failure in logs. */
 export class MigrationStepNotImplemented extends Error {
   constructor(phase: string) {
     super(`Migration phase "${phase}" is not yet wired up`);
@@ -121,187 +126,154 @@ export class MigrationStepNotImplemented extends Error {
   }
 }
 
-// ── extract ──────────────────────────────────────────────────────────────────
-// Back up the legacy VM to durable storage: a tarball of the workspace files
-// (node_modules/.git excluded — regenerable / re-pushed via git) plus the full
-// OpenCode chat-history store. Also enumerate the OpenCode session ids so the
-// `db` phase can create one project_session per real conversation.
-//
-// Layout inside the bundle (top-level dirs, relied on by rehydrate):
-//   workspace/   ← contents of $KORTIX_WORKSPACE
-//   opencode/    ← the OpenCode store (opencode.db + storage/message/<id>/...)
 export async function extractStep(ctx: MigrationContext): Promise<void> {
-  const sandboxId = ctx.legacy.sandboxId;
-
-  // Test-only escape hatch: skip the durable backup upload (e.g. when the
-  // operator's storage isn't reachable from the VM, as with a local Supabase).
-  // NEVER set this in production — it forgoes chat-history preservation.
-  if (process.env.LEGACY_MIGRATION_SKIP_BACKUP === '1') {
-    ctx.log('extract: LEGACY_MIGRATION_SKIP_BACKUP=1 — skipping backup upload (TEST ONLY)');
-    if (ctx.progress.backup_skipped !== true) await ctx.checkpoint({ backup_skipped: true, backup_path: null });
-  } else if (ctx.progress.backup_path && (await backupExists(sandboxId))) {
-    // Idempotent: a prior attempt may have finished the upload before crashing.
-    ctx.log('extract: backup already present, skipping upload', { path: ctx.progress.backup_path });
-  } else {
-    const endpoint = await resolveLegacyVmEndpoint(ctx.legacy);
-    const target = await createBackupUploadTarget(sandboxId);
-
-    // One shell script on the VM: resolve paths, tar workspace + opencode store,
-    // PUT the tarball straight to the signed URL (no Supabase creds on the VM).
-    const script = [
-      'set -euo pipefail',
-      RESOLVE_WS_OC_SH,
-      'BUNDLE=/tmp/kortix-migration-bundle.tar.gz',
-      // basename of WS becomes "workspace" and of OC becomes "opencode" for the
-      // canonical paths; tar stores them as those top-level dirs.
-      'tar czf "$BUNDLE" --exclude=node_modules --exclude=.git --warning=no-file-changed' +
-        ' -C "$(dirname "$WS")" "$(basename "$WS")"' +
-        ' ${OC:+-C "$(dirname "$OC")" "$(basename "$OC")"}',
-      `curl -fsS -X PUT -H 'x-upsert: true' -H 'Content-Type: application/octet-stream' --data-binary @"$BUNDLE" ${sq(target.url)}`,
-      'rm -f "$BUNDLE"',
-      'echo OK',
-    ].join('\n');
-
-    ctx.log('extract: backing up VM', { externalId: ctx.legacy.externalId });
-    await execOnLegacyVmOrThrow(endpoint, `bash -c ${sq(script)}`, 900);
-    await ctx.checkpoint({ backup_path: target.path, backup_bucket_uploaded_at: new Date().toISOString() });
-  }
-
-  // Enumerate OpenCode conversations from opencode.db so the db phase can create
-  // one project_session per real chat. Capture the store NOW (key is valid at
-  // migration time) so on-open rehydrate restores chats from it without a live
-  // JustAVPS key — those keys expire/rotate, so live-pull-on-open is unreliable.
   if (!Array.isArray(ctx.progress.opencode_sessions)) {
     const { sessions, archiveB64 } = await enumerateOpencodeSessions(ctx);
+    let archivePath: string | null = null;
     if (archiveB64) {
-      await ctx.database.update(legacySandboxMigrations)
-        .set({ opencodeArchive: archiveB64, updatedAt: new Date() })
-        .where(eq(legacySandboxMigrations.migrationId, ctx.migrationId));
+      archivePath = await uploadOpencodeArchive(ctx.legacy.sandboxId, Buffer.from(archiveB64, 'base64'));
     }
-    await ctx.checkpoint({ opencode_sessions: sessions });
-    ctx.log('extract: enumerated opencode sessions', { count: sessions.length, captured: Boolean(archiveB64) });
+    await ctx.checkpoint({ opencode_sessions: sessions, opencode_archive_path: archivePath });
+    ctx.log('extract: enumerated opencode sessions', { count: sessions.length, archived_to: archivePath ?? 'none' });
   }
 }
 
-// ── repo ─────────────────────────────────────────────────────────────────────
-// Provision the Freestyle managed repo that will hold the project's files. Real
-// implementation: idempotent on the recorded repo_id.
 export async function repoStep(ctx: MigrationContext): Promise<void> {
-  if (typeof ctx.progress.repo_id === 'string' && ctx.progress.repo_id) {
-    ctx.log('repo: already created, skipping', { repo_id: ctx.progress.repo_id });
+  if (typeof ctx.progress.git_url === 'string' && ctx.progress.git_url) {
+    ctx.log('repo: already created, skipping', { git_url: ctx.progress.git_url });
     return;
   }
 
-  if (!(await isFreestyleGitConfigured())) {
-    throw new Error('Freestyle git is not configured (missing API key); cannot provision project repo');
+  const backend = getDefaultManagedBackend();
+  if (!(await backend.isConfigured())) {
+    throw new Error(`Managed git provider "${backend.id}" is not configured; cannot provision project repo`);
   }
 
   const defaultBranch = 'main';
-  const repo = await createManagedRepo({ name: ctx.plan.project_name, defaultBranch });
-  // Mint a write identity scoped to this repo so the push phase can authenticate.
-  const identity = await createIdentity();
-  await grantRepoPermission(identity, repo.repoId, 'write');
+  const baseSlug = (
+    ctx.plan.project_name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
+    'kortix-project'
+  ).slice(0, 40);
+  const provisioned = await backend.createRepo({
+    accountId: ctx.plan.account_id,
+    projectId: ctx.plan.project_id,
+    slug: `${baseSlug}-${ctx.plan.project_id}`,
+    defaultBranch,
+    isPrivate: true,
+  });
 
   await ctx.checkpoint({
-    repo_id: repo.repoId,
-    git_url: repo.gitUrl,
-    git_identity: identity,
-    default_branch: repo.defaultBranch ?? defaultBranch,
+    git_provider: provisioned.provider,
+    git_url: provisioned.upstreamUrl,
+    git_external_repo_id: provisioned.externalRepoId,
+    git_repo_owner: provisioned.repoOwner,
+    git_repo_name: provisioned.repoName,
+    git_installation_id: provisioned.installationId,
+    git_credential_ref: provisioned.credentialRef,
+    default_branch: provisioned.defaultBranch || defaultBranch,
   });
-  ctx.log('repo: created', { repo_id: repo.repoId });
+  ctx.log('repo: created', { provider: provisioned.provider, repo: provisioned.repoName });
 }
 
-// ── push ───────────────────────────────────────────────────────────────────--
-// Publish the workspace to the Freestyle repo by running git FROM THE VM (the
-// files + git + network are already there; no need to move bytes through the
-// backend). The repo IS the project's durable file home — the new sandbox clones
-// it into /workspace on boot, so everything the user should keep must land here:
-// their files, their custom agents/skills/commands (.opencode), and their project
-// config (.kortix). The chat-history store (.local/share/opencode) is preserved
-// separately (captured at migration, rehydrated on open) and is excluded here.
-//
-// Source path: the REAL workspace is the nested-docker volume ($WS from
-// RESOLVE_WS_OC_SH), not the host /workspace (which is empty on JustAVPS).
-// Synthesizes kortix.toml if absent so migrated projects can build new sessions.
-// Idempotent on progress.pushed.
-//
-// Excludes (caches/secrets/state — regenerable or shipped elsewhere) are applied
-// via .git/info/exclude (local, never committed) AND a committed .gitignore (so
-// future sessions in the new project don't re-add the junk).
+
 const PUSH_EXCLUDES = [
-  // Caches / regenerable
+  '.persistent-system', '.kortix/services', '.kortix/backups',
   'node_modules', '.cache', '.npm', '.npm-global', '.bun', '.cargo', '.rustup',
   '.pnpm-store', '.local', '.config', '.mozilla', '.browser-profile',
   '.cursor-server', '.vscode-server', '.dbus', '.XDG', '__pycache__', '.venv', 'venv',
-  // Secrets / credentials (never push to git)
   '.ssh', '.gnupg', 'ssl', '.secrets', '.kortix/secrets', '*.pem', '*.key', '*.log',
 ];
+
+const STARTER_TEMPLATE = 'general-knowledge-worker';
+const STARTER_REMOTE_B64 = '/tmp/kortix-starter.tar.gz.b64';
+const STARTER_B64_CHUNK = 96 * 1024;
+
+function buildStarterTarB64(projectName: string, repoFullName?: string): string {
+  const files = buildStarterFiles({ projectName, repoFullName, template: STARTER_TEMPLATE });
+  const dir = mkdtempSync(join(tmpdir(), 'kortix-starter-'));
+  try {
+    for (const f of files) {
+      const full = join(dir, f.path);
+      mkdirSync(dirname(full), { recursive: true });
+      writeFileSync(full, f.content);
+    }
+    const tar = Bun.spawnSync(['tar', 'czf', '-', '-C', dir, '.']);
+    if (tar.exitCode !== 0) {
+      throw new Error(`starter: tar failed: ${new TextDecoder().decode(tar.stderr)}`);
+    }
+    return Buffer.from(tar.stdout).toString('base64');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function shipStarterToVm(
+  ctx: MigrationContext,
+  endpoint: LegacyVmEndpoint,
+  b64: string,
+): Promise<void> {
+  const total = Math.ceil(b64.length / STARTER_B64_CHUNK);
+  for (let n = 0; n * STARTER_B64_CHUNK < b64.length; n++) {
+    const chunk = b64.slice(n * STARTER_B64_CHUNK, (n + 1) * STARTER_B64_CHUNK);
+    const op = n === 0 ? '>' : '>>';
+    await execOnLegacyVmOrThrow(
+      endpoint,
+      `bash -c ${sq(`printf %s '${chunk}' ${op} ${STARTER_REMOTE_B64}`)}`,
+      60,
+    );
+    await ctx.heartbeat();
+  }
+  ctx.log('push: shipped starter base config to VM', { bytes_b64: b64.length, chunks: total });
+}
 export async function pushStep(ctx: MigrationContext): Promise<void> {
   if (ctx.progress.pushed === true) {
     ctx.log('push: already pushed, skipping');
     return;
   }
 
-  const repoId = ctx.progress.repo_id;
-  const identity = ctx.progress.git_identity;
-  const defaultBranch = typeof ctx.progress.default_branch === 'string' ? ctx.progress.default_branch : 'main';
-  if (typeof repoId !== 'string' || typeof identity !== 'string') {
-    throw new Error('push: repo phase did not record repo_id/git_identity');
-  }
+  const ref = gitRefFromProgress(ctx);
+  const defaultBranch = ref.defaultBranch;
 
-  // Fresh write token each attempt — tokens are short-lived and not worth
-  // persisting/reusing across retries.
-  const token = await mintIdentityToken(identity);
-  const authedUrl = freestyleAuthedGitUrl(repoId, token);
+  const backend = getBackend(ref.provider);
+  if (!backend.authedPushUrl) {
+    throw new Error(`push: managed git provider "${ref.provider}" cannot mint a push URL`);
+  }
+  const authedUrl = await backend.authedPushUrl(ref);
   const excludeLine = PUSH_EXCLUDES.map(sq).join(' ');
+
+  const endpoint = await resolveLegacyVmEndpoint(ctx.legacy);
+
+  const repoFullName = ref.repoOwner && ref.repoName ? `${ref.repoOwner}/${ref.repoName}` : undefined;
+  await shipStarterToVm(ctx, endpoint, buildStarterTarB64(ctx.plan.project_name, repoFullName));
 
   const script = [
     'set -euo pipefail',
-    // Resolve $WS to the nested-docker volume that actually holds the user's
-    // files, agents/skills and config (host /workspace is empty on JustAVPS).
     RESOLVE_WS_OC_SH,
     'cd "$WS"',
-    // The toolbox exec env has no $HOME; give git a writable one for its global
-    // config. The volume is owned by the nested container's uid but git runs as
-    // root, so allow it or git bails on "dubious ownership".
     'export HOME="$(mktemp -d)"',
     `git config --global --add safe.directory ${sq('*')}`,
-    // Minimal manifest with NO [sandbox] section — a freshly migrated project
-    // has no project-specific template row, so session boot resolves the shared
-    // platform-default template (correct base image + agent). We deliberately do
-    // NOT synthesize a Dockerfile: guessing a base produces a broken sandbox.
-    `[ -f kortix.toml ] || printf '%s\\n' ${sq('[project]')} ${sq(`name = "${ctx.plan.project_name.replace(/"/g, "'")}"`)} ${sq('description = "Migrated from a legacy Kortix sandbox."')} > kortix.toml`,
+    'rm -rf .kortix/opencode kortix.toml',
+    '__ST="$(mktemp -d)"',
+    `base64 -d ${sq(STARTER_REMOTE_B64)} | tar xzf - -C "$__ST"`,
+    'cp -a -n "$__ST"/. .',
+    `rm -rf "$__ST" ${sq(STARTER_REMOTE_B64)}`,
     `printf '%s\\n' ${excludeLine} > .gitignore`,
-    // Clean import: drop any legacy git metadata so this workspace becomes the
-    // repo's initial commit (the VM is archived after migration).
     'rm -rf .git',
     'git init -q',
-    // Local excludes (never committed) guarantee caches/secrets/the chat store
-    // stay out of the import even if a stray tracked copy existed.
     `printf '%s\\n' ${excludeLine} > .git/info/exclude`,
     `git checkout -qB ${sq(defaultBranch)}`,
     'git add -A',
     `git -c user.email=migrations@kortix.com -c user.name=Kortix commit -q --allow-empty -m ${sq('Import legacy workspace')}`,
     `git push --force ${sq(authedUrl)} HEAD:${sq(defaultBranch)}`,
-    // Report what we shipped so the migration log shows the file set landed.
     'echo "PUSH_OK files=$(git ls-files | wc -l) bytes=$(git ls-files -z | du -ch --files0-from=- 2>/dev/null | tail -1 | cut -f1)"',
   ].join('\n');
 
-  const endpoint = await resolveLegacyVmEndpoint(ctx.legacy);
-  ctx.log('push: pushing workspace to Freestyle', { repoId });
+  ctx.log('push: pushing workspace to managed repo', { provider: ref.provider, repo: ref.repoName });
   const out = await execOnLegacyVmOrThrow(endpoint, `bash -c ${sq(script)}`, 900);
   ctx.log('push: done', { summary: out.trim().split('\n').pop() });
   await ctx.checkpoint({ pushed: true });
 }
 
-// ── db ─────────────────────────────────────────────────────────────────────--
-// One transaction: ensure the account + members, create the project (repoUrl =
-// the Freestyle repo), project_members, and one project_session per preserved
-// OpenCode conversation, then archive the legacy sandbox. Sessions are created
-// STOPPED with no live sandbox — opening one in the new app provisions a fresh
-// Daytona sandbox from git and rehydrates chat history from the backup bundle.
-// The db_committed flag is flipped INSIDE the transaction so a crash/retry never
-// double-creates (also belt-and-suspenders onConflictDoNothing on every insert).
 export async function dbStep(ctx: MigrationContext): Promise<void> {
   if (ctx.progress.db_committed === true) {
     ctx.log('db: already committed, skipping');
@@ -309,11 +281,10 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
   }
 
   const { plan, legacy } = ctx;
-  const gitUrl = typeof ctx.progress.git_url === 'string' ? ctx.progress.git_url : null;
-  if (!gitUrl) throw new Error('db: repo phase did not record git_url');
-  const repoId = typeof ctx.progress.repo_id === 'string' ? ctx.progress.repo_id : null;
-  const gitIdentity = typeof ctx.progress.git_identity === 'string' ? ctx.progress.git_identity : null;
-  const defaultBranch = typeof ctx.progress.default_branch === 'string' ? ctx.progress.default_branch : 'main';
+  const ref = gitRefFromProgress(ctx);
+  const gitUrl = ref.upstreamUrl;
+  const defaultBranch = ref.defaultBranch;
+  const authMethod = ref.provider === 'github' ? 'github_app' : 'managed';
   const backupPath = typeof ctx.progress.backup_path === 'string' ? ctx.progress.backup_path : null;
   const ocSessions = Array.isArray(ctx.progress.opencode_sessions)
     ? (ctx.progress.opencode_sessions as Array<{ id?: unknown; title?: unknown }>)
@@ -328,11 +299,6 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
   await (ctx.database as unknown as {
     transaction: <T>(fn: (tx: typeof ctx.database) => Promise<T>) => Promise<T>;
   }).transaction(async (tx) => {
-    // 1. Account + members. plan.member_user_ids includes the accountId as a
-    // legacy stand-in for the owner — only valid in the old system where
-    // account_id == user_id. Filter it out and use the account's REAL members
-    // (kortix.account_members) so the actual user, not the account id, owns the
-    // migrated project.
     const [existingAccount] = await tx.select().from(accounts).where(eq(accounts.accountId, plan.account_id)).limit(1);
     const createdAccount = !existingAccount;
     if (!existingAccount) {
@@ -343,7 +309,6 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
       }).onConflictDoNothing({ target: accounts.accountId });
     }
 
-    // Genuine legacy collaborators (from sandbox_members) — real user ids.
     const legacyMemberUserIds = plan.member_user_ids.filter((id) => id !== plan.account_id);
     const createdMemberUserIds: string[] = [];
     for (const userId of legacyMemberUserIds) {
@@ -355,15 +320,12 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
       createdMemberUserIds.push(userId);
     }
 
-    // Project members = the account's current members (real users) ∪ legacy
-    // collaborators. Owners -> manager, everyone else -> editor.
     const accountMemberRows = await tx.select({ userId: accountMembers.userId, role: accountMembers.accountRole })
       .from(accountMembers).where(eq(accountMembers.accountId, plan.account_id));
     const ownerSet = new Set(accountMemberRows.filter((r) => r.role === 'owner').map((r) => r.userId));
     const projectUserIds = Array.from(new Set([...accountMemberRows.map((r) => r.userId), ...legacyMemberUserIds]));
     const grantedBy = [...ownerSet][0] ?? projectUserIds[0] ?? plan.account_id;
 
-    // 2. Project (repo = Freestyle).
     await tx.insert(projects).values({
       projectId: plan.project_id,
       accountId: plan.account_id,
@@ -373,6 +335,17 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
       manifestPath: 'kortix.toml',
       status: 'active',
       metadata: {
+        git: {
+          url: gitUrl,
+          upstream_url: gitUrl,
+          default_branch: defaultBranch,
+          provider: ref.provider,
+          managed: true,
+          auth: { method: authMethod, ref: ref.credentialRef, installation_id: ref.installationId },
+          repo_id: ref.externalRepoId,
+          owner: ref.repoOwner,
+          name: ref.repoName,
+        },
         legacy_migration: {
           run_id: ctx.runId,
           source_sandbox_id: plan.source_sandbox_id,
@@ -383,22 +356,23 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
       },
     }).onConflictDoNothing({ target: projects.projectId });
 
-    // Persist the Freestyle git connection so resolveProjectGitAuth can mint
-    // clone/push tokens later (clone-credential on session boot). Without this,
-    // sandboxes hit git.freestyle.sh unauthed and the clone fails.
-    if (repoId && gitIdentity) {
-      await tx.insert(projectGitConnections).values({
-        accountId: plan.account_id,
-        projectId: plan.project_id,
-        provider: 'freestyle',
-        repoUrl: gitUrl,
-        externalRepoId: repoId,
-        defaultBranch,
-        authMethod: 'managed',
-        credentialRef: gitIdentity,
-        status: 'connected',
-      }).onConflictDoNothing({ target: projectGitConnections.projectId });
-    }
+    await tx.insert(projectGitConnections).values({
+      accountId: plan.account_id,
+      projectId: plan.project_id,
+      provider: ref.provider,
+      repoUrl: gitUrl,
+      upstreamUrl: gitUrl,
+      managed: true,
+      repoOwner: ref.repoOwner,
+      repoName: ref.repoName,
+      externalRepoId: ref.externalRepoId,
+      defaultBranch,
+      authMethod,
+      installationId: ref.installationId,
+      credentialRef: ref.credentialRef,
+      visibility: 'private',
+      status: 'connected',
+    }).onConflictDoNothing({ target: projectGitConnections.projectId });
 
     for (const userId of projectUserIds) {
       await tx.insert(projectMembers).values({
@@ -410,11 +384,6 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
       }).onConflictDoNothing({ target: [projectMembers.projectId, projectMembers.userId] });
     }
 
-    // 3. One stopped session per OpenCode conversation (or a single default
-    //    session when the VM had no chat store). Each carries a rehydrate ref.
-    // sessionId MUST be a UUID v4 — the session API endpoints validate the path
-    // param against UUID_V4_REGEX, and session_sandboxes.sandbox_id (= sessionId)
-    // is a uuid column. The real OpenCode id lives in opencode_session_id.
     const sessionSpecs = ocSessions.length > 0
       ? ocSessions.map((s) => ({
           sessionId: randomUUID(),
@@ -435,11 +404,7 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
         sandboxUrl: null,
         opencodeSessionId: spec.opencodeSessionId,
         agentName: 'default',
-        // Dormant but listable (the list filters by visibility, not status). A
-        // sandbox is provisioned + chat rehydrated on-demand when opened.
         status: 'stopped',
-        // Migrated sessions belong to the whole project (the list view filters
-        // by visibility; without this they'd be invisible private/no-owner rows).
         createdBy: grantedBy,
         visibility: 'project',
         metadata: {
@@ -452,7 +417,6 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
       }).onConflictDoNothing({ target: projectSessions.sessionId });
     }
 
-    // 4. Archive the legacy sandbox row.
     await tx.update(sandboxes).set({
       status: 'archived',
       metadata: {
@@ -462,7 +426,6 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
       updatedAt: now,
     }).where(eq(sandboxes.sandboxId, legacy.sandboxId));
 
-    // 5. Flip the durable flag + record handles ATOMICALLY with the writes.
     await tx.update(legacySandboxMigrations).set({
       projectId: plan.project_id,
       sessionId: sessionSpecs[0]!.sessionId,
@@ -481,74 +444,4 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
 
   ctx.progress.db_committed = true;
   ctx.log('db: committed', { project_id: plan.project_id, sessions: ocSessions.length || 1 });
-}
-
-// ── provision ────────────────────────────────────────────────────────────────
-// Spin up a real Daytona sandbox per migrated session and attach it (insert the
-// session_sandboxes row). The app's `wake` only RESTARTS an existing paused
-// sandbox — it never provisions — so a session with no session_sandboxes row
-// can't be opened. provisionSessionSandbox clones the Freestyle repo we pushed
-// and boots from the shared platform-default template (the migrated repo has no
-// [sandbox] section, so no project-specific template shadows it). Returns once
-// the row is inserted; the provider boot continues in the background and the
-// dashboard's health poll picks up readiness. Idempotent on progress.provisioned
-// and on the per-session session_sandboxes row.
-export async function provisionStep(ctx: MigrationContext): Promise<void> {
-  if (ctx.progress.provisioned === true) {
-    ctx.log('provision: already done, skipping');
-    return;
-  }
-
-  const gitUrl = typeof ctx.progress.git_url === 'string' ? ctx.progress.git_url : null;
-  const identity = typeof ctx.progress.git_identity === 'string' ? ctx.progress.git_identity : null;
-  const defaultBranch = typeof ctx.progress.default_branch === 'string' ? ctx.progress.default_branch : 'main';
-  if (!gitUrl || !identity) throw new Error('provision: repo phase did not record git_url/git_identity');
-
-  // Attribute the sandbox to an account owner.
-  const [owner] = await ctx.database
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, ctx.plan.account_id), eq(accountMembers.accountRole, 'owner')))
-    .limit(1);
-  const ownerUserId = owner?.userId;
-  if (!ownerUserId) throw new Error('provision: account has no owner to attribute the sandbox to');
-
-  const sessions = await ctx.database
-    .select({ sessionId: projectSessions.sessionId, baseRef: projectSessions.baseRef })
-    .from(projectSessions)
-    .where(eq(projectSessions.projectId, ctx.plan.project_id));
-
-  for (const session of sessions) {
-    const [existing] = await ctx.database
-      .select({ sandboxId: sessionSandboxes.sandboxId })
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sessionId, session.sessionId))
-      .limit(1);
-    if (existing) {
-      ctx.log('provision: sandbox already exists, skipping', { sessionId: session.sessionId });
-      continue;
-    }
-
-    await ctx.heartbeat();
-    await provisionSessionSandbox({
-      sandboxId: session.sessionId,
-      accountId: ctx.plan.account_id,
-      projectId: ctx.plan.project_id,
-      userId: ownerUserId,
-      provider: 'daytona',
-      metadata: { session_id: session.sessionId, project_id: ctx.plan.project_id, legacy_migration: { run_id: ctx.runId } },
-      gitProject: {
-        projectId: ctx.plan.project_id,
-        repoUrl: gitUrl,
-        defaultBranch,
-        manifestPath: 'kortix.toml',
-        gitAuthToken: null,
-      },
-      resolveGitAuthToken: async () => mintIdentityToken(identity),
-      baseRef: session.baseRef ?? defaultBranch,
-    });
-    ctx.log('provision: kicked sandbox boot', { sessionId: session.sessionId });
-  }
-
-  await ctx.checkpoint({ provisioned: true });
 }

@@ -64,6 +64,10 @@ export interface ProjectApp {
   name: string;
   enabled: boolean;
   domains: string[];
+  /** Domains the app will actually serve on: its declared `domains`, or the
+   *  auto-issued free `*.style.dev` URL when none are declared. Always at
+   *  least one entry. */
+  effective_domains: string[];
   framework: string | null;
   source: AppSource;
   build: AppBuild | null;

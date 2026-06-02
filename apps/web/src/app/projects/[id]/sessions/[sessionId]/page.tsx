@@ -8,6 +8,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
 
 import { useAuth } from '@/components/AuthProvider';
+import { useAccountState } from '@/hooks/billing';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { isBillingEnabled } from '@/lib/config';
 import { SessionChat } from '@/components/session/session-chat';
 import { SessionLayout } from '@/components/session/session-layout';
 import { SessionLoadingSkeleton } from '@/components/session/session-loading-skeleton';
@@ -59,11 +62,22 @@ export default function ProjectSessionPage() {
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
 
+  // Billing gate. An account with no active plan can't run a session — the
+  // backend would never provision a sandbox, so polling for one spins forever.
+  // Detect "no plan" up front so we can (a) skip the sandbox poll entirely and
+  // (b) render a calm gated screen instead of an infinite loader. Subscribed-
+  // but-out-of-credits accounts are NOT gated (they can still CRUD).
+  const { data: accountState } = useAccountState();
+  const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
+  const accountLoaded = !!accountState;
+  const noPlan =
+    isBillingEnabled() && accountLoaded && !accountState.subscription?.subscription_id;
+
   // session_id == sandbox_id by construction (see session-sandbox.ts).
   const { data: sandbox, isLoading } = useQuery({
     queryKey: ['project', 'session-sandbox', projectId, sessionId],
     queryFn: () => getProjectSessionSandbox(projectId!, sessionId!),
-    enabled: !!user && !!sessionId && !!projectId,
+    enabled: !!user && !!sessionId && !!projectId && !noPlan,
     staleTime: 0,
     // Poll while the row is missing (returns null) OR while still provisioning.
     // Tight cadence so the UI flips to the sandbox the instant the backend
@@ -136,12 +150,42 @@ export default function ProjectSessionPage() {
     void wakeProjectSession(projectId, sandbox.session_id).catch(() => {});
   }, [sandbox, projectId]);
 
+  // The moment we know there's no plan, pop the one Team plan modal — don't
+  // wait for a sandbox boot + 402 (which made it look like a session got
+  // created first).
+  const billingGatedRef = useRef(false);
+  useEffect(() => {
+    if (!noPlan || billingGatedRef.current) return;
+    billingGatedRef.current = true;
+    openUpgradeDialog({ reason: 'subscription_required' });
+  }, [noPlan, openUpgradeDialog]);
+
   // From the first paint we mount ProjectShell so the project's sidebar is
   // always visible — no full-page "Preparing workspace" flash. The inner
   // content swaps between an inline loader, an error card, and the chat.
   const sandboxLabel = sandbox ? `session ${sandbox.sandbox_id.slice(0, 8)}` : undefined;
   const inner = (() => {
-    if (authLoading || !user || isLoading || !sandbox) {
+    if (authLoading || !user) {
+      return <SessionLoadingSkeleton />;
+    }
+
+    // No plan → don't spin on a sandbox that will never provision. Show a calm
+    // gated screen (the Team plan modal is already opening over it).
+    if (noPlan) {
+      return (
+        <InlineSessionError
+          title="Subscribe to start sessions"
+          message="Your team isn't on a plan yet. Subscribe to Kortix Team to run sessions, with LLM compute and AI Computers for every teammate."
+          action={
+            <Button onClick={() => openUpgradeDialog({ reason: 'subscription_required' })}>
+              Subscribe to Team plan
+            </Button>
+          }
+        />
+      );
+    }
+
+    if (isLoading || !sandbox) {
       return <SessionLoadingSkeleton />;
     }
 

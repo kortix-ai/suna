@@ -199,18 +199,38 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   const v2Balance: number =
     typeof v2Detail?.balance === 'number' ? v2Detail.balance : 0;
 
+  // No active plan → pitch the one central Team plan subscribe modal.
   if (
     isBillingEnabled() &&
     v2Status === 402 &&
-    (v2Code === 'subscription_required' ||
-      v2Code === 'insufficient_credits' ||
-      v2Code === 'no_account')
+    (v2Code === 'subscription_required' || v2Code === 'no_account')
   ) {
     useUpgradeDialogStore.getState().openUpgradeDialog({
       reason: v2Code,
       message: v2Message ?? '',
       balance: v2Balance,
     });
+    return;
+  }
+
+  // Already on a plan but the wallet ran dry. Don't pitch a subscription —
+  // they're subscribed and can still CRUD sessions; only metered LLM/compute
+  // spend is affected. Nudge a top-up instead of blocking with the modal.
+  if (isBillingEnabled() && v2Status === 402 && v2Code === 'insufficient_credits') {
+    const title = 'Out of credits';
+    if (!shouldSuppressDuplicate(v2Status, title)) {
+      toast.warning(title, {
+        description: 'Top up your wallet or turn on auto-refill to keep using compute and LLMs.',
+        duration: 6000,
+        action: {
+          label: 'Top up',
+          onClick: () =>
+            useAccountSettingsModalStore
+              .getState()
+              .openAccountSettings({ tab: 'billing', highlight: 'credits' }),
+        },
+      });
+    }
     return;
   }
 

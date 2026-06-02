@@ -147,6 +147,31 @@ export function setGlobalDefaultModel(model: ModelKey | undefined): void {
 // Latest logic — direct port from SolidJS reference
 // ============================================================================
 
+/**
+ * Fallback allowlist for the rare non-gateway model that carries no release-date
+ * metadata: only the flagship shows out of the box, everything else is opt-in via
+ * "Manage models". The managed Kortix gateway no longer flows through here — it
+ * shows its whole catalog by default (see `isManagedGatewayModel` below).
+ */
+const DEFAULT_VISIBLE_MODEL_IDS = new Set<string>(['anthropic/claude-opus-4.8']);
+
+/**
+ * Provider id of the managed Kortix LLM gateway (see the sandbox's
+ * `opencode.ts` provider config). It's a small, hand-picked catalog we control,
+ * so every model in it is shown by default — `isVisible` short-circuits the
+ * date-based "latest" heuristic for this provider. The newest-per-family
+ * behaviour is kept for BYO providers, which is what it's for.
+ */
+const MANAGED_GATEWAY_PROVIDER_ID = 'kortix';
+
+function isManagedGatewayModel(model: ModelKey): boolean {
+  return model.providerID === MANAGED_GATEWAY_PROVIDER_ID;
+}
+
+function isDefaultVisible(model: ModelKey): boolean {
+  return DEFAULT_VISIBLE_MODEL_IDS.has(model.modelID);
+}
+
 function isWithinMonths(dateStr: string | undefined, months: number): boolean {
   if (!dateStr) return false;
   try {
@@ -231,17 +256,24 @@ export function useModelStore(allModels: FlatModel[]) {
       const state = visibilityMap.get(key);
       if (state === 'hide') return false;
       if (state === 'show') return true;
+      // Managed Kortix gateway: show the whole curated catalog by default.
+      // It's a small, hand-picked set we control, so every model is on unless
+      // the user explicitly hides it.
+      if (isManagedGatewayModel(model)) return true;
       if (latestSet.has(key)) return true;
-      // If no release_date or invalid, show by default
       const m = allModels.find(
         (x) => x.providerID === model.providerID && x.modelID === model.modelID,
       );
-      if (!m?.releaseDate) return true;
+      // No (or invalid) release metadata — the managed Kortix gateway case.
+      // Default to showing only the flagship; every other model is opt-in via
+      // "Manage models". Providers that DO carry release dates keep the
+      // newest-per-family "latest" behaviour handled above.
+      if (!m?.releaseDate) return isDefaultVisible(model);
       try {
         const d = new Date(m.releaseDate);
-        if (isNaN(d.getTime())) return true;
+        if (isNaN(d.getTime())) return isDefaultVisible(model);
       } catch {
-        return true;
+        return isDefaultVisible(model);
       }
       return false;
     },
@@ -273,6 +305,14 @@ export function useModelStore(allModels: FlatModel[]) {
     },
     [],
   );
+
+  // Clear every visibility override so all models revert to their default
+  // (shown). Leaves recent/variant/selection state untouched.
+  const resetVisibility = useCallback(() => {
+    const s = getStore();
+    if (s.user.length === 0) return;
+    setStore({ ...s, user: [] });
+  }, []);
 
   // Recent models
   const recentModels = useMemo(() => store.recent, [store.recent]);
@@ -384,6 +424,7 @@ export function useModelStore(allModels: FlatModel[]) {
     isVisible,
     isLatest,
     setVisibility,
+    resetVisibility,
     recent: recentModels,
     pushRecent,
     getVariant,

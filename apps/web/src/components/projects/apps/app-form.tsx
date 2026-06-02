@@ -369,14 +369,19 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 px-5 py-3">
-        <Button type="button" variant="ghost" onClick={onDone} disabled={submitting}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={submitting}>
-          {submitting && <IconLoader className="size-3.5 animate-spin" />}
-          {isEdit ? 'Save changes' : 'Add app'}
-        </Button>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 px-5 py-3">
+        <p className="hidden truncate text-xs text-muted-foreground sm:block">
+          Saves to <code className="font-mono">kortix.toml</code> — deploy when you&apos;re ready.
+        </p>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="ghost" onClick={onDone} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting && <IconLoader className="size-3.5 animate-spin" />}
+            {isEdit ? 'Save changes' : 'Add app'}
+          </Button>
+        </div>
       </div>
     </form>
   );

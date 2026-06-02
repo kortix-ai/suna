@@ -289,7 +289,7 @@ Entries sort alphabetically by slug; slug uniqueness is per-section.
 | `slug`      | yes      | string     | URL-safe, unique among apps.                           |
 | `name`      | no       | string     | Display name. Defaults to slug.                        |
 | `enabled`   | no       | bool       | Defaults to `true`. Disabled apps are skipped.         |
-| `domains`   | yes      | `string[]` | Must be non-empty. The parser rejects entries that omit or empty this. |
+| `domains`   | no       | `string[]` | Optional. Omit it and the platform auto-issues a free `*.style.dev` URL at deploy time. When present, every entry must be a non-empty string. |
 | `framework` | no       | string     | Hint for the provider adapter (e.g. `"next"`).         |
 
 ### `[apps.source]`

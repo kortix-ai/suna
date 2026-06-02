@@ -201,6 +201,27 @@ export function manifestHashForApp(spec: AppSpec): string {
   return createHash('sha256').update(canonical).digest('hex');
 }
 
+/**
+ * Derive the stable, free `*.style.dev` URL an app gets when it declares no
+ * domains of its own. Deterministic per (project, slug) so redeploys keep the
+ * same address, and DNS-safe (underscores → dashes, label ≤ 63 chars). The
+ * short hash keeps it unique across the shared Freestyle account so two
+ * projects can both have an app called "site" without colliding.
+ */
+export function defaultAppDomain(projectId: string, slug: string): string {
+  const hash = createHash('sha256').update(`${projectId}:${slug}`).digest('hex').slice(0, 8);
+  const label = slug.replace(/_/g, '-').slice(0, 40).replace(/^-+|-+$/g, '') || 'app';
+  return `${label}-${hash}.style.dev`;
+}
+
+/**
+ * The domains the provider should actually serve an app on: its declared
+ * domains, or the auto-issued default when it declared none.
+ */
+export function resolveAppDomains(projectId: string, spec: AppSpec): string[] {
+  return spec.domains.length > 0 ? spec.domains : [defaultAppDomain(projectId, spec.slug)];
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 interface ParseOk { ok: true; spec: AppSpec }
@@ -221,18 +242,22 @@ function parseAppEntry(entry: unknown, index: number): ParseOk | ParseErr {
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
   const enabled = coerceBool(row.enabled, true);
 
-  // Domains — required for v1. At least one is needed for the provider
-  // to know where to serve from.
+  // Domains — optional. Omit them and the platform auto-issues a stable,
+  // free `*.style.dev` URL at deploy time (see `defaultAppDomain`), so the
+  // zero-config "vibecode an app and ship it" path needs no DNS setup. When
+  // present, every entry must be a non-empty string.
   const domainsRaw = row.domains;
-  if (!Array.isArray(domainsRaw) || domainsRaw.length === 0) {
-    return err(slug, 'domains must be a non-empty array of strings');
-  }
   const domains: string[] = [];
-  for (const d of domainsRaw) {
-    if (typeof d !== 'string' || !d.trim()) {
-      return err(slug, 'domains entries must be non-empty strings');
+  if (domainsRaw !== undefined) {
+    if (!Array.isArray(domainsRaw)) {
+      return err(slug, 'domains must be an array of strings when set');
     }
-    domains.push(d.trim());
+    for (const d of domainsRaw) {
+      if (typeof d !== 'string' || !d.trim()) {
+        return err(slug, 'domains entries must be non-empty strings');
+      }
+      domains.push(d.trim());
+    }
   }
 
   const framework = typeof row.framework === 'string' && row.framework.trim()

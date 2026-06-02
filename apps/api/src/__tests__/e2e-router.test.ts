@@ -40,7 +40,7 @@ function createMockChatResponse(overrides?: Partial<any>) {
     id: 'chatcmpl-mock-001',
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
-    model: 'anthropic/claude-sonnet-4-5',
+    model: 'anthropic/claude-sonnet-4.6',
     choices: [
       {
         index: 0,
@@ -62,10 +62,10 @@ function createMockChatResponse(overrides?: Partial<any>) {
 
 function createMockStreamResponse(): Response {
   const chunks = [
-    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4-5', choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }] },
-    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4-5', choices: [{ index: 0, delta: { content: 'Hello ' }, finish_reason: null }] },
-    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4-5', choices: [{ index: 0, delta: { content: 'world!' }, finish_reason: null }] },
-    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4-5', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 } },
+    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4.6', choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }] },
+    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4.6', choices: [{ index: 0, delta: { content: 'Hello ' }, finish_reason: null }] },
+    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4.6', choices: [{ index: 0, delta: { content: 'world!' }, finish_reason: null }] },
+    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4.6', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 } },
   ];
 
   const encoder = new TextEncoder();

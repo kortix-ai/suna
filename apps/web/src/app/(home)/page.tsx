@@ -30,8 +30,13 @@ import { HiArrowRight, HiMiniSparkles } from 'react-icons/hi2';
 import { MdShield } from 'react-icons/md';
 import { TbChevronUpRight } from 'react-icons/tb';
 
-const DEMO_URL = '/enterprise';
+const DEMO_URL = '/contact';
+const DOCS_URL = '/docs';
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
+// Default host used for SSR / first paint; replaced with the live frontend
+// origin once mounted so the install command always matches the deployment.
+const DEFAULT_INSTALL_HOST = 'kortix.com';
+const SHOT = (f: string) => `/images/landing-showcase/platform/${f}`;
 const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 
 const INTEGRATIONS = [
@@ -333,6 +338,18 @@ export default function Home() {
     window.location.href = user ? '/projects' : '/auth';
   }, [user]);
 
+  const copyInstall = useCallback(() => {
+    navigator.clipboard.writeText(installCmd);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [installCmd]);
+
+  // Scroll-linked hero fade + drawer that rises over it (legacy layout).
+  const { scrollY } = useScroll();
+  const heroOpacity = useTransform(scrollY, [0, 400], [1, 0]);
+  const heroScale = useTransform(scrollY, [0, 400], [1, 0.96]);
+  const drawerRadius = useTransform(scrollY, [200, 600], [28, 0]);
+
   return (
     <>
       <div className="bg-background relative">
@@ -368,7 +385,11 @@ export default function Home() {
               <InteractiveDemo />
             </div>
           </div>
-        </section>
+
+          {/* the command center — real product */}
+          <section className="mx-auto max-w-5xl px-6 pt-4 pb-14 sm:pb-20">
+            <StepMedia src={SHOT('01-command-center.png')} alt="The Kortix command center" priority />
+          </section>
 
         <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
           <Reveal>
@@ -510,7 +531,11 @@ export default function Home() {
 
           <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-14">
             <Reveal>
-              <CodeWindow />
+              <div className="mb-12 max-w-2xl">
+                <Eyebrow>Enterprise</Eyebrow>
+                <h2 className="mt-3 text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl md:text-4xl">Secure enough to run the whole company</h2>
+                <p className="mt-4 text-base leading-relaxed text-muted-foreground">Fine-grained control over who — and which agent — can do what. Built for the teams that take security seriously.</p>
+              </div>
             </Reveal>
             <Reveal delay={0.1}>
               <div className="w-full">

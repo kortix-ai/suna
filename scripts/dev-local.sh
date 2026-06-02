@@ -169,6 +169,28 @@ ensure_cli_binary() {
   fi
 }
 
+# Verify the workspace is actually LINKED, not just that node_modules/ exists.
+# A partial tree — e.g. a sibling git worktree whose node_modules symlinks back
+# into this checkout, so its own `pnpm/bun install` rewrites our symlink layer
+# for a different branch's manifest — leaves node_modules/ present but `next` /
+# `hono` unlinked and `.modules.yaml` gone. That surfaces ~10s later as the
+# opaque "next: command not found" / "Cannot find package 'hono'". Check the
+# exact things the dev servers need and reinstall if any are missing. A warm
+# `pnpm install` is ~5s and idempotent, so this is cheap insurance; a failure
+# aborts loudly instead of being swallowed into a half-broken boot.
+ensure_deps() {
+  if [[ -x "$ROOT_DIR/apps/web/node_modules/.bin/next" \
+     && -d "$ROOT_DIR/apps/api/node_modules/hono" \
+     && -f "$ROOT_DIR/node_modules/.modules.yaml" ]]; then
+    return 0
+  fi
+  echo "[dev] Dependencies missing or partial — running pnpm install…"
+  if ! (cd "$ROOT_DIR" && pnpm install); then
+    echo "[dev] ❌ pnpm install failed — fix the error above and re-run 'pnpm dev'." >&2
+    exit 1
+  fi
+}
+
 kill_dev_ports() {
   local ports=()
   local port
@@ -380,6 +402,7 @@ sys.exit(1)
 PY
 fi
 
+ensure_deps
 ensure_agent_binary
 ensure_cli_binary
 ensure_dev_tunnel

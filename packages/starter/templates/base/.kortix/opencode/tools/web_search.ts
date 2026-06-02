@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin";
 import { tavily } from "@tavily/core";
-import { getEnv } from "./lib/get-env";
+import { getEnv, getKortixRouterBase } from "./lib/get-env";
 
 interface SearchResult {
   title: string;
@@ -77,10 +77,10 @@ export default tool({
       ),
   },
   async execute(args, _context) {
-    const apiBaseURL = getEnv("TAVILY_API_URL");
-    // When routed through the Kortix proxy (TAVILY_API_URL is set), use KORTIX_TOKEN
-    // for auth — the proxy validates it and injects the real Tavily API key.
-    // When hitting the real Tavily API directly, use the user's own TAVILY_API_KEY.
+    // Route through the Kortix router (derived from KORTIX_API_URL) and auth with
+    // KORTIX_TOKEN; the router injects the real upstream key. Fall back to a raw
+    // TAVILY_API_KEY only when KORTIX_API_URL is unset (self-host/direct).
+    const apiBaseURL = getKortixRouterBase("tavily") ?? undefined;
     const apiKey = apiBaseURL
       ? getEnv("KORTIX_TOKEN")
       : getEnv("TAVILY_API_KEY");

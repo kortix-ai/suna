@@ -2,11 +2,11 @@
   "title": "Documentation",
   "pages": [
     "index",
-    "---Concepts---",
-    "concepts",
-    "reference",
-    "---Using the web app---",
     "quickstart",
-    "guides"
+    "---Learn---",
+    "concepts",
+    "guides",
+    "---Reference---",
+    "reference"
   ]
 }

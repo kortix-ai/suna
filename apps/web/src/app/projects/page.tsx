@@ -7,7 +7,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   FolderPlus,
-  HardDriveDownload,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -19,9 +18,9 @@ import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { ProjectCreateModal } from '@/components/projects/project-create-modal';
-import { LegacyMigrationDialog } from '@/components/projects/legacy-migration-dialog';
+import { LegacyMachineCard } from '@/components/projects/legacy-machine-card';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
-import { useLegacyMachines } from '@/hooks/legacy/use-legacy-machine-migration';
+import { useLegacyMachines, useStartLegacyMigration } from '@/hooks/legacy/use-legacy-machine-migration';
 import {
   archiveProject,
   listAccounts,
@@ -43,6 +42,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { billingApi } from '@/lib/api/billing';
+import { invalidateAccountState } from '@/hooks/billing';
 
 function relativeTime(input: string) {
   const date = new Date(input);
@@ -161,6 +162,35 @@ export default function ProjectsPage() {
     }
   }, [searchParams]);
 
+  // Return from the Team plan Stripe Checkout (?team_signup=success). Reconcile
+  // the subscription from Stripe so the account reflects the new plan + credits
+  // immediately — don't depend on the webhook landing first. Then refresh
+  // account state and strip the param so reloads don't re-fire.
+  useEffect(() => {
+    if (searchParams.get('team_signup') !== 'success') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await billingApi.syncSubscription();
+        if (cancelled) return;
+        await invalidateAccountState(queryClient);
+        toast.success('Subscription activated', {
+          description: 'Your team is on Kortix Team. Compute and LLM credits are ready.',
+        });
+      } catch {
+        // Webhook will reconcile shortly; just refresh what we can.
+        invalidateAccountState(queryClient);
+      } finally {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('team_signup');
+        window.history.replaceState(null, '', url.toString());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, queryClient]);
+
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
     queryFn: listAccounts,
@@ -193,11 +223,17 @@ export default function ProjectsPage() {
   const canCreateProjects =
     activeAccount?.account_role === 'owner' || activeAccount?.account_role === 'admin';
 
-  // Surface a "Migrate machines" entry point only for users who actually have
-  // legacy machines on this account; everyone else never sees the clutter.
-  const [migrateOpen, setMigrateOpen] = useState(false);
+  // Legacy machines live right in the projects grid as cards with a "must be
+  // migrated" badge, so they're impossible to miss and feel like everything
+  // else. The query only runs for users who actually have any.
   const legacyMachinesQuery = useLegacyMachines({ enabled: !!user });
-  const hasLegacyMachines = (legacyMachinesQuery.data?.sandboxes?.length ?? 0) > 0;
+  const startMigration = useStartLegacyMigration();
+
+  const handleMigrate = (sandboxId: string) =>
+    startMigration.mutate(sandboxId, {
+      onSuccess: () => toast.success('Migration started — this runs in the background'),
+      onError: (e: Error) => toast.error(e.message || 'Failed to start migration'),
+    });
 
   const archiveMutation = useMutation({
     mutationFn: archiveProject,
@@ -224,14 +260,42 @@ export default function ProjectsPage() {
     );
   }, [projectsQuery.data, query]);
 
+  const projectIds = useMemo(
+    () => new Set((projectsQuery.data ?? []).map((p) => p.project_id)),
+    [projectsQuery.data],
+  );
+
+  const legacyMachines = useMemo(() => {
+    const items = legacyMachinesQuery.data?.sandboxes ?? [];
+    const q = query.trim().toLowerCase();
+    return items.filter((machine) => {
+      // A finished migration is its own real project card now — drop the
+      // duplicate once that project shows up in the list.
+      const projectId = machine.migration?.project_id;
+      if (machine.migration?.status === 'completed' && projectId && projectIds.has(projectId)) {
+        return false;
+      }
+      if (!q) return true;
+      return machine.name.toLowerCase().includes(q) || machine.provider.toLowerCase().includes(q);
+    });
+  }, [legacyMachinesQuery.data, query, projectIds]);
+
   if (authLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
   }
 
   const total = projectsQuery.data?.length ?? 0;
+  const totalLegacy = legacyMachinesQuery.data?.sandboxes?.length ?? 0;
   const showProjectsLoading = accountsQuery.isLoading || projectsQuery.isLoading;
-  const showEmptyState = !!activeAccountId && !showProjectsLoading && !projectsQuery.isError && total === 0;
-  const showNoResults = !!activeAccountId && !showProjectsLoading && !projectsQuery.isError && total > 0 && filtered.length === 0;
+  const showEmptyState =
+    !!activeAccountId && !showProjectsLoading && !projectsQuery.isError && total === 0 && totalLegacy === 0;
+  const showNoResults =
+    !!activeAccountId &&
+    !showProjectsLoading &&
+    !projectsQuery.isError &&
+    total + totalLegacy > 0 &&
+    filtered.length === 0 &&
+    legacyMachines.length === 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -255,17 +319,6 @@ export default function ProjectsPage() {
                   className="h-9 pl-9 text-sm"
                 />
               </div>
-              {hasLegacyMachines && (
-                <Button
-                  onClick={() => setMigrateOpen(true)}
-                  variant="outline"
-                  size="sm"
-                  className="h-9 gap-1.5"
-                >
-                  <HardDriveDownload className="h-4 w-4" />
-                  Migrate machines
-                </Button>
-              )}
               <Button
                 onClick={() => setModalOpen(true)}
                 disabled={!activeAccountId || !canCreateProjects}
@@ -328,8 +381,17 @@ export default function ProjectsPage() {
             </SectionCard>
           )}
 
-          {filtered.length > 0 && (
+          {(filtered.length > 0 || legacyMachines.length > 0) && (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {legacyMachines.map((machine) => (
+                <LegacyMachineCard
+                  key={machine.sandbox_id}
+                  machine={machine}
+                  starting={startMigration.isPending && startMigration.variables === machine.sandbox_id}
+                  onMigrate={() => handleMigrate(machine.sandbox_id)}
+                  onOpenProject={(projectId) => router.push(`/projects/${projectId}`)}
+                />
+              ))}
               {filtered.map((project) => (
                 <ProjectCard
                   key={project.project_id}
@@ -349,8 +411,6 @@ export default function ProjectsPage() {
         onOpenChange={setModalOpen}
         accountId={activeAccountId}
       />
-
-      <LegacyMigrationDialog open={migrateOpen} onOpenChange={setMigrateOpen} />
 
       <PersonalOnboardingWelcome />
     </div>

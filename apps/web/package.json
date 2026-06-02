@@ -231,7 +231,7 @@
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "require-in-the-middle": "8.0.1",
-    "rimraf": "^6.1.3",
+    "rimraf": "2.7.1",
     "server-only": "^0.0.1",
     "shaders": "^2.5.94",
     "sonner": "^2.0.3",

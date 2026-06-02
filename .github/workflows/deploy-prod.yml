@@ -1,24 +1,31 @@
 name: Deploy Prod
 
-# PROD pipeline. Runs when `production` advances (via the promote.yml workflow)
-# or on manual dispatch. The root VERSION on `production` is the clean version
-# `X.Y.Z` being released.
+# PROD pipeline. Runs when `prod` advances (via the promote.yml workflow) or on
+# manual dispatch. The root VERSION on `prod` is the clean version `X.Y.Z`.
 #
 #   1. Retag the dev images (kortix/kortix-*:dev-latest) → :X.Y.Z + :latest
 #      (multi-arch manifest copy, zero rebuilds).
 #   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
 #      installers and cut a single GitHub Release `vX.Y.Z`.
-#   3. [GATED] Roll the prod ECS service. DORMANT until `PROD_LIVE=true` AND the
-#      `production` GitHub Environment approval — stays off until terraform
-#      prod is applied.
+#   3. Roll the `kortix-prod` ECS Fargate service onto the new image (OIDC).
+#   4. Deploy the prod frontend on Vercel (the `prod` branch → new.kortix.com,
+#      and kortix.com after the apex cutover).
 #
-# kortix.com (frontend) is served by Vercel, which auto-deploys from the
-# `production` branch — there is no frontend deploy step here.
+# The prod stack is api-prod.kortix.com (ECS) + new.kortix.com (Vercel) today;
+# after the apex DNS cutover it is api.kortix.com + kortix.com — same pipeline.
 
 on:
   push:
-    branches: [production]
+    branches: [prod]
   workflow_dispatch:
+  # Auto-run after a successful Promote. The promote workflow advances `prod`
+  # with the Actions GITHUB_TOKEN, which (by design) can't trigger the `push`
+  # event above — so a promote alone would deploy the frontend (Vercel) but not
+  # the API. This makes a promote deploy everything: when Promote completes
+  # successfully, run the full prod pipeline (see the `if` on the version job).
+  workflow_run:
+    workflows: ["Promote to Production"]
+    types: [completed]
 
 concurrency:
   group: deploy-prod
@@ -32,19 +39,40 @@ jobs:
   version:
     name: Resolve version
     runs-on: ubuntu-latest
+    # On push/manual dispatch, always run. When triggered by a Promote
+    # completing, only proceed if that promote actually succeeded. Every other
+    # job needs this one, so this single guard gates the whole pipeline.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
+      title: ${{ steps.v.outputs.title }}
+      notes: ${{ steps.v.outputs.notes }}
     steps:
       - uses: actions/checkout@v4
-      - name: Read VERSION
+        with:
+          fetch-depth: 0  # need full tags + annotations to read the release notes
+      - name: Read VERSION + release notes from the tag annotation
         id: v
         run: |
           set -euo pipefail
           V="$(tr -d '[:space:]' < VERSION)"
+          TAG="v$V"
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "tag=v$V" >> "$GITHUB_OUTPUT"
-          echo "Releasing v$V"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG"
+
+          # The annotated tag carries the human release entry written at promote
+          # time (promote.yml): subject line = title, body = notes. That becomes
+          # the GitHub Release name/body — i.e. the public changelog.
+          git fetch --force --tags origin "$TAG" >/dev/null 2>&1 || true
+          TITLE="$(git tag -l --format='%(contents:subject)' "$TAG" 2>/dev/null || true)"
+          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+          {
+            echo 'notes<<KORTIX_NOTES_EOF'
+            git tag -l --format='%(contents:body)' "$TAG" 2>/dev/null || true
+            echo 'KORTIX_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
 
   # ── Retag dev images → versioned + latest (no rebuild) ──────────────────────
   retag-images:
@@ -209,44 +237,30 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Validate signing secrets
+      # Never hard-fail on missing certs — a release should always ship an
+      # installer. Sign (+ notarize on macOS) when the platform's secrets are
+      # present; otherwise build UNSIGNED (Gatekeeper/SmartScreen warning).
+      - name: Decide signing
+        id: sign
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
         run: |
+          enabled=false
           case "${{ runner.os }}" in
-            macOS)
-              test -n "$APPLE_CERTIFICATE" || { echo "Missing APPLE_CERTIFICATE"; exit 1; }
-              test -n "$APPLE_CERTIFICATE_PASSWORD" || { echo "Missing APPLE_CERTIFICATE_PASSWORD"; exit 1; }
-              if [ -n "$APPLE_API_ISSUER" ] || [ -n "$APPLE_API_KEY" ] || [ -n "$APPLE_API_KEY_P8" ]; then
-                test -n "$APPLE_API_ISSUER" || { echo "Missing APPLE_API_ISSUER"; exit 1; }
-                test -n "$APPLE_API_KEY" || { echo "Missing APPLE_API_KEY"; exit 1; }
-                test -n "$APPLE_API_KEY_P8" || { echo "Missing APPLE_API_KEY_P8"; exit 1; }
-              else
-                test -n "$APPLE_ID" || { echo "Missing APPLE_ID"; exit 1; }
-                test -n "$APPLE_PASSWORD" || { echo "Missing APPLE_PASSWORD"; exit 1; }
-                test -n "$APPLE_TEAM_ID" || { echo "Missing APPLE_TEAM_ID"; exit 1; }
-              fi
-              ;;
-            Windows)
-              test -n "$WINDOWS_CERTIFICATE" || { echo "Missing WINDOWS_CERTIFICATE"; exit 1; }
-              test -n "$WINDOWS_CERTIFICATE_PASSWORD" || { echo "Missing WINDOWS_CERTIFICATE_PASSWORD"; exit 1; }
-              test -n "$WINDOWS_CERTIFICATE_THUMBPRINT" || { echo "Missing WINDOWS_CERTIFICATE_THUMBPRINT"; exit 1; }
-              ;;
+            macOS)   [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && enabled=true ;;
+            Windows) [ -n "$WINDOWS_CERTIFICATE" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ] && enabled=true ;;
+            *)       enabled=true ;;
           esac
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          [ "$enabled" = true ] && echo "::notice::${{ runner.os }} signing ENABLED." \
+                                || echo "::warning::${{ runner.os }} signing secrets absent — building UNSIGNED."
 
       - name: Prepare macOS notarization key
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.sign.outputs.enabled == 'true'
         shell: bash
         env:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
@@ -258,7 +272,7 @@ jobs:
           fi
 
       - name: Import Windows signing certificate
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.sign.outputs.enabled == 'true'
         shell: pwsh
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
@@ -277,6 +291,7 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          SIGN_ENABLED: ${{ steps.sign.outputs.enabled }}
           WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
           WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
         run: |
@@ -287,7 +302,7 @@ jobs:
           config.version = process.env.VERSION;
           config.productName = 'Kortix';
           config.identifier = 'com.kortix.desktop';
-          if (process.env.WINDOWS_CERTIFICATE_THUMBPRINT) {
+          if (process.env.SIGN_ENABLED === 'true' && process.env.WINDOWS_CERTIFICATE_THUMBPRINT) {
             config.bundle ||= {};
             config.bundle.windows ||= {};
             config.bundle.windows.certificateThumbprint = process.env.WINDOWS_CERTIFICATE_THUMBPRINT;
@@ -300,18 +315,20 @@ jobs:
       - name: Prepare desktop shell assets
         run: pnpm --filter @kortix/desktop run prepare-assets
 
+      # Apple env vars only when signing is enabled → Tauri signs + notarizes;
+      # empty otherwise → unsigned bundle.
       - name: Build desktop installer
         run: pnpm --filter @kortix/desktop tauri build --bundles ${{ matrix.bundles }}
         env:
           KORTIX_DESKTOP_DEFAULT_URL: ${{ env.DESKTOP_URL }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_API_ISSUER: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_API_KEY: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_API_KEY || '' }}
+          APPLE_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && (secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD) || '' }}
+          APPLE_TEAM_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
@@ -321,14 +338,15 @@ jobs:
           if-no-files-found: error
 
   # ── Cut a single GitHub Release vX.Y.Z (CLI + desktop) ──────────────────────
-  # CLI is required (it gates the release); desktop is best-effort — if signing
-  # fails on some/all desktop targets the release still ships with whatever
-  # installers built (or none), so a desktop cert problem never blocks the
-  # API/frontend/CLI release. Re-run desktop + re-dispatch later to attach them.
+  # Cut the release as soon as the CLI + images are ready — it does NOT wait on
+  # desktop. Desktop builds on slow, scarce, signed macOS/Windows runners that
+  # can get stuck queued for ~50min (or fail on a cert problem); waiting on them
+  # would block every release. Desktop installers are attached afterward by the
+  # separate `attach-desktop` job, best-effort. So a desktop problem can never
+  # delay or block the API/frontend/CLI release.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
-    needs: [version, retag-images, build-cli, build-desktop]
-    if: always() && needs.build-cli.result == 'success' && needs.retag-images.result == 'success'
+    needs: [version, retag-images, build-cli]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -343,24 +361,11 @@ jobs:
           name: cli-binaries
           path: artifacts/
 
-      - name: Download desktop artifacts (best-effort)
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          path: desktop-artifacts/
-          pattern: desktop-*
-          merge-multiple: true
-
       - name: Assemble release assets + checksums
         run: |
           set -euo pipefail
           mkdir -p release
           cp -v artifacts/kortix-* release/
-          if [ -d desktop-artifacts ]; then
-            find desktop-artifacts -maxdepth 1 -type f -exec cp -v {} release/ \;
-          else
-            echo "::warning::No desktop installers attached (build-desktop did not succeed) — release ships CLI + images only."
-          fi
           cd release
           sha256sum * > SHA256SUMS
           ls -lh
@@ -369,21 +374,55 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
-          name: ${{ needs.version.outputs.tag }}
+          # Human title + notes from the tag annotation (set at promote time) lead
+          # the release; the auto-generated PR list is appended below them.
+          name: ${{ needs.version.outputs.title != '' && format('{0} — {1}', needs.version.outputs.tag, needs.version.outputs.title) || needs.version.outputs.tag }}
+          body: ${{ needs.version.outputs.notes }}
           generate_release_notes: true
           files: |
             release/*
 
-  # ── [GATED] Roll the prod ECS service ───────────────────────────────────────
-  # DORMANT until repo var PROD_LIVE=true AND the `production` GitHub Environment
-  # approval are both satisfied. Keep this OFF until terraform env/prod is
-  # applied (cluster/service `kortix-prod` must exist first).
+  # ── Attach desktop installers to the release (best-effort, non-blocking) ─────
+  # Runs after the release is already cut. Uploads whatever desktop installers
+  # built; if desktop failed entirely it's a no-op and the release simply ships
+  # without installers (re-run desktop + this job later to add them).
+  attach-desktop:
+    name: Attach desktop installers
+    needs: [version, github-release, build-desktop]
+    if: always() && needs.github-release.result == 'success'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          path: desktop-artifacts/
+          pattern: desktop-*
+          merge-multiple: true
+
+      - name: Upload installers to the release (if any built)
+        run: |
+          set -euo pipefail
+          if [ ! -d desktop-artifacts ] || [ -z "$(ls -A desktop-artifacts 2>/dev/null)" ]; then
+            echo "::warning::No desktop installers built — release ships CLI + images only."
+            exit 0
+          fi
+          cd desktop-artifacts
+          sha256sum * > DESKTOP-SHA256SUMS
+          gh release upload "${{ needs.version.outputs.tag }}" * --clobber --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Roll the prod ECS service onto the freshly-tagged image ─────────────────
+  # The kortix-prod task definition pins kortix/kortix-api:latest (retagged
+  # above), so force-new-deployment re-pulls it and rolls the service. Auth via
+  # OIDC (no long-lived keys). The stack is already applied + validated.
   deploy-api:
-    name: Deploy API to prod (ECS) [gated]
+    name: Deploy API to prod (ECS)
     needs: [version, retag-images]
-    if: vars.PROD_LIVE == 'true'
     runs-on: ubuntu-latest
-    environment: production
     permissions:
       id-token: write # assume the AWS role via GitHub OIDC
       contents: read
@@ -393,13 +432,43 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
           aws-region: us-west-2
-      - name: Roll the prod ECS service
+      - name: Roll the prod ECS service (with clean version stamped)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          echo "Rolling ECS service kortix-prod onto v${{ needs.version.outputs.version }}…"
-          aws ecs update-service --cluster kortix-prod --service kortix-prod --force-new-deployment >/dev/null
-          aws ecs wait services-stable --cluster kortix-prod --services kortix-prod
-          aws ecs describe-services --cluster kortix-prod --services kortix-prod \
+          CLUSTER=kortix-prod; SERVICE=kortix-prod
+
+          # The image is retagged (not rebuilt), so it carries the promoted DEV
+          # build's KORTIX_VERSION default. Register a new task-def revision that
+          # sets the container env KORTIX_VERSION to the clean X.Y.Z, so prod
+          # /v1/health reports e.g. 0.9.1 (not 0.9.1-dev.<sha>). Everything else
+          # in the task def is preserved verbatim.
+          echo "Stamping KORTIX_VERSION=$VERSION onto a new kortix-prod task-def revision…"
+          CURRENT_TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --task-definition "$CURRENT_TD" \
+            --query 'taskDefinition' --output json > td.json
+
+          # Drop read-only fields, then upsert KORTIX_VERSION into each container's
+          # env (jq — no heredoc, robust inside the YAML run block).
+          jq --arg v "$VERSION" '
+            del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+            | .containerDefinitions |= map(
+                .environment = ((.environment // []) | map(select(.name != "KORTIX_VERSION"))
+                                 + [{name: "KORTIX_VERSION", value: $v}]))
+          ' td.json > td-new.json
+
+          NEW_TD=$(aws ecs register-task-definition --cli-input-json file://td-new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_TD"
+
+          echo "Rolling $SERVICE onto v$VERSION…"
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+            --task-definition "$NEW_TD" --force-new-deployment >/dev/null
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
             --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
             --output table
       - name: Summary
@@ -408,4 +477,21 @@ jobs:
           {
             echo "### Deployed API → **prod** (ECS Fargate)"
             echo "v${{ needs.version.outputs.version }} rolled onto ECS service \`kortix-prod\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Prod frontend (Vercel) ──────────────────────────────────────────────────
+  # No job here: the Vercel project is git-connected and auto-deploys the `prod`
+  # branch on every push (new.kortix.com today, kortix.com after the apex
+  # cutover) — the same way dev.kortix.com auto-deploys from `main`. The promote
+  # workflow's push to `prod` is what triggers it.
+  frontend-note:
+    name: Prod frontend (Vercel auto-deploys prod)
+    needs: version  # gate with the rest of the pipeline (skipped on a failed promote)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Note
+        run: |
+          {
+            echo "### Frontend → **prod** (Vercel)"
+            echo "Vercel auto-deploys the \`prod\` branch (new.kortix.com → api-prod; kortix.com after apex cutover). No action needed here."
           } >> "$GITHUB_STEP_SUMMARY"

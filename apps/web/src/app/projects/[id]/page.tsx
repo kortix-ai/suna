@@ -8,6 +8,9 @@ import { ProjectShell } from '@/components/projects/project-shell';
 import { ProjectHome, type ProjectHomeSendOptions } from '@/components/projects/project-home';
 import { createProjectSession } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
+import { useAccountState } from '@/hooks/billing';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { isBillingEnabled } from '@/lib/config';
 
 /**
  * Project root — the project home / dashboard.
@@ -16,54 +19,66 @@ import { toast } from '@/lib/toast';
  * (integrations, scheduled tasks, skills, Slack, team, agent) that tease the
  * feature and prompt setup, each docs-backed.
  *
- * Send flow is **optimistic**: we mint the session id client-side, navigate
- * straight into the ConnectingScreen, then POST in the background. That
- * removes the entire session-create round-trip from perceived boot time.
- * The session id is a real UUID; the API accepts client-provided ids via the
- * `session_id` body field (see apps/api/src/projects/index.ts createProjectSession).
+ * Send flow: create the session FIRST, then navigate on success. We used to
+ * navigate optimistically (mint id → push → POST in background) for perceived
+ * speed, but that meant a no-plan account got dropped onto a dead session page
+ * before the billing 402 came back. Now the backend's billing gate (which knows
+ * THIS project's account) is authoritative: a 402 opens the Team plan modal and
+ * we never navigate. The session id is client-minted so we can stash the pending
+ * prompt; the API accepts client-provided ids via the `session_id` body field.
  */
 export default function ProjectIndexPage() {
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { data: accountState } = useAccountState();
+  const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const [busy, setBusy] = useState(false);
 
   const handleSend = useCallback(
-    (text: string, options?: ProjectHomeSendOptions) => {
-      if (!text.trim()) return;
+    async (text: string, options?: ProjectHomeSendOptions) => {
+      if (!text.trim() || busy) return;
+
+      // Fast client-side pre-check (best-effort; backend is authoritative).
+      const noPlan =
+        isBillingEnabled() &&
+        !!accountState &&
+        !accountState.subscription?.subscription_id;
+      if (noPlan) {
+        openUpgradeDialog({ reason: 'subscription_required' });
+        return;
+      }
+
       setBusy(true);
-
-      // 1. Generate the session id locally — same RFC 4122 v4 shape the API
-      //    would have generated. We stash the pending prompt under this id
-      //    *before* navigating so ActiveSessionChat picks it up the moment
-      //    the page mounts.
-      const sessionId = crypto.randomUUID();
-      sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
-
-      // 2. Navigate FIRST — the ConnectingScreen renders against an empty
-      //    sandbox row and starts polling. From the user's perspective the
-      //    click is instant.
-      router.push(`/projects/${projectId}/sessions/${sessionId}`);
-
-      // 3. POST in the background. Errors get a toast but we leave the
-      //    navigation in place; ActiveSessionChat will surface the failure
-      //    once the sandbox poll returns 404.
-      void createProjectSession(projectId, {
-        session_id: sessionId,
-        ...(options?.sandbox_slug ? { sandbox_slug: options.sandbox_slug } : {}),
-      })
-        .then(() => {
-          queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-        })
-        .catch((err) => {
-          setBusy(false);
-          // 429 concurrent-session-limit is handled globally — skip the local toast.
-          if ((err as any)?.code === 'concurrent_session_limit') return;
-          toast.error(err instanceof Error ? err.message : 'Failed to start session');
+      try {
+        // Create FIRST. If the account has no plan, this 402s and we bail —
+        // no navigation, no dead session page. Use the id the SERVER returns
+        // (not a client-generated one): with the warm pool, create may hand
+        // back a pre-booted sandbox whose id is server-authoritative.
+        const created = await createProjectSession(projectId, {
+          ...(options?.sandbox_slug ? { sandbox_slug: options.sandbox_slug } : {}),
         });
+        const sessionId = created.session_id;
+        sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
+        queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+        router.push(`/projects/${projectId}/sessions/${sessionId}`);
+      } catch (err) {
+        setBusy(false);
+        const code = (err as any)?.code;
+        // 429 concurrent-session-limit is handled globally — skip the toast.
+        if (code === 'concurrent_session_limit') return;
+        // No plan → open the one Team plan subscribe modal. Don't navigate.
+        if (code === 'subscription_required' || code === 'no_account') {
+          openUpgradeDialog({ reason: code });
+          return;
+        }
+        // Out of credits on an existing plan (legacy/balance) → surface the
+        // backend message ("Top up to continue"); don't pitch a subscription.
+        toast.error(err instanceof Error ? err.message : 'Failed to start session');
+      }
     },
-    [projectId, queryClient, router],
+    [projectId, queryClient, router, accountState, openUpgradeDialog, busy],
   );
 
   return (

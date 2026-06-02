@@ -28,7 +28,6 @@ import {
   CommandItem,
   CommandFooter,
 } from '@/components/ui/command';
-import { Switch } from '@/components/ui/switch';
 
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { FlatModel } from './session-chat-input';
@@ -324,26 +323,6 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                         </div>
                         {isFree && <Tag variant="free">Free</Tag>}
                         {isSelected && <Check className="text-foreground shrink-0" />}
-                        {!isLatestModel && !isSelected && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div
-                                className="shrink-0"
-                                onClick={(e) => e.stopPropagation()}
-                                onPointerDown={(e) => e.stopPropagation()}
-                              >
-                                <Switch
-                                  checked={isModelVisible}
-                                  onCheckedChange={(checked) => modelStore.setVisibility(modelKey, checked)}
-                                  aria-label={`Show ${model.modelName} in the model picker`}
-                                />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="left" className="text-xs">
-                              {isModelVisible ? 'Showing in picker' : 'Show in picker'}
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
                       </CommandItem>
                     );
                   })}

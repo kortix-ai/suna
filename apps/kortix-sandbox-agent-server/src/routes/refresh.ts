@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 
 import type { Config } from '../config'
-import { refreshRepo } from '../git'
+import { refreshRepo, syncWorkspaceToBase } from '../git'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -28,10 +28,16 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
       return c.json({ error: 'refresh already running' }, 409)
     }
 
+    // `?base=1` syncs the workspace to the latest base tip (warm-pool claim);
+    // `?restart=0` skips the opencode restart (the file watcher picks up changes
+    // — keeps a warm claim fast). Default behaviour is the full refresh+restart.
+    const syncBase = c.req.query('base') === '1'
+    const skipRestart = c.req.query('restart') === '0'
+
     refreshInFlight = (async () => {
       try {
-        const repo = await refreshRepo(cfg)
-        await opencode.restart()
+        const repo = syncBase ? await syncWorkspaceToBase(cfg) : await refreshRepo(cfg)
+        if (!skipRestart) await opencode.restart()
         return c.json({
           ok: true,
           repo: {

@@ -70,17 +70,26 @@ export class DaytonaProvider implements SandboxProvider {
       Number.parseInt(process.env.KORTIX_DAYTONA_CREATE_TIMEOUT_SECONDS || '30', 10) || 30,
     );
 
+    const envVars: Record<string, string> = {
+      // Guarantee the sandbox contract even if a caller forgets: the runtime only
+      // needs KORTIX_API_URL + KORTIX_TOKEN; tools derive every router endpoint
+      // from KORTIX_API_URL and auth with KORTIX_TOKEN.
+      KORTIX_API_URL: `${sandboxApiBase}/v1`,
+      // Session identity, git context, KORTIX_TOKEN, and the project's own
+      // secrets (incl. provider keys set via `kortix providers`, picked up by
+      // opencode at boot) — see buildSessionSandboxEnvVars() and
+      // provisionSessionSandbox().
+      ...opts.envVars,
+    };
+    if (!envVars.KORTIX_TOKEN) {
+      throw new Error('[daytona] create() called without KORTIX_TOKEN — sandbox cannot authenticate to the Kortix router.');
+    }
+
     const daytonaSandbox = await daytona.create(
       {
         snapshot,
-        envVars: {
-          // Session identity, git context, KORTIX_API_URL + KORTIX_TOKEN, and
-          // the project's own secrets (incl. provider keys set via `kortix
-          // providers`, picked up by opencode at boot) — see
-          // buildSessionSandboxEnvVars() and provisionSessionSandbox().
-          ...opts.envVars,
-        },
-        autoStopInterval: 15,
+        envVars,
+        autoStopInterval: opts.autoStopInterval ?? 15,
         autoArchiveInterval: 30,
         public: false,
       },

@@ -136,26 +136,42 @@ nothing is worth changing.
 # {{ message.text }}
 # """
 
-# ─── Apps (experimental) ─────────────────────────────────────────────────
-# Gated by the platform flag KORTIX_APPS_EXPERIMENTAL. When off, entries
-# are parsed but never acted on. One `[[apps]]` entry per deployable.
+# ─── Apps ────────────────────────────────────────────────────────────────
+# Each `[[apps]]` entry is a deployable website. Kortix builds it and serves
+# it on a free `*.style.dev` URL (or your own domain). Manage these from the
+# dashboard's Apps panel, or edit here by hand. Experimental — gated by the
+# platform flag KORTIX_APPS_EXPERIMENTAL.
+#
+# This starter ships with one ready-to-deploy app (the `app/` folder). Open
+# the Apps panel and hit Deploy to put it live, then edit app/index.js — or
+# ask your agent to build it out — and redeploy.
+
+[[apps]]
+slug = "welcome"
+name = "Welcome site"
+enabled = true
+# No domains → a free *.style.dev URL is issued automatically.
+
+  [apps.source]
+  type = "git"            # deploys THIS project's repo (omit `repo`)
+  root_path = "app"       # the folder to deploy
+
+# Want a second app? Copy the block above. Point `root_path` at any folder,
+# set `repo`/`branch` to deploy a different repo, or add a `[apps.build]`
+# (command + out_dir) and `[apps.env]` for frameworks like Next or Vite:
 #
 # [[apps]]
 # slug = "marketing-site"
 # name = "Marketing site"
-# enabled = true
-# framework = "next"
-# domains = ["marketing.example.com"]
-#
+# framework = "next"          # optional hint; omit to auto-detect
+# # domains = ["marketing.example.com"]
 #   [apps.source]
-#   type = "git"                  # or "tar"
+#   type = "git"
 #   repo = "https://github.com/me/site"
 #   branch = "main"
-#   root_path = "apps/site"       # path inside the repo to deploy from
-#
+#   root_path = "apps/site"
 #   [apps.build]
 #   command = "pnpm build"
 #   out_dir = "dist"
-#
 #   [apps.env]
 #   NEXT_PUBLIC_API_URL = "https://api.example.com"

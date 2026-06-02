@@ -73,9 +73,9 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
-import { AccountOverviewTab } from '@/components/billing/account-overview';
 import { BillingTab, TransactionsTab } from '@/components/settings/user-settings-modal';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -316,7 +316,6 @@ export default function AccountSettingsPage() {
                       multi-account user doesn't see (or mutate) their primary
                       account by accident. */}
                   <BillingAccountProvider accountId={account.account_id}>
-                    <AccountOverviewTab accountId={account.account_id} />
                     <BillingTab
                       // Stripe Billing Portal requires an absolute return_url —
                       // a bare path 500s with "Not a valid URL". Build from origin.
@@ -327,6 +326,11 @@ export default function AccountSettingsPage() {
                       }
                       isActive={initialTab === 'billing'}
                     />
+                    {/* The "Subscribe to Team plan" button opens the global
+                        upgrade-dialog store; mount its renderer here (the global
+                        one lives only on share pages) so the dialog actually
+                        appears, scoped to THIS account via the provider above. */}
+                    <GlobalUpgradeDialog />
                   </BillingAccountProvider>
                 </TabsContent>
               )}

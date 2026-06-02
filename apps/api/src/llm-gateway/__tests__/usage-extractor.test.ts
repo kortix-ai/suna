@@ -7,7 +7,7 @@ import {
 describe('extractUsageFromJson', () => {
   test('full usage block', () => {
     const json = {
-      model: 'anthropic/claude-haiku-4-5',
+      model: 'anthropic/claude-opus-4.8',
       usage: {
         prompt_tokens: 12,
         completion_tokens: 34,
@@ -20,7 +20,7 @@ describe('extractUsageFromJson', () => {
     expect(u.completionTokens).toBe(34);
     expect(u.cachedTokens).toBe(5);
     expect(u.upstreamCostHint).toBe(0.000123);
-    expect(u.model).toBe('anthropic/claude-haiku-4-5');
+    expect(u.model).toBe('anthropic/claude-opus-4.8');
   });
 
   test('falls back to prompt_tokens_details.cached_tokens when top-level missing', () => {

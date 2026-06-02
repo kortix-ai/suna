@@ -11,7 +11,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
 import { HTTPException } from 'hono/http-exception';
-import { config, SANDBOX_VERSION } from './config';
+import { config } from './config';
 import { BillingError } from './errors';
 
 // ─── Sub-Service Imports ──────────────────────────────────────────────────── 
@@ -20,21 +20,14 @@ import { router } from './router';
 import { billingApp, accountDeletionApp } from './billing';
 import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
-import { isKortixToken } from './shared/crypto';
-import { getSupabase } from './shared/supabase';
-import { verifySupabaseJwt } from './shared/jwt-verify';
-import { canAccessPreviewSandbox } from './shared/preview-ownership';
 import { setupApp } from './setup';
 import { queueApp, startDrainer, stopDrainer } from './queue';
 import { serversApp } from './servers';
-// WoA is now mounted under the router at /v1/router/woa (see router/index.ts)
 import { supabaseAuth, combinedAuth } from './middleware/auth';
-import { validateSecretKey } from './repositories/api-keys';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
-// import { cloudGatewayApp } from './cloud-gateway/routes'; // TODO: restore once cloud-gateway routes land
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { oauthApp } from './oauth';
 import {
@@ -234,10 +227,12 @@ app.use('/v1/*', auditStateChangingRequest);
 
 // === Top-Level Health Check (no auth) ===
 
-// API version is injected at container start by deploy-zero-downtime.sh,
-// which extracts it from the Docker image tag (e.g. kortix/kortix-api:0.8.29 → 0.8.29).
+// Unified platform version (the root VERSION file). Baked into the image via the
+// Dockerfile ARG KORTIX_VERSION (dev builds → 0.9.0-dev.<sha8>) and overridden by
+// the prod ECS task-def env to the clean X.Y.Z. Deliberately NOT SANDBOX_VERSION —
+// that drives snapshot content-hashing and must stay constant across releases.
 // Falls back to 'dev' for local development.
-const API_VERSION = process.env.SANDBOX_VERSION || 'dev';
+const API_VERSION = process.env.KORTIX_VERSION || 'dev';
 
 app.get('/health', (c) => {
   return c.json({
@@ -371,11 +366,19 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
   );
 }
 
-app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*, /v1/billing/setup/*
+app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+
+// Universal git smart-HTTP proxy — every git-backed project's client origin.
+// Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
+// so it is intentionally NOT wrapped in combinedAuth.
+{
+  const { gitProxyApp } = await import('./git-proxy');
+  app.route('/v1/git', gitProxyApp); // /v1/git/:projectId(.git)/{info/refs,git-upload-pack,git-receive-pack}
+}
 
 // Executor — unified connector layer. Gateway routes (/connectors, /call) use
 // KORTIX_EXECUTOR_TOKEN (validated inside the router); admin routes
@@ -432,8 +435,6 @@ app.use('/v1/tunnel/*', async (c, next) => {
   return combinedAuth(c, next);
 });
 app.route('/v1/tunnel', tunnelApp);
-
-// WoA moved to /v1/router/woa — see router/index.ts
 
 // Preview Proxy — unified route for both cloud (Daytona) and local mode.
 // Pattern: /v1/p/{sandboxId}/{port}/* for ALL modes.
@@ -545,7 +546,7 @@ console.log(`
 ║  Services:                                                ║
 ║    /v1/router     (search, LLM, proxy)                    ║
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
-║    /v1/platform   (sandbox lifecycle)                      ║
+║    /v1/platform   (api keys, sandbox version)               ║
 ${config.KORTIX_DEPLOYMENTS_ENABLED ? '║    /v1/deployments (deploy lifecycle)                      ║\n' : ''}║    /v1/projects   (Git-backed projects)                    ║
 ${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n' : ''}
 ║    /v1/setup      (setup & env management)                 ║
@@ -570,10 +571,33 @@ initModelPricing().catch((err) =>
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
 let schemaReady = false;
-export function isSchemaReady() { return schemaReady; }
 
 // Ensure DB schema exists before starting services that depend on it.
 // This is idempotent — safe to run on every startup.
+// Start background services after the schema is ready. The access-control cache
+// and tunnel service serve request-path needs; the rest are background WORKERS
+// (queue drainer, project maintenance, trigger scheduler, startup pre-build,
+// legacy-migration worker, grant-expiry sweeper). Every API node runs them.
+async function startBackgroundServices() {
+  startAccessControlCache();
+  startTunnelService();
+
+  startDrainer();
+  startProjectMaintenance();
+  startProjectTriggerScheduler();
+  // Mint the global platform-default sandbox image once per boot so the first
+  // session anywhere lands on a cache hit. Idempotent + best-effort; the
+  // session-boot graceful path is the lazy fallback if this is skipped.
+  kickStartupPreBuild();
+  startLegacyMigrationWorker();
+  // IAM V2 time-bounded grants: tick every 60s, emit one audit event
+  // per row that just transitioned to expired. Engine already filters
+  // expired rows out of authorize() so correctness doesn't depend on
+  // this — it's purely for the audit trail.
+  const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
+  startGrantExpirySweeper();
+}
+
 ensureSchema()
   .then(async () => {
     schemaReady = true;
@@ -581,35 +605,12 @@ ensureSchema()
     // boot-time system-role seed + membership-policy backfill from V1
     // are no longer needed. Permissions resolve directly from
     // account_members.account_role and project_members.project_role.
-    startAccessControlCache();
-    startDrainer();
-    startTunnelService();
-    startProjectMaintenance();
-    startProjectTriggerScheduler();
-    // Mint the global platform-default sandbox image once per boot so the first
-    // session anywhere lands on a cache hit. Idempotent + best-effort; the
-    // session-boot graceful path is the lazy fallback if this is skipped.
-    kickStartupPreBuild();
-    startLegacyMigrationWorker();
-    // IAM V2 time-bounded grants: tick every 60s, emit one audit event
-    // per row that just transitioned to expired. Engine already filters
-    // expired rows out of authorize() so correctness doesn't depend on
-    // this — it's purely for the audit trail.
-    {
-      const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
-      startGrantExpirySweeper();
-    }
+    await startBackgroundServices();
   })
   .catch(async (err) => {
     console.error('[startup] ensureSchema failed, starting services anyway:', err);
     schemaReady = true;
-    startAccessControlCache();
-    startDrainer();
-    startTunnelService();
-    startProjectMaintenance();
-    startProjectTriggerScheduler();
-    kickStartupPreBuild();
-    startLegacyMigrationWorker();
+    await startBackgroundServices();
   });
 
 // Graceful shutdown
@@ -782,14 +783,3 @@ export default {
     },
   },
 };
-
-// Mark intentionally-unused imports so TS won't complain in cases the helpers
-// are referenced only by deleted code paths.
-void isKortixToken;
-void getSupabase;
-void verifySupabaseJwt;
-void canAccessPreviewSandbox;
-void validateSecretKey;
-void supabaseAuth;
-void combinedAuth;
- 

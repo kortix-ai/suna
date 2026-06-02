@@ -3,15 +3,15 @@
 /**
  * ProjectHome — the project's dashboard / landing surface.
  *
- * A calm, on-brand home that communicates the one important thing first —
- * "describe a task, your agent works" — and then how to build the project out:
- *   • the standard Kortix brandmark wallpaper, fading into the page, for
- *     ambient brand presence,
- *   • a hero with the project's identity + a premium composer (matching the
- *     signature look of the session chat input) to start a session, with
- *     quick-start suggestions, and
- *   • a grid of section tiles (integrations, schedules, skills, Slack, team,
- *     agent) that double as a teaser and a setup prompt, each docs-backed.
+ * Laid out as the empty state of a session: the same full-bleed wallpaper the
+ * session shows before its first message, the page content centered in the
+ * middle, and a composer pinned at the bottom matching the session chat input.
+ *
+ *   • full-bleed `SessionWelcome` wallpaper for the shared empty-state look,
+ *   • a hero with the project's identity,
+ *   • a compact grid of section tiles (integrations, schedules, skills, Slack,
+ *     team, agent) that double as a teaser and a setup prompt, and
+ *   • a bottom-pinned composer with quick-start prompts sitting over it.
  *
  * Counts come from the same cached queries the rest of the project uses.
  */
@@ -21,7 +21,6 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
   ArrowUp,
-  BookOpen,
   Bot,
   CalendarClock,
   ChevronLeft,
@@ -48,7 +47,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import { SessionWelcome } from '@/components/session/session-welcome';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { cn } from '@/lib/utils';
 import {
@@ -101,7 +100,6 @@ export function ProjectHome({
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
   const defaultSlug = sandboxesQuery.data?.default_slug ?? 'default';
   const activeSlug = selectedSlug ?? defaultSlug;
-  const activeTemplate = sandboxItems.find((t) => t.slug === activeSlug) ?? null;
   // Always show the picker (even with only the platform default) so the user
   // can confirm which template they're booting from and see its state. Hide
   // only while the list is still loading.
@@ -118,7 +116,7 @@ export function ProjectHome({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
 
   useEffect(() => {
@@ -151,38 +149,53 @@ export function ProjectHome({
   };
 
   return (
-    <div className="relative flex-1 min-h-0 overflow-hidden bg-background">
-      {/* Standard Kortix brandmark wallpaper — ambient brand presence behind the
-          hero, masked so it fades out before the setup grid below. */}
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+      {/* Full-bleed empty-state wallpaper — the exact backdrop a session shows
+          before its first message. The content and composer read over it. */}
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
-        <div className="absolute inset-0 opacity-60 dark:opacity-50 [-webkit-mask-image:linear-gradient(to_bottom,black,black_28%,transparent_68%)] [mask-image:linear-gradient(to_bottom,black,black_28%,transparent_68%)]">
-          <WallpaperBackground wallpaperId="brandmark" />
+        <SessionWelcome />
+      </div>
+
+      {/* Middle — hero + the "Build out your project" grid, centered in the
+          space above the pinned composer. On a normal desktop it fits without
+          scrolling; the overflow-safe `min-h-full` + `m-auto` pattern only
+          scrolls when the window is genuinely too short (e.g. mobile), never
+          clipping the top. */}
+      <div className="relative z-10 min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-6 py-8">
+          {/* m-auto vertically centers the hero + grid as one block. */}
+          <div className="m-auto w-full">
+            {/* Hero */}
+            <div className="mx-auto flex w-full max-w-2xl flex-col items-center text-center">
+              <EntityAvatar label={name || 'Project'} size="xl" className="shadow-sm" />
+              <h1 className="mt-5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                {name || 'Your project'}
+              </h1>
+            </div>
+
+            {/* Build out your project */}
+            <ProjectHomeSections projectId={projectId} />
+          </div>
         </div>
       </div>
 
-      <div className="relative z-10 h-full overflow-y-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-6 pb-24 pt-20 sm:pt-28">
-          {/* Hero */}
-          <div className="mx-auto flex w-full max-w-2xl flex-col items-center text-center">
-            <EntityAvatar label={name || 'Project'} size="xl" className="shadow-sm" />
-            <h1 className="mt-5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-              {name || 'Your project'}
-            </h1>
-            <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              Describe a task and your agent gets to work — or set things up below.
-            </p>
-          </div>
+      {/* Bottom dock — quick-start prompts sitting directly over the composer,
+          which is pinned to the page bottom and matches the session chat input
+          (same width, surface, radius, textarea metrics, and toolbar). */}
+      <div className="relative z-10 shrink-0">
+        <div className="mx-auto w-full max-w-[52rem] px-2 pb-6 sm:px-4">
+          {/* Quick-start suggestions — paged carousel of the shared starter
+              prompts; picking one fills the composer below. */}
+          <StarterPromptsCarousel onPick={applySuggestion} />
 
-          {/* Composer — mirrors the session chat input's signature card */}
-          <div className="mx-auto mt-8 w-full max-w-2xl">
-            <div
-              className={cn(
-                'group relative w-full rounded-[24px] border border-border bg-card transition-all duration-200',
-                'shadow-[0_1px_2px_rgba(0,0,0,0.04),0_18px_40px_-24px_rgba(0,0,0,0.18)]',
-                'focus-within:border-foreground/20 focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.05),0_24px_56px_-28px_rgba(0,0,0,0.28)]',
-              )}
-            >
-              <div className="flex flex-col px-3.5">
+          <div
+            className={cn(
+              'mt-2.5 w-full overflow-visible rounded-[24px] border border-border bg-card transition-colors',
+              'focus-within:border-foreground/20',
+            )}
+          >
+            <div className="flex flex-col gap-2">
+              <div className="px-3.5">
                 <textarea
                   ref={textareaRef}
                   value={text}
@@ -196,51 +209,38 @@ export function ProjectHome({
                   placeholder="Describe a task to start a session…"
                   autoFocus
                   rows={1}
-                  className="relative max-h-[220px] min-h-[64px] w-full resize-none overflow-y-auto border-none bg-transparent px-0.5 pb-2 pt-4 text-base leading-relaxed outline-none placeholder:text-muted-foreground/60 sm:text-[15px]"
+                  className="relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto border-none bg-transparent px-0.5 pb-6 pt-4 text-base leading-relaxed outline-none placeholder:text-muted-foreground sm:text-sm"
                 />
-                <div className="mb-2 flex items-center justify-between gap-2 pl-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    {showSandboxPicker ? (
-                      <SandboxPicker
-                        items={sandboxItems}
-                        activeSlug={activeSlug}
-                        onSelect={setSelectedSlug}
-                      />
-                    ) : null}
-                    <span className="hidden items-center gap-1.5 text-xs text-muted-foreground/60 sm:flex">
-                      <Kbd>Enter</Kbd>
-                      <span>to start</span>
-                      <span className="text-muted-foreground/30">·</span>
-                      <Kbd>Shift</Kbd>
-                      <Kbd>Enter</Kbd>
-                      <span>for a new line</span>
-                    </span>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={submit}
-                    disabled={busy || !text.trim()}
-                    aria-label="Start session"
-                    className="ml-auto size-8 shrink-0 rounded-full p-0"
-                  >
-                    {busy ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <ArrowUp className="size-4" />
-                    )}
-                  </Button>
+              </div>
+
+              {/* Bottom toolbar — mirrors the session input's layout: controls
+                  left, send right. */}
+              <div className="mb-1.5 flex items-center justify-between gap-1 pl-2 pr-1.5">
+                <div className="flex min-w-0 items-center gap-2">
+                  {showSandboxPicker ? (
+                    <SandboxPicker
+                      items={sandboxItems}
+                      activeSlug={activeSlug}
+                      onSelect={setSelectedSlug}
+                    />
+                  ) : null}
                 </div>
+                <Button
+                  size="sm"
+                  onClick={submit}
+                  disabled={busy || !text.trim()}
+                  aria-label="Start session"
+                  className="h-8 w-8 shrink-0 rounded-full p-0"
+                >
+                  {busy ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <ArrowUp className="size-4" />
+                  )}
+                </Button>
               </div>
             </div>
-
-            {/* Quick-start suggestions — paged carousel of the shared
-                starter prompts. Arrows let the user browse the full set
-                without crowding the composer. */}
-            <StarterPromptsCarousel onPick={applySuggestion} />
           </div>
-
-          {/* Sections */}
-          <ProjectHomeSections projectId={projectId} />
         </div>
       </div>
     </div>
@@ -340,14 +340,6 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
         <ChevronRight className="size-3.5" />
       </Button>
     </div>
-  );
-}
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 font-sans text-[11px] font-medium text-muted-foreground">
-      {children}
-    </kbd>
   );
 }
 
@@ -533,11 +525,11 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
   ];
 
   return (
-    <div className="mt-16">
-      <h2 className="mb-3 px-0.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+    <div className="mx-auto mt-9 w-full max-w-3xl">
+      <h2 className="mb-2.5 px-0.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
         Build out your project
       </h2>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         {tiles.map((t) => (
           <SectionTile key={t.title} tile={t} onOpen={openCustomize} />
         ))}
@@ -553,7 +545,7 @@ function SectionTile({
   tile: Tile;
   onOpen: (section: CustomizeSection) => void;
 }) {
-  const { icon: Icon, title, desc, count, setupCta, section, docs } = tile;
+  const { icon: Icon, title, desc, count, section } = tile;
   const isSet = (count ?? 0) > 0;
   return (
     <div
@@ -567,41 +559,25 @@ function SectionTile({
         }
       }}
       className={cn(
-        'group relative flex cursor-pointer flex-col rounded-2xl border border-border/60 bg-card/70 p-4 text-left backdrop-blur-sm',
+        'group relative flex cursor-pointer items-center gap-3 rounded-2xl border border-border/60 bg-card/70 p-3 text-left backdrop-blur-sm',
         'transition-all duration-150 hover:border-foreground/25 hover:bg-card',
-        'hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.18)]',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
       )}
     >
-      <div className="flex items-center justify-between">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-muted text-foreground/70 transition-colors group-hover:text-foreground">
-          <Icon className="size-4" />
-        </span>
-        {isSet ? (
-          <Badge size="sm" variant="secondary" className="tabular-nums">
-            {count}
-          </Badge>
-        ) : (
-          <ArrowRight className="size-4 text-muted-foreground/30 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground/60" />
-        )}
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground/70 transition-colors group-hover:text-foreground">
+        <Icon className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-foreground">{title}</div>
+        <div className="truncate text-xs text-muted-foreground">{desc}</div>
       </div>
-
-      <div className="mt-3 text-sm font-medium text-foreground">{title}</div>
-      <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{desc}</p>
-
-      <div className="mt-3 flex items-center justify-between">
-        <span className="text-xs font-medium text-primary">{isSet ? 'Manage' : setupCta}</span>
-        <a
-          href={docs}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          aria-label={`Learn about ${title}`}
-          className="text-muted-foreground/40 transition-colors hover:text-foreground"
-        >
-          <BookOpen className="size-3.5" />
-        </a>
-      </div>
+      {isSet ? (
+        <Badge size="sm" variant="secondary" className="shrink-0 tabular-nums">
+          {count}
+        </Badge>
+      ) : (
+        <ArrowRight className="size-4 shrink-0 text-muted-foreground/30 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground/60" />
+      )}
     </div>
   );
 }

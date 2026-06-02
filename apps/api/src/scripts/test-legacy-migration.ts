@@ -31,7 +31,7 @@ import { legacySandboxMigrations, projectSessions, projects, sandboxes, sessionS
 import { db } from '../shared/db';
 import { resolveAccountId as resolveAccountForUser } from '../shared/resolve-account';
 import { execOnLegacyVm, RESOLVE_WS_OC_SH, resolveLegacyVmEndpoint } from '../projects/legacy-vm-access';
-import { createBackupUploadTarget } from '../projects/legacy-migration-storage';
+import { ensureBackupBucket } from '../projects/legacy-migration-storage';
 import { driveMigration, startMigration } from '../projects/legacy-migration-runner';
 import { rehydrateSessionChat } from '../projects/legacy-migration-rehydrate';
 
@@ -241,8 +241,8 @@ async function diag() {
     } catch (e) { console.log('   ❌ vm exec ERR:', String(e)); }
   } catch (e) { console.log('❌ resolveEndpoint ERR:', String(e)); }
   try {
-    const t = await createBackupUploadTarget(env('TEST_SANDBOX_ID'));
-    console.log('✅ storage target OK ->', t.path, '|', t.url.slice(0, 70));
+    await ensureBackupBucket();
+    console.log('✅ storage OK -> backup bucket reachable');
   } catch (e) { console.log('❌ storage ERR:', String(e)); }
   process.exit(0);
 }

@@ -4,7 +4,7 @@ import type { LlmGatewayConfig, LlmGatewayHooks, UsageEvent } from '../types';
 
 const LIVE_KEY = process.env.KORTIX_OPENROUTER_API_KEY ?? '';
 const RUN_LIVE = !!LIVE_KEY && process.env.RUN_LIVE_LLM_TESTS === '1';
-const CHEAP_MODEL = process.env.LIVE_TEST_MODEL ?? 'google/gemini-2.0-flash-lite-001';
+const CHEAP_MODEL = process.env.LIVE_TEST_MODEL ?? 'deepseek/deepseek-v4-flash';
 
 const describeLive = RUN_LIVE ? describe : describe.skip;
 

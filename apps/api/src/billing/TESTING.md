@@ -277,7 +277,7 @@ bun test src/__tests__/billing/per-seat-pricing.test.ts \
 Before flipping `INTERNAL_KORTIX_ENV=prod`:
 
 - [ ] Create prod `per_seat` Stripe price ($20/mo) under prod product
-- [ ] Replace `PER_SEAT_STRIPE_PRICE_ID_PLACEHOLDER` in `STRIPE_PRICES_PROD.subscriptions.per_seat.monthly`
+- [x] Prod per-seat price set: price_1TcrQJG6l1KZGqIry1K1cqZY (live "Kortix seat" $20/mo)
 - [ ] Configure prod webhook endpoint in Stripe Dashboard pointing at prod API URL
 - [ ] Copy prod webhook signing secret into prod env's `STRIPE_WEBHOOK_SECRET`
 - [ ] Verify `INTERNAL_KORTIX_ENV=prod` → `ensureSchema()` is a no-op (managed externally)

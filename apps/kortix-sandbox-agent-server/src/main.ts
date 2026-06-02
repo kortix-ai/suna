@@ -11,6 +11,7 @@ import {
 } from './git'
 import { logger } from './logger'
 import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady } from './opencode'
+import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { startOpencodeEventLoop, type QuestionRequest } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
@@ -104,6 +105,13 @@ async function main() {
     opencodeConfigDir,
     usingProjectConfig: opencodeConfigDir !== cfg.defaultOpencodeConfigDir,
   })
+
+  // Satisfy the config dir's npm deps offline before opencode boots, so its
+  // first-session `bun install` doesn't re-resolve `^` ranges over the network
+  // (a 1.5–6s — sometimes minutes — stall that otherwise gates runtimeReady).
+  await ensureOpencodeConfigDeps(opencodeConfigDir)
+  bootMark('config-deps')
+
   const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
 
   if (bootState.repoMaterializationError) {

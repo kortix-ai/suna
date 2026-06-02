@@ -333,6 +333,30 @@ const LOGO_ASSETS: LogoAsset[] = [
   },
 ];
 
+interface SocialAsset {
+  id: string;
+  variant: string;
+  /** Square 1:1 profile-picture style PNG — symbol centred on a solid field. */
+  pngSrc: string;
+  dark: boolean;
+}
+
+/** Ready-to-use social avatars: the symbol centred on a solid field, square 1:1. */
+const SOCIAL_ASSETS: SocialAsset[] = [
+  {
+    id: 'social-black',
+    variant: 'Black',
+    pngSrc: '/brandkit/Profile Picture/Avatar Black.png',
+    dark: true,
+  },
+  {
+    id: 'social-white',
+    variant: 'White',
+    pngSrc: '/brandkit/Profile Picture/Avatar White.png',
+    dark: false,
+  },
+];
+
 const TYPE_SCALE = [
   {
     token: 'text-xs',

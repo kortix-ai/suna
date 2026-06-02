@@ -283,6 +283,15 @@ export const projectGitConnections = kortixSchema.table(
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     provider: varchar('provider', { length: 32 }).notNull(),
     repoUrl: text('repo_url').notNull(),
+    /**
+     * Real upstream git URL on the host (github.com/…, git.freestyle.sh/…).
+     * Distinct from repoUrl, which is the client-facing Kortix git-proxy URL.
+     * Server-side git + the proxy resolve the real host through this; clients
+     * never see it. Null on legacy rows (defaults to repoUrl).
+     */
+    upstreamUrl: text('upstream_url'),
+    /** True when Kortix provisioned this repo (vs a BYO/linked repo). */
+    managed: boolean('managed').default(false).notNull(),
     repoOwner: varchar('repo_owner', { length: 255 }),
     repoName: varchar('repo_name', { length: 255 }),
     externalRepoId: text('external_repo_id'),
@@ -652,6 +661,10 @@ export const sessionSandboxes = kortixSchema.table(
     status: sessionSandboxStatusEnum('status').default('provisioning').notNull(),
     config: jsonb('config').default({}).$type<Record<string, unknown>>(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    // Warm-pool lifecycle. NULL for a normal session sandbox; for a pre-booted
+    // pool sandbox: 'booting' → 'parked' (claimable) → 'claimed'. A parked
+    // sandbox has no project_sessions row yet. See docs/specs/warm-pool.md.
+    poolState: text('pool_state'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -662,6 +675,8 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+    // Hot path for the atomic warm-sandbox claim (WHERE project_id, pool_state).
+    index('idx_session_sandboxes_pool').on(table.projectId, table.poolState),
   ],
 );
 
@@ -1019,9 +1034,8 @@ export const kortixApiKeys = kortixSchema.table(
   'api_keys',
   {
     keyId: uuid('key_id').defaultRandom().primaryKey(),
-    // No FK constraint: sandbox_id can point at either `sandboxes` (legacy
-    // /instances) or `session_sandboxes` (project-session sandboxes). Both
-    // tables share the UUID space so the lookup keeps working.
+    // No FK constraint: session_sandboxes is not guaranteed to exist before
+    // older api_keys migrations replay, but API keys are now session-scoped.
     sandboxId: uuid('sandbox_id').notNull(),
     accountId: uuid('account_id').notNull(),
     publicKey: varchar('public_key', { length: 64 }).notNull(),

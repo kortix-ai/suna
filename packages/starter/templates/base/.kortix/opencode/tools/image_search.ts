@@ -1,11 +1,11 @@
 import { tool } from "@opencode-ai/plugin";
 import Replicate from "replicate";
-import { getEnv } from "./lib/get-env";
+import { getEnv, getKortixRouterBase } from "./lib/get-env";
 
 const SERPER_DEFAULT_URL = "https://google.serper.dev";
 
 function getSerperImagesUrl(): string {
-  const override = getEnv("SERPER_API_URL");
+  const override = getKortixRouterBase("serper");
   const base = override || SERPER_DEFAULT_URL;
   return `${base.replace(/\/+$/, "")}/images`;
 }
@@ -88,9 +88,9 @@ async function describeImage(
 }
 
 async function enrichImages(images: EnrichedImage[]): Promise<EnrichedImage[]> {
-  const replicateBaseUrl = getEnv("REPLICATE_API_URL");
-  // When routed through the Kortix proxy (REPLICATE_API_URL is set), use KORTIX_TOKEN
-  // for auth — the proxy validates it and injects the real Replicate API token.
+  const replicateBaseUrl = getKortixRouterBase("replicate") ?? undefined;
+  // Route through the Kortix router (derived from KORTIX_API_URL); auth with
+  // KORTIX_TOKEN. Fall back to a raw REPLICATE_API_TOKEN only when unset.
   const replicateToken = replicateBaseUrl
     ? getEnv("KORTIX_TOKEN")
     : getEnv("REPLICATE_API_TOKEN");
@@ -138,9 +138,9 @@ export default tool({
       ),
   },
   async execute(args, _context) {
-    const serperUrlOverride = getEnv("SERPER_API_URL");
-    // When routed through the Kortix proxy (SERPER_API_URL is set), use KORTIX_TOKEN
-    // for auth — the proxy validates it and injects the real Serper API key.
+    const serperUrlOverride = getKortixRouterBase("serper") ?? undefined;
+    // Route through the Kortix router (derived from KORTIX_API_URL); auth with
+    // KORTIX_TOKEN. Fall back to a raw SERPER_API_KEY only when unset.
     const apiKey = serperUrlOverride
       ? getEnv("KORTIX_TOKEN")
       : getEnv("SERPER_API_KEY");

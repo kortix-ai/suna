@@ -74,7 +74,13 @@ import {
   LLM_PROVIDERS,
   LLM_PROVIDER_BY_ID,
   type LlmProviderEntry,
+  type LlmProviderModel,
 } from '@/lib/llm-providers';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useModelStore } from '@/hooks/opencode/use-model-store';
+import type { FlatModel } from '@/components/session/session-chat-input';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 
 const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
@@ -122,20 +128,49 @@ export function ProjectProviderModal({
     return new Set(items.map((item) => item.name));
   }, [secretsQuery.data]);
 
+  // The managed Kortix gateway. It's injected into every sandbox by the
+  // platform (no API key, no connect step), so it never shows up via project
+  // secrets — we surface it here as an always-connected "Managed" provider,
+  // sourcing its model list from the live OpenCode provider list.
+  const { data: ocProviders } = useOpenCodeProviders();
+  const kortixProvider = useMemo<LlmProviderEntry | null>(() => {
+    const connectedIds = new Set(ocProviders?.connected ?? []);
+    const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
+    if (!kortix || !connectedIds.has('kortix')) return null;
+    const models: LlmProviderModel[] = Object.entries(kortix.models ?? {}).map(
+      ([id, m]) => ({
+        id,
+        name: ((m as { name?: string }).name || id).replace('(latest)', '').trim(),
+        released: (m as { release_date?: string }).release_date ?? null,
+      }),
+    );
+    return {
+      id: 'kortix',
+      label: kortix.name || 'Kortix',
+      envVars: [],
+      helpUrl: null,
+      hint: 'Included with your plan',
+      models,
+      featured: true,
+      managed: true,
+    };
+  }, [ocProviders]);
+
   // A provider is "connected" when its API-key route is fully wired (every
   // env var stored). Partial API-key state stays not-connected on purpose — a
-  // half-configured provider would error at session start anyway.
-  const connectedProviders = useMemo(
-    () =>
-      LLM_PROVIDERS.filter(
-        (p) =>
-          (p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v))) ||
+  // half-configured provider would error at session start anyway. The managed
+  // Kortix provider is always pinned first.
+  const connectedProviders = useMemo(() => {
+    const byo = LLM_PROVIDERS.filter(
+      (p) =>
+        p.id !== 'kortix' &&
+        ((p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v))) ||
           (p.id === 'openai' &&
             (secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
-              secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME))),
-      ),
-    [secretNames],
-  );
+              secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME)))),
+    );
+    return kortixProvider ? [kortixProvider, ...byo] : byo;
+  }, [secretNames, kortixProvider]);
 
   const hasConnections = connectedProviders.length > 0;
 
@@ -358,25 +393,32 @@ function ConnectedTab({
               {PROVIDER_LABELS[provider.id] ?? provider.label}
             </div>
             <div className="mt-0.5 truncate text-xs text-muted-foreground">
-              {providerCredentialSummary(provider)} · {provider.models.length} model
-              {provider.models.length === 1 ? '' : 's'}
+              {provider.managed
+                ? `${provider.hint} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`
+                : `${providerCredentialSummary(provider)} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`}
             </div>
           </div>
-          <Button
-            type="button"
-            onClick={() => setConfirmId(provider.id)}
-            disabled={disconnect.isPending}
-            variant="ghost"
-            size="icon-sm"
-            className="ml-auto shrink-0 text-muted-foreground/40 hover:bg-muted hover:text-foreground"
-            title="Disconnect"
-          >
-            {disconnect.isPending && disconnect.variables?.id === provider.id ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Unplug className="h-3.5 w-3.5" />
-            )}
-          </Button>
+          {provider.managed ? (
+            <Badge size="sm" variant="secondary" className="ml-auto shrink-0">
+              Managed
+            </Badge>
+          ) : (
+            <Button
+              type="button"
+              onClick={() => setConfirmId(provider.id)}
+              disabled={disconnect.isPending}
+              variant="ghost"
+              size="icon-sm"
+              className="ml-auto shrink-0 text-muted-foreground/40 hover:bg-muted hover:text-foreground"
+              title="Disconnect"
+            >
+              {disconnect.isPending && disconnect.variables?.id === provider.id ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Unplug className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          )}
         </div>
       ))}
 
@@ -1462,6 +1504,33 @@ function ModelsTab({
   search: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+
+  // Visibility (show/hide per model in the picker) is a global, browser-level
+  // preference shared with the session model selector — same store, same keys.
+  const flatModels = useMemo<FlatModel[]>(
+    () =>
+      connectedProviders.flatMap((p) =>
+        p.models.map((m) => ({
+          providerID: p.id,
+          providerName: p.label,
+          modelID: m.id,
+          modelName: m.name,
+          releaseDate: m.released ?? undefined,
+        })),
+      ),
+    [connectedProviders],
+  );
+  const modelStore = useModelStore(flatModels);
+
+  const enabledCount = useMemo(
+    () =>
+      flatModels.filter((m) =>
+        modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }),
+      ).length,
+    [flatModels, modelStore],
+  );
+  const hasOverrides = modelStore.userPrefs.length > 0;
+
   const grouped = useMemo(() => {
     const q = search.trim().toLowerCase();
     return connectedProviders
@@ -1496,38 +1565,66 @@ function ModelsTab({
   }
 
   return (
-    <div className="space-y-3 px-5 pb-4 pt-3">
-      {grouped.map(({ provider, models }) => (
-        <div key={provider.id}>
-          <div className="flex items-center gap-2 px-1 pb-1">
-            <ProviderLogo providerID={provider.id} name={provider.label} size="small" />
-            <span className="text-xs font-medium text-foreground/70">
-              {PROVIDER_LABELS[provider.id] ?? provider.label}
-            </span>
-            <span className="ml-auto text-xs text-muted-foreground/40">
-              {models.length}
-            </span>
-          </div>
-          <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/40">
-            {models.map((model, i) => (
-              <div
-                key={model.id}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2',
-                  i > 0 && 'border-t border-border/20',
-                )}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm text-foreground">{model.name}</div>
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground/50">
-                    {model.id}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+    <div className="px-5 pb-4 pt-3">
+      {!search && (
+        <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
+          <p className="text-xs text-muted-foreground/60">
+            {enabledCount} of {flatModels.length} shown in the model picker
+          </p>
+          {hasOverrides && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => modelStore.resetVisibility()}
+            >
+              Reset to defaults
+            </Button>
+          )}
         </div>
-      ))}
+      )}
+      <div className="space-y-3">
+        {grouped.map(({ provider, models }) => (
+          <div key={provider.id}>
+            <div className="flex items-center gap-2 px-1 pb-1">
+              <ProviderLogo providerID={provider.id} name={provider.label} size="small" />
+              <span className="text-xs font-medium text-foreground/70">
+                {PROVIDER_LABELS[provider.id] ?? provider.label}
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground/40">
+                {models.length}
+              </span>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/40">
+              {models.map((model, i) => {
+                const key = { providerID: provider.id, modelID: model.id };
+                const visible = modelStore.isVisible(key);
+                return (
+                  <label
+                    key={model.id}
+                    className={cn(
+                      'flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/30',
+                      i > 0 && 'border-t border-border/20',
+                      !visible && 'opacity-60',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm text-foreground">{model.name}</div>
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground/50">
+                        {model.id}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={visible}
+                      onCheckedChange={(c) => modelStore.setVisibility(key, c)}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

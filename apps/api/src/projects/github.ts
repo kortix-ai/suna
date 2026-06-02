@@ -8,7 +8,7 @@ const GITHUB_API = 'https://api.github.com';
 // user-readable runtime secrets.
 // Both ride this auth context because callers only consume `.token` for git
 // transport; GitHub API calls (ghFetch) are only made for actual GitHub repos.
-export type GitHubAuthSource = 'app_installation' | 'pat' | 'managed' | 'project_credential';
+type GitHubAuthSource = 'app_installation' | 'pat' | 'managed' | 'project_credential';
 
 export interface GitHubAuthContext {
   token: string;
@@ -30,7 +30,7 @@ export interface GitHubRepo {
   description: string | null;
 }
 
-export interface GitHubInstallationRepositories {
+interface GitHubInstallationRepositories {
   total_count: number;
   repositories: GitHubRepo[];
 }
@@ -79,7 +79,7 @@ function githubAppPrivateKey() {
   return process.env.KORTIX_GITHUB_APP_PRIVATE_KEY || process.env.GITHUB_APP_PRIVATE_KEY || null;
 }
 
-export function githubAppSlug() {
+function githubAppSlug() {
   return process.env.KORTIX_GITHUB_APP_SLUG || process.env.GITHUB_APP_SLUG || null;
 }
 
@@ -110,7 +110,7 @@ export interface GitHubAppInstallState {
   issuedAt: number;
 }
 
-export function buildGitHubAppInstallState(
+function buildGitHubAppInstallState(
   accountId: string,
   options: { nonce?: string } = {},
   nowMs = Date.now(),
@@ -156,10 +156,6 @@ export function verifyGitHubAppInstallStatePayload(state: string, nowMs = Date.n
   }
 }
 
-export function verifyGitHubAppInstallState(state: string, nowMs = Date.now()): string | null {
-  return verifyGitHubAppInstallStatePayload(state, nowMs)?.accountId ?? null;
-}
-
 export function buildGitHubAppInstallUrl(accountId?: string | null, nonce?: string) {
   const slug = githubAppSlug()?.trim();
   if (!slug) return null;
@@ -174,7 +170,7 @@ export function buildGitHubAppInstallUrl(accountId?: string | null, nonce?: stri
   return url.toString();
 }
 
-export function normalizeGitHubPrivateKey(value: string) {
+function normalizeGitHubPrivateKey(value: string) {
   return value.trim().replace(/\\n/g, '\n');
 }
 
@@ -253,12 +249,25 @@ export async function getGitHubAppInstallation(installationId: string): Promise<
   );
 }
 
-export async function createInstallationToken(installationId: string): Promise<GitHubInstallationToken> {
+export async function createInstallationToken(
+  installationId: string,
+  /**
+   * When provided, the minted token is scoped to ONLY these repos (by name,
+   * within the installation's owner). Used for managed repos so a project's
+   * sandbox gets a least-privilege token that can touch its own repo and no
+   * other repo under the managed org.
+   */
+  repositories?: string[],
+): Promise<GitHubInstallationToken> {
   const id = installationId.trim();
   if (!id) throw new Error('installation_id is required');
+  const scoped = (repositories ?? []).map((r) => r.trim()).filter(Boolean);
   return ghFetch<GitHubInstallationToken>(
     `/app/installations/${encodeURIComponent(id)}/access_tokens`,
-    { method: 'POST' },
+    {
+      method: 'POST',
+      ...(scoped.length ? { body: JSON.stringify({ repositories: scoped }) } : {}),
+    },
     { token: createGitHubAppJwt() },
   );
 }
@@ -333,6 +342,58 @@ export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
   }, input.auth);
 }
 
+/** Delete a repo. Best-effort teardown for managed-repo rollback / removal. */
+export async function deleteRepo(opts: {
+  owner: string;
+  repo: string;
+  auth?: Pick<GitHubAuthContext, 'token'>;
+}): Promise<void> {
+  await ghFetch<unknown>(
+    `/repos/${encodeURIComponent(opts.owner)}/${encodeURIComponent(opts.repo)}`,
+    { method: 'DELETE' },
+    opts.auth,
+  );
+}
+
+export interface GitHubInvitation {
+  /** Present when GitHub created a pending invitation (user not yet a member). */
+  id?: number;
+  html_url?: string;
+  permissions?: string;
+  invitee?: { login?: string };
+}
+
+/**
+ * Add a collaborator to a repo (or update their permission). On a repo the user
+ * isn't already on, GitHub creates a pending invitation they accept on
+ * github.com; returns the invitation (204/no body when already a collaborator).
+ * Requires an Administration:write-capable credential on the repo.
+ */
+export async function addCollaborator(opts: {
+  owner: string;
+  repo: string;
+  username: string;
+  /** GitHub permission: pull | triage | push | maintain | admin. */
+  permission?: string;
+  auth?: Pick<GitHubAuthContext, 'token'>;
+}): Promise<GitHubInvitation | null> {
+  const res = await fetch(
+    `${GITHUB_API}/repos/${encodeURIComponent(opts.owner)}/${encodeURIComponent(opts.repo)}/collaborators/${encodeURIComponent(opts.username)}`,
+    {
+      method: 'PUT',
+      headers: headers(opts.auth),
+      body: JSON.stringify({ permission: opts.permission ?? 'push' }),
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  if (res.status === 204) return null; // already a collaborator
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`GitHub add collaborator failed (${res.status}): ${detail || res.statusText}`);
+  }
+  return res.json().catch(() => null) as Promise<GitHubInvitation | null>;
+}
+
 export async function getBranchCommitSha(opts: {
   owner: string;
   repo: string;
@@ -393,29 +454,6 @@ export async function commitFile(opts: {
 
   await ghFetch(`/repos/${opts.owner}/${opts.repo}/contents/${encodeURI(opts.path)}`, {
     method: 'PUT',
-    body: JSON.stringify(body),
-  }, opts.auth);
-}
-
-/** Delete a file from a repo via the Contents API. Requires the file's
- * current sha (use `getFileSha` to look it up). 404 from upstream surfaces
- * as a thrown error — callers should pre-check existence. */
-export async function deleteFile(opts: {
-  owner: string;
-  repo: string;
-  path: string;
-  message: string;
-  branch?: string;
-  sha: string;
-  auth?: GitHubAuthContext;
-}): Promise<void> {
-  const body: Record<string, unknown> = {
-    message: opts.message,
-    sha: opts.sha,
-  };
-  if (opts.branch) body.branch = opts.branch;
-  await ghFetch(`/repos/${opts.owner}/${opts.repo}/contents/${encodeURI(opts.path)}`, {
-    method: 'DELETE',
     body: JSON.stringify(body),
   }, opts.auth);
 }

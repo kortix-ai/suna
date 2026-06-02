@@ -167,6 +167,11 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickProjectTemplatePrebuilds: () => {},
+  reconcileProjectTemplates: async () => {},
+  kickStartupPreBuild: () => {},
+  reconcileStaleBuilds: async () => ({ healed: 0 }),
+  ensurePlatformDefaultImage: async () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
@@ -241,6 +246,7 @@ mock.module('../projects/secrets', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: (_fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
@@ -627,7 +633,9 @@ describe('POST /v1/projects/:id/apps — create commits to manifest', () => {
     const app = createApp();
     const cases: Array<{ body: unknown; expect: RegExp }> = [
       { body: { domains: ['x.dev'], source: { type: 'git', repo: 'r' } }, expect: /name \(or slug\) is required/ },
-      { body: { slug: 'x', source: { type: 'git', repo: 'r' } }, expect: /domains must be a non-empty array/ },
+      // domains are optional now (auto-issued *.style.dev), so a non-array
+      // value is the rejectable case — not a missing one.
+      { body: { slug: 'x', domains: 'x.dev', source: { type: 'git', repo: 'r' } }, expect: /domains must be an array/ },
       { body: { slug: 'x', domains: ['x.dev'] }, expect: /source\.type must be/ },
       { body: { slug: 'x', domains: ['x.dev'], source: { type: 'tar' } }, expect: /type="tar" requires/ },
     ];
@@ -781,6 +789,57 @@ describe('POST /v1/projects/:id/apps/:slug/deploy — manual deploy', () => {
     const sent = freestyleCalls.at(-1)!.body as any;
     expect(sent.source.url).toBe(projectRow.repoUrl);
     expect(sent.source.branch).toBe(projectRow.defaultBranch);
+  });
+
+  test('app with NO domains auto-issues a stable *.style.dev URL', async () => {
+    // The zero-config "vibecode an app and ship it" path: no domains declared.
+    seedManifest([
+      '[[apps]]',
+      'slug = "nodomain"',
+      '',
+      '  [apps.source]',
+      '  type = "git"',
+      '  repo = "https://github.com/me/x"',
+    ].join('\n'));
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/apps/nodomain/deploy`, { method: 'POST' });
+    expect(res.status).toBe(201);
+
+    const sent = freestyleCalls.at(-1)!.body as any;
+    // Freestyle is handed a derived, DNS-safe subdomain — not an empty list.
+    expect(sent.config.domains).toHaveLength(1);
+    expect(sent.config.domains[0]).toMatch(/^nodomain-[0-9a-f]{8}\.style\.dev$/);
+
+    const row = deploymentRows[0]!;
+    expect(row.liveUrl).toBe(`https://${sent.config.domains[0]}`);
+
+    // Deterministic: the SAME app redeploys to the SAME URL.
+    const first = sent.config.domains[0];
+    await app.request(`/v1/projects/${PROJECT_ID}/apps/nodomain/deploy`, { method: 'POST' });
+    const sent2 = freestyleCalls.at(-1)!.body as any;
+    expect(sent2.config.domains[0]).toBe(first);
+  });
+
+  test('GET /apps exposes effective_domains (declared or auto-issued)', async () => {
+    seedManifest(
+      minimalGitApp({ slug: 'declared', domain: 'declared.style.dev' }),
+      [
+        '[[apps]]',
+        'slug = "auto"',
+        '',
+        '  [apps.source]',
+        '  type = "git"',
+        '  repo = "https://github.com/me/x"',
+      ].join('\n'),
+    );
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/apps`);
+    const body = await res.json();
+    const declared = body.apps.find((a: any) => a.slug === 'declared');
+    const auto = body.apps.find((a: any) => a.slug === 'auto');
+    expect(declared.effective_domains).toEqual(['declared.style.dev']);
+    expect(auto.domains).toEqual([]);
+    expect(auto.effective_domains[0]).toMatch(/^auto-[0-9a-f]{8}\.style\.dev$/);
   });
 
   test('upstream failure persists a row with status="failed" and an error', async () => {

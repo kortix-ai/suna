@@ -158,6 +158,14 @@ export function __clearCloneTokenCacheForTests(): void {
 
 async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
   if (!cfg.apiUrl || !cfg.projectId || !cfg.kortixToken) return undefined
+  // Universal proxy origin: when the repo is served by the Kortix git proxy
+  // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
+  // credential IS our own KORTIX_TOKEN — the proxy authenticates it and resolves
+  // the real upstream + host credential server-side. No clone-credential round
+  // trip, and a real GitHub/Freestyle token never enters the sandbox.
+  if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
+    return cfg.kortixToken
+  }
   const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.kortixToken}`
   if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
 
@@ -697,5 +705,36 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
   const after = await readRepoInfo(target)
   if (!after) throw new Error('project repo disappeared after refresh')
 
+  return { before, after }
+}
+
+/**
+ * Sync the workspace to the LATEST base-branch tip. Used when a warm-pool box
+ * is claimed: it cloned base when it parked, so base may have advanced since.
+ * Resets the current (session) branch to origin/<base> — safe because a fresh
+ * warm session has no local work yet. No opencode restart needed; opencode's
+ * file watcher picks up the changed files. See docs/specs/warm-pool.md.
+ */
+export async function syncWorkspaceToBase(cfg: Config): Promise<{ before: RepoInfo; after: RepoInfo }> {
+  const target = cfg.projectTarget
+  const before = await readRepoInfo(target)
+  if (!before) throw new Error('project repo is not materialized')
+
+  const cloneToken = await resolveCloneToken(cfg)
+  const base = cfg.defaultBranch
+  const fetched = await gitWithAuth(cloneToken, cfg.repoUrl, [
+    '-C', target, 'fetch', '--prune', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`,
+  ])
+  if (fetched.code !== 0) throw new Error(`git fetch base failed: ${fetched.stderr}`)
+
+  const branch = cfg.branchName || before.branch || base
+  const reset = await gitWithAuth(cloneToken, cfg.repoUrl, [
+    '-C', target, 'checkout', '-B', branch, `refs/remotes/origin/${base}`,
+  ])
+  if (reset.code !== 0) throw new Error(`git reset to base failed: ${reset.stderr}`)
+
+  const after = await readRepoInfo(target)
+  if (!after) throw new Error('project repo disappeared after base sync')
+  logger.info('[git] synced workspace to latest base', { base, branch, before: before.commit, after: after.commit })
   return { before, after }
 }

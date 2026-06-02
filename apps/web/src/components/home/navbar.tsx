@@ -78,7 +78,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState('hero');
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -99,21 +98,8 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
       setHasScrolled(false);
     }
 
-    // Update active section
-    const sections = filteredNavLinks.map((item) => item.href.substring(1));
-    for (const section of sections) {
-      const element = document.getElementById(section);
-      if (element) {
-        const rect = element.getBoundingClientRect();
-        if (rect.top <= 150 && rect.bottom >= 150) {
-          setActiveSection(section);
-          break;
-        }
-      }
-    }
-
     lastScrollY.current = currentScrollY;
-  }, [hasScrolled, filteredNavLinks]);
+  }, [hasScrolled]);
 
   useEffect(() => {
     // Use passive listener for better scroll performance
@@ -428,7 +414,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                       }}
                       suppressHydrationWarning
                     >
-                      {t('tryFree')}
+                      Launch Kortix
                     </Link>
                   </Button>
                 )}

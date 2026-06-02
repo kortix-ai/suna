@@ -16,6 +16,13 @@ export interface KortixProject {
   updated_at: string;
   project_role?: ProjectRole | null;
   effective_project_role?: ProjectRole | null;
+  /** Whether the experimental [[apps]] deployment surface is enabled
+   *  platform-wide (driven by the API's KORTIX_APPS_EXPERIMENTAL flag). */
+  apps_enabled?: boolean;
+  /** Effective per-project warm sandbox pool config (Customize → Sandbox). */
+  warm_pool?: { enabled: boolean; size: number };
+  /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
+  warm_pool_available?: boolean;
 }
 
 export interface KortixAccount {
@@ -474,6 +481,37 @@ export async function leaveAccount(accountId: string) {
 
 export async function getProject(projectId: string) {
   return unwrap(await backendApi.get<KortixProject>(`/projects/${projectId}`));
+}
+
+export interface RepoCollaboratorInvite {
+  username: string;
+  permission: string;
+  /** Pending-invitation URL to accept on GitHub, or null if already a collaborator. */
+  invitationUrl: string | null;
+  alreadyCollaborator: boolean;
+}
+
+/**
+ * Invite a GitHub user as a collaborator on a MANAGED repo — lets the project
+ * creator pull "their" Kortix-managed repo into their own GitHub account.
+ */
+export async function inviteRepoCollaborator(
+  projectId: string,
+  githubUsername: string,
+  permission: 'read' | 'write' = 'write',
+) {
+  return unwrap(
+    await backendApi.post<RepoCollaboratorInvite>(
+      `/projects/${projectId}/git/collaborators`,
+      { github_username: githubUsername, permission },
+    ),
+  );
+}
+
+/** True when this project's repo is a Kortix-managed GitHub repo (invitable). */
+export function isManagedGithubProject(project: { metadata?: Record<string, unknown> | null }): boolean {
+  const git = (project.metadata as { git?: { provider?: string; managed?: boolean } } | undefined)?.git;
+  return git?.provider === 'github' && git?.managed === true;
 }
 
 export async function getProjectDetail(projectId: string) {
@@ -2090,6 +2128,31 @@ export async function updateProject(
   return unwrap(
     await backendApi.patch<KortixProject>(`/projects/${projectId}`, input),
   );
+}
+
+/** Configure the per-project warm sandbox pool (Customize → Sandbox). */
+export async function updateWarmPool(
+  projectId: string,
+  input: { enabled?: boolean; size?: number },
+) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input),
+  );
+}
+
+export interface WarmPoolStatus {
+  available: boolean;
+  enabled: boolean;
+  size: number;
+  /** Sandboxes parked and ready to claim instantly. */
+  ready: number;
+  /** Sandboxes currently booting toward ready. */
+  warming: number;
+}
+
+/** Live warm pool config + status (ready / warming counts). */
+export async function getWarmPoolStatus(projectId: string): Promise<WarmPoolStatus> {
+  return unwrap(await backendApi.get<WarmPoolStatus>(`/projects/${projectId}/warm-pool`));
 }
 
 export async function setProjectOnboardingComplete(

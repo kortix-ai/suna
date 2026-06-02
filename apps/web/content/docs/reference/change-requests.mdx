@@ -117,6 +117,9 @@ For open CRs, the API refreshes `head_commit_sha` and `base_commit_sha` against 
 
 ```ts
 {
+  base_sha: string,          // current tip of base_ref
+  head_sha: string,          // current tip of head_ref
+  merge_base: string | null, // common ancestor (null if histories are unrelated)
   is_up_to_date: boolean,    // head_ref is fully merged into base
   can_merge: boolean,        // no conflicts
   can_fast_forward: boolean, // head is strictly ahead of base
