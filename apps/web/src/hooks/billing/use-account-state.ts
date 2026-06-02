@@ -267,6 +267,44 @@ export function useCreatePerSeatCheckout() {
   });
 }
 
+// Billing v2 — legacy → per-seat voluntary claim. Runs the migration synchronously
+// (the lazy sign-in path can silently skip/fail, leaving legacy users stuck with
+// no way to switch), then refreshes account state so the new plan + wallet credit
+// show immediately.
+export function useClaimPerSeat() {
+  const queryClient = useQueryClient();
+  const accountId = useBillingAccountId();
+  return useMutation({
+    mutationFn: () => billingApi.claimPerSeat(accountId),
+    onSuccess: async (data) => {
+      await invalidateAccountState(queryClient, true, true, accountId);
+      if (data.status === 'migrated') {
+        const parts: string[] = [];
+        if (data.first_seat_covered_usd > 0) parts.push(`$${data.first_seat_covered_usd.toFixed(2)} covered your first seat`);
+        if (data.credited_usd > 0) parts.push(`$${data.credited_usd.toFixed(2)} added as non-expiring credit`);
+        toast.success("You're on seat-based pricing", { description: parts.join(' · ') || undefined });
+      } else if (data.status === 'skipped:already_per_seat' || data.status === 'skipped:no_subs') {
+        // no_subs flips the flag with no Stripe work — they're now on per-seat.
+        toast.success("You're on seat-based pricing");
+      } else if (data.status === 'skipped:yearly_commitment') {
+        toast.message('Still on a yearly commitment', {
+          description: data.reason || 'You can switch once your committed term ends.',
+        });
+      } else {
+        // skipped:no_legacy_machine — nothing to move off of.
+        toast.message('Nothing to switch', {
+          description: 'No active machine subscription to move to seat-based pricing.',
+        });
+      }
+    },
+    onError: (err: any) => {
+      toast.error('Could not switch plans', {
+        description: err?.message || 'Try again, or contact support if this keeps happening.',
+      });
+    },
+  });
+}
+
 export function useCreatePortalSession() {
   const accountId = useBillingAccountId();
   return useMutation({

@@ -17,8 +17,31 @@ import {
 } from '../services/subscriptions';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
 import { syncSeatQuantity } from '../services/seat-management';
+import { maybeMigrateLegacyAccount } from '../services/legacy-account-migration';
 
 export const subscriptionsRouter = new Hono<AppEnv>();
+
+// Billing v2 — legacy → per-seat voluntary "claim". Runs the SAME migration as
+// the lazy sign-in path (create the $20/seat sub, cancel the legacy machine subs,
+// pre-pay the first seat period out of the unused machine value + return the
+// leftover as non-expiring credit, flip to per_seat) — but synchronously, so the
+// billing UI can show the result. Lets legacy users who weren't auto-migrated
+// (or where it silently skipped/failed) move themselves over with feedback.
+subscriptionsRouter.post('/claim-per-seat', async (c) => {
+  const accountId = await resolveScopedAccountId(c, 'body');
+  const result = await maybeMigrateLegacyAccount(accountId);
+  if (result.status === 'failed') {
+    return c.json({ ok: false, status: result.status, error: result.reason ?? 'Migration failed' }, 400);
+  }
+  return c.json({
+    ok: true,
+    status: result.status, // 'migrated' | 'skipped:already_per_seat' | 'skipped:no_subs' | …
+    credited_usd: result.proratedCreditUsd,
+    first_seat_covered_usd: result.firstSeatCoveredUsd,
+    cancelled_subscriptions: result.cancelledSubIds.length,
+    reason: result.reason ?? null,
+  });
+});
 
 subscriptionsRouter.post('/create-checkout-session', async (c) => {
   const accountId = await resolveScopedAccountId(c, 'body');
