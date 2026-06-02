@@ -293,7 +293,7 @@ function LauncherChip({ label, command }: { label: string; command: string }) {
       type="button"
       onClick={copy}
       title={`Copy "${command}"`}
-      className="group flex items-center gap-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-left transition-colors hover:border-border hover:bg-muted"
+      className="group flex items-center gap-2 rounded-2xl border border-border/60 bg-muted/40 px-3 py-2 text-left transition-colors hover:border-border hover:bg-muted"
     >
       <span className="text-sm font-medium text-foreground">{label}</span>
       <code className="font-mono text-[0.7rem] text-muted-foreground">{command}</code>
