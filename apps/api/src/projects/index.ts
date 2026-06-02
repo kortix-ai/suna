@@ -842,13 +842,13 @@ async function resolveGitHubRepoAuth(accountId: string, installationId?: string 
 }
 
 interface ProjectGitRemote {
-  /** freestyle | github | gitlab | bitbucket | generic */
+  /** github | gitlab | bitbucket | generic */
   provider: string;
-  /** managed | freestyle_identity | github_app | pat | project_credential | none */
+  /** managed | github_app | pat | project_credential | none */
   authMethod: string;
-  /** Freestyle repo id (managed repos). */
+  /** Deprecated managed-repo id slot — always null. */
   repoId: string | null;
-  /** Auth credential reference — Freestyle identity id for `managed`. */
+  /** Auth credential reference. */
   ref: string | null;
   installationId: string | null;
   repoOwner: string | null;
@@ -993,7 +993,7 @@ function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnect
     return {
       provider: connection.provider,
       authMethod: connection.authMethod,
-      repoId: connection.provider === 'freestyle' ? connection.externalRepoId : null,
+      repoId: null,
       ref: connection.credentialRef,
       installationId: connection.installationId,
       repoOwner: connection.repoOwner,
@@ -1019,21 +1019,6 @@ function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnect
       externalRepoId: git.external_repo_id ?? git.repo_id ?? null,
       upstreamUrl: typeof git.upstream_url === 'string' ? git.upstream_url : null,
       managed: git.managed === true || method === 'managed',
-    };
-  }
-  if (meta.git_provider === 'freestyle' || meta.freestyle) {
-    const fs = meta.freestyle ?? {};
-    return {
-      provider: 'freestyle',
-      authMethod: 'managed',
-      repoId: fs.repo_id ?? null,
-      ref: fs.identity_id ?? null,
-      installationId: null,
-      repoOwner: null,
-      repoName: null,
-      externalRepoId: fs.repo_id ?? null,
-      upstreamUrl: null,
-      managed: true,
     };
   }
   if (meta.github) {
@@ -1063,9 +1048,6 @@ function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnect
  */
 function resolveUpstreamUrl(project: ProjectRow, remote: ProjectGitRemote): string {
   if (remote.upstreamUrl) return remote.upstreamUrl;
-  if (remote.provider === 'freestyle' && remote.externalRepoId) {
-    return `https://git.freestyle.sh/${remote.externalRepoId}`;
-  }
   if (remote.provider === 'github' && remote.repoOwner && remote.repoName) {
     return `https://github.com/${remote.repoOwner}/${remote.repoName}.git`;
   }
@@ -1090,9 +1072,6 @@ function buildConnectionRef(project: ProjectRow, remote: ProjectGitRemote): GitC
 
 async function hasServerManagedGitAuth(project: ProjectRow): Promise<boolean> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
-  if (remote.provider === 'freestyle' && remote.authMethod === 'managed' && !!remote.repoId) {
-    return true;
-  }
   if (remote.provider === 'github' && remote.authMethod === 'github_app') {
     return true;
   }
@@ -1199,8 +1178,8 @@ export async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRo
 /**
  * Resolve a project to a real upstream git endpoint + short-lived host auth
  * headers — the single seam consumed by the Kortix git proxy (and, post-M2,
- * server-side git). Token resolution reuses `resolveProjectGitAuth` (managed
- * Freestyle / managed + BYO GitHub / project credential); the backend formats
+ * server-side git). Token resolution reuses `resolveProjectGitAuth` (managed +
+ * BYO GitHub / project credential); the backend formats
  * the URL + headers for the provider. Returns null when no upstream is
  * resolvable (no git connection / unauthenticated).
  */
@@ -2938,8 +2917,9 @@ projectsApp.post('/', async (c) => {
 });
 
 // POST /v1/projects/provision
-// Managed-git "Create project": provisions a Freestyle repo + scoped per-project
-// push token, optionally seeds the starter (web flow), and registers the project.
+// Managed-git "Create project": provisions a repo on the managed backend +
+// scoped per-project push token, optionally seeds the starter (web flow), and
+// registers the project.
 // Used by the web "Create project" button and `kortix ship` when a working tree
 // has no `origin` remote. BYO-repo projects go through POST / and /create-repo.
 projectsApp.post('/provision', async (c) => {
@@ -2950,8 +2930,8 @@ projectsApp.post('/provision', async (c) => {
   }
 
   // Managed-git provider, provider-agnostic via the backend registry. GitHub is
-  // the default + only active managed backend (Freestyle was never in prod and
-  // has been ripped out). Forgejo / Artifacts slot in here as drop-ins.
+  // the default + only active managed backend. Forgejo / Artifacts slot in here
+  // as drop-ins.
   const provider =
     normalizeString(body.provider) ??
     (process.env.MANAGED_GIT_PROVIDER?.trim() || 'github');
@@ -3062,8 +3042,8 @@ projectsApp.post('/provision', async (c) => {
     metadata: { seeded: false },
   });
 
-  // Resolve a push credential for seeding / the CLI's first push. Freestyle
-  // mints one at create time; GitHub mints an installation token now.
+  // Resolve a push credential for seeding / the CLI's first push. The managed
+  // GitHub backend mints an installation token.
   let pushToken = provisioned.initialToken;
   if (!pushToken) {
     pushToken = (await resolveProjectGitAuth(row)).auth?.token ?? null;
@@ -3128,7 +3108,7 @@ projectsApp.post('/provision', async (c) => {
 });
 
 // POST /v1/projects/:projectId/git-token
-// Mint a fresh scoped push token for a *managed* (Freestyle) project so the CLI
+// Mint a fresh scoped push token for a *managed* project so the CLI
 // can push on a later `kortix ship` without persisting credentials in git config.
 // Returns 409 for BYO projects (they push with the user's own git remote auth).
 projectsApp.post('/:projectId/git-token', async (c) => {
@@ -3143,8 +3123,8 @@ projectsApp.post('/:projectId/git-token', async (c) => {
   }
 
   // Provider-agnostic: resolve a fresh push credential through the backend seam
-  // (Freestyle mints a scoped identity token; GitHub mints an installation
-  // token). Never persisted in the sandbox/CLI git config.
+  // (the managed GitHub backend mints an installation token). Never persisted
+  // in the sandbox/CLI git config.
   const gitAuth = await resolveProjectGitAuth(loaded.row);
   if (!gitAuth.auth?.token) {
     return c.json({ error: 'Managed git is not configured / unavailable for this project' }, 503);
@@ -4196,9 +4176,9 @@ projectsApp.get('/:projectId/git/clone-credential', async (c) => {
 
 // PUT /v1/projects/:projectId/git-credential
 // Stores provider-neutral BYO git credentials as platform credentials, not as
-// user-readable/injectable runtime secrets. Managed providers (Freestyle and
-// GitHub App) mint credentials server-side; this exists for generic future
-// providers such as GitLab/Bitbucket until they have first-class adapters.
+// user-readable/injectable runtime secrets. The managed GitHub backend mints
+// credentials server-side; this exists for generic future providers such as
+// GitLab/Bitbucket until they have first-class adapters.
 projectsApp.put('/:projectId/git-credential', async (c) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
@@ -4922,8 +4902,8 @@ export async function commitManifest(
     return { ok: true };
   }
 
-  // Any other host (Freestyle managed git, GitLab, generic HTTPS remote):
-  // commit via the git CLI. The old code bailed here with "Project repo URL is
+  // Any other host (GitLab, generic HTTPS remote): commit via the git CLI.
+  // The old code bailed here with "Project repo URL is
   // not a GitHub URL", which broke every manifest edit (connectors, triggers,
   // apps) on managed/self-hosted projects. Mirrors createRemoteSessionBranch's
   // GitHub-fast-path / git-CLI-fallback split.
@@ -7783,7 +7763,7 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;
 // the underlying merge runs through ./git.ts which works against any git
-// backend (GitHub, GitLab, Freestyle, plain git) — so the merge UI lives in
+// backend (GitHub, GitLab, plain git) — so the merge UI lives in
 // Kortix even when the repo is hosted elsewhere.
 //
 // v1 is intentionally minimal: open / merged / closed, head_ref + base_ref,

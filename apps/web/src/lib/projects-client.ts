@@ -2038,7 +2038,7 @@ export async function createProjectRepo(input: CreateProjectRepoInput) {
 }
 
 /**
- * Create a project backed by a managed Kortix git repo (Freestyle) — the
+ * Create a project backed by a managed Kortix git repo — the
  * default. No GitHub account or repo-name uniqueness needed; the starter is
  * seeded server-side so the project boots immediately.
  */

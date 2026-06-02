@@ -49,7 +49,7 @@ Where it backs the project (origin is inferred, never asked):
     repo, so \`git push\` stays synced.
   * Other existing \`origin\` remote                       → registered + pushed.
   * No \`origin\` remote                                    → creates a managed
-    Kortix git repo (hosted on Freestyle) and pushes to it. No GitHub needed.
+    Kortix git repo and pushes to it. No GitHub needed.
 
 Accounts:
   On first ship, if you belong to more than one account you're asked which to
@@ -59,7 +59,7 @@ Options:
   --name <project>     Display name for a new project (default: folder name).
   --account <id|slug>  Account to create the project under (first ship only).
   --origin <value>     Override origin choice:
-                         freestyle    force a managed Kortix repo
+                         managed      force a managed Kortix repo
                          <git-url>    register + push to this remote
   --github-token <pat> Link a GitHub origin with this token instead of the
                        GitHub App (App-free import; needs repo Contents R/W).
@@ -382,10 +382,10 @@ async function shipFirstTime(
 
   // Decide origin without asking: explicit flag → existing remote → managed.
   const explicitUrl =
-    flags.origin && flags.origin !== 'freestyle' && flags.origin !== 'github'
+    flags.origin && flags.origin !== 'managed' && flags.origin !== 'github'
       ? flags.origin
       : null;
-  const forceManaged = flags.origin === 'freestyle';
+  const forceManaged = flags.origin === 'managed';
   const existingOrigin = forceManaged ? null : detectOrigin();
   const byoUrl = explicitUrl ?? existingOrigin;
 
@@ -489,11 +489,9 @@ async function shipExisting(
       : null;
   const repoUrl = proxyOrigin ?? project.repo_url;
   const meta = (project.metadata ?? {}) as Record<string, any>;
-  // Canonical: metadata.git.{provider,managed,auth.method}. Fallback: git_provider.
+  // Canonical managed flag lives at metadata.git.managed.
   const git = meta.git as { provider?: string; managed?: boolean; auth?: { method?: string } } | undefined;
-  const managed = git
-    ? git.managed === true || (git.provider === 'freestyle' && (git.auth?.method ?? 'managed') === 'managed')
-    : meta.git_provider === 'freestyle';
+  const managed = git?.managed === true;
 
   process.stdout.write(
     `\n  ${C.bold}kortix ship${C.reset}  ${C.dim}sync${C.reset}\n` +

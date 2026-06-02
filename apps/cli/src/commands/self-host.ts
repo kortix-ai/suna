@@ -13,7 +13,7 @@ import { C, status } from '../style.ts';
 
 const DEFAULT_INSTANCE = 'default';
 const DEFAULT_TAG = 'latest';
-const DEFAULT_HOST_NAME = 'local';
+const DEFAULT_HOST_NAME = 'selfhost';
 const DEFAULT_PUBLIC_URL = 'http://localhost:13737';
 const DEFAULT_API_URL = 'http://localhost:13738';
 const DEFAULT_FRONTEND_IMAGE_REPO = 'kortix/kortix-frontend';
@@ -207,7 +207,7 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
   renderIntegrationSummary(env);
   process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}Switch API  ${C.reset}${C.cyan}kortix hosts use local${C.reset}${C.dim} / ${C.reset}${C.cyan}kortix hosts use cloud${C.reset}\n\n`);
+  process.stdout.write(`  ${C.dim}Switch API  ${C.reset}${C.cyan}kortix hosts use selfhost${C.reset}${C.dim} / ${C.reset}${C.cyan}kortix hosts use cloud${C.reset}\n\n`);
 }
 
 async function selfHostStart(flags: GlobalFlags): Promise<number> {
@@ -342,10 +342,10 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
 
 async function configureIntegrations(env: SelfHostEnv): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Kortix self-host integrations${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}These power managed git, GitHub repo access, and app connectors.${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}These power app deployments, GitHub repo access, and app connectors.${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Press enter to skip anything you do not use yet.${C.reset}\n\n`);
 
-  const freestyleMode = await selectFrom('Managed git / deployments (Freestyle): skip/configure', ['skip', 'configure'] as const, freestyleConfigured(env) ? 'configure' : 'skip');
+  const freestyleMode = await selectFrom('App deployments (Freestyle): skip/configure', ['skip', 'configure'] as const, freestyleConfigured(env) ? 'configure' : 'skip');
   if (freestyleMode === 'configure') {
     env.FREESTYLE_API_KEY = await promptSecret('Freestyle API key', env.FREESTYLE_API_KEY);
     env.FREESTYLE_API_URL = await prompt('Freestyle API URL', env.FREESTYLE_API_URL || 'https://api.freestyle.sh');
@@ -413,7 +413,7 @@ function shouldPrompt(flags: GlobalFlags): boolean {
 function renderIntegrationSummary(env: SelfHostEnv): void {
   const rows = [
     {
-      name: 'Managed git / deployments',
+      name: 'App deployments',
       configured: freestyleConfigured(env),
       hint: 'FREESTYLE_API_KEY',
     },

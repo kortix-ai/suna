@@ -26,7 +26,7 @@ Concurrent-session caps are enforced per account; exceeding your tier returns `4
 
 - The session branch is **named after the session id** (a UUID). `KORTIX_SESSION_ID` and `KORTIX_BRANCH_NAME` are the same value.
 - It is cut from `base_ref`, which defaults to the project's `default_branch` (usually `main`), at create time.
-- Creation path depends on the backend: GitHub repos use the GitHub API (read the base tip, create the branch ref); generic git backends (e.g. Freestyle) push `refs/heads/<base>:refs/heads/<session-id>`.
+- Creation path depends on the backend: GitHub repos use the GitHub API (read the base tip, create the branch ref); generic git backends push `refs/heads/<base>:refs/heads/<session-id>`.
 - Triggers create their session branch the same way an interactive session does. Nothing writes the default branch directly except a change-request merge.
 
 ## What survives

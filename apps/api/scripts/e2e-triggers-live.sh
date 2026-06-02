@@ -12,7 +12,7 @@
 #            is pinned (ensure-opencode) — i.e. the agent runtime is up and the
 #            rendered trigger prompt was delivered (KORTIX_INITIAL_PROMPT).
 #
-# Runs against a REAL running backend (pnpm dev) + REAL managed git (Freestyle)
+# Runs against a REAL running backend (pnpm dev) + REAL managed git
 # + REAL Daytona sandboxes. NOT a unit test. Spends real compute + LLM credits.
 # Purges everything on exit (project, PAT, secret) and restores the credit row.
 #

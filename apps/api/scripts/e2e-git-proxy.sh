@@ -2,7 +2,7 @@
 # Live end-to-end proof that the Kortix git smart-HTTP proxy
 # (/v1/git/:projectId(.git)/{info/refs,git-upload-pack,git-receive-pack}) lets a
 # client clone AND push a real project repo using ONLY a Kortix token — never a
-# real host (GitHub/Freestyle) credential. The proxy resolves the project's
+# real host (GitHub) credential. The proxy resolves the project's
 # backend + mints the upstream credential server-side.
 #
 # This runs against a REAL running API + an EXISTING git-backed project. It does

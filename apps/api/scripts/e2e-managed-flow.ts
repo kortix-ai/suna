@@ -1,7 +1,7 @@
 /**
- * Live end-to-end test of the managed (Freestyle) project flow — start to end.
+ * Live end-to-end test of the managed project flow — start to end.
  *
- * This is NOT a unit test: it runs against a REAL backend + REAL Freestyle git
+ * This is NOT a unit test: it runs against a REAL backend + REAL managed git
  * (and exercises the real session-create path). Run it on demand:
  *
  *     cd apps/api && bun run scripts/e2e-managed-flow.ts
@@ -24,7 +24,6 @@ import { eq } from 'drizzle-orm';
 import { accountMembers, accountTokens } from '@kortix/db';
 import { db } from '../src/shared/db';
 import { createAccountToken } from '../src/repositories/account-tokens';
-import { callFreestyle } from '../src/deployments/providers/freestyle';
 
 const execFileAsync = promisify(execFile);
 const BACKEND = (process.env.BACKEND_URL || 'http://localhost:8008').replace(/\/+$/, '');
@@ -76,7 +75,6 @@ async function main() {
 
   let projectId = '';
   let repoUrl = '';
-  let repoId = '';
   let sessionId = '';
 
   try {
@@ -88,12 +86,11 @@ async function main() {
     });
     assert(prov.status === 201, 'provision → 201', `${prov.status} ${JSON.stringify(prov.json)}`);
     assert(prov.json.seeded === true, 'repo seeded server-side');
-    assert(prov.json.metadata?.git?.provider === 'freestyle', 'metadata.git.provider = freestyle');
-    assert(prov.json.metadata?.git?.auth?.method === 'managed', 'metadata.git.auth.method = managed');
+    assert(prov.json.metadata?.git?.managed === true, 'metadata.git.managed = true');
+    assert(typeof prov.json.metadata?.git?.provider === 'string', 'metadata.git.provider is set');
     assert(typeof prov.json.dashboard_url === 'string' && !prov.json.dashboard_url.includes('/v1'), 'dashboard_url is the web URL');
     projectId = prov.json.project_id;
     repoUrl = prov.json.repo_url;
-    repoId = prov.json.repo_id;
 
     // ── 3. seeded starter actually landed in the repo ─────────────────────
     const tk = await api('POST', `/projects/${projectId}/git-token`, token);
@@ -132,11 +129,6 @@ async function main() {
       const del = await api('DELETE', `/projects/${projectId}?purge=true`, token);
       assert(del.status === 200, 'rm --purge → 200', `${del.status} ${JSON.stringify(del.json)}`);
       assert(del.json?.repo_deleted === true, 'managed repo deleted on purge');
-      // independent confirmation the Freestyle repo is gone
-      if (repoId) {
-        const probe = await callFreestyle(`/git/v1/repo/${repoId}`, { method: 'GET' }).then((r) => r.status).catch(() => 0);
-        assert(probe === 404 || probe === 410 || probe === 400, 'Freestyle confirms repo deleted', `GET repo → ${probe}`);
-      }
     }
     await db.delete(accountTokens).where(eq(accountTokens.name, PAT_NAME)).catch(() => undefined);
   }

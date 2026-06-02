@@ -28,6 +28,11 @@ case "$target" in
     ;;
 esac
 
+# Refresh the embedded starter snapshot so the compiled binary carries an
+# up-to-date copy of the template tree (the on-disk walk does not survive
+# `bun build --compile`; see packages/starter/scripts/generate-embedded.ts).
+bun run ../../packages/starter/scripts/generate-embedded.ts
+
 bun build --compile --target="$target" --outfile=dist/kortix src/index.ts
 chmod +x dist/kortix
 size="$(stat -f%z dist/kortix 2>/dev/null || stat -c%s dist/kortix)"

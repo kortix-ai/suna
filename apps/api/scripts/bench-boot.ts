@@ -17,7 +17,7 @@
  *   BACKEND_URL        default http://localhost:8008
  *   BENCH_PROJECT_ID   project to boot. If unset and BENCH_CREATE=1, a fresh
  *                      project is provisioned first (and its create time logged).
- *   BENCH_CREATE=1     provision a new project (Freestyle + seed starter) first
+ *   BENCH_CREATE=1     provision a new project (managed git + seed starter) first
  *   BENCH_ITERS        number of boots to run (default 2: 1 cold-ish + 1 warm)
  *   READY_TIMEOUT_MS   default 300000 (5m)
  *   KEEP=1             don't delete sessions / archive the created project

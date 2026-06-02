@@ -284,7 +284,7 @@ export const projectGitConnections = kortixSchema.table(
     provider: varchar('provider', { length: 32 }).notNull(),
     repoUrl: text('repo_url').notNull(),
     /**
-     * Real upstream git URL on the host (github.com/…, git.freestyle.sh/…).
+     * Real upstream git URL on the host (e.g. github.com/…).
      * Distinct from repoUrl, which is the client-facing Kortix git-proxy URL.
      * Server-side git + the proxy resolve the real host through this; clients
      * never see it. Null on legacy rows (defaults to repoUrl).
@@ -1911,7 +1911,7 @@ export const accessRequests = kortixSchema.table(
 // merging `head_ref` into `base_ref` for a given project. The CR is metadata;
 // the underlying git operations (fetch, diff, merge) run through
 // apps/api/src/projects/git.ts and work against whichever backend the
-// project's repo URL points to (GitHub, GitLab, Freestyle, plain git).
+// project's repo URL points to (GitHub, GitLab, plain git).
 
 export const changeRequestStatusEnum = kortixSchema.enum('change_request_status', [
   'open',

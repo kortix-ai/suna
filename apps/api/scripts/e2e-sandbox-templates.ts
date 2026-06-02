@@ -5,7 +5,7 @@
  *
  *   1. Mint a PAT for the first local owner account (same pattern as the
  *      other e2e-* scripts).
- *   2. Provision a fresh Freestyle-backed project (seed_starter=true). With
+ *   2. Provision a fresh managed-git project (seed_starter=true). With
  *      the refactor, the starter no longer ships `.kortix/Dockerfile`, so the
  *      project has zero custom templates and only the platform default is
  *      available.

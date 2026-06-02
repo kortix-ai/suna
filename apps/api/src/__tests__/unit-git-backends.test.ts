@@ -39,14 +39,14 @@ describe('registry', () => {
   test('resolves known providers', () => {
     expect(getBackend('github')).toBe(githubBackend);
     expect(hasBackend('github')).toBe(true);
-    expect(hasBackend('freestyle')).toBe(false);
+    expect(hasBackend('bitbucket')).toBe(false);
     expect(hasBackend('forgejo')).toBe(false);
   });
 
   test('unknown providers fall back to the github backend (generic basic-auth transport)', () => {
     expect(getBackend('gitlab')).toBe(githubBackend);
     expect(getBackend('generic')).toBe(githubBackend);
-    expect(getBackend('freestyle')).toBe(githubBackend);
+    expect(getBackend('bitbucket')).toBe(githubBackend);
   });
 
   test('default managed backend is github (and honours MANAGED_GIT_PROVIDER)', () => {

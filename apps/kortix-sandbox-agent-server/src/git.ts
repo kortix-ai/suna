@@ -162,7 +162,7 @@ async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
   // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
   // credential IS our own KORTIX_TOKEN — the proxy authenticates it and resolves
   // the real upstream + host credential server-side. No clone-credential round
-  // trip, and a real GitHub/Freestyle token never enters the sandbox.
+  // trip, and a real GitHub token never enters the sandbox.
   if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
     return cfg.kortixToken
   }
@@ -293,7 +293,7 @@ export async function configureGitCredentialHelper(
     return
   }
   // Pin the username so git doesn't prompt for it when the remote URL carries
-  // no userinfo (freestyle/GitHub both expect the literal `x-access-token`).
+  // no userinfo (GitHub expects the literal `x-access-token`).
   await execGit(
     ['config', '--global', '--replace-all', `credential.${host}.username`, 'x-access-token'],
     { env },

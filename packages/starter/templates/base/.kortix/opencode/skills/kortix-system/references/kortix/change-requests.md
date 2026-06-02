@@ -3,7 +3,7 @@
 A **change request** (CR) is Kortix's PR-equivalent. It proposes
 merging one branch (`head_ref`) into another (`base_ref`) inside a
 single Kortix project. The CR layer is **Kortix-native** — it works
-on top of any git host (GitHub, GitLab, Freestyle, plain git) without
+on top of any git host (GitHub, GitLab, plain git) without
 per-host integration. The CR row is metadata; the underlying git
 operations (fetch, diff, three-way merge, fast-forward) run inside the
 Kortix API against whatever backend the project's `repo_url` points

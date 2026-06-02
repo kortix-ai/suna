@@ -193,9 +193,9 @@ async function main() {
   // ════ PHASE 9: PROJECT CRUD + sub-resources ════
   phase("9. Project CRUD");
   // Raw POST /v1/projects requires a real validated repo_url; the user-facing
-  // "Create project" path is /provision (managed Freestyle git). Use that.
+  // "Create project" path is /provision (managed git). Use that.
   expectStatus("POST /v1/projects (no repo_url → 400)", await api("POST", "/v1/projects", A.token, {}), 400);
-  const projCreate = await api("POST", "/v1/projects/provision", A.token, { provider: "freestyle", name: "e2e-project" });
+  const projCreate = await api("POST", "/v1/projects/provision", A.token, { name: "e2e-project" });
   expectStatus("POST /v1/projects/provision", projCreate, 201);
   const projectId: string | undefined = projCreate.body?.project_id || projCreate.body?.id || projCreate.body?.projectId;
   if (projectId) { created.projects.push(projectId); ok(`project = ${projectId}`); } else bad("no project id");

@@ -98,22 +98,22 @@ const envSchema = z.object({
 
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
   // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
-  // ('github' default | 'freestyle'). The GitHub backend creates repos under
-  // MANAGED_GIT_GITHUB_OWNER (a Kortix-owned org) via the Kortix App installed
-  // there (MANAGED_GIT_GITHUB_INSTALL_ID). Reuses KORTIX_GITHUB_APP_* for the
-  // App JWT. Each backend's isConfigured() checks its own vars, so leaving
-  // these blank keeps the GitHub backend inert (Freestyle stays the default).
+  // ('github' default; only active managed backend). The GitHub backend creates
+  // repos under MANAGED_GIT_GITHUB_OWNER (a Kortix-owned org) via the Kortix App
+  // installed there (MANAGED_GIT_GITHUB_INSTALL_ID). Reuses KORTIX_GITHUB_APP_*
+  // for the App JWT. Each backend's isConfigured() checks its own vars, so
+  // leaving these blank keeps the managed-git path inert.
   MANAGED_GIT_PROVIDER:            optStr,
   MANAGED_GIT_GITHUB_OWNER:        optStr,
   MANAGED_GIT_GITHUB_INSTALL_ID:   optStr,
   // Optional straight org PAT for the managed org (the "one server-side key"
-  // model, 1:1 with the old FREESTYLE_API_KEY). When set it takes precedence
+  // model). When set it takes precedence
   // over the GitHub App for managed-org admin ops (create/delete repo, invite
   // collaborator). Leave blank to use the App installation instead.
   MANAGED_GIT_GITHUB_TOKEN:        optStr,
   // When true, runtime clients (sandbox + `kortix` CLI) use the Kortix git
   // proxy as their git origin (auth = KORTIX_TOKEN) instead of the real host —
-  // so a real GitHub/Freestyle credential never reaches a sandbox. Requires a
+  // so a real GitHub credential never reaches a sandbox. Requires a
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
   // OFF leaves the direct clone-credential token flow untouched).
   KORTIX_GIT_PROXY:                optBoolFalse,

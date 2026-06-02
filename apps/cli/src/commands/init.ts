@@ -367,7 +367,6 @@ export async function runInit(argv: string[]): Promise<number> {
 
   // ── Get started panel ────────────────────────────────────────────────
   printGetStarted({
-    primaryAgent: primary,
     prompt: sampleStarterPrompt(),
   });
 

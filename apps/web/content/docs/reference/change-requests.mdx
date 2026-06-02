@@ -5,7 +5,7 @@ description: The CR data model, lifecycle, diff/merge semantics, CLI surface, an
 
 Kortix's pull-request equivalent — the path session work takes to reach `main`. For the plain-language version see [Change requests](/docs/concepts/change-requests); for a review walkthrough see [Reviewing and merging](/docs/quickstart).
 
-A CR proposes merging one branch (`head_ref`) into another (`base_ref`) inside a single Kortix project. The layer is Kortix-native — it works on any git host (GitHub, GitLab, Freestyle, plain git) without per-host integration. The CR row is metadata; the git operations (fetch, diff, three-way merge, fast-forward) run inside the Kortix API against the project's `repo_url` backend.
+A CR proposes merging one branch (`head_ref`) into another (`base_ref`) inside a single Kortix project. The layer is Kortix-native — it works on any git host (GitHub, GitLab, plain git) without per-host integration. The CR row is metadata; the git operations (fetch, diff, three-way merge, fast-forward) run inside the Kortix API against the project's `repo_url` backend.
 
 ## The agent mandate
 
