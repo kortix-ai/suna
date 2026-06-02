@@ -10,14 +10,21 @@
  * id, and default branch.
  */
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Check, Copy, Terminal } from 'lucide-react';
+import { FormEvent, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Check, Copy, Loader2, Terminal, UserPlus } from 'lucide-react';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getProject, isManagedGithubProject } from '@/lib/projects-client';
+import { toast } from '@/lib/toast';
+import {
+  getProject,
+  inviteRepoCollaborator,
+  isManagedGithubProject,
+} from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 
 export function DevView({ projectId }: { projectId: string }) {
@@ -83,14 +90,30 @@ function DevSteps({
   const managed = isManagedGithubProject(project);
   const branch = project.default_branch || 'main';
 
+  // Managed repos are private and Kortix-owned, so you can't clone until you're
+  // added as a collaborator — that has to come first. Unmanaged repos you
+  // already have access to, so we skip straight to cloning.
+  let step = 0;
+  const next = () => (step += 1);
+
   return (
     <div className="space-y-5">
+      {managed && (
+        <Step
+          n={next()}
+          title="Get access to the repo"
+          hint="This repo is private and owned by Kortix. Add your GitHub account as a collaborator, then accept the invite GitHub emails you."
+        >
+          <RepoAccessForm projectId={project.project_id} />
+        </Step>
+      )}
+
       <Step
-        n={1}
+        n={next()}
         title="Clone the repo"
         hint={
           managed
-            ? 'Kortix owns this repo. Add yourself as a collaborator under Settings → Repository first, so you can clone it.'
+            ? 'Once your invite is accepted, clone it like any other repo.'
             : 'You need read access to the repo to clone it.'
         }
       >
@@ -100,7 +123,7 @@ function DevSteps({
       </Step>
 
       <Step
-        n={2}
+        n={next()}
         title="Install the Kortix CLI"
         hint="Manages this project's secrets, sessions, and change requests from your terminal."
       >
@@ -110,7 +133,7 @@ function DevSteps({
       </Step>
 
       <Step
-        n={3}
+        n={next()}
         title="Link this folder to the project"
         hint="Writes .kortix/link.json so every kortix command in this repo targets this project."
       >
@@ -118,7 +141,7 @@ function DevSteps({
       </Step>
 
       <Step
-        n={4}
+        n={next()}
         title="Pull secrets"
         hint="Writes a .env with this project's secret names — fill in the values locally. Plaintext never leaves the cloud."
       >
@@ -126,7 +149,7 @@ function DevSteps({
       </Step>
 
       <Step
-        n={5}
+        n={next()}
         title="Run the agent locally"
         hint="Uses the same .kortix/opencode config that powers cloud sessions — identical agents, skills, and commands."
       >
@@ -134,7 +157,7 @@ function DevSteps({
       </Step>
 
       <Step
-        n={6}
+        n={next()}
         title="Ship your changes back"
         hint="Open a change request, then review and merge it from the dashboard or with kortix cr merge."
       >
@@ -229,6 +252,76 @@ function CommandBlock({ lines }: { lines: string[] }) {
         )}
       </button>
     </div>
+  );
+}
+
+/**
+ * Add a GitHub user as a collaborator on this project's managed repo, so they
+ * can clone it. Mirrors the control in Settings → Repository — surfaced here as
+ * step one of the local-dev flow, where you actually need it.
+ */
+function RepoAccessForm({ projectId }: { projectId: string }) {
+  const [username, setUsername] = useState('');
+
+  const invite = useMutation({
+    mutationFn: () => inviteRepoCollaborator(projectId, username.trim(), 'write'),
+    onSuccess: (res) => {
+      if (res.alreadyCollaborator) {
+        toast.success(`@${res.username} already has access to this repo`);
+      } else {
+        toast.success(`Invite sent to @${res.username} — accept it on GitHub`);
+      }
+      setUsername('');
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || 'Failed to add collaborator'),
+  });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (username.trim() && !invite.isPending) invite.mutate();
+  };
+
+  return (
+    <form className="flex flex-wrap items-center gap-2" onSubmit={submit}>
+      <div className="relative min-w-0 flex-1 basis-48">
+        <GithubMark className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" />
+        <Input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="Your GitHub username"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          className="pl-9"
+        />
+      </div>
+      <Button
+        type="submit"
+        size="lg"
+        className="shrink-0 gap-1.5"
+        disabled={!username.trim() || invite.isPending}
+      >
+        {invite.isPending ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <UserPlus className="size-3.5" />
+        )}
+        Add me
+      </Button>
+    </form>
+  );
+}
+
+/** GitHub mark rendered from Google's favicon service. */
+function GithubMark({ className }: { className?: string }) {
+  return (
+    <img
+      src="https://www.google.com/s2/favicons?domain=github.com&sz=64"
+      alt=""
+      aria-hidden
+      className={cn('rounded-[4px]', className)}
+    />
   );
 }
 
