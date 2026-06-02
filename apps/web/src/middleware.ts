@@ -41,6 +41,7 @@ const PUBLIC_ROUTES = [
   '/install.sh',
   '/design-system', // Living design system / brand guidelines should be public
   '/contact', // Request-a-demo / contact page should be public
+  '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked

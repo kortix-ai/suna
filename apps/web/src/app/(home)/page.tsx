@@ -9,8 +9,6 @@ import {
   ArrowRight,
   Check,
   Copy,
-  Github,
-  Star,
   GitBranch,
   ShieldCheck,
   Box,
@@ -18,19 +16,14 @@ import {
   ScrollText,
   Users,
   Server,
-  Boxes,
-  Cpu,
-  BookOpen,
 } from 'lucide-react';
 import { BackgroundAALChecker } from '@/components/auth/background-aal-checker';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { Button } from '@/components/ui/button';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { useAuth } from '@/components/AuthProvider';
-import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { Reveal } from '@/components/home/reveal';
 import { StepMedia } from '@/components/home/step-media';
-import { CodeWindow } from '@/components/home/code-window';
 
 const DEMO_URL = '/contact';
 const DOCS_URL = '/docs';
@@ -94,19 +87,6 @@ const STEPS: Step[] = [
     body: 'Add Kortix to Slack and your agent answers in the channels you invite it to. Put work on a schedule, fire it from a webhook, or kick it off from chat — every entry point routes to the right agent.',
     src: SHOT('06-channels.png'), url: 'acme.kortix.app',
   },
-];
-
-const DEV_POINTS: string[] = [
-  'kortix.toml declares your triggers, channels, connectors, and computer — versioned from the first commit.',
-  'Agents and skills are plain markdown files — edit and ship them like any codebase.',
-  'Every change is a change request: review the diff, approve to keep it, or roll back instantly.',
-  'Self-host on your own infra or run on Kortix cloud — bring your own models either way.',
-];
-
-const RUNS_ANYWHERE: { icon: typeof Server; title: string; desc: string }[] = [
-  { icon: Server, title: 'Self-host', desc: 'A laptop, a VPS, your own VPC, or fully air-gapped — your perimeter.' },
-  { icon: Boxes, title: 'Any engine', desc: 'An engine-agnostic runtime, built to stay pluggable over time.' },
-  { icon: Cpu, title: 'Any provider', desc: 'Bring your own model keys or subscription, or use Kortix compute.' },
 ];
 
 const ENTERPRISE: { icon: typeof Users; title: string; desc: string }[] = [
@@ -179,7 +159,6 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
   const { user } = useAuth();
-  const { formattedStars } = useGitHubStars('kortix-ai', 'kortix');
 
   // Derive the install command from the live frontend origin so it always
   // points at this deployment's own /install route (kortix.com, dev.kortix.com,
@@ -227,12 +206,16 @@ export default function Home() {
                 href={GITHUB_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="pointer-events-auto mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-background/70 px-3.5 py-1.5 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:text-foreground"
+                className="pointer-events-auto group mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-background/70 py-1 pl-1.5 pr-3 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:text-foreground"
               >
-                <Star className="size-3 fill-current text-amber-500" />
-                <span className="font-medium text-foreground">{formattedStars}</span> stars
-                <span className="text-border">·</span>
-                Open source on GitHub
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-foreground/[0.06] px-2 py-0.5 font-medium text-foreground">
+                  <svg viewBox="0 0 24 24" className="size-3" fill="currentColor" aria-hidden="true">
+                    <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z" />
+                  </svg>
+                  Open source
+                </span>
+                <span>Self-host anywhere — own it end to end</span>
+                <ArrowRight className="size-3 shrink-0 text-muted-foreground/70 transition-transform group-hover:translate-x-0.5" />
               </a>
               <h1 className="text-4xl font-medium leading-[1.04] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-7xl">
                 The AI command center<br />
@@ -243,13 +226,11 @@ export default function Home() {
               </p>
             </div>
             <div className="relative z-[1] pb-8 px-4 flex flex-col items-center gap-6">
-              <div className="flex flex-col items-center gap-3 sm:flex-row">
+              <div className="flex flex-col items-center gap-3">
                 <Button size="lg" className="h-12 px-8 text-sm rounded-full transition-colors" onClick={handleLaunch}>
-                  Launch Your Kortix<ArrowRight className="ml-1.5 size-3.5" />
+                  Launch Kortix<ArrowRight className="ml-1.5 size-3.5" />
                 </Button>
-                <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm">
-                  <Link href={DEMO_URL}>Request demo</Link>
-                </Button>
+                <Link href={DEMO_URL} className="text-sm text-muted-foreground transition-colors hover:text-foreground">or request a demo</Link>
               </div>
               <button
                 onClick={copyInstall}
@@ -318,58 +299,11 @@ export default function Home() {
           <TourStep key={step.n} step={step} index={i} />
         ))}
 
-        {/* ═══════════════ COMPANY AS CODE (developers) ═══════════════ */}
-        <section id="developers" className="scroll-mt-24 border-y border-border/60 bg-muted/20">
-          <div className="mx-auto max-w-6xl px-6 py-16 sm:py-24">
-            <Reveal>
-              <div className="mx-auto mb-12 max-w-2xl text-center">
-                <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Step 06 <span className="text-foreground/30">·</span> It&apos;s all code</div>
-                <h2 className="mt-3 text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl md:text-4xl">Your whole company, as code</h2>
-                <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-                  One repo is the source of truth. Every agent, skill, trigger, and policy is a plain file — versioned in git, reviewed in a change request, deployed in one command. No black box.
-                </p>
-              </div>
-            </Reveal>
-            <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-14">
-              <Reveal><CodeWindow /></Reveal>
-              <Reveal delay={0.1}>
-                <div>
-                  <ul className="space-y-3.5">
-                    {DEV_POINTS.map((x) => (
-                      <li key={x} className="flex items-start gap-3 text-sm leading-relaxed text-muted-foreground">
-                        <Check className="mt-0.5 size-4 shrink-0 text-foreground/70" />{x}
-                      </li>
-                    ))}
-                  </ul>
-                  <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="group mt-7 flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-4 transition-colors hover:border-foreground/30">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-muted/40"><Github className="size-5 text-foreground/80" /></span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground"><Star className="size-3.5 fill-current text-amber-500" />{formattedStars} stars on GitHub</div>
-                      <div className="mt-0.5 text-sm text-muted-foreground">A leading open AI workspace — star it, fork it, self-host it.</div>
-                    </div>
-                    <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:text-foreground" />
-                  </a>
-                </div>
-              </Reveal>
-            </div>
-            <Reveal delay={0.15}>
-              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {RUNS_ANYWHERE.map(({ icon: Icon, title, desc }) => (
-                  <div key={title} className="rounded-2xl border border-border/60 bg-card/40 p-5">
-                    <div className="flex items-center gap-2.5"><Icon className="size-4 text-foreground/70" /><h3 className="text-sm font-semibold text-foreground">{title}</h3></div>
-                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{desc}</p>
-                  </div>
-                ))}
-              </div>
-            </Reveal>
-          </div>
-        </section>
-
         {/* ═══════════════ THE RESULT — DELIVERABLES ═══════════════ */}
         <section className="mx-auto max-w-6xl px-6 py-16 sm:py-24">
           <Reveal>
             <div className="mx-auto mb-12 max-w-2xl text-center">
-              <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Step 07 <span className="text-foreground/30">·</span> Watch it work</div>
+              <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Step 06 <span className="text-foreground/30">·</span> Watch it work</div>
               <h2 className="mt-3 text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl md:text-4xl">Real work, done — not chat</h2>
               <p className="mt-4 text-base leading-relaxed text-muted-foreground">
                 Ask in plain language and an agent plans the work, runs it on a real computer, and hands back a finished deliverable you can review.
@@ -431,15 +365,11 @@ export default function Home() {
             <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
               Agents that do real work across your tools. Self-host it free — your infrastructure, your models — or run it fully managed on Kortix cloud.
             </p>
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={handleLaunch}>Launch Your Kortix<ArrowRight className="ml-1.5 size-3.5" /></Button>
-              <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm"><Link href={DEMO_URL}>Request demo</Link></Button>
+            <div className="mt-8 flex flex-col items-center justify-center gap-4">
+              <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={handleLaunch}>Launch Kortix<ArrowRight className="ml-1.5 size-3.5" /></Button>
+              <Link href={DEMO_URL} className="text-sm text-muted-foreground transition-colors hover:text-foreground">or request a demo</Link>
             </div>
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
-              <Link href={DOCS_URL} className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"><BookOpen className="size-4" />Read the docs</Link>
-              <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"><Star className="size-3.5 fill-current text-amber-500" />{formattedStars} stars on GitHub</a>
-            </div>
-            <p className="mt-7 inline-flex items-center gap-2 text-xs text-muted-foreground"><GitBranch className="size-3.5" /> Open source · SSO · roles · on-prem · no lock-in</p>
+            <p className="mt-8 inline-flex items-center gap-2 text-xs text-muted-foreground"><GitBranch className="size-3.5" /> Open source · SSO · roles · on-prem · no lock-in</p>
           </Reveal>
         </section>
 
@@ -458,7 +388,7 @@ export default function Home() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="https://www.google.com/s2/favicons?domain=github.com&sz=128" alt="GitHub" width={16} height={16} className="size-4 rounded-sm dark:invert" />
           </a>
-          <Button size="sm" className="px-5 text-xs rounded-full font-medium" onClick={handleLaunch}>Launch Your Kortix<ArrowRight className="ml-1.5 size-3" /></Button>
+          <Button size="sm" className="px-5 text-xs rounded-full font-medium" onClick={handleLaunch}>Launch Kortix<ArrowRight className="ml-1.5 size-3" /></Button>
         </div>
       </div>
     </BackgroundAALChecker>

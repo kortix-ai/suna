@@ -151,7 +151,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState('hero');
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -162,6 +161,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
 
   const ctaLink = '/auth';
+
+  // Highlight the nav item for the current route. '/' must match exactly;
+  // every other route also matches its sub-paths (e.g. /docs/foo → Docs).
+  const isNavActive = (href: string) =>
+    href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
 
   // Single unified scroll handler with hysteresis
   const handleScroll = useCallback(() => {
@@ -174,21 +178,8 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
       setHasScrolled(false);
     }
 
-    // Update active section
-    const sections = filteredNavLinks.map((item) => item.href.substring(1));
-    for (const section of sections) {
-      const element = document.getElementById(section);
-      if (element) {
-        const rect = element.getBoundingClientRect();
-        if (rect.top <= 150 && rect.bottom >= 150) {
-          setActiveSection(section);
-          break;
-        }
-      }
-    }
-
     lastScrollY.current = currentScrollY;
-  }, [hasScrolled, filteredNavLinks]);
+  }, [hasScrolled]);
 
   useEffect(() => {
     // Use passive listener for better scroll performance
@@ -263,7 +254,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               href={item.href}
               className={cn(
                 "px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap",
-                pathname === item.href
+                isNavActive(item.href)
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground"
               )}
@@ -301,7 +292,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             <Button
               onClick={() => { trackCtaSignup(); router.push(ctaLink); }}
               size="sm"
-            >{tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}</Button>
+            >Launch Kortix</Button>
           )}
 
           {/* Mobile Menu Button */}
@@ -353,31 +344,17 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                     key={item.id}
                     variants={drawerMenuVariants}
                   >
-                    <a
+                    <Link
                       href={item.href}
-                      onClick={(e) => {
-                        if (!item.href.startsWith('#')) {
-                          setIsDrawerOpen(false);
-                          return;
-                        }
-                        e.preventDefault();
-                        if (pathname !== '/') {
-                          router.push(`/${item.href}`);
-                          setIsDrawerOpen(false);
-                          return;
-                        }
-                        const element = document.getElementById(item.href.substring(1));
-                        element?.scrollIntoView({ behavior: 'smooth' });
-                        setIsDrawerOpen(false);
-                      }}
-                      className={cn('block py-3 text-4xl font-medium tracking-tight transition-colors', 
-                        (item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
+                      onClick={() => setIsDrawerOpen(false)}
+                      className={cn('block py-3 text-4xl font-medium tracking-tight transition-colors',
+                        isNavActive(item.href)
                           ? 'text-foreground'
                           : 'text-muted-foreground hover:text-foreground'
                       )}
                     >
                       {item.name}
-                    </a>
+                    </Link>
                   </motion.li>
                 ))}
                 {/* Mobile App Link — commented out for now
@@ -425,7 +402,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                       }}
                       suppressHydrationWarning
                     >
-                      {t('tryFree')}
+                      Launch Kortix
                     </Link>
                   </Button>
                 )}
