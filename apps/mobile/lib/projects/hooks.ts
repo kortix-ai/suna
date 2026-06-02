@@ -6,6 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   archiveProject,
+  createAccount,
   createProjectSession,
   getProject,
   linkRepository,
@@ -35,6 +36,16 @@ export function useAccounts(enabled = true) {
     queryFn: listAccounts,
     enabled,
     staleTime: 60_000,
+  });
+}
+
+export function useCreateAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => createAccount(name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
   });
 }
 
