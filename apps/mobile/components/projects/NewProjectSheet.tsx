@@ -251,25 +251,21 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
               <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted }}>Already have code on GitHub? Import it</Text>
             </Pressable>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Pressable
-                onPress={() => sheetRef.current?.dismiss()}
-                disabled={submitting}
-                style={{ height: 52, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' }}
-              >
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: muted }}>Cancel</Text>
-              </Pressable>
-              <View style={{ flex: 1 }}>
-                <PrimaryButton
-                  label="Create project"
-                  icon={<Icon as={Plus} size={18} color={theme.primaryForeground} />}
-                  loading={provision.isPending}
-                  disabled={submitting || !accountId}
-                  onPress={handleCreateManaged}
-                  theme={theme}
-                />
-              </View>
-            </View>
+            <PrimaryButton
+              label="Create project"
+              icon={<Icon as={Plus} size={18} color={theme.primaryForeground} />}
+              loading={provision.isPending}
+              disabled={submitting || !accountId}
+              onPress={handleCreateManaged}
+              theme={theme}
+            />
+            <Pressable
+              onPress={() => sheetRef.current?.dismiss()}
+              disabled={submitting}
+              style={{ height: 48, alignItems: 'center', justifyContent: 'center', marginTop: 6 }}
+            >
+              <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: muted }}>Cancel</Text>
+            </Pressable>
           </>
         ) : (
           <>
@@ -370,25 +366,21 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
                   style={{ backgroundColor: fieldBg, borderWidth: 1, borderColor: border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontFamily: 'Roobert', color: fg, marginBottom: 20 }}
                 />
 
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <Pressable
-                    onPress={() => sheetRef.current?.dismiss()}
-                    disabled={submitting}
-                    style={{ height: 52, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: muted }}>Cancel</Text>
-                  </Pressable>
-                  <View style={{ flex: 1 }}>
-                    <PrimaryButton
-                      label="Import repo"
-                      icon={<Icon as={Github} size={16} color={theme.primaryForeground} />}
-                      loading={link.isPending}
-                      disabled={submitting || !accountId || !selectedInstallationId || !selectedRepo}
-                      onPress={handleLinkGitHub}
-                      theme={theme}
-                    />
-                  </View>
-                </View>
+                <PrimaryButton
+                  label="Import repo"
+                  icon={<Icon as={Github} size={16} color={theme.primaryForeground} />}
+                  loading={link.isPending}
+                  disabled={submitting || !accountId || !selectedInstallationId || !selectedRepo}
+                  onPress={handleLinkGitHub}
+                  theme={theme}
+                />
+                <Pressable
+                  onPress={() => sheetRef.current?.dismiss()}
+                  disabled={submitting}
+                  style={{ height: 48, alignItems: 'center', justifyContent: 'center', marginTop: 6 }}
+                >
+                  <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: muted }}>Cancel</Text>
+                </Pressable>
 
                 {installationsQuery.data?.install_url ? (
                   <Pressable onPress={handleConnectGitHub} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 }}>
