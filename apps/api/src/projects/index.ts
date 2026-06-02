@@ -131,7 +131,7 @@ import {
 import { getSandboxProvider } from '../snapshots/providers';
 import { classifySnapshotError, describeSnapshotError } from '../snapshots/error-classify';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
-import { claimWarmSandbox, getWarmPoolCounts, notePoolPresence, refillProjectPool, resolveWarmConfig, warmPoolEnabled } from '../platform/services/warm-pool';
+import { claimWarmSandbox, getWarmPoolCounts, notePoolPresence, refillProjectPool, resolveWarmConfig, syncClaimedBoxToBase, warmPoolEnabled } from '../platform/services/warm-pool';
 import { rehydrateSessionChat } from './legacy-migration-rehydrate';
 import { ProvisionTimeline } from '../platform/services/provision-timeline';
 import { getProvider } from '../platform/providers';
@@ -2099,7 +2099,10 @@ export async function createProjectSession(input: {
             updatedAt: new Date(),
           })
           .returning();
-        // Refill the pool to replace the box we just took (fire-and-forget).
+        // Fast-forward the claimed box to the latest base tip (it cloned base
+        // when it parked, which may now be stale) + refill the pool. Both
+        // fire-and-forget so the create returns immediately.
+        void syncClaimedBoxToBase(claimed.externalId, userId).catch(() => {});
         void refillProjectPool(projectId).catch(() => {});
         return { row, headers: responseHeaders };
       } catch (err) {

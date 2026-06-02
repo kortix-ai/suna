@@ -156,6 +156,31 @@ export async function claimWarmSandbox(input: {
   };
 }
 
+/**
+ * After claiming a warm box, fast-forward its workspace to the LATEST base tip.
+ * The box cloned base when it parked, so base may have advanced since — without
+ * this, a claimed session opens on a stale checkout. Fire-and-forget + no
+ * opencode restart (the daemon's file watcher picks up the changed files).
+ */
+export async function syncClaimedBoxToBase(externalId: string | null, userId: string | undefined): Promise<void> {
+  if (!externalId) return;
+  try {
+    const { sandboxOpencodeEndpoint } = await import('../../projects/opencode-mapping');
+    const ep = await sandboxOpencodeEndpoint(externalId, userId);
+    if (!ep) return;
+    const res = await fetch(`${ep.url}/kortix/refresh?base=1&restart=0`, {
+      method: 'POST',
+      headers: ep.headers,
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (!res.ok) {
+      console.warn(`[warm-pool] base sync ${externalId.slice(0, 8)} -> ${res.status}`);
+    }
+  } catch (err) {
+    console.warn('[warm-pool] base sync failed:', err instanceof Error ? err.message : err);
+  }
+}
+
 /** Probe the daemon health through the local proxy using the sandbox key. */
 async function probeRuntimeReady(externalId: string, serviceKey: string): Promise<{ ready: boolean; error: string | null }> {
   try {

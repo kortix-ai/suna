@@ -45,7 +45,7 @@ const DAEMON_PORT = 8000;
 
 // ── Server-side reachability into the sandbox's OpenCode runtime ────────────
 
-async function sandboxOpencodeEndpoint(
+export async function sandboxOpencodeEndpoint(
   externalId: string,
   userId: string | undefined,
 ): Promise<{ url: string; headers: Record<string, string> } | null> {
