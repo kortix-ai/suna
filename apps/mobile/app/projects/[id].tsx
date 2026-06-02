@@ -1,10 +1,14 @@
 /**
- * Project detail — ported from web's /projects/[id].
+ * Project detail — ported from web's /projects/[id] (ProjectShell + ProjectSidebar).
  *
- * Uses the repo-first project-session backend (GET/POST /projects/{id}/sessions),
- * the same connection the web uses: each session is its own branch + sandbox.
- * Opening a running session switches the app's runtime to that session's sandbox
- * (reusing SandboxContext.switchSandbox) and hands off to the chat in app/home.tsx.
+ * Main area is the "hero": project name + a composer to start a session.
+ * A left drawer (menu button / tap-backdrop) mirrors the web sidebar:
+ *   New session · Search (the shared CommandPalette) · this project's Sessions.
+ *
+ * Sessions use the repo-first backend (GET/POST /projects/{id}/sessions); each is
+ * its own branch + sandbox. Opening a running session switches the runtime to
+ * that session's sandbox (SandboxContext.switchSandbox) and hands off to the
+ * chat in app/home.tsx.
  */
 
 import * as React from 'react';
@@ -17,17 +21,32 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  Dimensions,
+  StyleSheet,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, MessageSquare, ChevronRight, GitBranch, ArrowUp } from 'lucide-react-native';
+import {
+  ChevronRight,
+  GitBranch,
+  ArrowUp,
+  Menu,
+  X,
+  Plus,
+  Search as SearchIcon,
+  Folder,
+  MessageSquare,
+} from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
 import { useToast } from '@/components/ui/toast-provider';
+import { CommandPalette } from '@/components/session/CommandPalette';
 import { useProject, useProjectSessions, useCreateProjectSession } from '@/lib/projects/hooks';
 import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
 import { useSandboxContext } from '@/contexts/SandboxContext';
+import { useSessions } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { getSandboxUrl, type SandboxInfo } from '@/lib/platform/client';
 import { useThemeColors } from '@/lib/theme-colors';
@@ -72,18 +91,39 @@ export default function ProjectDetailScreen() {
 
   const projectQuery = useProject(projectId || null);
   const project = projectQuery.data;
-  const { switchSandbox } = useSandboxContext();
+  const { sandboxUrl, switchSandbox } = useSandboxContext();
   const sessionsQuery = useProjectSessions(projectId || null);
   const sessions = sessionsQuery.data ?? [];
   const createSession = useCreateProjectSession(projectId || null);
 
+  // Global runtime sessions — only used to power the shared CommandPalette search.
+  const globalSessions = useSessions(sandboxUrl).data ?? [];
+
   const [prompt, setPrompt] = React.useState('');
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
+
+  const drawerAnim = React.useRef(new Animated.Value(0)).current;
+  const screenW = Dimensions.get('window').width;
+  const drawerWidth = Math.min(330, screenW * 0.84);
+
+  React.useEffect(() => {
+    Animated.timing(drawerAnim, {
+      toValue: drawerOpen ? 1 : 0,
+      duration: drawerOpen ? 240 : 200,
+      useNativeDriver: true,
+    }).start();
+  }, [drawerOpen, drawerAnim]);
+
+  const translateX = drawerAnim.interpolate({ inputRange: [0, 1], outputRange: [-drawerWidth, 0] });
+  const backdropOpacity = drawerAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.5] });
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const subtle = isDark ? '#a1a1aa' : '#71717a';
   const faint = isDark ? '#52525b' : '#a1a1aa';
   const cardBg = isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF';
   const border = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const drawerBg = isDark ? '#0A0A0A' : '#F6F6F6';
 
   const openSession = React.useCallback(
     (session: ProjectSession) => {
@@ -112,20 +152,30 @@ export default function ProjectDetailScreen() {
     [switchSandbox, router, toast],
   );
 
-  const handleStart = React.useCallback(async () => {
+  const startSession = React.useCallback(
+    async (initialPrompt?: string) => {
+      if (createSession.isPending) return;
+      try {
+        haptics.medium();
+        await createSession.mutateAsync({
+          ...(initialPrompt ? { initial_prompt: initialPrompt, name: initialPrompt.slice(0, 60) } : {}),
+        });
+        setPrompt('');
+        haptics.success();
+        toast.success('Session starting…');
+      } catch (err: any) {
+        haptics.warning();
+        toast.error(err?.message || 'Failed to start session');
+      }
+    },
+    [createSession, toast],
+  );
+
+  const handleStart = React.useCallback(() => {
     const text = prompt.trim();
-    if (!text || createSession.isPending) return;
-    try {
-      haptics.medium();
-      await createSession.mutateAsync({ initial_prompt: text, name: text.slice(0, 60) });
-      setPrompt('');
-      haptics.success();
-      toast.success('Session starting…');
-    } catch (err: any) {
-      haptics.warning();
-      toast.error(err?.message || 'Failed to start session');
-    }
-  }, [prompt, createSession, toast]);
+    if (!text) return;
+    void startSession(text);
+  }, [prompt, startSession]);
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
@@ -136,31 +186,39 @@ export default function ProjectDetailScreen() {
         keyboardVerticalOffset={insets.top}
       >
         {/* Header */}
-        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 8 }}>
+        <View
+          style={{
+            paddingTop: insets.top + 8,
+            paddingHorizontal: 16,
+            paddingBottom: 8,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => {
+              haptics.selection();
+              setDrawerOpen(true);
+            }}
             hitSlop={8}
-            style={{ flexDirection: 'row', alignItems: 'center', height: 36, alignSelf: 'flex-start' }}
+            style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
           >
-            <ChevronLeft size={22} color={fg} />
-            <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: fg, marginLeft: 2 }}>Projects</Text>
+            <Menu size={22} color={fg} />
           </Pressable>
+          <Text style={{ flex: 1, fontSize: 16, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
+            {project?.name ?? (projectQuery.isLoading ? 'Loading…' : 'Project')}
+          </Text>
         </View>
 
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={sessionsQuery.isRefetching}
-              onRefresh={() => sessionsQuery.refetch()}
-              tintColor={subtle}
-            />
-          }
+          keyboardShouldPersistTaps="handled"
         >
-          {/* Title + meta */}
+          {/* Hero */}
           <Text style={{ fontSize: 26, fontFamily: 'Roobert-SemiBold', color: fg }} numberOfLines={2}>
-            {project?.name ?? (projectQuery.isLoading ? 'Loading…' : 'Project')}
+            {project?.name ?? 'Project'}
           </Text>
           {!!project && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
@@ -172,7 +230,7 @@ export default function ProjectDetailScreen() {
             </View>
           )}
 
-          {/* Composer — start a session */}
+          {/* Composer */}
           <View
             style={{
               marginTop: 20,
@@ -223,6 +281,75 @@ export default function ProjectDetailScreen() {
             </View>
           </View>
 
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, marginTop: 16, textAlign: 'center' }}>
+            Open the menu to browse this project's sessions.
+          </Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* ── Left drawer (web ProjectSidebar) ── */}
+      <Animated.View
+        pointerEvents={drawerOpen ? 'auto' : 'none'}
+        style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity, zIndex: 40 }]}
+      >
+        <Pressable style={{ flex: 1 }} onPress={() => setDrawerOpen(false)} />
+      </Animated.View>
+
+      <Animated.View
+        pointerEvents={drawerOpen ? 'auto' : 'none'}
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: drawerWidth,
+          backgroundColor: drawerBg,
+          zIndex: 41,
+          transform: [{ translateX }],
+        }}
+      >
+        <View style={{ flex: 1, paddingTop: insets.top + 8 }}>
+          {/* Drawer header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12 }}>
+            <Text style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }} numberOfLines={1}>
+              {project?.name ?? 'Project'}
+            </Text>
+            <Pressable onPress={() => setDrawerOpen(false)} hitSlop={8} style={{ padding: 4 }}>
+              <X size={20} color={subtle} />
+            </Pressable>
+          </View>
+
+          {/* Actions */}
+          <View style={{ paddingHorizontal: 8 }}>
+            <DrawerRow
+              icon={<Plus size={18} color={fg} />}
+              label="New session"
+              color={fg}
+              onPress={() => {
+                setDrawerOpen(false);
+                void startSession();
+              }}
+            />
+            <DrawerRow
+              icon={<SearchIcon size={18} color={fg} />}
+              label="Search"
+              color={fg}
+              onPress={() => {
+                setDrawerOpen(false);
+                setPaletteOpen(true);
+              }}
+            />
+            <DrawerRow
+              icon={<Folder size={18} color={fg} />}
+              label="Projects"
+              color={fg}
+              onPress={() => {
+                setDrawerOpen(false);
+                router.replace('/projects');
+              }}
+            />
+          </View>
+
           {/* Sessions */}
           <Text
             style={{
@@ -231,66 +358,130 @@ export default function ProjectDetailScreen() {
               color: faint,
               textTransform: 'uppercase',
               letterSpacing: 0.5,
-              marginTop: 28,
-              marginBottom: 12,
+              paddingHorizontal: 20,
+              marginTop: 16,
+              marginBottom: 8,
             }}
           >
             Sessions
           </Text>
 
-          {sessionsQuery.isLoading && (
-            <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-              <ActivityIndicator color={subtle} />
-            </View>
-          )}
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: insets.bottom + 16 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={sessionsQuery.isRefetching}
+                onRefresh={() => sessionsQuery.refetch()}
+                tintColor={subtle}
+              />
+            }
+          >
+            {sessionsQuery.isLoading && (
+              <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                <ActivityIndicator color={subtle} />
+              </View>
+            )}
 
-          {!sessionsQuery.isLoading && sessions.length === 0 && (
-            <View style={{ paddingVertical: 28, alignItems: 'center' }}>
-              <MessageSquare size={28} color={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'} style={{ marginBottom: 10 }} />
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: subtle, marginBottom: 4 }}>
+            {!sessionsQuery.isLoading && sessions.length === 0 && (
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, textAlign: 'center', paddingVertical: 24 }}>
                 No sessions yet
               </Text>
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, textAlign: 'center' }}>
-                Describe a task above to start one.
-              </Text>
-            </View>
-          )}
+            )}
 
-          {sessions.map((session) => {
-            const meta = statusMeta(session.status);
-            return (
-              <Pressable
-                key={session.session_id}
-                onPress={() => openSession(session)}
-                style={({ pressed }) => ({
-                  backgroundColor: cardBg,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: border,
-                  padding: 14,
-                  marginBottom: 10,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  opacity: pressed ? 0.7 : 1,
-                })}
-              >
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>
-                    {session.name || 'Untitled session'}
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: meta.color }} />
-                    <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: faint }}>
-                      {meta.label} · {ago(session.updated_at)}
+            {sessions.map((session) => {
+              const meta = statusMeta(session.status);
+              return (
+                <Pressable
+                  key={session.session_id}
+                  onPress={() => {
+                    setDrawerOpen(false);
+                    openSession(session);
+                  }}
+                  style={({ pressed }) => ({
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 10,
+                    paddingHorizontal: 12,
+                    borderRadius: 10,
+                    opacity: pressed ? 0.6 : 1,
+                  })}
+                >
+                  <MessageSquare size={15} color={faint} style={{ marginRight: 10 }} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text numberOfLines={1} style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>
+                      {session.name || 'Untitled session'}
                     </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                      <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: meta.color }} />
+                      <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: faint }}>
+                        {meta.label} · {ago(session.updated_at)}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-                {session.status === 'running' && <ChevronRight size={16} color={faint} />}
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </KeyboardAvoidingView>
+                  {session.status === 'running' && <ChevronRight size={15} color={faint} />}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </Animated.View>
+
+      {/* Search — shared command palette (web's Cmd+K) */}
+      <CommandPalette
+        visible={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        sessions={globalSessions}
+        onNewSession={() => void startSession()}
+        onSessionSelect={(sid) => {
+          if (sid) {
+            useTabStore.getState().navigateToSession(sid);
+            router.replace('/home');
+          }
+        }}
+        onPageSelect={(pageId) => {
+          useTabStore.getState().navigateToPage(pageId);
+          router.replace('/home');
+        }}
+        onSettings={() => router.replace('/home')}
+        sandboxUrl={sandboxUrl}
+        onFileSelect={() => {
+          useTabStore.getState().navigateToPage('page:files');
+          router.replace('/home');
+        }}
+      />
     </View>
+  );
+}
+
+function DrawerRow({
+  icon,
+  label,
+  color,
+  onPress,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  color: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => {
+        haptics.tap();
+        onPress();
+      }}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 10,
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      {icon}
+      <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color, marginLeft: 12 }}>{label}</Text>
+    </Pressable>
   );
 }
