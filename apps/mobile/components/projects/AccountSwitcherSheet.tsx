@@ -1,19 +1,19 @@
 /**
  * AccountSwitcherSheet — pick the active account/team for the projects list.
- * Mirrors the web app-header account switcher.
+ * Mirrors the web app-header account switcher. Uses the shared Icon/Avatar +
+ * NativeWind components for consistency with the rest of the app.
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
-import { View, Pressable } from 'react-native';
-import {
-  BottomSheetBackdrop,
-  BottomSheetModal,
-  BottomSheetView,
-} from '@gorhom/bottom-sheet';
+import { Pressable } from 'react-native';
+import { BottomSheetBackdrop, BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
+import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Check, Users, User } from 'lucide-react-native';
+import { Check } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
+import { Icon } from '@/components/ui/icon';
+import { Avatar } from '@/components/ui/Avatar';
 import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import type { KortixAccount } from '@/lib/projects/projects-client';
@@ -38,9 +38,6 @@ export function AccountSwitcherSheet({
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
-
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
 
   useEffect(() => {
@@ -49,7 +46,7 @@ export function AccountSwitcherSheet({
   }, [open]);
 
   const renderBackdrop = useCallback(
-    (props: any) => (
+    (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
     ),
     [],
@@ -66,13 +63,12 @@ export function AccountSwitcherSheet({
       handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
     >
       <BottomSheetView style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: insets.bottom + 20 }}>
-        <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+        <Text className="mb-3 font-roobert-medium text-xs uppercase tracking-wider text-muted-foreground">
           Switch account
         </Text>
 
         {accounts.map((account) => {
           const selected = account.account_id === selectedAccountId;
-          const Icon = account.personal_account ? User : Users;
           return (
             <Pressable
               key={account.account_id}
@@ -81,22 +77,14 @@ export function AccountSwitcherSheet({
                 onSelect(account.account_id);
                 sheetRef.current?.dismiss();
               }}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 12,
-                paddingHorizontal: 14,
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: selected ? theme.primary : border,
-                marginBottom: 8,
-              }}
+              className="mb-2 flex-row items-center rounded-xl px-3 py-2.5 active:opacity-80"
+              style={{ borderWidth: 1, borderColor: selected ? theme.primary : border }}
             >
-              <Icon size={18} color={muted} style={{ marginRight: 12 }} />
-              <Text style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
+              <Avatar variant="custom" size={32} fallbackText={account.name} />
+              <Text className="ml-3 flex-1 font-roobert-medium text-[15px] text-foreground" numberOfLines={1}>
                 {account.name}
               </Text>
-              {selected && <Check size={18} color={theme.primary} />}
+              {selected && <Icon as={Check} size={18} color={theme.primary} strokeWidth={2.4} />}
             </Pressable>
           );
         })}
