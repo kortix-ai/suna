@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { chatInstalls, projectSecrets } from '@kortix/db';
 import { db } from '../shared/db';
 import {
@@ -160,7 +160,11 @@ async function upsertSecret(projectId: string, name: string, value: string): Pro
     .insert(projectSecrets)
     .values({ projectId, name, valueEnc })
     .onConflictDoUpdate({
+      // owner_user_id is left NULL here (a SHARED secret), so the conflict must
+      // target the PARTIAL unique index `(project_id, name) WHERE owner_user_id
+      // IS NULL` — a bare ON CONFLICT (project_id, name) matches no index and 500s.
       target: [projectSecrets.projectId, projectSecrets.name],
+      targetWhere: sql`${projectSecrets.ownerUserId} is null`,
       set: { valueEnc, updatedAt: new Date() },
     });
 }
