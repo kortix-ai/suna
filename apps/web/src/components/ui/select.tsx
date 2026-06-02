@@ -1,10 +1,10 @@
 'use client';
 
-import * as SelectPrimitive from '@radix-ui/react-select';
-import * as React from 'react';
 import { cn } from '@/lib/utils';
-import { ButtonProps, buttonVariants } from './button';
+import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown, ChevronUp } from 'lucide-react';
+import * as React from 'react';
+import { ButtonProps, buttonVariants } from './button';
 
 const Select = SelectPrimitive.Root;
 
@@ -19,42 +19,30 @@ const SelectTrigger = React.forwardRef<
     size?: ButtonProps['size'];
     arrow?: boolean;
   }
->(
-  (
-    {
+>(({ className, children, variant = 'default', size = 'default', arrow = true, ...props }, ref) => (
+  <SelectPrimitive.Trigger
+    ref={ref}
+    className={cn(
+      'border-input bg-background ring-offset-background placeholder:text-muted-foreground hover:border-primary/10 hover:bg-muted/40 focus:ring-kortix-blue focus-visible:ring-kortix-blue flex h-9 w-fit items-center justify-between rounded-md border px-4 py-2 text-sm focus:ring-[0.6px] focus:outline-none focus-visible:ring-[0.6px] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 has-[>svg]:px-3 [&>span]:line-clamp-1',
+      variant === 'outline' &&
+        'bg-transprarent hover:bg-foreground/5/80 border-input hover:text-accent-foreground h-9 px-3',
+      variant === 'secondary' && buttonVariants({ variant: 'input', size }),
+      variant === 'secondary' && 'mx-0.5 my-0 w-fit border-none py-0',
+      variant === 'accent' && 'mx-0.5 my-0 w-fit border-none py-0',
+      variant === 'accent' &&
+        'bg-primary/5 text-accent-foreground hover:bg-primary/10 h-8 rounded-md',
       className,
-      children,
-      variant = 'default',
-      size = 'default',
-      arrow = true,
-      ...props
-    },
-    ref,
-  ) => (
-    <SelectPrimitive.Trigger
-      ref={ref}
-      className={cn(
-        'border-input bg-background ring-offset-background placeholder:text-muted-foreground hover:border-primary/10 hover:bg-muted/40 focus:ring-actrun-blue focus-visible:ring-actrun-blue flex h-9 px-4 py-2 has-[>svg]:px-3 w-fit items-center justify-between rounded-md border text-sm focus:ring-[0.6px] focus:outline-none focus-visible:ring-[0.6px] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
-        variant === 'outline' &&
-          'bg-transprarent hover:bg-foreground/5/80 border-input hover:text-accent-foreground h-9 px-3',
-        variant === 'secondary' && buttonVariants({ variant: 'input', size }),
-        variant === 'secondary' && 'mx-0.5 my-0 w-fit border-none py-0',
-        variant === 'accent' && 'mx-0.5 my-0 w-fit border-none py-0',
-        variant === 'accent' &&
-          'bg-primary/5 text-accent-foreground hover:bg-primary/10 h-8 rounded-md',
-        className,
-      )}
-      {...props}
-    >
-      {children}
-      {arrow && (
-        <SelectPrimitive.Icon asChild>
-          <ChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
-        </SelectPrimitive.Icon>
-      )}
-    </SelectPrimitive.Trigger>
-  ),
-);
+    )}
+    {...props}
+  >
+    {children}
+    {arrow && (
+      <SelectPrimitive.Icon asChild>
+        <ChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
+      </SelectPrimitive.Icon>
+    )}
+  </SelectPrimitive.Trigger>
+));
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 
 const SelectScrollUpButton = React.forwardRef<
@@ -63,10 +51,7 @@ const SelectScrollUpButton = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.ScrollUpButton
     ref={ref}
-    className={cn(
-      'flex cursor-default items-center justify-center py-1',
-      className,
-    )}
+    className={cn('flex cursor-default items-center justify-center py-1', className)}
     {...props}
   >
     <ChevronUp className="size-4" />
@@ -80,17 +65,13 @@ const SelectScrollDownButton = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.ScrollDownButton
     ref={ref}
-    className={cn(
-      'flex cursor-default items-center justify-center py-1',
-      className,
-    )}
+    className={cn('flex cursor-default items-center justify-center py-1', className)}
     {...props}
   >
     <ChevronDown className="size-4" />
   </SelectPrimitive.ScrollDownButton>
 ));
-SelectScrollDownButton.displayName =
-  SelectPrimitive.ScrollDownButton.displayName;
+SelectScrollDownButton.displayName = SelectPrimitive.ScrollDownButton.displayName;
 
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,

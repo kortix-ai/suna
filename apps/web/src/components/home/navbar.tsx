@@ -137,7 +137,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
         <div className="flex flex-1 items-center gap-8">
           <ContextMenu>
             <ContextMenuTrigger asChild>
-              <Link href="/" className="flex shrink-0 items-center">
+              <Link href="/" className="hit-area-4 flex shrink-0 items-center">
                 <KortixLogo size={18} variant="logomark" />
               </Link>
             </ContextMenuTrigger>
