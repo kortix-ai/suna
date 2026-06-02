@@ -34,6 +34,7 @@ import {
   Settings,
   SlidersHorizontal,
   Sparkles,
+  Terminal,
   Timer,
   Users,
   Webhook,
@@ -59,6 +60,7 @@ import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 
 import { ChangesView } from './sections/changes-view';
+import { DevView } from './sections/dev-view';
 import { FilesSection } from './sections/files-section';
 
 interface RailItem {
@@ -106,6 +108,7 @@ const FOOTER_ITEMS: readonly RailItem[] = [
   { section: 'changes', label: 'Changes', icon: GitPullRequest },
   { section: 'files', label: 'Files', icon: FolderOpen },
   { section: 'sandbox', label: 'Sandbox', icon: Container },
+  { section: 'dev', label: 'Dev', icon: Terminal },
   { section: 'members', label: 'Members', icon: Users },
   { section: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -335,6 +338,8 @@ function SectionContent({
       return <ChannelsView projectId={projectId} />;
     case 'sandbox':
       return <SandboxView projectId={projectId} />;
+    case 'dev':
+      return <DevView projectId={projectId} />;
     case 'settings':
       return <SettingsView projectId={projectId} />;
     default:
