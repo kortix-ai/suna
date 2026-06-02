@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Minus, Plus, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { updateWarmPool, type KortixProject } from '@/lib/projects-client';
+import { getWarmPoolStatus, updateWarmPool, type KortixProject } from '@/lib/projects-client';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 
@@ -46,6 +46,16 @@ export function WarmPoolCard({
       setEnabled(serverEnabled);
       setSize(serverSize);
     },
+  });
+
+  // Live pool status (ready / warming counts), polled while the card is open
+  // and the pool is on. Polling also doubles as a presence signal.
+  const status = useQuery({
+    queryKey: ['warm-pool-status', projectId],
+    queryFn: () => getWarmPoolStatus(projectId),
+    enabled: !!project?.warm_pool_available && enabled,
+    refetchInterval: 4000,
+    staleTime: 0,
   });
 
   if (!project?.warm_pool_available) return null;
@@ -90,6 +100,20 @@ export function WarmPoolCard({
               <div className="text-xs text-muted-foreground">
                 How many to keep warm and ready to claim ({0}–{MAX_SIZE}).
               </div>
+              {status.data && (
+                <div className="mt-1.5 flex items-center gap-3 text-xs">
+                  <span className="inline-flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-500">
+                    <span className="size-1.5 rounded-full bg-emerald-500" />
+                    {status.data.ready} ready
+                  </span>
+                  {status.data.warming > 0 && (
+                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                      <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+                      {status.data.warming} warming…
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Button

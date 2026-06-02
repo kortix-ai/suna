@@ -90,6 +90,23 @@ async function countGlobalWarm(): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
+/** Live warm-pool counts for a project: `ready` (parked, claimable) +
+ * `warming` (booting). Surfaced in the Customize → Sandbox card. */
+export async function getWarmPoolCounts(projectId: string): Promise<{ ready: number; warming: number }> {
+  const rows = await db
+    .select({ poolState: sessionSandboxes.poolState, n: sql<number>`count(*)::int` })
+    .from(sessionSandboxes)
+    .where(and(eq(sessionSandboxes.projectId, projectId), inArray(sessionSandboxes.poolState, ['parked', 'booting'])))
+    .groupBy(sessionSandboxes.poolState);
+  let ready = 0;
+  let warming = 0;
+  for (const r of rows) {
+    if (r.poolState === 'parked') ready = Number(r.n);
+    else if (r.poolState === 'booting') warming = Number(r.n);
+  }
+  return { ready, warming };
+}
+
 /**
  * Atomically claim a parked warm sandbox for `projectId` on behalf of `userId`.
  * Only claims boxes booted for that same user (owner) — the box carries that

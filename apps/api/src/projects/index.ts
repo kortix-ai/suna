@@ -131,7 +131,7 @@ import {
 import { getSandboxProvider } from '../snapshots/providers';
 import { classifySnapshotError, describeSnapshotError } from '../snapshots/error-classify';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
-import { claimWarmSandbox, notePoolPresence, refillProjectPool, resolveWarmConfig, warmPoolEnabled } from '../platform/services/warm-pool';
+import { claimWarmSandbox, getWarmPoolCounts, notePoolPresence, refillProjectPool, resolveWarmConfig, warmPoolEnabled } from '../platform/services/warm-pool';
 import { rehydrateSessionChat } from './legacy-migration-rehydrate';
 import { ProvisionTimeline } from '../platform/services/provision-timeline';
 import { getProvider } from '../platform/providers';
@@ -6068,6 +6068,18 @@ projectsApp.patch('/:projectId', async (c) => {
     projectRole: loaded.projectRole,
     effectiveRole: loaded.effectiveRole,
   }));
+});
+
+// GET /v1/projects/:projectId/warm-pool
+// Live warm pool config + status for the Customize → Sandbox card: how many
+// sandboxes are ready (parked) vs warming (booting) right now.
+projectsApp.get('/:projectId/warm-pool', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const cfg = resolveWarmConfig(loaded.row.metadata);
+  const counts = warmPoolEnabled() ? await getWarmPoolCounts(projectId) : { ready: 0, warming: 0 };
+  return c.json({ available: warmPoolEnabled(), enabled: cfg.enabled, size: cfg.size, ...counts });
 });
 
 // PATCH /v1/projects/:projectId/warm-pool

@@ -2140,6 +2140,21 @@ export async function updateWarmPool(
   );
 }
 
+export interface WarmPoolStatus {
+  available: boolean;
+  enabled: boolean;
+  size: number;
+  /** Sandboxes parked and ready to claim instantly. */
+  ready: number;
+  /** Sandboxes currently booting toward ready. */
+  warming: number;
+}
+
+/** Live warm pool config + status (ready / warming counts). */
+export async function getWarmPoolStatus(projectId: string): Promise<WarmPoolStatus> {
+  return unwrap(await backendApi.get<WarmPoolStatus>(`/projects/${projectId}/warm-pool`));
+}
+
 export async function setProjectOnboardingComplete(
   projectId: string,
   completed: boolean,
