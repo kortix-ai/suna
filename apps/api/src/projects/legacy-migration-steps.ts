@@ -43,12 +43,7 @@ import {
   getBackend,
   getDefaultManagedBackend,
 } from './git-backends';
-import {
-  backupExists,
-  backupObjectPath,
-  createBackupUploadTarget,
-  uploadOpencodeArchive,
-} from './legacy-migration-storage';
+import { uploadOpencodeArchive } from './legacy-migration-storage';
 import {
   execOnLegacyVm,
   execOnLegacyVmOrThrow,
@@ -130,41 +125,13 @@ export class MigrationStepNotImplemented extends Error {
 }
 
 export async function extractStep(ctx: MigrationContext): Promise<void> {
-  const sandboxId = ctx.legacy.sandboxId;
-
-  if (process.env.LEGACY_MIGRATION_SKIP_BACKUP === '1') {
-    ctx.log('extract: LEGACY_MIGRATION_SKIP_BACKUP=1 — skipping backup upload (TEST ONLY)');
-    if (ctx.progress.backup_skipped !== true) await ctx.checkpoint({ backup_skipped: true, backup_path: null });
-  } else if (ctx.progress.backup_path && (await backupExists(sandboxId))) {
-    ctx.log('extract: backup already present, skipping upload', { path: ctx.progress.backup_path });
-  } else {
-    const endpoint = await resolveLegacyVmEndpoint(ctx.legacy);
-    const target = await createBackupUploadTarget(sandboxId);
-
-    const script = [
-      'set -euo pipefail',
-      RESOLVE_WS_OC_SH,
-      'BUNDLE=/tmp/kortix-migration-bundle.tar.gz',
-      'tar czf "$BUNDLE" --warning=no-file-changed --warning=no-file-ignored' +
-        ' --exclude=node_modules --exclude=.git --exclude=.persistent-system' +
-        ' --exclude=.cache --exclude=.local --exclude=.config --exclude=.browser-profile' +
-        ' --exclude=.npm --exclude=.bun --exclude=.cargo --exclude=.ssh --exclude=.gnupg' +
-        ' -C "$(dirname "$WS")" "$(basename "$WS")"' +
-        ' ${OC:+-C "$(dirname "$OC")" "$(basename "$OC")"}' +
-        ' || [ $? -le 1 ]',
-      // Stream the bundle with --upload-file (PUT). NOT --data-binary @file,
-      // which buffers the entire tarball into RAM and OOMs the VM on large
-      // workspaces / small machines.
-      `curl -fsS -X PUT -H 'x-upsert: true' -H 'Content-Type: application/octet-stream' --upload-file "$BUNDLE" ${sq(target.url)}`,
-      'rm -f "$BUNDLE"',
-      'echo OK',
-    ].join('\n');
-
-    ctx.log('extract: backing up VM', { externalId: ctx.legacy.externalId });
-    await execOnLegacyVmOrThrow(endpoint, `bash -c ${sq(script)}`, 900);
-    await ctx.checkpoint({ backup_path: target.path, backup_bucket_uploaded_at: new Date().toISOString() });
-  }
-
+  // The legacy workspace is preserved the two ways the migration actually reads
+  // back: the FILES are pushed to git (push phase) and the OpenCode chat STORE is
+  // uploaded as its own small object below (rehydrate downloads it on first open).
+  // We deliberately do NOT tar+upload a full-workspace `bundle.tar.gz` — nothing
+  // ever restored from it, and on big machines it blew past the object-store
+  // upload cap (HTTP 400) and dead-lettered the whole migration. So extract is
+  // just: enumerate the OpenCode sessions + upload the (small) chat archive.
   if (!Array.isArray(ctx.progress.opencode_sessions)) {
     const { sessions, archiveB64 } = await enumerateOpencodeSessions(ctx);
     let archivePath: string | null = null;
