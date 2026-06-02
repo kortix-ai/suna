@@ -217,7 +217,7 @@ export default function ProjectDetailScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {/* Hero */}
-          <Text style={{ fontSize: 26, fontFamily: 'Roobert-SemiBold', color: fg }} numberOfLines={2}>
+          <Text style={{ fontSize: 26, lineHeight: 34, fontFamily: 'Roobert-SemiBold', color: fg }} numberOfLines={2}>
             {project?.name ?? 'Project'}
           </Text>
           {!!project && (
