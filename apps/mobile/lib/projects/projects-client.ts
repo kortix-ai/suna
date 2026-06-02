@@ -201,6 +201,32 @@ export function createProjectSession(projectId: string, input: CreateProjectSess
   });
 }
 
+export type EnsureOpencodeReason =
+  | 'unchanged'
+  | 'healed'
+  | 'created'
+  | 'not_ready'
+  | 'unreachable';
+
+export interface EnsureOpencodeResult extends ProjectSession {
+  ensure?: { reason: EnsureOpencodeReason; changed: boolean; pin: string | null };
+}
+
+/**
+ * Backend-owned OpenCode↔Kortix mapping (web parity). The API resolves the
+ * sandbox's canonical OpenCode root id and persists it to opencode_session_id,
+ * creating one if missing / healing a stale pin. Idempotent. The returned row
+ * carries the authoritative `opencode_session_id`; `ensure.reason` is
+ * `not_ready`/`unreachable` while the sandbox/runtime is still warming — the
+ * caller should retry. Clients must NOT set the pin themselves.
+ */
+export function ensureOpencodeSession(projectId: string, sessionId: string) {
+  return apiFetch<EnsureOpencodeResult>(
+    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/ensure-opencode`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
 export function archiveProject(projectId: string) {
   return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',
