@@ -86,7 +86,7 @@ import { ProvisioningProgress } from '@/components/provisioning/ProvisioningProg
 import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
 import type { SandboxProviderName } from '@/lib/platform/client';
 import { useProjectSessions, useCreateProjectSession, useProject } from '@/lib/projects/hooks';
-import { ensureOpencodeSession } from '@/lib/projects/projects-client';
+import { ensureOpencodeSession, wakeProjectSession } from '@/lib/projects/projects-client';
 import type { ProjectSession, ProjectSessionStatus, EnsureOpencodeResult } from '@/lib/projects/projects-client';
 import { Avatar } from '@/components/ui/Avatar';
 import {
@@ -1140,10 +1140,19 @@ export default function ProjectSessionScreen() {
     // patiently and only fail on a definitive 'failed' status or a long timeout.
     const startedAt = Date.now();
     const MAX_WAIT_MS = 3 * 60_000;
+    let lastWokeAt = 0;
     try {
       let attempt = 0;
       while (Date.now() - startedAt < MAX_WAIT_MS) {
         if (ensuringRef.current !== ps.session_id) return; // superseded by another open
+        // Wake an auto-stopped/idle sandbox (web parity). The provider stops idle
+        // sandboxes (~15min) but the DB row still reads 'running', so the
+        // container is dead and ensure-opencode would never resolve. Fire-and-
+        // forget; re-wake periodically in case it stops again mid-wait.
+        if (Date.now() - lastWokeAt > 25_000) {
+          lastWokeAt = Date.now();
+          wakeProjectSession(projectId, ps.session_id).catch(() => {});
+        }
         let updated: EnsureOpencodeResult | null = null;
         try {
           updated = await ensureOpencodeSession(projectId, ps.session_id);
