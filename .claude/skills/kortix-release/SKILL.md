@@ -86,29 +86,31 @@ gh run list --repo kortix-ai/suna --workflow deploy-dev.yml --limit 3 \
 (Web-only changes don't rebuild the API image — that's fine; they ship via Vercel from
 the `prod` branch, and deploy-prod still stamps the version.)
 
-### Step 6 — deploy to prod + verify
-The promote pushes `prod` with `GITHUB_TOKEN`, which **does not trigger workflows**, so
-deploy-prod must be dispatched by hand. Its concurrency is `cancel-in-progress: false`,
-so clear any stuck run first.
+### Step 6 — deploy is automatic; just verify
+A successful Promote **auto-triggers deploy-prod** (via a `workflow_run` trigger —
+the promote's `prod` push uses `GITHUB_TOKEN` which can't fire the `push` event, so
+`workflow_run` is what wires it). On promote success the full prod pipeline runs:
+retag image `:X.Y.Z`+`:latest`, roll `kortix-prod` ECS, cut the GitHub Release; Vercel
+auto-deploys the `prod` branch (kortix.com). **Nothing to dispatch.** Just watch + verify:
 ```bash
-# cancel zombie/queued deploy-prod runs holding the concurrency group
-for id in $(gh run list --repo kortix-ai/suna --workflow deploy-prod.yml --limit 6 \
-  --json databaseId,status --jq '.[]|select(.status=="queued" or .status=="in_progress")|.databaseId'); do
-  gh run cancel "$id" --repo kortix-ai/suna; done
-
-gh workflow run deploy-prod.yml --repo kortix-ai/suna --ref prod
-# poll the "Deploy API to prod (ECS)" job to completed/success, then verify:
+gh run list --repo kortix-ai/suna --workflow deploy-prod.yml --limit 1   # the auto run
+# once the "Deploy API to prod (ECS)" job is completed/success:
 curl -fsS https://api-prod.kortix.com/v1/health   # version should be the new X.Y.Z
 gh release view "vX.Y.Z" --repo kortix-ai/suna --json name,body   # title + notes present
 ```
+Fallback (if the auto run didn't fire, or to re-run): `gh workflow run deploy-prod.yml
+--ref prod`. Concurrency is `cancel-in-progress: false`, so cancel a stuck/queued run
+first (`gh run cancel <id>`).
 deploy-prod also: retags the image `:X.Y.Z`+`:latest`, cuts the GitHub Release
 (name = `vX.Y.Z — <title>`, body = your notes + an auto compare link), and Vercel
 auto-deploys the `prod` branch (new.kortix.com).
 
 ## 3. Gotchas (hard-won)
 
-- **promote → prod push uses `GITHUB_TOKEN` → no auto-trigger.** Always dispatch
-  deploy-prod manually (Step 6). This is the #1 "why didn't it deploy" trap.
+- **Promote auto-runs deploy-prod via `workflow_run`** (the prod push itself uses
+  `GITHUB_TOKEN` which can't fire the `push` event, so `workflow_run` on Promote-
+  completion is the wire). So a promote deploys everything; you only dispatch
+  deploy-prod manually as a fallback/re-run.
 - **deploy-prod concurrency = `cancel-in-progress: false`.** A slow desktop build or a
   zombie queued run blocks the next deploy — cancel it first.
 - **Don't promote a moving `main`.** If commits are still landing, each cancels the dev
@@ -138,5 +140,5 @@ no `vX.Y.Z` Release.
 2. Bump chosen per §1 (default patch).
 3. title + notes written in kortix-voice, accurate to the log.
 4. `promote.yml` run with title + notes; dev build for that commit is green.
-5. deploy-prod dispatched (manually), ECS green, api-prod on the new version.
+5. deploy-prod auto-ran on promote success, ECS green, api-prod on the new version.
 6. GitHub Release shows the title + notes → `/changelog` reads cleanly.
