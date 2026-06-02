@@ -1,8 +1,17 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Paperclip, ArrowUp } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Skeleton } from '@/components/ui/skeleton';
+
+/**
+ * Only show the center loader if the session is taking a noticeable moment to
+ * become usable. Warm-pool sessions open in ~0.5s, so the loader would just
+ * flash — gating it behind a short delay makes those feel instant (no spinner),
+ * while genuinely-cold boots still get feedback.
+ */
+const LOADER_DELAY_MS = 700;
 
 /**
  * Skeleton shown while a session is still loading / provisioning / waiting
@@ -20,11 +29,20 @@ import { Skeleton } from '@/components/ui/skeleton';
  * the transition is just "skeleton → input", no shift.
  */
 export function SessionLoadingSkeleton() {
+  // Hold the loader back briefly — a warm session is usable before this fires,
+  // so it never shows a spinner and reads as instant.
+  const [showLoader, setShowLoader] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setShowLoader(true), LOADER_DELAY_MS);
+    return () => clearTimeout(t);
+  }, []);
+
   return (
     <div className="relative flex flex-col h-full bg-background">
-      {/* Center: quiet loader where messages will eventually render */}
+      {/* Center: quiet loader where messages will eventually render — only once
+          the load is slow enough to warrant feedback (see LOADER_DELAY_MS). */}
       <div className="flex-1 min-h-0 flex items-center justify-center">
-        <KortixLoader size="small" />
+        {showLoader && <KortixLoader size="small" />}
       </div>
 
       {/* Chat input skeleton — matches the real SessionChatInput shell so
