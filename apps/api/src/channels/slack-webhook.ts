@@ -70,7 +70,6 @@ interface TurnStream {
   finalized: boolean;
   projectId: string;
   sessionId: string;
-  controlsTs: string | null;
   stopped: boolean;
   teamId: string;
   originatingEvent: SlackEvent;
@@ -120,7 +119,6 @@ async function startTurnStream(
     finalized: false,
     projectId,
     sessionId: '',
-    controlsTs: null,
     stopped: false,
     teamId,
     originatingEvent: event,
@@ -156,17 +154,7 @@ async function openStreamWithFirstStep(handle: TurnStream, firstStep: StreamTask
   handle.ts = streamTs;
   handle.steps = [firstStep];
   handle.streaming = true;
-  if (handle.sessionId) await repositionStopControls(handle);
   return true;
-}
-
-async function repositionStopControls(handle: TurnStream): Promise<void> {
-  if (!handle.sessionId) return;
-  if (handle.controlsTs) {
-    await deleteMessage(handle.token, handle.channel, handle.controlsTs);
-    handle.controlsTs = null;
-  }
-  await attachStopControls(handle, handle.sessionId);
 }
 
 function buildSlackTurnEnv(teamId: string, event: SlackEvent): Record<string, string> {
@@ -316,33 +304,6 @@ function buildQuestionBlocks(askId: string, questions: QuestionInfo[]): Array<Re
   return blocks;
 }
 
-async function attachStopControls(handle: TurnStream, sessionId: string): Promise<void> {
-  handle.sessionId = sessionId;
-  const threadTs = handle.streaming ? undefined : undefined;
-  const threadRoot = handle.triggerTs;
-  const ts = await postBlocks(
-    handle.token,
-    handle.channel,
-    'Working on it — click Stop to interrupt.',
-    [
-      {
-        type: 'actions',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: 'Stop' },
-            style: 'danger',
-            action_id: 'stop_turn',
-            value: JSON.stringify({ s: sessionId, p: handle.projectId }),
-          },
-        ],
-      },
-    ],
-    threadRoot,
-  );
-  if (ts) handle.controlsTs = ts;
-}
-
 export async function relayTurnStep(
   sessionId: string,
   title: string,
@@ -468,10 +429,6 @@ async function finalizeStream(
   await removeReaction(handle.token, handle.channel, handle.triggerTs, WORKING_EMOJI);
   if (opts.answer && !opts.error && !handle.stopped) {
     await addReaction(handle.token, handle.channel, handle.triggerTs, 'white_check_mark');
-  }
-  if (handle.controlsTs && !handle.stopped) {
-    await deleteMessage(handle.token, handle.channel, handle.controlsTs);
-    handle.controlsTs = null;
   }
 }
 
@@ -1225,8 +1182,8 @@ async function handleAskSubmit(payload: SlackInteractionPayload, askId: string):
       'Continuing…',
     );
     if (newHandle) {
+      newHandle.sessionId = pending.sessionId;
       activeStreams.set(pending.sessionId, newHandle);
-      await attachStopControls(newHandle, pending.sessionId);
     }
   } catch (err) {
     console.warn('[slack-webhook] post-question stream re-open failed', err);
@@ -1376,59 +1333,9 @@ async function respondViaUrl(url: string | undefined, body: unknown): Promise<vo
   }
 }
 
-async function handleStopTurn(payload: SlackInteractionPayload, rawValue: string): Promise<void> {
-  let value: { s?: string; p?: string };
-  try {
-    value = JSON.parse(rawValue || '{}') as { s?: string; p?: string };
-  } catch {
-    return;
-  }
-  const sessionId = value.s;
-  const projectId = value.p;
-  if (!sessionId || !projectId) return;
-
-  const handle = activeStreams.get(sessionId);
-  if (handle) handle.stopped = true;
-  const token = handle?.token ?? (await loadSlackTokenForProject(projectId));
-  const channelId = payload.channel?.id ?? handle?.channel ?? '';
-  const controlsTs = payload.message?.ts ?? handle?.controlsTs ?? '';
-
-  const aborted = await abortSandboxTurn(sessionId);
-
-  if (token && channelId && controlsTs) {
-    await updateBlocks(
-      token,
-      channelId,
-      controlsTs,
-      aborted ? 'Stopped.' : "Couldn't stop in time.",
-      [
-        {
-          type: 'context',
-          elements: [
-            {
-              type: 'mrkdwn',
-              text: aborted ? '🛑  *Stopped by you*' : '⚠️  *Stop request failed — the turn may have already completed.*',
-            },
-          ],
-        },
-      ],
-    );
-  }
-
-  if (aborted && handle && !handle.finalized) {
-    await finalizeStream(handle, { error: '_Stopped._' });
-    activeStreams.delete(sessionId);
-  }
-}
-
 async function handleBlockAction(payload: SlackInteractionPayload): Promise<void> {
   const action = payload.actions?.[0];
   if (!action?.action_id) return;
-
-  if (action.action_id === 'stop_turn') {
-    await handleStopTurn(payload, action.value ?? '');
-    return;
-  }
 
   if (action.action_id.startsWith('switch_project_')) {
     await handleSwitchProject(payload, action.value ?? '');
@@ -1949,8 +1856,8 @@ async function spawnAgentTurn(
     if (existing) {
       const handle = await startTurnStream(projectId, teamId, event, 'On it');
       if (handle) {
+        handle.sessionId = existing.sessionId;
         activeStreams.set(existing.sessionId, handle);
-        await attachStopControls(handle, existing.sessionId);
       }
       const outcome = await deliverFollowUpToSandbox(existing.sessionId, envelope, event);
       if (outcome === 'delivered') {
@@ -2032,8 +1939,8 @@ async function spawnAgentTurn(
   }
 
   if (result.row && handle) {
+    handle.sessionId = result.row.sessionId;
     activeStreams.set(result.row.sessionId, handle);
-    await attachStopControls(handle, result.row.sessionId);
   }
 
   if (result.row && teamId && threadId) {
@@ -2058,65 +1965,6 @@ async function spawnAgentTurn(
 }
 
 type DeliveryOutcome = 'delivered' | 'transient' | 'stale';
-
-async function resolveSandboxPreview(
-  kortixSessionId: string,
-): Promise<{ url: string; headers: Record<string, string> } | { error: 'stale' | 'transient' }> {
-  const [sandbox] = await db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      metadata: sessionSandboxes.metadata,
-      status: sessionSandboxes.status,
-    })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, kortixSessionId))
-    .limit(1);
-  if (!sandbox) return { error: 'stale' };
-  if (sandbox.status === 'stopped' || sandbox.status === 'archived' || sandbox.status === 'error') {
-    return { error: 'stale' };
-  }
-  if (sandbox.status !== 'active') return { error: 'transient' };
-  const daytonaSandboxId = (sandbox.metadata as Record<string, unknown> | null)?.['daytonaSandboxId'];
-  if (typeof daytonaSandboxId !== 'string' || !daytonaSandboxId) return { error: 'stale' };
-  try {
-    const daytona = getDaytona();
-    const sb = await daytona.get(daytonaSandboxId);
-    const link = await (sb as { getPreviewLink: (port: number) => Promise<{ url?: string; token?: string }> })
-      .getPreviewLink(8000);
-    const url = (link.url ?? `https://8000-${daytonaSandboxId}.daytonaproxy01.net`).replace(/\/$/, '');
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'X-Daytona-Skip-Preview-Warning': 'true',
-      'X-Daytona-Disable-CORS': 'true',
-    };
-    if (link.token) headers['X-Daytona-Preview-Token'] = link.token;
-    return { url, headers };
-  } catch (err) {
-    console.warn('[slack-webhook] getPreviewLink failed', err);
-    return { error: 'transient' };
-  }
-}
-
-async function abortSandboxTurn(kortixSessionId: string): Promise<boolean> {
-  const preview = await resolveSandboxPreview(kortixSessionId);
-  if ('error' in preview) return false;
-  try {
-    const res = await fetch(`${preview.url}/kortix/abort`, {
-      method: 'POST',
-      headers: preview.headers,
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) {
-      const body = (await res.text()).slice(0, 300);
-      console.warn('[slack-webhook] kortix/abort returned non-ok', { status: res.status, body });
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn('[slack-webhook] kortix/abort fetch failed', err);
-    return false;
-  }
-}
 
 async function deliverFollowUpToSandbox(
   kortixSessionId: string,
