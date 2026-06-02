@@ -82,7 +82,7 @@ import { SetupWizard } from '@/components/setup/SetupWizard';
 import { InstanceOnboarding } from '@/components/setup/InstanceOnboarding';
 import { ProvisioningProgress } from '@/components/provisioning/ProvisioningProgress';
 import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
-import { useProjectSessions } from '@/lib/projects/hooks';
+import { useProjectSessions, useCreateProjectSession } from '@/lib/projects/hooks';
 import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
 import {
   Eye, EyeOff, RefreshCw, Upload, Image, FolderPlus, LayoutGrid, List,
@@ -882,6 +882,7 @@ export default function ProjectSessionScreen() {
   const { data: projectSessions = [], isLoading: projectSessionsLoading } =
     useProjectSessions(projectId);
   const [activeProjectSessionId, setActiveProjectSessionId] = useState<string | null>(null);
+  const createProjectSession = useCreateProjectSession(projectId);
 
   // Legacy OpenCode sessions (global sandbox) — still backs tabs/overview until
   // the per-session sandbox wiring lands (Stage 4-5).
@@ -1083,7 +1084,7 @@ export default function ProjectSessionScreen() {
 
   const handleDashboardSend = useCallback(
     async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
-      if (!sandboxUrl || isDashboardSending) return;
+      if (!projectId || isDashboardSending) return;
       if (!text.trim()) return;
 
       // Process session mentions — append XML refs
@@ -1099,51 +1100,24 @@ export default function ProjectSessionScreen() {
       setIsDashboardSending(true);
 
       try {
-        // Create session — navigate immediately on success
-        const session = await createSession.mutateAsync({});
-        navigateToSession(session.id);
-
-        // Optimistic user message
-        const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const partId = `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        useSyncStore.getState().addOptimisticMessage(session.id, {
-          info: {
-            id: messageId,
-            role: 'user',
-            sessionID: session.id,
-            time: { created: Date.now() },
-          },
-          parts: [{ type: 'text', id: partId, text: finalText }],
+        // Repo-first model (web parity): create a project session carrying the
+        // initial prompt. The backend boots a per-session sandbox and delivers
+        // the prompt on launch (KORTIX_INITIAL_PROMPT). The new session shows up
+        // in the drawer as it provisions; opening it into the chat pane lands in
+        // Stage 4-5 (switch sandbox + render SessionPage on opencode_session_id).
+        const session = await createProjectSession.mutateAsync({
+          initial_prompt: finalText,
+          ...(options.agent ? { agent_name: options.agent } : {}),
         });
-        useSyncStore.getState().setStatus(session.id, { type: 'busy' });
-
-        // Fire prompt async (fire-and-forget)
-        const payload: Record<string, any> = {
-          parts: [{ type: 'text', text: finalText }],
-        };
-        if (options.model) payload.model = options.model;
-        if (options.agent) payload.agent = options.agent;
-        if (options.variant) payload.variant = options.variant;
-
-        const token = await getAuthToken();
-        fetch(`${sandboxUrl}/session/${session.id}/prompt_async`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify(payload),
-        }).catch((err) => {
-          log.error('❌ [Home] Dashboard prompt failed:', err);
-          useSyncStore.getState().setStatus(session.id, { type: 'idle' });
-        });
+        setActiveProjectSessionId(session.session_id);
       } catch (err: any) {
-        log.error('❌ [Home] Dashboard send failed:', err?.message || err);
+        log.error('❌ [Project] Dashboard send failed:', err?.message || err);
+        Alert.alert('Error', err?.message || 'Failed to start session');
       } finally {
         setIsDashboardSending(false);
       }
     },
-    [sandboxUrl, isDashboardSending, createSession, navigateToSession],
+    [projectId, isDashboardSending, createProjectSession],
   );
 
   // Capture a screenshot of the current tab before showing tabs overview.
@@ -1904,7 +1878,7 @@ export default function ProjectSessionScreen() {
                 <SessionChatInput
                   onSend={handleDashboardSend}
                   placeholder="Ask anything..."
-                  disabled={!sandboxUrl || isDashboardSending}
+                  disabled={isDashboardSending}
                   agent={resolved.agent}
                   agents={resolved.agents}
                   model={resolved.model}
