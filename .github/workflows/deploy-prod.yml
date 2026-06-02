@@ -356,7 +356,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download CLI artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cli-binaries
           path: artifacts/
@@ -395,7 +395,7 @@ jobs:
       contents: write
     steps:
       - name: Download desktop artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           path: desktop-artifacts/
