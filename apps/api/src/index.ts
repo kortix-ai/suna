@@ -575,23 +575,12 @@ let schemaReady = false;
 // Ensure DB schema exists before starting services that depend on it.
 // This is idempotent — safe to run on every startup.
 // Start background services after the schema is ready. The access-control cache
-// and tunnel service are always on (they serve request-path needs, not shared
-// background work). The rest are background WORKERS — gated behind
-// KORTIX_WORKERS_ENABLED so a parallel API-only node (e.g. a new ECS prod stack
-// sharing the live DB during cutover) can serve HTTP without double-firing
-// crons/queues/maintenance. Flip the switch (and stop the old node) at cutover.
+// and tunnel service serve request-path needs; the rest are background WORKERS
+// (queue drainer, project maintenance, trigger scheduler, startup pre-build,
+// legacy-migration worker, grant-expiry sweeper). Every API node runs them.
 async function startBackgroundServices() {
   startAccessControlCache();
   startTunnelService();
-
-  if (!config.KORTIX_WORKERS_ENABLED) {
-    console.warn(
-      '[startup] KORTIX_WORKERS_ENABLED=false — running API-only: trigger scheduler, ' +
-        'queue drainer, project maintenance, legacy-migration worker, startup pre-build, ' +
-        'and grant-expiry sweeper are DISABLED on this node.',
-    );
-    return;
-  }
 
   startDrainer();
   startProjectMaintenance();

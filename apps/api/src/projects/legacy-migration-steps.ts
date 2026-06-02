@@ -152,7 +152,10 @@ export async function extractStep(ctx: MigrationContext): Promise<void> {
         ' -C "$(dirname "$WS")" "$(basename "$WS")"' +
         ' ${OC:+-C "$(dirname "$OC")" "$(basename "$OC")"}' +
         ' || [ $? -le 1 ]',
-      `curl -fsS -X PUT -H 'x-upsert: true' -H 'Content-Type: application/octet-stream' --data-binary @"$BUNDLE" ${sq(target.url)}`,
+      // Stream the bundle with --upload-file (PUT). NOT --data-binary @file,
+      // which buffers the entire tarball into RAM and OOMs the VM on large
+      // workspaces / small machines.
+      `curl -fsS -X PUT -H 'x-upsert: true' -H 'Content-Type: application/octet-stream' --upload-file "$BUNDLE" ${sq(target.url)}`,
       'rm -f "$BUNDLE"',
       'echo OK',
     ].join('\n');
