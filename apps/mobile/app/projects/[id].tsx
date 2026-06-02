@@ -862,7 +862,10 @@ export default function ProjectSessionScreen() {
   const viewChangesSheetRef = useRef<BottomSheetModal>(null);
   const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>('light');
-  const { updateAvailable: hasUpdate } = useGlobalSandboxUpdate();
+  // The sandbox-update badge polls the GLOBAL sandbox (${sandboxUrl}/kortix/health)
+  // — a legacy-shell concept that 403s on the repo-first project screen (sessions
+  // get their own sandboxes). Disabled here; the badge still works on /home.
+  const hasUpdate = false;
 
   // Files page ref (for BottomBar menu integration)
   const filesPageRef = useRef<FilesPageRef>(null);
@@ -949,11 +952,15 @@ export default function ProjectSessionScreen() {
     return `${(ps && PROJECT_SESSION_STATUS_META[ps.status]?.label) || 'Provisioning'}…`;
   }, [projectSessions, connectingProjectSessionId]);
 
-  // Legacy OpenCode sessions (global sandbox) — still backs tabs/overview until
-  // the per-session sandbox wiring lands (Stage 4-5).
+  // Only touch a sandbox once a session is actually open (its sandbox is switched
+  // in via connectToProjectSession). On the dashboard there is no authorized
+  // sandbox — the global one is the stale repo-first default — so the legacy
+  // OpenCode/Kortix proxy hooks must stay disabled to avoid 403s
+  // ("Not authorized to access this sandbox").
+  const sessionSandboxUrl = activeSessionId ? sandboxUrl : undefined;
   const { data: sessions = [], isLoading: sessionsLoading } =
-    useSessions(sandboxUrl);
-  const { data: kortixProjects } = useKortixProjects(sandboxUrl);
+    useSessions(sessionSandboxUrl);
+  const { data: kortixProjects } = useKortixProjects(sessionSandboxUrl);
   const sortedProjects = useMemo(() => {
     if (!kortixProjects || !Array.isArray(kortixProjects)) return [];
     return [...kortixProjects].sort(
@@ -1021,9 +1028,9 @@ export default function ProjectSessionScreen() {
   }, [activeSessions]);
 
   // Agent/model/variant for dashboard input
-  const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
-  const { data: dashVisibleModels = [], allModels: dashAllModels = [], defaults: dashDefaults } = useOpenCodeModels(sandboxUrl);
-  const { data: dashConfig } = useOpenCodeConfig(sandboxUrl);
+  const { data: agents = [] } = useOpenCodeAgents(sessionSandboxUrl);
+  const { data: dashVisibleModels = [], allModels: dashAllModels = [], defaults: dashDefaults } = useOpenCodeModels(sessionSandboxUrl);
+  const { data: dashConfig } = useOpenCodeConfig(sessionSandboxUrl);
   const resolved = useResolvedConfig(agents, dashAllModels, dashConfig, dashDefaults);
 
   // Stable error message (prevents re-render loops from error object identity)
@@ -1053,17 +1060,22 @@ export default function ProjectSessionScreen() {
   const handleRightDrawerClose = useCallback(() => { haptics.selection(); setRightDrawerOpen(false); }, []);
 
   const handleNewSession = useCallback(async () => {
-    if (!sandboxUrl) return;
+    if (!projectId) return;
     try {
-      log.log('➕ [Home] Creating new session...');
-      const session = await createSession.mutateAsync({});
-      log.log('✅ [Home] Session created:', session.id);
-      navigateToSession(session.id);
+      haptics.tap();
       setDrawerOpen(false);
+      // Repo-first new session (web parity): create a blank project session and
+      // open it via the connecting state — the effect resolves the OpenCode pin
+      // (ensure-opencode) once the sandbox is up. No global-sandbox POST /session.
+      const session = await createProjectSession.mutateAsync({});
+      setActiveProjectSessionId(session.session_id);
+      navigateToSession(null);
+      setConnectingProjectSessionId(session.session_id);
     } catch (err: any) {
-      log.error('❌ [Home] Failed to create session:', err?.message || err);
+      log.error('❌ [Project] Failed to create session:', err?.message || err);
+      Alert.alert('Error', err?.message || 'Failed to create session');
     }
-  }, [sandboxUrl, createSession, navigateToSession]);
+  }, [projectId, createProjectSession, navigateToSession]);
 
   const handleCreateSessionWithPrompt = useCallback(async (title: string, prompt: string) => {
     if (!sandboxUrl) return;
@@ -2123,7 +2135,7 @@ export default function ProjectSessionScreen() {
                   onVariantCycle={resolved.cycleVariant}
                   onVariantSet={resolved.setVariant}
                   sessions={sessions}
-                  sandboxUrl={sandboxUrl}
+                  sandboxUrl={sessionSandboxUrl}
                 />
               </View>
             </KeyboardAvoidingView>
@@ -2352,7 +2364,7 @@ export default function ProjectSessionScreen() {
           useTabStore.getState().navigateToPage(pageId);
         }}
         onSettings={handleGoToSettings}
-        sandboxUrl={sandboxUrl}
+        sandboxUrl={sessionSandboxUrl}
         onFileSelect={(path) => {
           useTabStore.getState().navigateToPage('page:files');
           setPendingFilePath(path);
