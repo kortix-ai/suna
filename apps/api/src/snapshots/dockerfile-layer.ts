@@ -353,6 +353,41 @@ export function extractSandboxDefault(
   return slug;
 }
 
+/** Effective per-project warm-pool config. Warm pool keeps N pre-booted
+ * sandboxes ready to claim — see docs/specs/warm-pool.md. */
+export interface WarmPoolConfig {
+  enabled: boolean;
+  size: number;
+}
+
+/** Default when `[sandbox.warm_pool]` is unset: on, one warm sandbox. */
+export const DEFAULT_WARM_POOL: WarmPoolConfig = { enabled: true, size: 1 };
+const MAX_WARM_POOL_SIZE = 10;
+
+/**
+ * Resolve `[sandbox.warm_pool]` from a parsed manifest into the effective
+ * config, applying defaults for unset/invalid fields. Returns null only when
+ * the input isn't a usable manifest object (caller falls back to DEFAULT).
+ */
+export function extractWarmPool(
+  manifestRaw: Record<string, unknown> | null | undefined,
+): WarmPoolConfig {
+  const sandbox = manifestRaw?.sandbox;
+  const pool =
+    sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)
+      ? (sandbox as Record<string, unknown>).warm_pool
+      : undefined;
+  if (!pool || typeof pool !== 'object' || Array.isArray(pool)) return { ...DEFAULT_WARM_POOL };
+  const raw = pool as Record<string, unknown>;
+  const enabled = typeof raw.enabled === 'boolean' ? raw.enabled : DEFAULT_WARM_POOL.enabled;
+  const sizeRaw = raw.size;
+  const size =
+    typeof sizeRaw === 'number' && Number.isInteger(sizeRaw) && sizeRaw >= 0
+      ? Math.min(sizeRaw, MAX_WARM_POOL_SIZE)
+      : DEFAULT_WARM_POOL.size;
+  return { enabled, size };
+}
+
 function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | null {
   const slugRaw = typeof row.slug === 'string' ? row.slug.trim() : '';
   if (!slugRaw || !SLUG_RE.test(slugRaw)) {

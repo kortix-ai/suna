@@ -299,6 +299,40 @@ function validateSandbox(
       }
     }
   }
+
+  // `[sandbox.warm_pool]` keeps N pre-booted sandboxes ready to claim, cutting
+  // session create→usable to ~claim time. Optional table: { enabled, size }.
+  validateWarmPool(node.warm_pool, `${path}.warm_pool`, issues);
+}
+
+/** Largest warm-pool size a single project may request (cost guardrail). */
+export const MAX_WARM_POOL_SIZE = 10;
+
+function validateWarmPool(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node == null) return;
+  if (!isTable(node)) {
+    issues.push({
+      path,
+      message: '`[sandbox.warm_pool]` must be a table, e.g. `enabled = true` and `size = 1`.',
+      severity: 'error',
+    });
+    return;
+  }
+  if (node.enabled !== undefined && typeof node.enabled !== 'boolean') {
+    issues.push({ path: `${path}.enabled`, message: '`enabled` must be a boolean.', severity: 'error' });
+  }
+  if (node.size !== undefined) {
+    const size = node.size;
+    if (typeof size !== 'number' || !Number.isInteger(size) || size < 0) {
+      issues.push({ path: `${path}.size`, message: '`size` must be a non-negative integer.', severity: 'error' });
+    } else if (size > MAX_WARM_POOL_SIZE) {
+      issues.push({
+        path: `${path}.size`,
+        message: `\`size\` may not exceed ${MAX_WARM_POOL_SIZE} (per-project warm-pool cap).`,
+        severity: 'error',
+      });
+    }
+  }
 }
 
 function validateSandboxTemplates(

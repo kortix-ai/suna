@@ -23,6 +23,7 @@ import {
   DEFAULT_SANDBOX_SLUG,
   extractSandboxDefault,
   extractSandboxTemplates,
+  extractWarmPool,
   normalizeUserDockerfileForSnapshot,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   SANDBOX_SPEC_LIMITS,
@@ -560,6 +561,9 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
     const wantedDefault = extractSandboxDefault(parsed?.raw ?? null);
     const validDefault =
       wantedDefault && tomlTemplates.some((t) => t.slug === wantedDefault) ? wantedDefault : null;
+    // `[sandbox.warm_pool]` → projects.metadata.warm_pool, so the pool manager
+    // can read each project's desired warm size without re-parsing the manifest.
+    const warmPool = extractWarmPool(parsed?.raw ?? null);
     const [projectRow] = await db
       .select({ metadata: projects.metadata })
       .from(projects)
@@ -567,10 +571,12 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
       .limit(1);
     const meta = (projectRow?.metadata ?? {}) as Record<string, unknown>;
     const current = typeof meta.default_sandbox_slug === 'string' ? meta.default_sandbox_slug : null;
-    if (current !== validDefault) {
+    const currentWarm = JSON.stringify(meta.warm_pool ?? null);
+    if (current !== validDefault || currentWarm !== JSON.stringify(warmPool)) {
       const nextMeta = { ...meta };
       if (validDefault) nextMeta.default_sandbox_slug = validDefault;
       else delete nextMeta.default_sandbox_slug;
+      nextMeta.warm_pool = warmPool;
       await db
         .update(projects)
         .set({ metadata: nextMeta, updatedAt: new Date() })

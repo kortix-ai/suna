@@ -5,6 +5,8 @@ import {
   DEFAULT_SANDBOX_SLUG,
   extractSandboxDefault,
   extractSandboxTemplates,
+  extractWarmPool,
+  DEFAULT_WARM_POOL,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   sandboxSpecIsEmpty,
   SANDBOX_SPEC_LIMITS,
@@ -235,3 +237,18 @@ describe('sandboxSpecIsEmpty', () => {
     expect(sandboxSpecIsEmpty({ disk: 10 })).toBe(false);
   });
 });
+
+describe('extractWarmPool', () => {
+  test('defaults to enabled/size=1 when unset', () => {
+    expect(extractWarmPool(null)).toEqual(DEFAULT_WARM_POOL);
+    expect(extractWarmPool({})).toEqual({ enabled: true, size: 1 });
+    expect(extractWarmPool({ sandbox: {} })).toEqual({ enabled: true, size: 1 });
+  });
+  test('reads explicit values', () => {
+    expect(extractWarmPool({ sandbox: { warm_pool: { enabled: false, size: 3 } } })).toEqual({ enabled: false, size: 3 });
+  });
+  test('clamps oversized size and ignores invalid fields', () => {
+    expect(extractWarmPool({ sandbox: { warm_pool: { size: 999 } } })).toEqual({ enabled: true, size: 10 });
+    expect(extractWarmPool({ sandbox: { warm_pool: { size: -2, enabled: 'x' } } })).toEqual({ enabled: true, size: 1 });
+  });
+})
