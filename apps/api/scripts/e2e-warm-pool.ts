@@ -98,6 +98,7 @@ async function main() {
     ok(claimed?.status === 'active', `claimed box still active (=${claimed?.status})`);
     const [psRow] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, W)).limit(1);
     ok(!!psRow, 'project_sessions row exists for the claimed session');
+    ok(!!psRow?.opencodeSessionId, `opencode session pre-warmed + pinned on claim (=${psRow?.opencodeSessionId?.slice(0, 8) ?? 'MISSING'}) → client skips ensure-opencode`);
 
     // ── 5. pool-miss → null (cold fallback at the engine level) ──────────────
     console.log('[e2e] second claim with the pool drained → should miss…');

@@ -2088,6 +2088,9 @@ export async function createProjectSession(input: {
             status: 'provisioning',
             createdBy: userId,
             visibility: 'private',
+            // Pin the opencode session pre-created at park time so the client
+            // skips the ensure-opencode round-trip → chat usable immediately.
+            opencodeSessionId: claimed.opencodeSessionId ?? undefined,
             metadata: { ...metadata, warm_pool_claimed: true },
             updatedAt: new Date(),
           })

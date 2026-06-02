@@ -92,7 +92,7 @@ export async function listSandboxOpencodeSessions(
   }
 }
 
-async function createSandboxOpencodeSession(
+export async function createSandboxOpencodeSession(
   externalId: string,
   userId: string | undefined,
 ): Promise<string | null> {

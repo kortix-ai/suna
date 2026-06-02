@@ -121,7 +121,7 @@ export async function getWarmPoolCounts(projectId: string): Promise<{ ready: num
 export async function claimWarmSandbox(input: {
   projectId: string;
   userId: string;
-}): Promise<{ sandboxId: string; externalId: string | null; accountId: string } | null> {
+}): Promise<{ sandboxId: string; externalId: string | null; accountId: string; opencodeSessionId: string | null } | null> {
   if (!warmPoolEnabled()) return null;
   // Single statement, locked with SKIP LOCKED so concurrent claims never
   // collide. Prefer parked over booting, and oldest-first (= most booted).
@@ -141,15 +141,18 @@ export async function claimWarmSandbox(input: {
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING sandbox_id, external_id, account_id
+    RETURNING sandbox_id, external_id, account_id, metadata
   `);
   const r = (claimed as unknown as { rows?: any[] }).rows ?? (claimed as unknown as any[]);
   const row = Array.isArray(r) ? r[0] : undefined;
   if (!row) return null;
+  const meta = (row.metadata ?? {}) as Record<string, any>;
   return {
     sandboxId: row.sandbox_id as string,
     externalId: (row.external_id ?? null) as string | null,
     accountId: row.account_id as string,
+    // Pin pre-warmed at park time (see promoteWhenReady) → claim skips ensure-opencode.
+    opencodeSessionId: (meta.warmPool?.opencodeSessionId ?? null) as string | null,
   };
 }
 
@@ -171,7 +174,7 @@ async function promoteWhenReady(sandboxId: string): Promise<void> {
   while (Date.now() < deadline) {
     await new Promise((res) => setTimeout(res, READY_PROBE_INTERVAL_MS));
     const [row] = await db
-      .select({ poolState: sessionSandboxes.poolState, externalId: sessionSandboxes.externalId, status: sessionSandboxes.status, config: sessionSandboxes.config })
+      .select({ poolState: sessionSandboxes.poolState, externalId: sessionSandboxes.externalId, status: sessionSandboxes.status, config: sessionSandboxes.config, metadata: sessionSandboxes.metadata })
       .from(sessionSandboxes)
       .where(eq(sessionSandboxes.sandboxId, sandboxId))
       .limit(1);
@@ -181,8 +184,25 @@ async function promoteWhenReady(sandboxId: string): Promise<void> {
     if (!row.externalId || !serviceKey) continue;
     const { ready, error } = await probeRuntimeReady(row.externalId, serviceKey);
     if (ready) {
-      await db.update(sessionSandboxes).set({ poolState: 'parked', updatedAt: new Date() }).where(eq(sessionSandboxes.sandboxId, sandboxId));
-      console.log(`[warm-pool] parked ${sandboxId.slice(0, 8)}`);
+      const meta = (row.metadata ?? {}) as Record<string, any>;
+      // Pre-warm the opencode session so a claim skips the ensure-opencode
+      // round trip — the pin is already there → chat is usable immediately.
+      let opencodeSessionId: string | null = null;
+      try {
+        const { createSandboxOpencodeSession } = await import('../../projects/opencode-mapping');
+        opencodeSessionId = await createSandboxOpencodeSession(row.externalId, meta.warmPool?.ownerUserId);
+      } catch (err) {
+        console.warn(`[warm-pool] pre-warm opencode session failed for ${sandboxId.slice(0, 8)}:`, err instanceof Error ? err.message : err);
+      }
+      await db
+        .update(sessionSandboxes)
+        .set({
+          poolState: 'parked',
+          metadata: { ...meta, warmPool: { ...(meta.warmPool ?? {}), opencodeSessionId } },
+          updatedAt: new Date(),
+        })
+        .where(eq(sessionSandboxes.sandboxId, sandboxId));
+      console.log(`[warm-pool] parked ${sandboxId.slice(0, 8)}${opencodeSessionId ? ' (opencode pre-warmed)' : ''}`);
       return;
     }
     if (error) break;
