@@ -134,10 +134,10 @@ function DevSteps({
 
       <Step
         n={next()}
-        title="Link this folder to the project"
-        hint="Writes .kortix/link.json so every kortix command in this repo targets this project."
+        title="Set up your local dev environment"
+        hint="Wires the Kortix skill into your coding agent (Claude Code, Cursor, opencode…) and adds anything your local setup is missing — existing files are kept. The repo is already linked to this project, so kortix commands target it automatically."
       >
-        <CommandBlock lines={[`kortix projects link ${project.project_id}`]} />
+        <CommandBlock lines={['kortix init --force']} />
       </Step>
 
       <Step
