@@ -14,7 +14,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { accountMembers, projects, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountMembers, projects, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { getProvider } from '../providers';
@@ -249,33 +249,71 @@ export async function refillProjectPool(projectId: string): Promise<void> {
   }
 }
 
+/** Per-instance throttle so portal activity doesn't hammer the DB. */
+const presenceThrottle = new Map<string, number>();
+
 /**
- * Periodic reconcile: reap dead/aged boxes, then refill every recently-active
- * project with a warm pool. Best-effort; bounded by the global cap. Wired into
- * the project-maintenance sweep.
+ * Record that a user is *present* in a project (authenticated portal activity)
+ * and kick a refill so a warm box is ready by the time they hit "send". The
+ * presence timestamp gates reconcile: when no user has touched a project within
+ * the presence window, its pool is reaped — so we never hold idle boxes 24/7
+ * for absent users. Throttled to ~1 DB write per project per minute.
+ */
+export function notePoolPresence(projectId: string): void {
+  if (!warmPoolEnabled() || !projectId) return;
+  const nowMs = Date.now();
+  if (nowMs - (presenceThrottle.get(projectId) ?? 0) < 60_000) return;
+  presenceThrottle.set(projectId, nowMs);
+  void (async () => {
+    try {
+      await db
+        .update(projects)
+        .set({ metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{warm_pool_seen_at}', to_jsonb(now()))` })
+        .where(eq(projects.projectId, projectId));
+      await refillProjectPool(projectId);
+    } catch (err) {
+      console.warn('[warm-pool] notePresence failed:', err instanceof Error ? err.message : err);
+    }
+  })();
+}
+
+/**
+ * Periodic reconcile (wired into the project-maintenance sweep). Best-effort,
+ * bounded by the global cap:
+ *   1. reap dead/aged/marked boxes, AND boxes for projects with no fresh
+ *      presence (the user left → stop paying for idle boxes);
+ *   2. refill projects where a user is currently present and the pool is enabled.
  */
 export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: number; projects: number }> {
   if (!warmPoolEnabled()) return { reaped: 0, projects: 0 };
   let reaped = 0;
-  // 1. Reap dead/aged/marked boxes.
+  const presenceCutoff = new Date(now.getTime() - config.KORTIX_WARM_POOL_PRESENCE_MINUTES * 60_000);
+  const present = await db
+    .select({ projectId: projects.projectId, metadata: projects.metadata })
+    .from(projects)
+    .where(sql`(${projects.metadata} ->> 'warm_pool_seen_at')::timestamptz > ${presenceCutoff.toISOString()}::timestamptz`);
+  const presentIds = new Set(present.map((p) => p.projectId));
+
+  // 1. Reap dead/aged/marked boxes + boxes whose project has no fresh presence.
   const poolRows = await db
-    .select({ sandboxId: sessionSandboxes.sandboxId, externalId: sessionSandboxes.externalId, provider: sessionSandboxes.provider, poolState: sessionSandboxes.poolState, status: sessionSandboxes.status, createdAt: sessionSandboxes.createdAt, updatedAt: sessionSandboxes.updatedAt })
+    .select({ sandboxId: sessionSandboxes.sandboxId, projectId: sessionSandboxes.projectId, externalId: sessionSandboxes.externalId, provider: sessionSandboxes.provider, poolState: sessionSandboxes.poolState, status: sessionSandboxes.status, createdAt: sessionSandboxes.createdAt, updatedAt: sessionSandboxes.updatedAt })
     .from(sessionSandboxes)
     .where(inArray(sessionSandboxes.poolState, ['booting', 'parked', 'reap']));
   for (const row of poolRows) {
-    if (warmBoxReapReason(row, now.getTime())) {
+    const reason = warmBoxReapReason(row, now.getTime()) ?? (presentIds.has(row.projectId) ? null : 'absent');
+    if (reason) {
       await reapWarmSandbox(row);
       reaped++;
     }
   }
-  // 2. Refill recently-active projects.
-  const cutoff = new Date(now.getTime() - config.KORTIX_WARM_POOL_ACTIVE_DAYS * 86_400_000);
-  const active = await db
-    .selectDistinct({ projectId: projectSessions.projectId })
-    .from(projectSessions)
-    .where(sql`${projectSessions.createdAt} > ${cutoff}`);
-  for (const { projectId } of active) {
-    await refillProjectPool(projectId);
+
+  // 2. Refill projects where a user is present right now and the pool is enabled.
+  let refilled = 0;
+  for (const p of present) {
+    if (resolveWarmConfig(p.metadata).enabled) {
+      await refillProjectPool(p.projectId);
+      refilled++;
+    }
   }
-  return { reaped, projects: active.length };
+  return { reaped, projects: refilled };
 }

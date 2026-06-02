@@ -19,6 +19,10 @@ export interface KortixProject {
   /** Whether the experimental [[apps]] deployment surface is enabled
    *  platform-wide (driven by the API's KORTIX_APPS_EXPERIMENTAL flag). */
   apps_enabled?: boolean;
+  /** Effective warm sandbox pool config (Customize → Sandbox). */
+  warm_pool?: { enabled: boolean; size: number };
+  /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
+  warm_pool_available?: boolean;
 }
 
 export interface KortixAccount {
@@ -2123,6 +2127,16 @@ export async function updateProject(
 ) {
   return unwrap(
     await backendApi.patch<KortixProject>(`/projects/${projectId}`, input),
+  );
+}
+
+/** Configure the warm sandbox pool (Customize → Sandbox). */
+export async function updateWarmPool(
+  projectId: string,
+  input: { enabled?: boolean; size?: number },
+) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input),
   );
 }
 

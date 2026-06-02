@@ -123,9 +123,10 @@ const envSchema = z.object({
   // Global cap on total warm (pre-booted, unclaimed) sandboxes across all
   // projects — bounds idle cost + the Daytona quota.
   KORTIX_WARM_POOL_MAX_TOTAL:      optInt(50),
-  // Only keep a warm pool for projects with a session in the last N days, so we
-  // don't hold idle sandboxes for dormant projects.
-  KORTIX_WARM_POOL_ACTIVE_DAYS:    optInt(7),
+  // Presence window: only keep a warm pool while a user has touched the project
+  // (authenticated portal activity) within this many minutes. Closing the tab
+  // lets the pool reap, so we never hold idle boxes 24/7 for absent users.
+  KORTIX_WARM_POOL_PRESENCE_MINUTES: optInt(15),
 
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
@@ -444,7 +445,7 @@ export const config = {
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_WARM_POOL_ENABLED: env.KORTIX_WARM_POOL_ENABLED,
   KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
-  KORTIX_WARM_POOL_ACTIVE_DAYS: env.KORTIX_WARM_POOL_ACTIVE_DAYS,
+  KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
   JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,

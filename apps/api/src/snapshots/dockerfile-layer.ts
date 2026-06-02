@@ -369,6 +369,17 @@ const MAX_WARM_POOL_SIZE = 10;
  * config, applying defaults for unset/invalid fields. Returns null only when
  * the input isn't a usable manifest object (caller falls back to DEFAULT).
  */
+/** True iff the manifest explicitly declares a `[sandbox.warm_pool]` table.
+ * When false, the UI-set `projects.metadata.warm_pool` (if any) is preserved. */
+export function manifestDeclaresWarmPool(
+  manifestRaw: Record<string, unknown> | null | undefined,
+): boolean {
+  const sandbox = manifestRaw?.sandbox;
+  if (!sandbox || typeof sandbox !== 'object' || Array.isArray(sandbox)) return false;
+  const wp = (sandbox as Record<string, unknown>).warm_pool;
+  return !!wp && typeof wp === 'object' && !Array.isArray(wp);
+}
+
 export function extractWarmPool(
   manifestRaw: Record<string, unknown> | null | undefined,
 ): WarmPoolConfig {
