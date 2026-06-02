@@ -38,6 +38,7 @@ import { useSyncStore } from '@/lib/opencode/sync-store';
 import { getAuthToken } from '@/api/config';
 import type { Session } from '@/lib/opencode/types';
 import { SessionPage } from '@/components/session/SessionPage';
+import { SessionConnecting } from '@/components/session/SessionConnecting';
 import { SessionChatInput, type PromptOptions, type TrackedMention } from '@/components/session/SessionChatInput';
 import { BottomBar } from '@/components/session/BottomBar';
 import type { BottomBarRef } from '@/components/session/BottomBar';
@@ -2004,13 +2005,9 @@ export default function ProjectSessionScreen() {
                   borderRightWidth: 2,
                   borderColor: isDark ? '#222222' : '#e6e6e5',
                 }}
-                className="items-center justify-center px-8 bg-background"
+                className="bg-background"
               >
-                <ActivityIndicator size="large" color={isDark ? '#999999' : '#6e6e6e'} />
-                <Text className="mt-4 text-base font-medium text-foreground">Starting session…</Text>
-                <Text className="mt-1 text-sm text-center text-muted-foreground">
-                  {connectingStatusLabel}
-                </Text>
+                <SessionConnecting statusLabel={connectingStatusLabel} />
               </View>
             </View>
 
