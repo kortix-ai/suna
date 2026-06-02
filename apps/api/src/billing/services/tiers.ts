@@ -49,13 +49,19 @@ export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 12;
 export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 8;
 
 // Per-second pricing for reserved sandbox spec (declared in kortix.toml [sandbox]).
-// Numbers are pre-markup; debit emitter multiplies by COMPUTE_PRICE_MARKUP.
-//   $0.04 / core-hour  → 0.04 / 3600 ≈ 0.0000111 per core-second
-//   $0.005 / GB-hour   → 0.005 / 3600 ≈ 0.00000139 per GB-second
-//   $0.0001 / GB-hour  → 0.0001 / 3600 ≈ 0.0000000278 per GB-second
-export const COMPUTE_CPU_PRICE_PER_CORE_SECOND   = 0.0000111;
-export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND  = 0.00000139;
-export const COMPUTE_DISK_PRICE_PER_GB_SECOND    = 0.0000000278;
+// These are Daytona's PUBLISHED pay-as-you-go rates (the provider's actual cost
+// to us), so we recover what Daytona bills; debit emitter multiplies by
+// COMPUTE_PRICE_MARKUP for our margin on top. Re-sync if Daytona's pricing moves:
+// https://www.daytona.io/pricing  (as of 2026-06)
+//   vCPU  $0.0504 / core-hour → 0.0504  / 3600 = 0.000014   per core-second
+//   RAM   $0.0162 / GiB-hour  → 0.0162  / 3600 = 0.0000045  per GB-second
+//   disk  $0.000108 / GiB-hour→ 0.000108/ 3600 = 0.00000003 per GB-second
+// NOTE: we bill the full reserved spec at these rates — Daytona's first-5-GiB-free
+// RAM/disk allowance is an ORG-level promo to us, not a per-sandbox grant, so
+// passing it through per sandbox would under-bill (the very problem this fixes).
+export const COMPUTE_CPU_PRICE_PER_CORE_SECOND   = 0.000014;
+export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND  = 0.0000045;
+export const COMPUTE_DISK_PRICE_PER_GB_SECOND    = 0.00000003;
 /** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
 export const COMPUTE_ARCHIVE_DISK_MULTIPLIER     = 0.25;
 
