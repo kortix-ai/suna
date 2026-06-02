@@ -19,7 +19,7 @@ import {
 import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, X, FolderPlus, ChevronRight, ChevronDown, Plus, AlertCircle } from 'lucide-react-native';
+import { Search, X, FolderPlus, ChevronDown, Plus, AlertCircle } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/ui/Avatar';
@@ -27,6 +27,7 @@ import { KortixLogo } from '@/components/ui/KortixLogo';
 import { useToast } from '@/components/ui/toast-provider';
 import { AccountSwitcherSheet } from '@/components/projects/AccountSwitcherSheet';
 import { NewProjectSheet } from '@/components/projects/NewProjectSheet';
+import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
 import { useAuthContext } from '@/contexts';
 import { useAccounts, useArchiveProject, useProjects } from '@/lib/projects/hooks';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -56,12 +57,13 @@ export default function ProjectsScreen() {
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
   const toast = useToast();
-  const { user } = useAuthContext();
+  const { user, signOut, isSigningOut } = useAuthContext();
 
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const [query, setQuery] = React.useState('');
   const [accountSheetOpen, setAccountSheetOpen] = React.useState(false);
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
 
   const accountsQuery = useAccounts(!!user);
   const archive = useArchiveProject();
@@ -102,8 +104,9 @@ export default function ProjectsScreen() {
   const fg = isDark ? '#F8F8F8' : '#121215';
   const subtle = isDark ? '#a1a1aa' : '#71717a';
   const faint = isDark ? '#52525b' : '#a1a1aa';
-  const cardBg = isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF';
+  const cardBg = isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF';
   const border = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const cardBorder = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.09)';
   const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
 
   const openProject = React.useCallback(
@@ -173,6 +176,20 @@ export default function ProjectsScreen() {
     }
   }, [accountsQuery, projectsQuery, activeAccountId]);
 
+  const handleSignOut = React.useCallback(() => {
+    Alert.alert('Sign out', 'Sign out of Kortix?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          setAccountMenuOpen(false);
+          await signOut();
+        },
+      },
+    ]);
+  }, [signOut]);
+
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -206,26 +223,46 @@ export default function ProjectsScreen() {
             </Pressable>
           )}
         </View>
-        {canCreate && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {canCreate && (
+            <Pressable
+              onPress={() => {
+                haptics.selection();
+                setNewProjectOpen(true);
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingHorizontal: 14,
+                height: 36,
+                borderRadius: 9999,
+                backgroundColor: theme.primary,
+              }}
+            >
+              <Plus size={16} color={theme.primaryForeground} />
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>New</Text>
+            </Pressable>
+          )}
           <Pressable
             onPress={() => {
               haptics.selection();
-              setNewProjectOpen(true);
+              setAccountMenuOpen(true);
             }}
             style={{
-              flexDirection: 'row',
+              width: 34,
+              height: 34,
+              borderRadius: 17,
+              backgroundColor: isDark ? '#1f1f22' : '#ECECEC',
               alignItems: 'center',
-              gap: 6,
-              paddingHorizontal: 14,
-              height: 36,
-              borderRadius: 9999,
-              backgroundColor: theme.primary,
+              justifyContent: 'center',
             }}
           >
-            <Plus size={16} color={theme.primaryForeground} />
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>New</Text>
+            <Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: fg }}>
+              {(user?.email?.trim()?.[0] || '?').toUpperCase()}
+            </Text>
           </Pressable>
-        )}
+        </View>
       </View>
 
       {/* Title + subtitle */}
@@ -374,27 +411,32 @@ export default function ProjectsScreen() {
             delayLongPress={300}
             style={({ pressed }) => ({
               backgroundColor: cardBg,
-              borderRadius: 16,
+              borderRadius: 18,
               borderWidth: 1,
-              borderColor: border,
-              padding: 14,
-              marginBottom: 10,
+              borderColor: cardBorder,
+              paddingVertical: 16,
+              paddingHorizontal: 16,
+              marginBottom: 12,
               flexDirection: 'row',
               alignItems: 'center',
-              opacity: pressed ? 0.7 : 1,
-              transform: [{ scale: pressed ? 0.995 : 1 }],
+              shadowColor: '#000',
+              shadowOpacity: isDark ? 0 : 0.05,
+              shadowRadius: 10,
+              shadowOffset: { width: 0, height: 3 },
+              elevation: isDark ? 0 : 1,
+              opacity: pressed ? 0.92 : 1,
+              transform: [{ scale: pressed ? 0.99 : 1 }],
             })}
           >
-            <Avatar variant="custom" size={44} fallbackText={project.name} />
-            <View style={{ flex: 1, minWidth: 0, marginLeft: 12 }}>
-              <Text numberOfLines={1} style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>
+            <Avatar variant="custom" size={40} fallbackText={project.name} />
+            <View style={{ flex: 1, minWidth: 0, marginLeft: 14 }}>
+              <Text numberOfLines={1} style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>
                 {project.name}
               </Text>
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: faint, marginTop: 2 }}>
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: subtle, marginTop: 3 }}>
                 Updated {relativeTime(project.updated_at)}
               </Text>
             </View>
-            <ChevronRight size={16} color={faint} />
           </Pressable>
         ))}
       </ScrollView>
@@ -412,6 +454,19 @@ export default function ProjectsScreen() {
         accountId={activeAccountId}
         onClose={() => setNewProjectOpen(false)}
         onCreated={handleCreated}
+      />
+
+      <AccountMenuSheet
+        open={accountMenuOpen}
+        email={user?.email}
+        accountName={activeAccount?.name}
+        isSigningOut={isSigningOut}
+        onSettings={() => {
+          setAccountMenuOpen(false);
+          router.push('/(settings)');
+        }}
+        onSignOut={handleSignOut}
+        onClose={() => setAccountMenuOpen(false)}
       />
     </View>
   );
