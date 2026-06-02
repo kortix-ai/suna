@@ -10,7 +10,7 @@ export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState
   if (!accountState || accountState.billing_model !== 'legacy') return null;
 
   return (
-    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-3">
       <div className="flex items-start gap-2.5">
         <Sparkles className="size-4 text-primary mt-0.5 shrink-0" />
         <div className="space-y-1 min-w-0">
