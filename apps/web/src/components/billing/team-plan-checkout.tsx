@@ -32,7 +32,7 @@ export function TeamPlanCheckout({
 }: TeamPlanCheckoutProps) {
   const createPerSeat = useCreatePerSeatCheckout();
 
-  const pricePerSeat = accountState?.seats?.price_per_seat_usd ?? 20;
+  const pricePerSeat = accountState?.seats?.price_per_seat_usd ?? 40;
   const seatCount = accountState?.seats?.count ?? 1;
   const monthlyTotal = pricePerSeat * seatCount;
   const hasSeatMath = seatCount > 1;
@@ -113,7 +113,7 @@ export function TeamPlanCheckout({
             </>
           ) : (
             <>
-              {hasSeatMath ? `Subscribe — $${monthlyTotal}/month` : 'Subscribe — $20 / user / month'}
+              {hasSeatMath ? `Subscribe — $${monthlyTotal}/month` : 'Subscribe — $40 / user / month'}
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
             </>
           )}
@@ -150,7 +150,7 @@ export function TeamPlanDialog({ open, onOpenChange, accountState }: TeamPlanDia
       <DialogContent className="gap-0 overflow-hidden bg-card p-0 sm:max-w-[420px]">
         <DialogTitle className="sr-only">Subscribe to Kortix Team</DialogTitle>
         <DialogDescription className="sr-only">
-          $20 per user per month. LLM compute and AI Computers for every teammate.
+          $40 per user per month. LLM compute and AI Computers for every teammate.
         </DialogDescription>
         <TeamPlanCheckout accountState={accountState} embedded />
       </DialogContent>

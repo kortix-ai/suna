@@ -16,7 +16,7 @@ export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState
         <div className="space-y-1 min-w-0">
           <p className="text-sm font-medium">Switch to seat-based pricing</p>
           <p className="text-xs text-muted-foreground">
-            Move off per-machine billing to the new $20/seat plan. We cancel your machine
+            Move off per-machine billing to the new $40/seat plan. We cancel your machine
             subscriptions, put your unused balance toward your first seat, and return the
             rest as <span className="font-medium text-foreground">non-expiring credit</span>.
           </p>

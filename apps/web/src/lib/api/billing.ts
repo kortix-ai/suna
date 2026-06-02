@@ -453,7 +453,7 @@ export const billingApi = {
   },
 
   // Billing v2 — legacy → per-seat voluntary claim. Runs the migration server-side
-  // (create the $20/seat sub, cancel the machine subs, pre-pay the first seat out
+  // (create the $40/seat sub, cancel the machine subs, pre-pay the first seat out
   // of the unused machine value + return the rest as non-expiring credit, flip to
   // per_seat) and returns the result.
   async claimPerSeat(accountId?: string) {
