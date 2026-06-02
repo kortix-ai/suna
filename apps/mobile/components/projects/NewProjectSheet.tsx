@@ -18,6 +18,7 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Sparkles, Github, Plus, Check, GitBranch, ExternalLink } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
+import { Icon } from '@/components/ui/icon';
 import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import { useToast } from '@/components/ui/toast-provider';
@@ -197,7 +198,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
           <>
             {/* Managed info */}
             <View style={{ flexDirection: 'row', gap: 10, padding: 14, borderRadius: 14, backgroundColor: fieldBg, marginBottom: 18 }}>
-              <Sparkles size={18} color={theme.primary} />
+              <Icon as={Sparkles} size={18} color={theme.primary} />
               <Text style={{ flex: 1, fontSize: 13, fontFamily: 'Roobert', color: muted, lineHeight: 18 }}>
                 Creates a private managed repo and seeds the Kortix starter so sessions can boot.
               </Text>
@@ -243,13 +244,13 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
             </View>
 
             <Pressable onPress={() => setMode('github')} disabled={submitting} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: 20 }}>
-              <Github size={14} color={muted} />
+              <Icon as={Github} size={14} color={muted} />
               <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted }}>Import an existing GitHub repo</Text>
             </Pressable>
 
             <PrimaryButton
               label="Create project"
-              icon={<Plus size={18} color={theme.primaryForeground} />}
+              icon={<Icon as={Plus} size={18} color={theme.primaryForeground} />}
               loading={provision.isPending}
               disabled={submitting || !accountId}
               onPress={handleCreateManaged}
@@ -261,7 +262,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <Text style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>Import GitHub repository</Text>
               <Pressable onPress={() => setMode('managed')} disabled={submitting} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <GitBranch size={14} color={muted} />
+                <Icon as={GitBranch} size={14} color={muted} />
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted }}>Managed repo</Text>
               </Pressable>
             </View>
@@ -277,7 +278,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
                   Kortix uses the GitHub App to list repositories you can import.
                 </Text>
                 <Pressable onPress={handleConnectGitHub} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 9999, backgroundColor: theme.primary }}>
-                  <Github size={16} color={theme.primaryForeground} />
+                  <Icon as={Github} size={16} color={theme.primaryForeground} />
                   <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Connect</Text>
                 </Pressable>
               </View>
@@ -294,7 +295,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
                           onPress={() => setSelectedInstallationId(inst.installation_id ?? '')}
                           style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9999, borderWidth: 1, borderColor: active ? theme.primary : border }}
                         >
-                          <Github size={14} color={active ? theme.primary : muted} />
+                          <Icon as={Github} size={14} color={active ? theme.primary : muted} />
                           <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: active ? fg : muted }}>{inst.owner_login}</Text>
                         </Pressable>
                       );
@@ -331,7 +332,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
                           onPress={() => setSelectedRepo(repo.full_name)}
                           style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: selected ? theme.primary : border, marginBottom: 8 }}
                         >
-                          <Check size={16} color={selected ? theme.primary : 'transparent'} style={{ marginRight: 8 }} />
+                          <Icon as={Check} size={16} color={selected ? theme.primary : 'transparent'} style={{ marginRight: 8 }} />
                           <View style={{ flex: 1, minWidth: 0 }}>
                             <Text numberOfLines={1} style={{ fontSize: 14, fontFamily: 'Menlo', color: fg }}>{repo.full_name}</Text>
                             <Text numberOfLines={1} style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 2 }}>
@@ -357,7 +358,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
 
                 <PrimaryButton
                   label="Import repo"
-                  icon={<Github size={16} color={theme.primaryForeground} />}
+                  icon={<Icon as={Github} size={16} color={theme.primaryForeground} />}
                   loading={link.isPending}
                   disabled={submitting || !accountId || !selectedInstallationId || !selectedRepo}
                   onPress={handleLinkGitHub}
@@ -366,7 +367,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
 
                 {installationsQuery.data?.install_url ? (
                   <Pressable onPress={handleConnectGitHub} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 }}>
-                    <ExternalLink size={13} color={muted} />
+                    <Icon as={ExternalLink} size={13} color={muted} />
                     <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>Add another GitHub account</Text>
                   </Pressable>
                 ) : null}
