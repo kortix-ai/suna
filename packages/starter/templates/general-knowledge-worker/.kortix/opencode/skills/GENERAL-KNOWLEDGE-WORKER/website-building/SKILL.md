@@ -101,7 +101,15 @@ Build the site with the generated palette, following all the loaded design guida
 
 ### Step 3: Preview
 
-Show via static server: `show(type: "url", url: "http://localhost:3211/open?path=/workspace/project/index.html")`
+Start a local server with `pty_spawn`, then show its plain URL:
+
+```bash
+# static site (no build step)
+python3 -m http.server 3000 --directory /workspace/project
+# app: run its dev server instead, e.g. npm run dev
+```
+
+Then `show(type: "url", url: "http://localhost:3000/")`. The platform auto-detects and proxies any localhost port — no special URL format needed.
 
 ---
 
