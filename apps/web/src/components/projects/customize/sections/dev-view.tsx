@@ -53,9 +53,9 @@ function DevBody({ projectId }: { projectId: string }) {
             Develop on your own machine
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            This project lives in one git repo. Clone it, run the same agent
-            locally, and send your changes back as a change request — the same
-            way a cloud session does.
+            This project lives in one git repo. Clone it, open it in your own
+            coding agent — Claude Code, Cursor, Codex, opencode — and send your
+            changes back as a change request, the same way a cloud session does.
           </p>
         </header>
 
@@ -150,10 +150,10 @@ function DevSteps({
 
       <Step
         n={next()}
-        title="Run the agent locally"
-        hint="Uses the same .kortix/opencode config that powers cloud sessions — identical agents, skills, and commands."
+        title="Build it in your coding agent"
+        hint="This is where the work happens. Open the repo in the agent you wired up and just talk to it — the Kortix skill is loaded, so it knows how to configure agents, edit kortix.toml, add triggers, and write skills for this project."
       >
-        <CommandBlock lines={['opencode']} />
+        <Launchers />
       </Step>
 
       <Step
@@ -252,6 +252,57 @@ function CommandBlock({ lines }: { lines: string[] }) {
         )}
       </button>
     </div>
+  );
+}
+
+/**
+ * The coding agents `kortix init` can wire the Kortix skill into. Each chip
+ * copies the command that opens that agent in the current repo — pick whichever
+ * one you configured and start building.
+ */
+const LAUNCHERS: { label: string; command: string }[] = [
+  { label: 'Claude Code', command: 'claude' },
+  { label: 'Cursor', command: 'cursor .' },
+  { label: 'Codex', command: 'codex' },
+  { label: 'opencode', command: 'opencode' },
+];
+
+function Launchers() {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {LAUNCHERS.map((l) => (
+        <LauncherChip key={l.label} label={l.label} command={l.command} />
+      ))}
+    </div>
+  );
+}
+
+function LauncherChip({ label, command }: { label: string; command: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return;
+    navigator.clipboard.writeText(command).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={`Copy "${command}"`}
+      className="group flex items-center gap-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-left transition-colors hover:border-border hover:bg-muted"
+    >
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      <code className="font-mono text-[0.7rem] text-muted-foreground">{command}</code>
+      {copied ? (
+        <Check className="size-3.5 text-primary" />
+      ) : (
+        <Copy className="size-3.5 text-muted-foreground/60 transition-colors group-hover:text-muted-foreground" />
+      )}
+    </button>
   );
 }
 
