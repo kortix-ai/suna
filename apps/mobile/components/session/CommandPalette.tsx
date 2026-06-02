@@ -17,7 +17,6 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
   Platform,
   Text as RNText,
 } from 'react-native';
@@ -25,11 +24,9 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Fuse from 'fuse.js';
-import * as Haptics from 'expo-haptics';
 
 import type { Session } from '@/lib/opencode/types';
 import { searchFiles } from '@/lib/utils/file-search';
-import { getAuthToken } from '@/api/config';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -151,55 +148,13 @@ export function CommandPalette({
 
   // ── Command items ───────────────────────────────────────────────────────
 
-  // Runtime reload handler
-  const handleRuntimeReload = useCallback(async (mode: 'dispose-only' | 'full') => {
-    if (!sandboxUrl) return;
-    onClose();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    const doReload = async () => {
-      try {
-        const token = await getAuthToken();
-        const res = await fetch(`${sandboxUrl}/kortix/services/system/reload`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ mode }),
-        });
-        if (res.ok) {
-          Alert.alert(
-            'Success',
-            mode === 'full'
-              ? 'Full restart initiated — all managed services will come back up.'
-              : 'Config reloaded — agents, skills, and commands refreshed.',
-          );
-        } else {
-          Alert.alert('Error', 'Restart failed');
-        }
-      } catch {
-        Alert.alert('Error', 'Restart failed');
-      }
-    };
-
-    if (mode === 'full') {
-      Alert.alert(
-        'Full Restart',
-        'This will kill and restart every service (OpenCode, static server, kortix-master). Active sessions will be interrupted.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Restart', style: 'destructive', onPress: doReload },
-        ],
-      );
-    } else {
-      doReload();
-    }
-  }, [sandboxUrl, onClose]);
-
-  const commandItems: CommandItem[] = useMemo(
+  // Curated to mirror the web's project-shell command palette
+  // (apps/web/src/components/command-palette.tsx). The legacy global-shell
+  // entries the web hides — Open Terminal, Restart, Dashboard, Browser,
+  // Memory, LLM Providers — are intentionally omitted. Lead with New Session /
+  // Projects / Search Files, then the project tool pages, then Settings.
+  const commandItems = useMemo<CommandItem[]>(
     () => [
-      // ── Actions (matching web order) ──
       {
         id: 'newSession',
         label: 'New Session',
@@ -208,41 +163,21 @@ export function CommandPalette({
         onSelect: () => { onNewSession(); onClose(); },
       },
       {
-        id: 'page:terminal',
-        label: 'Open Terminal',
-        icon: 'terminal-outline',
-        group: 'action',
-        onSelect: () => { onPageSelect('page:terminal'); onClose(); },
-      },
-      {
-        id: 'restart-config',
-        label: 'Restart: Config Only',
-        icon: 'refresh-outline',
-        group: 'action',
-        onSelect: () => handleRuntimeReload('dispose-only'),
-      },
-      {
-        id: 'restart-full',
-        label: 'Restart: Full',
-        icon: 'refresh-outline',
-        group: 'action',
-        onSelect: () => handleRuntimeReload('full'),
-      },
-      // ── Navigation (matching web order) ──
-      {
-        id: 'dashboard',
-        label: 'Dashboard',
-        icon: 'grid-outline',
-        group: 'navigation',
-        onSelect: () => { onSessionSelect(''); onClose(); },
-      },
-      {
         id: 'page:projects',
         label: 'Projects',
         icon: 'folder-outline',
         group: 'navigation',
         onSelect: () => { onPageSelect('page:projects'); onClose(); },
       },
+      ...(sandboxUrl
+        ? [{
+            id: 'search-files',
+            label: 'Search Files...',
+            icon: 'document-text-outline',
+            group: 'action' as const,
+            onSelect: enterFileSearchMode,
+          }]
+        : []),
       {
         id: 'page:triggers',
         label: 'Scheduled Tasks',
@@ -272,29 +207,8 @@ export function CommandPalette({
         onSelect: () => { onPageSelect('page:files'); onClose(); },
       },
       {
-        id: 'page:browser',
-        label: 'Browser',
-        icon: 'compass-outline',
-        group: 'navigation',
-        onSelect: () => { onPageSelect('page:browser'); onClose(); },
-      },
-      {
-        id: 'page:memory',
-        label: 'Memory',
-        icon: 'hardware-chip-outline',
-        group: 'navigation',
-        onSelect: () => { onPageSelect('page:memory'); onClose(); },
-      },
-      {
-        id: 'page:llm-providers',
-        label: 'LLM Providers',
-        icon: 'cube-outline',
-        group: 'navigation',
-        onSelect: () => { onPageSelect('page:llm-providers'); onClose(); },
-      },
-      {
         id: 'page:secrets',
-        label: 'Secrets Manager',
+        label: 'Secrets',
         icon: 'key-outline',
         group: 'navigation',
         onSelect: () => { onPageSelect('page:secrets'); onClose(); },
@@ -307,7 +221,7 @@ export function CommandPalette({
         onSelect: () => { onSettings(); onClose(); },
       },
     ],
-    [onNewSession, onSessionSelect, onPageSelect, onSettings, onClose, handleRuntimeReload],
+    [onNewSession, onPageSelect, onSettings, onClose, sandboxUrl, enterFileSearchMode],
   );
 
   // ── Recent sessions (last 5, non-archived) ─────────────────────────────
@@ -545,18 +459,6 @@ export function CommandPalette({
               /* ── Default: Suggestions ── */
               <>
                 <SectionHeader label="SUGGESTIONS" color={sectionColor} />
-
-                {/* Search Files — top entry, before other commands */}
-                {sandboxUrl && (
-                  <CommandRow
-                    icon="document-text-outline"
-                    label="Search Files..."
-                    onPress={enterFileSearchMode}
-                    fgColor={fgColor}
-                    mutedColor={mutedColor}
-                    hoverBg={hoverBg}
-                  />
-                )}
 
                 {commandItems.map((item) => (
                   <CommandRow
