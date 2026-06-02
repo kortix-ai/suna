@@ -31,7 +31,9 @@ const READY_PROBE_INTERVAL_MS = 3000;
 // projects.metadata.warm_pool — DB only, never in kortix.toml.
 export const warmPoolEnabled = (): boolean => config.KORTIX_WARM_POOL_ENABLED === true;
 
-const MAX_WARM_SIZE = 10;
+// Per-project sanity cap on warm size. The real fleet bound is the operator's
+// KORTIX_WARM_POOL_MAX_TOTAL; this just stops a typo from warming a huge pool.
+const MAX_WARM_SIZE = 25;
 export interface WarmPoolConfig {
   enabled: boolean;
   size: number;

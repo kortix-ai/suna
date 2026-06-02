@@ -9,7 +9,7 @@ import { getWarmPoolStatus, updateWarmPool, type KortixProject } from '@/lib/pro
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 
-const MAX_SIZE = 10;
+const MAX_SIZE = 25;
 
 /**
  * Customize → Sandbox → Warm pool. Keeps N pre-booted sandboxes ready so a new
@@ -99,6 +99,11 @@ export function WarmPoolCard({
               <div className="text-sm font-medium">Ready sandboxes</div>
               <div className="text-xs text-muted-foreground">
                 How many to keep warm and ready to claim ({0}–{MAX_SIZE}).
+              </div>
+              <div className="mt-1 text-xs text-amber-600 dark:text-amber-500/90">
+                Each ready sandbox runs continuously and uses compute (billed to your
+                credits) — that&apos;s the trade for instant sessions. Kept low by default
+                to preserve credits; raise it for more speed.
               </div>
               {status.data && (
                 <div className="mt-1.5 flex items-center gap-3 text-xs">

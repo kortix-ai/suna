@@ -6121,7 +6121,7 @@ projectsApp.patch('/:projectId/warm-pool', async (c) => {
         ? prev.size
         : config.KORTIX_WARM_POOL_SIZE;
   if (size < 0) size = 0;
-  if (size > 10) size = 10;
+  if (size > 25) size = 25;
   const warm_pool = { enabled, size };
 
   const [row] = await db
