@@ -216,7 +216,7 @@ export default function ProjectsScreen() {
 
       {/* Title + subtitle */}
       <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 6 }}>
-        <Text style={{ fontSize: 28, fontFamily: 'Roobert-SemiBold', color: fg }}>Projects</Text>
+        <Text style={{ fontSize: 28, lineHeight: 36, fontFamily: 'Roobert-SemiBold', color: fg }}>Projects</Text>
         <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: subtle, marginTop: 4 }}>
           Your workspaces in one place. Pick up where you left off.
         </Text>
