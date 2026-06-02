@@ -34,16 +34,33 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
+      title: ${{ steps.v.outputs.title }}
+      notes: ${{ steps.v.outputs.notes }}
     steps:
       - uses: actions/checkout@v4
-      - name: Read VERSION
+        with:
+          fetch-depth: 0  # need full tags + annotations to read the release notes
+      - name: Read VERSION + release notes from the tag annotation
         id: v
         run: |
           set -euo pipefail
           V="$(tr -d '[:space:]' < VERSION)"
+          TAG="v$V"
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "tag=v$V" >> "$GITHUB_OUTPUT"
-          echo "Releasing v$V"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG"
+
+          # The annotated tag carries the human release entry written at promote
+          # time (promote.yml): subject line = title, body = notes. That becomes
+          # the GitHub Release name/body — i.e. the public changelog.
+          git fetch --force --tags origin "$TAG" >/dev/null 2>&1 || true
+          TITLE="$(git tag -l --format='%(contents:subject)' "$TAG" 2>/dev/null || true)"
+          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+          {
+            echo 'notes<<KORTIX_NOTES_EOF'
+            git tag -l --format='%(contents:body)' "$TAG" 2>/dev/null || true
+            echo 'KORTIX_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
 
   # ── Retag dev images → versioned + latest (no rebuild) ──────────────────────
   retag-images:
@@ -345,7 +362,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
-          name: ${{ needs.version.outputs.tag }}
+          # Human title + notes from the tag annotation (set at promote time) lead
+          # the release; the auto-generated PR list is appended below them.
+          name: ${{ needs.version.outputs.title != '' && format('{0} — {1}', needs.version.outputs.tag, needs.version.outputs.title) || needs.version.outputs.tag }}
+          body: ${{ needs.version.outputs.notes }}
           generate_release_notes: true
           files: |
             release/*

@@ -13,6 +13,14 @@ name: Promote to Production
 on:
   workflow_dispatch:
     inputs:
+      title:
+        description: 'Release title — a human one-liner shown on the changelog (e.g. "Warm pool + billing fixes")'
+        required: true
+        type: string
+      notes:
+        description: 'Release notes — what changed and why, for the public changelog (markdown ok)'
+        required: true
+        type: string
       bump:
         description: 'Semver bump (ignored if an explicit version is given)'
         required: true
@@ -84,6 +92,11 @@ jobs:
           echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
 
       - name: Write VERSION + commit to ${{ inputs.ref }}
+        # Inputs are passed via env (never interpolated into the script) so a
+        # title/notes with quotes or shell metacharacters can't break the run.
+        env:
+          IN_TITLE: ${{ inputs.title }}
+          IN_NOTES: ${{ inputs.notes }}
         run: |
           set -euo pipefail
           NEW="${{ steps.ver.outputs.new }}"
@@ -102,11 +115,14 @@ jobs:
             git push origin "HEAD:${{ inputs.ref }}"
           fi
 
-          # Create/replace the annotated tag at the current commit.
+          # Create/replace the annotated tag at the current commit. The tag
+          # annotation IS the release entry that deploy-prod.yml turns into the
+          # GitHub Release (and thus the public changelog): subject line = title,
+          # body = notes. This is why title/notes are required on dispatch.
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
             echo "Tag $TAG already exists locally — re-pointing."
           fi
-          git tag -fa "$TAG" -m "Release $TAG"
+          printf '%s\n\n%s\n' "$IN_TITLE" "$IN_NOTES" | git tag -fa "$TAG" -F -
           git push -f origin "$TAG"
 
       - name: Fast-forward prod to this commit
