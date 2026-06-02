@@ -58,6 +58,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { AutoTopupCard } from '@/components/billing/auto-topup-card';
 import { SeatManagementCard } from '@/components/billing/seat-management-card';
+import { ClaimPerSeatCard } from '@/components/billing/claim-per-seat-card';
 import { AccountOverviewTab } from '@/components/billing/account-overview';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
@@ -1484,6 +1485,9 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
 
                     {/* Plan / wallet / spend / limits */}
                     <AccountOverviewTab accountId={billingAccountId} />
+
+                    {/* Legacy machine-billed users — claim the new seat-based plan */}
+                    {accountState?.billing_model === 'legacy' && <ClaimPerSeatCard accountState={accountState} />}
 
                     {/* Team seats — when on the per-seat plan */}
                     {subscribedToTeam && <SeatManagementCard accountState={accountState} />}

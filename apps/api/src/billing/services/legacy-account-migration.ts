@@ -32,12 +32,11 @@ import { getCreditAccount, updateCreditAccount } from '../repositories/credit-ac
 import { resolveLiveStripeCustomerId } from './subscriptions';
 import { countActiveMembers } from './seat-management';
 import { grantCredits } from './credits';
-import { resolvePerSeatPriceId, defaultAutoTopupForSeats, MAX_SEATS_PER_ACCOUNT } from './tiers';
+import { resolvePerSeatPriceId, defaultAutoTopupForSeats, MAX_SEATS_PER_ACCOUNT, PER_SEAT_PRICE_USD } from './tiers';
 
 const ADVISORY_LOCK_NS = 'lazy_migrate';
 
 function lockKey(accountId: string): bigint {
-  // Hash accountId UUID into a stable 63-bit key for pg_advisory_lock.
   let h = 14695981039346656037n;
   for (const ch of `${ADVISORY_LOCK_NS}:${accountId}`) {
     h ^= BigInt(ch.charCodeAt(0));
@@ -49,6 +48,7 @@ function lockKey(accountId: string): bigint {
 interface MigrationResult {
   status: 'migrated' | 'skipped:already_per_seat' | 'skipped:yearly_commitment' | 'skipped:no_subs' | 'skipped:no_legacy_machine' | 'failed';
   proratedCreditUsd: number;
+  firstSeatCoveredUsd: number;
   cancelledSubIds: string[];
   newSubscriptionId: string | null;
   stoppedSandboxIds: string[];
@@ -70,44 +70,29 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
     }
   }
 
-  // Only customers who actually own a legacy machine (a kortix.sandboxes
-  // instance) are migrated to seat-based billing. A legacy-billing account with
-  // no machine is left untouched — we never cancel a subscription for someone
-  // who has no legacy instance to move off of.
   if (!(await accountHasLegacyMachine(accountId))) {
     return defaultResult('skipped:no_legacy_machine');
   }
 
   return await withAdvisoryLock(accountId, async () => {
-    // Re-read inside the lock — another worker may have raced ahead.
     const fresh = await getCreditAccount(accountId);
     if (!fresh || fresh.billingModel === 'per_seat') {
       return defaultResult('skipped:already_per_seat');
     }
 
-    // Resolve a LIVE customer in the current Stripe account (drops a stale
-    // mapping from a different account and returns null). A stale/absent customer
-    // means no reachable subs → it falls through to the no-subs path below rather
-    // than 500ing on "No such customer".
     const customerId = await resolveLiveStripeCustomerId(accountId);
     const stripe = getStripe();
     const now = Math.floor(Date.now() / 1000);
 
-    // 1. Inventory active Stripe subs (may be none if the user is on free tier)
     const activeSubs: Stripe.Subscription[] = customerId
       ? (await stripe.subscriptions.list({ customer: customerId, status: 'active', limit: 100 })).data
       : [];
 
     if (activeSubs.length === 0) {
-      // No paid history — just flip the flag, they'll subscribe via the new
-      // per-seat checkout flow whenever they want to.
       await updateCreditAccount(accountId, { billingModel: 'per_seat' } as any);
       return defaultResult('skipped:no_subs');
     }
 
-    // Pre-flight: refuse to cancel any legacy sub until we've confirmed we can
-    // create the replacement. Otherwise a missing per-seat price ID would leave
-    // the customer with no subscription at all.
     const seatCount = Math.min(MAX_SEATS_PER_ACCOUNT, Math.max(1, await countActiveMembers(accountId)));
     const priceId = resolvePerSeatPriceId();
     if (!priceId) {
@@ -119,10 +104,39 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
       return defaultResult('failed', 'no Stripe customer for account with active subs');
     }
 
-    // 2. Create the per-seat sub FIRST — BEFORE cancelling anything. This is the
-    //    critical safety property: if the charge can't be set up (no payment
-    //    method, card declined, Stripe error, …) we abort with the customer's
-    //    legacy subs still intact, never leaving them with no subscription at all.
+    // The unused (prorated) value of the legacy machine subs is returned IN FULL,
+    // split so the move costs nothing out of pocket now:
+    //   • the FIRST seat period is pre-paid from it (a Stripe customer-balance
+    //     credit that offsets the first per-seat invoice), and
+    //   • the leftover is granted as non-expiring wallet credit.
+    // e.g. $100 remaining, 1 seat → $20 covers the first seat month + $80 credit.
+    const totalProratedUsd = round2(
+      activeSubs.reduce((sum, sub) => sum + computeProratedRemaining(sub, now), 0),
+    );
+    const seatCostUsd = PER_SEAT_PRICE_USD * seatCount;
+    const firstSeatCoveredUsd = round2(Math.min(seatCostUsd, totalProratedUsd));
+    const walletCreditUsd = round2(totalProratedUsd - firstSeatCoveredUsd);
+
+    // Apply the first-seat offset as a customer-balance credit BEFORE creating the
+    // sub so the first invoice picks it up (often → $0, so no payment method is
+    // even required). Non-fatal: if it errors, the seat just bills normally.
+    if (firstSeatCoveredUsd > 0) {
+      try {
+        await stripe.customers.createBalanceTransaction(customerId, {
+          amount: -Math.round(firstSeatCoveredUsd * 100), // negative = credit to the customer
+          currency: 'usd',
+          description: 'Legacy machine credit applied to first seat period',
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[lazy-migrate] failed to apply first-seat balance credit for ${accountId}: ${msg}`);
+      }
+    }
+
+    // 2. Create the per-seat sub — BEFORE cancelling anything. Critical safety
+    //    property: if the charge can't be set up we abort with the customer's
+    //    legacy subs intact, never leaving them with no subscription. The first
+    //    invoice is offset by the balance credit above.
     let newSubscription: Stripe.Subscription;
     try {
       newSubscription = await stripe.subscriptions.create({
@@ -142,14 +156,11 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
       return defaultResult('failed', `create per-seat sub: ${msg}`);
     }
 
-    // 3. The seat sub is now active — cancel the legacy subs and sum their
-    //    prorated remainder. A cancel failure here is non-fatal: the replacement
-    //    is already in place, so we log it for manual cleanup and continue rather
-    //    than stranding the account.
-    let totalProratedUsd = 0;
+    // 3. The seat sub is now active — cancel the legacy subs (prorate:false; we've
+    //    already computed + returned their remainder). A cancel failure here is
+    //    non-fatal: the replacement is already in place, so we log for cleanup.
     const cancelledSubIds: string[] = [];
     for (const sub of activeSubs) {
-      totalProratedUsd += computeProratedRemaining(sub, now);
       try {
         await stripe.subscriptions.cancel(sub.id, { prorate: false } as any);
         cancelledSubIds.push(sub.id);
@@ -159,13 +170,12 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
       }
     }
 
-    // 4. Grant the prorated credit (non-expiring) — credit_ledger is the audit log.
-    // Refuse to flip billing_model if the grant fails, otherwise the customer
-    // would lose their prorated credit silently.
-    if (totalProratedUsd > 0) {
-      const description = `Legacy migration credit (cancelled ${cancelledSubIds.length} subscription${cancelledSubIds.length === 1 ? '' : 's'})`;
+    // 4. Grant the leftover as non-expiring wallet credit. Refuse to flip
+    //    billing_model if the grant fails, otherwise the credit is lost silently.
+    if (walletCreditUsd > 0) {
+      const description = `Legacy migration credit (cancelled ${cancelledSubIds.length} subscription${cancelledSubIds.length === 1 ? '' : 's'}; first seat period pre-paid)`;
       try {
-        const granted = await grantCredits(accountId, totalProratedUsd, 'legacy_migration', description, false);
+        const granted = await grantCredits(accountId, walletCreditUsd, 'legacy_migration', description, false);
         if (granted && typeof granted === 'object' && 'success' in granted && (granted as any).success === false) {
           console.error(`[lazy-migrate] grantCredits returned success=false for ${accountId}: ${JSON.stringify(granted)}`);
           return defaultResult('failed', 'credit grant returned success=false');
@@ -196,7 +206,8 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
 
     return {
       status: 'migrated',
-      proratedCreditUsd: round2(totalProratedUsd),
+      proratedCreditUsd: walletCreditUsd,
+      firstSeatCoveredUsd,
       cancelledSubIds,
       newSubscriptionId: newSubscription?.id ?? null,
       stoppedSandboxIds,
@@ -277,6 +288,7 @@ function defaultResult(
   return {
     status,
     proratedCreditUsd: 0,
+    firstSeatCoveredUsd: 0,
     cancelledSubIds: [],
     newSubscriptionId: null,
     stoppedSandboxIds: [],

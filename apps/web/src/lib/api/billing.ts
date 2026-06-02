@@ -452,6 +452,23 @@ export const billingApi = {
     return response.data!;
   },
 
+  // Billing v2 — legacy → per-seat voluntary claim. Runs the migration server-side
+  // (create the $20/seat sub, cancel the machine subs, pre-pay the first seat out
+  // of the unused machine value + return the rest as non-expiring credit, flip to
+  // per_seat) and returns the result.
+  async claimPerSeat(accountId?: string) {
+    const response = await backendApi.post<{
+      ok: boolean;
+      status: string;
+      credited_usd: number;
+      first_seat_covered_usd: number;
+      cancelled_subscriptions: number;
+      reason?: string | null;
+    }>('/billing/claim-per-seat', accountId ? { account_id: accountId } : {});
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
   async createPortalSession(request: CreatePortalSessionRequest, accountId?: string) {
     const response = await backendApi.post<CreatePortalSessionResponse>(
       '/billing/create-portal-session',
