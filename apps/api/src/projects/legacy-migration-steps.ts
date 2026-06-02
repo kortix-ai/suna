@@ -259,8 +259,19 @@ export async function pushStep(ctx: MigrationContext): Promise<void> {
     `rm -rf "$__ST" ${sq(STARTER_REMOTE_B64)}`,
     `printf '%s\\n' ${excludeLine} > .gitignore`,
     'rm -rf .git',
+    // Strip EMBEDDED git repos (a nested .git anywhere in the tree — a cloned
+    // sub-project). Left in place, `git add -A` records them as submodule
+    // gitlinks and their file contents are silently dropped from the migrated
+    // repo. Removing the inner .git flattens them into ordinary files so the
+    // user's work is actually preserved.
+    'find . -type d -name .git -prune -exec rm -rf {} + 2>/dev/null || true',
     'git init -q',
     `printf '%s\\n' ${excludeLine} > .git/info/exclude`,
+    // GitHub HARD-rejects any file >100MB, which aborts the whole push (exit 1)
+    // and dead-letters the migration. Exclude such files (leave them on disk,
+    // just don't track them) so the push succeeds; log each so the drop is never
+    // silent. Skip dirs already excluded above to avoid noise/wasted walking.
+    "find . -type f -size +100M -not -path './.git/*' -not -path './.persistent-system/*' -not -path './node_modules/*' -not -path './.cache/*' -printf '%P\\n' 2>/dev/null | while IFS= read -r f; do printf '%s\\n' \"$f\" >> .git/info/exclude; echo \"push: excluding >100MB file (GitHub limit): $f\"; done || true",
     `git checkout -qB ${sq(defaultBranch)}`,
     'git add -A',
     `git -c user.email=migrations@kortix.com -c user.name=Kortix commit -q --allow-empty -m ${sq('Import legacy workspace')}`,
