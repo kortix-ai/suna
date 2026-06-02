@@ -27,12 +27,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import {
   archiveProject,
   getProject,
   inviteRepoCollaborator,
   isManagedGithubProject,
+  updateAppsConfig,
   updateProject,
   type KortixProject,
 } from '@/lib/projects-client';
@@ -102,6 +104,7 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
           <>
             <GeneralProjectCard project={project} canManage={!!canManage} />
             <RepositoryCard project={project} canManage={!!canManage} />
+            <ExperimentalCard project={project} canManage={!!canManage} />
             {canManage && (
               <SectionCard
                 tone="destructive"
@@ -260,6 +263,63 @@ function RepositoryCard({
       {managed && (
         <RepoCollaboratorInvite projectId={project.project_id} />
       )}
+    </SectionCard>
+  );
+}
+
+/**
+ * Customize → Settings → Experimental. Per-project switches for features still
+ * in development. Each row is independent; add more toggles here as features
+ * graduate from operator-wide flags to per-project opt-in.
+ *
+ * Apps: the experimental `[[apps]]` deployment surface. When on, the Apps
+ * sidebar shortcut + overlay appear and the auto-deploy sweep picks this
+ * project up. DB-only (projects.metadata.apps_enabled) — overrides the
+ * operator-wide default.
+ */
+function ExperimentalCard({
+  project,
+  canManage,
+}: {
+  project: KortixProject;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const appsEnabled = project.apps_enabled ?? false;
+
+  const appsMutation = useMutation({
+    mutationFn: (next: boolean) =>
+      updateAppsConfig(project.project_id, { enabled: next }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['project', project.project_id], updated);
+      // The sidebar Apps shortcut gates off this same value via a separate
+      // 'project-detail' query — refresh it so the button appears/disappears.
+      queryClient.invalidateQueries({ queryKey: ['project-detail', project.project_id] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || 'Failed to update apps setting'),
+  });
+
+  return (
+    <SectionCard
+      title="Experimental"
+      description="Try features still in development for this project. They may change or break."
+    >
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">Apps</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Deploy this project&apos;s repo as live apps. Adds the Apps shortcut and
+            auto-deploys apps declared in kortix.toml.
+          </p>
+        </div>
+        <Switch
+          checked={appsEnabled}
+          disabled={!canManage || appsMutation.isPending}
+          onCheckedChange={(v) => appsMutation.mutate(v)}
+        />
+      </div>
     </SectionCard>
   );
 }

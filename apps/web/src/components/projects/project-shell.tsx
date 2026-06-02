@@ -186,9 +186,9 @@ export function ProjectShell({
       <CustomizeOverlay projectId={projectId} />
 
       {/* Apps — sibling overlay for the experimental [[apps]] deploy surface.
-          Self-gates on the platform flag (the store only opens when the
-          sidebar's flag-gated Apps button fires), so mounting it here is inert
-          when KORTIX_APPS_EXPERIMENTAL is off. */}
+          Self-gates on the per-project apps toggle (the store only opens when
+          the sidebar's gated Apps button fires), so mounting it here is inert
+          when apps is disabled for the project. */}
       <AppsOverlay projectId={projectId} />
 
       {/* Guided onboarding wizard — auto-opens for new projects, fades out

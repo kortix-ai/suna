@@ -132,6 +132,7 @@ import { getSandboxProvider } from '../snapshots/providers';
 import { classifySnapshotError, describeSnapshotError } from '../snapshots/error-classify';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
 import { claimWarmSandbox, getWarmPoolCounts, notePoolPresence, refillProjectPool, resolveWarmConfig, syncClaimedBoxToBase, warmPoolEnabled } from '../platform/services/warm-pool';
+import { resolveAppsEnabled } from './apps-config';
 import { rehydrateSessionChat } from './legacy-migration-rehydrate';
 import { ProvisionTimeline } from '../platform/services/provision-timeline';
 import { getProvider } from '../platform/providers';
@@ -348,10 +349,11 @@ function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole |
     effective_project_role: access?.effectiveRole ?? null,
     dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
     // Single source of truth for the experimental [[apps]] surface. Threading
-    // it onto the project payload lets the web client gate the Apps section +
-    // sidebar shortcut off the SAME platform flag that gates the API routes —
-    // flip KORTIX_APPS_EXPERIMENTAL on the API and both light up together.
-    apps_enabled: config.KORTIX_APPS_EXPERIMENTAL,
+    // the EFFECTIVE per-project value onto the project payload lets the web
+    // client gate the Apps section + sidebar shortcut off the SAME gate that
+    // gates the API routes. Per-project override (metadata.apps_enabled) wins;
+    // KORTIX_APPS_EXPERIMENTAL is the default for projects that haven't chosen.
+    apps_enabled: resolveAppsEnabled(row.metadata),
     // Warm sandbox pool (Customize → Sandbox). `warm_pool` is the effective
     // per-project config (UI value over the operator default); `warm_pool_available`
     // gates the UI control off the platform feature flag.
@@ -5352,24 +5354,34 @@ projectsApp.post('/:projectId/triggers/:slug/fire', async (c) => {
 // deploys on manifest drift; the routes below give the UI and CLI a
 // manual path.
 //
-// EXPERIMENTAL. The entire surface is gated behind
-// `KORTIX_APPS_EXPERIMENTAL`. When off (the default), every /apps route
-// returns 404 and the sweep skips every project. This middleware short-
-// circuits before any of the handlers below run.
+// EXPERIMENTAL. The entire surface is gated PER PROJECT
+// (projects.metadata.apps_enabled, defaulting to KORTIX_APPS_EXPERIMENTAL).
+// When off for a project, every /apps route returns 404 and the sweep skips
+// it. This middleware loads the project's gate and short-circuits before any
+// of the handlers below run.
+
+const APPS_DISABLED_BODY = {
+  error: 'kortix [[apps]] is experimental and disabled for this project. Enable it in Customize → Settings (or set KORTIX_APPS_EXPERIMENTAL=true to default it on).',
+} as const;
+
+async function projectAppsEnabled(projectId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return resolveAppsEnabled(row?.metadata);
+}
 
 projectsApp.use('/:projectId/apps/*', async (c, next) => {
-  if (!config.KORTIX_APPS_EXPERIMENTAL) {
-    return c.json({
-      error: 'kortix [[apps]] is experimental and disabled. Start the API with KORTIX_APPS_EXPERIMENTAL=true to enable.',
-    }, 404);
+  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
+    return c.json(APPS_DISABLED_BODY, 404);
   }
   await next();
 });
 projectsApp.use('/:projectId/apps', async (c, next) => {
-  if (!config.KORTIX_APPS_EXPERIMENTAL) {
-    return c.json({
-      error: 'kortix [[apps]] is experimental and disabled. Start the API with KORTIX_APPS_EXPERIMENTAL=true to enable.',
-    }, 404);
+  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
+    return c.json(APPS_DISABLED_BODY, 404);
   }
   await next();
 });
@@ -6111,6 +6123,36 @@ projectsApp.patch('/:projectId/warm-pool', async (c) => {
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
   void refillProjectPool(projectId).catch(() => {});
+  return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
+});
+
+// PATCH /v1/projects/:projectId/apps-config
+// Per-project toggle for the experimental [[apps]] deployment surface
+// (Customize → Settings). DB-only — stored in projects.metadata.apps_enabled,
+// never in kortix.toml. Overrides the operator default KORTIX_APPS_EXPERIMENTAL.
+// `enabled: null` clears the override and falls back to the operator default.
+projectsApp.patch('/:projectId/apps-config', async (c) => {
+  const projectId = c.req.param('projectId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
+  const nextMeta: Record<string, unknown> = { ...meta };
+  if (body.enabled === null) {
+    delete nextMeta.apps_enabled;
+  } else if (typeof body.enabled === 'boolean') {
+    nextMeta.apps_enabled = body.enabled;
+  } else {
+    return c.json({ error: 'enabled must be a boolean or null' }, 400);
+  }
+
+  const [row] = await db
+    .update(projects)
+    .set({ metadata: nextMeta, updatedAt: new Date() })
+    .where(eq(projects.projectId, projectId))
+    .returning();
+  if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 });
 

@@ -16,8 +16,9 @@ export interface KortixProject {
   updated_at: string;
   project_role?: ProjectRole | null;
   effective_project_role?: ProjectRole | null;
-  /** Whether the experimental [[apps]] deployment surface is enabled
-   *  platform-wide (driven by the API's KORTIX_APPS_EXPERIMENTAL flag). */
+  /** Whether the experimental [[apps]] deployment surface is enabled for THIS
+   *  project. Per-project override (Customize → Settings) over the operator
+   *  default KORTIX_APPS_EXPERIMENTAL. */
   apps_enabled?: boolean;
   /** Effective per-project warm sandbox pool config (Customize → Sandbox). */
   warm_pool?: { enabled: boolean; size: number };
@@ -2127,6 +2128,18 @@ export async function updateProject(
 ) {
   return unwrap(
     await backendApi.patch<KortixProject>(`/projects/${projectId}`, input),
+  );
+}
+
+/** Toggle the experimental [[apps]] surface for a project (Customize →
+ *  Settings). Pass `enabled: null` to clear the override and fall back to the
+ *  operator default. */
+export async function updateAppsConfig(
+  projectId: string,
+  input: { enabled: boolean | null },
+) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/apps-config`, input),
   );
 }
 
