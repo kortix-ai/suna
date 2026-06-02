@@ -44,9 +44,8 @@ import {
   getDefaultManagedBackend,
 } from './git-backends';
 import { buildStarterFiles } from './starter';
-import { uploadOpencodeArchive } from './legacy-migration-storage';
+import { createOpencodeArchiveUploadUrl, downloadOpencodeArchive } from './legacy-migration-storage';
 import {
-  execOnLegacyVm,
   execOnLegacyVmOrThrow,
   RESOLVE_WS_OC_SH,
   resolveLegacyVmEndpoint,
@@ -87,22 +86,44 @@ function gitRefFromProgress(ctx: MigrationContext): GitConnectionRef {
 
 export interface LegacyOpencodeSession { id: string; title: string }
 
-async function enumerateOpencodeSessions(ctx: MigrationContext): Promise<{ sessions: LegacyOpencodeSession[]; archiveB64: string | null }> {
+async function enumerateOpencodeSessions(ctx: MigrationContext): Promise<{ sessions: LegacyOpencodeSession[]; archivePath: string | null }> {
   const endpoint = await resolveLegacyVmEndpoint(ctx.legacy);
+  const { uploadUrl, path } = await createOpencodeArchiveUploadUrl(ctx.legacy.sandboxId);
+
+  // The VM tars the opencode store and streams it STRAIGHT to storage via a
+  // signed PUT (curl -T). No more piping the whole (100s-of-MB) tarball back as
+  // base64 through the toolbox exec stdout — that buffered the entire store in
+  // memory and dropped/empty'd at size. We only get back a short status line.
   const script = [
+    'set -uo pipefail',
     RESOLVE_WS_OC_SH,
-    '[ -z "$OC" ] && exit 0',
-    'cd "$OC" 2>/dev/null && tar czf - opencode.db opencode.db-wal opencode.db-shm 2>/dev/null | base64 | tr -d "\\n"',
+    '{ [ -z "$OC" ] || [ ! -f "$OC/opencode.db" ]; } && { echo OC_MISSING; exit 0; }',
+    'TMP="$(mktemp)"',
+    // wal/shm may be absent — 2>/dev/null swallows that; opencode.db is always archived.
+    'tar czf "$TMP" -C "$OC" opencode.db opencode.db-wal opencode.db-shm 2>/dev/null || true',
+    `code=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT -H 'Content-Type: application/gzip' -H 'x-upsert: true' -T "$TMP" ${sq(uploadUrl)})`,
+    'bytes=$(stat -c %s "$TMP" 2>/dev/null || echo 0)',
+    'rm -f "$TMP"',
+    'echo "UPLOAD code=$code bytes=$bytes"',
+    '[ "$code" = "200" ]',
   ].join('\n');
-  const out = await execOnLegacyVm(endpoint, `bash -c ${sq(script)}`, 180);
-  const b64 = out.stdout.trim();
-  if (!b64) {
+  const out = await execOnLegacyVmOrThrow(endpoint, `bash -c ${sq(script)}`, 600);
+  if (out.includes('OC_MISSING')) {
     ctx.log('extract: no opencode.db on machine — nothing to enumerate');
-    return { sessions: [], archiveB64: null };
+    return { sessions: [], archivePath: null };
+  }
+  ctx.log('extract: uploaded opencode archive to storage', { summary: out.trim().split('\n').pop(), path });
+
+  // Pull the archive back API-side to enumerate sessions — the API<->storage
+  // path handles any size, so the fragile exec transport is fully out of the way.
+  const tarball = await downloadOpencodeArchive(ctx.legacy.sandboxId);
+  if (!tarball) {
+    ctx.log('extract: archive not found in storage after upload — enumerated 0 sessions');
+    return { sessions: [], archivePath: path };
   }
   const dir = mkdtempSync(join(tmpdir(), 'kortix-oc-'));
   try {
-    writeFileSync(join(dir, 'oc.tar.gz'), Buffer.from(b64, 'base64'));
+    writeFileSync(join(dir, 'oc.tar.gz'), tarball);
     const untar = Bun.spawnSync(['tar', 'xzf', join(dir, 'oc.tar.gz'), '-C', dir]);
     if (untar.exitCode !== 0) throw new Error(`extract: failed to unpack opencode.db: ${new TextDecoder().decode(untar.stderr)}`);
     const db = new Database(join(dir, 'opencode.db'), { readonly: true });
@@ -110,7 +131,7 @@ async function enumerateOpencodeSessions(ctx: MigrationContext): Promise<{ sessi
       const rows = db.query(
         "select id, coalesce(nullif(title,''), slug, id) as title from session where parent_id is null and time_archived is null order by time_updated desc",
       ).all() as Array<{ id: string; title: string }>;
-      return { sessions: rows.map((r) => ({ id: r.id, title: String(r.title).slice(0, 200) })), archiveB64: b64 };
+      return { sessions: rows.map((r) => ({ id: r.id, title: String(r.title).slice(0, 200) })), archivePath: path };
     } finally {
       db.close();
     }
@@ -127,12 +148,11 @@ export class MigrationStepNotImplemented extends Error {
 }
 
 export async function extractStep(ctx: MigrationContext): Promise<void> {
+  // The opencode store is uploaded straight to storage from the VM inside
+  // enumerateOpencodeSessions (signed PUT), so there's no archive to re-upload
+  // here — we just record the session list + the object path.
   if (!Array.isArray(ctx.progress.opencode_sessions)) {
-    const { sessions, archiveB64 } = await enumerateOpencodeSessions(ctx);
-    let archivePath: string | null = null;
-    if (archiveB64) {
-      archivePath = await uploadOpencodeArchive(ctx.legacy.sandboxId, Buffer.from(archiveB64, 'base64'));
-    }
+    const { sessions, archivePath } = await enumerateOpencodeSessions(ctx);
     await ctx.checkpoint({ opencode_sessions: sessions, opencode_archive_path: archivePath });
     ctx.log('extract: enumerated opencode sessions', { count: sessions.length, archived_to: archivePath ?? 'none' });
   }
