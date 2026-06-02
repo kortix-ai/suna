@@ -2,26 +2,19 @@
  * Projects screen — post-login landing, ported from web's /projects page.
  *
  * Repo-first model: lists projects for the current account (GET /accounts +
- * GET /projects?account_id=). Mirrors the web layout (title, subtitle, search,
- * cards, loading/empty/no-results/error states).
+ * GET /projects?account_id=). A compact header (account switcher + New + the
+ * account menu) stays fixed; the title, search and list scroll together.
  */
 
 import * as React from 'react';
-import {
-  View,
-  ScrollView,
-  RefreshControl,
-  TextInput,
-  Pressable,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
+import { View, ScrollView, RefreshControl, TextInput, Pressable, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, X, FolderPlus, ChevronDown, Plus, AlertCircle } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
+import { Icon } from '@/components/ui/icon';
 import { Avatar } from '@/components/ui/Avatar';
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import { useToast } from '@/components/ui/toast-provider';
@@ -68,8 +61,6 @@ export default function ProjectsScreen() {
   const accountsQuery = useAccounts(!!user);
   const archive = useArchiveProject();
 
-  // Reconcile the persisted account against what the user actually has access
-  // to; fall back to the first account (mirrors web).
   React.useEffect(() => {
     const accounts = accountsQuery.data;
     if (!accounts) return;
@@ -100,14 +91,22 @@ export default function ProjectsScreen() {
   const showEmpty = !!activeAccountId && !loading && !projectsQuery.isError && total === 0;
   const showNoResults =
     !!activeAccountId && !loading && !projectsQuery.isError && total > 0 && filtered.length === 0;
+  const showSearch = total > 3;
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const subtle = isDark ? '#a1a1aa' : '#71717a';
   const faint = isDark ? '#52525b' : '#a1a1aa';
   const cardBg = isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF';
-  const border = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const cardBorder = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.09)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const cardBorder = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)';
+  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.035)';
+  const skeletonBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.055)';
+  const cardShadow = {
+    shadowColor: '#000',
+    shadowOpacity: isDark ? 0 : 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: isDark ? 0 : 1,
+  } as const;
 
   const openProject = React.useCallback(
     (p: KortixProject) => router.push(`/projects/${p.project_id}`),
@@ -166,8 +165,6 @@ export default function ProjectsScreen() {
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
-      // Refetch accounts first (the list is gated on having an account); once
-      // it resolves, the active-account effect re-enables the projects query.
       const tasks: Promise<unknown>[] = [accountsQuery.refetch()];
       if (activeAccountId) tasks.push(projectsQuery.refetch());
       await Promise.all(tasks);
@@ -194,18 +191,12 @@ export default function ProjectsScreen() {
     <View style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Header */}
+      {/* Fixed header */}
       <View
-        style={{
-          paddingTop: insets.top + 8,
-          paddingHorizontal: 20,
-          paddingBottom: 8,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
+        className="flex-row items-center justify-between"
+        style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 10 }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+        <View className="min-w-0 flex-1 flex-row items-center" style={{ gap: 12 }}>
           <KortixLogo variant="symbol" size={28} color={isDark ? 'dark' : 'light'} />
           {!!activeAccount && (
             <Pressable
@@ -214,34 +205,31 @@ export default function ProjectsScreen() {
                 setAccountSheetOpen(true);
               }}
               disabled={accountCount < 2}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 }}
+              className="shrink flex-row items-center"
+              style={{ gap: 4 }}
             >
-              <Text numberOfLines={1} style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: subtle, maxWidth: 160 }}>
+              <Text numberOfLines={1} className="font-roobert-medium text-[13px] text-muted-foreground" style={{ maxWidth: 150 }}>
                 {activeAccount.name}
               </Text>
-              {accountCount > 1 && <ChevronDown size={14} color={subtle} />}
+              {accountCount > 1 && <Icon as={ChevronDown} size={14} className="text-muted-foreground" strokeWidth={2.2} />}
             </Pressable>
           )}
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+
+        <View className="flex-row items-center" style={{ gap: 8 }}>
           {canCreate && (
             <Pressable
               onPress={() => {
                 haptics.selection();
                 setNewProjectOpen(true);
               }}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                paddingHorizontal: 14,
-                height: 36,
-                borderRadius: 9999,
-                backgroundColor: theme.primary,
-              }}
+              className="flex-row items-center rounded-full active:opacity-90"
+              style={{ gap: 6, paddingHorizontal: 14, height: 36, backgroundColor: theme.primary }}
             >
-              <Plus size={16} color={theme.primaryForeground} />
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>New</Text>
+              <Icon as={Plus} size={16} color={theme.primaryForeground} strokeWidth={2.4} />
+              <Text className="font-roobert-medium text-[13px]" style={{ color: theme.primaryForeground }}>
+                New
+              </Text>
             </Pressable>
           )}
           <Pressable
@@ -249,196 +237,159 @@ export default function ProjectsScreen() {
               haptics.selection();
               setAccountMenuOpen(true);
             }}
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 17,
-              backgroundColor: isDark ? '#1f1f22' : '#ECECEC',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+            className="items-center justify-center rounded-full active:opacity-85"
+            style={{ width: 34, height: 34, backgroundColor: isDark ? '#1f1f22' : '#ECECEC' }}
           >
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: fg }}>
+            <Text className="font-roobert-semibold text-[14px] text-foreground">
               {(user?.email?.trim()?.[0] || '?').toUpperCase()}
             </Text>
           </Pressable>
         </View>
       </View>
 
-      {/* Title + subtitle */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 6 }}>
-        <Text style={{ fontSize: 28, lineHeight: 36, fontFamily: 'Roobert-SemiBold', color: fg }}>Projects</Text>
-        <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: subtle, marginTop: 4 }}>
-          Your workspaces in one place. Pick up where you left off.
-        </Text>
-      </View>
-
-      {/* Search */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4 }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            backgroundColor: inputBg,
-            borderRadius: 9999,
-            paddingHorizontal: 16,
-            height: 42,
-          }}
-        >
-          <Search size={16} color={faint} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search projects"
-            placeholderTextColor={faint}
-            style={{ flex: 1, marginLeft: 8, fontSize: 15, fontFamily: 'Roobert', color: fg }}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-          {query.length > 0 && (
-            <Pressable onPress={() => setQuery('')} hitSlop={8}>
-              <X size={16} color={faint} />
-            </Pressable>
-          )}
-        </View>
-      </View>
-
-      {/* List */}
       <ScrollView
         style={{ flex: 1 }}
         alwaysBounceVertical
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={subtle}
-          />
-        }
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={subtle} />}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: 6, paddingBottom: 48 }}
       >
-        {loading && (
-          <View style={{ padding: 40, alignItems: 'center' }}>
-            <ActivityIndicator size="large" color={subtle} />
-          </View>
-        )}
+        {/* Title */}
+        <Text className="font-roobert-semibold text-foreground" style={{ fontSize: 28, lineHeight: 36 }}>
+          Projects
+        </Text>
+        <Text className="mt-1 font-roobert text-[14px] text-muted-foreground">
+          Your workspaces in one place. Pick up where you left off.
+        </Text>
 
-        {projectsQuery.isError && !loading && (
+        {/* Search — only once there's enough to search */}
+        {showSearch && (
           <View
-            style={{
-              borderRadius: 16,
-              borderWidth: 1,
-              borderColor: isDark ? 'rgba(248,113,113,0.25)' : 'rgba(220,38,38,0.25)',
-              padding: 16,
-              alignItems: 'center',
-            }}
+            className="mt-4 flex-row items-center rounded-2xl"
+            style={{ height: 44, paddingHorizontal: 14, backgroundColor: inputBg, borderWidth: 1, borderColor: cardBorder }}
           >
-            <AlertCircle size={20} color={isDark ? '#f87171' : '#dc2626'} style={{ marginBottom: 8 }} />
-            <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg, marginBottom: 4 }}>
-              Failed to load projects
-            </Text>
-            <Text
-              style={{ fontSize: 13, fontFamily: 'Roobert', color: subtle, textAlign: 'center', marginBottom: 12 }}
-            >
-              {(projectsQuery.error as Error)?.message ?? 'Something went wrong'}
-            </Text>
-            <Pressable
-              onPress={() => projectsQuery.refetch()}
-              style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 9999, borderWidth: 1, borderColor: border }}
-            >
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {showEmpty && (
-          <View style={{ padding: 40, alignItems: 'center' }}>
-            <FolderPlus
-              size={40}
-              color={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}
-              style={{ marginBottom: 12 }}
+            <Icon as={Search} size={16} className="text-muted-foreground" strokeWidth={2.2} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search projects"
+              placeholderTextColor={faint}
+              className="ml-2 flex-1"
+              style={{ fontSize: 15, fontFamily: 'Roobert', color: fg }}
+              returnKeyType="search"
+              autoCorrect={false}
+              autoCapitalize="none"
             />
-            <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: subtle, marginBottom: 4 }}>
-              No projects yet
-            </Text>
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, textAlign: 'center' }}>
-              A project is a dedicated space for one company, product, or idea.
-            </Text>
-            {canCreate && (
-              <Pressable
-                onPress={() => {
-                  haptics.selection();
-                  setNewProjectOpen(true);
-                }}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
-                  marginTop: 16,
-                  paddingHorizontal: 16,
-                  height: 40,
-                  borderRadius: 9999,
-                  backgroundColor: theme.primary,
-                }}
-              >
-                <Plus size={16} color={theme.primaryForeground} />
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>
-                  Create your first project
-                </Text>
+            {query.length > 0 && (
+              <Pressable onPress={() => setQuery('')} hitSlop={8}>
+                <Icon as={X} size={16} className="text-muted-foreground" strokeWidth={2.2} />
               </Pressable>
             )}
           </View>
         )}
 
-        {showNoResults && (
-          <View style={{ padding: 40, alignItems: 'center' }}>
-            <Search size={32} color={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'} style={{ marginBottom: 12 }} />
-            <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: subtle, marginBottom: 4 }}>
-              No matches for "{query.trim()}"
-            </Text>
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, textAlign: 'center' }}>
-              Try a different search term
-            </Text>
-          </View>
-        )}
+        <View className="mt-5">
+          {/* Loading skeletons */}
+          {loading &&
+            [0, 1, 2, 3].map((i) => (
+              <View
+                key={i}
+                className="mb-3 flex-row items-center rounded-2xl border"
+                style={{ paddingHorizontal: 16, paddingVertical: 16, backgroundColor: cardBg, borderColor: cardBorder }}
+              >
+                <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: skeletonBg }} />
+                <View className="ml-3.5 flex-1">
+                  <View style={{ height: 13, width: '55%', borderRadius: 6, backgroundColor: skeletonBg }} />
+                  <View style={{ height: 11, width: '32%', borderRadius: 6, backgroundColor: skeletonBg, marginTop: 9 }} />
+                </View>
+              </View>
+            ))}
 
-        {filtered.map((project) => (
-          <Pressable
-            key={project.project_id}
-            onPress={() => openProject(project)}
-            onLongPress={() => onCardLongPress(project)}
-            delayLongPress={300}
-            style={({ pressed }) => ({
-              backgroundColor: cardBg,
-              borderRadius: 18,
-              borderWidth: 1,
-              borderColor: cardBorder,
-              paddingVertical: 16,
-              paddingHorizontal: 16,
-              marginBottom: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              shadowColor: '#000',
-              shadowOpacity: isDark ? 0 : 0.05,
-              shadowRadius: 10,
-              shadowOffset: { width: 0, height: 3 },
-              elevation: isDark ? 0 : 1,
-              opacity: pressed ? 0.92 : 1,
-              transform: [{ scale: pressed ? 0.99 : 1 }],
-            })}
-          >
-            <Avatar variant="custom" size={40} fallbackText={project.name} />
-            <View style={{ flex: 1, minWidth: 0, marginLeft: 14 }}>
-              <Text numberOfLines={1} style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>
-                {project.name}
+          {/* Error */}
+          {projectsQuery.isError && !loading && (
+            <View
+              className="items-center rounded-2xl border"
+              style={{ padding: 20, borderColor: isDark ? 'rgba(248,113,113,0.25)' : 'rgba(220,38,38,0.25)' }}
+            >
+              <Icon as={AlertCircle} size={22} color={isDark ? '#f87171' : '#dc2626'} />
+              <Text className="mt-2 font-roobert-medium text-[15px] text-foreground">Couldn't load projects</Text>
+              <Text className="mt-1 text-center font-roobert text-[13px] text-muted-foreground">
+                {(projectsQuery.error as Error)?.message ?? 'Check your connection and try again.'}
               </Text>
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: subtle, marginTop: 3 }}>
-                Updated {relativeTime(project.updated_at)}
-              </Text>
+              <Pressable
+                onPress={() => onRefresh()}
+                className="mt-3 rounded-full border active:opacity-80"
+                style={{ paddingHorizontal: 18, paddingVertical: 9, borderColor: cardBorder }}
+              >
+                <Text className="font-roobert-medium text-[13px] text-foreground">Retry</Text>
+              </Pressable>
             </View>
-          </Pressable>
-        ))}
+          )}
+
+          {/* Empty */}
+          {showEmpty && (
+            <View className="items-center" style={{ paddingVertical: 56 }}>
+              <View
+                className="items-center justify-center rounded-2xl"
+                style={{ width: 56, height: 56, backgroundColor: inputBg, marginBottom: 16 }}
+              >
+                <Icon as={FolderPlus} size={26} className="text-muted-foreground" strokeWidth={1.8} />
+              </View>
+              <Text className="font-roobert-semibold text-[17px] text-foreground">No projects yet</Text>
+              <Text className="mt-1.5 text-center font-roobert text-[13px] text-muted-foreground" style={{ maxWidth: 260 }}>
+                A project is a dedicated space for one company, product, or idea.
+              </Text>
+              {canCreate && (
+                <Pressable
+                  onPress={() => {
+                    haptics.selection();
+                    setNewProjectOpen(true);
+                  }}
+                  className="mt-5 flex-row items-center rounded-full active:opacity-90"
+                  style={{ gap: 6, paddingHorizontal: 18, height: 44, backgroundColor: theme.primary }}
+                >
+                  <Icon as={Plus} size={16} color={theme.primaryForeground} strokeWidth={2.4} />
+                  <Text className="font-roobert-medium text-[14px]" style={{ color: theme.primaryForeground }}>
+                    Create your first project
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          )}
+
+          {/* No results */}
+          {showNoResults && (
+            <View className="items-center" style={{ paddingVertical: 48 }}>
+              <Icon as={Search} size={28} className="text-muted-foreground/40" strokeWidth={1.8} />
+              <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">
+                No matches for “{query.trim()}”
+              </Text>
+              <Text className="mt-1 font-roobert text-[13px] text-muted-foreground">Try a different search term</Text>
+            </View>
+          )}
+
+          {/* Cards */}
+          {filtered.map((project) => (
+            <Pressable
+              key={project.project_id}
+              onPress={() => openProject(project)}
+              onLongPress={() => onCardLongPress(project)}
+              delayLongPress={300}
+              className="mb-3 flex-row items-center rounded-2xl border active:opacity-90"
+              style={{ paddingHorizontal: 16, paddingVertical: 14, backgroundColor: cardBg, borderColor: cardBorder, ...cardShadow }}
+            >
+              <Avatar variant="custom" size={40} fallbackText={project.name} />
+              <View className="ml-3.5 flex-1">
+                <Text numberOfLines={1} className="font-roobert-semibold text-[15px] text-foreground">
+                  {project.name}
+                </Text>
+                <Text numberOfLines={1} className="mt-0.5 font-roobert text-[13px] text-muted-foreground">
+                  Updated {relativeTime(project.updated_at)}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
       </ScrollView>
 
       <AccountSwitcherSheet
