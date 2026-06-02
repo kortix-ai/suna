@@ -82,6 +82,8 @@ import { SetupWizard } from '@/components/setup/SetupWizard';
 import { InstanceOnboarding } from '@/components/setup/InstanceOnboarding';
 import { ProvisioningProgress } from '@/components/provisioning/ProvisioningProgress';
 import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
+import { useProjectSessions } from '@/lib/projects/hooks';
+import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
 import {
   Eye, EyeOff, RefreshCw, Upload, Image, FolderPlus, LayoutGrid, List,
   FileText, Copy, Pencil, Trash2,
@@ -420,6 +422,63 @@ function SessionListItem({
             </TouchableOpacity>
           </View>
         )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Project session list item (repo-first model) ──────────────────────────
+// The project detail drawer lists the project's sessions (GET /projects/:id/
+// sessions), each its own branch + sandbox. Unlike the OpenCode Session tree
+// these are flat and carry a provisioning status, so we render name + status.
+
+const PROJECT_SESSION_STATUS_META: Record<
+  ProjectSessionStatus,
+  { label: string; dot: string; pending: boolean }
+> = {
+  queued: { label: 'Queued', dot: '#F59E0B', pending: true },
+  branching: { label: 'Branching', dot: '#F59E0B', pending: true },
+  provisioning: { label: 'Provisioning', dot: '#F59E0B', pending: true },
+  running: { label: 'Running', dot: '#22C55E', pending: false },
+  stopped: { label: 'Stopped', dot: '#9CA3AF', pending: false },
+  failed: { label: 'Failed', dot: '#EF4444', pending: false },
+  completed: { label: 'Completed', dot: '#9CA3AF', pending: false },
+};
+
+function ProjectSessionListItem({
+  item,
+  isActive,
+  onPress,
+}: {
+  item: ProjectSession;
+  isActive: boolean;
+  onPress: (s: ProjectSession) => void;
+}) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const mutedColor = isDark ? '#999999' : '#6e6e6e';
+  const meta = PROJECT_SESSION_STATUS_META[item.status] ?? PROJECT_SESSION_STATUS_META.stopped;
+  const title = item.name || item.branch_name || 'New session';
+
+  return (
+    <TouchableOpacity
+      onPress={() => onPress(item)}
+      className={`rounded-2xl px-3 py-2.5 mb-1 ${isActive ? 'bg-muted' : ''}`}
+      activeOpacity={0.6}
+    >
+      <View className="flex-row items-center">
+        <View className="h-2 w-2 rounded-full mr-2.5" style={{ backgroundColor: meta.dot }} />
+        <Text
+          className={`flex-1 text-sm ${isActive ? 'text-foreground font-semibold' : 'text-foreground'}`}
+          numberOfLines={1}
+        >
+          {title}
+        </Text>
+        {meta.pending ? (
+          <ActivityIndicator size="small" color={mutedColor} style={{ marginLeft: 8 }} />
+        ) : item.status !== 'running' ? (
+          <Text className="text-[11px] text-muted-foreground ml-2">{meta.label}</Text>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -818,6 +877,14 @@ export default function ProjectSessionScreen() {
   }, []);
 
   // Data
+  // Repo-first project sessions (web model): GET /projects/:id/sessions.
+  // This is what the left drawer lists for the project detail screen.
+  const { data: projectSessions = [], isLoading: projectSessionsLoading } =
+    useProjectSessions(projectId);
+  const [activeProjectSessionId, setActiveProjectSessionId] = useState<string | null>(null);
+
+  // Legacy OpenCode sessions (global sandbox) — still backs tabs/overview until
+  // the per-session sandbox wiring lands (Stage 4-5).
   const { data: sessions = [], isLoading: sessionsLoading } =
     useSessions(sandboxUrl);
   const { data: kortixProjects } = useKortixProjects(sandboxUrl);
@@ -956,6 +1023,15 @@ export default function ProjectSessionScreen() {
     navigateToSession(session.id);
     setDrawerOpen(false);
   }, [navigateToSession]);
+
+  // Open a project session from the drawer. Stage 2 marks it active + closes the
+  // drawer; Stage 4-5 will switch the SandboxContext to ps.sandbox_url and open
+  // ps.opencode_session_id so the middle pane renders that session's chat.
+  const handleOpenProjectSession = useCallback((ps: ProjectSession) => {
+    haptics.tap();
+    setActiveProjectSessionId(ps.session_id);
+    setDrawerOpen(false);
+  }, []);
 
   const handleProjectPress = useCallback((project: KortixProject) => {
     const pageId = `page:project:${project.id}`;
@@ -1286,8 +1362,8 @@ export default function ProjectSessionScreen() {
           <AnimatedChevron expanded={sessionsExpanded} color={mutedColor} size={16} />
         </TouchableOpacity>
 
-        {/* Session list + Archived */}
-        {sessionsLoading ? (
+        {/* Session list — the project's repo-first sessions */}
+        {projectSessionsLoading ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="small" color={mutedColor} />
           </View>
@@ -1297,75 +1373,17 @@ export default function ProjectSessionScreen() {
             contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 20 }}
           >
             <AnimatedCollapsible expanded={sessionsExpanded}>
-              {/* Archived section (collapsible) */}
-              {archivedSessions.length > 0 && (
-                <>
-                  <TouchableOpacity
-                    onPress={() => { haptics.selection(); setArchivedExpanded((v) => !v); }}
-                    className="flex-row items-center justify-between px-3 py-2.5"
-                    activeOpacity={0.6}
-                  >
-                    <View className="flex-row items-center">
-                      <Ionicons name="archive-outline" size={16} color={mutedColor} />
-                      <Text className="text-sm ml-2 text-muted-foreground">Archived</Text>
-                    </View>
-                    <View className="flex-row items-center">
-                      <View className="bg-muted rounded-full px-2 py-0.5 mr-1">
-                        <Text className="text-xs text-muted-foreground">{archivedSessions.length}</Text>
-                      </View>
-                      <AnimatedChevron expanded={archivedExpanded} color={mutedColor} size={14} />
-                    </View>
-                  </TouchableOpacity>
-
-                  <AnimatedCollapsible expanded={archivedExpanded}>
-                    {archivedSessions.map((item) => (
-                      <View key={item.id} className="flex-row items-center rounded-lg px-3 py-2.5 mb-0.5">
-                        <Text
-                          className="flex-1 text-sm text-muted-foreground"
-                          numberOfLines={1}
-                        >
-                          {item.title || 'New Session'}
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() => { haptics.tap(); handleUnarchive(item.id); }}
-                          className="p-1.5 mr-1"
-                          hitSlop={6}
-                          activeOpacity={0.6}
-                        >
-                          <Ionicons name="archive-outline" size={16} color={mutedColor} />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => { haptics.medium(); handleDelete(item.id); }}
-                          className="p-1.5"
-                          hitSlop={6}
-                          activeOpacity={0.6}
-                        >
-                          <Ionicons name="trash-outline" size={16} color={mutedColor} />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                  </AnimatedCollapsible>
-                </>
-              )}
-
-              {/* Active sessions — parent/child tree (matches web f1aea74) */}
-              {rootSessions.length === 0 ? (
+              {projectSessions.length === 0 ? (
                 <View className="items-center py-8">
                   <Text className="text-sm text-muted-foreground">No sessions yet</Text>
                 </View>
               ) : (
-                rootSessions.map((item) => (
-                  <SessionGroup
-                    key={item.id}
-                    session={item}
-                    allSessions={activeSessions}
-                    childMap={childMap}
-                    expandedNodes={expandedSessionNodes}
-                    onToggleExpand={toggleSessionExpand}
-                    activeSessionId={activeSessionId}
-                    onPress={handleSessionPress}
-                    onArchive={handleArchive}
-                    onDelete={handleDelete}
+                projectSessions.map((ps) => (
+                  <ProjectSessionListItem
+                    key={ps.session_id}
+                    item={ps}
+                    isActive={ps.session_id === activeProjectSessionId}
+                    onPress={handleOpenProjectSession}
                   />
                 ))
               )}
@@ -1426,29 +1444,20 @@ export default function ProjectSessionScreen() {
   }, [
     isDark,
     insets,
-    activeSessions,
-    rootSessions,
-    childMap,
-    expandedSessionNodes,
-    toggleSessionExpand,
-    archivedSessions,
-    sessionsLoading,
+    projectSessions,
+    projectSessionsLoading,
+    activeProjectSessionId,
+    handleOpenProjectSession,
     sessionsExpanded,
-    archivedExpanded,
     projectsExpanded,
     sortedProjects,
     handleProjectPress,
-    activeSessionId,
     userDisplayName,
     userEmail,
     planLabel,
     hasUpdate,
     handleUserMenuOpen,
     handleNewSession,
-    handleSessionPress,
-    handleArchive,
-    handleUnarchive,
-    handleDelete,
   ]);
 
   const renderRightDrawerContent = useCallback(
