@@ -1,187 +1,1217 @@
 /**
- * Project detail — three-pane single-project view (web /projects/[id] + the
- * app's existing drawer experience):
- *   LEFT drawer  — project + its sessions (repo-first), New session, Search.
- *   MIDDLE       — a composer to start a session (the session itself opens in
- *                  the home runtime when run).
- *   RIGHT drawer — the existing pages menu (RightDrawerContent), to arrange later.
+ * Home — Main app screen for Kortix Computer Mobile.
  *
- * Uses react-native-drawer-layout (same as app/home.tsx). Sessions come from the
- * repo-first backend (GET/POST /projects/{id}/sessions); opening a running one
- * switches the runtime to its sandbox and hands off to the chat in app/home.tsx.
+ * Uses a drawer layout:
+ * - Drawer: Session list + "New Session" button
+ * - Main: Either SessionPage (active session) or DashboardHome (new chat input)
  */
 
-import * as React from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View,
-  ScrollView,
-  Pressable,
   TouchableOpacity,
+  FlatList,
+  ScrollView,
   ActivityIndicator,
-  RefreshControl,
-  TextInput,
-  KeyboardAvoidingView,
+  Alert,
+  Animated,
+  Modal,
   Platform,
+  StyleSheet,
 } from 'react-native';
-import { Drawer } from 'react-native-drawer-layout';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { Menu, GitBranch, ArrowUp, PanelRight } from 'lucide-react-native';
-
+import { captureScreen } from 'react-native-view-shot';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
-import { useToast } from '@/components/ui/toast-provider';
-import { CommandPalette } from '@/components/session/CommandPalette';
-import { RightDrawerContent } from '@/components/session/RightDrawerContent';
-import { useProject, useProjectSessions, useCreateProjectSession } from '@/lib/projects/hooks';
-import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColorScheme } from 'nativewind';
+import { Drawer } from 'react-native-drawer-layout';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BottomSheetModal } from '@gorhom/bottom-sheet';
+
+import { useAuthContext } from '@/contexts';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useSessions } from '@/lib/platform/hooks';
-import { useTabStore } from '@/stores/tab-store';
-import { getSandboxUrl, type SandboxInfo } from '@/lib/platform/client';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useSessions, useCreateSession, useDeleteSession, useArchiveSession, useUnarchiveSession } from '@/lib/platform/hooks';
+import { useSyncStore } from '@/lib/opencode/sync-store';
+import { getAuthToken } from '@/api/config';
+import type { Session } from '@/lib/opencode/types';
+import { SessionPage } from '@/components/session/SessionPage';
+import { SessionChatInput, type PromptOptions, type TrackedMention } from '@/components/session/SessionChatInput';
+import { BottomBar } from '@/components/session/BottomBar';
+import type { BottomBarRef } from '@/components/session/BottomBar';
+import { TabsOverview } from '@/components/session/TabsOverview';
+import { CommandPalette } from '@/components/session/CommandPalette';
+import {
+  useOpenCodeAgents,
+  useOpenCodeModels,
+  useOpenCodeConfig,
+} from '@/lib/opencode/hooks/use-opencode-data';
+import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
+import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
+import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
+import { RightDrawerContent } from '@/components/session/RightDrawerContent';
+import { UserMenuSheet } from '@/components/session/UserMenuSheet';
+import { ViewChangesSheet } from '@/components/session/ViewChangesSheet';
+import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptSheet';
+import { ProjectsPage } from '@/components/pages/ProjectsPage';
+import { ProjectDetailPage } from '@/components/pages/ProjectDetailPage';
+import { useKortixProjects, type KortixProject } from '@/lib/kortix';
+import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { haptics } from '@/lib/haptics';
+import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
+import { PlaceholderPage } from '@/components/session/PlaceholderPage';
+import { UpdatesPage } from '@/components/pages/UpdatesPage';
+import { SSHPage } from '@/components/pages/SSHPage';
+import { RunningServicesPage } from '@/components/pages/RunningServicesPage';
+import { BrowserPage } from '@/components/pages/BrowserPage';
+import { FilesPage } from '@/components/pages/FilesPage';
+import { IntegrationsTabPage } from '@/components/pages/IntegrationsTabPage';
+import { ScheduledTasksTabPage } from '@/components/pages/ScheduledTasksPage';
+import { ApiKeysTabPage } from '@/components/pages/ApiKeysPage';
+import { ChannelsTabPage } from '@/components/pages/ChannelsPage';
+import { TunnelTabPage } from '@/components/pages/TunnelPage';
+import { WorkspacePage, type WorkspacePageRef } from '@/components/pages/WorkspacePage';
+import { AgentBrowserPage } from '@/components/pages/AgentBrowserPage';
+import type { FilesPageRef } from '@/components/pages/FilesPage';
+import { SecretsPage } from '@/components/pages/SecretsPage';
+import { MemoryPage } from '@/components/pages/MemoryPage';
+import { LlmProvidersPage } from '@/components/pages/LlmProvidersPage';
+import { TerminalPage } from '@/components/pages/TerminalPage';
+import { SetupWizard } from '@/components/setup/SetupWizard';
+import { InstanceOnboarding } from '@/components/setup/InstanceOnboarding';
+import { ProvisioningProgress } from '@/components/provisioning/ProvisioningProgress';
+import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
+import {
+  Eye, EyeOff, RefreshCw, Upload, Image, FolderPlus, LayoutGrid, List,
+  FileText, Copy, Pencil, Trash2,
+  Bot, Sparkles, Terminal, FolderOpen, Plug, Settings,
+  ChevronsUpDown,
+} from 'lucide-react-native';
+import type { BottomBarMenuItem } from '@/components/session/BottomBar';
+import { log } from '@/lib/logger';
+import { KortixLogo } from '@/components/ui/KortixLogo';
+import { PageHeader } from '@/components/ui/page-header';
+import { useTabScreenshotStore, validatePersistedScreenshots } from '@/stores/tab-screenshot-store';
 
-function ago(iso?: string) {
-  if (!iso) return '';
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
+// Safe import of react-native-view-shot — requires native rebuild.
+// Returns null if the native module isn't available yet.
+let captureRef: ((ref: any, opts?: any) => Promise<string>) | null = null;
+let ViewShotComponent: React.ComponentType<any> | null = null;
+try {
+  const viewShot = require('react-native-view-shot');
+  captureRef = viewShot.captureRef;
+  ViewShotComponent = viewShot.default;
+} catch {
+  // Native module not available — screenshots disabled until rebuild
 }
 
-function statusMeta(status: ProjectSessionStatus): { label: string; color: string } {
-  switch (status) {
-    case 'running':
-      return { label: 'running', color: '#34d399' };
-    case 'queued':
-    case 'branching':
-    case 'provisioning':
-      return { label: 'provisioning', color: '#f59e0b' };
-    case 'failed':
-      return { label: 'failed', color: '#ef4444' };
-    default:
-      return { label: status, color: '#a1a1aa' };
-  }
+const THEME_PREFERENCE_KEY = '@theme_preference';
+type ThemePreference = 'light' | 'dark' | 'system';
+
+// ─── Animated collapsible wrapper ────────────────────────────────────────────
+
+function AnimatedCollapsible({
+  expanded,
+  children,
+}: {
+  expanded: boolean;
+  children: React.ReactNode;
+}) {
+  const [contentHeight, setContentHeight] = useState(0);
+  const anim = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: expanded ? 1 : 0,
+      duration: 250,
+      useNativeDriver: false,
+    }).start();
+  }, [expanded, anim]);
+
+  const animatedHeight = contentHeight > 0
+    ? anim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, contentHeight],
+      })
+    : undefined;
+
+  const opacity = anim.interpolate({
+    inputRange: [0, 0.3, 1],
+    outputRange: [0, 0, 1],
+  });
+
+  return (
+    <View>
+      {/* Hidden measurer — always present, unconstrained by animated height */}
+      <View
+        style={{ position: 'absolute', opacity: 0, zIndex: -1, left: 0, right: 0 }}
+        pointerEvents="none"
+        onLayout={(e) => {
+          const h = e.nativeEvent.layout.height;
+          if (h > 0 && h !== contentHeight) setContentHeight(h);
+        }}
+      >
+        {children}
+      </View>
+      {/* Animated container */}
+      <Animated.View style={{ height: animatedHeight, opacity, overflow: 'hidden' }}>
+        {children}
+      </Animated.View>
+    </View>
+  );
 }
 
-const TRANSPARENT_DRAWER = {
-  width: '84%' as const,
-  backgroundColor: 'transparent',
-  shadowColor: 'transparent',
-  shadowOpacity: 0,
-  shadowRadius: 0,
-  shadowOffset: { width: 0, height: 0 },
-  elevation: 0,
-};
+// ─── Animated chevron ───────────────────────────────────────────────────────
 
-export default function ProjectDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const projectId = typeof id === 'string' ? id : '';
+function AnimatedChevron({ expanded, color, size = 16 }: { expanded: boolean; color: string; size?: number }) {
+  const rotation = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(rotation, {
+      toValue: expanded ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [expanded, rotation]);
+
+  const rotate = rotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['-90deg', '0deg'],
+  });
+
+  return (
+    <Animated.View style={{ transform: [{ rotate }] }}>
+      <Ionicons name="chevron-down" size={size} color={color} />
+    </Animated.View>
+  );
+}
+
+// ─── Connecting to Workspace (with restart button) ──────────────────────────
+// Ported from web's connecting-screen.tsx (commits 345b805, a13fd57).
+// Shows a restart button after 10s so users can recover a stuck sandbox.
+
+function ConnectingToWorkspace({
+  isDark,
+  phase,
+}: {
+  isDark: boolean;
+  /** What we're actually waiting for — helps the user diagnose a stuck state. */
+  phase: 'awaiting-sandbox' | 'provisioning' | 'checking-env';
+}) {
   const router = useRouter();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
-  const theme = useThemeColors();
-  const toast = useToast();
+  const [showEscape, setShowEscape] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
-  const projectQuery = useProject(projectId || null);
-  const project = projectQuery.data;
-  const { sandboxUrl, switchSandbox } = useSandboxContext();
-  const sessionsQuery = useProjectSessions(projectId || null);
-  const sessions = sessionsQuery.data ?? [];
-  const createSession = useCreateProjectSession(projectId || null);
-  const globalSessions = useSessions(sandboxUrl).data ?? [];
+  // Show recovery buttons after 10 seconds of waiting
+  useEffect(() => {
+    const timer = setTimeout(() => setShowEscape(true), 10_000);
+    return () => clearTimeout(timer);
+  }, []);
 
-  const [prompt, setPrompt] = React.useState('');
-  const [leftOpen, setLeftOpen] = React.useState(false);
-  const [rightOpen, setRightOpen] = React.useState(false);
-  const [paletteOpen, setPaletteOpen] = React.useState(false);
+  const handleRestart = useCallback(async () => {
+    if (restarting) return;
+    setRestarting(true);
+    try {
+      const { restartSandbox } = await import('@/lib/platform/client');
+      await restartSandbox();
+      Alert.alert('Restarting', 'Machine restart initiated. Reconnecting…');
+    } catch (err: any) {
+      Alert.alert('Restart failed', err?.message || 'Unknown error');
+    } finally {
+      // Keep the button disabled for 15s so the sandbox has time to come back
+      setTimeout(() => setRestarting(false), 15_000);
+    }
+  }, [restarting]);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const subtle = isDark ? '#a1a1aa' : '#71717a';
-  const faint = isDark ? '#52525b' : '#a1a1aa';
-  const cardBg = isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const drawerBg = isDark ? '#0A0A0A' : '#F6F6F6';
+  const handleBackToInstances = useCallback(() => {
+    router.push('/(settings)/instances');
+  }, [router]);
 
-  const openSession = React.useCallback(
-    (session: ProjectSession) => {
-      if (session.status !== 'running') {
-        toast.info(`Session is ${statusMeta(session.status).label}`);
-        return;
-      }
-      haptics.selection();
-      const externalId = session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
-      switchSandbox({
-        sandbox_id: session.sandbox_id,
-        external_id: externalId,
-        name: session.name || 'Session',
-        provider: (session.sandbox_provider as any) || 'daytona',
-        base_url: session.sandbox_url || getSandboxUrl(externalId),
-        status: 'active',
-        created_at: session.created_at,
-        updated_at: session.updated_at,
-      } as SandboxInfo);
-      if (session.opencode_session_id) {
-        useTabStore.getState().navigateToSession(session.opencode_session_id);
-      }
-      router.replace('/home');
-    },
-    [switchSandbox, router, toast],
-  );
+  // Diagnostic message — tells the user what we're actually waiting on so a
+  // stuck state is less confusing. `awaiting-sandbox` is the one that hangs
+  // silently with no polling activity; the others have logs ticking.
+  const phaseText =
+    phase === 'awaiting-sandbox'
+      ? 'Waiting for sandbox to be assigned.'
+      : phase === 'provisioning'
+      ? 'Sandbox is still provisioning.'
+      : 'Checking sandbox health and restoring your session.';
 
-  const startSession = React.useCallback(
-    async (initialPrompt?: string) => {
-      if (createSession.isPending) return;
-      try {
-        haptics.medium();
-        await createSession.mutateAsync({
-          ...(initialPrompt ? { initial_prompt: initialPrompt, name: initialPrompt.slice(0, 60) } : {}),
-        });
-        setPrompt('');
-        haptics.success();
-        toast.success('Session starting…');
-      } catch (err: any) {
-        haptics.warning();
-        toast.error(err?.message || 'Failed to start session');
-      }
-    },
-    [createSession, toast],
-  );
+  // Restart only makes sense if we actually have a sandbox to talk to.
+  const canRestart = phase === 'checking-env';
 
-  const handleStart = React.useCallback(() => {
-    const text = prompt.trim();
-    if (!text) return;
-    void startSession(text);
-  }, [prompt, startSession]);
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#09090b' : '#FFFFFF', paddingHorizontal: 40 }}>
+      <View style={{ flexDirection: 'column', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+        <KortixLogo size={22} variant="symbol" color={isDark ? 'dark' : 'light'} />
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert', letterSpacing: 2, textTransform: 'uppercase', color: isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)' }}>
+          Connecting to Workspace
+        </Text>
+      </View>
+      <ActivityIndicator size="small" color={isDark ? '#ffffff' : '#000000'} />
+      <Text style={{ marginTop: 24, fontSize: 14, fontFamily: 'Roobert', color: isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)', textAlign: 'center', lineHeight: 22, maxWidth: 300 }}>
+        {phaseText}
+      </Text>
 
-  // ── Left drawer (matches app/home.tsx drawer styling 1:1) ─────────────────
-  const renderLeftDrawer = React.useCallback(() => {
-    const iconColor = isDark ? '#F8F8F8' : '#121215';
-    const mutedColor = isDark ? '#999999' : '#6e6e6e';
-    return (
-      <View className="flex-1 bg-chrome-background" style={{ paddingTop: insets.top }}>
-        {/* Header */}
-        <View className="flex-row items-center justify-between px-5 pt-3 pb-4">
-          <Text className="flex-1 text-base font-roobert-semibold text-foreground" numberOfLines={1}>
-            {project?.name ?? 'Project'}
-          </Text>
-          <TouchableOpacity onPress={() => setLeftOpen(false)} hitSlop={8} activeOpacity={0.6}>
-            <Ionicons name="close" size={22} color={mutedColor} />
+      {/* Recovery row — appears after 10s of waiting */}
+      {showEscape && (
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {canRestart && (
+            <TouchableOpacity
+              onPress={handleRestart}
+              disabled={restarting}
+              activeOpacity={0.7}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+                borderRadius: 999,
+                backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                opacity: restarting ? 0.5 : 1,
+              }}
+            >
+              <Ionicons
+                name="refresh-outline"
+                size={14}
+                color={isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)'}
+              />
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}>
+                {restarting ? 'Restarting…' : 'Restart'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={handleBackToInstances}
+            activeOpacity={0.7}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderRadius: 999,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            }}
+          >
+            <Ionicons
+              name="arrow-back-outline"
+              size={14}
+              color={isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)'}
+            />
+            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}>
+              Back to Instances
+            </Text>
           </TouchableOpacity>
         </View>
+      )}
+    </View>
+  );
+}
 
-        {/* Top-level actions */}
+// ─── Session list item (extracted to avoid re-renders) ──────────────────────
+
+function SessionListItem({
+  item,
+  isActive,
+  isChild = false,
+  childCount = 0,
+  isExpanded = false,
+  onToggleExpand,
+  onPress,
+  onArchive,
+  onDelete,
+}: {
+  item: Session;
+  isActive: boolean;
+  /** True when this row is rendered nested under a parent */
+  isChild?: boolean;
+  /** Total number of direct children — shows a persistent toggle pill */
+  childCount?: number;
+  /** Whether this row's children are currently expanded */
+  isExpanded?: boolean;
+  /** Toggle expand/collapse for this row's children */
+  onToggleExpand?: () => void;
+  onPress: (s: Session) => void;
+  onArchive?: (id: string) => void;
+  onDelete?: (id: string) => void;
+}) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const mutedColor = isDark ? '#999999' : '#6e6e6e';
+  const status = useSyncStore((s) => s.sessionStatus[item.id]);
+  const isSessionBusy = status?.type === 'busy';
+
+  return (
+    <TouchableOpacity
+      onPress={() => { haptics.tap(); onPress(item); }}
+      onLongPress={() => {
+        haptics.medium();
+        Alert.alert(item.title || 'Session', undefined, [
+          { text: 'Archive', onPress: () => onArchive?.(item.id) },
+          { text: 'Delete', style: 'destructive', onPress: () => onDelete?.(item.id) },
+          { text: 'Cancel', style: 'cancel' },
+        ]);
+      }}
+      className={`rounded-2xl px-3 py-2.5 mb-1 ${isActive ? 'bg-muted' : ''}`}
+      activeOpacity={0.6}
+    >
+      <View className="flex-row items-center">
+        {isSessionBusy && (
+          <View className="h-2 w-2 rounded-full bg-primary mr-2" />
+        )}
+        <Text
+          className={`flex-1 text-sm ${
+            isActive ? 'text-foreground font-semibold' : 'text-foreground'
+          }`}
+          numberOfLines={1}
+        >
+          {item.title || 'New Session'}
+        </Text>
+
+        {/* Child toggle pill — matches web f1aea74: persistent badge that stays
+            visible so expanded sub-session lists can be collapsed again */}
+        {childCount > 0 && onToggleExpand && (
+          <TouchableOpacity
+            onPress={(e) => {
+              e.stopPropagation();
+              haptics.selection();
+              onToggleExpand();
+            }}
+            hitSlop={6}
+            activeOpacity={0.6}
+            accessibilityLabel={isExpanded ? 'Collapse sub-sessions' : 'Expand sub-sessions'}
+            className={`ml-2 rounded-full px-2 py-0.5 ${
+              isExpanded
+                ? isDark ? 'bg-white/10' : 'bg-black/10'
+                : isDark ? 'bg-white/[0.04]' : 'bg-black/[0.04]'
+            }`}
+          >
+            <Text
+              className={`text-[10px] ${
+                isExpanded ? 'text-foreground' : 'text-muted-foreground'
+              }`}
+              style={{ fontVariant: ['tabular-nums'] }}
+            >
+              {childCount}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {isActive && (
+          <View className="flex-row items-center ml-2">
+            <TouchableOpacity
+              onPress={() => { haptics.medium(); onArchive?.(item.id); }}
+              className="p-1.5 mr-0.5"
+              hitSlop={6}
+              activeOpacity={0.6}
+            >
+              <Ionicons name="archive-outline" size={16} color={mutedColor} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { haptics.medium(); onDelete?.(item.id); }}
+              className="p-1.5"
+              hitSlop={6}
+              activeOpacity={0.6}
+            >
+              <Ionicons name="trash-outline" size={16} color={mutedColor} />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * Build a map from parent session ID → array of child session IDs.
+ * Ported from web's childMapByParent() in ui/turns.ts.
+ */
+function buildChildMap(sessions: Session[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const session of sessions) {
+    if (!session.parentID) continue;
+    const existing = map.get(session.parentID);
+    if (existing) {
+      existing.push(session.id);
+    } else {
+      map.set(session.parentID, [session.id]);
+    }
+  }
+  return map;
+}
+
+/**
+ * SessionGroup — renders a session row + its expanded children (recursive for nested trees).
+ */
+function SessionGroup({
+  session,
+  allSessions,
+  childMap,
+  expandedNodes,
+  onToggleExpand,
+  activeSessionId,
+  onPress,
+  onArchive,
+  onDelete,
+}: {
+  session: Session;
+  allSessions: Session[];
+  childMap: Map<string, string[]>;
+  expandedNodes: Record<string, boolean>;
+  onToggleExpand: (sessionId: string) => void;
+  activeSessionId: string | null;
+  onPress: (s: Session) => void;
+  onArchive?: (id: string) => void;
+  onDelete?: (id: string) => void;
+}) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const childIds = childMap.get(session.id);
+  const hasChildren = !!childIds && childIds.length > 0;
+  const isExpanded = expandedNodes[session.id] ?? false;
+
+  const childSessions = useMemo(() => {
+    if (!childIds) return [];
+    return childIds
+      .map((id) => allSessions.find((s) => s.id === id))
+      .filter((s): s is Session => !!s)
+      .sort((a, b) => (a.time?.created ?? 0) - (b.time?.created ?? 0));
+  }, [childIds, allSessions]);
+
+  return (
+    <View>
+      <SessionListItem
+        item={session}
+        isActive={session.id === activeSessionId}
+        isChild={false}
+        childCount={hasChildren ? childSessions.length : 0}
+        isExpanded={isExpanded}
+        onToggleExpand={hasChildren ? () => onToggleExpand(session.id) : undefined}
+        onPress={onPress}
+        onArchive={onArchive}
+        onDelete={onDelete}
+      />
+
+      {/* Expanded children — indented with a subtle left border */}
+      {hasChildren && isExpanded && (
+        <View
+          className="ml-4 pl-2"
+          style={{
+            borderLeftWidth: 1,
+            borderLeftColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+          }}
+        >
+          {childSessions.map((child) => {
+            const grandchildIds = childMap.get(child.id);
+            const hasGrandchildren = !!grandchildIds && grandchildIds.length > 0;
+
+            // Recurse for grandchildren
+            if (hasGrandchildren) {
+              return (
+                <SessionGroup
+                  key={child.id}
+                  session={child}
+                  allSessions={allSessions}
+                  childMap={childMap}
+                  expandedNodes={expandedNodes}
+                  onToggleExpand={onToggleExpand}
+                  activeSessionId={activeSessionId}
+                  onPress={onPress}
+                  onArchive={onArchive}
+                  onDelete={onDelete}
+                />
+              );
+            }
+
+            return (
+              <SessionListItem
+                key={child.id}
+                item={child}
+                isActive={child.id === activeSessionId}
+                isChild
+                onPress={onPress}
+                onArchive={onArchive}
+                onDelete={onDelete}
+              />
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Main screen ────────────────────────────────────────────────────────────
+
+export default function ProjectSessionScreen() {
+  // Cloned 1:1 from app/home.tsx — same three-pane layout (left drawer · session
+  // middle · right drawer). projectId is the repo-first project we'll scope the
+  // new API onto.
+  const { id: projectId } = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
+  const { colorScheme, setColorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const router = useRouter();
+  const {
+    sandboxUrl, sandboxId, isLoading: sandboxLoading, error: sandboxError,
+    provisioningSandboxId, provisioningExternalId, provisioningProvider, onProvisioningComplete,
+  } = useSandboxContext();
+  // Project view (web model): never gate on a global sandbox. Sandboxes are
+  // resolved per session, so the screen renders immediately.
+  const isProvisioning = false;
+
+  // ── Provisioning progress poller ──
+  const poller = useSandboxPoller({
+    sandboxId: provisioningSandboxId,
+    externalId: provisioningExternalId,
+    provider: provisioningProvider,
+    enabled: isProvisioning,
+  });
+
+  // When poller reaches 'ready', trigger refetch in sandbox context
+  useEffect(() => {
+    if (poller.status === 'ready') {
+      onProvisioningComplete();
+    }
+  }, [poller.status, onProvisioningComplete]);
+
+  // ── Instance setup wizard check ──
+  // 'checking' = waiting for sandbox to be reachable, then checking env
+  // 'needed'   = setup not complete, show wizard
+  // 'done'     = setup complete, show main app
+  const [setupState, setSetupState] = useState<'checking' | 'needed' | 'onboarding' | 'done'>('done');
+
+  useEffect(() => {
+    // Project view: the global-sandbox setup gate is disabled — the screen
+    // renders immediately (web model). Sandboxes are resolved per session.
+    return;
+    // eslint-disable-next-line no-unreachable
+    if (!sandboxUrl) {
+      log.log('[Home] Setup check: no sandboxUrl yet');
+      return;
+    }
+    if (isProvisioning) {
+      log.log('[Home] Setup check: sandbox still provisioning, waiting...');
+      return;
+    }
+    log.log('[Home] Setup check: starting with sandboxUrl:', sandboxUrl);
+    let cancelled = false;
+
+    (async () => {
+      // Check if we previously completed setup (persisted across app restarts).
+      // If so, keep polling longer before showing wizard — the sandbox is likely
+      // just booting and the env isn't populated yet.
+      const SETUP_DONE_KEY = 'kortix-instance-setup-done';
+      const wasSetupDone = (await AsyncStorage.getItem(SETUP_DONE_KEY)) === '1';
+      const maxWaitMs = wasSetupDone ? 90_000 : 60_000;
+      const pollMs = 3_000;
+      const start = Date.now();
+
+      // Poll the env endpoint until sandbox responds.
+      let reachable = false;
+      while (Date.now() - start < maxWaitMs && !cancelled) {
+        try {
+          const token = await getAuthToken();
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 5000);
+          const res = await fetch(`${sandboxUrl}/env/INSTANCE_SETUP_COMPLETE`, {
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
+          // 403 means the proxy is rejecting us (sandbox not authorized / not ready yet)
+          // — don't treat as reachable, keep polling
+          if (res.status === 403) {
+            log.log('[Home] Setup check: got 403 (sandbox not authorized yet), keep polling...');
+            await new Promise((r) => setTimeout(r, pollMs));
+            continue;
+          }
+          // Any other HTTP response (even 404 for missing key) means sandbox is up
+          reachable = true;
+          if (cancelled) return;
+          log.log('[Home] Setup check: sandbox reachable, INSTANCE_SETUP_COMPLETE response:', res.status);
+          if (res.ok) {
+            const data = await res.json();
+            log.log('[Home] INSTANCE_SETUP_COMPLETE value:', data?.INSTANCE_SETUP_COMPLETE);
+            if (data?.INSTANCE_SETUP_COMPLETE === 'true') {
+              // Persist that setup is done so future boots show "Connecting" instead of wizard
+              await AsyncStorage.setItem(SETUP_DONE_KEY, '1').catch(() => {});
+              // Setup done — check if onboarding is also done.
+              // Fix (ported from web e635de8): only enter onboarding on
+              // POSITIVE evidence (200 response with value !== 'true').
+              // On failure (5xx, network error) defer silently — the sandbox
+              // is just slow, don't pop the onboarding wizard on users who
+              // already completed it.
+              try {
+                const onbCtrl = new AbortController();
+                const onbTimeout = setTimeout(() => onbCtrl.abort(), 5000);
+                const onbRes = await fetch(`${sandboxUrl}/env/ONBOARDING_COMPLETE`, {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                  },
+                  signal: onbCtrl.signal,
+                });
+                clearTimeout(onbTimeout);
+                if (cancelled) return;
+                if (onbRes.ok) {
+                  const onbData = await onbRes.json();
+                  if (onbData?.ONBOARDING_COMPLETE === 'true') {
+                    setSetupState('done');
+                    return;
+                  }
+                  // Positive evidence: 200 but not 'true' → needs onboarding
+                  setSetupState('onboarding');
+                  return;
+                }
+                // Non-200 (5xx, 403, etc.) — can't tell. Defer to main app.
+                log.warn('[Home] ONBOARDING_COMPLETE returned', onbRes.status, '— deferring, not entering onboarding');
+                setSetupState('done');
+                return;
+              } catch {
+                // Network error — sandbox unreachable for this check.
+                // Don't default to onboarding. Show main app and let
+                // the user retry or wait for the sandbox to come back.
+                log.warn('[Home] Failed to check ONBOARDING_COMPLETE — deferring, not entering onboarding');
+                setSetupState('done');
+                return;
+              }
+            }
+          }
+          // INSTANCE_SETUP_COMPLETE not 'true' yet.
+          // If we previously completed setup, the sandbox is likely still booting
+          // — keep polling instead of immediately showing the wizard.
+          if (wasSetupDone) {
+            log.log('[Home] Setup check: env not ready yet but setup was done before, keep polling...');
+            await new Promise((r) => setTimeout(r, pollMs));
+            continue;
+          }
+          // Fresh install — show setup wizard
+          log.log('[Home] Setup check: INSTANCE_SETUP_COMPLETE not true, showing wizard');
+          setSetupState('needed');
+          return;
+        } catch (err: any) {
+          log.error('[Home] Setup check poll error:', err?.message || err);
+        }
+        await new Promise((r) => setTimeout(r, pollMs));
+      }
+
+      if (cancelled) return;
+
+      if (!reachable) {
+        log.log('[Home] Setup check: sandbox not reachable after timeout');
+        // If setup was done before, skip to main app (sandbox might come up later)
+        if (wasSetupDone) {
+          setSetupState('done');
+        } else {
+          setSetupState('needed');
+        }
+        return;
+      }
+
+      // Sandbox is reachable but env never returned 'true' after extended polling.
+      // If setup was done before, go to main app — the sandbox just booted slowly.
+      if (wasSetupDone) {
+        log.log('[Home] Setup check: timed out but was previously set up — showing main app');
+        setSetupState('done');
+      } else {
+        setSetupState('needed');
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [sandboxUrl, isProvisioning]);
+
+  const handleSetupComplete = useCallback(() => {
+    // Persist that setup completed so we don't show wizard on next boot
+    AsyncStorage.setItem('kortix-instance-setup-done', '1').catch(() => {});
+    setSetupState('onboarding');
+  }, []);
+
+  const handleOnboardingComplete = useCallback(() => {
+    setSetupState('done');
+  }, []);
+
+  // State
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [rightDrawerOpen, setRightDrawerOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [pendingFilePath, setPendingFilePath] = useState<string | null>(null);
+  const userMenuSheetRef = useRef<BottomSheetModal>(null);
+  const viewChangesSheetRef = useRef<BottomSheetModal>(null);
+  const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
+  const [themePreference, setThemePreference] = useState<ThemePreference>('light');
+  const { updateAvailable: hasUpdate } = useGlobalSandboxUpdate();
+
+  // Files page ref (for BottomBar menu integration)
+  const filesPageRef = useRef<FilesPageRef>(null);
+  const workspacePageRef = useRef<WorkspacePageRef>(null);
+  const bottomBarRef = useRef<BottomBarRef>(null);
+  const viewShotRef = useRef<any>(null);
+  const [filesShowHidden, setFilesShowHidden] = useState(false);
+  const [filesViewMode, setFilesViewMode] = useState<'list' | 'grid'>('list');
+  const [filesSelectedName, setFilesSelectedName] = useState<string | null>(null);
+  const { user, signOut, isSigningOut } = useAuthContext();
+  const userEmail = user?.email || '';
+  const userDisplayName = userEmail.split('@')[0] || 'User';
+  const planLabel = 'Self-Hosted';
+  const sandboxLabel = sandboxId || 'Sandbox';
+  const sandboxHost = sandboxUrl ? sandboxUrl.replace(/^https?:\/\//, '') : undefined;
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
+        if (!mounted) return;
+        if (saved === 'light' || saved === 'dark' || saved === 'system') {
+          setThemePreference(saved);
+        } else {
+          setThemePreference(colorScheme === 'dark' ? 'dark' : 'light');
+        }
+      } catch {
+        if (mounted) {
+          setThemePreference(colorScheme === 'dark' ? 'dark' : 'light');
+        }
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [colorScheme]);
+
+  // Validate persisted tab screenshots (remove stale entries on startup)
+  useEffect(() => { validatePersistedScreenshots(); }, []);
+
+  // Compact session mutation
+  const compactSession = useCompactSession();
+
+  // Persisted tab state (survives app restarts)
+  const activeSessionId = useTabStore((s) => s.activeSessionId);
+  const activePageId = useTabStore((s) => s.activePageId);
+  const showTabsOverview = useTabStore((s) => s.showTabsOverview);
+  const openTabIds = useTabStore((s) => s.openTabIds);
+  const openPageIds = useTabStore((s) => s.openPageIds);
+  const tabStateById = useTabStore((s) => s.tabStateById);
+  const sessionHistory = useTabStore((s) => s.sessionHistory);
+  const historyIndex = useTabStore((s) => s.historyIndex);
+  const navigateToSession = useTabStore((s) => s.navigateToSession);
+  const closeTab = useTabStore((s) => s.closeTab);
+  const closeAllTabs = useTabStore((s) => s.closeAllTabs);
+  const setShowTabsOverview = useTabStore((s) => s.setShowTabsOverview);
+
+  const canGoBack = historyIndex > 0;
+  const canGoForward = historyIndex < sessionHistory.length - 1;
+
+  const handleHistoryBack = useCallback(() => {
+    useTabStore.getState().goBack();
+  }, []);
+
+  const handleHistoryForward = useCallback(() => {
+    useTabStore.getState().goForward();
+  }, []);
+
+  // Data
+  const { data: sessions = [], isLoading: sessionsLoading } =
+    useSessions(sandboxUrl);
+  const { data: kortixProjects } = useKortixProjects(sandboxUrl);
+  const sortedProjects = useMemo(() => {
+    if (!kortixProjects || !Array.isArray(kortixProjects)) return [];
+    return [...kortixProjects].sort(
+      (a: KortixProject, b: KortixProject) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  }, [kortixProjects]);
+  const createSession = useCreateSession(sandboxUrl);
+  const deleteSession = useDeleteSession(sandboxUrl);
+  const archiveSession = useArchiveSession(sandboxUrl);
+  const unarchiveSession = useUnarchiveSession(sandboxUrl);
+
+  // Split sessions into active and archived
+  const activeSessions = useMemo(
+    () => sessions.filter((s) => !(s.time as any).archived),
+    [sessions],
+  );
+  const archivedSessions = useMemo(
+    () => sessions.filter((s) => !!(s.time as any).archived),
+    [sessions],
+  );
+
+  // Tabs shown as pills in the BottomBar (session tabs + page tabs)
+  const bottomBarTabs = useMemo(() => {
+    const sessionPills = openTabIds.map((id) => {
+      const s = sessions.find((sess) => sess.id === id);
+      return {
+        id,
+        label: s?.title || 'Session',
+        icon: 'chatbubble-outline' as const,
+      };
+    });
+    const pagePills = openPageIds.map((id) => {
+      const p = PAGE_TABS[id];
+      // Dynamic project tabs (page:project:<id>): use projectName from tab state
+      if (!p && id.startsWith('page:project:')) {
+        const projectName = (tabStateById[id]?.projectName as string) || 'Project';
+        return { id, label: projectName, icon: 'folder-outline' as const };
+      }
+      return {
+        id,
+        label: p?.label || id,
+        icon: (p?.icon as any) || 'document-outline',
+      };
+    });
+    return [...sessionPills, ...pagePills];
+  }, [openTabIds, openPageIds, sessions, tabStateById]);
+
+  // Collapsible state
+  const [sessionsExpanded, setSessionsExpanded] = useState(true);
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [projectsExpanded, setProjectsExpanded] = useState(false);
+  const [expandedSessionNodes, setExpandedSessionNodes] = useState<Record<string, boolean>>({});
+
+  const toggleSessionExpand = useCallback((sessionId: string) => {
+    setExpandedSessionNodes((prev) => ({ ...prev, [sessionId]: !prev[sessionId] }));
+  }, []);
+
+  // Build parent→children map and derive the list of top-level (root) sessions.
+  // Child sessions render nested under their parents when the parent is expanded.
+  const { childMap, rootSessions } = useMemo(() => {
+    const map = buildChildMap(activeSessions);
+    const sessionIds = new Set(activeSessions.map((s) => s.id));
+    const roots = activeSessions.filter((s) => !s.parentID || !sessionIds.has(s.parentID));
+    return { childMap: map, rootSessions: roots };
+  }, [activeSessions]);
+
+  // Agent/model/variant for dashboard input
+  const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
+  const { data: dashVisibleModels = [], allModels: dashAllModels = [], defaults: dashDefaults } = useOpenCodeModels(sandboxUrl);
+  const { data: dashConfig } = useOpenCodeConfig(sandboxUrl);
+  const resolved = useResolvedConfig(agents, dashAllModels, dashConfig, dashDefaults);
+
+  // Stable error message (prevents re-render loops from error object identity)
+  const sandboxErrorMsg = sandboxError?.message || null;
+
+  // Open file selected from command palette once Files page is active.
+  useEffect(() => {
+    if (!pendingFilePath) return;
+    if (activePageId !== 'page:files') return;
+
+    const timer = setTimeout(() => {
+      filesPageRef.current?.openPath(pendingFilePath);
+      setPendingFilePath(null);
+    }, 120);
+
+    return () => clearTimeout(timer);
+  }, [pendingFilePath, activePageId]);
+
+  // ── Handlers (all useCallback for stable refs) ──
+
+  // Soft selection tick on drawer open/close so swipe-to-open and swipe-to-close
+  // feel snappy. The Drawer component fires these callbacks once per transition,
+  // so they don't repeat during the slide animation.
+  const handleDrawerOpen = useCallback(() => { haptics.selection(); setDrawerOpen(true); }, []);
+  const handleDrawerClose = useCallback(() => { haptics.selection(); setDrawerOpen(false); }, []);
+  const handleRightDrawerOpen = useCallback(() => { haptics.selection(); setRightDrawerOpen(true); }, []);
+  const handleRightDrawerClose = useCallback(() => { haptics.selection(); setRightDrawerOpen(false); }, []);
+
+  const handleNewSession = useCallback(async () => {
+    if (!sandboxUrl) return;
+    try {
+      log.log('➕ [Home] Creating new session...');
+      const session = await createSession.mutateAsync({});
+      log.log('✅ [Home] Session created:', session.id);
+      navigateToSession(session.id);
+      setDrawerOpen(false);
+    } catch (err: any) {
+      log.error('❌ [Home] Failed to create session:', err?.message || err);
+    }
+  }, [sandboxUrl, createSession, navigateToSession]);
+
+  const handleCreateSessionWithPrompt = useCallback(async (title: string, prompt: string) => {
+    if (!sandboxUrl) return;
+    try {
+      const session = await createSession.mutateAsync({ title });
+      navigateToSession(session.id);
+      // Send the preset prompt into the new session
+      const token = await getAuthToken();
+      await fetch(`${sandboxUrl}/session/${session.id}/prompt_async`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ parts: [{ type: 'text', text: prompt }] }),
+      });
+    } catch (err: any) {
+      log.error('❌ [Home] Failed to create session with prompt:', err?.message || err);
+    }
+  }, [sandboxUrl, createSession, navigateToSession]);
+
+  const handleSessionPress = useCallback((session: Session) => {
+    navigateToSession(session.id);
+    setDrawerOpen(false);
+  }, [navigateToSession]);
+
+  const handleProjectPress = useCallback((project: KortixProject) => {
+    const pageId = `page:project:${project.id}`;
+    useTabStore.getState().setTabState(pageId, { projectName: project.name });
+    useTabStore.getState().navigateToPage(pageId);
+    setDrawerOpen(false);
+  }, []);
+
+  const handleBack = useCallback(() => navigateToSession(null), [navigateToSession]);
+
+  const handleArchive = useCallback((sessionId: string) => {
+    Alert.alert('Archive Session', 'Move this session to archived?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Archive',
+        onPress: () => {
+          if (useTabStore.getState().activeSessionId === sessionId) {
+            navigateToSession(null);
+          }
+          archiveSession.mutate(sessionId);
+        },
+      },
+    ]);
+  }, [archiveSession, navigateToSession]);
+
+  const handleUnarchive = useCallback((sessionId: string) => {
+    unarchiveSession.mutate(sessionId);
+  }, [unarchiveSession]);
+
+  const handleDelete = useCallback((sessionId: string) => {
+    Alert.alert('Delete Session', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          if (useTabStore.getState().activeSessionId === sessionId) {
+            navigateToSession(null);
+          }
+          deleteSession.mutate(sessionId);
+        },
+      },
+    ]);
+  }, [deleteSession, navigateToSession]);
+
+  // Simplified dashboard send flow (ported from web 3f150e0).
+  // Single `isSending` guard, `finally` cleanup, parallel session create + fade.
+  const [isDashboardSending, setIsDashboardSending] = useState(false);
+
+  const handleDashboardSend = useCallback(
+    async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
+      if (!sandboxUrl || isDashboardSending) return;
+      if (!text.trim()) return;
+
+      // Process session mentions — append XML refs
+      let finalText = text;
+      const sessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value);
+      if (sessionMentions && sessionMentions.length > 0) {
+        const refs = sessionMentions
+          .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
+          .join('\n');
+        finalText = `${text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
+      }
+
+      setIsDashboardSending(true);
+
+      try {
+        // Create session — navigate immediately on success
+        const session = await createSession.mutateAsync({});
+        navigateToSession(session.id);
+
+        // Optimistic user message
+        const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const partId = `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        useSyncStore.getState().addOptimisticMessage(session.id, {
+          info: {
+            id: messageId,
+            role: 'user',
+            sessionID: session.id,
+            time: { created: Date.now() },
+          },
+          parts: [{ type: 'text', id: partId, text: finalText }],
+        });
+        useSyncStore.getState().setStatus(session.id, { type: 'busy' });
+
+        // Fire prompt async (fire-and-forget)
+        const payload: Record<string, any> = {
+          parts: [{ type: 'text', text: finalText }],
+        };
+        if (options.model) payload.model = options.model;
+        if (options.agent) payload.agent = options.agent;
+        if (options.variant) payload.variant = options.variant;
+
+        const token = await getAuthToken();
+        fetch(`${sandboxUrl}/session/${session.id}/prompt_async`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(payload),
+        }).catch((err) => {
+          log.error('❌ [Home] Dashboard prompt failed:', err);
+          useSyncStore.getState().setStatus(session.id, { type: 'idle' });
+        });
+      } catch (err: any) {
+        log.error('❌ [Home] Dashboard send failed:', err?.message || err);
+      } finally {
+        setIsDashboardSending(false);
+      }
+    },
+    [sandboxUrl, isDashboardSending, createSession, navigateToSession],
+  );
+
+  // Capture a screenshot of the current tab before showing tabs overview.
+  // Screenshots are stored as temp files in the app's private directory —
+  // they never appear in the user's photo gallery.
+  const handleOpenTabsOverview = useCallback(async () => {
+    const currentTabId = activePageId || activeSessionId;
+    if (currentTabId && viewShotRef.current && captureRef) {
+      try {
+        const uri = await captureRef(viewShotRef, {
+          format: 'jpg',
+          quality: 0.6,
+          result: 'tmpfile',
+        });
+        if (uri) {
+          useTabScreenshotStore.getState().setScreenshot(currentTabId, uri);
+        }
+      } catch (err) {
+        // Native module not available or capture failed — text preview fallback
+      }
+    }
+    setShowTabsOverview(true);
+  }, [activePageId, activeSessionId, setShowTabsOverview]);
+
+  const closeUserMenuSheet = useCallback(() => {
+    userMenuSheetRef.current?.dismiss();
+  }, []);
+
+  const handleGoToSettings = useCallback(() => {
+    closeUserMenuSheet();
+    setDrawerOpen(false);
+    router.push('/(settings)');
+  }, [closeUserMenuSheet, router]);
+
+  const handleManageInstances = useCallback(() => {
+    closeUserMenuSheet();
+    setDrawerOpen(false);
+    router.push('/(settings)/instances');
+  }, [closeUserMenuSheet, router]);
+
+  const handleAddInstance = useCallback(() => {
+    closeUserMenuSheet();
+    setDrawerOpen(false);
+    router.push('/(settings)/instances');
+  }, [closeUserMenuSheet, router]);
+
+  const handleOpenChangelog = useCallback(() => {
+    closeUserMenuSheet();
+    setDrawerOpen(false);
+    useTabStore.getState().navigateToPage('page:updates');
+  }, [closeUserMenuSheet]);
+
+  // Theme transition overlay — snapshot + crossfade to mirror web's view-transition blur effect
+  const [themeTransitionUri, setThemeTransitionUri] = useState<string | null>(null);
+  const themeTransitionOpacity = useRef(new Animated.Value(1)).current;
+
+  const handleThemeSelect = useCallback(async (value: ThemePreference) => {
+    if (value === themePreference) return;
+
+    // Capture the current screen so we can crossfade from old theme to new
+    let snapshotUri: string | null = null;
+    try {
+      snapshotUri = await captureScreen({
+        format: 'jpg',
+        quality: 0.8,
+        result: 'tmpfile',
+      });
+    } catch {
+      // Capture failed — fall through to instant switch
+    }
+
+    if (snapshotUri) {
+      themeTransitionOpacity.setValue(1);
+      setThemeTransitionUri(snapshotUri);
+    }
+
+    setThemePreference(value);
+    try {
+      await AsyncStorage.setItem(THEME_PREFERENCE_KEY, value);
+    } catch {}
+    setColorScheme(value === 'system' ? 'system' : value);
+
+    if (snapshotUri) {
+      // Let the new theme paint a frame before fading the snapshot out
+      requestAnimationFrame(() => {
+        Animated.timing(themeTransitionOpacity, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }).start(() => {
+          setThemeTransitionUri(null);
+        });
+      });
+    }
+  }, [themePreference, setColorScheme, themeTransitionOpacity]);
+
+  const handleUserMenuOpen = useCallback(() => {
+    userMenuSheetRef.current?.present();
+  }, []);
+
+  const handleSignOut = useCallback(() => {
+    if (isSigningOut) return;
+    Alert.alert(
+      'Sign out',
+      'Sign out of Kortix?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              closeUserMenuSheet();
+              setDrawerOpen(false);
+              await signOut();
+            } catch (err: any) {
+              log.error('❌ [Home] Sign out failed:', err?.message || err);
+            }
+          },
+        },
+      ],
+    );
+  }, [signOut, isSigningOut, closeUserMenuSheet]);
+
+  // ── Drawer content ──
+
+  const renderDrawerContent = useCallback(() => {
+    const iconColor = isDark ? '#F8F8F8' : '#121215';
+    const mutedColor = isDark ? '#999999' : '#6e6e6e';
+
+    return (
+      <View
+        className="flex-1 bg-chrome-background"
+        style={{ paddingTop: insets.top }}
+      >
+        {/* Kortix wordmark */}
+        <View className="flex-row items-center justify-between px-5 pt-3 pb-4">
+          <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
+        </View>
+
+        {/* Top-level actions: New session / Search / Files */}
         <View className="px-2 mb-2">
           <TouchableOpacity
-            onPress={() => { haptics.tap(); setLeftOpen(false); void startSession(); }}
+            onPress={() => { haptics.tap(); handleNewSession(); }}
             className="flex-row items-center rounded-lg px-3 py-2.5"
             activeOpacity={0.6}
           >
@@ -189,224 +1219,949 @@ export default function ProjectDetailScreen() {
             <Text className="flex-1 text-sm font-medium ml-3 text-foreground">New session</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => { haptics.tap(); setLeftOpen(false); setPaletteOpen(true); }}
+            onPress={() => { haptics.tap(); setDrawerOpen(false); setCommandPaletteOpen(true); }}
             className="flex-row items-center rounded-lg px-3 py-2.5"
             activeOpacity={0.6}
           >
             <Ionicons name="search-outline" size={18} color={iconColor} />
             <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Search</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => { haptics.tap(); setLeftOpen(false); router.replace('/projects'); }}
-            className="flex-row items-center rounded-lg px-3 py-2.5"
-            activeOpacity={0.6}
+        </View>
+
+        {/* Projects header (collapsible) — above Sessions, matches web sidebar */}
+        {sortedProjects.length > 0 && (
+          <>
+            <TouchableOpacity
+              onPress={() => { haptics.selection(); setProjectsExpanded((v) => !v); }}
+              className="flex-row items-center justify-between px-5 py-2.5"
+              activeOpacity={0.6}
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="folder-outline" size={18} color={iconColor} />
+                <Text className="text-sm font-medium ml-3 text-foreground">Projects</Text>
+              </View>
+              <View className="flex-row items-center">
+                <View className="bg-muted rounded-full px-2 py-0.5 mr-1">
+                  <Text className="text-xs text-muted-foreground">{sortedProjects.length}</Text>
+                </View>
+                <AnimatedChevron expanded={projectsExpanded} color={mutedColor} size={16} />
+              </View>
+            </TouchableOpacity>
+
+            <AnimatedCollapsible expanded={projectsExpanded}>
+              <View className="px-2 pb-2">
+                {sortedProjects.map((project: KortixProject) => (
+                  <TouchableOpacity
+                    key={project.id}
+                    onPress={() => { haptics.tap(); handleProjectPress(project); }}
+                    className="flex-row items-center rounded-lg px-4 py-2 mb-0.5"
+                    activeOpacity={0.6}
+                  >
+                    <Ionicons name="folder-outline" size={14} color={mutedColor} style={{ marginRight: 8 }} />
+                    <Text className="flex-1 text-sm text-muted-foreground" numberOfLines={1}>
+                      {project.name}
+                    </Text>
+                    {(project.sessionCount ?? 0) > 0 && (
+                      <Text className="text-xs text-muted-foreground/50 ml-2">
+                        {project.sessionCount}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </AnimatedCollapsible>
+          </>
+        )}
+
+        {/* Sessions header (collapsible) */}
+        <TouchableOpacity
+          onPress={() => { haptics.selection(); setSessionsExpanded((v) => !v); }}
+          className="flex-row items-center justify-between px-5 py-2.5"
+          activeOpacity={0.6}
+        >
+          <View className="flex-row items-center">
+            <Ionicons name="list-outline" size={18} color={iconColor} />
+            <Text className="text-sm font-medium ml-3 text-foreground">Sessions</Text>
+          </View>
+          <AnimatedChevron expanded={sessionsExpanded} color={mutedColor} size={16} />
+        </TouchableOpacity>
+
+        {/* Session list + Archived */}
+        {sessionsLoading ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="small" color={mutedColor} />
+          </View>
+        ) : (
+          <ScrollView
+            className="flex-1"
+            contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 20 }}
           >
-            <Ionicons name="folder-outline" size={18} color={iconColor} />
-            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Projects</Text>
+            <AnimatedCollapsible expanded={sessionsExpanded}>
+              {/* Archived section (collapsible) */}
+              {archivedSessions.length > 0 && (
+                <>
+                  <TouchableOpacity
+                    onPress={() => { haptics.selection(); setArchivedExpanded((v) => !v); }}
+                    className="flex-row items-center justify-between px-3 py-2.5"
+                    activeOpacity={0.6}
+                  >
+                    <View className="flex-row items-center">
+                      <Ionicons name="archive-outline" size={16} color={mutedColor} />
+                      <Text className="text-sm ml-2 text-muted-foreground">Archived</Text>
+                    </View>
+                    <View className="flex-row items-center">
+                      <View className="bg-muted rounded-full px-2 py-0.5 mr-1">
+                        <Text className="text-xs text-muted-foreground">{archivedSessions.length}</Text>
+                      </View>
+                      <AnimatedChevron expanded={archivedExpanded} color={mutedColor} size={14} />
+                    </View>
+                  </TouchableOpacity>
+
+                  <AnimatedCollapsible expanded={archivedExpanded}>
+                    {archivedSessions.map((item) => (
+                      <View key={item.id} className="flex-row items-center rounded-lg px-3 py-2.5 mb-0.5">
+                        <Text
+                          className="flex-1 text-sm text-muted-foreground"
+                          numberOfLines={1}
+                        >
+                          {item.title || 'New Session'}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => { haptics.tap(); handleUnarchive(item.id); }}
+                          className="p-1.5 mr-1"
+                          hitSlop={6}
+                          activeOpacity={0.6}
+                        >
+                          <Ionicons name="archive-outline" size={16} color={mutedColor} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => { haptics.medium(); handleDelete(item.id); }}
+                          className="p-1.5"
+                          hitSlop={6}
+                          activeOpacity={0.6}
+                        >
+                          <Ionicons name="trash-outline" size={16} color={mutedColor} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </AnimatedCollapsible>
+                </>
+              )}
+
+              {/* Active sessions — parent/child tree (matches web f1aea74) */}
+              {rootSessions.length === 0 ? (
+                <View className="items-center py-8">
+                  <Text className="text-sm text-muted-foreground">No sessions yet</Text>
+                </View>
+              ) : (
+                rootSessions.map((item) => (
+                  <SessionGroup
+                    key={item.id}
+                    session={item}
+                    allSessions={activeSessions}
+                    childMap={childMap}
+                    expandedNodes={expandedSessionNodes}
+                    onToggleExpand={toggleSessionExpand}
+                    activeSessionId={activeSessionId}
+                    onPress={handleSessionPress}
+                    onArchive={handleArchive}
+                    onDelete={handleDelete}
+                  />
+                ))
+              )}
+            </AnimatedCollapsible>
+          </ScrollView>
+        )}
+
+        {/* Previous Chats — pre-OpenCode threads with bulk-convert (matches web sidebar) */}
+        <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
+
+        {/* Bottom: user info — card style matching desktop */}
+        <View
+          className="px-3 pt-2"
+          style={{ paddingBottom: insets.bottom + 8 }}
+        >
+          <TouchableOpacity
+            onPress={() => { haptics.tap(); handleUserMenuOpen(); }}
+            activeOpacity={0.8}
+            className="flex-row items-center rounded-2xl border border-border"
+            style={{
+              height: 48,
+              paddingHorizontal: 8,
+              gap: 8,
+              backgroundColor: isDark ? 'rgba(45, 45, 45, 0.4)' : 'rgba(229, 229, 229, 0.4)',
+            }}
+          >
+            <View className="relative">
+              <View className="h-8 w-8 rounded-full bg-muted items-center justify-center">
+                <Text className="text-xs font-semibold text-muted-foreground uppercase">
+                  {userDisplayName.charAt(0)}
+                </Text>
+              </View>
+              {hasUpdate && (
+                <View className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-background" />
+              )}
+            </View>
+            <View className="flex-1" style={{ gap: 2 }}>
+              <Text
+                className="font-medium text-foreground"
+                style={{ fontSize: 13, lineHeight: 16 }}
+                numberOfLines={1}
+              >
+                {userDisplayName}
+              </Text>
+              <Text
+                className="text-muted-foreground"
+                style={{ fontSize: 11, lineHeight: 14 }}
+                numberOfLines={1}
+              >
+                {userEmail || planLabel}
+              </Text>
+            </View>
+            <ChevronsUpDown size={14} color={mutedColor} />
           </TouchableOpacity>
         </View>
-
-        {/* Sessions header */}
-        <View className="flex-row items-center px-5 py-2.5">
-          <Ionicons name="list-outline" size={18} color={iconColor} />
-          <Text className="text-sm font-medium ml-3 text-foreground">Sessions</Text>
-        </View>
-
-        {/* Session list */}
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: insets.bottom + 20 }}
-          refreshControl={
-            <RefreshControl refreshing={sessionsQuery.isRefetching} onRefresh={() => sessionsQuery.refetch()} tintColor={mutedColor} />
-          }
-        >
-          {sessionsQuery.isLoading && (
-            <View className="items-center" style={{ paddingVertical: 24 }}>
-              <ActivityIndicator color={mutedColor} />
-            </View>
-          )}
-
-          {!sessionsQuery.isLoading && sessions.length === 0 && (
-            <Text className="text-center text-sm text-muted-foreground" style={{ paddingVertical: 24 }}>
-              No sessions yet
-            </Text>
-          )}
-
-          {sessions.map((session) => {
-            const meta = statusMeta(session.status);
-            return (
-              <TouchableOpacity
-                key={session.session_id}
-                onPress={() => { haptics.tap(); setLeftOpen(false); openSession(session); }}
-                className="flex-row items-center rounded-lg px-3 py-2.5"
-                activeOpacity={0.6}
-              >
-                <View className="flex-1" style={{ minWidth: 0 }}>
-                  <Text numberOfLines={1} className="text-sm font-medium text-foreground">
-                    {session.name || 'Untitled session'}
-                  </Text>
-                  <View className="flex-row items-center mt-0.5" style={{ gap: 5 }}>
-                    <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: meta.color }} />
-                    <Text className="text-xs text-muted-foreground">
-                      {meta.label} · {ago(session.updated_at)}
-                    </Text>
-                  </View>
-                </View>
-                {session.status === 'running' && <Ionicons name="chevron-forward" size={16} color={mutedColor} />}
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
       </View>
     );
-  }, [isDark, insets.top, insets.bottom, project?.name, sessions, sessionsQuery, startSession, openSession, router]);
+  }, [
+    isDark,
+    insets,
+    activeSessions,
+    rootSessions,
+    childMap,
+    expandedSessionNodes,
+    toggleSessionExpand,
+    archivedSessions,
+    sessionsLoading,
+    sessionsExpanded,
+    archivedExpanded,
+    projectsExpanded,
+    sortedProjects,
+    handleProjectPress,
+    activeSessionId,
+    userDisplayName,
+    userEmail,
+    planLabel,
+    hasUpdate,
+    handleUserMenuOpen,
+    handleNewSession,
+    handleSessionPress,
+    handleArchive,
+    handleUnarchive,
+    handleDelete,
+  ]);
 
-  // ── Right drawer (existing pages menu — arrange later) ────────────────────
-  const renderRightDrawer = React.useCallback(
-    () => (
-      <View style={{ flex: 1, backgroundColor: drawerBg }}>
-        <RightDrawerContent onClose={() => setRightOpen(false)} />
-      </View>
-    ),
-    [drawerBg],
+  const renderRightDrawerContent = useCallback(
+    () => <RightDrawerContent onClose={handleRightDrawerClose} />,
+    [handleRightDrawerClose],
   );
 
+  // ── Render ──
+
+  // Show provisioning progress when sandbox is being created
+  if (isProvisioning) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <ProvisioningProgress
+          progress={poller.progress}
+          stages={poller.stages}
+          currentStage={poller.currentStage}
+          stageMessage={poller.stageMessage}
+          machineInfo={poller.machineInfo}
+          error={poller.error}
+        />
+      </>
+    );
+  }
+
+  // Show loading screen while checking setup status — matches frontend's
+  // "Connecting to Workspace" skeleton screen.
+  // Includes a restart button that appears after a delay (ported from web 345b805 / a13fd57).
+  if (setupState === 'checking') {
+    const phase: 'awaiting-sandbox' | 'provisioning' | 'checking-env' =
+      !sandboxUrl && isProvisioning
+        ? 'provisioning'
+        : !sandboxUrl
+        ? 'awaiting-sandbox'
+        : 'checking-env';
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <ConnectingToWorkspace isDark={isDark} phase={phase} />
+      </>
+    );
+  }
+
+  // Show setup wizard if instance setup is not complete
+  if (setupState === 'needed') {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <SetupWizard onComplete={handleSetupComplete} />
+      </>
+    );
+  }
+
+  // Show agent-driven onboarding after wizard completes
+  if (setupState === 'onboarding') {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <InstanceOnboarding onComplete={handleOnboardingComplete} />
+      </>
+    );
+  }
+
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
+    <>
       <Stack.Screen options={{ headerShown: false }} />
 
       <Drawer
-        open={leftOpen}
-        onOpen={() => setLeftOpen(true)}
-        onClose={() => setLeftOpen(false)}
+        open={drawerOpen}
+        onOpen={handleDrawerOpen}
+        onClose={handleDrawerClose}
         drawerType="slide"
-        drawerStyle={TRANSPARENT_DRAWER}
-        overlayStyle={{ backgroundColor: 'rgba(0,0,0,0.35)' }}
-        swipeEnabled={!rightOpen}
-        swipeEdgeWidth={60}
-        renderDrawerContent={renderLeftDrawer}
+        drawerStyle={{
+          width: '80%',
+          backgroundColor: 'transparent',
+          shadowColor: 'transparent',
+          shadowOpacity: 0,
+          shadowRadius: 0,
+          shadowOffset: { width: 0, height: 0 },
+          elevation: 0,
+        }}
+        overlayStyle={{ backgroundColor: 'transparent' }}
+        swipeEnabled={!rightDrawerOpen}
+        swipeEdgeWidth={80}
+        swipeMinDistance={30}
+        renderDrawerContent={renderDrawerContent}
       >
         <Drawer
-          open={rightOpen}
-          onOpen={() => setRightOpen(true)}
-          onClose={() => setRightOpen(false)}
+          open={rightDrawerOpen}
+          onOpen={handleRightDrawerOpen}
+          onClose={handleRightDrawerClose}
           drawerPosition="right"
           drawerType="slide"
-          drawerStyle={TRANSPARENT_DRAWER}
-          overlayStyle={{ backgroundColor: 'rgba(0,0,0,0.35)' }}
-          swipeEnabled={!leftOpen}
-          swipeEdgeWidth={60}
-          renderDrawerContent={renderRightDrawer}
+          drawerStyle={{
+            width: '80%',
+            backgroundColor: 'transparent',
+            shadowColor: 'transparent',
+            shadowOpacity: 0,
+            shadowRadius: 0,
+            shadowOffset: { width: 0, height: 0 },
+            elevation: 0,
+          }}
+          overlayStyle={{ backgroundColor: 'transparent' }}
+          swipeEnabled={!drawerOpen}
+          swipeEdgeWidth={80}
+          swipeMinDistance={30}
+          renderDrawerContent={renderRightDrawerContent}
         >
-          {/* Middle */}
-          <View style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
-            <KeyboardAvoidingView
-              style={{ flex: 1 }}
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              keyboardVerticalOffset={insets.top}
-            >
-              {/* Header */}
+        {React.createElement(
+          ViewShotComponent || View,
+          ViewShotComponent
+            ? { ref: viewShotRef, style: { flex: 1, backgroundColor: isDark ? '#09090B' : '#FFFFFF' } }
+            : { className: 'flex-1 bg-background' },
+          <>
+          {/* Side hairlines — only needed for SessionPage / Dashboard, where the
+              chat input pushes the page card up so its own borders don't reach
+              the bottom of the screen. Other pages use PageContent which spans
+              full height and renders its own side borders. */}
+          {!activePageId && !showTabsOverview && (
+            <>
               <View
+                pointerEvents="none"
                 style={{
-                  paddingTop: insets.top + 8,
-                  paddingHorizontal: 12,
-                  paddingBottom: 8,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
+                  position: 'absolute',
+                  left: 0,
+                  top: insets.top + 68,
+                  bottom: 0,
+                  width: 2,
+                  backgroundColor: isDark ? '#222222' : '#e6e6e5',
+                  zIndex: 10,
                 }}
+              />
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: insets.top + 68,
+                  bottom: 0,
+                  width: 2,
+                  backgroundColor: isDark ? '#222222' : '#e6e6e5',
+                  zIndex: 10,
+                }}
+              />
+            </>
+          )}
+          {/* Loading sandbox */}
+          {sandboxLoading ? (
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator size="large" color={isDark ? '#999999' : '#6e6e6e'} />
+              <Text className="text-sm mt-3 text-muted-foreground">
+                Connecting to sandbox...
+              </Text>
+            </View>
+
+          /* Sandbox error */
+          ) : sandboxErrorMsg ? (
+            <View className="flex-1 items-center justify-center px-8">
+              <Text className="text-base font-medium mb-2 text-foreground">
+                Connection Error
+              </Text>
+              <Text className="text-sm text-center text-muted-foreground">
+                {sandboxErrorMsg}
+              </Text>
+            </View>
+
+          /* Active page tab — Files */
+          ) : activePageId === 'page:files' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <FilesPage
+              ref={filesPageRef}
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+              onFileSelectionChange={(file) => setFilesSelectedName(file?.name ?? null)}
+              onRequestMenu={() => bottomBarRef.current?.presentMenu()}
+            />
+
+          /* Active page tab — Memory */
+          ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <MemoryPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — LLM Providers */
+          ) : activePageId === 'page:llm-providers' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <LlmProvidersPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Secrets */
+          ) : activePageId === 'page:secrets' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <SecretsPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Terminal */
+          ) : activePageId === 'page:terminal' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <TerminalPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Updates */
+          ) : activePageId === 'page:updates' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <UpdatesPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — SSH */
+          ) : activePageId === 'page:ssh' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <SSHPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Running Services */
+          ) : activePageId === 'page:running-services' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <RunningServicesPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Browser */
+          ) : activePageId === 'page:browser' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <BrowserPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Agent Browser */
+          ) : activePageId === 'page:agent-browser' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <AgentBrowserPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Integrations */
+          ) : activePageId === 'page:integrations' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <IntegrationsTabPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Triggers / Scheduled Tasks */
+          ) : activePageId === 'page:triggers' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <ScheduledTasksTabPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — API Keys */
+          ) : activePageId === 'page:api' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <ApiKeysTabPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Channels */
+          ) : activePageId === 'page:channels' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <ChannelsTabPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Tunnel */
+          ) : activePageId === 'page:tunnel' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <TunnelTabPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Workspace */
+          ) : activePageId === 'page:workspace' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <WorkspacePage
+              ref={workspacePageRef}
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+              onCreateSessionWithPrompt={handleCreateSessionWithPrompt}
+            />
+
+          /* Active page tab — Projects list */
+          ) : activePageId === 'page:projects' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <ProjectsPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Single project detail (dynamic: page:project:{id}) */
+          ) : activePageId?.startsWith('page:project:') && !showTabsOverview ? (
+            <ProjectDetailPage
+              projectId={activePageId.replace('page:project:', '')}
+              onBack={() => {
+                // Go back to projects list
+                useTabStore.getState().navigateToPage('page:projects');
+              }}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — other pages (placeholder) */
+          ) : activePageId && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <PlaceholderPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active session */
+          ) : activeSessionId && !showTabsOverview ? (
+            <SessionPage sessionId={activeSessionId} onBack={handleBack} onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen} onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen} isDrawerOpen={drawerOpen} isRightDrawerOpen={rightDrawerOpen} />
+
+          /* Tabs overview */
+          ) : showTabsOverview ? (
+            <TabsOverview
+              sessions={activeSessions}
+              openTabIds={openTabIds}
+              activeSessionId={activeSessionId}
+              onSelectTab={(id) => navigateToSession(id)}
+              onCloseTab={(id) => {
+                closeTab(id);
+                useTabScreenshotStore.getState().removeScreenshot(id);
+              }}
+              onCloseAll={() => {
+                closeAllTabs();
+                useTabScreenshotStore.getState().clear();
+              }}
+              onNewSession={handleNewSession}
+              onDismiss={() => setShowTabsOverview(false)}
+            />
+
+          /* Dashboard */
+          ) : (
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" className="bg-chrome-background">
+              <PageHeader
+                title="Kortix"
+                onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                isDrawerOpen={drawerOpen}
+                onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+                isRightDrawerOpen={rightDrawerOpen}
+              />
+
+              {/* Rounded card tucks under the header (curved edge), matching SessionPage */}
+              <Animated.View
+                style={{
+                  flex: 1,
+                  marginTop: -24,
+                  borderTopLeftRadius: 28,
+                  borderTopRightRadius: 28,
+                  overflow: 'hidden',
+                  borderTopWidth: 2,
+                  borderLeftWidth: 2,
+                  borderRightWidth: 2,
+                  borderColor: isDark ? '#222222' : '#e6e6e5',
+                  opacity: isDashboardSending ? 0.3 : 1,
+                }}
+                className="items-center justify-center px-8 bg-background"
               >
-                <Pressable onPress={() => { haptics.selection(); setLeftOpen(true); }} hitSlop={6} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon as={Menu} size={22} color={fg} strokeWidth={2.2} />
-                </Pressable>
-                <Text style={{ flex: 1, fontSize: 16, fontFamily: 'Roobert-Medium', color: fg, textAlign: 'center' }} numberOfLines={1}>
-                  {project?.name ?? (projectQuery.isLoading ? 'Loading…' : 'Project')}
+                <Text className="text-2xl font-bold mb-2 text-foreground">
+                  What can I help with?
                 </Text>
-                <Pressable onPress={() => { haptics.selection(); setRightOpen(true); }} hitSlop={6} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon as={PanelRight} size={20} color={fg} strokeWidth={2.2} />
-                </Pressable>
+                <Text className="text-sm text-center text-muted-foreground">
+                  Start a conversation or select a session from the menu.
+                </Text>
+              </Animated.View>
+
+              <View>
+                <SessionChatInput
+                  onSend={handleDashboardSend}
+                  placeholder="Ask anything..."
+                  disabled={!sandboxUrl || isDashboardSending}
+                  agent={resolved.agent}
+                  agents={resolved.agents}
+                  model={resolved.model}
+                  models={dashVisibleModels}
+                  modelKey={resolved.modelKey}
+                  variant={resolved.variant}
+                  variants={resolved.variants}
+                  onAgentChange={resolved.setAgent}
+                  onModelChange={resolved.setModel}
+                  onVariantCycle={resolved.cycleVariant}
+                  onVariantSet={resolved.setVariant}
+                  sessions={sessions}
+                  sandboxUrl={sandboxUrl}
+                />
               </View>
-
-              <ScrollView
-                style={{ flex: 1 }}
-                contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 }}
-                keyboardShouldPersistTaps="handled"
-              >
-                {!!project && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 }}>
-                    <Icon as={GitBranch} size={13} className="text-muted-foreground" />
-                    <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: subtle }} numberOfLines={1}>
-                      {project.default_branch || 'main'}
-                      {project.status === 'archived' ? ' · archived' : ''}
-                    </Text>
-                  </View>
-                )}
-
-                {/* Composer — the middle / start a session */}
-                <View style={{ borderRadius: 18, borderWidth: 1, borderColor: border, backgroundColor: cardBg, padding: 12 }}>
-                  <TextInput
-                    value={prompt}
-                    onChangeText={setPrompt}
-                    placeholder="Describe a task to start a session…"
-                    placeholderTextColor={faint}
-                    multiline
-                    editable={!createSession.isPending}
-                    style={{ minHeight: 56, maxHeight: 160, fontSize: 15, fontFamily: 'Roobert', color: fg, paddingHorizontal: 4, paddingTop: 4 }}
-                  />
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 8 }}>
-                    <Pressable
-                      onPress={handleStart}
-                      disabled={createSession.isPending || !prompt.trim()}
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: theme.primary,
-                        opacity: createSession.isPending || !prompt.trim() ? 0.4 : 1,
-                      }}
-                    >
-                      {createSession.isPending ? (
-                        <ActivityIndicator size="small" color={theme.primaryForeground} />
-                      ) : (
-                        <Icon as={ArrowUp} size={18} color={theme.primaryForeground} strokeWidth={2.4} />
-                      )}
-                    </Pressable>
-                  </View>
-                </View>
-
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, marginTop: 16, textAlign: 'center' }}>
-                  Open the left menu for this project's sessions.
-                </Text>
-              </ScrollView>
             </KeyboardAvoidingView>
-          </View>
+          )}
+
+        </>
+        )}
+
+          {/* Bottom bar — hidden when tabs overview is showing */}
+          {!showTabsOverview && (
+            <View>
+              <BottomBar
+                ref={bottomBarRef}
+                activeSessionId={activeSessionId}
+                onMenuDismiss={() => {
+                  if (activePageId === 'page:files') {
+                    filesPageRef.current?.deselectFile();
+                    setFilesSelectedName(null);
+                  }
+                }}
+                tabs={bottomBarTabs}
+                activeTabId={activePageId || activeSessionId}
+                onSelectTab={(tabId) => {
+                  if (tabId.startsWith('page:')) {
+                    useTabStore.getState().navigateToPage(tabId);
+                  } else {
+                    useTabStore.getState().navigateToSession(tabId);
+                  }
+                }}
+                onNewSession={handleNewSession}
+                onOpenTabs={handleOpenTabsOverview}
+                onCompactSession={() => {
+                  if (activeSessionId && sandboxUrl) {
+                    Alert.alert(
+                      'Compact Session',
+                      'This will summarize older messages using AI to free up context space. Key information is preserved, but original messages will be condensed into a compact summary.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Compact',
+                          onPress: () => {
+                            compactSession.mutate(
+                              { sandboxUrl, sessionId: activeSessionId },
+                              {
+                                onError: (err) => {
+                                  Alert.alert('Compact Failed', err.message || 'Failed to compact session.');
+                                },
+                              },
+                            );
+                          },
+                        },
+                      ],
+                    );
+                  }
+                }}
+                onExportTranscript={() => {
+                  if (activeSessionId) {
+                    exportTranscriptSheetRef.current?.present();
+                  }
+                }}
+                onViewChanges={() => {
+                  if (activeSessionId) {
+                    viewChangesSheetRef.current?.present();
+                  }
+                }}
+                onDiagnostics={() => log.log('TODO: diagnostics')}
+                onArchiveSession={() => { if (activeSessionId) handleArchive(activeSessionId); }}
+                customMenuItems={
+                  activePageId === 'page:workspace'
+                    ? ([
+                        {
+                          icon: Bot,
+                          label: 'New agent',
+                          onPress: () => handleCreateSessionWithPrompt('New agent', "HEY let's build a new agent. Ask what job it should own, then scaffold it in the right workspace location and wire up any supporting skills."),
+                        },
+                        {
+                          icon: Sparkles,
+                          label: 'New skill',
+                          onPress: () => handleCreateSessionWithPrompt('New skill', "HEY let's build a new skill. Ask what should trigger it, then create the SKILL.md and any supporting files in the right workspace location."),
+                        },
+                        {
+                          icon: Terminal,
+                          label: 'New command',
+                          onPress: () => handleCreateSessionWithPrompt('New command', "HEY let's build a new slash command. Ask what the command should do, then add it in the right workspace location and connect it to the correct agent."),
+                        },
+                        {
+                          icon: FolderOpen,
+                          label: 'New project',
+                          onPress: () => handleCreateSessionWithPrompt('New project', "HEY let's set up a new project. Ask for the name and purpose, then create it in the right workspace location with a clean starting structure."),
+                        },
+                        { type: 'divider' },
+                        {
+                          icon: Plug,
+                          label: 'Add MCP server',
+                          onPress: () => workspacePageRef.current?.openSettings('mcp'),
+                        },
+                        {
+                          icon: Settings,
+                          label: 'Settings',
+                          onPress: () => workspacePageRef.current?.openSettings('general'),
+                        },
+                        { type: 'divider' },
+                        {
+                          icon: RefreshCw,
+                          label: 'Refresh workspace',
+                          onPress: () => workspacePageRef.current?.refetch(),
+                        },
+                      ] as BottomBarMenuItem[])
+                    : activePageId === 'page:files'
+                    ? (filesSelectedName
+                        ? ([
+                            // Contextual file actions only (long-press)
+                            {
+                              icon: FileText,
+                              label: `Open ${filesSelectedName}`,
+                              onPress: () => {
+                                filesPageRef.current?.openFile();
+                                setFilesSelectedName(null);
+                              },
+                            },
+                            {
+                              icon: Copy,
+                              label: 'Copy path',
+                              onPress: () => {
+                                filesPageRef.current?.copyPath();
+                                setFilesSelectedName(null);
+                              },
+                            },
+                            {
+                              icon: Pencil,
+                              label: 'Rename',
+                              onPress: () => filesPageRef.current?.renameFile(),
+                            },
+                            {
+                              icon: Trash2,
+                              label: 'Delete',
+                              destructive: true,
+                              onPress: () => filesPageRef.current?.deleteFile(),
+                            },
+                          ] as BottomBarMenuItem[])
+                        : ([
+                            // General file actions (three-dot tap)
+                            {
+                              icon: filesViewMode === 'list' ? LayoutGrid : List,
+                              label: filesViewMode === 'list' ? 'Grid view' : 'List view',
+                              onPress: () => {
+                                filesPageRef.current?.toggleViewMode();
+                                setFilesViewMode((v) => (v === 'list' ? 'grid' : 'list'));
+                              },
+                            },
+                            {
+                              icon: filesShowHidden ? Eye : EyeOff,
+                              label: filesShowHidden ? 'Hide dotfiles' : 'Show dotfiles',
+                              onPress: () => {
+                                filesPageRef.current?.toggleHidden();
+                                setFilesShowHidden((v) => !v);
+                              },
+                            },
+                            {
+                              icon: Upload,
+                              label: 'Upload file',
+                              onPress: () => filesPageRef.current?.uploadDocument(),
+                            },
+                            {
+                              icon: Image,
+                              label: 'Upload image',
+                              onPress: () => filesPageRef.current?.uploadImage(),
+                            },
+                            {
+                              icon: FolderPlus,
+                              label: 'New folder',
+                              onPress: () => filesPageRef.current?.createFolder(),
+                            },
+                            {
+                              icon: RefreshCw,
+                              label: 'Refresh',
+                              onPress: () => filesPageRef.current?.refetch(),
+                            },
+                          ] as BottomBarMenuItem[]))
+                    : undefined
+                }
+              />
+            </View>
+          )}
         </Drawer>
       </Drawer>
 
+      <UserMenuSheet
+        ref={userMenuSheetRef}
+        sandboxLabel={sandboxLabel}
+        sandboxHost={sandboxHost}
+        onManageInstances={handleManageInstances}
+        onAddInstance={handleAddInstance}
+        onOpenSettings={handleGoToSettings}
+        onOpenChangelog={handleOpenChangelog}
+        onSignOut={handleSignOut}
+        onSelectTheme={handleThemeSelect}
+        activeTheme={themePreference}
+        isSigningOut={isSigningOut}
+      />
+
+      <ViewChangesSheet
+        ref={viewChangesSheetRef}
+        sessionId={activeSessionId}
+      />
+
+      <ExportTranscriptSheet
+        ref={exportTranscriptSheetRef}
+        sessionId={activeSessionId}
+      />
+
+      {/* Command Palette */}
       <CommandPalette
-        visible={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        sessions={globalSessions}
-        onNewSession={() => void startSession()}
-        onSessionSelect={(sid) => {
-          if (sid) {
-            useTabStore.getState().navigateToSession(sid);
-            router.replace('/home');
+        visible={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        sessions={sessions}
+        onNewSession={handleNewSession}
+        onSessionSelect={(id) => {
+          if (id) {
+            navigateToSession(id);
+          } else {
+            navigateToSession(null);
           }
         }}
         onPageSelect={(pageId) => {
           useTabStore.getState().navigateToPage(pageId);
-          router.replace('/home');
         }}
-        onSettings={() => router.replace('/home')}
+        onSettings={handleGoToSettings}
         sandboxUrl={sandboxUrl}
-        onFileSelect={() => {
+        onFileSelect={(path) => {
           useTabStore.getState().navigateToPage('page:files');
-          router.replace('/home');
+          setPendingFilePath(path);
         }}
       />
-    </View>
+
+      {/* Theme transition overlay — crossfade snapshot of previous theme */}
+      {themeTransitionUri && (
+        <Modal
+          visible
+          transparent
+          statusBarTranslucent
+          animationType="none"
+          hardwareAccelerated
+        >
+          <Animated.Image
+            source={{ uri: themeTransitionUri }}
+            resizeMode="cover"
+            fadeDuration={0}
+            style={[StyleSheet.absoluteFillObject, { opacity: themeTransitionOpacity }]}
+            pointerEvents="none"
+          />
+        </Modal>
+      )}
+    </>
   );
 }
