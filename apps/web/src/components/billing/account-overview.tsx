@@ -47,7 +47,13 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
     );
   }
 
-  const tierName = state.tier?.display_name || state.tier?.name || 'No plan';
+  // Per-seat accounts don't use the legacy `tier` field (it stays 'free'), so
+  // show the seat plan from billing_model + seats instead of the tier label —
+  // otherwise a paying per-seat account renders as "Free".
+  const seatCount = state.seats?.count ?? 1;
+  const tierName = state.billing_model === 'per_seat'
+    ? `Team · ${seatCount} seat${seatCount === 1 ? '' : 's'}`
+    : (state.tier?.display_name || state.tier?.name || 'No plan');
   const subStatus = state.subscription?.status || null;
   const wallet = state.credits?.total ?? 0;
   const usage = state.usage_this_period;
