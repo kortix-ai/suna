@@ -107,7 +107,7 @@ async function bootOnce(projectId: string, token: string, iter: number): Promise
   for (;;) {
     const r = await fetch(healthUrl, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
     const body = r ? await r.json().catch(() => null) : null;
-    if (Array.isArray(body?.timeline) && body.timeline.length) inboxTimeline = body.timeline;
+    if (Array.isArray(body?.boot_timeline) && body.boot_timeline.length) inboxTimeline = body.boot_timeline;
     if (body?.runtimeReady === true) { readyAt = Date.now(); break; }
     if (body?.boot_error) throw new Error(`boot_error: ${body.boot_error}`);
     if (Date.now() - activeAt > READY_TIMEOUT_MS) throw new Error('timed out waiting for runtimeReady');

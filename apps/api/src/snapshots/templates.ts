@@ -56,7 +56,11 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 
 const OPENCODE_VERSION = '1.15.10';
 const AGENT_BROWSER_VERSION = '0.27.0';
-const RUNTIME_LAYER_VERSION = 'workspace-less-v1';
+// Bump when the rendered Kortix Dockerfile layer changes (the Dockerfile text
+// itself is not hashed into the snapshot fingerprint, so a layer change needs a
+// manual version bump to invalidate cached images). v2: bake OpenCode config
+// deps into /opt/kortix/opencode-config-deps for offline boot-time install.
+const RUNTIME_LAYER_VERSION = 'baked-oc-deps-v2';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

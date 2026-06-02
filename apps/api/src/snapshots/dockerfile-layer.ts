@@ -124,17 +124,23 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\',
     '    && bun --version',
     '',
-    // Pre-warm Bun's package cache with the OpenCode tool dependencies. The tools
-    // in .kortix/opencode/tools/ (web_search, image_search, scrape_webpage) import
-    // these, and OpenCode runs `bun install` in the cloned config dir at boot.
-    // Warming the cache at the runtime HOME path (where OpenCode runs, HOME=/opt/kortix/home)
-    // makes that boot-time install offline + fast — no per-boot download.
-    // Keep in sync with packages/starter/templates/base/.kortix/opencode/package.json.
-    'RUN mkdir -p /opt/kortix/home/.bun/install/cache /tmp/oc-deps \\',
-    '    && cd /tmp/oc-deps \\',
-    `    && printf '{"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > package.json \\`,
-    '    && BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install \\',
-    '    && rm -rf /tmp/oc-deps',
+    // Pre-install the OpenCode tool dependencies once, at image-build time, into a
+    // stable baked location. The tools in .kortix/opencode/tools/ (web_search,
+    // image_search, scrape_webpage) import these, and OpenCode runs `bun install`
+    // in the cloned config dir at boot — but node_modules/bun.lock are gitignored,
+    // so that boot install would otherwise RE-RESOLVE the `^` ranges over the
+    // network (a 1.5–6s — sometimes minutes — stall on the session hot path). The
+    // daemon's ensureOpencodeConfigDeps() links this baked node_modules + bun.lock
+    // into the resolved config dir before opencode starts, making the boot install
+    // a no-op. The same step also warms Bun's cache at the runtime HOME
+    // (HOME=/opt/kortix/home). Keep deps in sync with
+    // packages/starter/templates/base/.kortix/opencode/package.json — and bump
+    // RUNTIME_LAYER_VERSION in templates.ts when they change (the rendered
+    // Dockerfile is not itself part of the snapshot fingerprint).
+    'RUN mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps \\',
+    '    && cd /opt/kortix/opencode-config-deps \\',
+    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > package.json \\`,
+    '    && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install',
     '',
     `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
     '    && agent-browser --version',
