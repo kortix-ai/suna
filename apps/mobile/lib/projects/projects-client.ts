@@ -227,6 +227,22 @@ export function ensureOpencodeSession(projectId: string, sessionId: string) {
   );
 }
 
+export type WakeStatus = 'running' | 'waking' | 'provisioning' | 'unknown';
+
+/**
+ * Wake a sandbox the provider auto-stopped while idle (web parity). The DB row
+ * still reads `running` after an idle auto-stop, so opening hits a dead
+ * container and ensure-opencode spins on `not_ready`/`unreachable` forever. This
+ * returns instantly — a running sandbox is a no-op; a stopped one is started in
+ * the background while the ensure retry picks up readiness.
+ */
+export function wakeProjectSession(projectId: string, sessionId: string) {
+  return apiFetch<{ status: WakeStatus }>(
+    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/wake`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
 export function archiveProject(projectId: string) {
   return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',
