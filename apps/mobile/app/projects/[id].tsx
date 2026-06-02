@@ -1133,13 +1133,23 @@ export default function ProjectSessionScreen() {
   const ensureAndOpen = useCallback(async (ps: ProjectSession) => {
     if (!projectId || ensuringRef.current === ps.session_id) return;
     ensuringRef.current = ps.session_id;
+    // ensure-opencode returns reason 'not_ready'/'unreachable' (HTTP 200, no pin)
+    // while the sandbox's OpenCode runtime is still warming — a cold sandbox can
+    // take a few minutes. The web waits for the runtime (useOpenCodeRuntimeReady)
+    // before resolving the pin; mobile has no such signal, so we poll ensure
+    // patiently and only fail on a definitive 'failed' status or a long timeout.
+    const startedAt = Date.now();
+    const MAX_WAIT_MS = 3 * 60_000;
     try {
-      for (let attempt = 0; attempt < 8; attempt++) {
+      let attempt = 0;
+      while (Date.now() - startedAt < MAX_WAIT_MS) {
+        if (ensuringRef.current !== ps.session_id) return; // superseded by another open
         let updated: EnsureOpencodeResult | null = null;
         try {
           updated = await ensureOpencodeSession(projectId, ps.session_id);
-        } catch {
-          // network / sandbox unreachable — fall through to backoff + retry
+        } catch (err: any) {
+          // 409 (sandbox row not ready yet) etc. — transient while booting.
+          log.log('🔄 [connect] ensure-opencode retry:', err?.message || err);
         }
         if (updated?.opencode_session_id) {
           connectToProjectSession({
@@ -1150,12 +1160,21 @@ export default function ProjectSessionScreen() {
           });
           return;
         }
-        await new Promise((r) => setTimeout(r, Math.min(800 * 2 ** attempt, 8_000)));
+        if (updated?.status === 'failed') {
+          setConnectingProjectSessionId(null);
+          Alert.alert('Session failed to start', updated.error || 'The sandbox could not be provisioned.');
+          return;
+        }
+        if (updated?.ensure?.reason) {
+          log.log(`⏳ [connect] runtime warming (${updated.ensure.reason}), attempt ${attempt + 1}`);
+        }
+        attempt += 1;
+        await new Promise((r) => setTimeout(r, Math.min(1500 + attempt * 500, 4_000)));
       }
       setConnectingProjectSessionId(null);
-      Alert.alert('Could not start session', 'The session runtime did not become ready. Please try again.');
+      Alert.alert('Could not start session', 'The session runtime did not become ready in time. Please try again.');
     } finally {
-      ensuringRef.current = null;
+      if (ensuringRef.current === ps.session_id) ensuringRef.current = null;
     }
   }, [projectId, connectToProjectSession]);
 
