@@ -387,26 +387,3 @@ image = "ubuntu:22.04"
     expect(text).toContain('kortix_version');
   });
 });
-
-describe('validateManifest — sandbox.warm_pool', () => {
-  test('accepts a valid warm_pool table', () => {
-    const r = summarize('[sandbox.warm_pool]\nenabled = true\nsize = 2\n');
-    expect(r.errorPaths).toEqual([]);
-  });
-
-  test('accepts an empty / omitted warm_pool', () => {
-    expect(summarize('[sandbox]\n').errorPaths).toEqual([]);
-    expect(summarize('[sandbox.warm_pool]\n').errorPaths).toEqual([]);
-  });
-
-  test('rejects non-boolean enabled', () => {
-    const r = summarize('[sandbox.warm_pool]\nenabled = "yes"\n');
-    expect(r.errorPaths).toContain('sandbox.warm_pool.enabled');
-  });
-
-  test('rejects negative / non-integer / oversized size', () => {
-    expect(summarize('[sandbox.warm_pool]\nsize = -1\n').errorPaths).toContain('sandbox.warm_pool.size');
-    expect(summarize('[sandbox.warm_pool]\nsize = 1.5\n').errorPaths).toContain('sandbox.warm_pool.size');
-    expect(summarize('[sandbox.warm_pool]\nsize = 999\n').errorPaths).toContain('sandbox.warm_pool.size');
-  });
-})

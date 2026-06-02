@@ -10,7 +10,7 @@ import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../src/shared/db';
 import { getProvider } from '../src/platform/providers';
-import { notePoolPresence, reconcileWarmPool, resolveWarmConfig } from '../src/platform/services/warm-pool';
+import { notePoolPresence, reconcileWarmPool, warmPoolEnabled } from '../src/platform/services/warm-pool';
 
 const PID = process.env.BENCH_PROJECT_ID || '';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -48,7 +48,7 @@ async function main() {
     const seenAt = (p?.m as any)?.warm_pool_seen_at;
     ok(!!seenAt, `warm_pool_seen_at written (${seenAt ? String(seenAt).slice(0, 19) : 'MISSING'})`);
     ok(boxes.length >= 1, `presence kicked a spawn (${boxes.length} box in ${((Date.now() - tSpawn) / 1000).toFixed(1)}s)`);
-    ok(resolveWarmConfig(p?.m).enabled, 'project warm config resolves enabled');
+    ok(warmPoolEnabled(), 'warm pool enabled (global flag)');
     if (boxes.length === 0) throw new Error('no box spawned from presence');
 
     // 2. wait for parked

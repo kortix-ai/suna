@@ -1,19 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveWarmConfig, warmBoxReapReason } from '../platform/services/warm-pool';
-
-describe('resolveWarmConfig', () => {
-  test('defaults to enabled/size 1 when unset', () => {
-    expect(resolveWarmConfig(null)).toEqual({ enabled: true, size: 1 });
-    expect(resolveWarmConfig({})).toEqual({ enabled: true, size: 1 });
-  });
-  test('reads synced metadata.warm_pool', () => {
-    expect(resolveWarmConfig({ warm_pool: { enabled: false, size: 3 } })).toEqual({ enabled: false, size: 3 });
-    expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 0 } })).toEqual({ enabled: true, size: 0 });
-  });
-  test('clamps oversized size', () => {
-    expect(resolveWarmConfig({ warm_pool: { size: 999 } })).toEqual({ enabled: true, size: 10 });
-  });
-});
+import { warmBoxReapReason } from '../platform/services/warm-pool';
 
 describe('warmBoxReapReason', () => {
   const base = { status: 'active', createdAt: new Date(1000), updatedAt: new Date(1000) };

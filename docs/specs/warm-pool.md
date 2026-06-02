@@ -10,16 +10,19 @@ Cut session create→usable by keeping N pre-booted sandboxes per project, ready
 to **claim** instantly instead of calling `daytona.create()` + clone + opencode
 boot on the request path.
 
-Configurable per project in `kortix.toml`:
+**This is a cloud/operator setting, not a per-project one** — there is no
+`kortix.toml` config and no UI. The operator turns it on and sizes it via env:
 
-```toml
-[sandbox.warm_pool]
-enabled = true   # default true
-size    = 1      # default 1; warm sandboxes kept ready per project
+```
+KORTIX_WARM_POOL_ENABLED=true       # off by default
+KORTIX_WARM_POOL_SIZE=1             # warm boxes kept per active project
+KORTIX_WARM_POOL_MAX_TOTAL=50       # global cap (idle cost + Daytona quota)
+KORTIX_WARM_POOL_PRESENCE_MINUTES=15 # only warm projects a user is present in
 ```
 
-Toggle/size also editable from the Customize → Sandbox section (UI writes the
-same manifest, same as the rest of `[sandbox]`).
+Cost is contained by **presence gating**: a pool is held only while a user is
+actively in the project (authenticated portal activity), and reaped when they
+leave — so no idle boxes 24/7.
 
 ## What a warm sandbox can pre-do — the crux
 
@@ -96,14 +99,12 @@ contract). Per-session executor/LLM tokens are minted at claim and handed to the
 daemon in the claim payload (not via env). If a use case truly needs a
 per-sandbox `KORTIX_TOKEN`, mint it at claim and have the daemon adopt it.
 
-## Config + plumbing
+## Config
 
-- **Schema** (`packages/manifest-schema`): add `warm_pool { enabled: bool, size:
-  int 0..N }` under `[sandbox]`, validated alongside `default`.
-- **Metadata sync** (`templates.ts`, same place `default_sandbox_slug` is
-  written): persist `projects.metadata.warm_pool = { enabled, size }`.
-- **UI**: Customize → Sandbox toggle + size stepper → writes the manifest (same
-  path as other `[sandbox]` edits). Default on / size 1 when unset.
+Operator env only (see top). No per-project `kortix.toml` config, no UI — warm
+pool is infra, not project authoring. `projects.metadata.warm_pool_seen_at` is
+the only project-level field, and it's a runtime *presence* timestamp written by
+`notePoolPresence`, not user config.
 
 ## Data model
 

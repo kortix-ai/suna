@@ -120,6 +120,9 @@ const envSchema = z.object({
   // Warm sandbox pool (docs/specs/warm-pool.md). Default OFF — when enabled,
   // keep N pre-booted sandboxes per project to claim instantly.
   KORTIX_WARM_POOL_ENABLED:        optBoolFalse,
+  // How many warm sandboxes to keep per active project (operator-set; this is
+  // a cloud/infra knob, not a per-project setting).
+  KORTIX_WARM_POOL_SIZE:           optInt(1),
   // Global cap on total warm (pre-booted, unclaimed) sandboxes across all
   // projects — bounds idle cost + the Daytona quota.
   KORTIX_WARM_POOL_MAX_TOTAL:      optInt(50),
@@ -444,6 +447,7 @@ export const config = {
   MANAGED_GIT_GITHUB_TOKEN: env.MANAGED_GIT_GITHUB_TOKEN,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_WARM_POOL_ENABLED: env.KORTIX_WARM_POOL_ENABLED,
+  KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
   KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
   KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
 

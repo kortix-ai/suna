@@ -19,32 +19,16 @@ import { db } from '../../shared/db';
 import { config } from '../../config';
 import { getProvider } from '../providers';
 import { provisionSessionSandbox } from './session-sandbox';
-import { DEFAULT_WARM_POOL, extractWarmPool, type WarmPoolConfig } from '../../snapshots/dockerfile-layer';
 
 const POOL_BOOT_TIMEOUT_MS = 8 * 60 * 1000; // booting longer than this → failed → reap
 const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle (snapshot drift)
 const READY_PROBE_TIMEOUT_MS = 5 * 60 * 1000;
 const READY_PROBE_INTERVAL_MS = 3000;
 
+// Warm pool is a cloud/infra setting, not a per-project one: a single global
+// flag + size, set by the operator. See docs/specs/warm-pool.md.
 export const warmPoolEnabled = (): boolean => config.KORTIX_WARM_POOL_ENABLED === true;
-
-/** Effective warm config for a project, honoring the default (on / size 1). */
-export function resolveWarmConfig(metadata: unknown): WarmPoolConfig {
-  const meta = metadata as Record<string, unknown> | null | undefined;
-  const wp = meta?.warm_pool;
-  if (wp && typeof wp === 'object' && !Array.isArray(wp)) {
-    // Already-synced metadata.warm_pool ({enabled,size}).
-    const raw = wp as Record<string, unknown>;
-    const enabled = typeof raw.enabled === 'boolean' ? raw.enabled : DEFAULT_WARM_POOL.enabled;
-    const size =
-      typeof raw.size === 'number' && Number.isInteger(raw.size) && raw.size >= 0
-        ? Math.min(raw.size, 10)
-        : DEFAULT_WARM_POOL.size;
-    return { enabled, size };
-  }
-  // No synced config yet → fall back to the manifest shape / defaults.
-  return extractWarmPool(meta ? { sandbox: (meta as any).sandbox } : null);
-}
+const warmPoolSize = (): number => Math.max(0, config.KORTIX_WARM_POOL_SIZE);
 
 /**
  * Why a parked/booting box should be reaped, or null to keep it. Pure so it's
@@ -226,21 +210,21 @@ async function reapWarmSandbox(row: { sandboxId: string; externalId: string | nu
 export async function refillProjectPool(projectId: string): Promise<void> {
   if (!warmPoolEnabled()) return;
   try {
+    const desired = warmPoolSize();
+    if (desired <= 0) return;
     const [project] = await db
-      .select({ projectId: projects.projectId, accountId: projects.accountId, repoUrl: projects.repoUrl, defaultBranch: projects.defaultBranch, manifestPath: projects.manifestPath, metadata: projects.metadata })
+      .select({ projectId: projects.projectId, accountId: projects.accountId, repoUrl: projects.repoUrl, defaultBranch: projects.defaultBranch, manifestPath: projects.manifestPath })
       .from(projects)
       .where(eq(projects.projectId, projectId))
       .limit(1);
     if (!project) return;
-    const cfg = resolveWarmConfig(project.metadata);
-    if (!cfg.enabled || cfg.size <= 0) return;
     const live = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(sessionSandboxes)
       .where(and(eq(sessionSandboxes.projectId, projectId), inArray(sessionSandboxes.poolState, ['booting', 'parked'])))
       .then((rows) => Number(rows[0]?.n ?? 0));
     const globalRemaining = config.KORTIX_WARM_POOL_MAX_TOTAL - (await countGlobalWarm());
-    const want = Math.min(cfg.size - live, Math.max(0, globalRemaining));
+    const want = Math.min(desired - live, Math.max(0, globalRemaining));
     for (let i = 0; i < want; i++) {
       await spawnWarmSandbox(project).catch((err) => console.warn('[warm-pool] spawn failed:', err instanceof Error ? err.message : err));
     }
@@ -289,7 +273,7 @@ export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: num
   let reaped = 0;
   const presenceCutoff = new Date(now.getTime() - config.KORTIX_WARM_POOL_PRESENCE_MINUTES * 60_000);
   const present = await db
-    .select({ projectId: projects.projectId, metadata: projects.metadata })
+    .select({ projectId: projects.projectId })
     .from(projects)
     .where(sql`(${projects.metadata} ->> 'warm_pool_seen_at')::timestamptz > ${presenceCutoff.toISOString()}::timestamptz`);
   const presentIds = new Set(present.map((p) => p.projectId));
@@ -307,13 +291,9 @@ export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: num
     }
   }
 
-  // 2. Refill projects where a user is present right now and the pool is enabled.
-  let refilled = 0;
+  // 2. Refill projects where a user is present right now (size is the global op knob).
   for (const p of present) {
-    if (resolveWarmConfig(p.metadata).enabled) {
-      await refillProjectPool(p.projectId);
-      refilled++;
-    }
+    await refillProjectPool(p.projectId);
   }
-  return { reaped, projects: refilled };
+  return { reaped, projects: present.length };
 }
