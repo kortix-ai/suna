@@ -12,29 +12,24 @@ const marketingButtonVariants = cva(
       variant: {
         default: 'bg-foreground text-background hover:bg-foreground/90',
         brand:
-          'bg-actrun-blue/90 dark:bg-actrun-blue/60 text-background dark:text-foreground shadow-xs hover:bg-actrun-blue/85 dark:hover:bg-actrun-blue/50 transition-colors duration-200 ease-in',
-        blue: 'bg-actrun-blue text-background dark:text-foreground shadow-xs hover:bg-actrun-blue/90',
-        'blue-ghost': 'hover:bg-sidebar-accent/40 text-actrun-blue',
-        'blue-secondary':
-          'bg-actrun-blue/10 text-actrun-blue hover:bg-actrun-blue/20',
+          'bg-kortix-blue/90 dark:bg-kortix-blue/60 text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/85 dark:hover:bg-kortix-blue/50 transition-colors duration-200 ease-in',
+        blue: 'bg-kortix-blue text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/90',
+        'blue-ghost': 'hover:bg-sidebar-accent/40 text-kortix-blue',
+        'blue-secondary': 'bg-kortix-blue/10 text-kortix-blue hover:bg-kortix-blue/20',
         danger: 'bg-destructive text-background hover:bg-destructive/90',
-        destructive:
-          'bg-destructive/80 text-background hover:bg-destructive/85',
+        destructive: 'bg-destructive/80 text-background hover:bg-destructive/85',
         outline:
           'border border-border bg-transparent text-foreground hover:bg-foreground/5 hover:text-foreground',
-        'outline-ghost':
-          'border border-primary/10 hover:bg-background/50 hover:text-foreground',
+        'outline-ghost': 'border border-primary/10 hover:bg-background/50 hover:text-foreground',
         secondary:
           'bg-secondary text-primary hover:bg-secondary  border border-border  text-foreground ',
         'outline-secondary': 'bg-secondary text-primary hover:bg-secondary ',
         input: 'bg-input text-primary hover:bg-input',
         accent: 'bg-foreground/5 text-accent-foreground hover:bg-foreground/10',
-        ghost:
-          'bg-transparent text-foreground hover:bg-foreground/10 hover:text-foreground',
+        ghost: 'bg-transparent text-foreground hover:bg-foreground/10 hover:text-foreground',
         muted: 'bg-muted text-foreground hover:bg-muted/90',
         link: 'text-foreground underline-offset-4 hover:underline bg-transparent',
-        foreground:
-          'bg-foreground text-foreground-foreground hover:bg-foreground/90',
+        foreground: 'bg-foreground text-foreground-foreground hover:bg-foreground/90',
         'outline-foreground':
           'border border-foreground/10 bg-foreground/80 hover:bg-foreground/90 text-foreground/80 hover:text-foreground',
         success: 'bg-emerald-500/60 text-foreground hover:bg-emerald-500/65',
@@ -46,8 +41,7 @@ const marketingButtonVariants = cva(
         transparent: 'bg-transparent hover:bg-transparent text-foreground',
         text: 'text-muted-foreground hover:text-primary',
 
-        'ghost-sidebar':
-          'bg-transparent hover:bg-sidebar hover:text-sidebar-accent-foreground',
+        'ghost-sidebar': 'bg-transparent hover:bg-sidebar hover:text-sidebar-accent-foreground',
         'outline-sidebar':
           'border border-border bg-transparent hover:bg-sidebar hover:text-sidebar-accent-foreground',
       },
@@ -64,8 +58,7 @@ const marketingButtonVariants = cva(
         'icon-lg': 'size-10 ',
         'magic-sm':
           'h-9 px-4 py-2 has-[>svg]:px-3  sm:h-8 sm:rounded-sm sm:gap-1.5 sm:px-3 sm:has-[>svg]:px-2.5',
-        toolbar:
-          "h-7 gap-1.5 px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+        toolbar: "h-7 gap-1.5 px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
 
         fit: 'h-auto w-auto items-start justify-start px-3 py-1.5',
       },

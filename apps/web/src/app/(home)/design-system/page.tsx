@@ -2,111 +2,40 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useState, useEffect } from 'react';
+import { cn } from '@/lib/utils';
 import {
-  Download,
-  Check,
-  Copy,
-  X,
-  Loader2,
   AlertCircle,
   AlertTriangle,
-  Info,
-  TriangleAlert,
-  Bold,
-  Settings,
-  MoreHorizontal,
-  HelpCircle,
-  ChevronsUpDown,
-  Search,
-  Plus,
-  Trash2,
   ArrowRight,
-  Mail,
-  Star,
+  Bold,
+  Check,
+  ChevronsUpDown,
+  Copy,
+  Download,
   FolderGit2,
+  HelpCircle,
+  Info,
+  Loader2,
+  Mail,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Settings,
+  Star,
+  Trash2,
+  TriangleAlert,
   Users,
+  X,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Switch } from '@/components/ui/switch';
-import { Toggle } from '@/components/ui/toggle';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-  TabsListCompact,
-  TabsTriggerCompact,
-} from '@/components/ui/tabs';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-  ModalTrigger,
-} from '@/components/ui/modal';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipProvider,
-} from '@/components/ui/tooltip';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -118,17 +47,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
-import { Slider } from '@/components/ui/slider';
-import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -137,6 +56,84 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { DefinitionList, DefinitionRow } from '@/components/ui/definition-list';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { EmptyState } from '@/components/ui/empty-state';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { InfoBanner } from '@/components/ui/info-banner';
+import { InlineMeta } from '@/components/ui/inline-meta';
+import { Input } from '@/components/ui/input';
+import { Kbd, KbdGroup } from '@/components/ui/kbd';
+import { IconInbox } from '@/components/ui/kortix-icons';
+import { Label } from '@/components/ui/label';
+import { List, ListRow } from '@/components/ui/list';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+  ModalTrigger,
+} from '@/components/ui/modal';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageSearchBar } from '@/components/ui/page-search-bar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Progress } from '@/components/ui/progress';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Section as BrandSection } from '@/components/ui/section';
+import { SectionCard } from '@/components/ui/section-card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Slider } from '@/components/ui/slider';
+import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { DiffStat, StatusBadge, StatusDot } from '@/components/ui/status';
+import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -145,30 +142,19 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Kbd, KbdGroup } from '@/components/ui/kbd';
-import { Calendar } from '@/components/ui/calendar';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import { PageShell } from '@/components/ui/page-shell';
-import { Section as BrandSection } from '@/components/ui/section';
-import { DefinitionList, DefinitionRow } from '@/components/ui/definition-list';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import { EmptyState } from '@/components/ui/empty-state';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { StatusDot, DiffStat, StatusBadge } from '@/components/ui/status';
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsListCompact,
+  TabsTrigger,
+  TabsTriggerCompact,
+} from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { Toggle } from '@/components/ui/toggle';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
-import { IconInbox } from '@/components/ui/kortix-icons';
-import { PageHeader } from '@/components/ui/page-header';
-import { SpotlightCard } from '@/components/ui/spotlight-card';
-import { PageSearchBar } from '@/components/ui/page-search-bar';
-import { Cable, Radio, Zap, Plug } from 'lucide-react';
+import { Cable, Plug, Radio, Zap } from 'lucide-react';
 
 /* ─────────────────────── Data ─────────────────────── */
 
@@ -552,9 +538,7 @@ const TOC_SECTIONS = [
 
 /* All section IDs flattened for intersection observer */
 const ALL_SECTION_IDS = TOC_SECTIONS.flatMap((s) =>
-  'children' in s && s.children
-    ? [s.id, ...s.children.map((c) => c.id)]
-    : [s.id],
+  'children' in s && s.children ? [s.id, ...s.children.map((c) => c.id)] : [s.id],
 );
 
 /* ─────────────────── Helper Components ─────────────────── */
@@ -569,15 +553,15 @@ function Hex({ value }: { value: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1200);
       }}
-      className="inline-flex items-center gap-1.5 group cursor-pointer"
+      className="group inline-flex cursor-pointer items-center gap-1.5"
     >
-      <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground transition-colors">
+      <span className="text-muted-foreground group-hover:text-foreground font-mono text-xs transition-colors">
         {value}
       </span>
       {copied ? (
         <Check className="size-2.5 text-emerald-500" />
       ) : (
-        <Copy className="size-2.5 text-muted-foreground group-hover:text-muted-foreground transition-colors" />
+        <Copy className="text-muted-foreground group-hover:text-muted-foreground size-2.5 transition-colors" />
       )}
     </button>
   );
@@ -592,7 +576,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
     <div className="group relative">
       <div
         className={cn(
-          'aspect-[3/2] rounded-lg flex items-center justify-center transition-colors relative overflow-hidden',
+          'relative flex aspect-[3/2] items-center justify-center overflow-hidden rounded-lg transition-colors',
           isWordmark ? 'px-6 py-8' : 'p-10',
           asset.dark
             ? 'bg-neutral-950 ring-1 ring-white/[0.06]'
@@ -605,30 +589,24 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
           alt={`Kortix ${asset.label} ${asset.variant}`}
           className={cn(
             'object-contain',
-            isWordmark
-              ? 'max-h-8 md:max-h-10 w-full'
-              : 'max-h-10 md:max-h-12 w-auto',
+            isWordmark ? 'max-h-8 w-full md:max-h-10' : 'max-h-10 w-auto md:max-h-12',
           )}
         />
 
         <a
           href={downloadHref}
           download={downloadName}
-          className="absolute inset-0 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity bg-black/[0.04] dark:bg-white/[0.04] cursor-pointer"
+          className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-lg bg-black/[0.04] opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white/[0.04]"
         >
-          <span className="flex items-center gap-1.5 text-xs font-medium bg-background ring-1 ring-border rounded-full px-3 py-1.5 shadow-sm">
+          <span className="bg-background ring-border flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm ring-1">
             <Download className="size-3" /> {fmt.toUpperCase()}
           </span>
         </a>
       </div>
 
       <div className="mt-2 flex items-baseline gap-1.5 px-0.5">
-        <span className="text-xs font-medium text-foreground">
-          {asset.label}
-        </span>
-        <span className="text-xs font-mono text-muted-foreground">
-          {asset.variant}
-        </span>
+        <span className="text-foreground text-xs font-medium">{asset.label}</span>
+        <span className="text-muted-foreground font-mono text-xs">{asset.variant}</span>
       </div>
     </div>
   );
@@ -642,15 +620,15 @@ function FormatToggle({
   onChange: (v: LogoFormat) => void;
 }) {
   return (
-    <div className="flex items-center gap-0.5 bg-foreground/[0.05] rounded-full p-0.5">
+    <div className="bg-foreground/[0.05] flex items-center gap-0.5 rounded-full p-0.5">
       {(['svg', 'png'] as const).map((f) => (
         <button
           key={f}
           onClick={() => onChange(f)}
           className={cn(
-            'text-xs font-mono px-3 py-1 rounded-full transition-colors cursor-pointer',
+            'cursor-pointer rounded-full px-3 py-1 font-mono text-xs transition-colors',
             value === f
-              ? 'bg-background text-foreground shadow-sm ring-1 ring-foreground/[0.06]'
+              ? 'bg-background text-foreground ring-foreground/[0.06] shadow-sm ring-1'
               : 'text-muted-foreground hover:text-foreground',
           )}
         >
@@ -661,43 +639,26 @@ function FormatToggle({
   );
 }
 
-function DemoContainer({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function DemoContainer({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div
-      className={cn(
-        'rounded-xl ring-1 ring-border/50 bg-card/30 p-6',
-        className,
-      )}
-    >
+    <div className={cn('ring-border/50 bg-card/30 rounded-xl p-6 ring-1', className)}>
       {children}
     </div>
   );
 }
 
 function SectionDivider() {
-  return <div className="mt-14 pt-8 border-t border-border/50" />;
+  return <div className="border-border/50 mt-14 border-t pt-8" />;
 }
 
 function ComponentLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
-      {children}
-    </h3>
+    <h3 className="text-muted-foreground mb-2 text-xs tracking-widest uppercase">{children}</h3>
   );
 }
 
 function ComponentDesc({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-      {children}
-    </p>
-  );
+  return <p className="text-muted-foreground mb-4 text-sm leading-relaxed">{children}</p>;
 }
 
 /* ─── Motion Demo ─── */
@@ -729,26 +690,22 @@ function MotionBar({
       <button
         type="button"
         onClick={replay}
-        className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors cursor-pointer w-24 shrink-0 text-left"
+        className="text-muted-foreground hover:text-foreground w-24 shrink-0 cursor-pointer text-left font-mono text-xs transition-colors"
       >
         {label}
       </button>
-      <div className="flex-1 h-7 bg-muted/30 rounded-md relative overflow-hidden">
+      <div className="bg-muted/30 relative h-7 flex-1 overflow-hidden rounded-md">
         <div
-          className="absolute top-1 bottom-1 left-1 rounded-sm bg-foreground/70"
+          className="bg-foreground/70 absolute top-1 bottom-1 left-1 rounded-sm"
           style={{
             width: active ? 'calc(100% - 8px)' : '24px',
             transitionProperty: 'width',
-            transitionDuration: durationToken
-              ? `var(${durationToken})`
-              : `${durationMs}ms`,
-            transitionTimingFunction: easingToken
-              ? `var(${easingToken})`
-              : easing,
+            transitionDuration: durationToken ? `var(${durationToken})` : `${durationMs}ms`,
+            transitionTimingFunction: easingToken ? `var(${easingToken})` : easing,
           }}
         />
       </div>
-      <span className="text-xs font-mono text-muted-foreground w-14 shrink-0 text-right">
+      <span className="text-muted-foreground w-14 shrink-0 text-right font-mono text-xs">
         {durationMs}ms
       </span>
     </div>
@@ -770,33 +727,31 @@ function AntiPatternBlock({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="rounded-xl ring-1 ring-border/50 overflow-hidden">
-      <div className="px-5 py-4 border-b border-border/30">
-        <h4 className="text-sm font-medium text-foreground">{title}</h4>
-        <p className="text-xs text-muted-foreground mt-1">{description}</p>
+    <div className="ring-border/50 overflow-hidden rounded-xl ring-1">
+      <div className="border-border/30 border-b px-5 py-4">
+        <h4 className="text-foreground text-sm font-medium">{title}</h4>
+        <p className="text-muted-foreground mt-1 text-xs">{description}</p>
       </div>
-      <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/30">
+      <div className="divide-border/30 grid divide-y md:grid-cols-2 md:divide-x md:divide-y-0">
         <div className="p-4">
-          <div className="flex items-center gap-1.5 mb-2.5">
+          <div className="mb-2.5 flex items-center gap-1.5">
             <X className="size-3 text-red-500" />
-            <span className="text-xs uppercase tracking-widest text-red-500/70 font-medium">
-              {tHardcodedUi.raw(
-                'appHomeDesignSystemPage.line566JsxTextDonAposT',
-              )}
+            <span className="text-xs font-medium tracking-widest text-red-500/70 uppercase">
+              {tHardcodedUi.raw('appHomeDesignSystemPage.line566JsxTextDonAposT')}
             </span>
           </div>
-          <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap leading-relaxed bg-muted/30 rounded-lg p-3 overflow-x-auto">
+          <pre className="text-muted-foreground bg-muted/30 overflow-x-auto rounded-lg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
             {bad}
           </pre>
         </div>
         <div className="p-4">
-          <div className="flex items-center gap-1.5 mb-2.5">
+          <div className="mb-2.5 flex items-center gap-1.5">
             <Check className="size-3 text-emerald-500" />
-            <span className="text-xs uppercase tracking-widest text-emerald-500/70 font-medium">
+            <span className="text-xs font-medium tracking-widest text-emerald-500/70 uppercase">
               Do
             </span>
           </div>
-          <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap leading-relaxed bg-muted/30 rounded-lg p-3 overflow-x-auto">
+          <pre className="text-muted-foreground bg-muted/30 overflow-x-auto rounded-lg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
             {good}
           </pre>
         </div>
@@ -840,7 +795,7 @@ function TocSidebar() {
   })?.id;
 
   return (
-    <nav className="hidden lg:block sticky top-20 self-start w-48 shrink-0 pt-2">
+    <nav className="sticky top-20 hidden w-48 shrink-0 self-start pt-2 lg:block">
       <ul className="space-y-0.5">
         {TOC_SECTIONS.map((s) => {
           const isParentActive = s.id === activeParentId;
@@ -850,7 +805,7 @@ function TocSidebar() {
               <a
                 href={`#${s.id}`}
                 className={cn(
-                  'text-xs block py-1 transition-colors',
+                  'block py-1 text-xs transition-colors',
                   activeId === s.id || isParentActive
                     ? 'text-foreground font-medium'
                     : 'text-muted-foreground hover:text-foreground',
@@ -859,13 +814,13 @@ function TocSidebar() {
                 {s.label}
               </a>
               {hasChildren && isParentActive && (
-                <ul className="ml-2.5 border-l border-border/30 pl-2.5 mt-0.5 mb-1 space-y-0">
+                <ul className="border-border/30 mt-0.5 mb-1 ml-2.5 space-y-0 border-l pl-2.5">
                   {s.children.map((c) => (
                     <li key={c.id}>
                       <a
                         href={`#${c.id}`}
                         className={cn(
-                          'text-xs block py-0.5 transition-colors',
+                          'block py-0.5 text-xs transition-colors',
                           activeId === c.id
                             ? 'text-foreground font-medium'
                             : 'text-muted-foreground hover:text-foreground',
@@ -893,40 +848,36 @@ export default function BrandPage() {
   const [checkboxChecked, setCheckboxChecked] = useState(true);
   const [switchOn, setSwitchOn] = useState(true);
   const [switchOff, setSwitchOff] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(
-    new Date(),
-  );
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [sliderValue, setSliderValue] = useState([50]);
   const [togglePressed, setTogglePressed] = useState(true);
   const [collapsibleOpen, setCollapsibleOpen] = useState(false);
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="max-w-5xl mx-auto px-6 pt-24 sm:pt-32 pb-24 sm:pb-32">
+    <main className="bg-background min-h-screen">
+      <div className="mx-auto max-w-5xl px-6 pt-24 pb-24 sm:pt-32 sm:pb-32">
         <div className="flex gap-16">
           {/* TOC sidebar — desktop only */}
           <TocSidebar />
 
           {/* Main content */}
-          <div className="flex-1 max-w-3xl">
+          <div className="max-w-3xl flex-1">
             {/* ═══════════════ Hero ═══════════════ */}
             <section id="hero">
               <div className="mb-3">
-                <Badge variant="outline" className="text-xs font-mono">
+                <Badge variant="outline" className="font-mono text-xs">
                   v1.0
                 </Badge>
               </div>
-              <h1 className="text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-foreground mb-5">
-                {tHardcodedUi.raw(
-                  'appHomeDesignSystemPage.line700JsxTextBrandAmpDesignSystem',
-                )}
+              <h1 className="text-foreground mb-5 text-3xl font-medium tracking-tight sm:text-4xl md:text-5xl">
+                {tHardcodedUi.raw('appHomeDesignSystemPage.line700JsxTextBrandAmpDesignSystem')}
               </h1>
-              <p className="text-base text-muted-foreground leading-relaxed max-w-xl">
+              <p className="text-muted-foreground max-w-xl text-base leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line703JsxTextLogoAssetsColorPaletteTypographyMotionTokensComponent',
                 )}
               </p>
-              <div className="flex flex-wrap gap-2 mt-6">
+              <div className="mt-6 flex flex-wrap gap-2">
                 <Badge variant="secondary">
                   <span className="font-mono">30+</span> Components
                 </Badge>
@@ -934,37 +885,31 @@ export default function BrandPage() {
                   <span className="font-mono">7</span> Themes
                 </Badge>
                 <Badge variant="secondary">
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line714JsxTextOklchColors',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line714JsxTextOklchColors')}
                 </Badge>
                 <Badge variant="secondary">
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line715JsxTextRadixPrimitives',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line715JsxTextRadixPrimitives')}
                 </Badge>
               </div>
             </section>
 
             {/* ═══════════════ Logo ═══════════════ */}
             <section id="logo" className="mt-14">
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-xs uppercase tracking-widest text-muted-foreground">
-                  Logo
-                </h2>
+              <div className="mb-5 flex items-center justify-between">
+                <h2 className="text-muted-foreground text-xs tracking-widest uppercase">Logo</h2>
                 <FormatToggle value={logoFmt} onChange={setLogoFmt} />
               </div>
-              <p className="text-base text-muted-foreground leading-relaxed mb-6">
+              <p className="text-muted-foreground mb-6 text-base leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line728JsxTextTwoFormsTheSymbolAndTheWordmarkEach',
                 )}
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {LOGO_ASSETS.map((a) => (
                   <LogoCard key={a.id} asset={a} fmt={logoFmt} />
                 ))}
               </div>
-              <p className="text-sm text-muted-foreground leading-relaxed mt-6">
+              <p className="text-muted-foreground mt-6 text-sm leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line737JsxTextTheSymbolIsDerivedFromTheLetterK',
                 )}
@@ -978,10 +923,10 @@ export default function BrandPage() {
             {/* ═══════════════ Colors ═══════════════ */}
             <section id="colors">
               <SectionDivider />
-              <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
+              <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
                 Colors
               </h2>
-              <p className="text-base text-muted-foreground leading-relaxed mb-6">
+              <p className="text-muted-foreground mb-6 text-base leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line751JsxTextBlackAndWhiteIsTheFoundationEachUi',
                 )}
@@ -989,8 +934,8 @@ export default function BrandPage() {
 
               {/* Foundation */}
               <div className="mb-8">
-                <p className="text-xs text-muted-foreground mb-3">Foundation</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <p className="text-muted-foreground mb-3 text-xs">Foundation</p>
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                   {BRAND_COLORS.map((c) => (
                     <div key={c.hex}>
                       <div
@@ -1000,10 +945,8 @@ export default function BrandPage() {
                         )}
                         style={{ backgroundColor: c.hex }}
                       />
-                      <div className="mt-2 px-0.5 space-y-0.5">
-                        <span className="text-xs font-medium text-foreground">
-                          {c.name}
-                        </span>
+                      <div className="mt-2 space-y-0.5 px-0.5">
+                        <span className="text-foreground text-xs font-medium">{c.name}</span>
                         <div className="flex flex-col">
                           <Hex value={c.hex} />
                           <Hex value={c.oklch} />
@@ -1018,48 +961,44 @@ export default function BrandPage() {
                     rendered with both light and dark swatches so the whole
                     theme is visible at a glance regardless of the current mode. */}
               <div>
-                <div className="flex items-baseline justify-between mb-3">
-                  <p className="text-xs text-muted-foreground">
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line791JsxTextCorePalette',
-                    )}
+                <div className="mb-3 flex items-baseline justify-between">
+                  <p className="text-muted-foreground text-xs">
+                    {tHardcodedUi.raw('appHomeDesignSystemPage.line791JsxTextCorePalette')}
                   </p>
-                  <p className="font-mono text-xs text-muted-foreground/70">
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line794JsxTextGlobalsCssRootDark',
-                    )}
+                  <p className="text-muted-foreground/70 font-mono text-xs">
+                    {tHardcodedUi.raw('appHomeDesignSystemPage.line794JsxTextGlobalsCssRootDark')}
                   </p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   {CORE_PALETTE.map((token) => (
                     <div
                       key={token.var}
-                      className="rounded-lg border border-border/50 overflow-hidden"
+                      className="border-border/50 overflow-hidden rounded-lg border"
                     >
-                      <div className="grid grid-cols-2 h-14">
+                      <div className="grid h-14 grid-cols-2">
                         <div
-                          className="relative ring-1 ring-inset ring-black/[0.06]"
+                          className="relative ring-1 ring-black/[0.06] ring-inset"
                           style={{ backgroundColor: token.light }}
                         >
-                          <span className="absolute bottom-1 left-2 text-xs font-mono text-black/55 uppercase tracking-widest">
+                          <span className="absolute bottom-1 left-2 font-mono text-xs tracking-widest text-black/55 uppercase">
                             light
                           </span>
                         </div>
                         <div
-                          className="relative ring-1 ring-inset ring-white/[0.06]"
+                          className="relative ring-1 ring-white/[0.06] ring-inset"
                           style={{ backgroundColor: token.dark }}
                         >
-                          <span className="absolute bottom-1 left-2 text-xs font-mono text-white/55 uppercase tracking-widest">
+                          <span className="absolute bottom-1 left-2 font-mono text-xs tracking-widest text-white/55 uppercase">
                             dark
                           </span>
                         </div>
                       </div>
-                      <div className="px-3 py-2.5 bg-background">
-                        <div className="flex items-baseline justify-between gap-2 mb-1">
-                          <span className="text-xs font-medium text-foreground truncate">
+                      <div className="bg-background px-3 py-2.5">
+                        <div className="mb-1 flex items-baseline justify-between gap-2">
+                          <span className="text-foreground truncate text-xs font-medium">
                             {token.name}
                           </span>
-                          <span className="font-mono text-xs text-muted-foreground shrink-0">
+                          <span className="text-muted-foreground shrink-0 font-mono text-xs">
                             {token.var}
                           </span>
                         </div>
@@ -1077,10 +1016,10 @@ export default function BrandPage() {
             {/* ═══════════════ Typography ═══════════════ */}
             <section id="typography">
               <SectionDivider />
-              <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
+              <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
                 Typography
               </h2>
-              <p className="text-base text-muted-foreground leading-relaxed mb-8">
+              <p className="text-muted-foreground mb-8 text-base leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line848JsxTextRoobertAGeometricSansSerifFontMedium500',
                 )}
@@ -1092,37 +1031,26 @@ export default function BrandPage() {
                   { label: 'Medium · 500', cls: 'font-medium' },
                   { label: 'Regular · 400', cls: 'font-normal' },
                 ].map((s) => (
-                  <div key={s.label} className="border-b border-border/30 pb-5">
-                    <span className="font-mono text-xs text-muted-foreground tracking-widest block mb-2">
+                  <div key={s.label} className="border-border/30 border-b pb-5">
+                    <span className="text-muted-foreground mb-2 block font-mono text-xs tracking-widest">
                       {s.label}
                     </span>
-                    <p
-                      className={cn(
-                        'text-3xl md:text-5xl tracking-tight text-foreground',
-                        s.cls,
-                      )}
-                    >
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line871JsxTextKortixComputer',
-                      )}
+                    <p className={cn('text-foreground text-3xl tracking-tight md:text-5xl', s.cls)}>
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line871JsxTextKortixComputer')}
                     </p>
                   </div>
                 ))}
               </div>
 
               {/* Mono showcase */}
-              <div className="bg-neutral-950 text-neutral-100 rounded-lg p-5 md:p-6 mt-6">
-                <span className="font-mono text-xs text-neutral-500 tracking-widest block mb-3">
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line880JsxTextRoobertMono',
-                  )}
+              <div className="mt-6 rounded-lg bg-neutral-950 p-5 text-neutral-100 md:p-6">
+                <span className="mb-3 block font-mono text-xs tracking-widest text-neutral-500">
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line880JsxTextRoobertMono')}
                 </span>
-                <p className="font-mono text-lg md:text-2xl tracking-tight">
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line883JsxTextConstAgentNewKortix',
-                  )}
+                <p className="font-mono text-lg tracking-tight md:text-2xl">
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line883JsxTextConstAgentNewKortix')}
                 </p>
-                <p className="font-mono text-xs text-neutral-600 mt-4">
+                <p className="mt-4 font-mono text-xs text-neutral-600">
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789',
                   )}
@@ -1131,30 +1059,24 @@ export default function BrandPage() {
 
               {/* Type scale table */}
               <div className="mt-8">
-                <p className="text-xs text-muted-foreground mb-4">
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line894JsxTextTypeScale',
-                  )}
+                <p className="text-muted-foreground mb-4 text-xs">
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line894JsxTextTypeScale')}
                 </p>
                 <div className="space-y-0">
                   {TYPE_SCALE.map((t) => (
                     <div
                       key={t.token}
-                      className="flex items-baseline gap-4 py-3 border-b border-border/20"
+                      className="border-border/20 flex items-baseline gap-4 border-b py-3"
                     >
                       <div className="w-24 shrink-0">
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {t.token}
-                        </span>
+                        <span className="text-muted-foreground font-mono text-xs">{t.token}</span>
                       </div>
                       <div className="w-16 shrink-0">
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {t.px}
-                        </span>
+                        <span className="text-muted-foreground font-mono text-xs">{t.px}</span>
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="min-w-0 flex-1">
                         <span
-                          className="text-foreground font-medium truncate block"
+                          className="text-foreground block truncate font-medium"
                           style={{ fontSize: t.size }}
                         >
                           {tHardcodedUi.raw(
@@ -1162,8 +1084,8 @@ export default function BrandPage() {
                           )}
                         </span>
                       </div>
-                      <div className="hidden sm:block shrink-0 max-w-48">
-                        <span className="text-xs text-muted-foreground truncate block">
+                      <div className="hidden max-w-48 shrink-0 sm:block">
+                        <span className="text-muted-foreground block truncate text-xs">
                           {t.use}
                         </span>
                       </div>
@@ -1176,10 +1098,10 @@ export default function BrandPage() {
             {/* ═══════════════ Motion ═══════════════ */}
             <section id="motion">
               <SectionDivider />
-              <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
+              <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
                 Motion
               </h2>
-              <p className="text-base text-muted-foreground leading-relaxed mb-6">
+              <p className="text-muted-foreground mb-6 text-base leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line938JsxTextStandardizedDurationAndEasingTokensEnsureEveryTransition',
                 )}
@@ -1187,10 +1109,8 @@ export default function BrandPage() {
 
               {/* Duration scale */}
               <div className="mb-8">
-                <p className="text-xs text-muted-foreground mb-4">
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line946JsxTextDurationScale',
-                  )}
+                <p className="text-muted-foreground mb-4 text-xs">
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line946JsxTextDurationScale')}
                 </p>
                 <DemoContainer>
                   <div className="space-y-3">
@@ -1208,10 +1128,8 @@ export default function BrandPage() {
 
               {/* Easing curves */}
               <div>
-                <p className="text-xs text-muted-foreground mb-4">
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line964JsxTextEasingCurves',
-                  )}
+                <p className="text-muted-foreground mb-4 text-xs">
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line964JsxTextEasingCurves')}
                 </p>
                 <DemoContainer>
                   <div className="space-y-3">
@@ -1232,10 +1150,10 @@ export default function BrandPage() {
             {/* ═══════════════ Spacing ═══════════════ */}
             <section id="spacing">
               <SectionDivider />
-              <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
+              <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
                 Spacing
               </h2>
-              <p className="text-base text-muted-foreground leading-relaxed mb-6">
+              <p className="text-muted-foreground mb-6 text-base leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line988JsxTextAConsistentSpacingScaleBasedOn4pxIncrements',
                 )}
@@ -1245,16 +1163,14 @@ export default function BrandPage() {
                 <div className="space-y-2.5">
                   {SPACING_SCALE.map((s) => (
                     <div key={s.token} className="flex items-center gap-4">
-                      <span className="font-mono text-xs text-muted-foreground w-8 shrink-0 text-right">
+                      <span className="text-muted-foreground w-8 shrink-0 text-right font-mono text-xs">
                         {s.token}
                       </span>
                       <div
-                        className="h-5 rounded-sm bg-foreground/60"
+                        className="bg-foreground/60 h-5 rounded-sm"
                         style={{ width: `${s.px * 3}px` }}
                       />
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {s.px}px
-                      </span>
+                      <span className="text-muted-foreground font-mono text-xs">{s.px}px</span>
                     </div>
                   ))}
                 </div>
@@ -1264,10 +1180,10 @@ export default function BrandPage() {
             {/* ═══════════════ Components ═══════════════ */}
             <section id="components">
               <SectionDivider />
-              <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
+              <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
                 Components
               </h2>
-              <p className="text-base text-muted-foreground leading-relaxed mb-8">
+              <p className="text-muted-foreground mb-8 text-base leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line1019JsxTextTheCompleteComponentLibraryEachComponentUsesA',
                 )}
@@ -1280,27 +1196,17 @@ export default function BrandPage() {
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line1029JsxTextText10Variants8SizesTheFoundationOfEvery',
                   )}
-                  <code className="font-mono text-xs bg-muted px-1 rounded">
-                    rounded-full
-                  </code>
+                  <code className="bg-muted rounded px-1 font-mono text-xs">rounded-full</code>
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line1030JsxTextEveryContainerCardsDialogsInputsTextareasSelectsInfo',
                   )}
-                  <code className="font-mono text-xs bg-muted px-1 rounded">
-                    rounded-2xl
-                  </code>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line1031JsxTextNeverPut',
-                  )}
-                  <code className="font-mono text-xs bg-muted px-1 rounded">
+                  <code className="bg-muted rounded px-1 font-mono text-xs">rounded-2xl</code>
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line1031JsxTextNeverPut')}
+                  <code className="bg-muted rounded px-1 font-mono text-xs">
                     rounded-sm/md/lg/xl
                   </code>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line1032JsxTextOnABoxThe',
-                  )}
-                  <code className="font-mono text-xs bg-muted px-1 rounded">
-                    destructive
-                  </code>
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line1032JsxTextOnABoxThe')}
+                  <code className="bg-muted rounded px-1 font-mono text-xs">destructive</code>
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line1033JsxTextVariantIsReservedForThe',
                   )}
@@ -1317,10 +1223,8 @@ export default function BrandPage() {
                   <div className="space-y-6">
                     {/* Base Variants */}
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1039JsxTextBaseVariants',
-                        )}
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1039JsxTextBaseVariants')}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Button variant="default">Default</Button>
@@ -1333,10 +1237,8 @@ export default function BrandPage() {
                     </div>
                     {/* Kortix Variants */}
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1051JsxTextKortixVariants',
-                        )}
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1051JsxTextKortixVariants')}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Button variant="secondary">Secondary</Button>
@@ -1347,10 +1249,8 @@ export default function BrandPage() {
                     </div>
                     {/* Standard Sizes */}
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1061JsxTextStandardSizes',
-                        )}
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1061JsxTextStandardSizes')}
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         <Button size="lg">Large</Button>
@@ -1363,10 +1263,8 @@ export default function BrandPage() {
                     </div>
                     {/* Compact Sizes */}
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1071JsxTextCompactSizes',
-                        )}
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1071JsxTextCompactSizes')}
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         <Button size="toolbar" variant="muted">
@@ -1385,17 +1283,13 @@ export default function BrandPage() {
                     </div>
                     {/* With Icons */}
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1081JsxTextWithIcons',
-                        )}
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1081JsxTextWithIcons')}
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         <Button>
                           <Mail className="size-4" />
-                          {tHardcodedUi.raw(
-                            'appHomeDesignSystemPage.line1083JsxTextSendEmail',
-                          )}
+                          {tHardcodedUi.raw('appHomeDesignSystemPage.line1083JsxTextSendEmail')}
                         </Button>
                         <Button variant="outline">
                           <Plus className="size-4" /> Create
@@ -1416,7 +1310,7 @@ export default function BrandPage() {
                     </div>
                     {/* States */}
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
                         States
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
@@ -1446,10 +1340,8 @@ export default function BrandPage() {
                 <DemoContainer>
                   <div className="space-y-4">
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1114JsxTextBaseVariants',
-                        )}
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1114JsxTextBaseVariants')}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="default">Default</Badge>
@@ -1462,10 +1354,8 @@ export default function BrandPage() {
                       </div>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1126JsxTextSemanticStatus',
-                        )}
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1126JsxTextSemanticStatus')}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="success">Success</Badge>
@@ -1475,7 +1365,7 @@ export default function BrandPage() {
                       </div>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
                         Sizes
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
@@ -1492,10 +1382,8 @@ export default function BrandPage() {
                       </div>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1144JsxTextWithIcons',
-                        )}
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1144JsxTextWithIcons')}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="default">
@@ -1529,13 +1417,11 @@ export default function BrandPage() {
                   )}
                 </ComponentDesc>
                 <DemoContainer>
-                  <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <Card variant="default">
                       <CardHeader>
                         <CardTitle>
-                          {tHardcodedUi.raw(
-                            'appHomeDesignSystemPage.line1167JsxTextDefaultCard',
-                          )}
+                          {tHardcodedUi.raw('appHomeDesignSystemPage.line1167JsxTextDefaultCard')}
                         </CardTitle>
                         <CardDescription>
                           {tHardcodedUi.raw(
@@ -1544,7 +1430,7 @@ export default function BrandPage() {
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-muted-foreground text-sm">
                           {tHardcodedUi.raw(
                             'appHomeDesignSystemPage.line1174JsxTextCardContentGoesHereUseForGroupingRelated',
                           )}
@@ -1559,9 +1445,7 @@ export default function BrandPage() {
                     <Card variant="glass">
                       <CardHeader>
                         <CardTitle>
-                          {tHardcodedUi.raw(
-                            'appHomeDesignSystemPage.line1186JsxTextGlassCard',
-                          )}
+                          {tHardcodedUi.raw('appHomeDesignSystemPage.line1186JsxTextGlassCard')}
                         </CardTitle>
                         <CardDescription>
                           {tHardcodedUi.raw(
@@ -1570,7 +1454,7 @@ export default function BrandPage() {
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-muted-foreground text-sm">
                           {tHardcodedUi.raw(
                             'appHomeDesignSystemPage.line1193JsxTextCardContentGoesHereUsedForOverlaysAnd',
                           )}
@@ -1595,7 +1479,7 @@ export default function BrandPage() {
                   )}
                 </ComponentDesc>
                 <DemoContainer>
-                  <div className="space-y-4 max-w-sm">
+                  <div className="max-w-sm space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="demo-input">Label</Label>
                       <Input
@@ -1632,7 +1516,7 @@ export default function BrandPage() {
                   )}
                 </ComponentDesc>
                 <DemoContainer>
-                  <div className="space-y-4 max-w-sm">
+                  <div className="max-w-sm space-y-4">
                     <Textarea
                       placeholder={tHardcodedUi.raw(
                         'appHomeDesignSystemPage.line1241JsxAttrPlaceholderWriteSomething',
@@ -1691,9 +1575,7 @@ export default function BrandPage() {
                       <Checkbox
                         id="check-1"
                         checked={checkboxChecked}
-                        onCheckedChange={(v) =>
-                          setCheckboxChecked(v as boolean)
-                        }
+                        onCheckedChange={(v) => setCheckboxChecked(v as boolean)}
                       />
                       <Label htmlFor="check-1">Checked</Label>
                     </div>
@@ -1703,10 +1585,7 @@ export default function BrandPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Checkbox id="check-3" disabled />
-                      <Label
-                        htmlFor="check-3"
-                        className="text-muted-foreground"
-                      >
+                      <Label htmlFor="check-3" className="text-muted-foreground">
                         Disabled
                       </Label>
                     </div>
@@ -1725,27 +1604,16 @@ export default function BrandPage() {
                 <DemoContainer>
                   <div className="space-y-4">
                     <div className="flex items-center gap-3">
-                      <Switch
-                        id="switch-on"
-                        checked={switchOn}
-                        onCheckedChange={setSwitchOn}
-                      />
+                      <Switch id="switch-on" checked={switchOn} onCheckedChange={setSwitchOn} />
                       <Label htmlFor="switch-on">On</Label>
                     </div>
                     <div className="flex items-center gap-3">
-                      <Switch
-                        id="switch-off"
-                        checked={switchOff}
-                        onCheckedChange={setSwitchOff}
-                      />
+                      <Switch id="switch-off" checked={switchOff} onCheckedChange={setSwitchOff} />
                       <Label htmlFor="switch-off">Off</Label>
                     </div>
                     <div className="flex items-center gap-3">
                       <Switch id="switch-dis" disabled />
-                      <Label
-                        htmlFor="switch-dis"
-                        className="text-muted-foreground"
-                      >
+                      <Label htmlFor="switch-dis" className="text-muted-foreground">
                         Disabled
                       </Label>
                     </div>
@@ -1788,9 +1656,7 @@ export default function BrandPage() {
               {/* ─── Radio Group ─── */}
               <div id="comp-radio" className="mb-12">
                 <ComponentLabel>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line1369JsxTextRadioGroup',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line1369JsxTextRadioGroup')}
                 </ComponentLabel>
                 <ComponentDesc>
                   {tHardcodedUi.raw(
@@ -1826,9 +1692,7 @@ export default function BrandPage() {
                 <DemoContainer>
                   <div className="space-y-6">
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3">
-                        Standard
-                      </p>
+                      <p className="text-muted-foreground mb-3 text-xs">Standard</p>
                       <Tabs defaultValue="tab1">
                         <TabsList>
                           <TabsTrigger value="tab1">Account</TabsTrigger>
@@ -1836,21 +1700,21 @@ export default function BrandPage() {
                           <TabsTrigger value="tab3">Settings</TabsTrigger>
                         </TabsList>
                         <TabsContent value="tab1">
-                          <p className="text-sm text-muted-foreground mt-2">
+                          <p className="text-muted-foreground mt-2 text-sm">
                             {tHardcodedUi.raw(
                               'appHomeDesignSystemPage.line1411JsxTextAccountSettingsAndPreferences',
                             )}
                           </p>
                         </TabsContent>
                         <TabsContent value="tab2">
-                          <p className="text-sm text-muted-foreground mt-2">
+                          <p className="text-muted-foreground mt-2 text-sm">
                             {tHardcodedUi.raw(
                               'appHomeDesignSystemPage.line1416JsxTextChangeYourPassword',
                             )}
                           </p>
                         </TabsContent>
                         <TabsContent value="tab3">
-                          <p className="text-sm text-muted-foreground mt-2">
+                          <p className="text-muted-foreground mt-2 text-sm">
                             {tHardcodedUi.raw(
                               'appHomeDesignSystemPage.line1421JsxTextGeneralSettings',
                             )}
@@ -1859,37 +1723,29 @@ export default function BrandPage() {
                       </Tabs>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3">
-                        Compact
-                      </p>
+                      <p className="text-muted-foreground mb-3 text-xs">Compact</p>
                       <Tabs defaultValue="c1">
                         <TabsListCompact>
-                          <TabsTriggerCompact value="c1">
-                            Day
-                          </TabsTriggerCompact>
-                          <TabsTriggerCompact value="c2">
-                            Week
-                          </TabsTriggerCompact>
-                          <TabsTriggerCompact value="c3">
-                            Month
-                          </TabsTriggerCompact>
+                          <TabsTriggerCompact value="c1">Day</TabsTriggerCompact>
+                          <TabsTriggerCompact value="c2">Week</TabsTriggerCompact>
+                          <TabsTriggerCompact value="c3">Month</TabsTriggerCompact>
                         </TabsListCompact>
                         <TabsContent value="c1">
-                          <p className="text-sm text-muted-foreground mt-2">
+                          <p className="text-muted-foreground mt-2 text-sm">
                             {tHardcodedUi.raw(
                               'appHomeDesignSystemPage.line1444JsxTextDailyViewContent',
                             )}
                           </p>
                         </TabsContent>
                         <TabsContent value="c2">
-                          <p className="text-sm text-muted-foreground mt-2">
+                          <p className="text-muted-foreground mt-2 text-sm">
                             {tHardcodedUi.raw(
                               'appHomeDesignSystemPage.line1449JsxTextWeeklyViewContent',
                             )}
                           </p>
                         </TabsContent>
                         <TabsContent value="c3">
-                          <p className="text-sm text-muted-foreground mt-2">
+                          <p className="text-muted-foreground mt-2 text-sm">
                             {tHardcodedUi.raw(
                               'appHomeDesignSystemPage.line1454JsxTextMonthlyViewContent',
                             )}
@@ -1913,17 +1769,13 @@ export default function BrandPage() {
                   <Dialog>
                     <DialogTrigger asChild>
                       <Button variant="outline">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1472JsxTextOpenDialog',
-                        )}
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1472JsxTextOpenDialog')}
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
                         <DialogTitle>
-                          {tHardcodedUi.raw(
-                            'appHomeDesignSystemPage.line1476JsxTextDialogTitle',
-                          )}
+                          {tHardcodedUi.raw('appHomeDesignSystemPage.line1476JsxTextDialogTitle')}
                         </DialogTitle>
                         <DialogDescription>
                           {tHardcodedUi.raw(
@@ -1932,7 +1784,7 @@ export default function BrandPage() {
                         </DialogDescription>
                       </DialogHeader>
                       <div className="py-4">
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-muted-foreground text-sm">
                           {tHardcodedUi.raw(
                             'appHomeDesignSystemPage.line1484JsxTextDialogBodyContentGoesHere',
                           )}
@@ -1951,9 +1803,8 @@ export default function BrandPage() {
               <div id="comp-modal" className="mb-12">
                 <ComponentLabel>Modal</ComponentLabel>
                 <ComponentDesc>
-                  Responsive overlay: bottom sheet on mobile, centered dialog on
-                  desktop. Supports side variants via{' '}
-                  <code className="text-xs font-mono">side</code>.
+                  Responsive overlay: bottom sheet on mobile, centered dialog on desktop. Supports
+                  side variants via <code className="font-mono text-xs">side</code>.
                 </ComponentDesc>
                 <DemoContainer>
                   <Modal>
@@ -1968,7 +1819,7 @@ export default function BrandPage() {
                         </ModalDescription>
                       </ModalHeader>
                       <ModalBody>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-muted-foreground text-sm">
                           Modal body content goes here.
                         </p>
                       </ModalBody>
@@ -1993,17 +1844,13 @@ export default function BrandPage() {
                   <Sheet>
                     <SheetTrigger asChild>
                       <Button variant="outline">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1505JsxTextOpenSheet',
-                        )}
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1505JsxTextOpenSheet')}
                       </Button>
                     </SheetTrigger>
                     <SheetContent>
                       <SheetHeader>
                         <SheetTitle>
-                          {tHardcodedUi.raw(
-                            'appHomeDesignSystemPage.line1509JsxTextSheetTitle',
-                          )}
+                          {tHardcodedUi.raw('appHomeDesignSystemPage.line1509JsxTextSheetTitle')}
                         </SheetTitle>
                         <SheetDescription>
                           {tHardcodedUi.raw(
@@ -2012,7 +1859,7 @@ export default function BrandPage() {
                         </SheetDescription>
                       </SheetHeader>
                       <div className="py-6">
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-muted-foreground text-sm">
                           {tHardcodedUi.raw(
                             'appHomeDesignSystemPage.line1516JsxTextSheetBodyContent',
                           )}
@@ -2026,9 +1873,7 @@ export default function BrandPage() {
               {/* ─── Dropdown Menu ─── */}
               <div id="comp-dropdown" className="mb-12">
                 <ComponentLabel>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line1526JsxTextDropdownMenu',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line1526JsxTextDropdownMenu')}
                 </ComponentLabel>
                 <ComponentDesc>
                   {tHardcodedUi.raw(
@@ -2054,7 +1899,7 @@ export default function BrandPage() {
                       <DropdownMenuItem>Duplicate</DropdownMenuItem>
                       <DropdownMenuItem>Archive</DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem>Delete</DropdownMenuItem>
+                      <DropdownMenuItem variant="destructive">Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </DemoContainer>
@@ -2118,19 +1963,15 @@ export default function BrandPage() {
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1603JsxTextOpenPopover',
-                        )}
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1603JsxTextOpenPopover')}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-64">
                       <div className="space-y-2">
                         <p className="text-sm font-medium">
-                          {tHardcodedUi.raw(
-                            'appHomeDesignSystemPage.line1607JsxTextPopoverTitle',
-                          )}
+                          {tHardcodedUi.raw('appHomeDesignSystemPage.line1607JsxTextPopoverTitle')}
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-muted-foreground text-xs">
                           {tHardcodedUi.raw(
                             'appHomeDesignSystemPage.line1609JsxTextThisIsThePopoverContentItCanContain',
                           )}
@@ -2154,9 +1995,7 @@ export default function BrandPage() {
                     <Alert>
                       <Info className="size-4" />
                       <AlertTitle>
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1628JsxTextDefaultAlert',
-                        )}
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1628JsxTextDefaultAlert')}
                       </AlertTitle>
                       <AlertDescription>
                         {tHardcodedUi.raw(
@@ -2189,9 +2028,7 @@ export default function BrandPage() {
               {/* ─── Alert Dialog ─── */}
               <div id="comp-alert-dialog" className="mb-12">
                 <ComponentLabel>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line1653JsxTextAlertDialog',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line1653JsxTextAlertDialog')}
                 </ComponentLabel>
                 <ComponentDesc>
                   {tHardcodedUi.raw(
@@ -2202,17 +2039,13 @@ export default function BrandPage() {
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="destructive">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1660JsxTextDeleteItem',
-                        )}
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1660JsxTextDeleteItem')}
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
                         <AlertDialogTitle>
-                          {tHardcodedUi.raw(
-                            'appHomeDesignSystemPage.line1665JsxTextAreYouSure',
-                          )}
+                          {tHardcodedUi.raw('appHomeDesignSystemPage.line1665JsxTextAreYouSure')}
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                           {tHardcodedUi.raw(
@@ -2241,9 +2074,7 @@ export default function BrandPage() {
                   <Accordion type="single" collapsible className="w-full">
                     <AccordionItem value="item-1">
                       <AccordionTrigger>
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1691JsxTextWhatIsKortix',
-                        )}
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1691JsxTextWhatIsKortix')}
                       </AccordionTrigger>
                       <AccordionContent>
                         {tHardcodedUi.raw(
@@ -2265,9 +2096,7 @@ export default function BrandPage() {
                     </AccordionItem>
                     <AccordionItem value="item-3">
                       <AccordionTrigger>
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1712JsxTextHowDoThemesWork',
-                        )}
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1712JsxTextHowDoThemesWork')}
                       </AccordionTrigger>
                       <AccordionContent>
                         {tHardcodedUi.raw(
@@ -2306,21 +2135,19 @@ export default function BrandPage() {
                         </Button>
                       </CollapsibleTrigger>
                     </div>
-                    <div className="rounded-md border border-border/50 px-4 py-2 mt-2 text-sm">
+                    <div className="border-border/50 mt-2 rounded-md border px-4 py-2 text-sm">
                       {tHardcodedUi.raw(
                         'appHomeDesignSystemPage.line1751JsxTextKortixDesignSystem',
                       )}
                     </div>
                     <CollapsibleContent className="mt-2 space-y-2">
-                      <div className="rounded-md border border-border/50 px-4 py-2 text-sm">
+                      <div className="border-border/50 rounded-md border px-4 py-2 text-sm">
                         {tHardcodedUi.raw(
                           'appHomeDesignSystemPage.line1755JsxTextKortixComponents',
                         )}
                       </div>
-                      <div className="rounded-md border border-border/50 px-4 py-2 text-sm">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1758JsxTextKortixTokens',
-                        )}
+                      <div className="border-border/50 rounded-md border px-4 py-2 text-sm">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1758JsxTextKortixTokens')}
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
@@ -2337,16 +2164,12 @@ export default function BrandPage() {
                 </ComponentDesc>
                 <DemoContainer>
                   <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground">
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line1774JsxTextContentAbove',
-                      )}
+                    <p className="text-muted-foreground text-sm">
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line1774JsxTextContentAbove')}
                     </p>
                     <Separator />
-                    <p className="text-sm text-muted-foreground">
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line1778JsxTextContentBelow',
-                      )}
+                    <p className="text-muted-foreground text-sm">
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line1778JsxTextContentBelow')}
                     </p>
                   </div>
                 </DemoContainer>
@@ -2360,18 +2183,14 @@ export default function BrandPage() {
                     'appHomeDesignSystemPage.line1788JsxTextLoadingPlaceholderForContentThatHasn',
                   )}
                   {"'"}
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line1788JsxTextTLoadedYet',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line1788JsxTextTLoadedYet')}
                 </ComponentDesc>
                 <DemoContainer>
                   <div className="space-y-6">
                     {/* Card-like skeleton */}
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1795JsxTextCardSkeleton',
-                        )}
+                      <p className="text-muted-foreground mb-3 text-xs">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1795JsxTextCardSkeleton')}
                       </p>
                       <div className="flex items-start gap-4">
                         <Skeleton className="size-12 rounded-full" />
@@ -2384,10 +2203,8 @@ export default function BrandPage() {
                     </div>
                     {/* Inline skeletons */}
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1809JsxTextInlineVariants',
-                        )}
+                      <p className="text-muted-foreground mb-3 text-xs">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1809JsxTextInlineVariants')}
                       </p>
                       <div className="space-y-3">
                         <Skeleton className="h-10 w-full rounded-2xl" />
@@ -2414,9 +2231,7 @@ export default function BrandPage() {
                   <div className="space-y-4">
                     {[0, 25, 50, 75, 100].map((v) => (
                       <div key={v} className="space-y-1.5">
-                        <span className="text-xs font-mono text-muted-foreground">
-                          {v}%
-                        </span>
+                        <span className="text-muted-foreground font-mono text-xs">{v}%</span>
                         <Progress value={v} />
                       </div>
                     ))}
@@ -2434,13 +2249,8 @@ export default function BrandPage() {
                 </ComponentDesc>
                 <DemoContainer>
                   <div className="max-w-sm space-y-4">
-                    <Slider
-                      value={sliderValue}
-                      onValueChange={setSliderValue}
-                      max={100}
-                      step={1}
-                    />
-                    <span className="text-xs font-mono text-muted-foreground">
+                    <Slider value={sliderValue} onValueChange={setSliderValue} max={100} step={1} />
+                    <span className="text-muted-foreground font-mono text-xs">
                       Value: {sliderValue[0]}
                     </span>
                   </div>
@@ -2458,9 +2268,7 @@ export default function BrandPage() {
                 <DemoContainer>
                   <div className="max-w-sm space-y-2">
                     <Label htmlFor="label-demo">
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line1873JsxTextEmailAddress',
-                      )}
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line1873JsxTextEmailAddress')}
                     </Label>
                     <Input
                       id="label-demo"
@@ -2494,9 +2302,7 @@ export default function BrandPage() {
                       <BreadcrumbSeparator />
                       <BreadcrumbItem>
                         <BreadcrumbPage>
-                          {tHardcodedUi.raw(
-                            'appHomeDesignSystemPage.line1901JsxTextDesignSystem',
-                          )}
+                          {tHardcodedUi.raw('appHomeDesignSystemPage.line1901JsxTextDesignSystem')}
                         </BreadcrumbPage>
                       </BreadcrumbItem>
                     </BreadcrumbList>
@@ -2579,10 +2385,8 @@ export default function BrandPage() {
                 <DemoContainer>
                   <div className="space-y-4">
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1975JsxTextIndividualKeys',
-                        )}
+                      <p className="text-muted-foreground mb-3 text-xs">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1975JsxTextIndividualKeys')}
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         <Kbd>⌘</Kbd>
@@ -2594,7 +2398,7 @@ export default function BrandPage() {
                       </div>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground mb-3">
+                      <p className="text-muted-foreground mb-3 text-xs">
                         {tHardcodedUi.raw(
                           'appHomeDesignSystemPage.line1988JsxTextKeyGroupsShortcuts',
                         )}
@@ -2602,27 +2406,19 @@ export default function BrandPage() {
                       <div className="flex flex-wrap items-center gap-4">
                         <KbdGroup>
                           <Kbd>⌘</Kbd>
-                          <span className="text-muted-foreground text-xs">
-                            +
-                          </span>
+                          <span className="text-muted-foreground text-xs">+</span>
                           <Kbd>K</Kbd>
                         </KbdGroup>
                         <KbdGroup>
                           <Kbd>⌘</Kbd>
-                          <span className="text-muted-foreground text-xs">
-                            +
-                          </span>
+                          <span className="text-muted-foreground text-xs">+</span>
                           <Kbd>Shift</Kbd>
-                          <span className="text-muted-foreground text-xs">
-                            +
-                          </span>
+                          <span className="text-muted-foreground text-xs">+</span>
                           <Kbd>P</Kbd>
                         </KbdGroup>
                         <KbdGroup>
                           <Kbd>Ctrl</Kbd>
-                          <span className="text-muted-foreground text-xs">
-                            +
-                          </span>
+                          <span className="text-muted-foreground text-xs">+</span>
                           <Kbd>C</Kbd>
                         </KbdGroup>
                       </div>
@@ -2644,7 +2440,7 @@ export default function BrandPage() {
                     mode="single"
                     selected={selectedDate}
                     onSelect={setSelectedDate}
-                    className="rounded-lg border border-border/50"
+                    className="border-border/50 rounded-lg border"
                   />
                 </DemoContainer>
               </div>
@@ -2652,9 +2448,7 @@ export default function BrandPage() {
               {/* ─── Scroll Area ─── */}
               <div id="comp-scrollarea" className="mb-12">
                 <ComponentLabel>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2040JsxTextScrollArea',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2040JsxTextScrollArea')}
                 </ComponentLabel>
                 <ComponentDesc>
                   {tHardcodedUi.raw(
@@ -2662,20 +2456,18 @@ export default function BrandPage() {
                   )}
                 </ComponentDesc>
                 <DemoContainer>
-                  <ScrollArea className="h-48 w-full rounded-md border border-border/50 p-4">
+                  <ScrollArea className="border-border/50 h-48 w-full rounded-md border p-4">
                     <div className="space-y-2">
                       {Array.from({ length: 20 }, (_, i) => (
                         <div
                           key={i}
-                          className="flex items-center gap-3 py-1.5 border-b border-border/20"
+                          className="border-border/20 flex items-center gap-3 border-b py-1.5"
                         >
-                          <span className="text-xs font-mono text-muted-foreground w-6">
+                          <span className="text-muted-foreground w-6 font-mono text-xs">
                             {String(i + 1).padStart(2, '0')}
                           </span>
-                          <span className="text-sm text-foreground">
-                            {tHardcodedUi.raw(
-                              'appHomeDesignSystemPage.line2056JsxTextListItem',
-                            )}
+                          <span className="text-foreground text-sm">
+                            {tHardcodedUi.raw('appHomeDesignSystemPage.line2056JsxTextListItem')}
                             {i + 1}
                           </span>
                         </div>
@@ -2689,17 +2481,15 @@ export default function BrandPage() {
             {/* ═══════════════ Page Patterns ═══════════════ */}
             <section id="page-patterns">
               <SectionDivider />
-              <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
-                {tHardcodedUi.raw(
-                  'appHomeDesignSystemPage.line2070JsxTextPagePatterns',
-                )}
+              <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
+                {tHardcodedUi.raw('appHomeDesignSystemPage.line2070JsxTextPagePatterns')}
               </h2>
-              <p className="text-base text-muted-foreground leading-relaxed mb-8">
+              <p className="text-muted-foreground mb-8 text-base leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line2073JsxTextHowKortixListManagementPagesAreBuiltThese',
                 )}
-                <code className="text-xs font-mono">/scheduled-tasks</code>,{' '}
-                <code className="text-xs font-mono">/tunnel</code>
+                <code className="font-mono text-xs">/scheduled-tasks</code>,{' '}
+                <code className="font-mono text-xs">/tunnel</code>
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line2075JsxTextNewManagementStylePagesShouldComposeTheSame',
                 )}
@@ -2712,16 +2502,14 @@ export default function BrandPage() {
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line2084JsxTextTheCanonicalHeroForListManagementPagesRounded',
                   )}
-                  <code className="text-xs font-mono">max-w-7xl</code>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2087JsxTextHorizontalPadding',
-                  )}
+                  <code className="font-mono text-xs">max-w-7xl</code>
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2087JsxTextHorizontalPadding')}
                 </ComponentDesc>
-                <DemoContainer className="p-0 overflow-hidden">
+                <DemoContainer className="overflow-hidden p-0">
                   <div className="p-6">
                     <PageHeader icon={Zap}>
                       <div className="space-y-2 sm:space-y-4">
-                        <div className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight">
+                        <div className="text-2xl font-semibold tracking-tight sm:text-3xl md:text-4xl">
                           <span className="text-primary">
                             {tHardcodedUi.raw(
                               'appHomeDesignSystemPage.line2094JsxTextScheduledTasks',
@@ -2732,7 +2520,7 @@ export default function BrandPage() {
                     </PageHeader>
                   </div>
                 </DemoContainer>
-                <pre className="mt-3 text-xs font-mono text-muted-foreground bg-muted/20 rounded-lg px-4 py-3 overflow-x-auto">{`<div className="container mx-auto max-w-7xl px-3 sm:px-4 py-3 sm:py-4">
+                <pre className="text-muted-foreground bg-muted/20 mt-3 overflow-x-auto rounded-lg px-4 py-3 font-mono text-xs">{`<div className="container mx-auto max-w-7xl px-3 sm:px-4 py-3 sm:py-4">
   <PageHeader icon={Zap}>
     <div className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight">
       <span className="text-primary">Scheduled Tasks</span>
@@ -2748,7 +2536,7 @@ export default function BrandPage() {
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line2113JsxTextItemCardUsedAcrossEveryListPageMouse',
                   )}
-                  <code className="text-xs font-mono">
+                  <code className="font-mono text-xs">
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2115JsxTextBgCardBorderBorderBorder50',
                     )}
@@ -2758,7 +2546,7 @@ export default function BrandPage() {
                   )}
                 </ComponentDesc>
                 <DemoContainer>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     {[
                       { icon: Cable, label: 'tunnel-42', sub: 'exposes :3000' },
                       { icon: Radio, label: '#releases', sub: 'Slack channel' },
@@ -2771,19 +2559,16 @@ export default function BrandPage() {
                     ].map((item, i) => {
                       const I = item.icon;
                       return (
-                        <SpotlightCard
-                          key={i}
-                          className="bg-card border border-border/50"
-                        >
-                          <div className="p-4 flex items-center gap-3 cursor-pointer">
-                            <div className="flex items-center justify-center w-9 h-9 rounded-[10px] bg-muted border border-border/50 shrink-0">
-                              <I className="h-4 w-4 text-foreground" />
+                        <SpotlightCard key={i} className="bg-card border-border/50 border">
+                          <div className="flex cursor-pointer items-center gap-3 p-4">
+                            <div className="bg-muted border-border/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border">
+                              <I className="text-foreground h-4 w-4" />
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-semibold text-foreground truncate">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-foreground truncate text-sm font-semibold">
                                 {item.label}
                               </div>
-                              <div className="text-xs text-muted-foreground truncate">
+                              <div className="text-muted-foreground truncate text-xs">
                                 {item.sub}
                               </div>
                             </div>
@@ -2802,7 +2587,7 @@ export default function BrandPage() {
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line2156JsxTextStandardSearchPillPlacedInTheActionBar',
                   )}
-                  <code className="text-xs font-mono">max-w-md</code>
+                  <code className="font-mono text-xs">max-w-md</code>
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line2157JsxTextWidthSoItSitsNextToARight',
                   )}
@@ -2828,22 +2613,18 @@ export default function BrandPage() {
               {/* ── Stagger Mount ── */}
               <div id="pat-stagger" className="mb-12">
                 <ComponentLabel>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2179JsxTextStaggerMount',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2179JsxTextStaggerMount')}
                 </ComponentLabel>
                 <ComponentDesc>
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line2181JsxTextEveryManagementPageMountsItsThreeZonesWith',
                   )}
-                  <code className="text-xs font-mono">delay-75</code>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2183JsxTextContentAt',
-                  )}
-                  <code className="text-xs font-mono">delay-150</code>.
+                  <code className="font-mono text-xs">delay-75</code>
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2183JsxTextContentAt')}
+                  <code className="font-mono text-xs">delay-150</code>.
                 </ComponentDesc>
                 <DemoContainer>
-                  <pre className="text-xs font-mono text-muted-foreground bg-muted/20 rounded-lg px-4 py-3 overflow-x-auto leading-relaxed">{`// Page header
+                  <pre className="text-muted-foreground bg-muted/20 overflow-x-auto rounded-lg px-4 py-3 font-mono text-xs leading-relaxed">{`// Page header
 <div className="... animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
 
 // Search + action bar
@@ -2858,10 +2639,10 @@ export default function BrandPage() {
             {/* ═══════════════ Primitives ═══════════════ */}
             <section id="patterns">
               <SectionDivider />
-              <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
+              <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
                 Primitives
               </h2>
-              <p className="text-base text-muted-foreground leading-relaxed mb-8">
+              <p className="text-muted-foreground mb-8 text-base leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line2205JsxTextSmallCompositionPiecesUsedInsideProjectPagesIssue',
                 )}
@@ -2874,27 +2655,21 @@ export default function BrandPage() {
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line2214JsxTextTheOneLayoutWrapperStandardisesMaxWidthHorizontal',
                   )}{' '}
-                  <code className="text-xs font-mono">
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2216JsxTextReading720',
-                    )}
+                  <code className="font-mono text-xs">
+                    {tHardcodedUi.raw('appHomeDesignSystemPage.line2216JsxTextReading720')}
                   </code>
                   ,{' '}
-                  <code className="text-xs font-mono">
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2217JsxTextDefault1000',
-                    )}
+                  <code className="font-mono text-xs">
+                    {tHardcodedUi.raw('appHomeDesignSystemPage.line2217JsxTextDefault1000')}
                   </code>
                   ,{' '}
-                  <code className="text-xs font-mono">
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2218JsxTextWide1280',
-                    )}
+                  <code className="font-mono text-xs">
+                    {tHardcodedUi.raw('appHomeDesignSystemPage.line2218JsxTextWide1280')}
                   </code>
-                  , <code className="text-xs font-mono">full</code>.
+                  , <code className="font-mono text-xs">full</code>.
                 </ComponentDesc>
                 <DemoContainer>
-                  <div className="rounded-lg border border-dashed border-border/60 py-10 text-center text-xs text-muted-foreground">
+                  <div className="border-border/60 text-muted-foreground rounded-lg border border-dashed py-10 text-center text-xs">
                     <code>
                       {tHardcodedUi.raw(
                         'appHomeDesignSystemPage.line2223JsxTextLtPageshellWidthQuotDefaultQuotGtLt',
@@ -2919,7 +2694,7 @@ export default function BrandPage() {
                 </ComponentDesc>
                 <DemoContainer>
                   <BrandSection label="About">
-                    <p className="text-sm text-foreground leading-relaxed">
+                    <p className="text-foreground text-sm leading-relaxed">
                       {tHardcodedUi.raw(
                         'appHomeDesignSystemPage.line2241JsxTextDescriptionContentLivesHereSectionsSeparateConcernsOn',
                       )}
@@ -2928,16 +2703,12 @@ export default function BrandPage() {
                   <BrandSection
                     label="Details"
                     action={
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-2 text-xs"
-                      >
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
                         Edit
                       </Button>
                     }
                   >
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-muted-foreground text-sm">
                       {tHardcodedUi.raw(
                         'appHomeDesignSystemPage.line2254JsxTextASecondSectionWithATrailingAction',
                       )}
@@ -2983,7 +2754,7 @@ export default function BrandPage() {
                       </Button>
                     }
                   >
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-muted-foreground text-sm">
                       {tHardcodedUi.raw(
                         'appHomeDesignSystemPage.line2286JsxTextBodyContentSitsInThePaddedRegionPass',
                       )}{' '}
@@ -3004,12 +2775,12 @@ export default function BrandPage() {
                   >
                     <div className="flex items-center justify-between gap-4">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground">
+                        <p className="text-foreground text-sm font-medium">
                           {tHardcodedUi.raw(
                             'appHomeDesignSystemPage.line2298JsxTextDeleteThisAccount',
                           )}
                         </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
+                        <p className="text-muted-foreground mt-0.5 text-xs">
                           {tHardcodedUi.raw(
                             'appHomeDesignSystemPage.line2301JsxTextPermanentlyRemovesTheAccountAndAllItsData',
                           )}
@@ -3027,9 +2798,7 @@ export default function BrandPage() {
               <div id="pat-avatars" className="mb-12">
                 <ComponentLabel>Avatars</ComponentLabel>
                 <ComponentDesc>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2316JsxTextOneRule',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2316JsxTextOneRule')}
                   <strong>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2316JsxTextPeopleAreRoundThingsAreSquare',
@@ -3044,9 +2813,7 @@ export default function BrandPage() {
                       'appHomeDesignSystemPage.line2319JsxTextNeutralMonochromeInitials',
                     )}
                   </strong>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2319JsxTextNoColouredBackgrounds',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2319JsxTextNoColouredBackgrounds')}
                   <code>EntityAvatar</code>
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line2320JsxTextRendersARoundedSquareTileForAccountsProjects',
@@ -3054,7 +2821,7 @@ export default function BrandPage() {
                 </ComponentDesc>
                 <DemoContainer className="space-y-5">
                   <div className="flex items-center gap-4">
-                    <span className="w-24 text-xs uppercase tracking-wider text-muted-foreground">
+                    <span className="text-muted-foreground w-24 text-xs tracking-wider uppercase">
                       People
                     </span>
                     <UserAvatar
@@ -3079,7 +2846,7 @@ export default function BrandPage() {
                     />
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="w-24 text-xs uppercase tracking-wider text-muted-foreground">
+                    <span className="text-muted-foreground w-24 text-xs tracking-wider uppercase">
                       Things
                     </span>
                     <EntityAvatar
@@ -3098,9 +2865,7 @@ export default function BrandPage() {
               {/* ── List & ListRow ── */}
               <div id="pat-list" className="mb-12">
                 <ComponentLabel>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2348JsxTextListAmpListrow',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2348JsxTextListAmpListrow')}
                 </ComponentLabel>
                 <ComponentDesc>
                   {tHardcodedUi.raw(
@@ -3111,9 +2876,7 @@ export default function BrandPage() {
                     'appHomeDesignSystemPage.line2351JsxTextSEachWithALeadingAvatarSlotUseravatar',
                   )}{' '}
                   <code>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2355JsxTextSectioncardFlush',
-                    )}
+                    {tHardcodedUi.raw('appHomeDesignSystemPage.line2355JsxTextSectioncardFlush')}
                   </code>
                   .
                 </ComponentDesc>
@@ -3204,20 +2967,16 @@ export default function BrandPage() {
                 <DemoContainer>
                   <DefinitionList dividers>
                     <DefinitionRow label="Path">
-                      <code className="text-xs font-mono text-foreground">
+                      <code className="text-foreground font-mono text-xs">
                         /workspace/jjk-domain-search
                       </code>
                     </DefinitionRow>
                     <DefinitionRow label="Created">
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line2413JsxTextText2DaysAgo',
-                      )}
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line2413JsxTextText2DaysAgo')}
                     </DefinitionRow>
                     <DefinitionRow label="Updated">
                       <span className="tabular-nums">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line2415JsxTextText3mAgo',
-                        )}
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line2415JsxTextText3mAgo')}
                       </span>
                     </DefinitionRow>
                     <DefinitionRow label="Sessions">8</DefinitionRow>
@@ -3235,23 +2994,15 @@ export default function BrandPage() {
                 </ComponentDesc>
                 <DemoContainer>
                   <InlineMeta>
-                    <span className="font-mono text-foreground">
-                      /workspace/jjk
+                    <span className="text-foreground font-mono">/workspace/jjk</span>
+                    <span>
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line2435JsxTextText24Issues')}
                     </span>
                     <span>
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line2435JsxTextText24Issues',
-                      )}
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line2436JsxTextCreated2dAgo')}
                     </span>
                     <span>
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line2436JsxTextCreated2dAgo',
-                      )}
-                    </span>
-                    <span>
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line2437JsxTextText8Sessions',
-                      )}
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line2437JsxTextText8Sessions')}
                     </span>
                   </InlineMeta>
                 </DemoContainer>
@@ -3276,20 +3027,12 @@ export default function BrandPage() {
                     )}
                     action={
                       <Button size="sm" className="h-8 px-4 text-sm">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line2457JsxTextNewIssue',
-                        )}
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line2457JsxTextNewIssue')}
                       </Button>
                     }
                     secondaryAction={
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-3 text-sm"
-                      >
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line2462JsxTextLearnMore',
-                        )}
+                      <Button variant="ghost" size="sm" className="h-8 px-3 text-sm">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line2462JsxTextLearnMore')}
                       </Button>
                     }
                   />
@@ -3312,9 +3055,7 @@ export default function BrandPage() {
                   <InfoBanner
                     tone="info"
                     icon={Info}
-                    title={tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2479JsxAttrTitleHeadsUp',
-                    )}
+                    title={tHardcodedUi.raw('appHomeDesignSystemPage.line2479JsxAttrTitleHeadsUp')}
                   >
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2480JsxTextTheManifestIsBeingReSyncedSecretsApply',
@@ -3334,15 +3075,9 @@ export default function BrandPage() {
                   <InfoBanner
                     tone="success"
                     icon={Check}
-                    title={tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2488JsxAttrTitleAllSet',
-                    )}
+                    title={tHardcodedUi.raw('appHomeDesignSystemPage.line2488JsxAttrTitleAllSet')}
                     action={
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-2 text-xs"
-                      >
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">
                         Dismiss
                       </Button>
                     }
@@ -3365,17 +3100,13 @@ export default function BrandPage() {
                     'appHomeDesignSystemPage.line2503JsxTextTheSingleSourceOfTruthForLdquoThis',
                   )}{' '}
                   <code>Badge</code>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2505JsxTextBoxesUse',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2505JsxTextBoxesUse')}
                   <code>InfoBanner</code>
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line2505JsxTextForTheCasesAComponentCanAposT',
                   )}
                   <code>StatusDot</code>, <code>DiffStat</code>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line2508JsxTextOrThe',
-                  )}
+                  {tHardcodedUi.raw('appHomeDesignSystemPage.line2508JsxTextOrThe')}
                   <code>STATUS_TEXT/BG/BORDER</code>{' '}
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line2509JsxTextMapsInsteadOfReInlining',
@@ -3407,24 +3138,18 @@ export default function BrandPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge tone="success">
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line2535JsxTextText3Passed',
-                      )}
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line2535JsxTextText3Passed')}
                     </StatusBadge>
                     <StatusBadge tone="warning">
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line2536JsxTextText5Warnings',
-                      )}
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line2536JsxTextText5Warnings')}
                     </StatusBadge>
                     <StatusBadge tone="destructive">
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line2537JsxTextText2Errors',
-                      )}
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line2537JsxTextText2Errors')}
                     </StatusBadge>
                     <StatusBadge tone="info">Modified</StatusBadge>
                     <StatusBadge tone="neutral">Idle</StatusBadge>
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     Use <code>StatusBadge</code>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2542JsxTextForInformationalStatusFaintInclRed',
@@ -3445,10 +3170,10 @@ export default function BrandPage() {
             {/* ═══════════════ Anti-Patterns ═══════════════ */}
             <section id="anti-patterns">
               <SectionDivider />
-              <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
+              <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
                 Anti-Patterns
               </h2>
-              <p className="text-base text-muted-foreground leading-relaxed mb-8">
+              <p className="text-muted-foreground mb-8 text-base leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line2557JsxTextCodePatternsThatViolateTheDesignSystemFollow',
                 )}
@@ -3531,13 +3256,13 @@ export default function BrandPage() {
             {/* ═══════════════ Usage ═══════════════ */}
             <section id="usage">
               <SectionDivider />
-              <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
+              <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
                 Usage
               </h2>
 
-              <div className="grid md:grid-cols-2 gap-10">
+              <div className="grid gap-10 md:grid-cols-2">
                 <div>
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400 tracking-widest uppercase mb-4">
+                  <p className="mb-4 text-xs tracking-widest text-emerald-600 uppercase dark:text-emerald-400">
                     Do
                   </p>
                   {[
@@ -3554,17 +3279,17 @@ export default function BrandPage() {
                   ].map((t) => (
                     <div
                       key={t}
-                      className="flex items-start gap-2.5 py-2 border-b border-border/30"
+                      className="border-border/30 flex items-start gap-2.5 border-b py-2"
                     >
-                      <span className="mt-0.5 flex items-center justify-center size-4 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+                      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                         <Check className="size-2.5" />
                       </span>
-                      <span className="text-sm text-muted-foreground">{t}</span>
+                      <span className="text-muted-foreground text-sm">{t}</span>
                     </div>
                   ))}
                 </div>
                 <div>
-                  <p className="text-xs text-red-600 dark:text-red-400 tracking-widest uppercase mb-4">
+                  <p className="mb-4 text-xs tracking-widest text-red-600 uppercase dark:text-red-400">
                     Don{"'"}t
                   </p>
                   {[
@@ -3581,12 +3306,12 @@ export default function BrandPage() {
                   ].map((t) => (
                     <div
                       key={t}
-                      className="flex items-start gap-2.5 py-2 border-b border-border/30"
+                      className="border-border/30 flex items-start gap-2.5 border-b py-2"
                     >
-                      <span className="mt-0.5 flex items-center justify-center size-4 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 shrink-0">
+                      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-red-500/10 text-red-600 dark:text-red-400">
                         <X className="size-2.5" />
                       </span>
-                      <span className="text-sm text-muted-foreground">{t}</span>
+                      <span className="text-muted-foreground text-sm">{t}</span>
                     </div>
                   ))}
                 </div>

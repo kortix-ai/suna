@@ -5,17 +5,17 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  "flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50  [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none  aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-center cursor-pointer shadow-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+  "flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50  [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none  aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-center cursor-pointer shadow-none focus-visible:outline-none focus-visible:ring-kortix-blue focus-visible:ring-[0.6px]",
 
   {
     variants: {
       variant: {
         default: 'bg-foreground text-background hover:bg-foreground/90',
         brand:
-          'bg-actrun-blue/90 dark:bg-actrun-blue/60 text-background dark:text-foreground shadow-xs hover:bg-actrun-blue/85 dark:hover:bg-actrun-blue/50 transition-colors duration-200 ease-in',
-        blue: 'bg-actrun-blue text-background dark:text-foreground shadow-xs hover:bg-actrun-blue/90',
-        'blue-ghost': 'hover:bg-sidebar-accent/40 text-actrun-blue',
-        'blue-secondary': 'bg-actrun-blue/10 text-actrun-blue hover:bg-actrun-blue/20',
+          'bg-kortix-blue/90 dark:bg-kortix-blue/60 text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/85 dark:hover:bg-kortix-blue/50 transition-colors duration-200 ease-in',
+        blue: 'bg-kortix-blue text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/90',
+        'blue-ghost': 'hover:bg-sidebar-accent/40 text-kortix-blue',
+        'blue-secondary': 'bg-kortix-blue/10 text-kortix-blue hover:bg-kortix-blue/20',
         danger: 'bg-destructive text-background hover:bg-destructive/90',
         destructive: 'bg-destructive/80 text-background hover:bg-destructive/85',
         outline:
