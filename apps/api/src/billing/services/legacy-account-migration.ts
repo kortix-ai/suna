@@ -29,6 +29,7 @@ import { sandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { getStripe } from '../../shared/stripe';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
+import { listAccountStripeCustomerIds } from '../repositories/customers';
 import { resolveLiveStripeCustomerId } from './subscriptions';
 import { countActiveMembers } from './seat-management';
 import { grantCredits } from './credits';
@@ -80,13 +81,34 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
       return defaultResult('skipped:already_per_seat');
     }
 
-    const customerId = await resolveLiveStripeCustomerId(accountId);
+    const customerId = await resolveLiveStripeCustomerId(accountId); // canonical — the seat sub lives here
     const stripe = getStripe();
     const now = Math.floor(Date.now() / 1000);
 
-    const activeSubs: Stripe.Subscription[] = customerId
-      ? (await stripe.subscriptions.list({ customer: customerId, status: 'active', limit: 100 })).data
-      : [];
+    // Inventory active subs across ALL of the account's Stripe customers (active
+    // AND deactivated billing_customers rows + the canonical one), not just one.
+    // A user can have several Stripe customers and their MACHINE subs often live
+    // on a non-canonical / older one — cancelling only the resolved customer's
+    // subs leaves the real ones running (double-billing). A stale id that belongs
+    // to a different Stripe account just errors on list → skip it. Skip any
+    // per-seat sub so re-running never cancels a seat sub we already created.
+    const candidateCustomerIds = Array.from(new Set([
+      ...(await listAccountStripeCustomerIds(accountId)),
+      ...(customerId ? [customerId] : []),
+    ]));
+    const activeSubs: Stripe.Subscription[] = [];
+    for (const cid of candidateCustomerIds) {
+      try {
+        const list = await stripe.subscriptions.list({ customer: cid, status: 'active', limit: 100 });
+        for (const sub of list.data) {
+          if (sub.metadata?.billing_model === 'per_seat') continue; // never cancel a seat sub
+          activeSubs.push(sub);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[lazy-migrate] could not list subs for customer ${cid} (account ${accountId}): ${msg}`);
+      }
+    }
 
     if (activeSubs.length === 0) {
       await updateCreditAccount(accountId, { billingModel: 'per_seat' } as any);

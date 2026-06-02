@@ -4,7 +4,6 @@ import { buildAccountState, buildMinimalAccountState, buildLocalAccountState } f
 import { hasDatabase } from '../../shared/db';
 import { config } from '../../config';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
-import { maybeMigrateLegacyAccount } from '../services/legacy-account-migration';
 
 export const accountStateRouter = new Hono<AppEnv>();
 
@@ -14,15 +13,10 @@ accountStateRouter.get('/', async (c) => {
   }
   const accountId = await resolveScopedAccountId(c, 'query');
 
-  // Lazy migration: legacy customer → per-seat on first sign-in. Fire-and-
-  // forget so we never delay the response on Stripe latency. The next refetch
-  // (or any account_state call within ~5s of the migration) will see the new
-  // billing_model + the granted credit.
-  if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    void maybeMigrateLegacyAccount(accountId).catch((err) => {
-      console.error(`[lazy-migrate] background migration failed for ${accountId}:`, err);
-    });
-  }
+  // NOTE: legacy → per-seat migration is NOT auto-triggered on sign-in anymore.
+  // Silently cancelling a customer's subs + creating a seat sub without consent
+  // was surprising. It now runs ONLY when the user explicitly clicks "Claim
+  // seat-based pricing" (POST /v1/billing/claim-per-seat → maybeMigrateLegacyAccount).
 
   try {
     const state = await buildAccountState(accountId);

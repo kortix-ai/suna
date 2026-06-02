@@ -25,6 +25,30 @@ async function listKortixCustomersByAccountId(accountId: string): Promise<Billin
     .where(eq(billingCustomers.accountId, accountId));
 }
 
+/**
+ * Every Stripe customer id ever associated with this account — kortix
+ * billing_customers (active AND inactive) + the legacy basejump table, deduped.
+ * The legacy→per-seat migration uses this to cancel subs that live on a
+ * deactivated/older customer, not just the canonical one (a user can have
+ * several Stripe customers; their machine subs may be on a non-canonical one).
+ */
+export async function listAccountStripeCustomerIds(accountId: string): Promise<string[]> {
+  const ids = new Set<string>();
+  for (const row of await listKortixCustomersByAccountId(accountId)) {
+    if ((row.provider ?? 'stripe') === 'stripe' && row.id) ids.add(row.id);
+  }
+  try {
+    const legacy = await db
+      .select()
+      .from(billingCustomersInBasejump)
+      .where(eq(billingCustomersInBasejump.accountId, accountId));
+    for (const row of legacy as BillingCustomerRow[]) if (row.id) ids.add(row.id);
+  } catch {
+    // basejump customers table may not exist in all environments
+  }
+  return Array.from(ids);
+}
+
 async function getLegacyCustomerByAccountId(accountId: string) {
   try {
     const rows = await db
