@@ -35,6 +35,7 @@ import {
   COMPUTE_MEMORY_PRICE_PER_GB_SECOND,
   COMPUTE_DISK_PRICE_PER_GB_SECOND,
   COMPUTE_PRICE_MARKUP,
+  DAYTONA_DISCOUNT,
   isPerSeatAccount,
 } from './tiers';
 
@@ -51,14 +52,15 @@ export interface StartComputeOpts {
 
 /**
  * Compute the cost (in USD, pre-balance-deduction) for a window.
- * Pre-markup numbers are in tiers.ts; this is where the markup is applied.
+ * tiers.ts holds Daytona's LIST rates; here we apply our volume discount
+ * (DAYTONA_DISCOUNT → our real cost) and then the markup (our margin).
  */
 export function calculateComputeCost(spec: SandboxSpec, durationSeconds: number): number {
   if (durationSeconds <= 0) return 0;
   const cpuCost    = spec.cpuCores  * COMPUTE_CPU_PRICE_PER_CORE_SECOND  * durationSeconds;
   const memCost    = spec.memoryGb  * COMPUTE_MEMORY_PRICE_PER_GB_SECOND * durationSeconds;
   const diskCost   = spec.diskGb    * COMPUTE_DISK_PRICE_PER_GB_SECOND   * durationSeconds;
-  return (cpuCost + memCost + diskCost) * COMPUTE_PRICE_MARKUP;
+  return (cpuCost + memCost + diskCost) * DAYTONA_DISCOUNT * COMPUTE_PRICE_MARKUP;
 }
 
 /**
