@@ -291,7 +291,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           </a>
 
           <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-            <Link href="/enterprise">{tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}</Link>
+            <Link href="/contact">{tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}</Link>
           </Button>
           {user ? (
             <Button asChild size="sm">

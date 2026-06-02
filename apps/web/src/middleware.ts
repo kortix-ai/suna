@@ -32,6 +32,7 @@ const PUBLIC_ROUTES = [
   '/checkout', // Public checkout wrapper for Apple compliance
   '/support', // Support page should be public
   '/help', // Help center and documentation should be public
+  '/docs', // Product documentation (Fumadocs) should be public
   '/credits-explained', // Credits explained page should be public
   '/about', // About page should be public
   '/careers', // Careers page should be public
@@ -39,7 +40,7 @@ const PUBLIC_ROUTES = [
   '/install',
   '/install.sh',
   '/design-system', // Living design system / brand guidelines should be public
-  '/enterprise', // Request-a-demo page should be public
+  '/contact', // Request-a-demo / contact page should be public
   '/countryerror', // Country restriction error page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked

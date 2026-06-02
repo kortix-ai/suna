@@ -4,8 +4,7 @@ export const siteConfig = {
     links: [
       { id: 1, name: 'Product', href: '/#product' },
       { id: 2, name: 'Developers', href: '/#developers' },
-      { id: 3, name: 'Pricing', href: '/#pricing' },
-      { id: 4, name: 'Docs', href: '/docs' },
+      { id: 3, name: 'Docs', href: '/docs' },
     ],
   },
   hero: {

@@ -32,10 +32,12 @@ import { Reveal } from '@/components/home/reveal';
 import { StepMedia } from '@/components/home/step-media';
 import { CodeWindow } from '@/components/home/code-window';
 
-const DEMO_URL = '/enterprise';
+const DEMO_URL = '/contact';
 const DOCS_URL = '/docs';
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
-const INSTALL_CMD = 'curl -fsSL https://kortix.com/install | bash';
+// Default host used for SSR / first paint; replaced with the live frontend
+// origin once mounted so the install command always matches the deployment.
+const DEFAULT_INSTALL_HOST = 'kortix.com';
 const SHOT = (f: string) => `/images/landing-showcase/platform/${f}`;
 const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 
@@ -175,8 +177,19 @@ function TourStep({ step, index }: { step: Step; index: number }) {
 export default function Home() {
   const [showFloatingCta, setShowFloatingCta] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
   const { user } = useAuth();
   const { formattedStars } = useGitHubStars('kortix-ai', 'kortix');
+
+  // Derive the install command from the live frontend origin so it always
+  // points at this deployment's own /install route (kortix.com, dev.kortix.com,
+  // a self-hosted domain, …) rather than a hardcoded host.
+  const installCmd = `curl -fsSL https://${installHost}/install | bash`;
+  const installCmdShort = `curl -fsSL ${installHost}/install`;
+
+  useEffect(() => {
+    setInstallHost(window.location.host);
+  }, []);
 
   useEffect(() => {
     const onScroll = () => setShowFloatingCta(window.scrollY > window.innerHeight);
@@ -190,10 +203,10 @@ export default function Home() {
   }, [user]);
 
   const copyInstall = useCallback(() => {
-    navigator.clipboard.writeText(INSTALL_CMD);
+    navigator.clipboard.writeText(installCmd);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, []);
+  }, [installCmd]);
 
   // Scroll-linked hero fade + drawer that rises over it (legacy layout).
   const { scrollY } = useScroll();
@@ -208,35 +221,60 @@ export default function Home() {
         {/* ═══════════════ HERO — sticky, fades + scales on scroll ═══════════════ */}
         <div className="sticky top-0 z-0 h-dvh overflow-hidden">
           <WallpaperBackground wallpaperId="brandmark" />
-          <motion.div className="relative z-[1] flex h-full flex-col" style={{ opacity: heroOpacity, scale: heroScale }}>
-            <div className="flex flex-1 flex-col items-center justify-center px-6 pt-24 text-center">
+          <motion.div className="relative z-[1] flex flex-col h-full" style={{ opacity: heroOpacity, scale: heroScale }}>
+            <div className="flex-1 flex flex-col items-center justify-center px-6 pt-24 text-center pointer-events-none">
+              <a
+                href={GITHUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="pointer-events-auto mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-background/70 px-3.5 py-1.5 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:text-foreground"
+              >
+                <Star className="size-3 fill-current text-amber-500" />
+                <span className="font-medium text-foreground">{formattedStars}</span> stars
+                <span className="text-border">·</span>
+                Open source on GitHub
+              </a>
               <h1 className="text-4xl font-medium leading-[1.04] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-7xl">
                 The AI command center<br />
                 <span className="text-muted-foreground">for your company</span>
               </h1>
               <p className="mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-                Run every team on AI agents that do real work — and own all of it as code.
+                One place to build, run, and govern your AI-native company.
               </p>
-              <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
-                <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={handleLaunch}>
+            </div>
+            <div className="relative z-[1] pb-8 px-4 flex flex-col items-center gap-6">
+              <div className="flex flex-col items-center gap-3 sm:flex-row">
+                <Button size="lg" className="h-12 px-8 text-sm rounded-full transition-colors" onClick={handleLaunch}>
                   Launch Your Kortix<ArrowRight className="ml-1.5 size-3.5" />
                 </Button>
                 <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm">
                   <Link href={DEMO_URL}>Request demo</Link>
                 </Button>
               </div>
-              <button onClick={copyInstall} className="group mt-6 inline-flex h-9 items-center gap-2.5 rounded-full border border-border bg-background/70 px-4 backdrop-blur-sm transition-colors hover:border-foreground/20 cursor-pointer">
-                <span className="select-none font-mono text-[11px] text-muted-foreground">$</span>
-                <code className="font-mono text-[11px] tracking-tight text-foreground">{INSTALL_CMD}</code>
-                <span className="border-l border-border pl-2.5">
-                  {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3 text-muted-foreground transition-colors group-hover:text-foreground" />}
-                </span>
+              <button
+                onClick={copyInstall}
+                className="group flex items-center gap-2.5 h-9 px-4 rounded-full bg-background/70 border border-border hover:bg-background/90 hover:border-foreground/20 transition-colors cursor-pointer animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200 fill-mode-both backdrop-blur-sm"
+              >
+                <span className="font-mono text-[11px] text-muted-foreground select-none">$</span>
+                <code className="text-[11px] font-mono text-foreground tracking-tight">{installCmd}</code>
+                <div className="pl-2.5 border-l border-border">
+                  {copied
+                    ? <Check className="size-3 text-emerald-500" />
+                    : <Copy className="size-3 text-muted-foreground group-hover:text-foreground transition-colors" />
+                  }
+                </div>
               </button>
-            </div>
-            <div className="flex justify-center pb-10">
-              <motion.div animate={{ y: [0, 6, 0] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}>
-                <div className="flex h-8 w-5 items-start justify-center rounded-full border-2 border-muted-foreground/20 p-1">
-                  <motion.div className="h-1.5 w-1 rounded-full bg-muted-foreground/40" animate={{ y: [0, 8, 0] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }} />
+              <motion.div
+                className="mt-3"
+                animate={{ y: [0, 6, 0] }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                <div className="w-5 h-8 rounded-full border-2 border-muted-foreground/20 flex items-start justify-center p-1">
+                  <motion.div
+                    className="w-1 h-1.5 rounded-full bg-muted-foreground/40"
+                    animate={{ y: [0, 8, 0] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                  />
                 </div>
               </motion.div>
             </div>
@@ -386,12 +424,12 @@ export default function Home() {
         </section>
 
         {/* ═══════════════ CLOSING CTA ═══════════════ */}
-        <section id="pricing" className="mx-auto max-w-5xl scroll-mt-24 px-6 py-24 text-center sm:py-32">
+        <section id="get-started" className="mx-auto max-w-5xl scroll-mt-24 px-6 py-24 text-center sm:py-32">
           <Reveal>
             <Eyebrow>Start free</Eyebrow>
-            <h2 className="mx-auto mt-3 max-w-2xl text-3xl font-medium leading-tight tracking-tight text-foreground sm:text-4xl md:text-5xl">Give your company a workforce</h2>
+            <h2 className="mx-auto mt-3 max-w-2xl text-3xl font-medium leading-tight tracking-tight text-foreground sm:text-4xl md:text-5xl">Your company&apos;s AI workforce</h2>
             <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-              Self-host the whole platform for free — bring your own models. Or launch it managed on Kortix cloud, from $20 a seat.
+              Agents that do real work across your tools. Self-host it free — your infrastructure, your models — or run it fully managed on Kortix cloud.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={handleLaunch}>Launch Your Kortix<ArrowRight className="ml-1.5 size-3.5" /></Button>
@@ -399,9 +437,9 @@ export default function Home() {
             </div>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
               <Link href={DOCS_URL} className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"><BookOpen className="size-4" />Read the docs</Link>
-              <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"><Github className="size-4" />View on GitHub</a>
+              <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"><Star className="size-3.5 fill-current text-amber-500" />{formattedStars} stars on GitHub</a>
             </div>
-            <p className="mt-7 inline-flex items-center gap-2 text-xs text-muted-foreground"><GitBranch className="size-3.5" /> Open · SSO · roles · on-prem · no lock-in</p>
+            <p className="mt-7 inline-flex items-center gap-2 text-xs text-muted-foreground"><GitBranch className="size-3.5" /> Open source · SSO · roles · on-prem · no lock-in</p>
           </Reveal>
         </section>
 
@@ -412,7 +450,7 @@ export default function Home() {
         <div className={cn('fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-background/95 px-1.5 py-1.5 backdrop-blur-md transition-[transform,opacity] duration-[600ms] ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform', showFloatingCta ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-16 opacity-0')}>
           <button onClick={copyInstall} className="group hidden sm:flex items-center gap-2 h-8 px-3 rounded-full hover:bg-foreground/[0.08] transition-colors cursor-pointer">
             <span className="font-mono text-[11px] text-muted-foreground select-none">$</span>
-            <code className="text-[11px] font-mono text-foreground tracking-tight">curl -fsSL kortix.com/install</code>
+            <code className="text-[11px] font-mono text-foreground tracking-tight">{installCmdShort}</code>
             {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3 text-muted-foreground group-hover:text-foreground transition-colors" />}
           </button>
           <span className="hidden sm:block w-px h-5 bg-border" />
