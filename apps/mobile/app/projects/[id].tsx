@@ -16,6 +16,7 @@ import {
   View,
   ScrollView,
   Pressable,
+  TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   TextInput,
@@ -26,18 +27,8 @@ import { Drawer } from 'react-native-drawer-layout';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  Menu,
-  X,
-  Plus,
-  Search as SearchIcon,
-  Folder,
-  MessageSquare,
-  ChevronRight,
-  GitBranch,
-  ArrowUp,
-  PanelRight,
-} from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Menu, GitBranch, ArrowUp, PanelRight } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -171,55 +162,72 @@ export default function ProjectDetailScreen() {
     void startSession(text);
   }, [prompt, startSession]);
 
-  // ── Left drawer (repo-first project + sessions) ───────────────────────────
-  const renderLeftDrawer = React.useCallback(
-    () => (
-      <View style={{ flex: 1, paddingTop: insets.top + 8, backgroundColor: drawerBg }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12 }}>
-          <Text style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }} numberOfLines={1}>
+  // ── Left drawer (matches app/home.tsx drawer styling 1:1) ─────────────────
+  const renderLeftDrawer = React.useCallback(() => {
+    const iconColor = isDark ? '#F8F8F8' : '#121215';
+    const mutedColor = isDark ? '#999999' : '#6e6e6e';
+    return (
+      <View className="flex-1 bg-chrome-background" style={{ paddingTop: insets.top }}>
+        {/* Header */}
+        <View className="flex-row items-center justify-between px-5 pt-3 pb-4">
+          <Text className="flex-1 text-base font-roobert-semibold text-foreground" numberOfLines={1}>
             {project?.name ?? 'Project'}
           </Text>
-          <Pressable onPress={() => setLeftOpen(false)} hitSlop={8} style={{ padding: 4 }}>
-            <Icon as={X} size={20} className="text-muted-foreground" strokeWidth={2.2} />
-          </Pressable>
+          <TouchableOpacity onPress={() => setLeftOpen(false)} hitSlop={8} activeOpacity={0.6}>
+            <Ionicons name="close" size={22} color={mutedColor} />
+          </TouchableOpacity>
         </View>
 
-        <View style={{ paddingHorizontal: 8 }}>
-          <DrawerRow icon={Plus} label="New session" color={fg} onPress={() => { setLeftOpen(false); void startSession(); }} />
-          <DrawerRow icon={SearchIcon} label="Search" color={fg} onPress={() => { setLeftOpen(false); setPaletteOpen(true); }} />
-          <DrawerRow icon={Folder} label="Projects" color={fg} onPress={() => { setLeftOpen(false); router.replace('/projects'); }} />
+        {/* Top-level actions */}
+        <View className="px-2 mb-2">
+          <TouchableOpacity
+            onPress={() => { haptics.tap(); setLeftOpen(false); void startSession(); }}
+            className="flex-row items-center rounded-lg px-3 py-2.5"
+            activeOpacity={0.6}
+          >
+            <Ionicons name="create-outline" size={18} color={iconColor} />
+            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">New session</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => { haptics.tap(); setLeftOpen(false); setPaletteOpen(true); }}
+            className="flex-row items-center rounded-lg px-3 py-2.5"
+            activeOpacity={0.6}
+          >
+            <Ionicons name="search-outline" size={18} color={iconColor} />
+            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Search</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => { haptics.tap(); setLeftOpen(false); router.replace('/projects'); }}
+            className="flex-row items-center rounded-lg px-3 py-2.5"
+            activeOpacity={0.6}
+          >
+            <Ionicons name="folder-outline" size={18} color={iconColor} />
+            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Projects</Text>
+          </TouchableOpacity>
         </View>
 
-        <Text
-          style={{
-            fontSize: 12,
-            fontFamily: 'Roobert-Medium',
-            color: faint,
-            textTransform: 'uppercase',
-            letterSpacing: 0.5,
-            paddingHorizontal: 20,
-            marginTop: 16,
-            marginBottom: 8,
-          }}
-        >
-          Sessions
-        </Text>
+        {/* Sessions header */}
+        <View className="flex-row items-center px-5 py-2.5">
+          <Ionicons name="list-outline" size={18} color={iconColor} />
+          <Text className="text-sm font-medium ml-3 text-foreground">Sessions</Text>
+        </View>
 
+        {/* Session list */}
         <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: insets.bottom + 16 }}
+          className="flex-1"
+          contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: insets.bottom + 20 }}
           refreshControl={
-            <RefreshControl refreshing={sessionsQuery.isRefetching} onRefresh={() => sessionsQuery.refetch()} tintColor={subtle} />
+            <RefreshControl refreshing={sessionsQuery.isRefetching} onRefresh={() => sessionsQuery.refetch()} tintColor={mutedColor} />
           }
         >
           {sessionsQuery.isLoading && (
-            <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-              <ActivityIndicator color={subtle} />
+            <View className="items-center" style={{ paddingVertical: 24 }}>
+              <ActivityIndicator color={mutedColor} />
             </View>
           )}
 
           {!sessionsQuery.isLoading && sessions.length === 0 && (
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, textAlign: 'center', paddingVertical: 24 }}>
+            <Text className="text-center text-sm text-muted-foreground" style={{ paddingVertical: 24 }}>
               No sessions yet
             </Text>
           )}
@@ -227,39 +235,31 @@ export default function ProjectDetailScreen() {
           {sessions.map((session) => {
             const meta = statusMeta(session.status);
             return (
-              <Pressable
+              <TouchableOpacity
                 key={session.session_id}
-                onPress={() => { setLeftOpen(false); openSession(session); }}
-                style={({ pressed }) => ({
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  borderRadius: 10,
-                  opacity: pressed ? 0.6 : 1,
-                })}
+                onPress={() => { haptics.tap(); setLeftOpen(false); openSession(session); }}
+                className="flex-row items-center rounded-lg px-3 py-2.5"
+                activeOpacity={0.6}
               >
-                <Icon as={MessageSquare} size={15} className="text-muted-foreground" strokeWidth={2} style={{ marginRight: 10 }} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>
+                <View className="flex-1" style={{ minWidth: 0 }}>
+                  <Text numberOfLines={1} className="text-sm font-medium text-foreground">
                     {session.name || 'Untitled session'}
                   </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                  <View className="flex-row items-center mt-0.5" style={{ gap: 5 }}>
                     <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: meta.color }} />
-                    <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: faint }}>
+                    <Text className="text-xs text-muted-foreground">
                       {meta.label} · {ago(session.updated_at)}
                     </Text>
                   </View>
                 </View>
-                {session.status === 'running' && <Icon as={ChevronRight} size={15} className="text-muted-foreground" />}
-              </Pressable>
+                {session.status === 'running' && <Ionicons name="chevron-forward" size={16} color={mutedColor} />}
+              </TouchableOpacity>
             );
           })}
         </ScrollView>
       </View>
-    ),
-    [insets.top, insets.bottom, drawerBg, fg, faint, subtle, project?.name, sessions, sessionsQuery, startSession, openSession, router],
-  );
+    );
+  }, [isDark, insets.top, insets.bottom, project?.name, sessions, sessionsQuery, startSession, openSession, router]);
 
   // ── Right drawer (existing pages menu — arrange later) ────────────────────
   const renderRightDrawer = React.useCallback(
@@ -408,37 +408,5 @@ export default function ProjectDetailScreen() {
         }}
       />
     </View>
-  );
-}
-
-function DrawerRow({
-  icon,
-  label,
-  color,
-  onPress,
-}: {
-  icon: typeof Plus;
-  label: string;
-  color: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={() => {
-        haptics.tap();
-        onPress();
-      }}
-      style={({ pressed }) => ({
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 10,
-        paddingHorizontal: 12,
-        borderRadius: 10,
-        opacity: pressed ? 0.6 : 1,
-      })}
-    >
-      <Icon as={icon} size={18} color={color} strokeWidth={2.2} />
-      <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color, marginLeft: 12 }}>{label}</Text>
-    </Pressable>
   );
 }
