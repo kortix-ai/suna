@@ -133,6 +133,13 @@ export function listAccounts() {
   return apiFetch<KortixAccount[]>('/accounts');
 }
 
+export function createAccount(name: string) {
+  return apiFetch<KortixAccount>('/accounts', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
 // ── Projects ───────────────────────────────────────────────────────────────
 
 export function listProjectsForAccount(accountId?: string) {
