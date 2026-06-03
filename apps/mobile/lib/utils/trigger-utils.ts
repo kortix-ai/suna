@@ -6,12 +6,7 @@
  */
 
 import {
-  MessageSquare,
-  Github,
-  Slack,
-  Hash,
   Globe,
-  Sparkles,
   Repeat,
   Webhook,
 } from 'lucide-react-native';
@@ -25,21 +20,12 @@ export const getTriggerIcon = (triggerType: string | undefined) => {
   }
   
   switch (triggerType.toLowerCase()) {
+    case 'cron':
     case 'schedule':
     case 'scheduled':
       return Repeat;
-    case 'telegram':
-      return MessageSquare;
-    case 'github':
-      return Github;
-    case 'slack':
-      return Slack;
     case 'webhook':
       return Webhook;
-    case 'discord':
-      return Hash;
-    case 'event':
-      return Sparkles;
     default:
       return Globe;
   }
@@ -49,7 +35,7 @@ export const getTriggerIcon = (triggerType: string | undefined) => {
  * Get trigger category (scheduled or app)
  */
 export const getTriggerCategory = (triggerType: string): 'scheduled' | 'app' => {
-  const scheduledTypes = ['schedule', 'scheduled'];
+  const scheduledTypes = ['cron', 'schedule', 'scheduled'];
   return scheduledTypes.includes(triggerType.toLowerCase()) ? 'scheduled' : 'app';
 };
 
