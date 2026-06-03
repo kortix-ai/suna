@@ -1984,7 +1984,7 @@ export interface ProjectSessionSandbox {
   session_id: string;
   project_id: string;
   account_id: string;
-  provider: 'daytona' | 'local_docker' | 'justavps';
+  provider: 'daytona' | 'local_docker';
   external_id: string | null;
   base_url: string | null;
   status: ProjectSessionSandboxStatus;

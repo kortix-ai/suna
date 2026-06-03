@@ -41,9 +41,7 @@ import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 function providerLabel(provider: SandboxProviderName): string {
   switch (provider) {
     case 'local_docker': return 'LOCAL';
-    case 'justavps': return 'CLOUD';
     case 'daytona': return 'CLOUD';
-    default: return 'INSTANCE';
   }
 }
 

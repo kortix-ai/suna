@@ -22,7 +22,7 @@ const SANDBOX_PORTS = {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker' | 'justavps';
+export type SandboxProviderName = 'daytona' | 'local_docker';
 
 export interface SandboxInfo {
   sandbox_id: string;
@@ -233,7 +233,6 @@ export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
  * Ensure the user has a project-session sandbox provisioned.
  */
 export async function ensureSandbox(opts?: {
-  provider?: SandboxProviderName;
   projectId?: string;
 }): Promise<{ sandbox: SandboxInfo; created: boolean }> {
   log.log('📦 [Platform] Ensuring sandbox...');
@@ -307,7 +306,7 @@ export async function restartSandbox(sandboxId?: string): Promise<void> {
 /**
  * Get sandbox providers supported by the project-session flow.
  */
-export async function getProviders(): Promise<string[]> {
+export async function getProviders(): Promise<SandboxProviderName[]> {
   return ['daytona'];
 }
 

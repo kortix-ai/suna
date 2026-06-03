@@ -23,7 +23,7 @@ function resetSDKClient(): void {
   _resetClient?.();
 }
 
-type SandboxProvider = 'daytona' | 'local_docker' | 'justavps';
+type SandboxProvider = 'daytona' | 'local_docker';
 
 export interface ServerEntry {
   id: string;
@@ -285,7 +285,7 @@ async function loadFromApi(): Promise<ServerEntry[] | null> {
       label: string;
       url: string;
       isDefault: boolean;
-      provider: 'daytona' | 'local_docker' | 'justavps' | null;
+      provider: 'daytona' | 'local_docker' | null;
       sandboxId: string | null;
       mappedPorts: Record<string, string> | null;
     }> = await res.json();

@@ -351,7 +351,7 @@ function isBackendOnLocalhost(apiBaseUrl: string): boolean {
  * Build a preview proxy URL for a sandbox service port.
  *
  * Both modes are proxy URLs — neither connects to the user's raw localhost.
- * Provider type (local_docker, daytona, justavps) is irrelevant; the only thing
+ * Provider type is irrelevant; the only thing
  * that matters is whether kortix-api is running on the user's local machine,
  * because that determines whether *.localhost DNS can reach it.
  *
