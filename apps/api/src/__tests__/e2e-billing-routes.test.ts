@@ -334,6 +334,46 @@ describe('Billing: removed payment report routes', () => {
   });
 });
 
+describe('Billing: removed subscription checkout routes', () => {
+  test('legacy inline checkout endpoints are not mounted', async () => {
+    const app = createBillingTestApp();
+    const createInline = await app.request('/v1/billing/create-inline-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+      body: JSON.stringify({ tier_key: 'pro', billing_period: 'monthly' }),
+    });
+    const confirmInline = await app.request('/v1/billing/confirm-inline-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+      body: JSON.stringify({ subscription_id: 'sub_test', tier_key: 'pro' }),
+    });
+
+    expect(createInline.status).toBe(404);
+    expect(confirmInline.status).toBe(404);
+  });
+
+  test('manual checkout confirmation and proration endpoints are not mounted', async () => {
+    const app = createBillingTestApp();
+    const details = await app.request('/v1/billing/checkout-session/cs_test', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer test_token' },
+    });
+    const confirm = await app.request('/v1/billing/confirm-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+      body: JSON.stringify({ session_id: 'cs_test' }),
+    });
+    const proration = await app.request('/v1/billing/proration-preview?new_price_id=price_test', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer test_token' },
+    });
+
+    expect(details.status).toBe(404);
+    expect(confirm.status).toBe(404);
+    expect(proration.status).toBe(404);
+  });
+});
+
 describe('Billing: webhooks', () => {
   test('POST /v1/billing/webhooks/stripe remains public and signature-checked', async () => {
     const app = createBillingTestApp();

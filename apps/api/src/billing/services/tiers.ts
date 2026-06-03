@@ -1,7 +1,6 @@
 import type { TierConfig, DailyCreditConfig } from '../../types';
 import { config } from '../../config';
 
-export const TOKEN_PRICE_MULTIPLIER = 1.2;
 export const MINIMUM_CREDIT_FOR_RUN = 0.01;
 
 /** One-time credit grant per machine provisioned ($5 = 500 display credits). */
