@@ -1,10 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  KNOWN_SCHEMA_VERSION,
-  RESERVED_SANDBOX_SLUG,
-  validateManifest,
-  formatIssues,
-} from '../index.ts';
+import { validateManifest, formatIssues } from '../index.ts';
 
 function summarize(input: string | Record<string, unknown>) {
   const result = validateManifest(input);
@@ -44,7 +39,7 @@ describe('validateManifest — kortix_version', () => {
   });
 
   test('rejects a version higher than known', () => {
-    const { errorPaths } = summarize(`kortix_version = ${KNOWN_SCHEMA_VERSION + 1}`);
+    const { errorPaths } = summarize('kortix_version = 2');
     expect(errorPaths).toContain('kortix_version');
   });
 
@@ -134,7 +129,7 @@ slug = "empty"
     const { errorPaths } = summarize(`
 kortix_version = 1
 [[sandbox.templates]]
-slug = "${RESERVED_SANDBOX_SLUG}"
+slug = "default"
 image = "ubuntu:22.04"
 `);
     expect(errorPaths).toContain('sandbox.templates[0].slug');

@@ -19,13 +19,13 @@
 import { parse as parseToml, TomlError } from 'smol-toml';
 
 /** Maximum manifest schema version this validator understands. */
-export const KNOWN_SCHEMA_VERSION = 1;
+const KNOWN_SCHEMA_VERSION = 1;
 
 /** The slug reserved for the platform-shared default sandbox template. */
-export const RESERVED_SANDBOX_SLUG = 'default';
+const RESERVED_SANDBOX_SLUG = 'default';
 
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
-export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
