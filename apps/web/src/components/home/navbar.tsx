@@ -77,7 +77,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const t = useTranslations('common');
   const lastScrollY = useRef(0);
 
   const filteredNavLinks = siteConfig.nav.links;
