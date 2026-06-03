@@ -21,5 +21,3 @@ export function useThreadUsage({
     staleTime: 30000, // 30 seconds
   });
 }
-
-export type { ThreadUsageResponse };

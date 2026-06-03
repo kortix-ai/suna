@@ -45,7 +45,7 @@ export interface ProviderInfo {
   models: Record<string, ModelInfo>;
 }
 
-export interface ProviderListResponse {
+interface ProviderListResponse {
   all: ProviderInfo[];
   default: Record<string, string>;
   connected: string[];
