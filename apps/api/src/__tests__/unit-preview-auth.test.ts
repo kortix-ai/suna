@@ -95,8 +95,6 @@ mock.module('../shared/auth-audit', () => ({
 
 mock.module('../config', () => ({
   config: {
-    isLocal: () => false,
-    isLocalDockerEnabled: () => true,
     SANDBOX_CONTAINER_NAME: 'kortix-sandbox',
   },
 }));

@@ -153,14 +153,13 @@ mock.module('../config', () => ({
     FRONTEND_URL: 'http://localhost:3000',
     KORTIX_BILLING_INTERNAL_ENABLED: true,
     ALLOWED_SANDBOX_PROVIDERS: ['local_docker'],
-    isDaytonaEnabled: () => false,
-    isLocalDockerEnabled: () => false,
     getDefaultProvider: () => 'local_docker',
   },
 }));
 
 // Customers repository mock
 mock.module('../billing/repositories/customers', () => ({
+  listAccountStripeCustomerIds: async () => ['cus_test_123'],
   getCustomerByAccountId: async () => ({ id: 'cus_test_123', accountId: TEST_USER_ID, email: 'test@kortix.dev', provider: 'stripe', active: true }),
   getCustomerByStripeId: async () => null,
   upsertCustomer: async () => {},

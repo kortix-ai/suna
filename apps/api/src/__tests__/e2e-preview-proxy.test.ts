@@ -143,10 +143,7 @@ mock.module('../shared/daytona', () => ({
 }));
 
 mock.module('../config', () => ({
-  config: {
-    isDaytonaEnabled: () => true,
-    isLocalDockerEnabled: () => false,
-  },
+  config: {},
 }));
 
 mock.module('../projects/secrets', () => {

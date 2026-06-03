@@ -588,18 +588,6 @@ export const config = {
 
   // ─── Helper Methods ────────────────────────────────────────────────────────
 
-  isProviderEnabled(name: SandboxProviderName): boolean {
-    if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
-    switch (name) {
-      case 'daytona': return !!this.DAYTONA_API_KEY;
-      case 'local_docker': return !!this.DOCKER_HOST;
-      default: {
-        const exhaustive: never = name;
-        return exhaustive;
-      }
-    }
-  },
-
   /**
    * Default sandbox provider for new sessions. First entry of
    * ALLOWED_SANDBOX_PROVIDERS, with 'daytona' as the safety belt for an
@@ -609,14 +597,6 @@ export const config = {
    */
   getDefaultProvider(): SandboxProviderName {
     return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
-  },
-
-  isDaytonaEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('daytona') && !!this.DAYTONA_API_KEY;
-  },
-
-  isLocalDockerEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker') && !!this.DOCKER_HOST;
   },
 
 };
