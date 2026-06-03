@@ -318,7 +318,6 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 ## 16. Billing (gated by `KORTIX_BILLING_INTERNAL_ENABLED`; off → 404 `billing_disabled`)
 
 `BILL-1` `GET /billing/account-state` (always available; off → unlimited mock).
-`BILL-2` `POST /billing/setup/initialize {server_type,location}` → free Stripe sub.
 `BILL-3b` `POST /billing/create-checkout-session` · `create-per-seat-checkout` · `create-portal-session`.
 `BILL-4` `POST /billing/sync-subscription`.
 `BILL-5` `POST /billing/purchase-credits`; `GET /billing/transactions`.
