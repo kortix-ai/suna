@@ -101,7 +101,7 @@ serversApp.put('/sync', async (c) => {
   return c.json(results);
 });
 
-// ─── CRUD routes ────────────────────────────────────────────────────────────
+// ─── Routes ─────────────────────────────────────────────────────────────────
 
 // GET /v1/servers — list this user's server entries
 serversApp.get('/', async (c) => {
@@ -114,20 +114,6 @@ serversApp.get('/', async (c) => {
     .where(eq(serverEntries.accountId, accountId))
     .orderBy(serverEntries.createdAt);
   return c.json(rows.filter((row) => !isManagedOrProxyServer(row)));
-});
-
-// GET /v1/servers/:id — get a single server entry (scoped to account)
-serversApp.get('/:id', async (c) => {
-  const userId = c.get('userId');
-  const accountId = await resolveAccountId(userId);
-  const id = c.req.param('id');
-
-  const [row] = await db
-    .select()
-    .from(serverEntries)
-    .where(and(eq(serverEntries.accountId, accountId), eq(serverEntries.id, id)));
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json(row);
 });
 
 // POST /v1/servers — create/upsert a server entry
@@ -180,39 +166,6 @@ serversApp.post('/', async (c) => {
     .returning();
 
   return c.json(row, 201);
-});
-
-// PUT /v1/servers/:id — update an existing server entry
-serversApp.put('/:id', async (c) => {
-  const userId = c.get('userId');
-  const accountId = await resolveAccountId(userId);
-  const id = c.req.param('id');
-
-  const body = await c.req.json<{
-    label?: string;
-    url?: string;
-    isDefault?: boolean;
-    provider?: SandboxProviderName | null;
-    sandboxId?: string | null;
-    mappedPorts?: Record<string, string> | null;
-  }>();
-
-  const updates: Record<string, unknown> = { updatedAt: new Date() };
-  if (body.label !== undefined) updates.label = body.label;
-  if (body.url !== undefined) updates.url = body.url;
-  if (body.isDefault !== undefined) updates.isDefault = body.isDefault;
-  if (body.provider !== undefined) updates.provider = body.provider;
-  if (body.sandboxId !== undefined) updates.sandboxId = body.sandboxId;
-  if (body.mappedPorts !== undefined) updates.mappedPorts = body.mappedPorts;
-
-  const [row] = await db
-    .update(serverEntries)
-    .set(updates)
-    .where(and(eq(serverEntries.accountId, accountId), eq(serverEntries.id, id)))
-    .returning();
-
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json(row);
 });
 
 // DELETE /v1/servers/:id — delete a server entry

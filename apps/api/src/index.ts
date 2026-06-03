@@ -387,7 +387,7 @@ app.route('/v1/oauth', oauthApp);
 
 // All remaining routes require authentication (JWT or kortix_ token).
 app.use('/v1/servers/*', combinedAuth);
-app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v1/servers/sync
+app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/sync, DELETE /v1/servers/:id
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
