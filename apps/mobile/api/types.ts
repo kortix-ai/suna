@@ -346,10 +346,3 @@ export interface SendMessageInput {
   agentId?: string;
   files?: Array<{ uri: string; name: string; type: string }>;
 }
-
-export interface FileUploadResponse {
-  path: string;
-  final_filename: string;
-  size: number;
-  type: string;
-}
