@@ -1119,10 +1119,6 @@ function NotificationToggle({ icon: Icon, label, description, enabled, onToggle,
     );
 }
 
-// ─── Billing Tab ─────────────────────────────────────────────────────────────
-// (Legacy "Kortix Computer / Instances" section removed — sandboxes are now
-// ephemeral per-session compute, not billable named machines.)
-
 const CREDIT_PACKAGES: { credits: number; price: number }[] = [
     { credits: 1000, price: 10 },
     { credits: 2500, price: 25 },

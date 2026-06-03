@@ -1001,8 +1001,6 @@
   }
 }
 
-/* Legacy chat-markdown styles removed - use UnifiedMarkdown component instead */
-
 /* Fix Shiki code block rendering: the global * { border-border } rule gives every
    .line span a solid border-style. Combined with display:contents on Shiki wrappers,
    browsers can render thin artifact lines between code lines in large blocks. */

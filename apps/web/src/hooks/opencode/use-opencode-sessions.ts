@@ -712,7 +712,3 @@ export async function rejectQuestion(requestId: string): Promise<void> {
   const result = await client.question.reject({ requestID: requestId });
   unwrap(result);
 }
-
-// useSessionPolling was removed — SSE reconnects within <3s making 2s HTTP
-// polling redundant. All session status + message updates are driven by SSE
-// events via the sync store. See SSE-FIRST-MIGRATION-PLAN.md Phase 1d.
