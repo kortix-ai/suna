@@ -22,14 +22,12 @@ mock.module('../../billing/services/seat-management', () => ({
 // ─── Track calls ──────────────────────────────────────────────────────────────
 
 let upsertCreditAccountCalls: any[] = [];
-let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
 let resetExpiringCreditsCalls: any[] = [];
 let stripeCancelSubCalls: any[] = [];
 
 beforeEach(() => {
   upsertCreditAccountCalls = [];
-  updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
   resetExpiringCreditsCalls = [];
   stripeCancelSubCalls = [];
@@ -48,9 +46,7 @@ beforeEach(() => {
     const a = createMockCreditAccount();
     return { balance: a.balance, expiringCredits: a.expiringCredits, nonExpiringCredits: a.nonExpiringCredits, dailyCreditsBalance: a.dailyCreditsBalance, tier: a.tier };
   };
-  mockRegistry.updateCreditAccount = async (id: string, data: any) => {
-    updateCreditAccountCalls.push({ accountId: id, data });
-  };
+  mockRegistry.updateCreditAccount = async () => {};
   mockRegistry.upsertCreditAccount = async (id: string, data: any) => {
     upsertCreditAccountCalls.push({ accountId: id, data });
   };
@@ -86,10 +82,6 @@ const {
   getOrCreateStripeCustomer,
   createCheckoutSession,
   createPerSeatCheckoutSession,
-  cancelSubscription,
-  reactivateSubscription,
-  scheduleDowngrade,
-  cancelScheduledChange,
   cancelFreeSubscriptionForUpgrade,
 } = await import('../../billing/services/subscriptions');
 
@@ -203,99 +195,6 @@ describe('createPerSeatCheckoutSession', () => {
     expect(checkoutParams.mode).toBe('subscription');
     expect(checkoutParams.line_items[0].quantity).toBe(1);
     expect(checkoutParams.payment_method_collection).toBe('always');
-  });
-});
-
-describe('cancelSubscription', () => {
-  test('sets cancel_at_period_end', async () => {
-    let updateParams: any = null;
-    mockRegistry.stripeClient.subscriptions.update = async (_id: string, params: any) => {
-      updateParams = params;
-      return createMockStripeSubscription({ ...params, cancel_at: Date.now() / 1000 + 86400 * 30 });
-    };
-
-    const result = await cancelSubscription('acc_test_123');
-    expect(result.success).toBe(true);
-    expect(updateParams.cancel_at_period_end).toBe(true);
-  });
-
-  test('throws during commitment period', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        commitmentType: 'yearly_commitment',
-        commitmentEndDate: new Date(Date.now() + 86400000 * 365).toISOString(), // 1 year from now
-      });
-
-    try {
-      await cancelSubscription('acc_test_123');
-      expect(true).toBe(false);
-    } catch (err: any) {
-      expect(err.name).toBe('SubscriptionError');
-      expect(err.message).toContain('commitment');
-    }
-  });
-
-  test('allows cancel after commitment expires', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        commitmentType: 'yearly_commitment',
-        commitmentEndDate: new Date(Date.now() - 86400000).toISOString(), // Yesterday
-      });
-
-    mockRegistry.stripeClient.subscriptions.update = async (_id: string, _params: any) =>
-      createMockStripeSubscription({ cancel_at: Date.now() / 1000 + 86400 * 30 });
-
-    const result = await cancelSubscription('acc_test_123');
-    expect(result.success).toBe(true);
-  });
-});
-
-describe('reactivateSubscription', () => {
-  test('clears cancel_at_period_end', async () => {
-    let updateParams: any = null;
-    mockRegistry.stripeClient.subscriptions.update = async (_id: string, params: any) => {
-      updateParams = params;
-      return createMockStripeSubscription(params);
-    };
-
-    const result = await reactivateSubscription('acc_test_123');
-    expect(result.success).toBe(true);
-    expect(updateParams.cancel_at_period_end).toBe(false);
-  });
-});
-
-describe('scheduleDowngrade', () => {
-  test('stores scheduled change in DB', async () => {
-    const result = await scheduleDowngrade('acc_test_123', 'free');
-
-    expect(result.success).toBe(true);
-    expect(updateCreditAccountCalls.length).toBe(1);
-    expect(updateCreditAccountCalls[0].data.scheduledTierChange).toBe('free');
-    expect(updateCreditAccountCalls[0].data.scheduledTierChangeDate).toBeDefined();
-  });
-
-  test('throws when no active subscription', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ stripeSubscriptionId: null });
-
-    try {
-      await scheduleDowngrade('acc_test_123', 'free');
-      expect(true).toBe(false);
-    } catch (err: any) {
-      expect(err.name).toBe('SubscriptionError');
-    }
-  });
-});
-
-describe('cancelScheduledChange', () => {
-  test('clears all scheduled fields', async () => {
-    const result = await cancelScheduledChange('acc_test_123');
-
-    expect(result.success).toBe(true);
-    expect(updateCreditAccountCalls.length).toBe(1);
-    expect(updateCreditAccountCalls[0].data.scheduledTierChange).toBeNull();
-    expect(updateCreditAccountCalls[0].data.scheduledTierChangeDate).toBeNull();
-    expect(updateCreditAccountCalls[0].data.scheduledPriceId).toBeNull();
   });
 });
 

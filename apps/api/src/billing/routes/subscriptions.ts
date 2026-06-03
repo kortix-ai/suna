@@ -3,10 +3,6 @@ import type { AppEnv } from '../../types';
 import {
   createCheckoutSession,
   createPortalSession,
-  cancelSubscription,
-  reactivateSubscription,
-  scheduleDowngrade,
-  cancelScheduledChange,
   syncSubscription,
   createPerSeatCheckoutSession,
 } from '../services/subscriptions';
@@ -90,32 +86,6 @@ subscriptionsRouter.post('/create-portal-session', async (c) => {
   const email = c.get('userEmail');
   const body = await c.req.json();
   const result = await createPortalSession(accountId, body.return_url, email);
-  return c.json(result);
-});
-
-subscriptionsRouter.post('/cancel-subscription', async (c) => {
-  const accountId = await resolveScopedAccountId(c, 'body');
-  const body = await c.req.json().catch(() => ({}));
-  const result = await cancelSubscription(accountId, body.feedback);
-  return c.json(result);
-});
-
-subscriptionsRouter.post('/reactivate-subscription', async (c) => {
-  const accountId = await resolveScopedAccountId(c, 'body');
-  const result = await reactivateSubscription(accountId);
-  return c.json(result);
-});
-
-subscriptionsRouter.post('/schedule-downgrade', async (c) => {
-  const accountId = await resolveScopedAccountId(c, 'body');
-  const body = await c.req.json();
-  const result = await scheduleDowngrade(accountId, body.target_tier_key, body.commitment_type);
-  return c.json(result);
-});
-
-subscriptionsRouter.post('/cancel-scheduled-change', async (c) => {
-  const accountId = await resolveScopedAccountId(c, 'body');
-  const result = await cancelScheduledChange(accountId);
   return c.json(result);
 });
 

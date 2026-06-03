@@ -374,6 +374,35 @@ describe('Billing: removed subscription checkout routes', () => {
   });
 });
 
+describe('Billing: removed subscription management routes', () => {
+  test('legacy direct subscription management endpoints are not mounted', async () => {
+    const app = createBillingTestApp();
+    const cancel = await app.request('/v1/billing/cancel-subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+      body: JSON.stringify({ feedback: 'test' }),
+    });
+    const reactivate = await app.request('/v1/billing/reactivate-subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+    });
+    const scheduleDowngrade = await app.request('/v1/billing/schedule-downgrade', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+      body: JSON.stringify({ target_tier_key: 'free' }),
+    });
+    const cancelScheduled = await app.request('/v1/billing/cancel-scheduled-change', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+    });
+
+    expect(cancel.status).toBe(404);
+    expect(reactivate.status).toBe(404);
+    expect(scheduleDowngrade.status).toBe(404);
+    expect(cancelScheduled.status).toBe(404);
+  });
+});
+
 describe('Billing: webhooks', () => {
   test('POST /v1/billing/webhooks/stripe remains public and signature-checked', async () => {
     const app = createBillingTestApp();
