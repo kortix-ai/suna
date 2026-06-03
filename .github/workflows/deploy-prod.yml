@@ -1,7 +1,10 @@
 name: Deploy Prod
 
-# PROD pipeline. Runs when `prod` advances (via the promote.yml workflow) or on
-# manual dispatch. The root VERSION on `prod` is the clean version `X.Y.Z`.
+# PROD pipeline. Runs when `prod` advances — i.e. when a reviewed promote PR is
+# MERGED (promote.yml opens it) — or on manual dispatch. This is the ONLY place
+# a version is published: the tag `vX.Y.Z`, the GitHub Release, the image retag,
+# the ECS roll, and the frontend all happen here, never before the prod merge.
+# The root VERSION on `prod` is the clean version `X.Y.Z`.
 #
 #   1. Retag the dev images (kortix/kortix-*:dev-latest) → :X.Y.Z + :latest
 #      (multi-arch manifest copy, zero rebuilds).
@@ -46,27 +49,30 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # need full tags + annotations to read the release notes
-      - name: Read VERSION + release notes from the tag annotation
+      - name: Read VERSION + release notes (committed by the promote PR)
         id: v
         run: |
           set -euo pipefail
           V="$(tr -d '[:space:]' < VERSION)"
-          TAG="v$V"
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Releasing $TAG"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+          echo "Publishing v$V"
 
-          # The annotated tag carries the human release entry written at promote
-          # time (promote.yml): subject line = title, body = notes. That becomes
-          # the GitHub Release name/body — i.e. the public changelog.
-          git fetch --force --tags origin "$TAG" >/dev/null 2>&1 || true
-          TITLE="$(git tag -l --format='%(contents:subject)' "$TAG" 2>/dev/null || true)"
-          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
-          {
-            echo 'notes<<KORTIX_NOTES_EOF'
-            git tag -l --format='%(contents:body)' "$TAG" 2>/dev/null || true
-            echo 'KORTIX_NOTES_EOF'
-          } >> "$GITHUB_OUTPUT"
+          # promote.yml committed RELEASE_NOTES.md (line 1 = title, rest = notes)
+          # onto the release branch; it merged into prod with this release. The
+          # tag does NOT exist yet — the GitHub Release job creates it at this
+          # prod commit. (Nothing was published before this merge.)
+          if [ -f RELEASE_NOTES.md ]; then
+            echo "title=$(head -n1 RELEASE_NOTES.md)" >> "$GITHUB_OUTPUT"
+            {
+              echo 'notes<<KORTIX_NOTES_EOF'
+              tail -n +3 RELEASE_NOTES.md
+              echo 'KORTIX_NOTES_EOF'
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "title=" >> "$GITHUB_OUTPUT"
+            { echo 'notes<<KORTIX_NOTES_EOF'; echo 'KORTIX_NOTES_EOF'; } >> "$GITHUB_OUTPUT"
+          fi
 
   # ── Retag dev images → versioned + latest (no rebuild) ──────────────────────
   retag-images:

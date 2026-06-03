@@ -1,27 +1,33 @@
 name: Promote to Production
 
-# Manual promotion: bumps the unified root VERSION, commits it to `main`, tags
-# `vX.Y.Z`, and opens a REVIEW-GATED PR (release/vX.Y.Z → `prod`). `prod` is a
-# protected branch (required approving review, no direct/force push), so a
-# second person must approve before merge. MERGING that PR advances `prod`,
-# whose push event triggers deploy-prod.yml (image retag + GitHub Release +
-# prod ECS roll + prod frontend deploy). This is the SOC2 production change-
-# review gate; `main` (dev) stays push-friendly.
+# Review-gated promotion — PROPOSE only; publishing happens on merge.
 #
-# `prod` is the production branch: it deploys api-prod.kortix.com (ECS Fargate)
-# and new.kortix.com (Vercel) today, and api.kortix.com + kortix.com after the
-# apex DNS cutover. This is the ONLY way a clean version `X.Y.Z` enters prod;
-# dev builds on `main` are always `X.Y.Z-dev.<sha8>`.
+# This workflow never publishes anything. It:
+#   1. computes the NEXT version from what's currently live on `prod`,
+#   2. freezes the promoted code (the source ref, default `main`) on an
+#      ephemeral `release/vX.Y.Z` branch, stamping `VERSION` + `RELEASE_NOTES.md`,
+#   3. opens a PR into the protected `prod` branch.
+#
+# No tag, no GitHub Release, no image retag, no deploy, and `main` is untouched.
+# A second person reviews and MERGES the PR — that merge is the ONLY thing that
+# advances `prod`, and its push event triggers deploy-prod.yml, which is what
+# actually creates the tag `vX.Y.Z`, cuts the Release, and deploys. So a version
+# only ever comes into existence when code lands on `prod`. `main` (dev) stays
+# push-friendly; the review gate lives entirely at the prod boundary.
+#
+# The release branch does a `merge -s ours origin/prod` so `prod` is always an
+# ancestor of the PR head → the promote PR merges cleanly every time (no VERSION
+# / notes conflicts), while keeping the promoted ref's content verbatim.
 
 on:
   workflow_dispatch:
     inputs:
       title:
-        description: 'Release title — a human one-liner shown on the changelog (e.g. "Warm pool + billing fixes")'
+        description: 'Release title — one-liner for the public changelog'
         required: true
         type: string
       notes:
-        description: 'Release notes — what changed and why, for the public changelog (markdown ok)'
+        description: 'Release notes — what changed and why (markdown ok)'
         required: true
         type: string
       bump:
@@ -29,10 +35,7 @@ on:
         required: true
         default: patch
         type: choice
-        options:
-          - patch
-          - minor
-          - major
+        options: [patch, minor, major]
       version:
         description: 'Explicit version override (e.g. 0.9.1) — optional'
         required: false
@@ -52,8 +55,8 @@ permissions:
   pull-requests: write
 
 jobs:
-  promote:
-    name: Bump VERSION, tag, open review-gated prod PR
+  open-release-pr:
+    name: Open review-gated release PR
     runs-on: ubuntu-latest
     steps:
       - name: Checkout ${{ inputs.ref }} (full history)
@@ -62,19 +65,22 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
 
-      - name: Compute new version
+      - name: Compute next version (from what's live on prod)
         id: ver
         run: |
           set -euo pipefail
-          CURRENT="$(tr -d '[:space:]' < VERSION)"
-          echo "Current VERSION: $CURRENT"
+          git fetch --no-tags origin prod >/dev/null 2>&1 || true
+          # Source of truth for "what's released" = VERSION on prod. Falls back
+          # to the ref's VERSION only if prod has none (first-ever release).
+          BASE="$(git show origin/prod:VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+          [ -n "$BASE" ] || BASE="$(tr -d '[:space:]' < VERSION)"
+          echo "Currently live on prod: $BASE"
 
           EXPLICIT="${{ inputs.version }}"
           if [ -n "$EXPLICIT" ]; then
-            NEW="${EXPLICIT#v}"  # tolerate a leading v
+            NEW="${EXPLICIT#v}"
           else
-            # Parse X.Y.Z and bump.
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE"
             : "${MAJOR:=0}"; : "${MINOR:=0}"; : "${PATCH:=0}"
             case "${{ inputs.bump }}" in
               major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
@@ -83,73 +89,48 @@ jobs:
             esac
             NEW="${MAJOR}.${MINOR}.${PATCH}"
           fi
+          echo "$NEW" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "Computed version '$NEW' is not X.Y.Z" >&2; exit 1; }
 
-          # Validate semver X.Y.Z.
-          if ! echo "$NEW" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Computed version '$NEW' is not valid X.Y.Z semver" >&2
-            exit 1
-          fi
-
-          echo "New VERSION: $NEW"
-          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
           echo "new=$NEW" >> "$GITHUB_OUTPUT"
           echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
+          echo "Proposing v$NEW"
 
-      - name: Write VERSION + commit to ${{ inputs.ref }}
-        # Inputs are passed via env (never interpolated into the script) so a
-        # title/notes with quotes or shell metacharacters can't break the run.
-        env:
-          IN_TITLE: ${{ inputs.title }}
-          IN_NOTES: ${{ inputs.notes }}
-        run: |
-          set -euo pipefail
-          NEW="${{ steps.ver.outputs.new }}"
-          TAG="${{ steps.ver.outputs.tag }}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Idempotent-ish: only write+commit if VERSION actually changed.
-          printf '%s\n' "$NEW" > VERSION
-          if git diff --quiet -- VERSION; then
-            echo "VERSION already at $NEW — no commit needed."
-          else
-            git add VERSION
-            git commit -m "chore(release): $TAG"
-            git push origin "HEAD:${{ inputs.ref }}"
-          fi
-
-          # Create/replace the annotated tag at the current commit. The tag
-          # annotation IS the release entry that deploy-prod.yml turns into the
-          # GitHub Release (and thus the public changelog): subject line = title,
-          # body = notes. This is why title/notes are required on dispatch.
-          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            echo "Tag $TAG already exists locally — re-pointing."
-          fi
-          printf '%s\n\n%s\n' "$IN_TITLE" "$IN_NOTES" | git tag -fa "$TAG" -F -
-          git push -f origin "$TAG"
-
-      - name: Open review-gated release PR to prod
+      - name: Freeze release branch + open PR into prod
         env:
           GH_TOKEN: ${{ github.token }}
           IN_TITLE: ${{ inputs.title }}
           IN_NOTES: ${{ inputs.notes }}
         run: |
           set -euo pipefail
+          NEW="${{ steps.ver.outputs.new }}"
           TAG="${{ steps.ver.outputs.tag }}"
-          SHA="$(git rev-parse HEAD)"
           RELBR="release/$TAG"
-          # `prod` is a protected branch (required review, no direct/force push),
-          # so promotion is gated on a human approval. Freeze exactly what we
-          # promote on an ephemeral release branch, then open a PR into prod.
-          # A second person approves; merging the PR is what advances prod and
-          # triggers deploy-prod.yml (via the push event on prod).
-          git push -f origin "$SHA:refs/heads/$RELBR"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Branch off the promoted ref, then record prod as a merged ancestor
+          # WITHOUT taking its content (`-s ours`). This guarantees the PR into
+          # prod is a clean fast-forward-able merge — no VERSION/notes conflicts,
+          # ever — while the tree stays exactly the promoted ref's content.
+          git checkout -B "$RELBR"
+          git merge -s ours --no-edit origin/prod -m "chore(release): supersede prod with $TAG" || true
+
+          # Stamp the clean version + carry the human release entry as a committed
+          # file. deploy-prod.yml reads these AFTER the merge to publish — nothing
+          # is published here.
+          printf '%s\n' "$NEW" > VERSION
+          printf '%s\n\n%s\n' "$IN_TITLE" "$IN_NOTES" > RELEASE_NOTES.md
+          git add VERSION RELEASE_NOTES.md
+          git commit -m "release: $TAG"
+          git push -f origin "HEAD:refs/heads/$RELBR"
+
           existing="$(gh pr list --base prod --head "$RELBR" --state open --json number --jq '.[0].number' || true)"
           if [ -n "$existing" ]; then
             echo "Release PR #$existing already open for $RELBR."
           else
-            printf '%s\n\n%s\n\n---\n_Promotion of `%s` to production. Requires one approving review; merging triggers the prod deploy (deploy-prod.yml)._\n' \
+            printf '%s\n\n%s\n\n---\n_Merging this PR **publishes %s**: tags it, cuts the GitHub Release, retags images, rolls the prod ECS service, and deploys the prod frontend. Nothing is published until this merges._\n' \
               "$IN_TITLE" "$IN_NOTES" "$TAG" \
               | gh pr create --base prod --head "$RELBR" --title "Release $TAG — $IN_TITLE" --body-file -
           fi
@@ -157,12 +138,11 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "### Release PR opened for prod"
+            echo "### Release PR opened — \`${{ steps.ver.outputs.tag }}\`"
             echo ""
-            echo "- Previous VERSION: \`${{ steps.ver.outputs.current }}\`"
-            echo "- New VERSION: \`${{ steps.ver.outputs.new }}\`"
-            echo "- Tag: \`${{ steps.ver.outputs.tag }}\`"
-            echo "- Source ref: \`${{ inputs.ref }}\` → \`release/${{ steps.ver.outputs.tag }}\` → PR into \`prod\`"
+            echo "- Live on prod: \`${{ steps.ver.outputs.base }}\`"
+            echo "- Proposed version: \`${{ steps.ver.outputs.new }}\`"
+            echo "- \`${{ inputs.ref }}\` → \`release/${{ steps.ver.outputs.tag }}\` → PR into \`prod\`"
             echo ""
-            echo "_Review-gated promotion: a second person must approve the PR into \`prod\`. **Merging** it advances \`prod\` and triggers **deploy-prod.yml** — retag image → \`v${{ steps.ver.outputs.new }}\` + \`:latest\`, cut the GitHub Release, roll the \`kortix-prod\` ECS service, and deploy the prod frontend._"
+            echo "_Nothing is published yet. A reviewer approves + merges the PR; the **merge** publishes the version (tag + GitHub Release + image retag + ECS roll + frontend)._"
           } >> "$GITHUB_STEP_SUMMARY"
