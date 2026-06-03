@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { dirname, extname, join, normalize } from 'node:path'
 
 import { logger } from './logger'
@@ -154,37 +154,39 @@ function injectBase(html: string, absFilePath: string, baseUrl: string): string 
   return `${injection}\n${html}`
 }
 
+function notFound(absPath: string): Response {
+  return new Response(`Not found: ${absPath}`, {
+    status: 404,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
+  })
+}
+
+function readError(absPath: string, error: unknown): Response {
+  const message = error instanceof Error ? error.message : String(error)
+  return new Response(`Read error: ${message}`, {
+    status: 500,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
+  })
+}
+
+function serveDirectory(absPath: string, baseUrl: string): Response {
+  const indexHtml = serveFile(join(absPath, 'index.html'), baseUrl, true)
+  if (indexHtml.status !== 404) return indexHtml
+
+  const indexHtm = serveFile(join(absPath, 'index.htm'), baseUrl, true)
+  if (indexHtm.status !== 404) return indexHtm
+
+  return new Response(`Directory listing not supported. No index.html found in ${absPath}`, {
+    status: 404,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
+  })
+}
+
 function serveFile(absPath: string, baseUrl: string, injectBaseTag = false): Response {
   try {
     if (!isAllowed(absPath)) {
       return new Response(`Forbidden path. Allowed roots: ${ALLOWED_ROOTS.join(', ')}`, {
         status: 403,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
-      })
-    }
-    if (!existsSync(absPath)) {
-      return new Response(`Not found: ${absPath}`, {
-        status: 404,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
-      })
-    }
-    const stat = statSync(absPath)
-    if (stat.isDirectory()) {
-      // Auto-index: try index.html / index.htm. Always inject <base> for
-      // auto-indexed HTML — the visitor navigated to a directory URL and
-      // relative asset paths need to resolve through /abs/.
-      const indexHtml = join(absPath, 'index.html')
-      const indexHtm = join(absPath, 'index.htm')
-      if (existsSync(indexHtml)) return serveFile(indexHtml, baseUrl, true)
-      if (existsSync(indexHtm)) return serveFile(indexHtm, baseUrl, true)
-      return new Response(`Directory listing not supported. No index.html found in ${absPath}`, {
-        status: 404,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
-      })
-    }
-    if (!stat.isFile()) {
-      return new Response(`Not a file: ${absPath}`, {
-        status: 400,
         headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
       })
     }
@@ -206,10 +208,10 @@ function serveFile(absPath: string, baseUrl: string, injectBaseTag = false): Res
       headers: { 'Content-Type': mime, ...corsHeaders },
     })
   } catch (e) {
-    return new Response(`Read error: ${(e as Error)?.message || String(e)}`, {
-      status: 500,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
-    })
+    const code = (e as { code?: string })?.code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return notFound(absPath)
+    if (code === 'EISDIR') return serveDirectory(absPath, baseUrl)
+    return readError(absPath, e)
   }
 }
 
