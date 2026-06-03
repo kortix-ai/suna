@@ -5,13 +5,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --env-file=.env run --hot src/index.ts",
-    "start": "bun --env-file=.env run src/index.ts",
-    "migration:legacy-sandboxes": "bun run src/scripts/migrate-legacy-sandboxes.ts",
-    "migration:legacy-fleet": "bun --env-file=.env run src/scripts/migrate-legacy-fleet.ts",
+    "dev": "dotenvx run -- bun run --hot src/index.ts",
+    "dev:envfile": "bun --env-file=.env.local run --hot src/index.ts",
+    "start": "dotenvx run -- bun run src/index.ts",
+    "migration:legacy-sandboxes": "dotenvx run -- bun run src/scripts/migrate-legacy-sandboxes.ts",
+    "migration:legacy-fleet": "dotenvx run -- bun run src/scripts/migrate-legacy-fleet.ts",
     "e2e:flow": "bun run scripts/e2e-managed-flow.ts",
     "typecheck": "tsc --noEmit",
-    "test": "for f in src/__tests__/billing/*.test.ts src/__tests__/e2e-*.test.ts src/__tests__/unit-*.test.ts; do bun test \"$f\" || exit 1; done",
+    "test": "dotenvx run -- bash -c 'for f in src/__tests__/billing/*.test.ts src/__tests__/e2e-*.test.ts src/__tests__/unit-*.test.ts; do bun test \"$f\" || exit 1; done'",
     "test:all": "bun run test"
   },
   "dependencies": {

@@ -1,0 +1,44 @@
+name: drata-compliance-as-code
+
+# Drata Compliance-as-Code: scans the repo's Infrastructure-as-Code (the
+# Terraform under infra/) for misconfigurations and reports results back to
+# Drata, gating on test severity. Supports SOC 2 (CC) — shifts infra
+# compliance left so misconfigs are caught in CI before they reach AWS.
+#
+# The pipeline FAILS if any test at or above `minimumSeverity` fails.
+# Auth: the pipeline key lives in repo secret DRATA_IAC_PIPELINE_KEY
+# (never committed — referenced only via ${{ secrets.* }}).
+
+on:
+  push:
+    branches: [main, prod]
+    paths:
+      - "infra/**"
+      - ".github/workflows/drata-compliance.yml"
+  pull_request:
+    branches: [main, prod]
+    paths:
+      - "infra/**"
+      - ".github/workflows/drata-compliance.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  drata-iac-scan:
+    name: compliance-as-code-action
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Drata Github Action
+        id: drata
+        uses: drata/compliance-as-code-action@v1.0.0
+        env:
+          DRATA_API_TOKEN: ${{ secrets.DRATA_IAC_PIPELINE_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          minimumSeverity: "CRITICAL"

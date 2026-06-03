@@ -3,7 +3,6 @@
   "private": true,
   "scripts": {
     "dev": "bash scripts/dev-local.sh",
-    "dev:prod": "bash scripts/dev-prod.sh",
     "dev:web": "pnpm --filter Kortix-Computer-Frontend dev",
     "dev:frontend": "pnpm --filter Kortix-Computer-Frontend dev",
     "dev:mobile": "pnpm --filter ./apps/mobile dev",
@@ -20,6 +19,7 @@
     "stripe:listen": "stripe listen --forward-to http://localhost:8008/v1/billing/webhooks/stripe"
   },
   "devDependencies": {
+    "@dotenvx/dotenvx": "^1.69.2",
     "agent-tunnel": "workspace:@kortix/agent-tunnel@*"
   },
   "packageManager": "pnpm@8.11.0",

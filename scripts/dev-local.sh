@@ -14,7 +14,24 @@ load_local_env() {
   # Supabase/auth (cloud dev has Google enabled), but force only the Kortix API
   # endpoint back to localhost and mark the process as local-dev so cloud
   # provision pollers do not sweep shared remote rows.
-  eval "$(python3 - "$ROOT_DIR/apps/api/.env" "$ROOT_DIR/apps/web/.env" <<'PY'
+  # apps/api/.env is dotenvx-ENCRYPTED and committed to git. Decrypt it with the
+  # dotenvx private key — apps/api/.env.keys locally, or Dotenv Armor
+  # (`dotenvx-armor login`). apps/web/.env stays plaintext (client-facing
+  # NEXT_PUBLIC_* only), so it's read directly below.
+  local DOTENVX="$ROOT_DIR/node_modules/.bin/dotenvx"
+  if [[ -x "$DOTENVX" ]]; then
+    local _api_env
+    _api_env="$("$DOTENVX" get --format eval -f "$ROOT_DIR/apps/api/.env" 2>/dev/null || true)"
+    if [[ -z "$_api_env" || "$_api_env" == *'="encrypted:'* ]]; then
+      echo "[dev] ⚠️  could not decrypt apps/api/.env — run 'dotenvx-armor login' (or restore apps/api/.env.keys)" >&2
+    else
+      set -a; eval "$_api_env"; set +a
+    fi
+  else
+    echo "[dev] ⚠️  dotenvx not installed (run 'pnpm install') — apps/api/.env not loaded" >&2
+  fi
+
+  eval "$(python3 - "$ROOT_DIR/apps/web/.env" <<'PY'
 import re, shlex, sys
 for path in sys.argv[1:]:
     try:
@@ -285,12 +302,18 @@ run_sandbox_dev() {
   # Deterministic local dev credentials from the running stack.
   eval "$(cd "$SUPABASE_DIR" && supabase status -o env 2>/dev/null | sed 's/^/export SB_/')"
 
-  # Materialize the per-app .env files. The local Supabase trio comes from the
+  # Materialize the per-app env files. The local Supabase trio comes from the
   # running stack; infra/LLM secrets come from the project secrets the platform
   # injected into this sandbox's env (set them in the Kortix dashboard). Reserved
   # names (PORT/KORTIX_*) are never injected, so the runtime-local ones are set
   # explicitly here.
-  cat > "$ROOT_DIR/apps/api/.env" <<EOF
+  #
+  # NB: write to apps/api/.env.LOCAL, never apps/api/.env. The committed .env is
+  # dotenvx-encrypted and tracked in git; a sandbox has no decryption key, and
+  # overwriting the tracked file with plaintext would risk a secret leak via a
+  # change request. .env.local is gitignored and Bun loads it at higher
+  # precedence than .env (the API below starts with --env-file=.env.local).
+  cat > "$ROOT_DIR/apps/api/.env.local" <<EOF
 ENV_MODE=local
 INTERNAL_KORTIX_ENV=dev
 PORT=8008
@@ -347,7 +370,10 @@ EOF
 
   echo "[dev] Starting API (dev) on :8008"
   cd "$ROOT_DIR"
-  KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev
+  # Sandbox mode reads the generated plaintext apps/api/.env.local (no dotenvx
+  # decryption key here); dev:envfile starts Bun with --env-file=.env.local so
+  # the encrypted, committed apps/api/.env is not auto-loaded.
+  KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev:envfile
 }
 
 trap cleanup EXIT INT TERM
