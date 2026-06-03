@@ -357,29 +357,6 @@ export function getDailyCreditConfig(tierName: string): DailyCreditConfig | null
   return getTier(tierName).dailyCreditConfig;
 }
 
-function getTierOrder(tierName: string): number {
-  const order = [
-    'none',
-    'free',
-    'pro',
-    // Legacy tiers ordered above pro for backward compat
-    'tier_2_20',
-    'tier_6_50',
-    'tier_12_100',
-    'tier_25_200',
-    'tier_50_400',
-    'tier_125_800',
-    'tier_200_1000',
-    'tier_150_1200',
-  ];
-  const idx = order.indexOf(tierName);
-  return idx >= 0 ? idx : 0;
-}
-
-export function isUpgrade(fromTier: string, toTier: string): boolean {
-  return getTierOrder(toTier) > getTierOrder(fromTier);
-}
-
 // ─── RevenueCat (mobile billing — untouched) ─────────────────────────────────
 
 const REVENUECAT_PRODUCT_MAPPING: Record<string, string> = {
