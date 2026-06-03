@@ -34,7 +34,7 @@ import {
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
 import { ensureOpencodeSessionPin } from './opencode-mapping';
-import { sendAccountInviteEmail, buildInviteUrl } from '../accounts/email';
+import { sendAccountInviteEmail, buildInviteUrl, isInviteEmailConfigured } from '../accounts/email';
 import { resolveAccountId } from '../shared/resolve-account';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
@@ -6291,24 +6291,30 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
     });
 
     // Fire the invite email — same transport + template as account-level
-    // invites, framed around this project. Best-effort: the invitation row
-    // already exists, so on skip/failure we still return the invite_url for
-    // the inviter to share the link manually (mirrors the account route).
+    // invites, framed around this project. Fire-and-forget: the invitation row
+    // already exists and we return the invite_url regardless, so we don't block
+    // the response on Mailtrap (its 10s timeout was stacking onto the request).
+    // send() never throws (it returns a result object), but guard the promise
+    // anyway so a transport-layer rejection can't surface as unhandled.
     const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
     const [accountRow] = await db
       .select({ name: accounts.name })
       .from(accounts)
       .where(eq(accounts.accountId, loaded.row.accountId))
       .limit(1);
-    const delivery = await sendAccountInviteEmail({
-      email,
-      accountName: accountRow?.name ?? 'Kortix',
-      inviterEmail: callerEmail,
-      inviteId,
-      role,
-      projectName: loaded.row.name,
-    });
-    const emailSent = delivery.ok === true;
+    const emailConfigured = isInviteEmailConfigured();
+    if (emailConfigured) {
+      void sendAccountInviteEmail({
+        email,
+        accountName: accountRow?.name ?? 'Kortix',
+        inviterEmail: callerEmail,
+        inviteId,
+        role,
+        projectName: loaded.row.name,
+      }).catch((err) => {
+        console.warn('[projects/invite] invite email send failed:', (err as Error).message);
+      });
+    }
 
     return c.json(
       {
@@ -6317,10 +6323,11 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
         invite_id: inviteId,
         project_role: role,
         invite_url: buildInviteUrl(inviteId),
-        email_sent: emailSent,
-        email_skip_reason:
-          delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
-        message: emailSent
+        // Optimistic: send is queued, not awaited. When delivery isn't wired up
+        // we know synchronously it'll be skipped, so report that honestly.
+        email_sent: emailConfigured,
+        email_skip_reason: emailConfigured ? null : 'missing_mailtrap_token',
+        message: emailConfigured
           ? `No Kortix account for that email yet — an invitation email has been sent. They'll land on this project as ${role} when they sign up.`
           : `No Kortix account for that email yet — invitation created. Share the invite link with them; they'll land on this project as ${role} when they sign up.`,
       },
