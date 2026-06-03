@@ -53,7 +53,7 @@ export interface AccountDetail {
   updated_at: string;
 }
 
-export interface AccountMemberGroup {
+interface AccountMemberGroup {
   group_id: string;
   name: string;
 }
@@ -74,7 +74,7 @@ export interface AccountMember {
   joined_at: string;
 }
 
-export interface ProjectGroupAccessSource {
+interface ProjectGroupAccessSource {
   group_id: string;
   group_name: string;
   role: ProjectRole;
@@ -147,7 +147,7 @@ export interface ResendInviteResult {
   email_skip_reason: string | null;
 }
 
-export interface AccountInviteDescribeFull {
+interface AccountInviteDescribeFull {
   invite_id: string;
   account_id: string;
   account_name: string | null;
@@ -161,7 +161,7 @@ export interface AccountInviteDescribeFull {
   email_matches_caller: true;
 }
 
-export interface AccountInviteDescribeRedacted {
+interface AccountInviteDescribeRedacted {
   invite_id: string;
   expired: boolean;
   accepted_at: string | null;
@@ -1838,7 +1838,7 @@ export async function syncOpencodeSessionData(
 // in `project_trigger_runtime` so a fire doesn't amplify into a git commit.
 // ---------------------------------------------------------------------------
 
-export type ProjectTriggerType = 'cron' | 'webhook';
+type ProjectTriggerType = 'cron' | 'webhook';
 
 /** Parsed trigger spec — what the listing endpoint returns. */
 export interface ProjectTrigger {
@@ -1865,7 +1865,7 @@ export interface ProjectTrigger {
 
 /** Parse error surfaced by the listing endpoint so the UI can render
  * broken triggers next to green ones. */
-export interface ProjectTriggerParseError {
+interface ProjectTriggerParseError {
   slug: string;
   path: string;
   error: string;
@@ -1972,7 +1972,7 @@ export async function fireProjectTrigger(projectId: string, slug: string) {
 // team-membership coupling. Access gated by `project_members` only.
 // ---------------------------------------------------------------------------
 
-export type ProjectSessionSandboxStatus =
+type ProjectSessionSandboxStatus =
   | 'provisioning'
   | 'active'
   | 'stopped'

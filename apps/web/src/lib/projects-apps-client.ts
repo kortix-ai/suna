@@ -7,21 +7,21 @@ import { backendApi } from '@/lib/api-client';
 // snake_case so we keep that on the wire and translate at the component
 // boundary when needed.
 
-export type AppSourceGit = {
+type AppSourceGit = {
   type: 'git';
   repo: string | null;
   branch: string | null;
   root_path: string | null;
 };
 
-export type AppSourceTar = {
+type AppSourceTar = {
   type: 'tar';
   url: string;
 };
 
-export type AppSource = AppSourceGit | AppSourceTar;
+type AppSource = AppSourceGit | AppSourceTar;
 
-export interface AppBuild {
+interface AppBuild {
   command: string | null;
   out_dir: string | null;
 }
@@ -36,7 +36,7 @@ export type DeploymentStatus =
   | 'failed'
   | 'stopped';
 
-export interface ProjectAppDeploymentRow {
+interface ProjectAppDeploymentRow {
   deployment_id: string;
   account_id: string;
   project_id: string | null;
@@ -77,7 +77,7 @@ export interface ProjectApp {
   drift: boolean;
 }
 
-export interface ProjectAppParseError {
+interface ProjectAppParseError {
   slug: string;
   path: string;
   error: string;
