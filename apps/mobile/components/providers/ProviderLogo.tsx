@@ -22,7 +22,6 @@ import Groq from '@/assets/provider-icons/groq.svg';
 import XAI from '@/assets/provider-icons/xai.svg';
 import AmazonBedrock from '@/assets/provider-icons/amazon-bedrock.svg';
 import MoonshotAI from '@/assets/provider-icons/moonshotai.svg';
-import MoonshotAICN from '@/assets/provider-icons/moonshotai-cn.svg';
 import Deepseek from '@/assets/provider-icons/deepseek.svg';
 import Mistral from '@/assets/provider-icons/mistral.svg';
 import Cohere from '@/assets/provider-icons/cohere.svg';
@@ -37,13 +36,11 @@ import Cloudflare from '@/assets/provider-icons/cloudflare-workers-ai.svg';
 import Azure from '@/assets/provider-icons/azure.svg';
 import OllamaCloud from '@/assets/provider-icons/ollama-cloud.svg';
 import Perplexity from '@/assets/provider-icons/perplexity.svg';
-import LMStudio from '@/assets/provider-icons/lmstudio.svg';
 import V0 from '@/assets/provider-icons/v0.svg';
-import Wandb from '@/assets/provider-icons/wandb.svg';
 import Baseten from '@/assets/provider-icons/baseten.svg';
 import GithubModels from '@/assets/provider-icons/github-models.svg';
 import GoogleVertex from '@/assets/provider-icons/google-vertex.svg';
-import GoogleVertexAnthropic from '@/assets/provider-icons/google-vertex-anthropic.svg';
+import GenericProviderIcon from '@/assets/provider-icons/generic-provider.svg';
 
 type SvgComponent = React.ComponentType<{ width?: number; height?: number; color?: string }>;
 
@@ -59,7 +56,7 @@ const PROVIDER_ICON_MAP: Record<string, SvgComponent> = {
   xai: XAI,
   bedrock: AmazonBedrock,
   moonshotai: MoonshotAI,
-  'moonshotai-cn': MoonshotAICN,
+  'moonshotai-cn': MoonshotAI,
   deepseek: Deepseek,
   mistral: Mistral,
   cohere: Cohere,
@@ -74,13 +71,13 @@ const PROVIDER_ICON_MAP: Record<string, SvgComponent> = {
   azure: Azure,
   ollama: OllamaCloud,
   perplexity: Perplexity,
-  lmstudio: LMStudio,
+  lmstudio: GenericProviderIcon,
   v0: V0,
-  wandb: Wandb,
+  wandb: GenericProviderIcon,
   baseten: Baseten,
   'github-models': GithubModels,
   'google-vertex': GoogleVertex,
-  'google-vertex-anthropic': GoogleVertexAnthropic,
+  'google-vertex-anthropic': GenericProviderIcon,
 };
 
 const PROVIDER_LABELS: Record<string, string> = {

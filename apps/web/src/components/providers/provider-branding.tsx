@@ -23,7 +23,7 @@ const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   xai: { src: '/provider-icons/xai.svg', fallback: 'XA' },
   bedrock: { src: '/provider-icons/amazon-bedrock.svg', fallback: 'AW' },
   moonshotai: { src: '/provider-icons/moonshotai.svg', fallback: 'MS' },
-  'moonshotai-cn': { src: '/provider-icons/moonshotai-cn.svg', fallback: 'MS' },
+  'moonshotai-cn': { src: '/provider-icons/moonshotai.svg', fallback: 'MS' },
   deepseek: { src: '/provider-icons/deepseek.svg', fallback: 'DS' },
   mistral: { src: '/provider-icons/mistral.svg', fallback: 'MI' },
   cohere: { src: '/provider-icons/cohere.svg', fallback: 'CO' },
@@ -38,9 +38,9 @@ const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   azure: { src: '/provider-icons/azure.svg', fallback: 'AZ' },
   ollama: { src: '/provider-icons/ollama-cloud.svg', fallback: 'OL' },
   perplexity: { src: '/provider-icons/perplexity.svg', fallback: 'PE' },
-  lmstudio: { src: '/provider-icons/lmstudio.svg', fallback: 'LM' },
+  lmstudio: { src: '/provider-icons/generic-provider.svg', fallback: 'LM' },
   v0: { src: '/provider-icons/v0.svg', fallback: 'V0' },
-  wandb: { src: '/provider-icons/wandb.svg', fallback: 'WB' },
+  wandb: { src: '/provider-icons/generic-provider.svg', fallback: 'WB' },
   baseten: { src: '/provider-icons/baseten.svg', fallback: 'BT' },
   // Add all other icons - they fallback to initials if not mapped
 };
