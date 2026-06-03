@@ -1,6 +1,7 @@
 import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
 import { LocalDockerProvider } from './local-docker';
+import { PlatinumProvider } from './platinum';
 
 /**
  * Sandbox provider lineup. Extensible registry — adding a new runtime is
@@ -11,7 +12,7 @@ import { LocalDockerProvider } from './local-docker';
  *   - daytona — managed cloud (Daytona)
  *   - local_docker — self-hosted/local Docker runtime
  */
-export type ProviderName = 'daytona' | 'local_docker';
+export type ProviderName = 'daytona' | 'local_docker' | 'platinum';
 export type { SandboxProviderName } from '../../config';
 
 export interface CreateSandboxOpts {
@@ -105,6 +106,12 @@ export function getProvider(name: ProviderName): SandboxProvider {
       }
       provider = new LocalDockerProvider();
       break;
+    case 'platinum':
+      if (!config.PLATINUM_API_KEY) {
+        throw new Error('Platinum provider requires PLATINUM_API_KEY to be set.');
+      }
+      provider = new PlatinumProvider();
+      break;
     default: {
       const exhaustive: never = name;
       throw new Error(`Unknown sandbox provider: ${exhaustive}`);
@@ -123,5 +130,6 @@ export function getAvailableProviders(): ProviderName[] {
   const available: ProviderName[] = [];
   if (config.isDaytonaEnabled()) available.push('daytona');
   if (config.isLocalDockerEnabled()) available.push('local_docker');
+  if (config.isPlatinumEnabled()) available.push('platinum');
   return available;
 }
