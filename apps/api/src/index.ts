@@ -29,6 +29,7 @@ import { initModelPricing, stopModelPricing } from './router/config/model-pricin
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
+import { startLeaderElection, stopLeaderElection, isLeader } from './shared/leader-election';
 import { oauthApp } from './oauth';
 import {
   projectWebhooksApp,
@@ -46,6 +47,7 @@ import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
 import { auditStateChangingRequest } from './shared/audit';
 import { opsApp } from './ops';
+import { adminApp } from './admin';
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the
@@ -78,6 +80,9 @@ process.on('uncaughtException', (err: Error) => {
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
 const app = new Hono();
+// Exported so tooling/tests can introspect the route table (app.routes) without
+// booting the server. See the import.meta.main guard around startup below.
+export { app };
 
 // === Global Middleware === 
 
@@ -242,6 +247,7 @@ app.get('/health', (c) => {
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),
+    leader: isLeader(),
   });
 });
 
@@ -254,6 +260,7 @@ app.get('/v1/health', (c) => {
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),
+    leader: isLeader(),
   });
 });
 
@@ -264,6 +271,53 @@ app.get('/v1/system/status', (c) => {
     technicalIssue: { enabled: false },
     updatedAt: new Date().toISOString(),
   });
+});
+
+// ─── Maintenance config (DB-backed; replaces Vercel Edge Config) ─────────────
+// One row in kortix.platform_settings under 'maintenance_config'. GET is public
+// (banner + maintenance page read it); PUT is admin-only. Set via /admin/utils.
+const MAINTENANCE_KEY = 'maintenance_config';
+const DEFAULT_MAINTENANCE = {
+  level: 'none' as const,
+  title: '',
+  message: '',
+  startTime: null,
+  endTime: null,
+  statusUrl: null,
+  affectedServices: [] as string[],
+  updatedAt: new Date(0).toISOString(),
+};
+
+app.get('/v1/system/maintenance', async (c) => {
+  const { hasDatabase, db } = await import('./shared/db');
+  if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
+  const { platformSettings } = await import('@kortix/db');
+  const { eq } = await import('drizzle-orm');
+  const [row] = await db
+    .select({ value: platformSettings.value })
+    .from(platformSettings)
+    .where(eq(platformSettings.key, MAINTENANCE_KEY))
+    .limit(1);
+  return c.json(row?.value ?? DEFAULT_MAINTENANCE);
+});
+
+app.put('/v1/system/maintenance', supabaseAuth, async (c: any) => {
+  const accountId = c.get('userId') as string;
+  const { getPlatformRole } = await import('./shared/platform-roles');
+  const role = await getPlatformRole(accountId);
+  if (role !== 'admin' && role !== 'super_admin') {
+    return c.json({ error: 'Admin access required' }, 403);
+  }
+  const { hasDatabase, db } = await import('./shared/db');
+  if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
+  const body = await c.req.json().catch(() => ({}));
+  const config = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
+  const { platformSettings } = await import('@kortix/db');
+  await db
+    .insert(platformSettings)
+    .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: platformSettings.key, set: { value: config, updatedAt: new Date() } });
+  return c.json(config);
 });
 
 // ─── Stub Endpoints ─────────────────────────────────────────────────────────
@@ -409,7 +463,9 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
   app.route('/v1/setup', setupApp);        // /v1/setup/install-status (public), rest (auth inside router)
 }
-// /v1/admin/* — legacy admin dashboard surface removed. Web admin pages will 404.
+// /v1/admin/* — admin console (accounts/users/ledger/credits). supabaseAuth +
+// requireAdmin enforced inside the router. Backs apps/web/src/app/admin/.
+app.route('/v1/admin', adminApp);
 
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
@@ -574,52 +630,69 @@ let schemaReady = false;
 
 // Ensure DB schema exists before starting services that depend on it.
 // This is idempotent — safe to run on every startup.
-// Start background services after the schema is ready. The access-control cache
-// and tunnel service serve request-path needs; the rest are background WORKERS
-// (queue drainer, project maintenance, trigger scheduler, startup pre-build,
-// legacy-migration worker, grant-expiry sweeper). Every API node runs them.
-async function startBackgroundServices() {
+// Services that run on EVERY replica. The access-control cache and tunnel
+// service serve request-path needs (per-node caches + the WS acceptor), so they
+// must be live on each node behind the load balancer.
+async function startReplicaServices() {
   startAccessControlCache();
   startTunnelService();
+}
 
+// Singleton background WORKERS — must run on EXACTLY ONE replica at a time
+// (the elected leader). On ECS Fargate the API runs as N replicas (prod: min 2,
+// up to 10); running these on every replica would double-fire cron triggers
+// (N duplicate paid agent sessions + duplicate external side effects),
+// over-provision the warm pool, and double-run legacy migrations. Leader
+// election (shared/leader-election.ts) starts/stops these via onAcquire/onRelease.
+// The guard makes start/stop idempotent across leadership flaps.
+let singletonWorkersRunning = false;
+async function startSingletonWorkers() {
+  if (singletonWorkersRunning) return;
+  singletonWorkersRunning = true;
   startDrainer();
   startProjectMaintenance();
   startProjectTriggerScheduler();
-  // Mint the global platform-default sandbox image once per boot so the first
-  // session anywhere lands on a cache hit. Idempotent + best-effort; the
-  // session-boot graceful path is the lazy fallback if this is skipped.
+  // Mint the global platform-default sandbox image once per leadership term so
+  // the first session anywhere lands on a cache hit. Idempotent + best-effort;
+  // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
   startLegacyMigrationWorker();
-  // IAM V2 time-bounded grants: tick every 60s, emit one audit event
-  // per row that just transitioned to expired. Engine already filters
-  // expired rows out of authorize() so correctness doesn't depend on
-  // this — it's purely for the audit trail.
+  // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
+  // that just transitioned to expired. Engine already filters expired rows out
+  // of authorize() so correctness doesn't depend on this — it's the audit trail.
   const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   startGrantExpirySweeper();
 }
-
-ensureSchema()
-  .then(async () => {
-    schemaReady = true;
-    // V2 IAM hard-codes role permissions in iam/role-perms.ts, so the
-    // boot-time system-role seed + membership-policy backfill from V1
-    // are no longer needed. Permissions resolve directly from
-    // account_members.account_role and project_members.project_role.
-    await startBackgroundServices();
-  })
-  .catch(async (err) => {
-    console.error('[startup] ensureSchema failed, starting services anyway:', err);
-    schemaReady = true;
-    await startBackgroundServices();
-  });
-
-// Graceful shutdown
-async function shutdown(signal: string) {
-  appLogger.info(`Shutting down gracefully`, { signal });
+async function stopSingletonWorkers() {
+  if (!singletonWorkersRunning) return;
+  singletonWorkersRunning = false;
   stopDrainer();
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
   stopLegacyMigrationWorker();
+  const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
+  stopGrantExpirySweeper();
+}
+
+// Boot the per-node services, then begin leader election. The leader runs the
+// singleton workers; every other replica just serves requests. Works with one
+// replica (sole leader) or many (exactly one leader), and with no DATABASE_URL
+// (self-host single node → sole leader, no coordination).
+async function bootServices() {
+  await startReplicaServices();
+  startLeaderElection({
+    onAcquire: () => startSingletonWorkers(),
+    onRelease: () => stopSingletonWorkers(),
+  });
+}
+
+// Graceful shutdown
+async function shutdown(signal: string) {
+  appLogger.info(`Shutting down gracefully`, { signal });
+  // Releases the lease (so a peer takes over immediately instead of waiting out
+  // the TTL) and stops the singleton workers via onRelease — but only if this
+  // node was the leader. Then stop the per-node services.
+  await stopLeaderElection();
   stopModelPricing();
   stopTunnelService();
   stopAccessControlCache();
@@ -628,8 +701,30 @@ async function shutdown(signal: string) {
   process.exit(0);
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+// Boot only when this module is the entry point (`bun run src/index.ts`, which
+// is how both `pnpm dev` and the Docker CMD launch it). Guarding behind
+// import.meta.main lets tooling and tests `import { app }` to introspect the
+// route table without starting the DB schema check, background workers, or
+// signal handlers. Does NOT change production boot — there, import.meta.main is true.
+if (import.meta.main) {
+  ensureSchema()
+    .then(async () => {
+      schemaReady = true;
+      // V2 IAM hard-codes role permissions in iam/role-perms.ts, so the
+      // boot-time system-role seed + membership-policy backfill from V1
+      // are no longer needed. Permissions resolve directly from
+      // account_members.account_role and project_members.project_role.
+      await bootServices();
+    })
+    .catch(async (err) => {
+      console.error('[startup] ensureSchema failed, starting services anyway:', err);
+      schemaReady = true;
+      await bootServices();
+    });
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
 
 // Subdomain preview routing — `p{port}-{sandboxId}.localhost:{apiPort}/...`
 // Handled at the Bun.serve level so the proxied app sees itself at root `/`

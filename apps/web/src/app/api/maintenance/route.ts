@@ -81,9 +81,15 @@ export async function PUT(request: NextRequest) {
     updatedAt: new Date().toISOString(),
   };
 
+  // Forward the admin's access token — the API enforces the admin role on the write.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
-    await setMaintenanceConfig(updated);
-    return NextResponse.json(updated);
+    const saved = await setMaintenanceConfig(updated, session.access_token);
+    return NextResponse.json(saved);
   } catch (err) {
     console.error('[api/maintenance] PUT error:', err);
     return NextResponse.json({ error: 'Failed to update maintenance config' }, { status: 500 });

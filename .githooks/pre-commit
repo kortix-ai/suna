@@ -1,10 +1,17 @@
 #!/bin/sh
-# Kortix secrets guard (auto-encrypt + block).
+# Kortix secrets guard (auto-encrypt + block) — every committable .env is
+# dotenvx-managed, no exceptions.
 #
-# 1. Auto-encrypts the committed dotenvx profiles, so a hand-typed plaintext
-#    value is sealed before it can land in a commit. `dotenvx encrypt` is
-#    idempotent on already-encrypted files, so this is a no-op otherwise.
+# 1. Auto-encrypts EVERY staged .env that's about to be committed (any path,
+#    e.g. apps/*/.env, .env.dev, .env.prod, a brand-new service's .env), so a
+#    hand-typed plaintext value is sealed before it lands in the commit.
+#    `dotenvx encrypt` is idempotent on already-encrypted files (no churn) and
+#    mints a keypair into the adjacent .env.keys for a new file.
 # 2. Backstop: fails the commit if ANY unencrypted, non-gitignored .env remains.
+#
+# Excluded: .env.keys (the private keys — never committed/encrypted) and
+# .env.example (plaintext templates). Gitignored files (.env.local, supabase/.env)
+# never get staged, so they're untouched.
 #
 # Enable once per clone:  git config core.hooksPath .githooks
 set -e
@@ -14,11 +21,15 @@ if command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
 elif [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
 else DX="npx --yes @dotenvx/dotenvx"; fi
 
-for f in apps/api/.env apps/api/.env.dev; do
-  if [ -f "$f" ]; then
-    $DX encrypt -f "$f" >/dev/null 2>&1 || true
-    git add "$f"
-  fi
+# Discover every staged .env / .env.<env> being added or modified.
+staged_envs=$(git diff --cached --name-only --diff-filter=ACM \
+  | grep -E '(^|/)\.env($|\.[A-Za-z0-9_-]+$)' \
+  | grep -vE '(^|/)\.env\.keys$|(^|/)\.env\.example$' || true)
+
+for f in $staged_envs; do
+  [ -f "$f" ] || continue
+  $DX encrypt -f "$f" --no-armor >/dev/null 2>&1 || true
+  git add "$f"
 done
 
 # Block any remaining unencrypted, committable .env (exits non-zero on failure).

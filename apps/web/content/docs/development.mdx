@@ -10,21 +10,48 @@ For contributors running this repository locally. Requires Docker, Node 22, and 
 
 ```sh
 pnpm install
-pnpm dev          # web + API + Supabase + tunnel
+pnpm dev          # full LOCAL stack (web + API + local Supabase + tunnel)
+```
+
+## Environments
+
+There are **three environments for local development**, each a separate set of API secrets. They differ only in *which backend the API talks to* — same code, different DB / Stripe / keys:
+
+| Command | Env | API talks to |
+| --- | --- | --- |
+| `pnpm dev` | **local** | 100% local stack — local Supabase/Postgres in Docker, test Stripe. Also runs the web + tunnel. |
+| `pnpm dev:dev-env` | **dev** | the **dev** stack — dev Supabase DB, **test** Stripe, dev keys (mirrors `dev-api.kortix.com`). |
+| `pnpm dev:prod-env` | **prod** | the **prod** stack — prod Supabase DB, **LIVE** Stripe, prod keys (mirrors `api.kortix.com`). |
+
+`pnpm dev` is the full local stack you'll use day-to-day. `dev:dev-env` / `dev:prod-env` run the **API** locally against the remote dev/prod backend (for debugging DB/billing/account flows) — they don't start local Supabase.
+
+<Callout type="warn">
+`pnpm dev:prod-env` connects your local API to **production** — DB writes, Stripe calls, etc. are **real**. Use it deliberately.
+</Callout>
+
+Verify all three decrypt and point at the right stack:
+
+```sh
+pnpm test:envs
 ```
 
 ## How secrets work
 
-The API's secrets live **encrypted in the repo** with [dotenvx](https://dotenvx.com). Every value in `apps/api/.env` is AES-encrypted (`KEY=encrypted:…`). The **public key** that encrypts them sits in the file and is safe to commit; the **private key** that decrypts them never touches git. So the secrets are safe in version control — only the key is sensitive.
+Each environment is a [dotenvx](https://dotenvx.com)-encrypted file, committed to the repo:
 
-There are two profiles, one file each, every one with its own keypair:
-
-| Profile | File | Used by |
+| Env | File | Key (in `apps/api/.env.keys`) |
 | --- | --- | --- |
-| local | `apps/api/.env` | `pnpm dev` |
-| dev | `apps/api/.env.dev` | `dotenvx run -f apps/api/.env.dev -- …` |
+| local | `apps/api/.env` | `DOTENV_PRIVATE_KEY` |
+| dev | `apps/api/.env.dev` | `DOTENV_PRIVATE_KEY_DEV` |
+| prod | `apps/api/.env.prod` | `DOTENV_PRIVATE_KEY_PROD` |
 
-The private keys are held off your machine in [Dotenv Armor](https://dotenvx.com/armor). `pnpm dev` decrypts them **in memory** at boot via `dotenvx run` — nothing plaintext is ever written to disk. (Production secrets are not kept in the repo; the prod runtime injects them.)
+Every value is AES-encrypted (`KEY=encrypted:…`). The **public key** that encrypts sits in the file and is safe to commit; the **private key** that decrypts never touches git — it lives off your machine in [Dotenv Armor](https://dotenvx.com/armor). At runtime `dotenvx run -f <file>` decrypts **in memory** and injects the vars — nothing plaintext is ever written to disk.
+
+<Callout type="info">
+These encrypted files are **only for local development**. The actual deployed **production** environment does **not** read them — the prod infra loads its env from **AWS Secrets Manager** at runtime. So `apps/api/.env.prod` is just for running locally against the prod backend; changing it does not change what production runs.
+</Callout>
+
+**`apps/web` uses the same three encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.prod`, own keys in `apps/web/.env.keys`). Most of it is public (`NEXT_PUBLIC_*`); only a few Vercel keys are secret. It's decrypted the same way — `pnpm dev` or `pnpm dev:web`.
 
 ## First time on a new machine
 
@@ -39,8 +66,9 @@ dotenvx-armor login
 <Step>
 ### Pull the keys from the cloud
 ```sh
-cd apps/api
-for f in .env .env.dev; do dotenvx-armor pull -f "$f"; done
+for app in api web; do
+  (cd "apps/$app" && for f in .env .env.dev .env.prod; do dotenvx-armor pull -f "$f"; done)
+done
 ```
 </Step>
 <Step>
@@ -52,17 +80,18 @@ pnpm dev
 </Step>
 </Steps>
 
-The pre-commit hook **auto-encrypts** `apps/api/.env` / `.env.dev` (so a hand-typed plaintext value is sealed before it can be committed) and blocks the commit if any unencrypted `.env` slips through.
+The pre-commit hook **auto-encrypts** the profile files (`.env` / `.env.dev` / `.env.prod`) so a hand-typed plaintext value is sealed before it can be committed, and blocks the commit if any unencrypted `.env` slips through.
 
 ## Everyday
 
 | Task | Command |
 | --- | --- |
-| Run locally | `pnpm dev` |
-| Read a secret | `dotenvx get KEY -f apps/api/.env` |
-| Add / change a secret | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev`), then commit |
+| Run (local / dev / prod) | `pnpm dev` · `pnpm dev:dev-env` · `pnpm dev:prod-env` |
+| Verify all 3 envs decrypt | `pnpm test:envs` |
+| Read a secret | `dotenvx get KEY -f apps/api/.env` (or `.env.dev` / `.env.prod`) |
+| Add / change a secret | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev` / `.env.prod`), then commit |
 | Share a new/rotated key with the team | `dotenvx-armor push -f <file>` (one file at a time) |
 
 <Callout type="warn">
-Never write plaintext into `apps/api/.env` — it's encrypted and committed. Machine-local overrides go in the gitignored `apps/api/.env.local`, which Bun loads at higher precedence.
+Never write plaintext into the profile files — they're encrypted and committed. Machine-local overrides go in the gitignored `apps/api/.env.local`, which Bun loads at higher precedence.
 </Callout>

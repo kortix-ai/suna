@@ -3,6 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "bash scripts/dev-local.sh",
+    "dev:dev-env": "pnpm --filter kortix-api dev:dev-env",
+    "dev:prod-env": "pnpm --filter kortix-api dev:prod-env",
+    "test:envs": "bash scripts/e2e-secrets-envs.sh",
     "dev:web": "pnpm --filter Kortix-Computer-Frontend dev",
     "dev:frontend": "pnpm --filter Kortix-Computer-Frontend dev",
     "dev:mobile": "pnpm --filter ./apps/mobile dev",
@@ -32,6 +35,7 @@
       "protobufjs@>=7.0.0 <7.5.6": "7.5.6",
       "@protobufjs/utf8@>=1.0.0 <1.1.1": "1.1.1",
       "mermaid@>=11.0.0 <11.15.0": "11.15.0",
+      "@opentelemetry/api": "1.9.0",
       "@opentelemetry/sdk-node@>=0.0.0 <0.217.0": "0.217.0",
       "@opentelemetry/exporter-prometheus@>=0.0.0 <0.217.0": "0.217.0",
       "fast-uri@>=3.0.0 <3.1.2": "3.1.2",

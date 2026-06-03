@@ -12,43 +12,23 @@ load_local_env() {
   # Supabase/auth (cloud dev has Google enabled), but force only the Kortix API
   # endpoint back to localhost and mark the process as local-dev so cloud
   # provision pollers do not sweep shared remote rows.
-  # apps/api/.env is dotenvx-ENCRYPTED and committed to git. Decrypt it with the
-  # dotenvx private key — apps/api/.env.keys locally, or Dotenv Armor
-  # (`dotenvx-armor login`). apps/web/.env stays plaintext (client-facing
-  # NEXT_PUBLIC_* only), so it's read directly below.
-  local DOTENVX="$ROOT_DIR/node_modules/.bin/dotenvx"
+  # apps/api/.env and apps/web/.env are dotenvx-ENCRYPTED and committed to git.
+  # Decrypt them with the dotenvx private keys — apps/{api,web}/.env.keys locally,
+  # or Dotenv Armor (`dotenvx-armor login`) — and export so the API/web children
+  # inherit the plaintext values.
+  local DOTENVX="$ROOT_DIR/node_modules/.bin/dotenvx" _f _env
   if [[ -x "$DOTENVX" ]]; then
-    local _api_env
-    _api_env="$("$DOTENVX" get --format eval -f "$ROOT_DIR/apps/api/.env" 2>/dev/null || true)"
-    if [[ -z "$_api_env" || "$_api_env" == *'="encrypted:'* ]]; then
-      echo "[start] ⚠️  could not decrypt apps/api/.env — run 'dotenvx-armor login' (or restore apps/api/.env.keys)" >&2
-    else
-      set -a; eval "$_api_env"; set +a
-    fi
+    for _f in apps/api/.env apps/web/.env; do
+      _env="$("$DOTENVX" get --format eval -f "$ROOT_DIR/$_f" 2>/dev/null || true)"
+      if [[ -z "$_env" || "$_env" == *'="encrypted:'* ]]; then
+        echo "[start] ⚠️  could not decrypt $_f — run 'dotenvx-armor login' (or restore its .env.keys)" >&2
+      else
+        set -a; eval "$_env"; set +a
+      fi
+    done
   else
-    echo "[start] ⚠️  dotenvx not installed (run 'pnpm install') — apps/api/.env not loaded" >&2
+    echo "[start] ⚠️  dotenvx not installed (run 'pnpm install') — env not loaded" >&2
   fi
-
-  eval "$(python3 - "$ROOT_DIR/apps/web/.env" <<'PY'
-import re, shlex, sys
-for path in sys.argv[1:]:
-    try:
-        lines = open(path, encoding='utf-8')
-    except FileNotFoundError:
-        continue
-    with lines:
-        for raw in lines:
-            line = raw.strip()
-            if not line or line.startswith('#') or '=' not in line:
-                continue
-            key, value = line.split('=', 1)
-            key = key.strip()
-            if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', key):
-                continue
-            value = value.strip().strip('"').strip("'")
-            print(f'export {key}={shlex.quote(value)}')
-PY
-)"
 
   export KORTIX_LOCAL_DEV=1
   export ENV_MODE=local
