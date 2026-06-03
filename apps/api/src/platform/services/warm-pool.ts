@@ -18,6 +18,7 @@ import { db } from '../../shared/db';
 import { config } from '../../config';
 import { getProvider } from '../providers';
 import { provisionSessionSandbox } from './session-sandbox';
+import { buildSessionSandboxEnvVars } from '../../projects/session-env';
 
 const POOL_BOOT_TIMEOUT_MS = 8 * 60 * 1000; // booting longer than this → failed → reap
 const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle (snapshot drift)
@@ -248,8 +249,6 @@ async function spawnWarmSandbox(project: {
   const ownerUserId = await getProjectOwnerUserId(project.accountId);
   if (!ownerUserId || !project.repoUrl) return false;
   const W = randomUUID();
-  // Lazy import to avoid a load-time cycle with projects/index.ts.
-  const { buildSessionSandboxEnvVars } = await import('../../projects');
   const extraEnvVars = await buildSessionSandboxEnvVars({
     accountId: project.accountId,
     projectId: project.projectId,
