@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import {
   chatChannelBindings,
+  chatEventDedup,
   chatInstalls,
   chatThreads,
+  chatTurnStreams,
   projects,
   projectSessions,
   sessionSandboxes,
@@ -42,22 +44,35 @@ export const slackWebhookApp = new Hono();
 const FIVE_MINUTES = 5 * 60;
 
 const EVENT_DEDUPE_TTL_MS = 5 * 60 * 1000;
-const seenEventIds = new Map<string, number>();
 
-function alreadyHandled(eventId: string | undefined): boolean {
+// Cross-replica dedup. Slack can redeliver the same event_id (retries); with >1
+// API replica an in-memory set only dedups within one process, so a redelivery
+// to another replica re-fires the turn. An INSERT … ON CONFLICT DO NOTHING makes
+// "already handled?" one shared decision: a row came back ⇒ we're the first to
+// claim it; empty ⇒ someone already has.
+async function alreadyHandled(eventId: string | undefined): Promise<boolean> {
   if (!eventId) return false;
-  const now = Date.now();
-  for (const [id, expiry] of seenEventIds) {
-    if (expiry < now) seenEventIds.delete(id);
+  try {
+    const inserted = await db
+      .insert(chatEventDedup)
+      .values({ eventId, expiresAt: new Date(Date.now() + EVENT_DEDUPE_TTL_MS) })
+      .onConflictDoNothing({ target: chatEventDedup.eventId })
+      .returning({ eventId: chatEventDedup.eventId });
+    return inserted.length === 0;
+  } catch (err) {
+    // Never let a dedup hiccup wedge the webhook — fail open (process the event).
+    console.warn('[slack-webhook] event dedup check failed', err);
+    return false;
   }
-  if (seenEventIds.has(eventId)) return true;
-  seenEventIds.set(eventId, now + EVENT_DEDUPE_TTL_MS);
-  return false;
 }
 
 const WORKING_EMOJI = 'hourglass_flowing_sand';
 const STREAM_TTL_MS = 15 * 60 * 1000;
 
+// In-memory representation of one live turn stream. NOT a process-global cache —
+// it's loaded from / saved to kortix.chat_turn_streams on every relay so any API
+// replica can advance or finalize the stream (see loadStream/saveStream). `token`
+// is loaded per-project, never persisted.
 interface TurnStream {
   channel: string;
   ts: string;
@@ -70,21 +85,112 @@ interface TurnStream {
   finalized: boolean;
   projectId: string;
   sessionId: string;
-  stopped: boolean;
   teamId: string;
   originatingEvent: SlackEvent;
 }
 
-const activeStreams = new Map<string, TurnStream>();
+function rowToHandle(row: typeof chatTurnStreams.$inferSelect, token: string): TurnStream {
+  return {
+    channel: row.channel,
+    ts: row.messageTs ?? '',
+    token,
+    triggerTs: row.triggerTs,
+    steps: (row.steps as StreamTaskChunk[]) ?? [],
+    streaming: row.streaming,
+    placeholderActive: row.placeholderActive,
+    expiry: new Date(row.expiresAt).getTime(),
+    finalized: row.finalized,
+    projectId: row.projectId,
+    sessionId: row.sessionId,
+    teamId: row.teamId,
+    originatingEvent: row.originatingEvent as SlackEvent,
+  };
+}
 
+/** Hydrate a DB row into a usable handle (loads the bot token for its project). */
+async function loadStream(sessionId: string): Promise<TurnStream | null> {
+  if (!sessionId) return null;
+  const [row] = await db
+    .select()
+    .from(chatTurnStreams)
+    .where(eq(chatTurnStreams.sessionId, sessionId))
+    .limit(1);
+  if (!row) return null;
+  const token = await loadSlackTokenForProject(row.projectId);
+  if (!token) return null;
+  return rowToHandle(row, token);
+}
+
+/** Upsert the handle (minus the token) so the next relay — on any replica — sees it. */
+async function saveStream(handle: TurnStream): Promise<void> {
+  if (!handle.sessionId) return;
+  const values = {
+    sessionId: handle.sessionId,
+    projectId: handle.projectId,
+    teamId: handle.teamId,
+    channel: handle.channel,
+    triggerTs: handle.triggerTs,
+    messageTs: handle.ts || null,
+    streaming: handle.streaming,
+    placeholderActive: handle.placeholderActive,
+    finalized: handle.finalized,
+    steps: handle.steps,
+    originatingEvent: handle.originatingEvent as unknown,
+    expiresAt: new Date(handle.expiry),
+    updatedAt: new Date(),
+  };
+  await db
+    .insert(chatTurnStreams)
+    .values(values as typeof chatTurnStreams.$inferInsert)
+    .onConflictDoUpdate({ target: chatTurnStreams.sessionId, set: values as Partial<typeof chatTurnStreams.$inferInsert> });
+}
+
+async function deleteStream(sessionId: string): Promise<void> {
+  if (!sessionId) return;
+  await db.delete(chatTurnStreams).where(eq(chatTurnStreams.sessionId, sessionId));
+}
+
+/**
+ * Atomically claim a stream for finalization so only one replica runs stopStream
+ * (the answer relay and the expiry watchdog can race). Returns true to the winner.
+ */
+async function claimFinalize(sessionId: string): Promise<boolean> {
+  const rows = await db
+    .update(chatTurnStreams)
+    .set({ finalized: true, updatedAt: new Date() })
+    .where(and(eq(chatTurnStreams.sessionId, sessionId), eq(chatTurnStreams.finalized, false)))
+    .returning({ sessionId: chatTurnStreams.sessionId });
+  return rows.length > 0;
+}
+
+// Watchdog: finalize streams whose agent died/never sent, and GC expired dedup
+// rows. Every replica runs it; claimFinalize makes the work single-winner.
 setInterval(() => {
-  const now = Date.now();
-  for (const [sessionId, handle] of activeStreams) {
-    if (!handle.finalized && handle.expiry < now) {
-      activeStreams.delete(sessionId);
-      void finalizeStream(handle, { error: '_The run stopped unexpectedly — try again._' });
+  void (async () => {
+    try {
+      const now = new Date();
+      const expired = await db
+        .select()
+        .from(chatTurnStreams)
+        .where(and(eq(chatTurnStreams.finalized, false), lt(chatTurnStreams.expiresAt, now)))
+        .limit(50);
+      for (const row of expired) {
+        // claimFinalize flips the DB row to finalized; build the handle from the
+        // row we already read (still finalized=false) so finalizeStream runs once.
+        if (!(await claimFinalize(row.sessionId))) continue;
+        const token = await loadSlackTokenForProject(row.projectId);
+        if (token) {
+          await finalizeStream(rowToHandle(row, token), {
+            error: '_The run stopped unexpectedly — try again._',
+          });
+        }
+        await deleteStream(row.sessionId);
+      }
+      await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, now));
+    } catch (err) {
+      console.warn('[slack-webhook] stream watchdog tick failed', err);
     }
-  }
+  })();
 }, 60_000).unref();
 
 async function startTurnStream(
@@ -119,7 +225,6 @@ async function startTurnStream(
     finalized: false,
     projectId,
     sessionId: '',
-    stopped: false,
     teamId,
     originatingEvent: event,
     ts: placeholderTs,
@@ -206,7 +311,7 @@ export async function postQuestionAndWait(
   sessionId: string,
   questions: QuestionInfo[],
 ): Promise<{ ok: boolean; ask_id?: string; answers?: string[][]; error?: string }> {
-  const handle = activeStreams.get(sessionId);
+  const handle = await loadStream(sessionId);
   if (!handle) {
     return { ok: false, error: 'No active Slack turn for this session.' };
   }
@@ -215,7 +320,7 @@ export async function postQuestionAndWait(
   const originatingEvent = handle.originatingEvent;
 
   await finalizeStream(handle, { answer: '_Waiting on your answer below…_' });
-  activeStreams.delete(sessionId);
+  await deleteStream(sessionId);
 
   const askId = randomUUID();
   const blocks = buildQuestionBlocks(askId, questions);
@@ -313,7 +418,7 @@ export async function relayTurnStep(
     sourcesForPrev?: Array<{ url: string; text: string }>;
   } = {},
 ): Promise<boolean> {
-  const handle = activeStreams.get(sessionId);
+  const handle = await loadStream(sessionId);
   if (!handle || handle.finalized) {
     console.warn('[slack-webhook] turn-stream step relay dropped — no active stream', {
       sessionId,
@@ -334,6 +439,7 @@ export async function relayTurnStep(
     const opened = await openStreamWithFirstStep(handle, firstStep);
     if (!opened) return false;
     handle.expiry = Date.now() + STREAM_TTL_MS;
+    await saveStream(handle);
     return true;
   }
   const chunks: StreamTaskChunk[] = [];
@@ -368,6 +474,7 @@ export async function relayTurnStep(
   chunks.push(next);
   handle.expiry = Date.now() + STREAM_TTL_MS;
   await appendStream(handle.token, handle.channel, handle.ts, chunks);
+  await saveStream(handle);
   return true;
 }
 
@@ -376,10 +483,13 @@ export async function relayTurnAnswer(
   text: string,
   blocks?: unknown[],
 ): Promise<boolean> {
-  const handle = activeStreams.get(sessionId);
+  const handle = await loadStream(sessionId);
   if (!handle || handle.finalized) return false;
-  activeStreams.delete(sessionId);
+  // Win the finalize race against the watchdog / a duplicate send before we
+  // run stopStream, so the message is closed exactly once.
+  if (!(await claimFinalize(sessionId))) return false;
   await finalizeStream(handle, { answer: text, blocks });
+  await deleteStream(sessionId);
   return true;
 }
 
@@ -427,7 +537,7 @@ async function finalizeStream(
     }
   }
   await removeReaction(handle.token, handle.channel, handle.triggerTs, WORKING_EMOJI);
-  if (opts.answer && !opts.error && !handle.stopped) {
+  if (opts.answer && !opts.error) {
     await addReaction(handle.token, handle.channel, handle.triggerTs, 'white_check_mark');
   }
 }
@@ -499,7 +609,7 @@ slackWebhookApp.post('/', async (c) => {
   if (!envelope) return c.json({ error: 'Invalid JSON' }, 400);
   if (envelope.type === 'url_verification') return c.json({ challenge: envelope.challenge });
   if (envelope.type !== 'event_callback' || !envelope.event) return c.json({ ok: true });
-  if (alreadyHandled(envelope.event_id)) return c.json({ ok: true });
+  if (await alreadyHandled(envelope.event_id)) return c.json({ ok: true });
 
   void (async () => {
     const teamId = envelope.team_id ?? envelope.event?.team ?? '';
@@ -1183,7 +1293,7 @@ async function handleAskSubmit(payload: SlackInteractionPayload, askId: string):
     );
     if (newHandle) {
       newHandle.sessionId = pending.sessionId;
-      activeStreams.set(pending.sessionId, newHandle);
+      await saveStream(newHandle);
     }
   } catch (err) {
     console.warn('[slack-webhook] post-question stream re-open failed', err);
@@ -1449,7 +1559,7 @@ slackWebhookApp.post('/:projectId', async (c) => {
   if (!envelope) return c.json({ error: 'Invalid JSON' }, 400);
   if (envelope.type === 'url_verification') return c.json({ challenge: envelope.challenge });
   if (envelope.type !== 'event_callback' || !envelope.event) return c.json({ ok: true });
-  if (alreadyHandled(envelope.event_id)) return c.json({ ok: true });
+  if (await alreadyHandled(envelope.event_id)) return c.json({ ok: true });
 
   void dispatchSlackEvent(projectId, envelope).catch((err) =>
     console.error('[slack-webhook] byo handler failed', err),
@@ -1857,7 +1967,7 @@ async function spawnAgentTurn(
       const handle = await startTurnStream(projectId, teamId, event, 'On it');
       if (handle) {
         handle.sessionId = existing.sessionId;
-        activeStreams.set(existing.sessionId, handle);
+        await saveStream(handle);
       }
       const outcome = await deliverFollowUpToSandbox(existing.sessionId, envelope, event);
       if (outcome === 'delivered') {
@@ -1874,7 +1984,7 @@ async function spawnAgentTurn(
         return;
       }
       if (handle) {
-        activeStreams.delete(existing.sessionId);
+        await deleteStream(existing.sessionId);
         await finalizeStream(handle, { error: "I couldn't reach the sandbox — try again." });
       }
       if (outcome === 'transient') return;
@@ -1940,7 +2050,7 @@ async function spawnAgentTurn(
 
   if (result.row && handle) {
     handle.sessionId = result.row.sessionId;
-    activeStreams.set(result.row.sessionId, handle);
+    await saveStream(handle);
   }
 
   if (result.row && teamId && threadId) {
