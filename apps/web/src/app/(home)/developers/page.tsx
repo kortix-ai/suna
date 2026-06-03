@@ -17,7 +17,6 @@ import {
   Cpu,
   GitBranch,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { CodeWindow } from '@/components/home/code-window';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { cn } from '@/lib/utils';
