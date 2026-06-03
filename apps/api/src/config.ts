@@ -522,19 +522,21 @@ export const config = {
       process.env.INTERNAL_SERVICE_KEY = generated;
       // Persist to .env so the key survives process restarts (avoids re-sync on every restart)
       try {
-        const { appendFileSync, readFileSync, existsSync } = require('fs');
+        const { appendFileSync, readFileSync } = require('fs');
         const { resolve } = require('path');
         const candidates = [
           resolve(__dirname, '../../.env'),       // from src/config.ts -> ../../.env
           resolve(process.cwd(), '.env'),          // cwd/.env
         ];
         for (const envPath of candidates) {
-          if (existsSync(envPath)) {
+          try {
             const content = readFileSync(envPath, 'utf-8');
             if (!content.includes('INTERNAL_SERVICE_KEY=')) {
               appendFileSync(envPath, `\n# Auto-generated service key for sandbox auth (do not remove)\nINTERNAL_SERVICE_KEY=${generated}\n`);
             }
             break;
+          } catch (err: any) {
+            if (err?.code !== 'ENOENT') throw err;
           }
         }
       } catch (err: any) {
