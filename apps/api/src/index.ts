@@ -6,7 +6,8 @@ import { emitOtelSpan } from './lib/otel';
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
 import { getRequestUrl } from './lib/request-url';
 
-import { Hono } from 'hono';
+import { OpenAPIHono } from '@hono/zod-openapi';
+import { mountOpenApiDocs } from './openapi';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
@@ -79,7 +80,7 @@ process.on('uncaughtException', (err: Error) => {
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
-const app = new Hono();
+const app = new OpenAPIHono();
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
@@ -238,6 +239,10 @@ app.use('/v1/*', auditStateChangingRequest);
 // that drives snapshot content-hashing and must stay constant across releases.
 // Falls back to 'dev' for local development.
 const API_VERSION = process.env.KORTIX_VERSION || 'dev';
+
+// OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
+// register into the spec as each sub-router is migrated to @hono/zod-openapi.
+mountOpenApiDocs(app, API_VERSION);
 
 app.get('/health', (c) => {
   return c.json({

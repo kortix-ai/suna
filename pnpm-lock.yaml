@@ -63,6 +63,9 @@ importers:
       '@daytonaio/sdk':
         specifier: ^0.143.0
         version: 0.143.0(ws@8.20.0)
+      '@hono/zod-openapi':
+        specifier: ^0.19.10
+        version: 0.19.10(hono@4.12.18)(zod@3.25.76)
       '@kortix/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -78,6 +81,9 @@ importers:
       '@logtail/node':
         specifier: ^0.5.8
         version: 0.5.8
+      '@scalar/hono-api-reference':
+        specifier: ^0.10.20
+        version: 0.10.20(hono@4.12.18)
       '@sentry/bun':
         specifier: ^10.47.0
         version: 10.47.0
@@ -1387,6 +1393,15 @@ packages:
     dependencies:
       package-manager-detector: 1.6.0
       tinyexec: 1.0.2
+    dev: false
+
+  /@asteasolutions/zod-to-openapi@7.3.4(zod@3.25.76):
+    resolution: {integrity: sha512-/2rThQ5zPi9OzVwes6U7lK1+Yvug0iXu25olp7S0XsYmOqnyMfxH7gdSQjn/+DSOHRg7wnotwGJSyL+fBKdnEA==}
+    peerDependencies:
+      zod: ^3.20.2
+    dependencies:
+      openapi3-ts: 4.6.0
+      zod: 3.25.76
     dev: false
 
   /@aws-crypto/crc32@5.2.0:
@@ -5084,6 +5099,30 @@ packages:
       yargs: 17.7.2
     dev: false
 
+  /@hono/zod-openapi@0.19.10(hono@4.12.18)(zod@3.25.76):
+    resolution: {integrity: sha512-dpoS6DenvoJyvxtQ7Kd633FRZ/Qf74+4+o9s+zZI8pEqnbjdF/DtxIib08WDpCaWabMEJOL5TXpMgNEZvb7hpA==}
+    engines: {node: '>=16.0.0'}
+    peerDependencies:
+      hono: 4.12.18
+      zod: '>=3.0.0'
+    dependencies:
+      '@asteasolutions/zod-to-openapi': 7.3.4(zod@3.25.76)
+      '@hono/zod-validator': 0.7.6(hono@4.12.18)(zod@3.25.76)
+      hono: 4.12.18
+      openapi3-ts: 4.6.0
+      zod: 3.25.76
+    dev: false
+
+  /@hono/zod-validator@0.7.6(hono@4.12.18)(zod@3.25.76):
+    resolution: {integrity: sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==}
+    peerDependencies:
+      hono: 4.12.18
+      zod: ^3.25.0 || ^4.0.0
+    dependencies:
+      hono: 4.12.18
+      zod: 3.25.76
+    dev: false
+
   /@hookform/resolvers@5.2.2(react-hook-form@7.71.1):
     resolution: {integrity: sha512-A/IxlMLShx3KjV/HeTcTfaMxdwy690+L/ZADoeaTltLx+CVuzkeVIPuybK3jrRfw7YZnmdKsVVHAlEPIAEUNlA==}
     peerDependencies:
@@ -6246,7 +6285,7 @@ packages:
     dependencies:
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.0)
-      yaml: 2.8.3
+      yaml: 2.9.0
     dev: false
 
   /@opentelemetry/context-async-hooks@2.6.1(@opentelemetry/api@1.9.0):
@@ -11715,6 +11754,53 @@ packages:
   /@rushstack/eslint-patch@1.15.0:
     resolution: {integrity: sha512-ojSshQPKwVvSMR8yT2L/QtUkV5SXi/IfDiJ4/8d6UbTPjiHVmxZzUAzGD8Tzks1b9+qQkZa0isUOvYObedITaw==}
     dev: true
+
+  /@scalar/client-side-rendering@0.1.13:
+    resolution: {integrity: sha512-p8V4HgEWjaCpqsnhclg1pTfjE9JA0AWRr0ocBQHexoHo+pqnSs1d83Mv9rjH7R0FZJrlCSandZZeY3DMX2gYXQ==}
+    engines: {node: '>=22'}
+    dependencies:
+      '@scalar/schemas': 0.3.3
+      '@scalar/types': 0.12.3
+      '@scalar/validation': 0.6.0
+    dev: false
+
+  /@scalar/helpers@0.8.1:
+    resolution: {integrity: sha512-yuiuBCadP5bjAnIv23QvifVN/NaMi9xBF6b8Wdk4QOzwzLPJmp699MAdf33J0A5i2qKcvnu32iz/VkEJmQRe5g==}
+    engines: {node: '>=22'}
+    dev: false
+
+  /@scalar/hono-api-reference@0.10.20(hono@4.12.18):
+    resolution: {integrity: sha512-/Ae0M9rOpsJJb5b121G8LX4vvBo1t2qFX1ffRKkTgCS9VWfpsfq11r0yBcYy1fmAn1x8YLO21Ls1/9h8LzHuDw==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      hono: 4.12.18
+    dependencies:
+      '@scalar/client-side-rendering': 0.1.13
+      hono: 4.12.18
+    dev: false
+
+  /@scalar/schemas@0.3.3:
+    resolution: {integrity: sha512-qDcgFu6ta5Z90L9D2P6DFKzYesU+FW5+m55SGmdI4iRMRCwj5umHpec2Y2W/SJcCF6bbUZawMxuOH2Ja6rUNpQ==}
+    engines: {node: '>=22'}
+    dependencies:
+      '@scalar/helpers': 0.8.1
+      '@scalar/validation': 0.6.0
+    dev: false
+
+  /@scalar/types@0.12.3:
+    resolution: {integrity: sha512-7zaXafbgTFmsJ/9AwYeExUWzXoZNyKOL0SEVAUWRaOndcjxpFCtwzuPrc1elMEWdHopWbY1Qe5pWKbE2aqG2HA==}
+    engines: {node: '>=22'}
+    dependencies:
+      '@scalar/helpers': 0.8.1
+      nanoid: 5.1.6
+      type-fest: 5.7.0
+      zod: 4.3.6
+    dev: false
+
+  /@scalar/validation@0.6.0:
+    resolution: {integrity: sha512-tpmmG+/xRE2Kn9RpflU3AIyZv08v10+E1ZrJCx7z6+/91zHVxy0M73kC1LT4/8PbYNt85ywyC8+n+D99JdMcGA==}
+    engines: {node: '>=20'}
+    dev: false
 
   /@schummar/icu-type-parser@1.21.5:
     resolution: {integrity: sha512-bXHSaW5jRTmke9Vd0h5P7BtWZG9Znqb8gSDxZnxaGSJnGwPLDPfS+3g0BKzeWqzgZPsIVZkM7m2tbo18cm5HBw==}
@@ -24243,7 +24329,7 @@ packages:
       metro-cache: 0.83.3
       metro-core: 0.83.3
       metro-runtime: 0.83.3
-      yaml: 2.8.3
+      yaml: 2.9.0
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -24260,7 +24346,7 @@ packages:
       metro-cache: 0.83.5
       metro-core: 0.83.5
       metro-runtime: 0.83.5
-      yaml: 2.8.3
+      yaml: 2.9.0
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -25613,6 +25699,12 @@ packages:
       define-lazy-prop: 2.0.0
       is-docker: 2.2.1
       is-wsl: 2.2.0
+
+  /openapi3-ts@4.6.0:
+    resolution: {integrity: sha512-a4sfn6L2sIShhtzJqmjGrARvxAW/3F2BJDdyRVvNF9VhAsZSh5hSyI3a9TNvmzBxXmq66nY5LNT5bQcBxYAZZg==}
+    dependencies:
+      yaml: 2.9.0
+    dev: false
 
   /opencode-ai@1.14.28:
     resolution: {integrity: sha512-ZPukJNvujSVa+LVoXvj2ciUV57UcnuxmMtzpFQBYd6fbhjeT1vMC6jCurO/5mIp76fiPmGM7ilzRXVeY6bIwPw==}
@@ -29204,6 +29296,11 @@ packages:
     resolution: {integrity: sha512-05PUHKSNE8ou2dwIxTngl4EzcnsCDZGJ/iCLtDflR/SHB/ny14rXc+qU5P4mG9JkusiV7EivzY9Mhm55AzAvCg==}
     dev: false
 
+  /tagged-tag@1.0.0:
+    resolution: {integrity: sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==}
+    engines: {node: '>=20'}
+    dev: false
+
   /tailwind-merge@2.6.0:
     resolution: {integrity: sha512-P+Vu1qXfzediirmHOC3xKGAYeZtPcV9g76X+xg2FD4tYgR71ewMA35Y3sCz3zhiN/dwefRpJX0yBcgwi1fXNQA==}
     dev: false
@@ -29645,6 +29742,13 @@ packages:
   /type-fest@0.7.1:
     resolution: {integrity: sha512-Ne2YiiGN8bmrmJJEuTWTLJR32nh/JdL1+PSicowtNb0WFpn59GK8/lfD61bVtzguz7b3PBt74nxpv/Pw5po5Rg==}
     engines: {node: '>=8'}
+
+  /type-fest@5.7.0:
+    resolution: {integrity: sha512-1URUxUqfHFM1c+zfSPsa3gnkO7Aq21qyH75SIduNYz4SzY964rn1X2vCMQaHSHhktiw+0kPa2iyb6PUpXqB6Vg==}
+    engines: {node: '>=20'}
+    dependencies:
+      tagged-tag: 1.0.0
+    dev: false
 
   /typed-array-buffer@1.0.3:
     resolution: {integrity: sha512-nAYYwfY3qnzX30IkA6AQZjVbtK6duGontcQm1WSG1MD94YLqK0515GNApXkoxKOWMusVssAHWLh9SeaoefYFGw==}
@@ -30612,8 +30716,8 @@ packages:
     hasBin: true
     dev: true
 
-  /yaml@2.8.3:
-    resolution: {integrity: sha512-AvbaCLOO2Otw/lW5bmh9d/WEdcDFdQp2Z2ZUH3pX9U2ihyUY0nvLv7J6TrWowklRGPYbB/IuIMfYgxaCPg5Bpg==}
+  /yaml@2.9.0:
+    resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
     engines: {node: '>= 14.6'}
     hasBin: true
 
