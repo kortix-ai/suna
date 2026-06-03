@@ -7,6 +7,7 @@
  * served at /v1/openapi.json and rendered by Scalar at /v1/docs.
  */
 import { OpenAPIHono, z, type RouteConfig } from "@hono/zod-openapi";
+import type { Env } from "hono";
 import { Scalar } from "@scalar/hono-api-reference";
 
 /** Permissive error envelope — matches the platform's `{error,message,status}` 404 shape. */
@@ -61,8 +62,8 @@ function defaultHook(result: { success: boolean; error?: { issues: unknown } }, 
 }
 
 /** Create an OpenAPIHono sub-app with the shared error contract. */
-export function makeOpenApiApp() {
-  return new OpenAPIHono({ defaultHook });
+export function makeOpenApiApp<E extends Env = Env>() {
+  return new OpenAPIHono<E>({ defaultHook });
 }
 
 /** Register security + serve the spec (/v1/openapi.json) and Scalar UI (/v1/docs). */
