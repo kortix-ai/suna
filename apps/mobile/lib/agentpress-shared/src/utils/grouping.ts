@@ -1,6 +1,6 @@
 import type { UnifiedMessage, MessageGroup } from '../types/messages';
 
-export interface GroupingOptions {
+interface GroupingOptions {
   streamingTextContent?: string;
   streamingToolCall?: UnifiedMessage | null;
   readOnly?: boolean;
@@ -8,7 +8,7 @@ export interface GroupingOptions {
   isStreamingText?: boolean;
 }
 
-export function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
+function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
   const groups: MessageGroup[] = [];
   let currentGroup: MessageGroup | null = null;
 
