@@ -699,8 +699,6 @@ function writeCompose(instance: string): void {
       GOTRUE_SMTP_ADMIN_EMAIL: admin@localhost
       GOTRUE_SMTP_HOST: localhost
       GOTRUE_SMTP_PORT: "587"
-      GOTRUE_SMTP_USER: unused
-      GOTRUE_SMTP_PASS: unused
       GOTRUE_SMTP_SENDER_NAME: Kortix
       GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
       GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
