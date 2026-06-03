@@ -342,6 +342,17 @@ describe('Billing: removed subscription management routes', () => {
     expect(scheduleDowngrade.status).toBe(404);
     expect(cancelScheduled.status).toBe(404);
   });
+
+  test('manual seat quantity sync endpoint is not mounted', async () => {
+    const app = createBillingTestApp();
+    const res = await app.request('/v1/billing/sync-seat-quantity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+      body: JSON.stringify({ account_id: TEST_USER_ID }),
+    });
+
+    expect(res.status).toBe(404);
+  });
 });
 
 describe('Billing: webhooks', () => {

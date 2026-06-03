@@ -7,7 +7,6 @@ import {
   createPerSeatCheckoutSession,
 } from '../services/subscriptions';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
-import { syncSeatQuantity } from '../services/seat-management';
 import { maybeMigrateLegacyAccount } from '../services/legacy-account-migration';
 
 export const subscriptionsRouter = new Hono<AppEnv>();
@@ -69,15 +68,6 @@ subscriptionsRouter.post('/create-per-seat-checkout', async (c) => {
     locale: body.locale,
   });
 
-  return c.json(result);
-});
-
-// Billing v2 — manually trigger a seat-count reconciliation. The Stripe
-// webhook normally handles this on member changes; this endpoint is a manual
-// "kick" for ops / for handling cases where the webhook was dropped.
-subscriptionsRouter.post('/sync-seat-quantity', async (c) => {
-  const accountId = await resolveScopedAccountId(c, 'body');
-  const result = await syncSeatQuantity(accountId);
   return c.json(result);
 });
 
