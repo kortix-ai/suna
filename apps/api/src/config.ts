@@ -241,7 +241,6 @@ const envSchema = z.object({
   KORTIX_WORKERS_ENABLED:                  optBoolTrue,
 
   // ── Version / GitHub (optional) ───────────────────────────────────────────
-  SANDBOX_VERSION:             optStr,  // dev override: skip npm registry lookup for latest version
   GITHUB_TOKEN:                optStr,  // optional: authenticated GitHub API calls for changelog
 
   // ── Mailtrap (optional — provisioning email notifications) ────────────────
@@ -573,8 +572,6 @@ export const config = {
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
 
   // ─── Version / GitHub ──────────────────────────────────────────────────────
-  /** Dev override: force a specific sandbox version via env var. */
-  SANDBOX_VERSION_OVERRIDE: env.SANDBOX_VERSION,
   GITHUB_TOKEN: env.GITHUB_TOKEN,
 
   // ─── Mailtrap (Email Notifications) ────────────────────────────────────────

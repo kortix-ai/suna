@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { config } from '../../config';
+import { config, SANDBOX_VERSION } from '../../config';
 
 /**
  * Sandbox version and changelog endpoints.
@@ -70,7 +70,7 @@ function isCacheValid<T>(entry: CacheEntry<T> | null): entry is CacheEntry<T> {
 }
 
 function getRunningVersion(): string {
-  return process.env.SANDBOX_VERSION || config.SANDBOX_VERSION_OVERRIDE || 'unknown';
+  return SANDBOX_VERSION;
 }
 
 function getRunningChannel(): VersionChannel {
