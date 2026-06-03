@@ -44,8 +44,9 @@ for f in .env .env.dev; do dotenvx-armor pull -f "$f"; done
 ```
 </Step>
 <Step>
-### Run
+### Install the commit guard + run
 ```sh
+dotenvx ext precommit --install   # blocks committing any unencrypted .env
 pnpm dev
 ```
 </Step>

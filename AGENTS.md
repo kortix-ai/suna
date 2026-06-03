@@ -24,13 +24,14 @@ Bring it up with `pnpm dev` from `suna/` (it loads `apps/api/.env` +
 what's already running before starting a duplicate: `curl -s
 localhost:8008/v1/health`, `lsof -iTCP:3000 -sTCP:LISTEN`.
 
-> **`apps/api/.env` is dotenvx-encrypted** (committed ciphertext; values show as
-> `encrypted:…`). `pnpm dev`/`pnpm dev:api` decrypt it via `dotenvx run` using
-> the key in `apps/api/.env.keys` or Dotenv Armor (`dotenvx-armor login`). To
-> read a value: `pnpm dlx @dotenvx/dotenvx get KEY -f apps/api/.env`; to
-> add/rotate: `… set KEY value -f apps/api/.env` then commit. Never write
-> plaintext to `apps/api/.env` — runtime overrides go in the gitignored
-> `apps/api/.env.local`.
+> **Secrets are dotenvx-encrypted (mandatory).** `apps/api/.env` (+ `.env.dev`)
+> are committed as ciphertext (`KEY=encrypted:…`); keys live in Dotenv Armor.
+> **Never write a plaintext secret into a tracked file or commit** — add/change
+> values only via `dotenvx set KEY value -f apps/api/.env` (then commit), read
+> with `dotenvx get`, and machine-local overrides go in the gitignored
+> `apps/api/.env.local`. If the user pastes a key, store it with `dotenvx set`,
+> never paste it raw. A pre-commit hook + GitHub push protection enforce this —
+> don't bypass them. Full procedure: the **dotenvx-secrets** skill.
 
 ### Authenticating to the live API (for scripts/tests)
 Mint a real JWT against local Supabase, then call the API with it:
