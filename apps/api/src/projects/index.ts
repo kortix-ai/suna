@@ -3506,37 +3506,6 @@ projectsApp.post('/create-repo', async (c) => {
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 });
 
-// ─── Manifest validation ──────────────────────────────────────────────────
-// One schema, exercised in three places: the CLI (`kortix ship` pre-flight +
-// `kortix validate`), this server-side endpoint (lets dashboards / tooling
-// ask the server "is this valid?"), and the CR-merge gate.
-//
-// Body: { raw: string } (TOML text). Always returns 200 — the verdict is in
-// the body so the caller can show issues without having to handle HTTP error
-// codes. CLI use: `kortix validate` runs locally, this is for surfaces that
-// don't have the file on disk.
-
-// POST /v1/projects/:projectId/manifest/validate
-projectsApp.post('/:projectId/manifest/validate', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  let body: { raw?: unknown } = {};
-  try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
-  const raw = typeof body.raw === 'string' ? body.raw : null;
-  if (!raw) {
-    return c.json({ error: 'Missing `raw` (TOML string) in body.' }, 400);
-  }
-
-  const { validateManifest } = await import('@kortix/manifest-schema');
-  const verdict = validateManifest(raw);
-  return c.json({
-    valid: verdict.valid,
-    issues: verdict.issues,
-  });
-});
-
 // ─── Sandbox templates ─────────────────────────────────────────────────────
 // One platform-default image, optionally extended by `[[sandbox.templates]]` entries
 // in kortix.toml. Session boot is stateless: it computes the expected snapshot

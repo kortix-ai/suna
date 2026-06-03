@@ -1,13 +1,12 @@
 /**
  * Canonical kortix.toml schema + validator.
  *
- * One source of truth, exercised in three places:
+ * One source of truth, exercised wherever manifest input is accepted:
  *
  *   1. `kortix ship` (CLI) — pre-flight validation before push. A broken
  *      manifest fails fast with a colored diagnostic, no push happens.
- *   2. Backend `POST /v1/projects/:id/manifest/validate` + CR-merge gate —
- *      backstop so manifests pushed without the CLI (raw git push, web
- *      edit) still can't take a project down.
+ *   2. Backend CR-merge gate — backstop so manifests pushed without the CLI
+ *      (raw git push, web edit) still can't take a project down.
  *   3. `kortix validate` (CLI) — explicit subcommand that just runs the
  *      validator and prints a report.
  *
