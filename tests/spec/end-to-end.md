@@ -367,7 +367,6 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 
 ### Ops (platform admin)
 `OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403.
-`ADM-1` `GET /admin/api/accounts` · `GET /admin/api/accounts/:id/users` · `GET /admin/api/accounts/:id/ledger` · `POST /admin/api/accounts/:id/credits[/:debit]` → `requireAdmin`.
 
 ---
 

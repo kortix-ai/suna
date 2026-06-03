@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 278,
+  "count": 273,
   "routes": [
     {
       "method": "GET",
@@ -297,26 +297,6 @@
     {
       "method": "DELETE",
       "path": "/v1/accounts/tokens/:tokenId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/admin/api/accounts"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/admin/api/accounts/:id/credits"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/admin/api/accounts/:id/credits/debit"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/admin/api/accounts/:id/ledger"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/admin/api/accounts/:id/users"
     },
     {
       "method": "POST",
