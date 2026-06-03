@@ -1,11 +1,11 @@
 ---
 name: kortix-voice
-description: "Kortix brand voice + interface copy rules. Load this WHENEVER you write or edit user-facing words in apps/web — UI labels, buttons, empty states, onboarding, modals, toasts, headings, marketing/landing copy, or docs framing — and whenever deciding how to phrase a feature for non-technical vs technical readers. Enforces: plain language by default, technical detail is opt-in, the command-center vocabulary, and the banned-words list. Pairs with kortix-design-system (how it looks) — this is how it reads. Canonical positioning lives in suna/COMMS.md."
+description: "Kortix brand voice + interface copy rules. Load this WHENEVER you write or edit user-facing words in apps/web — UI labels, buttons, empty states, onboarding, modals, toasts, headings, marketing/landing copy, or docs framing — and whenever deciding how to phrase a feature for non-technical vs technical readers. Enforces: plain language by default, technical detail is opt-in, the command-center vocabulary, and the banned-words list. Pairs with kortix-design-system (how it looks) — this is how it reads."
 ---
 
 # Kortix Voice
 
-How Kortix *reads*. The design system governs how it looks; this governs the words. The canonical positioning is **`suna/COMMS.md`** — when in doubt, that doc wins; this skill is how you apply it in the product.
+How Kortix *reads*. The design system governs how it looks; this governs the words.
 
 ## The one rule
 
@@ -72,4 +72,4 @@ Developer-facing surfaces — the **Reference** docs, the CLI, `kortix.toml`, co
 2. Sentence case? Active voice? Outcome-first?
 3. No banned words? No "Suna"? No runtime pinning?
 4. Is every factual claim true to the code?
-5. Does it match `COMMS.md` positioning and the glossary above?
+5. Does it match the glossary above?
