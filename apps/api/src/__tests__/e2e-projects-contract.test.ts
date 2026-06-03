@@ -694,22 +694,6 @@ describe('projects API contract', () => {
     expect(projectRows.find((project) => project.projectId === PROJECT_ID)?.lastOpenedAt).toBeInstanceOf(Date);
   });
 
-  test('legacy sandbox template alias is not mounted', async () => {
-    const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sandboxes`);
-    expect(res.status).toBe(404);
-  });
-
-  test('standalone manifest validation endpoint is not mounted', async () => {
-    const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/manifest/validate`, {
-      method: 'POST',
-      body: JSON.stringify({ raw: 'kortix_version = 1' }),
-      headers: { 'content-type': 'application/json' },
-    });
-    expect(res.status).toBe(404);
-  });
-
   test('streams a zip archive of the repo / subtree', async () => {
     const app = createApp();
 

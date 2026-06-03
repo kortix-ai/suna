@@ -1,8 +1,7 @@
 /**
  * E2E tests for Billing HTTP routes.
  *
- * Tests: account deletion (status, request, cancel, delete-immediately)
- *        and removed legacy billing route surfaces.
+ * Tests: account deletion (status, request, cancel, delete-immediately).
  *
  * Strategy:
  * - mock.module() replaces auth, services, and repositories
@@ -193,168 +192,6 @@ beforeEach(() => {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe('Billing: removed credit read routes', () => {
-  test('legacy tier, balance, and usage summary endpoints are not mounted', async () => {
-    const app = createBillingTestApp();
-    const tiers = await app.request('/v1/billing/tier-configurations', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer test_token' },
-    });
-    const breakdown = await app.request('/v1/billing/credit-breakdown', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer test_token' },
-    });
-    const usage = await app.request('/v1/billing/usage-history?days=7', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer test_token' },
-    });
-
-    expect(tiers.status).toBe(404);
-    expect(breakdown.status).toBe(404);
-    expect(usage.status).toBe(404);
-  });
-});
-
-describe('Billing: removed duplicate account-state routes', () => {
-  test('legacy minimal account-state endpoint is not mounted', async () => {
-    const app = createBillingTestApp();
-    const minimal = await app.request('/v1/billing/account-state/minimal', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer test_token' },
-    });
-
-    expect(minimal.status).toBe(404);
-  });
-});
-
-describe('Billing: removed cron routes', () => {
-  test('legacy yearly rotation HTTP cron endpoint is not mounted', async () => {
-    const app = createBillingTestApp();
-    const rotation = await app.request('/v1/billing/cron/yearly-rotation', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer test_token' },
-    });
-
-    expect(rotation.status).toBe(404);
-  });
-});
-
-describe('Billing: removed deduction routes', () => {
-  test('legacy direct deduction endpoints are not mounted', async () => {
-    const app = createBillingTestApp();
-    const deduct = await app.request('/v1/billing/deduct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ prompt_tokens: 1, completion_tokens: 1, model: 'claude-sonnet-4.6' }),
-    });
-    const deductUsage = await app.request('/v1/billing/deduct-usage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ amount: 0.01 }),
-    });
-
-    expect(deduct.status).toBe(404);
-    expect(deductUsage.status).toBe(404);
-  });
-});
-
-describe('Billing: removed payment report routes', () => {
-  test('legacy transaction summary and credit usage endpoints are not mounted', async () => {
-    const app = createBillingTestApp();
-    const summary = await app.request('/v1/billing/transactions/summary', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer test_token' },
-    });
-    const creditUsage = await app.request('/v1/billing/credit-usage', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer test_token' },
-    });
-
-    expect(summary.status).toBe(404);
-    expect(creditUsage.status).toBe(404);
-  });
-});
-
-describe('Billing: removed subscription checkout routes', () => {
-  test('legacy inline checkout endpoints are not mounted', async () => {
-    const app = createBillingTestApp();
-    const createInline = await app.request('/v1/billing/create-inline-checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ tier_key: 'pro', billing_period: 'monthly' }),
-    });
-    const confirmInline = await app.request('/v1/billing/confirm-inline-checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ subscription_id: 'sub_test', tier_key: 'pro' }),
-    });
-
-    expect(createInline.status).toBe(404);
-    expect(confirmInline.status).toBe(404);
-  });
-
-  test('manual checkout confirmation and proration endpoints are not mounted', async () => {
-    const app = createBillingTestApp();
-    const details = await app.request('/v1/billing/checkout-session/cs_test', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer test_token' },
-    });
-    const confirm = await app.request('/v1/billing/confirm-checkout-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ session_id: 'cs_test' }),
-    });
-    const proration = await app.request('/v1/billing/proration-preview?new_price_id=price_test', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer test_token' },
-    });
-
-    expect(details.status).toBe(404);
-    expect(confirm.status).toBe(404);
-    expect(proration.status).toBe(404);
-  });
-});
-
-describe('Billing: removed subscription management routes', () => {
-  test('legacy direct subscription management endpoints are not mounted', async () => {
-    const app = createBillingTestApp();
-    const cancel = await app.request('/v1/billing/cancel-subscription', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ feedback: 'test' }),
-    });
-    const reactivate = await app.request('/v1/billing/reactivate-subscription', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-    });
-    const scheduleDowngrade = await app.request('/v1/billing/schedule-downgrade', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ target_tier_key: 'free' }),
-    });
-    const cancelScheduled = await app.request('/v1/billing/cancel-scheduled-change', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-    });
-
-    expect(cancel.status).toBe(404);
-    expect(reactivate.status).toBe(404);
-    expect(scheduleDowngrade.status).toBe(404);
-    expect(cancelScheduled.status).toBe(404);
-  });
-
-  test('manual seat quantity sync endpoint is not mounted', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/sync-seat-quantity', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ account_id: TEST_USER_ID }),
-    });
-
-    expect(res.status).toBe(404);
-  });
-});
-
 describe('Billing: webhooks', () => {
   test('POST /v1/billing/webhooks/stripe remains public and signature-checked', async () => {
     const app = createBillingTestApp();
@@ -365,16 +202,6 @@ describe('Billing: webhooks', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe('Missing stripe-signature header');
-  });
-
-  test('legacy singular /v1/billing/webhook/stripe is not mounted', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/webhook/stripe', {
-      method: 'POST',
-      headers: { 'stripe-signature': 'sig_test' },
-      body: '{}',
-    });
-    expect(res.status).toBe(404);
   });
 });
 

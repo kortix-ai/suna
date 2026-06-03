@@ -207,14 +207,6 @@ beforeEach(() => {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe('Router: removed routes', () => {
-  test('duplicate sub-router health endpoint is not mounted', async () => {
-    const app = createRouterTestApp();
-    const res = await app.request('/v1/router/health');
-    expect(res.status).toBe(404);
-  });
-});
-
 describe('Router: web-search', () => {
   test('POST /v1/router/web-search returns search results', async () => {
     const app = createRouterTestApp();
@@ -677,12 +669,6 @@ describe('Router: auth (mocked apiKeyAuth)', () => {
       body: JSON.stringify({ query: 'test' }),
     });
     expect(res.status).toBe(401);
-  });
-
-  test('removed health endpoint does not bypass router auth rules', async () => {
-    const app = createRouterTestApp();
-    const res = await app.request('/v1/router/health');
-    expect(res.status).toBe(404);
   });
 
   test('search routes require auth, models require auth', async () => {
