@@ -22,3 +22,8 @@ export const SHIKI_THEMES = {
   dark: pierreDark,
   light: pierreLight,
 } as const;
+
+/** Resolve the Shiki theme name to use for the current next-themes value. */
+export function resolveShikiThemeName(resolvedTheme: string | undefined): string {
+  return resolvedTheme === 'dark' ? SHIKI_THEME_DARK_NAME : SHIKI_THEME_LIGHT_NAME;
+}

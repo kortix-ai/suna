@@ -270,6 +270,10 @@ export function useCreatePortalSession() {
   });
 }
 
+export const accountStateSelectors = {
+  tierKey: (state: AccountState | undefined) => state?.subscription?.tier_key ?? 'none',
+};
+
 // `useTransactions` (rich variant with typeFilter) lives in `./use-transactions`
 // and is the only one actually used by the BillingTab history block. The
 // previous duplicate here was a thin wrapper that the index re-exported but
