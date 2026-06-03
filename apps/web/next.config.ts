@@ -66,17 +66,6 @@ const nextConfig = (): NextConfig => ({
     qualities: [75, 100],
   },
 
-  async redirects() {
-    return [
-      // /enterprise was renamed to /contact — keep old links alive.
-      {
-        source: '/enterprise',
-        destination: '/contact',
-        permanent: true,
-      },
-    ];
-  },
-
   async rewrites() {
     return [
       // Proxy API calls to backend to avoid CORS in local dev
