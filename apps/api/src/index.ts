@@ -46,6 +46,7 @@ import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
 import { auditStateChangingRequest } from './shared/audit';
 import { opsApp } from './ops';
+import { adminApp } from './admin';
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the
@@ -459,7 +460,9 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
   app.route('/v1/setup', setupApp);        // /v1/setup/install-status (public), rest (auth inside router)
 }
-// /v1/admin/* — legacy admin dashboard surface removed. Web admin pages will 404.
+// /v1/admin/* — admin console (accounts/users/ledger/credits). supabaseAuth +
+// requireAdmin enforced inside the router. Backs apps/web/src/app/admin/.
+app.route('/v1/admin', adminApp);
 
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
