@@ -14,8 +14,6 @@ import { daytonaProvider } from './daytona';
 import type { SandboxProviderAdapter } from './types';
 
 export type {
-  BuildableTemplate,
-  BuildLogTap,
   ProviderState,
   SandboxProviderAdapter,
 } from './types';

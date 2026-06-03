@@ -4,7 +4,7 @@ import { preview } from './routes/preview';
 import { getAuthToken } from './routes/auth';
 import { shareApp } from './routes/share';
 import { createSandboxProxyRateLimitMiddleware } from '../shared/rate-limit';
-export { invalidateProviderCache, resolveProvider } from './provider';
+export { invalidateProviderCache } from './provider';
 
 const sandboxProxyApp = new Hono();
 

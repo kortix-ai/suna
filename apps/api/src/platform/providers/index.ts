@@ -15,12 +15,8 @@ import type { ProviderName, SandboxProvider } from './types';
 export type {
   CreateSandboxOpts,
   ProviderName,
-  ProvisioningStatus,
-  ProvisioningTraits,
   ProvisionResult,
-  ResolvedEndpoint,
   SandboxProvider,
-  SandboxStatus,
 } from './types';
 
 const providers = new Map<ProviderName, SandboxProvider>();
