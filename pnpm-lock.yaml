@@ -95,7 +95,7 @@ importers:
         version: 4.0.12
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.0)(bun-types@1.3.12)(postgres@3.4.8)
+        version: 0.45.2(@opentelemetry/api@1.9.0)(postgres@3.4.8)
       hono:
         specifier: 4.12.18
         version: 4.12.18
@@ -118,9 +118,6 @@ importers:
       '@types/dockerode':
         specifier: ^3.3.35
         version: 3.3.47
-      bun-types:
-        specifier: ^1.3.12
-        version: 1.3.12
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
@@ -739,7 +736,7 @@ importers:
         version: 0.31.10
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.0)(bun-types@1.3.12)(postgres@3.4.8)
+        version: 0.45.2(@opentelemetry/api@1.9.0)(postgres@3.4.8)
       postgres:
         specifier: ^3.4.0
         version: 3.4.8
@@ -13974,6 +13971,7 @@ packages:
     resolution: {integrity: sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA==}
     dependencies:
       '@types/node': 22.19.13
+    dev: true
 
   /busboy@1.6.0:
     resolution: {integrity: sha512-8SFQbg/0hQ9xy3UNTB0YEnsNBbWfhf7RtnzpL7TkBiTBRfrQ9Fxcnz7VJsleJpyp6rVLvXiuORqjlHi5q+PYuA==}
@@ -15179,7 +15177,7 @@ packages:
       tsx: 4.21.0
     dev: false
 
-  /drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(bun-types@1.3.12)(postgres@3.4.8):
+  /drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(postgres@3.4.8):
     resolution: {integrity: sha512-kY0BSaTNYWnoDMVoyY8uxmyHjpJW1geOmBMdSSicKo9CIIWkSxMIj2rkeSR51b8KAPB7m+qysjuHme5nKP+E5Q==}
     peerDependencies:
       '@aws-sdk/client-rds-data': '>=3'
@@ -15272,7 +15270,6 @@ packages:
         optional: true
     dependencies:
       '@opentelemetry/api': 1.9.0
-      bun-types: 1.3.12
       postgres: 3.4.8
     dev: false
 
