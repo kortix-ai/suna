@@ -430,12 +430,9 @@ export async function reconcileStaleBuilds(
   let closedReady = 0;
   let closedFailed = 0;
   for (const row of rows) {
-    let state: ProviderState = 'missing';
-    try {
-      state = await provider.getSnapshotState(row.snapshotName);
-    } catch {
-      state = 'missing';
-    }
+    const state: ProviderState = await provider
+      .getSnapshotState(row.snapshotName)
+      .catch(() => 'missing');
     if (state === 'active') {
       await closeBuildLogReady(row.buildId);
       closedReady += 1;

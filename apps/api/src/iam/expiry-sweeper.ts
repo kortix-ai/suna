@@ -30,7 +30,6 @@ import { recordAuditEvent } from '../shared/audit';
 
 const TICK_MS = 60_000;
 let timer: ReturnType<typeof setTimeout> | null = null;
-let stopped = false;
 
 // Recursive setTimeout (not setInterval) so a slow tick can't cause
 // overlapping runs. With setInterval, if runOnce() took longer than
@@ -41,7 +40,6 @@ let stopped = false;
 // settle guarantees serial execution per process.
 export function startGrantExpirySweeper(): void {
   if (timer) return; // already armed, idempotent
-  stopped = false;
   // Fire once on boot so an expiry that happened during downtime is
   // logged immediately rather than waiting up to a minute. The rest
   // of the loop is driven by tickAndRearm() re-scheduling itself.
@@ -54,7 +52,6 @@ async function tickAndRearm(): Promise<void> {
   } catch (err) {
     console.error('[iam expiry sweeper] tick failed', err);
   }
-  if (stopped) return;
   timer = setTimeout(tickAndRearm, TICK_MS);
 }
 
