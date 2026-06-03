@@ -70,6 +70,8 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/tools/show.ts',
   '.kortix/opencode/tools/web_search.ts',
   'README.md',
+  'app/index.js',
+  'app/package.json',
   'kortix.toml',
 ];
 
@@ -113,7 +115,8 @@ describe('applyScaffold', () => {
     // Manifest declares the opencode config dir explicitly. Sandbox templates
     // are no longer pre-seeded — the project boots from the platform default
     // and users can add custom `[[sandbox.templates]]` entries on demand.
-    expect(manifest).not.toContain('[sandbox]');
+    expect(manifest).not.toMatch(/^\s*\[sandbox\]\s*$/m);
+    expect(manifest).not.toMatch(/^\s*\[\[sandbox\.templates\]\]\s*$/m);
     expect(manifest).toContain('config_dir = ".kortix/opencode"');
 
     // Sanity-check a couple of the other content files.
