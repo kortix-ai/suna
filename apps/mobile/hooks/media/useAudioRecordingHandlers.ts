@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import type { useAudioRecorder } from './useAudioRecorder';
-import type { useAgentManager } from '../ui/useAgentManager';
 import { log } from '@/lib/logger';
 
 /**
@@ -15,7 +14,6 @@ import { log } from '@/lib/logger';
  */
 export function useAudioRecordingHandlers(
   audioRecorder: ReturnType<typeof useAudioRecorder>,
-  agentManager: ReturnType<typeof useAgentManager>,
   transcribeAndAddToInput?: (audioUri: string) => Promise<void>
 ) {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -74,7 +72,6 @@ export function useAudioRecordingHandlers(
       log.log('📊 Audio data:', {
         uri: recordingUri,
         duration: result?.duration,
-        agent: agentManager.selectedAgent?.name || 'Unknown',
       });
       
       // Transcribe from the original file

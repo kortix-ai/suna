@@ -272,8 +272,6 @@ export function SessionPage({ sessionId, onOpenDrawer, onOpenRightDrawer, isDraw
   // ── Audio recording ──
 
   const audioRecorder = useAudioRecorder();
-  // Dummy agent manager shape for useAudioRecordingHandlers compatibility
-  const dummyAgentManager = useMemo(() => ({ selectedAgent: null } as any), []);
 
   // Track transcribed text to inject into SessionChatInput
   const [pendingTranscription, setPendingTranscription] = useState<string | null>(null);
@@ -284,7 +282,7 @@ export function SessionPage({ sessionId, onOpenDrawer, onOpenRightDrawer, isDraw
     }
   }, []);
 
-  const audioHandlers = useAudioRecordingHandlers(audioRecorder, dummyAgentManager, transcribeAndAddToInput);
+  const audioHandlers = useAudioRecordingHandlers(audioRecorder, transcribeAndAddToInput);
 
   // ── Send / Stop handlers (defined early so queue drain logic can reference them) ──
 

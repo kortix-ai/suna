@@ -13,13 +13,11 @@ import { haptics } from '@/lib/haptics';
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
-  BottomSheetTextInput,
   BottomSheetView,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import {
   Check,
-  Globe,
   Monitor,
   Plus,
   Server,
@@ -33,7 +31,7 @@ import {
   useCreateLocalInstance,
   useSandbox,
 } from '@/lib/platform/hooks';
-import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from '@/lib/platform/client';
+import type { SandboxInfo, SandboxProviderName } from '@/lib/platform/client';
 import { setInstanceProgress, useInstanceProgress } from '@/stores/instance-progress';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
@@ -272,16 +270,11 @@ export default function InstancesScreen() {
 
 // ─── Add Instance Bottom Sheet ──────────────────────────────────────────────
 
-type AddStep = 'select' | 'custom';
-
 const AddInstanceSheet = React.forwardRef<
   BottomSheetModal,
   { isDark: boolean; onCreated: () => void; onProgress: (p: { percent: number; message: string } | null) => void }
 >(function AddInstanceSheet({ isDark, onCreated, onProgress }, ref) {
   const insets = useSafeAreaInsets();
-  const [step, setStep] = React.useState<AddStep>('select');
-  const [customUrl, setCustomUrl] = React.useState('');
-  const [customLabel, setCustomLabel] = React.useState('');
   const [isCreating, setIsCreating] = React.useState(false);
   const [progress, setProgress] = React.useState<{ percent: number; message: string } | null>(null);
 
@@ -289,12 +282,11 @@ const AddInstanceSheet = React.forwardRef<
   const createLocalMutation = useCreateLocalInstance();
 
   const hasLocalDocker = Array.isArray(providers) && providers.includes('local_docker');
-  const fgColor = isDark ? '#f8f8f8' : '#121215';
 
   const snapPoints = React.useMemo(() => {
     if (isCreating && progress) return [300];
-    return step === 'custom' ? [370] : [260];
-  }, [step, isCreating, progress]);
+    return [260];
+  }, [isCreating, progress]);
 
   const renderBackdrop = React.useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -304,9 +296,6 @@ const AddInstanceSheet = React.forwardRef<
   );
 
   const resetState = React.useCallback(() => {
-    setStep('select');
-    setCustomUrl('');
-    setCustomLabel('');
     setIsCreating(false);
     setProgress(null);
   }, []);
@@ -344,27 +333,6 @@ const AddInstanceSheet = React.forwardRef<
       },
     );
   }, [createLocalMutation, onCreated, onProgress, resetState]);
-
-  const handleCustomConnect = React.useCallback(async () => {
-    const url = customUrl.trim();
-    if (!url) return;
-
-    haptics.tap();
-    setIsCreating(true);
-
-    const version = await checkInstanceHealth(url);
-    setIsCreating(false);
-
-    if (version) {
-      haptics.success();
-      Alert.alert('Connected', `Instance is reachable (v${version}). Custom URL instances will be available in a future update.`);
-      onCreated();
-      resetState();
-    } else {
-      haptics.warning();
-      Alert.alert('Unreachable', 'Could not connect to the instance. Check the URL and try again.');
-    }
-  }, [customUrl, onCreated, resetState]);
 
   return (
     <BottomSheetModal
@@ -414,7 +382,7 @@ const AddInstanceSheet = React.forwardRef<
               </View>
             </View>
           </View>
-        ) : step === 'select' ? (
+        ) : (
           <View className="px-1">
             <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
               New Instance
@@ -424,7 +392,7 @@ const AddInstanceSheet = React.forwardRef<
             </Text>
 
             <View>
-              {hasLocalDocker && (
+              {hasLocalDocker ? (
                 <>
                   <Pressable
                     onPress={handleLocalDocker}
@@ -440,92 +408,16 @@ const AddInstanceSheet = React.forwardRef<
                       {isCreating && createLocalMutation.isPending && <ActivityIndicator size="small" />}
                     </View>
                   </Pressable>
-                  <View className="h-px bg-border/35" />
                 </>
-              )}
-
-              <Pressable
-                onPress={() => { haptics.tap(); setStep('custom'); }}
-                className="py-3.5 active:opacity-85"
-              >
-                <View className="flex-row items-center">
-                  <Icon as={Globe} size={18} className="text-foreground/80" strokeWidth={2.2} />
-                  <View className="ml-4 flex-1">
-                    <Text className="font-roobert-medium text-[15px] text-foreground">Custom URL</Text>
-                    <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">Connect to any Kortix instance by address</Text>
-                  </View>
-                </View>
-              </Pressable>
-            </View>
-          </View>
-        ) : (
-          <View className="px-1">
-            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
-              Custom URL
-            </Text>
-            <Text className="mb-4 font-roobert text-xs text-muted-foreground">
-              Enter the address of your Kortix instance.
-            </Text>
-
-            <BottomSheetTextInput
-              value={customUrl}
-              onChangeText={setCustomUrl}
-              placeholder="http://localhost:8008/v1/p/sandbox/8000"
-              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              style={{
-                backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
-                borderWidth: 1,
-                borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
-                borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
-                fontSize: 14, fontFamily: 'Roobert', color: fgColor, marginBottom: 10,
-              }}
-            />
-
-            <BottomSheetTextInput
-              value={customLabel}
-              onChangeText={setCustomLabel}
-              placeholder="Display name (optional)"
-              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
-              autoCapitalize="words"
-              autoCorrect={false}
-              style={{
-                backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
-                borderWidth: 1,
-                borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
-                borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
-                fontSize: 14, fontFamily: 'Roobert', color: fgColor, marginBottom: 16,
-              }}
-            />
-
-            <Pressable
-              onPress={handleCustomConnect}
-              disabled={!customUrl.trim() || isCreating}
-              className="items-center rounded-full py-3.5 active:opacity-90"
-              style={{
-                backgroundColor: customUrl.trim()
-                  ? isDark ? '#f8f8f8' : '#121215'
-                  : isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
-                opacity: customUrl.trim() ? 1 : 0.5,
-              }}
-            >
-              {isCreating ? (
-                <ActivityIndicator size="small" color={isDark ? '#121215' : '#f8f8f8'} />
               ) : (
-                <Text
-                  className="font-roobert-semibold text-[15px]"
-                  style={{ color: customUrl.trim() ? (isDark ? '#121215' : '#f8f8f8') : (isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)') }}
-                >
-                  Connect
-                </Text>
+                <View className="py-5">
+                  <Text className="font-roobert-medium text-[15px] text-foreground">No local provider available</Text>
+                  <Text className="mt-1 font-roobert text-xs text-muted-foreground">
+                    Local Docker is not available for this app configuration.
+                  </Text>
+                </View>
               )}
-            </Pressable>
-
-            <Pressable onPress={() => { haptics.tap(); setStep('select'); }} className="mt-3 items-center py-2 active:opacity-70">
-              <Text className="font-roobert-medium text-sm text-muted-foreground">Back</Text>
-            </Pressable>
+            </View>
           </View>
         )}
       </BottomSheetView>
