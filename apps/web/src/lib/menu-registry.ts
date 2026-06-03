@@ -69,7 +69,7 @@ import {
 // ============================================================================
 
 /** Where a menu item should be rendered. */
-export type MenuSurface =
+type MenuSurface =
   | 'commandPalette'
   | 'leftSidebar'
   | 'userMenu';
@@ -583,7 +583,7 @@ export function getItemsForSurface(surface: MenuSurface): MenuItemDef[] {
 // Settings modal tabs — derived from the same registry
 // ============================================================================
 
-export interface SettingsTab {
+interface SettingsTab {
   id: SettingsTabId;
   label: string;
   icon: LucideIcon;

@@ -30,7 +30,7 @@ export interface GroupMember {
   added_by: string | null;
 }
 
-export interface EffectivePermissionProbe {
+interface EffectivePermissionProbe {
   allowed: boolean;
   reason: string | null;
   action: string;
@@ -237,11 +237,11 @@ export async function revokeScimToken(accountId: string, tokenId: string) {
 
 // ─── Account MFA enforcement ──────────────────────────────────────────────
 
-export interface MfaRequiredStatus {
+interface MfaRequiredStatus {
   enabled: boolean;
 }
 
-export interface MfaRequiredPreview {
+interface MfaRequiredPreview {
   total_members: number;
   members_with_mfa: number;
   /** Members without a verified MFA factor. Super-admins are still listed
@@ -587,7 +587,7 @@ export interface AuditEvent {
   metadata: Record<string, unknown>;
 }
 
-export interface ListAuditFilter {
+interface ListAuditFilter {
   /** Prefix or exact match on action string ("iam.group" matches every
    *  iam.group.* event; "iam.group.create" matches exact). */
   action?: string;
@@ -637,7 +637,7 @@ export interface PermissionProbeInput {
   resourceId?: string;
 }
 
-export interface PermissionProbeResult {
+interface PermissionProbeResult {
   action: string;
   resource_type: ResourceType;
   resource_id: string | null;

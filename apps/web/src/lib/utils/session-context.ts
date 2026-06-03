@@ -8,7 +8,7 @@
 
 import { useTabStore } from '@/stores/tab-store';
 
-export interface SessionContext {
+interface SessionContext {
   sourceSessionId: string;
   sourceSessionTitle: string;
 }

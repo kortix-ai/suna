@@ -10,7 +10,7 @@ import {
   type SubdomainUrlOptions,
 } from '@/lib/utils/sandbox-url';
 
-export interface SandboxProxyContext {
+interface SandboxProxyContext {
   serverUrl: string;
   mappedPorts?: Record<string, string>;
   subdomainOpts: SubdomainUrlOptions;

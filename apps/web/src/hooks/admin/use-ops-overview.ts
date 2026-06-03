@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
 
-export interface OpsOverview {
+interface OpsOverview {
   generated_at: string;
   api: {
     status: string;

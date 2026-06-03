@@ -9,7 +9,7 @@ interface ParsedMemorySearchHit {
   files: string[];
 }
 
-export interface ParsedMemorySearchOutput {
+interface ParsedMemorySearchOutput {
   matched: boolean;
   label: string;
   query: string;

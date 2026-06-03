@@ -44,7 +44,7 @@ export function parseProjectListOutput(output: string): ProjectEntry[] {
 	return projects;
 }
 
-export interface ProjectSelectData {
+interface ProjectSelectData {
 	name: string;
 	path: string;
 	success: boolean;
@@ -62,7 +62,7 @@ export function parseProjectSelectOutput(output: string): ProjectSelectData | nu
 	};
 }
 
-export interface ProjectCreateData {
+interface ProjectCreateData {
 	name: string;
 	path: string;
 	id: string;
@@ -112,7 +112,7 @@ export function parseConnectorListOutput(output: string): ConnectorEntry[] {
 	return connectors;
 }
 
-export interface ConnectorGetData {
+interface ConnectorGetData {
 	name: string;
 	description: string;
 	source: string;
@@ -140,7 +140,7 @@ export function parseConnectorGetOutput(output: string): ConnectorGetData | null
 	};
 }
 
-export interface ConnectorSetupData {
+interface ConnectorSetupData {
 	count: number;
 	connectors: string[];
 	success: boolean;

@@ -30,7 +30,7 @@ export interface DetectedLocalhostUrl {
   inCodeBlock: boolean;
 }
 
-export interface ParsedLocalhostUrl {
+interface ParsedLocalhostUrl {
   /** Canonicalized localhost URL (http(s)://localhost:PORT/path?query#hash) */
   originalUrl: string;
   /** Parsed port number */

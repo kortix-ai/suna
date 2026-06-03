@@ -138,7 +138,7 @@ export async function deleteProjectApp(
   return unwrap(await backendApi.delete<ListProjectAppsResponse>(`${base(projectId)}/${slug}`));
 }
 
-export interface DeployProjectAppResponse {
+interface DeployProjectAppResponse {
   status: 'active' | 'failed';
   app_slug: string;
   deployment: ProjectAppDeploymentRow | null;
@@ -154,7 +154,7 @@ export async function deployProjectApp(
   ));
 }
 
-export interface StopProjectAppResponse {
+interface StopProjectAppResponse {
   ok: boolean;
   deployment: ProjectAppDeploymentRow | null;
 }
@@ -169,7 +169,7 @@ export async function stopProjectApp(
   ));
 }
 
-export interface ProjectAppLogsResponse {
+interface ProjectAppLogsResponse {
   ok: boolean;
   data?: unknown;
   error?: string;

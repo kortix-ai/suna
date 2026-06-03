@@ -25,7 +25,7 @@ interface ParsedLtmMemory {
   tags: string[];
 }
 
-export type ParsedMemoryEntry = ParsedObservationMemory | ParsedLtmMemory;
+type ParsedMemoryEntry = ParsedObservationMemory | ParsedLtmMemory;
 
 function parseObservationReport(text: string): ParsedObservationMemory | null {
   if (!text.includes('Observation #')) return null;

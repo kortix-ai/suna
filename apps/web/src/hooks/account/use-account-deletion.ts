@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
 import { toast } from '@/lib/toast';
 
-export interface AccountDeletionStatus {
+interface AccountDeletionStatus {
     has_pending_deletion: boolean;
     deletion_scheduled_for: string | null;
     requested_at: string | null;
@@ -10,19 +10,19 @@ export interface AccountDeletionStatus {
     supported: boolean;
 }
 
-export interface RequestDeletionResponse {
+interface RequestDeletionResponse {
     success: boolean;
     message: string;
     deletion_scheduled_for: string;
     can_cancel: boolean;
 }
 
-export interface CancelDeletionResponse {
+interface CancelDeletionResponse {
     success: boolean;
     message: string;
 }
 
-export interface DeleteImmediatelyResponse {
+interface DeleteImmediatelyResponse {
     success: boolean;
     message: string;
 }

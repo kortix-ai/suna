@@ -20,7 +20,7 @@ export interface LspDiagnostic {
   source?: string;
 }
 
-export interface DiagnosticsState {
+interface DiagnosticsState {
   /** All diagnostics keyed by file path (may be absolute or relative) */
   byFile: Record<string, LspDiagnostic[]>;
 

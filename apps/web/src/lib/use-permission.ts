@@ -20,12 +20,12 @@ import {
   type ResourceType,
 } from '@/lib/iam-client';
 
-export interface UsePermissionTarget {
+interface UsePermissionTarget {
   resourceType?: ResourceType;
   resourceId?: string;
 }
 
-export interface UsePermissionResult {
+interface UsePermissionResult {
   /** True only when the probe has resolved AND the API said yes.
    * While loading or on error, this is false — UI defaults to hidden/disabled. */
   allowed: boolean;

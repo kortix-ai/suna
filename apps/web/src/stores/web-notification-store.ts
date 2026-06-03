@@ -8,7 +8,7 @@ import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 // Types
 // ============================================================================
 
-export type WebNotificationPermission = 'default' | 'granted' | 'denied';
+type WebNotificationPermission = 'default' | 'granted' | 'denied';
 
 interface WebNotificationPreferences {
   /** Master toggle for browser notifications */

@@ -7,7 +7,7 @@ const tunnelKeys = {
   deviceAuth: (code: string) => ['tunnel', 'device-auth', code] as const,
 };
 
-export interface DeviceAuthInfo {
+interface DeviceAuthInfo {
   deviceCode: string;
   machineHostname: string | null;
   status: 'pending' | 'approved' | 'denied' | 'expired';
