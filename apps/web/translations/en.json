@@ -1332,14 +1332,6 @@
       "line198JsxTextCreditType": "Credit Type",
       "line200JsxTextCreditsAfter": "Credits After"
     },
-    "componentsBillingPricingNewInstanceModal": {
-      "line143JsxTextOneMachineAllYourToolsAgentsThatRun": "One machine. All your tools. Agents that run themselves.",
-      "line149JsxTextChooseYourMachine": "Choose your machine",
-      "line185JsxTextVcpu": "vCPU ·",
-      "line207JsxTextEveryPlanIncludes": "Every plan includes",
-      "line241JsxTextCancelAnytime": "Cancel anytime",
-      "line244JsxTextGetYourKortix": "Get Your Kortix"
-    },
     "componentsCommandPalette": {
       "line183JsxTextSearchFilesInThisProjectSRepo": "Search files in this project's repo",
       "line185JsxTextPrefixWith": "Prefix with",

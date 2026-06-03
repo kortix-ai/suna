@@ -1332,14 +1332,6 @@
       "line198JsxTextCreditType": "クレジットタイプ",
       "line200JsxTextCreditsAfter": "適用後のクレジット"
     },
-    "componentsBillingPricingNewInstanceModal": {
-      "line143JsxTextOneMachineAllYourToolsAgentsThatRun": "1台のマシン。すべてのツール。自律的に動くエージェント。",
-      "line149JsxTextChooseYourMachine": "マシンを選択",
-      "line185JsxTextVcpu": "vCPU ·",
-      "line207JsxTextEveryPlanIncludes": "すべてのプランに含まれるもの",
-      "line241JsxTextCancelAnytime": "いつでもキャンセル可能",
-      "line244JsxTextGetYourKortix": "あなたのKortixを入手"
-    },
     "componentsCommandPalette": {
       "line183JsxTextSearchFilesInThisProjectSRepo": "Search files in this project's repo",
       "line185JsxTextPrefixWith": "Prefix with",

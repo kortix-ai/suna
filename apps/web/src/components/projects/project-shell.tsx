@@ -105,7 +105,6 @@ export function ProjectShell({
   return (
     <AppProviders
       showSidebar
-      showGlobalNewInstanceModal={false}
       showGlobalUserSettingsModal={false}
       defaultSidebarOpen={initialSidebarOpen}
       sidebarContent={<ProjectSidebar projectId={projectId} />}

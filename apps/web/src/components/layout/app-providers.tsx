@@ -5,8 +5,6 @@ import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
 import { SubscriptionStoreSync } from '@/stores/subscription-store';
-import { NewInstanceModal } from '@/components/billing/pricing/new-instance-modal';
-import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
@@ -64,12 +62,6 @@ function DeleteOperationEffectsWrapper({ children }: { children: React.ReactNode
   return <>{children}</>;
 }
 
-/** Store-driven NewInstanceModal — mounted by legacy dashboard surfaces only. */
-function GlobalNewInstanceModal() {
-  const { isOpen, title, closeNewInstanceModal } = useNewInstanceModalStore();
-  return <NewInstanceModal open={isOpen} onOpenChange={(o) => !o && closeNewInstanceModal()} title={title} />;
-}
-
 /** Store-driven UserSettingsModal — mounted once globally so the error handler
  *  can route billing errors to the Billing tab with a highlight. */
 function GlobalUserSettingsModal() {
@@ -89,7 +81,6 @@ interface AppProvidersProps {
   defaultSidebarOpen?: boolean;
   sidebarContent?: React.ReactNode;
   sidebarSiblings?: React.ReactNode;
-  showGlobalNewInstanceModal?: boolean;
   showGlobalUserSettingsModal?: boolean;
 }
 
@@ -99,7 +90,6 @@ export function AppProviders({
   defaultSidebarOpen,
   sidebarContent,
   sidebarSiblings,
-  showGlobalNewInstanceModal = false,
   showGlobalUserSettingsModal = false,
 }: AppProvidersProps) {
   // One-time sweep on app load: reclaim localStorage left over from older builds
@@ -113,7 +103,6 @@ export function AppProviders({
     <DeleteOperationEffectsWrapper>
       <SubscriptionStoreSync>
         {children}
-        {showGlobalNewInstanceModal && <GlobalNewInstanceModal />}
         {showGlobalUserSettingsModal && <GlobalUserSettingsModal />}
         {isBillingEnabled() && <GlobalUpgradeDialog />}
       </SubscriptionStoreSync>

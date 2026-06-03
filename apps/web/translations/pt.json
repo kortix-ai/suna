@@ -1332,14 +1332,6 @@
       "line198JsxTextCreditType": "Tipo de crédito",
       "line200JsxTextCreditsAfter": "Créditos depois"
     },
-    "componentsBillingPricingNewInstanceModal": {
-      "line143JsxTextOneMachineAllYourToolsAgentsThatRun": "Uma máquina. Todas as suas ferramentas. Agentes que rodam sozinhos.",
-      "line149JsxTextChooseYourMachine": "Escolha sua máquina",
-      "line185JsxTextVcpu": "vCPU ·",
-      "line207JsxTextEveryPlanIncludes": "Todo plano inclui",
-      "line241JsxTextCancelAnytime": "Cancele a qualquer momento",
-      "line244JsxTextGetYourKortix": "Obtenha seu Kortix"
-    },
     "componentsCommandPalette": {
       "line183JsxTextSearchFilesInThisProjectSRepo": "Search files in this project's repo",
       "line185JsxTextPrefixWith": "Prefix with",

@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { useSubscriptionStore } from '@/stores/subscription-store';
-import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 
@@ -47,7 +47,7 @@ interface UseDownloadRestrictionReturn {
  */
 export function useDownloadRestriction(options?: UseDownloadRestrictionOptions): UseDownloadRestrictionReturn {
   const accountState = useSubscriptionStore((state) => state.accountState);
-  const openNewInstanceModal = useNewInstanceModalStore((state) => state.openNewInstanceModal);
+  const openUpgradeDialog = useUpgradeDialogStore((state) => state.openUpgradeDialog);
 
   const isFreeTier = accountState?.subscription && (
     accountState.subscription.tier_key === 'free' ||
@@ -68,9 +68,11 @@ export function useDownloadRestriction(options?: UseDownloadRestrictionOptions):
       duration: 5000,
     });
     
-    // Also open the pricing modal
-    openNewInstanceModal(`Upgrade to download your ${featureName} and more`);
-  }, [openNewInstanceModal, options?.featureName]);
+    openUpgradeDialog({
+      reason: 'subscription_required',
+      message: `Upgrade to download your ${featureName} and more`,
+    });
+  }, [openUpgradeDialog, options?.featureName]);
 
   const withRestrictionCheck = useCallback(<T extends (...args: any[]) => any>(callback: T) => {
     return (...args: Parameters<T>): ReturnType<T> | void => {

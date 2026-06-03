@@ -71,7 +71,7 @@ import { useCreatePty } from '@/hooks/opencode/use-opencode-pty';
 import { CompactDialog } from '@/components/session/compact-dialog';
 import { DiffDialog } from '@/components/session/diff-dialog';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
-import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { createClient } from '@/lib/supabase/client';
 import { isBillingEnabled } from '@/lib/config';
 import { useTheme } from 'next-themes';
@@ -372,7 +372,7 @@ export function CommandPalette() {
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
-  const openNewInstanceModal = useNewInstanceModalStore((s) => s.openNewInstanceModal);
+  const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const rawPathname = usePathname();
@@ -902,8 +902,8 @@ export function CommandPalette() {
 
   const handleOpenPlan = useCallback(() => {
     close();
-    openNewInstanceModal();
-  }, [close, openNewInstanceModal]);
+    openUpgradeDialog({ reason: 'subscription_required' });
+  }, [close, openUpgradeDialog]);
 
   const handleLogout = useCallback(async () => {
     close();

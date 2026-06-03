@@ -1,6 +1,5 @@
 import { toast } from '@/lib/toast';
 import { BillingError, formatBillingErrorForUI } from './api/errors';
-import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { isBillingEnabled } from '@/lib/config';
@@ -287,7 +286,10 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
         duration: 6000,
       });
     } else {
-      useNewInstanceModalStore.getState().openNewInstanceModal(errorUI.alertTitle);
+      useUpgradeDialogStore.getState().openUpgradeDialog({
+        reason: 'subscription_required',
+        message: errorUI.alertTitle,
+      });
     }
     return;
   }

@@ -1332,14 +1332,6 @@
       "line198JsxTextCreditType": "积分类型",
       "line200JsxTextCreditsAfter": "之后的积分"
     },
-    "componentsBillingPricingNewInstanceModal": {
-      "line143JsxTextOneMachineAllYourToolsAgentsThatRun": "一台机器。所有工具。自主运行的代理。",
-      "line149JsxTextChooseYourMachine": "选择你的机器",
-      "line185JsxTextVcpu": "vCPU ·",
-      "line207JsxTextEveryPlanIncludes": "每个套餐都包含",
-      "line241JsxTextCancelAnytime": "随时取消",
-      "line244JsxTextGetYourKortix": "获取你的 Kortix"
-    },
     "componentsCommandPalette": {
       "line183JsxTextSearchFilesInThisProjectSRepo": "Search files in this project's repo",
       "line185JsxTextPrefixWith": "Prefix with",
