@@ -43,7 +43,7 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - `pnpm --filter @kortix/tests test:e2e` — Playwright UI specs.
 - `pnpm --filter @kortix/tests test:e2e:gate5:local` — local Gate 5 verifier.
 - `pnpm --filter @kortix/tests test:e2e:gate5:target` — target Gate 5 rehearsal.
-- `tests/e2e/end-to-end.md` is the flow source-of-truth.
+- `tests/README.md` indexes the current E2E and Gate 5 harnesses.
 - Provisioning is slow (snapshot build up to ~9 min, sandbox up to ~5 min) —
   run long checks in the background and poll the log.
 
