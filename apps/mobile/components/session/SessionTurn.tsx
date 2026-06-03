@@ -2863,20 +2863,19 @@ export function SessionTurn({
     [userText, commands],
   );
 
-  // Detect channel message (Telegram/Slack) in user message
+  // Detect Slack channel messages in user prompts.
   const channelMessageInfo = useMemo(() => {
     if (!userText) return undefined;
-    // Match pattern: [Telegram · DM · message from Name] or [Slack · #channel · message from Name]
-    const headerMatch = userText.match(/^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/);
+    // Match pattern: [Slack · #channel · message from Name]
+    const headerMatch = userText.match(/^\[(Slack)\s*·\s*(?:[^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/);
     if (!headerMatch) return undefined;
-    const platform = headerMatch[1] as 'Telegram' | 'Slack';
-    const context = headerMatch[2].trim();
-    const userName = headerMatch[3].trim();
-    // Extract the actual message (between header and Chat ID/instructions)
+    const platform = headerMatch[1] as 'Slack';
+    const userName = headerMatch[2].trim();
+    // Extract the actual message (between header and Slack instructions)
     const afterHeader = userText.slice(headerMatch[0].length);
-    const instrStart = afterHeader.search(/\n\s*(Chat ID:|── Telegram instructions|── Slack instructions)/);
+    const instrStart = afterHeader.search(/\n\s*── Slack instructions/);
     const messageText = instrStart >= 0 ? afterHeader.slice(0, instrStart).trim() : afterHeader.trim();
-    return { platform, context, userName, messageText };
+    return { platform, userName, messageText };
   }, [userText]);
 
   // Detect trigger_event in user message
@@ -2981,11 +2980,11 @@ export function SessionTurn({
             {/* Channel badge + user name */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <Ionicons
-                name={channelMessageInfo.platform === 'Telegram' ? 'paper-plane-outline' : 'logo-slack'}
+                name="logo-slack"
                 size={14}
-                color={channelMessageInfo.platform === 'Telegram' ? '#29B6F6' : '#E91E63'}
+                color="#E91E63"
               />
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: channelMessageInfo.platform === 'Telegram' ? '#29B6F6' : '#E91E63' }}>
+              <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: '#E91E63' }}>
                 {channelMessageInfo.platform}
               </Text>
               <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: isDark ? '#71717a' : '#a1a1aa' }}>·</Text>
