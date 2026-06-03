@@ -85,7 +85,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 ## 3. Access gating / signup (public)
 
 `ACC-2` `POST /access/check-email {email}` → 200 allowed/blocked.
-`ACC-4` (self-hosted only, `isLocal()`) `GET /setup/install-status` + `GET /setup/sandbox-providers` → public; `POST /setup/bootstrap-owner` → first owner; `GET /setup/status|health|setup-status`; `GET/POST /setup/setup-wizard-step`, `POST /setup/setup-complete`. Cloud → routes 404.
+`ACC-4` (self-hosted only, `isLocal()`) `GET /setup/install-status` → public install probe; `POST /setup/bootstrap-owner` → public first-owner bootstrap. Cloud → routes 404.
 
 ---
 

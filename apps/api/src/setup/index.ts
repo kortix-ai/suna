@@ -3,34 +3,15 @@
  *
  * Provides the public install probe and owner bootstrap endpoint used by the
  * self-host flow. Mounted at /v1/setup/*.
- *
- * Auth: /install-status and /bootstrap-owner are public before any owner
- * exists. Any future setup route should require Supabase JWT.
  */
 
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
-import { supabaseAuth } from '../middleware/auth';
 import { sql } from 'drizzle-orm';
 import { db, hasDatabase } from '../shared/db';
 import { getSupabase } from '../shared/supabase';
 
 export const setupApp = new Hono<AppEnv>();
-
-// ─── Auth ───────────────────────────────────────────────────────────────────
-// The installer needs these two routes before any user exists. Keep every
-// future setup route behind Supabase auth.
-setupApp.use('/*', async (c, next) => {
-  // Allow public routes without auth
-  if (
-    c.req.path.endsWith('/install-status') ||
-    c.req.path.endsWith('/bootstrap-owner')
-  ) {
-    return next();
-  }
-  // Everything else requires a valid Supabase JWT
-  return supabaseAuth(c, next);
-});
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
