@@ -256,7 +256,9 @@ test.describe('09 - Admin operations console', () => {
   test('admin overview and operations dashboard use the supported ops API cleanly', async ({ page }) => {
     await json(await fetch(`${apiBase.replace(/\/v1$/, '')}/health`), 200);
     const session = await ensureAdminSession();
-    await installBrowserSession(page, session, '/admin');
+    // Let the assertions below own the admin navigations; otherwise the
+    // immediate duplicate /admin load can abort Supabase's user fetch.
+    await installBrowserSession(page, session, '/favicon.png');
 
     await assertAdminRouteClean(page, '/admin', [
       'Admin overview',
