@@ -140,7 +140,7 @@ function validateRoot(raw: Record<string, unknown>, issues: ManifestIssue[]): vo
     issues.push({
       path: 'kortix_version',
       message: 'kortix_version is required — add `kortix_version = 1` at the top.',
-      severity: 'warning',
+      severity: 'error',
     });
     return;
   }

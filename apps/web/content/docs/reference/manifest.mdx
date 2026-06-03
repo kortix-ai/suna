@@ -65,7 +65,7 @@ User said: {{ body.text }}
 kortix_version = 1
 ```
 
-`kortix_version` is the schema version. Manifests without it are treated as v1 for backward compatibility (`null`, `1`, and `"1"` all decode to v1). A manifest declaring a version higher than the platform knows about is rejected outright — the platform won't silently misread future fields. When the platform writes the manifest back after a dashboard edit, it ensures `kortix_version` is the first key.
+`kortix_version` is the required schema version. A manifest declaring a version higher than the platform knows about is rejected outright — the platform won't silently misread future fields. When the platform writes the manifest back after a dashboard edit, it ensures `kortix_version` is the first key.
 
 ## What's parsed where
 

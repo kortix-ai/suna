@@ -22,12 +22,11 @@ describe('validateManifest — syntax', () => {
     expect(result.issues[0].message).toContain('Syntax error');
   });
 
-  test('empty TOML is valid (no required top-level keys beyond a warning)', () => {
+  test('empty TOML is invalid without kortix_version', () => {
     const result = validateManifest('');
-    // The only issue is the kortix_version warning.
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.issues.length).toBe(1);
-    expect(result.issues[0].severity).toBe('warning');
+    expect(result.issues[0].severity).toBe('error');
     expect(result.issues[0].path).toBe('kortix_version');
   });
 });
@@ -43,9 +42,9 @@ describe('validateManifest — kortix_version', () => {
     expect(errorPaths).toContain('kortix_version');
   });
 
-  test('warns when kortix_version is missing', () => {
-    const { warningPaths } = summarize(`[project]\nname = "x"`);
-    expect(warningPaths).toContain('kortix_version');
+  test('rejects when kortix_version is missing', () => {
+    const { errorPaths } = summarize(`[project]\nname = "x"`);
+    expect(errorPaths).toContain('kortix_version');
   });
 });
 

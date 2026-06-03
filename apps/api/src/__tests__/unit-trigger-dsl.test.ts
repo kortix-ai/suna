@@ -20,9 +20,8 @@ function manifestWith(triggersBlock: string): string {
 }
 
 describe('kortix.toml — schema versioning', () => {
-  test('missing kortix_version is treated as v1 (back-compat)', () => {
-    const parsed = parseManifestString(MIN_PROJECT);
-    expect(parsed.schemaVersion).toBe(1);
+  test('missing kortix_version is rejected', () => {
+    expect(() => parseManifestString(MIN_PROJECT)).toThrow(/kortix_version is required/);
   });
 
   test('explicit kortix_version = 1 round-trips', () => {
@@ -210,12 +209,12 @@ prompt_template = "legacy field name"
 
 describe('[[triggers]] — validation errors', () => {
   test('an empty manifest yields zero triggers, no errors', () => {
-    const parsed = parseManifestString(MIN_PROJECT);
+    const parsed = parseManifestString(`kortix_version = 1\n${MIN_PROJECT}`);
     expect(extractTriggers(parsed)).toEqual({ specs: [], errors: [] });
   });
 
   test('a [triggers] table (single brackets) is rejected with guidance', () => {
-    const parsed = parseManifestString(`${MIN_PROJECT}\n[triggers]\nslug = "x"\n`);
+    const parsed = parseManifestString(`kortix_version = 1\n${MIN_PROJECT}\n[triggers]\nslug = "x"\n`);
     const { specs, errors } = extractTriggers(parsed);
     expect(specs).toEqual([]);
     expect(errors[0]!.error).toMatch(/array of tables/);

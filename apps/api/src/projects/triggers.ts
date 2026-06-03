@@ -42,8 +42,7 @@ export const MANIFEST_FILENAME = 'kortix.toml';
 
 /**
  * Schema version of the manifest. Bumped when we make a breaking change to
- * how the file is parsed. Manifests without `kortix_version` are treated as
- * v1 (backward compat). A higher major than KNOWN_SCHEMA_VERSION → loaders
+ * how the file is parsed. A higher major than KNOWN_SCHEMA_VERSION → loaders
  * refuse to interpret the file so we don't silently misread future fields.
  */
 export const KNOWN_SCHEMA_VERSION = 1;
@@ -132,11 +131,14 @@ export async function readManifest(
  */
 export function parseManifestString(raw: string): ParsedManifest {
   const parsed = parseToml(raw) as Record<string, unknown>;
+  if (parsed.kortix_version == null) {
+    throw new Error('kortix_version is required');
+  }
   const version = typeof parsed.kortix_version === 'number'
     ? parsed.kortix_version
     : typeof parsed.kortix_version === 'string'
       ? Number(parsed.kortix_version)
-      : KNOWN_SCHEMA_VERSION;
+      : NaN;
 
   if (!Number.isFinite(version) || version < 1) {
     throw new Error('kortix_version must be a positive integer');
