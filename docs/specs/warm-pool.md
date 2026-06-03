@@ -1,8 +1,7 @@
 # Per-project warm sandbox pool
 
 Status: SPEC / proposed. Owner: boot-latency. Related: session boot profile
-(opencode bun-install fix shipped `ab314366c`), `daytona.create()` bench
-(`apps/api/scripts/bench-daytona-create.ts`).
+(opencode bun-install fix shipped `ab314366c`).
 
 ## Goal
 
