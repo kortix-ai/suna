@@ -23,7 +23,6 @@ import {
   DEFAULT_SANDBOX_SLUG,
   extractSandboxDefault,
   extractSandboxTemplates,
-  normalizeUserDockerfileForSnapshot,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   SANDBOX_SPEC_LIMITS,
 } from './dockerfile-layer';
@@ -393,11 +392,10 @@ async function resolveUserDockerfile(
   if (template.dockerfilePath) {
     const commitSha = await resolveCommitSha(project, project.defaultBranch);
     const bytes = await readRepoFile(project, template.dockerfilePath, commitSha);
-    const normalized = normalizeUserDockerfileForSnapshot(bytes);
-    if (!normalized.trim()) {
+    if (!bytes.trim()) {
       throw new Error(`Sandbox template "${template.slug}": Dockerfile ${template.dockerfilePath} is empty`);
     }
-    return { dockerfile: normalized, commit: commitSha };
+    return { dockerfile: bytes, commit: commitSha };
   }
   if (template.image) {
     return { dockerfile: `FROM ${template.image}\n`, commit: null };

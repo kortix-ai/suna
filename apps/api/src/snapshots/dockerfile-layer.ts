@@ -99,7 +99,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     agentCliPath,
     executorSdkPath,
   } = opts;
-  const trimmed = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
+  const trimmed = userDockerfile.trimEnd();
 
   const kortixLayer = [
     '',
@@ -173,15 +173,6 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
   ].join('\n');
 
   return `${trimmed}\n${kortixLayer}`;
-}
-
-export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
-  // The legacy starter Dockerfile installed baseline tools that the injected
-  // Kortix layer installs again. Strip that exact starter block so existing
-  // user Dockerfiles still build cleanly.
-  const starterBlock =
-    /# Bring in baseline tooling\. The Kortix layer on top also installs\n# git\/curl\/ca-certificates\/nodejs\/npm, but having them in your base\n# makes interactive sessions snappier\.\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends \\\n        ca-certificates \\\n        curl \\\n        git \\\n        build-essential \\\n    && rm -rf \/var\/lib\/apt\/lists\/\*\n\n?/;
-  return dockerfile.replace(starterBlock, '');
 }
 
 /**
@@ -305,10 +296,7 @@ export function extractSandboxTemplates(
     sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)
       ? (sandbox as Record<string, unknown>).templates
       : undefined;
-  // Migration safety net: the pre-rename `[[sandboxes]]` form still parses at
-  // boot so an un-migrated project on main doesn't lose its templates. The
-  // validator (ship / CR-merge gate) is what enforces the new name.
-  const arr = Array.isArray(nested) ? nested : manifestRaw.sandboxes;
+  const arr = Array.isArray(nested) ? nested : undefined;
   if (Array.isArray(arr)) {
     for (const entry of arr) {
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;

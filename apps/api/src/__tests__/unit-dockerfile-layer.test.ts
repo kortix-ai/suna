@@ -47,29 +47,6 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('mkdir -p /workspace');
   });
 
-  test('strips only the generated starter baseline apt block', () => {
-    const user = `FROM ubuntu:24.04
-
-# Bring in baseline tooling. The Kortix layer on top also installs
-# git/curl/ca-certificates/nodejs/npm, but having them in your base
-# makes interactive sessions snappier.
-RUN apt-get update \\
-    && apt-get install -y --no-install-recommends \\
-        ca-certificates \\
-        curl \\
-        git \\
-        build-essential \\
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /workspace
-`;
-    const merged = buildLayeredDockerfile({ userDockerfile: user, ...COMMON });
-    expect(merged).toContain('FROM ubuntu:24.04');
-    expect(merged).toContain('WORKDIR /workspace');
-    expect(merged).not.toContain('having them in your base');
-    expect(merged.match(/apt-get update/g)?.length).toBe(1);
-  });
-
   test('result ends with a trailing newline', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...COMMON });
     expect(merged.endsWith('\n')).toBe(true);
@@ -143,14 +120,6 @@ describe('extractSandboxTemplates', () => {
     expect(out).toHaveLength(0);
   });
 
-  test('legacy [[sandboxes]] form still parses as a migration safety net', () => {
-    const out = extractSandboxTemplates({
-      sandboxes: [{ slug: 'ml', image: 'python:3.12-slim' }],
-    });
-    expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ slug: 'ml', image: 'python:3.12-slim' });
-  });
-
   test('rejects [[sandbox.templates]] entries claiming the reserved "default" slug', () => {
     const out = extractSandboxTemplates({
       sandbox: {
@@ -187,10 +156,12 @@ describe('extractSandboxTemplates', () => {
 
   test('deduplicates by slug (first wins)', () => {
     const out = extractSandboxTemplates({
-      sandboxes: [
-        { slug: 'ml', dockerfile: 'a' },
-        { slug: 'ml', image: 'python:3.12-slim' },
-      ],
+      sandbox: {
+        templates: [
+          { slug: 'ml', dockerfile: 'a' },
+          { slug: 'ml', image: 'python:3.12-slim' },
+        ],
+      },
     });
     expect(out).toHaveLength(1);
     expect(out[0].dockerfile).toBe('a');
@@ -198,7 +169,9 @@ describe('extractSandboxTemplates', () => {
 
   test('clamps over-spec resources rather than rejecting them', () => {
     const out = extractSandboxTemplates({
-      sandboxes: [{ slug: 'huge', dockerfile: 'a', cpu: 9999, memory: 99999 }],
+      sandbox: {
+        templates: [{ slug: 'huge', dockerfile: 'a', cpu: 9999, memory: 99999 }],
+      },
     });
     expect(out[0].spec).toEqual({
       cpu: SANDBOX_SPEC_LIMITS.cpu.max,
@@ -208,10 +181,12 @@ describe('extractSandboxTemplates', () => {
 
   test('rejects absolute and traversal Dockerfile paths', () => {
     const out = extractSandboxTemplates({
-      sandboxes: [
-        { slug: 'a', dockerfile: '/etc/Dockerfile' },
-        { slug: 'b', dockerfile: '../escape/Dockerfile' },
-      ],
+      sandbox: {
+        templates: [
+          { slug: 'a', dockerfile: '/etc/Dockerfile' },
+          { slug: 'b', dockerfile: '../escape/Dockerfile' },
+        ],
+      },
     });
     expect(out[0].dockerfile).toBe(undefined);
     expect(out[1].dockerfile).toBe(undefined);
