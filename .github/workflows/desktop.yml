@@ -197,7 +197,7 @@ jobs:
           APPLE_TEAM_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.files }}
@@ -219,7 +219,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download desktop artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: desktop-artifacts/
           pattern: desktop-*
