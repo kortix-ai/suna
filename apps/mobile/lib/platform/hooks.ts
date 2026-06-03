@@ -27,7 +27,6 @@ export const platformKeys = {
   sessions: () => [...platformKeys.all, 'sessions'] as const,
   session: (id: string) => [...platformKeys.sessions(), id] as const,
   sessionMessages: (id: string) => [...platformKeys.session(id), 'messages'] as const,
-  sessionStatus: () => [...platformKeys.all, 'session-status'] as const,
 };
 
 // ─── Helper: Authenticated fetch to OpenCode server ──────────────────────────
