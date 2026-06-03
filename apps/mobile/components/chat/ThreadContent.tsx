@@ -983,7 +983,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                                       success: parsed.result.success,
                                     } : undefined}
                                     onToolClick={() => handleToolPressInternal(toolMsg)}
-                                    sandboxId={sandboxId}
+                                    sandboxUrl={sandboxUrl}
                                   />
                                 );
                               }
@@ -1241,7 +1241,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                                       success: tc.tool_result?.success !== false,
                                     } : undefined}
                                     onToolClick={() => isCompleted && handleStreamingToolCallPress(tc, assistantMsgId)}
-                                    sandboxId={sandboxId}
+                                    sandboxUrl={sandboxUrl}
                                   />
                                 );
                               }
@@ -1582,7 +1582,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                               success: tc.tool_result?.success !== false,
                             } : undefined}
                             onToolClick={() => {}}
-                            sandboxId={sandboxId}
+                            sandboxUrl={sandboxUrl}
                           />
                         );
                       }

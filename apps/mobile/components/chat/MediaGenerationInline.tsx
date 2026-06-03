@@ -20,7 +20,7 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import { getToolIcon } from '@/lib/icons/tool-icons';
 import { getUserFriendlyToolName } from '@agentpress/shared';
-import { useSandboxImageBlob } from '@/lib/files/hooks';
+import { useOpenCodeFileBlob } from '@/lib/files/hooks';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
 type MediaType = 'image' | 'video' | null;
@@ -36,7 +36,7 @@ interface MediaGenerationInlineProps {
     success?: boolean;
   };
   onToolClick: () => void;
-  sandboxId?: string;
+  sandboxUrl?: string;
 }
 
 /**
@@ -154,7 +154,7 @@ function ShimmerBox({ aspectVideo = false }: { aspectVideo?: boolean }) {
 /**
  * Inline image display with loading state - full width, pressable
  */
-function InlineImage({ filePath, sandboxId, onPress }: { filePath: string; sandboxId?: string; onPress?: () => void }) {
+function InlineImage({ filePath, sandboxUrl, onPress }: { filePath: string; sandboxUrl?: string; onPress?: () => void }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [imageError, setImageError] = useState(false);
@@ -167,8 +167,8 @@ function InlineImage({ filePath, sandboxId, onPress }: { filePath: string; sandb
     return filePath.startsWith('/') ? filePath : `/workspace/${filePath}`;
   }, [filePath]);
 
-  const { data: imageBlob, isLoading } = useSandboxImageBlob(sandboxId, normalizedPath, {
-    enabled: !!sandboxId && !!normalizedPath,
+  const { data: imageBlob, isLoading } = useOpenCodeFileBlob(sandboxUrl, normalizedPath, {
+    enabled: !!sandboxUrl && !!normalizedPath,
   });
 
   // Convert blob to data URI
@@ -196,7 +196,7 @@ function InlineImage({ filePath, sandboxId, onPress }: { filePath: string; sandb
     };
   }, [imageBlob]);
 
-  if (isLoading || !imageUri) {
+  if (!sandboxUrl || isLoading || !imageUri) {
     return <ShimmerBox />;
   }
 
@@ -244,7 +244,7 @@ export function MediaGenerationInline({
   toolCall,
   toolResult,
   onToolClick,
-  sandboxId,
+  sandboxUrl,
 }: MediaGenerationInlineProps) {
   const isComplete = !!toolResult;
   const media = isComplete ? extractGeneratedMedia(toolResult?.output) : null;
@@ -281,9 +281,9 @@ export function MediaGenerationInline({
       {!isComplete ? (
         <ShimmerBox aspectVideo={isVideoGeneration} />
       ) : media?.type === 'image' ? (
-        <InlineImage filePath={media.path} sandboxId={sandboxId} onPress={onToolClick} />
+        <InlineImage filePath={media.path} sandboxUrl={sandboxUrl} onPress={onToolClick} />
       ) : media?.type === 'video' ? (
-        <InlineImage filePath={media.path} sandboxId={sandboxId} onPress={onToolClick} />
+        <InlineImage filePath={media.path} sandboxUrl={sandboxUrl} onPress={onToolClick} />
       ) : null}
     </View>
   );
@@ -328,4 +328,3 @@ const styles = StyleSheet.create({
     padding: 16,
   },
 });
-

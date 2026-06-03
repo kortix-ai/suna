@@ -9,7 +9,6 @@ import {
   Eye,
   FileText,
   Presentation,
-  Pencil,
   Copy,
   Check,
   FileDiff,
@@ -36,7 +35,6 @@ import { JsonRenderer } from './JsonRenderer';
 import { CsvRenderer } from './CsvRenderer';
 import { XlsxRenderer } from './XlsxRenderer';
 import { ToolViewCard, TabSwitcher, StatusBadge, LoadingState, CodeRenderer, FileDownloadButton } from '../shared';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -81,7 +79,6 @@ export function FileOperationToolView({
   project,
   streamingText,
 }: ToolViewProps) {
-  const { openFileInComputer } = useKortixComputerStore();
   const [isCopyingContent, setIsCopyingContent] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'preview' | 'changes'>('preview');
   const sourceScrollRef = useRef<ScrollView>(null);
@@ -770,20 +767,12 @@ export function FileOperationToolView({
         <View className="flex-row items-center justify-between w-full">
           <View className="flex-row items-center gap-2">
             {processedFilePath && (
-              <Pressable
-                onPress={() => {
-                  if (isPresentationSlide) return;
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  openFileInComputer(processedFilePath);
-                }}
-                disabled={isPresentationSlide}
-                className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border active:opacity-70"
-              >
+              <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
                 <Icon as={FileText} size={12} className="text-primary" />
                 <Text className="text-xs font-roobert-medium text-primary" numberOfLines={1}>
                   {fileName || 'File'}
                 </Text>
-              </Pressable>
+              </View>
             )}
             <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
               <Icon as={FileIcon} size={12} className="text-primary" />
@@ -844,17 +833,6 @@ export function FileOperationToolView({
                   size={17}
                   className="text-primary"
                 />
-              </Pressable>
-            )}
-            {processedFilePath && !isPresentationSlide && (
-              <Pressable
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  openFileInComputer(processedFilePath);
-                }}
-                className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
-              >
-                <Icon as={Pencil} size={17} className="text-primary" />
               </Pressable>
             )}
           </View>

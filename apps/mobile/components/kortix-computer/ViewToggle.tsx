@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Icon } from '@/components/ui/icon';
-import { Zap, FolderOpen, Globe } from 'lucide-react-native';
+import { Zap, Globe } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -13,21 +13,14 @@ import type { ViewType } from '@/stores/kortix-computer-store';
 interface ViewToggleProps {
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
-  showFilesTab?: boolean;
 }
 
 const AnimatedView = Animated.createAnimatedComponent(View);
 
-export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: ViewToggleProps) {
-  const viewOptions = showFilesTab
-    ? ['tools', 'files', 'browser'] as const
-    : ['tools', 'browser'] as const;
+export function ViewToggle({ currentView, onViewChange }: ViewToggleProps) {
+  const viewOptions = ['tools', 'browser'] as const;
 
   const getViewIndex = (view: ViewType) => {
-    // If files tab is hidden and current view is files, default to tools
-    if (!showFilesTab && view === 'files') {
-      return 0; // tools
-    }
     const index = viewOptions.indexOf(view as any);
     return index >= 0 ? index : 0;
   };
@@ -42,7 +35,7 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
       damping: 30,
       stiffness: 300,
     });
-  }, [currentView, indicatorPosition, showFilesTab]);
+  }, [currentView, indicatorPosition]);
 
   const indicatorStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: indicatorPosition.value }],
@@ -72,20 +65,6 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
         />
       </Pressable>
 
-      {showFilesTab && (
-        <Pressable
-          onPress={() => handlePress('files')}
-          className="relative z-10 h-7 w-7 items-center justify-center rounded-xl"
-        >
-          <Icon
-            as={FolderOpen}
-            size={14}
-            className={currentView === 'files' ? 'text-primary-foreground' : 'text-primary'}
-            strokeWidth={2}
-          />
-        </Pressable>
-      )}
-
       <Pressable
         onPress={() => handlePress('browser')}
         className="relative z-10 h-7 w-7 items-center justify-center rounded-xl"
@@ -100,4 +79,3 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
     </View>
   );
 }
-

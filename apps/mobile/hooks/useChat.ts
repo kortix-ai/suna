@@ -21,7 +21,6 @@ import {
   chatKeys,
 } from '@/lib/chat';
 import {
-  useUploadMultipleFiles,
   useStageFiles,
   validateFileSize,
 } from '@/lib/files';
@@ -337,7 +336,6 @@ export function useChat(): UseChatReturn {
   const unifiedAgentStartMutation = useUnifiedAgentStartMutation();
   const stopAgentRunMutation = useStopAgentRunMutation();
   const updateThreadMutation = useUpdateThread();
-  const uploadFilesMutation = useUploadMultipleFiles();
   const stageFilesMutation = useStageFiles();
 
   const lastStreamStartedRef = useRef<string | null>(null);
@@ -752,19 +750,12 @@ export function useChat(): UseChatReturn {
         queryKey: chatKeys.messages(activeThreadId) 
       });
       
-      if (activeSandboxId) {
-        queryClient.invalidateQueries({ 
-          queryKey: ['files', 'sandbox', activeSandboxId],
-          refetchType: 'all',
-        });
-      }
-      
       log.log('[useChat] ✅ Messages refreshed successfully');
     } catch (error) {
       log.error('[useChat] ❌ Failed to refresh messages:', error);
       throw error;
     }
-  }, [activeThreadId, isStreaming, refetchMessages, queryClient, activeSandboxId]);
+  }, [activeThreadId, isStreaming, refetchMessages, queryClient]);
 
   const loadThread = useCallback((threadId: string) => {
     log.log('[useChat] Loading thread:', threadId);
@@ -1331,7 +1322,6 @@ export function useChat(): UseChatReturn {
     attachments,
     sendMessageMutation,
     unifiedAgentStartMutation,
-    uploadFilesMutation,
     threadData,
     activeSandboxId,
     selectedQuickAction,
