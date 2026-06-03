@@ -1914,7 +1914,6 @@ export default function HomeScreen() {
                     viewChangesSheetRef.current?.present();
                   }
                 }}
-                onDiagnostics={() => log.log('TODO: diagnostics')}
                 onArchiveSession={() => { if (activeSessionId) handleArchive(activeSessionId); }}
                 customMenuItems={
                   activePageId === 'page:workspace'

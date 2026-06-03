@@ -52,7 +52,6 @@ interface BottomBarProps {
   onCompactSession?: () => void;
   onExportTranscript?: () => void;
   onViewChanges?: () => void;
-  onDiagnostics?: () => void;
   onArchiveSession?: () => void;
   customMenuItems?: BottomBarMenuItem[];
   onMenuDismiss?: () => void;
@@ -85,7 +84,6 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   onCompactSession,
   onExportTranscript,
   onViewChanges,
-  onDiagnostics,
   onArchiveSession,
   customMenuItems,
   onMenuDismiss,
@@ -157,12 +155,11 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   }, []);
 
   const menuItems = useMemo(() => [
-    { icon: 'alert-circle-outline' as const, label: 'Diagnostics', onPress: () => { closeSheet(); onDiagnostics?.(); } },
     { icon: 'git-compare-outline' as const, label: 'View changes', onPress: () => { closeSheet(); onViewChanges?.(); } },
     { icon: 'download-outline' as const, label: 'Export transcript', onPress: () => { closeSheet(); onExportTranscript?.(); } },
     { icon: 'layers-outline' as const, label: 'Compact session', onPress: () => { closeSheet(); onCompactSession?.(); } },
     { icon: 'archive-outline' as const, label: 'Archive session', onPress: () => { closeSheet(); onArchiveSession?.(); } },
-  ], [closeSheet, onDiagnostics, onViewChanges, onExportTranscript, onCompactSession, onArchiveSession]);
+  ], [closeSheet, onViewChanges, onExportTranscript, onCompactSession, onArchiveSession]);
 
 
   const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
