@@ -9,7 +9,6 @@ import {
   Shield,
   Zap,
   Loader2,
-  Unplug,
   Save,
   RotateCcw,
   ChevronDown,
@@ -29,16 +28,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
@@ -62,9 +51,6 @@ import {
   useOpenCodeProviders,
   useOpenCodeToolIds,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { getClient } from '@/lib/opencode-sdk';
-import { useQueryClient } from '@tanstack/react-query';
-import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
 import {
   PROVIDER_LABELS,
