@@ -78,12 +78,13 @@ export function validateManifest(
       parsed = parseToml(input) as Record<string, unknown>;
     } catch (err) {
       if (err instanceof TomlError) {
+        const tomlError = err as Error & { line?: unknown; column?: unknown };
         issues.push({
           path: '<toml>',
-          message: `Syntax error: ${err.message}`,
+          message: `Syntax error: ${tomlError.message}`,
           severity: 'error',
-          line: typeof (err as any).line === 'number' ? (err as any).line : undefined,
-          column: typeof (err as any).column === 'number' ? (err as any).column : undefined,
+          line: typeof tomlError.line === 'number' ? tomlError.line : undefined,
+          column: typeof tomlError.column === 'number' ? tomlError.column : undefined,
         });
       } else {
         issues.push({
