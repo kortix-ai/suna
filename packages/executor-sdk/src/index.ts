@@ -128,7 +128,7 @@ export function createExecutorClient(opts: ExecutorClientOptions): ExecutorClien
   return new ExecutorClient(opts);
 }
 
-export function flattenCatalog(connectors: ExecutorConnector[]): ExecutorToolMatch[] {
+function flattenCatalog(connectors: ExecutorConnector[]): ExecutorToolMatch[] {
   const tools: ExecutorToolMatch[] = [];
   for (const connector of connectors) {
     for (const action of connector.actions) {
