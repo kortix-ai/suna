@@ -88,7 +88,7 @@ export interface FlowMeta {
   tags?: string[];
   /** Serialize against shared account state. */
   serial?: boolean;
-  /** Touches a global singleton (cron/queue/ops); run last, one at a time. */
+  /** Touches a global singleton (cron/ops); run last, one at a time. */
   global?: boolean;
   timeoutMs?: number;
   retry?: { attempts: number };

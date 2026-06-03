@@ -1,6 +1,6 @@
 /**
  * Polling helpers for async live resources (snapshot build, sandbox boot,
- * session status, queue drain). On timeout we throw with the LAST SEEN state so
+ * session status). On timeout we throw with the LAST SEEN state so
  * the report shows "stuck in provisioning for 600s", not a bare timeout.
  */
 
