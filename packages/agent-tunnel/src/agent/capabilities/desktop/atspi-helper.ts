@@ -282,7 +282,7 @@ async function ensureHelper(): Promise<string> {
   return HELPER_PATH;
 }
 
-export interface AtspiHelperRequest {
+interface AtspiHelperRequest {
   action: string;
   pid?: number;
   maxDepth?: number;
@@ -295,7 +295,7 @@ export interface AtspiHelperRequest {
   value?: string;
 }
 
-export interface AtspiHelperResponse {
+interface AtspiHelperResponse {
   ok: boolean;
   error?: string;
   root?: any;

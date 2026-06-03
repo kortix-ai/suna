@@ -828,7 +828,7 @@ async function ensureHelper(): Promise<string> {
   return HELPER_PATH;
 }
 
-export interface CSharpHelperRequest {
+interface CSharpHelperRequest {
   action: string;
   x?: number;
   y?: number;
@@ -856,7 +856,7 @@ export interface CSharpHelperRequest {
   value?: string;
 }
 
-export interface CSharpHelperResponse {
+interface CSharpHelperResponse {
   ok: boolean;
   x?: number;
   y?: number;

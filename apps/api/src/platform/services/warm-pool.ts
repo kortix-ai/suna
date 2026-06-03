@@ -33,7 +33,7 @@ export const warmPoolEnabled = (): boolean => config.KORTIX_WARM_POOL_MAX_TOTAL 
 // Per-project sanity cap on warm size. The real fleet bound is the operator's
 // KORTIX_WARM_POOL_MAX_TOTAL; this just stops a typo from warming a huge pool.
 const MAX_WARM_SIZE = 25;
-export interface WarmPoolConfig {
+interface WarmPoolConfig {
   enabled: boolean;
   size: number;
 }

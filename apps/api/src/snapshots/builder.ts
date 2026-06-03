@@ -39,7 +39,7 @@ class SnapshotBuildError extends Error {
   }
 }
 
-export type SnapshotBuildSource =
+type SnapshotBuildSource =
   | 'session-start'
   | 'project-create'
   | 'cr-merge'
@@ -265,7 +265,7 @@ export async function deleteSandboxImage(
 }
 
 /** Stateless view of every template available to the project + live state. */
-export interface SandboxTemplateView {
+interface SandboxTemplateView {
   templateId: string | null;
   slug: string;
   name: string;
@@ -342,7 +342,7 @@ export { resolveTemplateBySlug as resolveTemplate };
 
 // ─── Build log (UI-only, never read on boot) ─────────────────────────────
 
-export interface ProjectSnapshotBuildSummary {
+interface ProjectSnapshotBuildSummary {
   buildId: string;
   projectId: string;
   slug: string;
