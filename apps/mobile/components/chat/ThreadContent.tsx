@@ -25,9 +25,7 @@ import {
 } from '@agentpress/shared';
 import {
   parseToolMessage,
-  isHiddenTool,
 } from '@agentpress/shared/tools';
-import { HIDE_STREAMING_XML_TAGS } from '@agentpress/shared/tools';
 import { groupMessagesWithStreaming } from '@agentpress/shared/utils';
 import { preprocessTextOnlyTools } from '@agentpress/shared/tools';
 import { useColorScheme } from 'nativewind';
@@ -1055,16 +1053,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                           if (functionCallsIndex !== -1) {
                             detectedTag = 'function_calls';
                             tagStartIndex = functionCallsIndex;
-                          } else {
-                            for (const tag of HIDE_STREAMING_XML_TAGS) {
-                              const openingTagPattern = `<${tag}`;
-                              const index = rawContent.indexOf(openingTagPattern);
-                              if (index !== -1) {
-                                detectedTag = tag;
-                                tagStartIndex = index;
-                                break;
-                              }
-                            }
                           }
 
                           // For smooth display: get text before tag, but only show as much as smoothed
@@ -1199,16 +1187,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       // Render ALL tool calls (streaming + completed) - don't filter out completed ones
                       // The StreamingToolCallIndicator component handles completed state correctly
                       
-                      // Filter out hidden tools (internal/initialization tools)
-                      const visibleToolCalls = toolCalls.filter((tc: any) => {
-                        const toolName = tc.function_name?.replace(/_/g, '-') || '';
-                        return !isHiddenTool(toolName);
-                      });
-
-                      // If all tools were hidden, don't render anything
-                      if (visibleToolCalls.length === 0 && toolCalls.length > 0) {
-                        return null;
-                      }
+                      const visibleToolCalls = toolCalls;
 
                       if (visibleToolCalls.length > 0) {
                         const assistantMsgId = streamingToolCall?.message_id || 
@@ -1378,16 +1357,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
             if (functionCallsIndex !== -1) {
               detectedTag = 'function_calls';
               tagStartIndex = functionCallsIndex;
-            } else {
-              for (const tag of HIDE_STREAMING_XML_TAGS) {
-                const openingTagPattern = `<${tag}`;
-                const index = rawContent.indexOf(openingTagPattern);
-                if (index !== -1) {
-                  detectedTag = tag;
-                  tagStartIndex = index;
-                  break;
-                }
-              }
             }
 
             // Has visible text before tag?
@@ -1457,16 +1426,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     if (functionCallsIndex !== -1) {
                       detectedTag = 'function_calls';
                       tagStartIndex = functionCallsIndex;
-                    } else {
-                      for (const tag of HIDE_STREAMING_XML_TAGS) {
-                        const openingTagPattern = `<${tag}`;
-                        const index = rawContent.indexOf(openingTagPattern);
-                        if (index !== -1) {
-                          detectedTag = tag;
-                          tagStartIndex = index;
-                          break;
-                        }
-                      }
                     }
 
                     // For smooth display: get text before tag, but only show as much as smoothed
@@ -1522,10 +1481,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                   );
                 }
 
-                // Filter out hidden and ask/complete tools
+                // Filter out ask/complete tools.
                 const visibleToolCalls = toolCalls.filter((tc: any) => {
-                  const name = (tc.function_name || '').replace(/_/g, '-');
-                  return !isHiddenTool(name) && !isAskOrCompleteTool(tc.function_name);
+                  return !isAskOrCompleteTool(tc.function_name);
                 });
 
                 if (visibleToolCalls.length === 0) {
