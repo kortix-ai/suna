@@ -1,8 +1,8 @@
 import { config, getToolCost } from '../../config';
 import {
-  checkCredits as checkCreditsDb,
-  deductCredits as deductCreditsDb,
-} from '../../repositories/credits';
+  deductCredits as deductBillingCredits,
+  getCreditSummary,
+} from '../../billing/services/credits';
 import type { BillingCheckResult, BillingDeductResult } from '../../types';
 
 /**
@@ -20,12 +20,20 @@ export async function checkCredits(
     return { hasCredits: true, balance: 0, message: 'Credits check skipped (billing disabled)' };
   }
 
-  const result = await checkCreditsDb(accountId, minimumRequired);
+  let result: Awaited<ReturnType<typeof getCreditSummary>>;
+  try {
+    result = await getCreditSummary(accountId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Credit check failed';
+    return { hasCredits: false, balance: 0, message };
+  }
 
   return {
-    hasCredits: result.hasCredits,
-    message: result.message,
-    balance: result.balance,
+    hasCredits: result.total >= minimumRequired,
+    message: result.total >= minimumRequired
+      ? 'OK'
+      : `Insufficient credits. Balance: $${result.total.toFixed(4)}`,
+    balance: result.total,
   };
 }
 
@@ -58,15 +66,21 @@ export async function deductToolCredits(
     `Kortix ${toolName.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}`;
   const deductDescription = sessionId ? `${baseDescription} [session:${sessionId}]` : baseDescription;
 
-  const result = await deductCreditsDb(accountId, cost, deductDescription);
-
-  if (!result.success) {
-    return { success: false, cost: 0, newBalance: 0, error: result.error };
+  let result: Awaited<ReturnType<typeof deductBillingCredits>>;
+  try {
+    result = await deductBillingCredits(accountId, cost, deductDescription);
+  } catch (error) {
+    return {
+      success: false,
+      cost: 0,
+      newBalance: 0,
+      error: error instanceof Error ? error.message : 'Deduction error',
+    };
   }
 
   return {
     success: true,
-    cost: result.amountDeducted || cost,
+    cost: result.cost || cost,
     newBalance: result.newBalance || 0,
     transactionId: result.transactionId,
   };
@@ -97,15 +111,21 @@ export async function deductLLMCredits(
   const baseDescription = `LLM: ${model} (${inputTokens}/${outputTokens} tokens)`;
   const description = sessionId ? `${baseDescription} [session:${sessionId}]` : baseDescription;
 
-  const result = await deductCreditsDb(accountId, calculatedCost, description);
-
-  if (!result.success) {
-    return { success: false, cost: 0, newBalance: 0, error: result.error };
+  let result: Awaited<ReturnType<typeof deductBillingCredits>>;
+  try {
+    result = await deductBillingCredits(accountId, calculatedCost, description, 'llm_debit');
+  } catch (error) {
+    return {
+      success: false,
+      cost: 0,
+      newBalance: 0,
+      error: error instanceof Error ? error.message : 'Deduction error',
+    };
   }
 
   return {
     success: true,
-    cost: result.amountDeducted || calculatedCost,
+    cost: result.cost || calculatedCost,
     newBalance: result.newBalance || 0,
     transactionId: result.transactionId,
   };
