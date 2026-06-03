@@ -1,18 +1,11 @@
 /**
  * Maintenance configuration store.
  *
- * Production: reads from Vercel Edge Config (ultra-fast edge reads),
- *             writes via the Vercel REST API.
- * Local dev:  falls back to an in-memory store so the admin panel
- *             works without any Vercel setup.
- *
- * Required env vars for production:
- *   EDGE_CONFIG           – connection string (set automatically by Vercel)
- *   EDGE_CONFIG_ID        – the Edge Config store ID
- *   VERCEL_API_TOKEN      – token with edge-config write scope
+ * Backed by the Kortix API + database (kortix.platform_settings), NOT Vercel
+ * Edge Config. Reads hit the public `GET /v1/system/maintenance`; writes hit the
+ * admin-only `PUT /v1/system/maintenance` (the API enforces the admin role).
+ * Set it from the admin panel at /admin/utils.
  */
-
-import { createClient, type EdgeConfigClient } from '@vercel/edge-config';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,110 +32,57 @@ export interface MaintenanceConfig {
   updatedAt: string;
 }
 
-const EDGE_CONFIG_KEY = 'maintenance_config';
-
 const DEFAULT_CONFIG: MaintenanceConfig = {
   level: 'none',
   title: '',
   message: '',
-  updatedAt: new Date().toISOString(),
+  updatedAt: new Date(0).toISOString(),
 };
 
-// ---------------------------------------------------------------------------
-// Edge Config client (singleton)
-// ---------------------------------------------------------------------------
-
-let _edgeClient: EdgeConfigClient | null = null;
-
-function getEdgeClient(): EdgeConfigClient | null {
-  if (_edgeClient) return _edgeClient;
-  const connectionString = process.env.EDGE_CONFIG;
-  if (!connectionString) return null;
-  _edgeClient = createClient(connectionString);
-  return _edgeClient;
+function backendUrl(): string {
+  return (
+    process.env.BACKEND_URL ||
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    'http://localhost:8008/v1'
+  ).replace(/\/$/, '');
 }
-
-// ---------------------------------------------------------------------------
-// In-memory fallback for local dev
-// ---------------------------------------------------------------------------
-
-let _memoryStore: MaintenanceConfig = { ...DEFAULT_CONFIG };
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * Read the current maintenance configuration.
- * Fast in production (Edge Config), instant in dev (memory).
- */
+/** Read the current maintenance configuration (public). */
 export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
-  const client = getEdgeClient();
-  if (client) {
-    try {
-      const config = await client.get<MaintenanceConfig>(EDGE_CONFIG_KEY);
-      return config ?? { ...DEFAULT_CONFIG };
-    } catch (err) {
-      console.warn('[maintenance-store] Edge Config read failed, using defaults:', err);
-      return { ...DEFAULT_CONFIG };
-    }
+  try {
+    const res = await fetch(`${backendUrl()}/system/maintenance`, { cache: 'no-store' });
+    if (!res.ok) return { ...DEFAULT_CONFIG };
+    const config = (await res.json()) as MaintenanceConfig | null;
+    return config ?? { ...DEFAULT_CONFIG };
+  } catch (err) {
+    console.warn('[maintenance-store] read failed, using defaults:', err);
+    return { ...DEFAULT_CONFIG };
   }
-  // Local fallback
-  return { ..._memoryStore };
 }
 
 /**
- * Write maintenance configuration.
- * Production: PATCH via Vercel REST API.
- * Local dev: updates in-memory store.
+ * Write maintenance configuration. Requires the caller's Supabase access token —
+ * the API enforces the admin role on `PUT /v1/system/maintenance`.
  */
-export async function setMaintenanceConfig(config: MaintenanceConfig): Promise<MaintenanceConfig> {
-  const edgeConfigured = !!process.env.EDGE_CONFIG;
-  const edgeConfigId = process.env.EDGE_CONFIG_ID;
-  const vercelToken = process.env.VERCEL_API_TOKEN;
-
-  if (edgeConfigured && (!edgeConfigId || !vercelToken)) {
-    throw new Error('Edge Config writes require EDGE_CONFIG_ID and VERCEL_API_TOKEN');
+export async function setMaintenanceConfig(
+  config: MaintenanceConfig,
+  accessToken: string,
+): Promise<MaintenanceConfig> {
+  const res = await fetch(`${backendUrl()}/system/maintenance`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`maintenance write failed (${res.status}): ${body}`);
   }
-
-  if (edgeConfigId && vercelToken) {
-    const res = await fetch(
-      `https://api.vercel.com/v1/edge-config/${edgeConfigId}/items`,
-      {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${vercelToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          items: [
-            {
-              operation: 'upsert',
-              key: EDGE_CONFIG_KEY,
-              value: config,
-            },
-          ],
-        }),
-      },
-    );
-
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Edge Config write failed (${res.status}): ${body}`);
-    }
-
-    const client = getEdgeClient();
-    if (client) {
-      const persisted = await client.get<MaintenanceConfig>(EDGE_CONFIG_KEY).catch(() => null);
-      if (!persisted || persisted.updatedAt !== config.updatedAt) {
-        throw new Error('Edge Config write did not persist the maintenance config');
-      }
-    }
-
-    return config;
-  }
-
-  // Local fallback
-  _memoryStore = { ...config };
-  return _memoryStore;
+  return (await res.json()) as MaintenanceConfig;
 }
