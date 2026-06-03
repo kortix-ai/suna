@@ -70,5 +70,3 @@ export interface MessageGroup {
   messages: UnifiedMessage[];
   key: string;
 }
-
-export type AgentStatus = 'idle' | 'running' | 'connecting' | 'error';
