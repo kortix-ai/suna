@@ -11,7 +11,6 @@ api_image      = "ghcr.io/kortix-ai/kortix-api:vX.Y.Z"
 container_port = 8000
 
 api_environment = {
-  ENV_MODE                  = "cloud"
   KORTIX_URL                = "https://api.kortix.com"
   ALLOWED_SANDBOX_PROVIDERS = "daytona"
   # prod non-secret config ...

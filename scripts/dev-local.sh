@@ -36,7 +36,6 @@ PY
 )"
 
   export KORTIX_LOCAL_DEV=1
-  export ENV_MODE=local
   # `local_docker` was removed when we consolidated on cloud — listing it here
   # only made the API log "Unknown sandbox provider" twice on every boot.
   export ALLOWED_SANDBOX_PROVIDERS="daytona"
@@ -265,7 +264,7 @@ cleanup() {
 run_sandbox_dev() {
   echo "[dev] Kortix sandbox detected → full local stack (Supabase + API + web), self-contained."
   export PATH="/opt/supabase:/usr/local/bin:$PATH"
-  export KORTIX_LOCAL_DEV=1 ENV_MODE=local
+  export KORTIX_LOCAL_DEV=1
 
   # Docker daemon — Supabase runs as containers. Start it if boot didn't.
   if ! docker info >/dev/null 2>&1; then
@@ -291,7 +290,6 @@ run_sandbox_dev() {
   # names (PORT/KORTIX_*) are never injected, so the runtime-local ones are set
   # explicitly here.
   cat > "$ROOT_DIR/apps/api/.env" <<EOF
-ENV_MODE=local
 INTERNAL_KORTIX_ENV=dev
 PORT=8008
 KORTIX_URL=http://localhost:8008
