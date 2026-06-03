@@ -15,6 +15,25 @@ flow("SYS-1", { domain: "system", tags: ["smoke", "health"], routes: ["GET /heal
   });
 });
 
+flow(
+  "SYS-2",
+  { domain: "system", tags: ["smoke"], routes: ["GET /v1/system/maintenance", "PUT /v1/system/maintenance"] },
+  async (ctx) => {
+    await ctx.step("GET maintenance config is public", async () => {
+      const r = await ctx.client.get("/v1/system/maintenance");
+      r.status(200).body().exists("$.level").exists("$.updatedAt");
+    });
+    await ctx.step("PUT maintenance config: ANON -> 401", async () => {
+      const r = await ctx.client.put("/v1/system/maintenance", { level: "none" });
+      r.status(401);
+    });
+    await ctx.step("PUT maintenance config: non-platform OWNER -> 403", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).put("/v1/system/maintenance", { level: "none" });
+      r.status(403);
+    });
+  },
+);
+
 flow("SYS-5", { domain: "system", tags: ["smoke"], routes: ["GET /v1/accounts/me"] }, async (ctx) => {
   await ctx.step("404 shape on unknown route", async () => {
     const r = await ctx.client.get("/v1/this-route-does-not-exist");

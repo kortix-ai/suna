@@ -109,6 +109,35 @@ flow(
   },
 );
 
+flow(
+  "LLM-1",
+  {
+    domain: "router",
+    routes: [
+      "GET /v1/llm/health",
+      "GET /v1/llm/models",
+      "POST /v1/llm/chat/completions",
+    ],
+  },
+  async (ctx) => {
+    await ctx.step("managed LLM health: public gateway status", async () => {
+      const r = await ctx.client.get("/v1/llm/health");
+      r.status([200, 500, 503]);
+    });
+    await ctx.step("managed LLM models: gateway status or upstream status", async () => {
+      const r = await ctx.client.get("/v1/llm/models", { timeoutMs: 10_000 });
+      r.status([200, 401, 403, 404, 429, 500, 502, 503]);
+    });
+    await ctx.step("managed LLM chat/completions: missing bearer never succeeds", async () => {
+      const r = await ctx.client.post("/v1/llm/chat/completions", {
+        model: "openai/gpt-4o-mini",
+        messages: [{ role: "user", content: "hi" }],
+      });
+      r.status([401, 500, 503]);
+    });
+  },
+);
+
 // NOTE: the billed proxy passthrough (`router.all('/:service/*')`) is a Hono ALL
 // catch-all, so it is not a discrete entry in app.routes / the route manifest and
 // can't be a coverage target. Its auth boundary is covered transitively by the
