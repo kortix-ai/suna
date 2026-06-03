@@ -25,7 +25,9 @@ resource "aws_kms_key" "cloudtrail" {
     Version = "2012-10-17"
     Id      = "cloudtrail-cmk-policy"
     Statement = [
-      { Sid = "EnableRoot", Effect = "Allow", Principal = { AWS = "arn:aws:iam::${local.account_id}:root" }, Action = "kms:*", Resource = "*" },
+      { Sid    = "EnableRoot", Effect = "Allow", Principal = { AWS = "arn:aws:iam::${local.account_id}:root" },
+        Action = ["kms:Create*", "kms:Describe*", "kms:Enable*", "kms:List*", "kms:Put*", "kms:Update*", "kms:Revoke*", "kms:Disable*", "kms:Get*", "kms:Delete*", "kms:TagResource", "kms:UntagResource", "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion", "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*"],
+      Resource = "*" },
       { Sid = "AllowCloudTrailEncrypt", Effect = "Allow", Principal = { Service = "cloudtrail.amazonaws.com" }, Action = "kms:GenerateDataKey*", Resource = "*",
       Condition = { StringLike = { "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:aws:cloudtrail:*:${local.account_id}:trail/*" } } },
       { Sid = "AllowCloudTrailDescribe", Effect = "Allow", Principal = { Service = "cloudtrail.amazonaws.com" }, Action = "kms:DescribeKey", Resource = "*" },
@@ -151,7 +153,7 @@ resource "aws_iam_role" "flow_logs" {
 resource "aws_iam_role_policy" "flow_logs" {
   name   = "flow-logs-delivery"
   role   = aws_iam_role.flow_logs.id
-  policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogGroups", "logs:DescribeLogStreams"], Resource = "*" }] })
+  policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogGroups", "logs:DescribeLogStreams"], Resource = ["arn:aws:logs:*:${local.account_id}:log-group:/vpc/flowlogs", "arn:aws:logs:*:${local.account_id}:log-group:/vpc/flowlogs:*", "arn:aws:logs:*:${local.account_id}:log-group:/vpc/flowlogs:*:log-stream:*"] }] })
 }
 resource "aws_cloudwatch_log_group" "flow_logs" {
   name              = "/vpc/flowlogs"
