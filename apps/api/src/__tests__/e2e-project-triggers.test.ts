@@ -347,6 +347,12 @@ mock.module('../shared/db', () => ({
   },
 }));
 
+process.env.ALLOWED_SANDBOX_PROVIDERS = 'local_docker';
+process.env.DOCKER_HOST ||= 'unix:///var/run/docker.sock';
+process.env.KORTIX_WARM_POOL_SIZE = '0';
+process.env.KORTIX_TRIGGER_SCHEDULER_ENABLED = 'false';
+process.env.KORTIX_APPS_EXPERIMENTAL = 'false';
+
 const { projectsApp, projectWebhooksApp, runProjectTriggerSweep } = await import('../projects/index');
 
 function createApp() {
