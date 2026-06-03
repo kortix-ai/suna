@@ -3595,28 +3595,6 @@ async function loadGitProject(loaded: { row: ProjectRow }) {
   };
 }
 
-// GET /v1/projects/:projectId/sandboxes
-// Available templates for this project: platform default + any `[[sandbox.templates]]`
-// entries from kortix.toml. Each row includes its live Daytona state so the
-// picker can show "ready" / "building" / "missing" at a glance.
-projectsApp.get('/:projectId/sandboxes', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const project = await loadGitProject(loaded);
-  try {
-    const templates = await listSandboxTemplates(project);
-    return c.json({
-      items: templates.map(serializeTemplate),
-      default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: `Failed to list sandbox templates: ${message}` }, 500);
-  }
-});
-
 // GET /v1/projects/:projectId/snapshots
 // Templates + recent build log. Used by the Sandbox panel.
 projectsApp.get('/:projectId/snapshots', async (c) => {
@@ -3791,8 +3769,8 @@ projectsApp.post('/:projectId/snapshots/fix-with-agent', async (c) => {
 // Full CRUD over `kortix.sandbox_templates`. Shared/platform rows are read-
 // only. Project-scoped rows can be created/edited/deleted from the dashboard.
 
-// GET /v1/projects/:projectId/sandbox-templates — same as /sandboxes; thinner
-// path for the "templates only" UI surface. We re-use the same serializer.
+// GET /v1/projects/:projectId/sandbox-templates — templates-only UI/CLI surface.
+// Re-uses the snapshot serializer.
 projectsApp.get('/:projectId/sandbox-templates', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');

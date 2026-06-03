@@ -1083,10 +1083,10 @@ export interface RebuildSnapshotResponse {
   snapshot_name: string;
 }
 
-export async function listProjectSandboxes(projectId: string) {
+export async function listSandboxTemplates(projectId: string) {
   return unwrap(
     await backendApi.get<SandboxTemplatesResponse>(
-      `/projects/${projectId}/sandboxes`,
+      `/projects/${projectId}/sandbox-templates`,
     ),
   );
 }
