@@ -53,8 +53,9 @@ async function hashPath(
   }
 
   if (stats.isFile()) {
-    hash.update(`file\0${logicalPath}\0${stats.size}\0`);
-    hash.update(await readFile(path));
+    const content = await readFile(path);
+    hash.update(`file\0${logicalPath}\0${content.length}\0`);
+    hash.update(content);
     hash.update('\0');
     return;
   }
