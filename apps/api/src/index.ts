@@ -233,28 +233,21 @@ app.use('/v1/*', auditStateChangingRequest);
 // Falls back to 'dev' for local development.
 const API_VERSION = process.env.KORTIX_VERSION || 'dev';
 
-app.get('/health', (c) => {
-  return c.json({
+function healthPayload() {
+  return {
     status: 'ok',
     service: 'kortix-api',
     version: API_VERSION,
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),
-  });
-});
+  };
+}
+
+app.get('/health', (c) => c.json(healthPayload()));
 
 // Health check under /v1 prefix (frontend uses NEXT_PUBLIC_BACKEND_URL which includes /v1)
-app.get('/v1/health', (c) => {
-  return c.json({
-    status: 'ok',
-    service: 'kortix-api',
-    version: API_VERSION,
-    timestamp: new Date().toISOString(),
-    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
-    tunnel: getTunnelServiceStatus(),
-  });
-});
+app.get('/v1/health', (c) => c.json(healthPayload()));
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
