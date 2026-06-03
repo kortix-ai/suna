@@ -256,15 +256,6 @@ app.get('/health', (c) => c.json(healthPayload()));
 // Health check under /v1 prefix (frontend uses NEXT_PUBLIC_BACKEND_URL which includes /v1)
 app.get('/v1/health', (c) => c.json(healthPayload()));
 
-// Also expose system status at root for backward compat with frontend
-app.get('/v1/system/status', (c) => {
-  return c.json({
-    maintenanceNotice: { enabled: false },
-    technicalIssue: { enabled: false },
-    updatedAt: new Date().toISOString(),
-  });
-});
-
 // ─── Maintenance config (DB-backed; replaces Vercel Edge Config) ─────────────
 // One row in kortix.platform_settings under 'maintenance_config'. GET is public
 // (banner + maintenance page read it); PUT is admin-only. Set via /admin/utils.
@@ -310,15 +301,6 @@ app.put('/v1/system/maintenance', supabaseAuth, async (c: any) => {
     .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
     .onConflictDoUpdate({ target: platformSettings.key, set: { value: config, updatedAt: new Date() } });
   return c.json(config);
-});
-
-// ─── Stub Endpoints ─────────────────────────────────────────────────────────
-// These endpoints are called by the frontend but were never implemented.
-// Adding proper stubs stops 404 noise and provides correct responses.
-
-// POST /v1/prewarm — no-op pre-warm. Frontend fires this on login.
-app.post('/v1/prewarm', (c) => {
-  return c.json({ success: true });
 });
 
 // /v1/accounts/* — account & member management lives in ./accounts router.

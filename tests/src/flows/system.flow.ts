@@ -15,17 +15,6 @@ flow("SYS-1", { domain: "system", tags: ["smoke", "health"], routes: ["GET /heal
   });
 });
 
-flow("SYS-2", { domain: "system", tags: ["smoke"], routes: ["GET /v1/system/status", "POST /v1/prewarm"] }, async (ctx) => {
-  await ctx.step("GET /v1/system/status", async () => {
-    const r = await ctx.client.get("/v1/system/status");
-    r.status(200).body().has("$.maintenanceNotice.enabled", false).has("$.technicalIssue.enabled", false);
-  });
-  await ctx.step("POST /v1/prewarm", async () => {
-    const r = await ctx.client.post("/v1/prewarm", {});
-    r.status(200).body().has("$.success", true);
-  });
-});
-
 flow("SYS-4", { domain: "system", tags: ["smoke", "health"], routes: ["GET /v1/router/health"] }, async (ctx) => {
   await ctx.step("GET /v1/router/health", async () => {
     const r = await ctx.client.get("/v1/router/health");

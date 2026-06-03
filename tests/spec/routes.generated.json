@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 292,
+  "count": 290,
   "routes": [
     {
       "method": "GET",
@@ -555,10 +555,6 @@
       "path": "/v1/platform/api-keys/:keyId/revoke"
     },
     {
-      "method": "POST",
-      "path": "/v1/prewarm"
-    },
-    {
       "method": "GET",
       "path": "/v1/projects"
     },
@@ -1057,10 +1053,6 @@
     {
       "method": "PUT",
       "path": "/v1/system/maintenance"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/system/status"
     },
     {
       "method": "GET",
