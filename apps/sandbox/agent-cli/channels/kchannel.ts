@@ -19,19 +19,8 @@ function describeSlack(): ChannelSummary {
   };
 }
 
-function describeTelegram(): ChannelSummary {
-  return {
-    platform: 'telegram',
-    connected: Boolean(getEnv('TELEGRAM_BOT_TOKEN')),
-    workspace_id: null,
-    workspace_name: null,
-    bot_user_id: null,
-  };
-}
-
 const PLATFORMS: Record<string, () => ChannelSummary> = {
   slack: describeSlack,
-  telegram: describeTelegram,
 };
 
 async function main(): Promise<void> {
@@ -72,18 +61,17 @@ async function main(): Promise<void> {
       console.log(`
 kchannel — channel discovery
 
-Tells the agent which communication platforms (Slack, Telegram, …) are
-connected for this project. Connections live in project_secrets and are
-injected as env vars at sandbox spawn.
+Tells the agent which communication platforms are connected for this project.
+Connections live in project_secrets and are injected as env vars at sandbox
+spawn.
 
 Commands:
-  list [--platform slack|telegram]   List connected platforms.
+  list [--platform slack]            List connected platforms.
   info <platform>                    Workspace/team/bot details for one.
   help                               Show this help.
 
 Once connected, post messages via:
   slack send --channel C0... --text "hi"
-  telegram send --chat 12345 --text "hi"
 
 Management (connect/disconnect/set defaults) is host-side — use the
 Kortix dashboard or \`kortix channels\` on your machine.
