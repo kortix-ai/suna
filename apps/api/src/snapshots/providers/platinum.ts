@@ -13,8 +13,7 @@
 
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { platinumJson, platinumUpload, isPlatinumConfigured } from '../../shared/platinum';
-import { config } from '../../config';
+import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
 import {
   stageBuildContext,
   DEFAULT_CPU,
@@ -69,25 +68,33 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     const ctx = await stageBuildContext(input.snapshotName, userDockerfile);
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
     try {
-      // Tar the context (gzip). The agent binary is multi-MB, so this goes up as
-      // a multipart upload, not inline JSON.
       const tar = Bun.spawn(['tar', '-czf', tarPath, '-C', ctx.contextDir, '.']);
-      const code = await tar.exited;
-      if (code !== 0) throw new Error(`tar build context failed (exit ${code})`);
+      if ((await tar.exited) !== 0) throw new Error('tar build context failed');
 
-      const sizeMb = (input.spec.diskGb ?? DEFAULT_DISK_GB) * 1024;
-      const form = new FormData();
-      form.append('context', new Blob([new Uint8Array(await readFile(tarPath))]), 'context.tar.gz');
-      form.append('name', input.snapshotName);
-      form.append('dockerfile', ctx.dockerfileName);
-      form.append('size_mb', String(sizeMb));
-      form.append('default_cpu', String(input.spec.cpu ?? DEFAULT_CPU));
-      form.append('default_ram_mb', String((input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024));
-      form.append('default_disk_gb', String(input.spec.diskGb ?? DEFAULT_DISK_GB));
-      form.append('entrypoint', (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '));
+      // Contexts are 100s of MB (baked agent + CLI binaries) — too big for the
+      // API gateway's body cap, so upload DIRECTLY to object storage via a
+      // presigned PUT (phase 1 + 2), then register the build (phase 3). The
+      // build itself still happens server-side on Platinum (podman build).
+      console.info(`[snapshots] ${input.snapshotName}: presign + upload build context to Platinum (slug="${input.slug}")`);
+      const { upload_url, context_s3_key } = await platinumJson<{ upload_url: string; context_s3_key: string }>(
+        '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
+      );
+      const put = await fetch(upload_url, { method: 'PUT', body: new Uint8Array(await readFile(tarPath)) });
+      if (!put.ok) throw new Error(`build-context S3 upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
 
-      console.info(`[snapshots] ${input.snapshotName}: uploading build context to Platinum (slug="${input.slug}")`);
-      await platinumUpload<PlatinumTemplate>('/v1/templates/from-build', form);
+      await platinumJson<PlatinumTemplate>('/v1/templates/from-build', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: input.snapshotName,
+          context_s3_key,
+          dockerfile: ctx.dockerfileName,
+          size_mb: (input.spec.diskGb ?? DEFAULT_DISK_GB) * 1024,
+          default_cpu: input.spec.cpu ?? DEFAULT_CPU,
+          default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
+          default_disk_gb: input.spec.diskGb ?? DEFAULT_DISK_GB,
+          entrypoint: (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '),
+        }),
+      });
       await this.waitForActive(input.snapshotName, tap);
     } finally {
       await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});

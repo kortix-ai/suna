@@ -40,21 +40,3 @@ export async function platinumJson<T>(path: string, init: RequestInit = {}): Pro
   return (text ? JSON.parse(text) : {}) as T;
 }
 
-/**
- * Multipart POST (build-context upload). Does NOT set Content-Type — fetch
- * derives the multipart boundary from the FormData body. Same auth + error
- * contract as platinumJson.
- */
-export async function platinumUpload<T>(path: string, form: FormData): Promise<T> {
-  if (!config.PLATINUM_API_KEY) throw new Error('Missing PLATINUM_API_KEY');
-  const res = await fetch(`${platinumBase()}${path}`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${config.PLATINUM_API_KEY}` },
-    body: form,
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`platinum POST ${path} -> ${res.status} ${text.slice(0, 300)}`);
-  }
-  return (text ? JSON.parse(text) : {}) as T;
-}
