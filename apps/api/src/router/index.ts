@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { config } from '../config';
 import { apiKeyAuth } from '../middleware/auth';
 import { webSearch } from './routes/search-web';
 import { imageSearch } from './routes/search-image';
@@ -8,16 +7,6 @@ import { proxy } from './routes/proxy';
 import { anthropic } from './routes/anthropic';
 
 const router = new Hono();
-
-// Health checks (no auth)
-router.get('/health', (c) => {
-  return c.json({
-    status: 'ok',
-    service: 'kortix-router',
-    timestamp: new Date().toISOString(),
-    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
-  });
-});
 
 // Search routes (apiKeyAuth)
 router.use('/web-search/*', apiKeyAuth);

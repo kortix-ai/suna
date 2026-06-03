@@ -207,16 +207,11 @@ beforeEach(() => {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe('Router: health', () => {
-  test('GET /v1/router/health returns ok', async () => {
+describe('Router: removed routes', () => {
+  test('duplicate sub-router health endpoint is not mounted', async () => {
     const app = createRouterTestApp();
     const res = await app.request('/v1/router/health');
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.status).toBe('ok');
-    expect(body.service).toBe('kortix-router');
-    expect(body.timestamp).toBeDefined();
-    expect(body.billing_enabled).toBeDefined();
+    expect(res.status).toBe(404);
   });
 });
 
@@ -684,10 +679,10 @@ describe('Router: auth (mocked apiKeyAuth)', () => {
     expect(res.status).toBe(401);
   });
 
-  test('health endpoint does NOT require auth', async () => {
+  test('removed health endpoint does not bypass router auth rules', async () => {
     const app = createRouterTestApp();
     const res = await app.request('/v1/router/health');
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
   });
 
   test('search routes require auth, models require auth', async () => {
