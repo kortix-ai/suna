@@ -44,9 +44,8 @@ export async function buildAccountState(accountId: string): Promise<AccountState
   const sub = await getSubscriptionInfo(accountId);
   const isAdmin = await isPlatformAdmin(accountId);
 
-  // If no credit_accounts row exists, user hasn't been initialized yet.
-  // Return 'none' so middleware redirects to /setting-up for auto-initialization.
-  // Only return 'free' when the row actually exists with tier='free'.
+  // If no credit_accounts row exists, return 'none'. Only return 'free' when
+  // the row actually exists with tier='free'.
   const tierName = sub ? (sub.tier ?? 'free') : 'none';
   const tier = getTier(tierName);
   const dailyConfig = getDailyCreditConfig(tierName);

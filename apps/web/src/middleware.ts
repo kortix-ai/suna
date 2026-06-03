@@ -46,9 +46,6 @@ const PUBLIC_ROUTES = [
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
 
-// Routes that require authentication but are related to billing/setup
-const BILLING_ROUTES: string[] = [];
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -282,11 +279,6 @@ export async function middleware(request: NextRequest) {
       const redirectTarget = `${pathname}${request.nextUrl.search || ''}`;
       url.searchParams.set('redirect', redirectTarget);
       return NextResponse.redirect(url);
-    }
-
-    // ── Billing-related routes (activate-trial, etc.) ────────────────────
-    if (BILLING_ROUTES.some(route => pathname.startsWith(route))) {
-      return supabaseResponse;
     }
 
     return supabaseResponse;
