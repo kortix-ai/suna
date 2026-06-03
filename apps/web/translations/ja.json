@@ -479,7 +479,8 @@
     },
     "appAccountsPage": {
       "line66JsxTextBackToProjects": "プロジェクトに戻る",
-      "line75JsxTextNewAccount": "新しいアカウント"
+      "line75JsxTextNewAccount": "新しいアカウント",
+      "line71JsxTextAccountsYouBelongTo": "所属しているアカウント。"
     },
     "appAdminComponentsAdminShell": {
       "line55JsxTextAdminAccessRequired": "管理者アクセスが必要です",
@@ -696,7 +697,8 @@
       "roleMember": "メンバー",
       "invitationKicker": "招待",
       "decline": "辞退",
-      "accept": "承諾"
+      "accept": "承諾",
+      "joinAccountDescription": "このチームアカウントに {roleLabel} として参加します。"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – 自律型企業オペレーティングシステム",
@@ -1090,7 +1092,8 @@
     },
     "appNotFound": {
       "line65JsxTextPageNotFound": "ページが見つかりません",
-      "line100JsxTextReturnHome": "ホームに戻る"
+      "line100JsxTextReturnHome": "ホームに戻る",
+      "line70JsxTextThePageYouAposReLookingForDoesn": "お探しのページは存在しないか、移動されました。"
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "無効な認可リクエスト",
@@ -2272,6 +2275,40 @@
       "line521JsxAttrPlaceholderPickAGroup": "Pick a group...",
       "line526JsxTextNoGroupsInThisAccountYetCreateOne": "No groups in this account yet. Create one first.",
       "line554JsxTextAddMapping": "Add mapping"
+    },
+    "componentsLayoutAccountSwitcher": {
+      "line137JsxAttrAriaLabelSwitchAccount": "アカウントを切り替え",
+      "line190JsxAttrPlaceholderFindAccount": "アカウントを検索",
+      "line277JsxTextAllAccounts": "すべてのアカウント",
+      "line286JsxTextNewAccount": "新しいアカウント"
+    },
+    "componentsProjectsProjectCreateModal": {
+      "line237JsxTextNewProject": "新しいプロジェクト",
+      "line240JsxTextStartWithAPrivateManagedRepoExistingGithub": "非公開の管理リポジトリから始めるか、既存の GitHub リポジトリをインポートします。",
+      "line251JsxAttrTitleKortixManagedRepository": "Kortix 管理リポジトリ",
+      "line253JsxTextCreatesAPrivateManagedRepoSeedsTheStarter": "非公開の管理リポジトリを作成し、スターターを配置して、このプロジェクトにリンクします。",
+      "line258JsxTextProjectName": "プロジェクト名",
+      "line273JsxTextGeneralKnowledgeWorkerSkills": "一般的なナレッジワーカー向けスキル",
+      "line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand": "調査、監査、サポート、ブランド、ビジネス運用向けの事前設定済みスキルを含めます。",
+      "line297JsxTextImportExistingGithubRepo": "既存の GitHub リポジトリをインポート",
+      "line320JsxTextCreateProject": "プロジェクトを作成",
+      "line330JsxTextImportGithubRepository": "GitHub リポジトリをインポート",
+      "line333JsxTextPickAConnectedGithubAccountThenSearchIts": "接続済みの GitHub アカウントを選択してから、そのリポジトリを検索します。",
+      "line345JsxTextManagedRepo": "管理リポジトリ",
+      "line352JsxTextLoadingGithubConnections": "GitHub 接続を読み込み中...",
+      "line362JsxAttrTitleConnectTheKortixGithubApp": "Kortix GitHub App を接続",
+      "line383JsxTextKortixUsesTheGithubAppToListRepositories": "Kortix は GitHub App を使用してリポジトリを一覧表示し、セッション用のブランチを作成します。",
+      "line391JsxTextGitAccount": "Git アカウント",
+      "line405JsxTextAddAccount": "アカウントを追加",
+      "line417JsxAttrPlaceholderSelectAGithubAccount": "GitHub アカウントを選択",
+      "line451JsxTextManageGitConnections": "Git 接続を管理",
+      "line484JsxAttrTitleNoRepositoriesAvailable": "利用可能なリポジトリがありません",
+      "line485JsxAttrDescriptionUpdateTheGithubAppInstallationToGrantKortix": "Kortix がリポジトリにアクセスできるよう、GitHub App のインストールを更新してください。",
+      "line511JsxTextProjectName": "プロジェクト名",
+      "line516JsxAttrPlaceholderUseRepositoryName": "リポジトリ名を使用",
+      "line549JsxTextImportRepo": "リポジトリをインポート",
+      "line623JsxAttrPlaceholderSearchRepositories": "リポジトリを検索...",
+      "line631JsxTextNoRepositoriesFound": "リポジトリが見つかりません"
     }
   }
 }

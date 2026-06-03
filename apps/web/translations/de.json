@@ -479,7 +479,8 @@
     },
     "appAccountsPage": {
       "line66JsxTextBackToProjects": "Zurück zu Projekten",
-      "line75JsxTextNewAccount": "Neues Konto"
+      "line75JsxTextNewAccount": "Neues Konto",
+      "line71JsxTextAccountsYouBelongTo": "Konten, denen du angehörst."
     },
     "appAdminComponentsAdminShell": {
       "line55JsxTextAdminAccessRequired": "Admin-Zugriff erforderlich",
@@ -696,7 +697,8 @@
       "roleMember": "Mitglied",
       "invitationKicker": "Einladung",
       "decline": "Ablehnen",
-      "accept": "Annehmen"
+      "accept": "Annehmen",
+      "joinAccountDescription": "Du trittst diesem Teamkonto als {roleLabel} bei."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das autonome Betriebssystem für Unternehmen",
@@ -1090,7 +1092,8 @@
     },
     "appNotFound": {
       "line65JsxTextPageNotFound": "Seite nicht gefunden",
-      "line100JsxTextReturnHome": "Zur Startseite zurückkehren"
+      "line100JsxTextReturnHome": "Zur Startseite zurückkehren",
+      "line70JsxTextThePageYouAposReLookingForDoesn": "Die gesuchte Seite existiert nicht oder wurde verschoben."
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "Ungültige Autorisierungsanfrage",
@@ -2272,6 +2275,40 @@
       "line521JsxAttrPlaceholderPickAGroup": "Pick a group...",
       "line526JsxTextNoGroupsInThisAccountYetCreateOne": "No groups in this account yet. Create one first.",
       "line554JsxTextAddMapping": "Add mapping"
+    },
+    "componentsLayoutAccountSwitcher": {
+      "line137JsxAttrAriaLabelSwitchAccount": "Konto wechseln",
+      "line190JsxAttrPlaceholderFindAccount": "Konto suchen",
+      "line277JsxTextAllAccounts": "Alle Konten",
+      "line286JsxTextNewAccount": "Neues Konto"
+    },
+    "componentsProjectsProjectCreateModal": {
+      "line237JsxTextNewProject": "Neues Projekt",
+      "line240JsxTextStartWithAPrivateManagedRepoExistingGithub": "Starte mit einem privaten verwalteten Repository oder importiere ein vorhandenes GitHub-Repository.",
+      "line251JsxAttrTitleKortixManagedRepository": "Von Kortix verwaltetes Repository",
+      "line253JsxTextCreatesAPrivateManagedRepoSeedsTheStarter": "Erstellt ein privates verwaltetes Repository, richtet den Starter ein und verknüpft es mit diesem Projekt.",
+      "line258JsxTextProjectName": "Projektname",
+      "line273JsxTextGeneralKnowledgeWorkerSkills": "Allgemeine Wissensarbeiter-Skills",
+      "line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand": "Vordefinierte Skills für Recherche, Prüfung, Support, Marke und Geschäftsabläufe einschließen.",
+      "line297JsxTextImportExistingGithubRepo": "Vorhandenes GitHub-Repository importieren",
+      "line320JsxTextCreateProject": "Projekt erstellen",
+      "line330JsxTextImportGithubRepository": "GitHub-Repository importieren",
+      "line333JsxTextPickAConnectedGithubAccountThenSearchIts": "Wähle ein verbundenes GitHub-Konto aus und suche dann dessen Repositories.",
+      "line345JsxTextManagedRepo": "Verwaltetes Repository",
+      "line352JsxTextLoadingGithubConnections": "GitHub-Verbindungen werden geladen...",
+      "line362JsxAttrTitleConnectTheKortixGithubApp": "Kortix GitHub App verbinden",
+      "line383JsxTextKortixUsesTheGithubAppToListRepositories": "Kortix verwendet die GitHub App, um Repositories aufzulisten und Branches für Sessions zu erstellen.",
+      "line391JsxTextGitAccount": "Git-Konto",
+      "line405JsxTextAddAccount": "Konto hinzufügen",
+      "line417JsxAttrPlaceholderSelectAGithubAccount": "GitHub-Konto auswählen",
+      "line451JsxTextManageGitConnections": "Git-Verbindungen verwalten",
+      "line484JsxAttrTitleNoRepositoriesAvailable": "Keine Repositories verfügbar",
+      "line485JsxAttrDescriptionUpdateTheGithubAppInstallationToGrantKortix": "Aktualisiere die GitHub App-Installation, um Kortix Zugriff auf Repositories zu gewähren.",
+      "line511JsxTextProjectName": "Projektname",
+      "line516JsxAttrPlaceholderUseRepositoryName": "Repository-Namen verwenden",
+      "line549JsxTextImportRepo": "Repository importieren",
+      "line623JsxAttrPlaceholderSearchRepositories": "Repositories suchen...",
+      "line631JsxTextNoRepositoriesFound": "Keine Repositories gefunden"
     }
   }
 }

@@ -479,7 +479,8 @@
     },
     "appAccountsPage": {
       "line66JsxTextBackToProjects": "Voltar para projetos",
-      "line75JsxTextNewAccount": "Nova conta"
+      "line75JsxTextNewAccount": "Nova conta",
+      "line71JsxTextAccountsYouBelongTo": "Contas das quais você faz parte."
     },
     "appAdminComponentsAdminShell": {
       "line55JsxTextAdminAccessRequired": "Acesso de administrador necessário",
@@ -696,7 +697,8 @@
       "roleMember": "membro",
       "invitationKicker": "Convite",
       "decline": "Recusar",
-      "accept": "Aceitar"
+      "accept": "Aceitar",
+      "joinAccountDescription": "Você entrará nesta conta de equipe como {roleLabel}."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – O sistema operacional autônomo para empresas",
@@ -1090,7 +1092,8 @@
     },
     "appNotFound": {
       "line65JsxTextPageNotFound": "Página não encontrada",
-      "line100JsxTextReturnHome": "Voltar ao início"
+      "line100JsxTextReturnHome": "Voltar ao início",
+      "line70JsxTextThePageYouAposReLookingForDoesn": "A página que você está procurando não existe ou foi movida."
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "Solicitação de autorização inválida",
@@ -2272,6 +2275,40 @@
       "line521JsxAttrPlaceholderPickAGroup": "Pick a group...",
       "line526JsxTextNoGroupsInThisAccountYetCreateOne": "No groups in this account yet. Create one first.",
       "line554JsxTextAddMapping": "Add mapping"
+    },
+    "componentsLayoutAccountSwitcher": {
+      "line137JsxAttrAriaLabelSwitchAccount": "Trocar conta",
+      "line190JsxAttrPlaceholderFindAccount": "Encontrar conta",
+      "line277JsxTextAllAccounts": "Todas as contas",
+      "line286JsxTextNewAccount": "Nova conta"
+    },
+    "componentsProjectsProjectCreateModal": {
+      "line237JsxTextNewProject": "Novo projeto",
+      "line240JsxTextStartWithAPrivateManagedRepoExistingGithub": "Comece com um repositório privado gerenciado ou importe um repositório GitHub existente.",
+      "line251JsxAttrTitleKortixManagedRepository": "Repositório gerenciado pelo Kortix",
+      "line253JsxTextCreatesAPrivateManagedRepoSeedsTheStarter": "Cria um repositório privado gerenciado, adiciona o starter e vincula ao projeto.",
+      "line258JsxTextProjectName": "Nome do projeto",
+      "line273JsxTextGeneralKnowledgeWorkerSkills": "Habilidades gerais de trabalhador do conhecimento",
+      "line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand": "Inclui habilidades pré-configuradas para pesquisa, auditoria, suporte, marca e operações de negócios.",
+      "line297JsxTextImportExistingGithubRepo": "Importar repositório GitHub existente",
+      "line320JsxTextCreateProject": "Criar projeto",
+      "line330JsxTextImportGithubRepository": "Importar repositório GitHub",
+      "line333JsxTextPickAConnectedGithubAccountThenSearchIts": "Escolha uma conta GitHub conectada e pesquise seus repositórios.",
+      "line345JsxTextManagedRepo": "Repositório gerenciado",
+      "line352JsxTextLoadingGithubConnections": "Carregando conexões GitHub...",
+      "line362JsxAttrTitleConnectTheKortixGithubApp": "Conectar o GitHub App do Kortix",
+      "line383JsxTextKortixUsesTheGithubAppToListRepositories": "O Kortix usa o GitHub App para listar repositórios e criar branches para sessões.",
+      "line391JsxTextGitAccount": "Conta Git",
+      "line405JsxTextAddAccount": "Adicionar conta",
+      "line417JsxAttrPlaceholderSelectAGithubAccount": "Selecionar uma conta GitHub",
+      "line451JsxTextManageGitConnections": "Gerenciar conexões Git",
+      "line484JsxAttrTitleNoRepositoriesAvailable": "Nenhum repositório disponível",
+      "line485JsxAttrDescriptionUpdateTheGithubAppInstallationToGrantKortix": "Atualize a instalação do GitHub App para conceder ao Kortix acesso aos repositórios.",
+      "line511JsxTextProjectName": "Nome do projeto",
+      "line516JsxAttrPlaceholderUseRepositoryName": "Usar nome do repositório",
+      "line549JsxTextImportRepo": "Importar repositório",
+      "line623JsxAttrPlaceholderSearchRepositories": "Pesquisar repositórios...",
+      "line631JsxTextNoRepositoriesFound": "Nenhum repositório encontrado"
     }
   }
 }

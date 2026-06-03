@@ -479,7 +479,8 @@
     },
     "appAccountsPage": {
       "line66JsxTextBackToProjects": "返回项目",
-      "line75JsxTextNewAccount": "新账户"
+      "line75JsxTextNewAccount": "新账户",
+      "line71JsxTextAccountsYouBelongTo": "你所属的账户。"
     },
     "appAdminComponentsAdminShell": {
       "line55JsxTextAdminAccessRequired": "需要管理员访问权限",
@@ -696,7 +697,8 @@
       "roleMember": "成员",
       "invitationKicker": "邀请",
       "decline": "拒绝",
-      "accept": "接受"
+      "accept": "接受",
+      "joinAccountDescription": "你将以 {roleLabel} 身份加入此团队账户。"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – 自主型公司操作系统",
@@ -1090,7 +1092,8 @@
     },
     "appNotFound": {
       "line65JsxTextPageNotFound": "页面未找到",
-      "line100JsxTextReturnHome": "返回主页"
+      "line100JsxTextReturnHome": "返回主页",
+      "line70JsxTextThePageYouAposReLookingForDoesn": "你要查找的页面不存在或已移动。"
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "无效的授权请求",
@@ -2272,6 +2275,40 @@
       "line521JsxAttrPlaceholderPickAGroup": "Pick a group...",
       "line526JsxTextNoGroupsInThisAccountYetCreateOne": "No groups in this account yet. Create one first.",
       "line554JsxTextAddMapping": "Add mapping"
+    },
+    "componentsLayoutAccountSwitcher": {
+      "line137JsxAttrAriaLabelSwitchAccount": "切换账户",
+      "line190JsxAttrPlaceholderFindAccount": "查找账户",
+      "line277JsxTextAllAccounts": "所有账户",
+      "line286JsxTextNewAccount": "新建账户"
+    },
+    "componentsProjectsProjectCreateModal": {
+      "line237JsxTextNewProject": "新建项目",
+      "line240JsxTextStartWithAPrivateManagedRepoExistingGithub": "从私有托管仓库开始，或导入现有 GitHub 仓库。",
+      "line251JsxAttrTitleKortixManagedRepository": "Kortix 托管仓库",
+      "line253JsxTextCreatesAPrivateManagedRepoSeedsTheStarter": "创建私有托管仓库，填充 starter，并将其关联到此项目。",
+      "line258JsxTextProjectName": "项目名称",
+      "line273JsxTextGeneralKnowledgeWorkerSkills": "通用知识工作者技能",
+      "line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand": "包含用于研究、审计、支持、品牌和业务运营的预配置技能。",
+      "line297JsxTextImportExistingGithubRepo": "导入现有 GitHub 仓库",
+      "line320JsxTextCreateProject": "创建项目",
+      "line330JsxTextImportGithubRepository": "导入 GitHub 仓库",
+      "line333JsxTextPickAConnectedGithubAccountThenSearchIts": "选择已连接的 GitHub 账户，然后搜索其仓库。",
+      "line345JsxTextManagedRepo": "托管仓库",
+      "line352JsxTextLoadingGithubConnections": "正在加载 GitHub 连接...",
+      "line362JsxAttrTitleConnectTheKortixGithubApp": "连接 Kortix GitHub App",
+      "line383JsxTextKortixUsesTheGithubAppToListRepositories": "Kortix 使用 GitHub App 列出仓库并为会话创建分支。",
+      "line391JsxTextGitAccount": "Git 账户",
+      "line405JsxTextAddAccount": "添加账户",
+      "line417JsxAttrPlaceholderSelectAGithubAccount": "选择 GitHub 账户",
+      "line451JsxTextManageGitConnections": "管理 Git 连接",
+      "line484JsxAttrTitleNoRepositoriesAvailable": "没有可用仓库",
+      "line485JsxAttrDescriptionUpdateTheGithubAppInstallationToGrantKortix": "更新 GitHub App 安装，以授予 Kortix 访问仓库的权限。",
+      "line511JsxTextProjectName": "项目名称",
+      "line516JsxAttrPlaceholderUseRepositoryName": "使用仓库名称",
+      "line549JsxTextImportRepo": "导入仓库",
+      "line623JsxAttrPlaceholderSearchRepositories": "搜索仓库...",
+      "line631JsxTextNoRepositoriesFound": "未找到仓库"
     }
   }
 }
