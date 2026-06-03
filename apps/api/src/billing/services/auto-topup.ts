@@ -243,7 +243,7 @@ async function tryAutoTopup(accountId: string): Promise<void> {
     });
 
     if (paymentIntent.status === 'succeeded') {
-      const { grantCredits } = await import('./credits');
+      const { grantCredits } = await import('./credit-grants');
       await grantCredits(
         accountId,
         amount,
