@@ -78,9 +78,6 @@ process.on('uncaughtException', (err: Error) => {
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
 const app = new Hono();
-// Exported so tooling/tests can introspect the route table (app.routes) without
-// booting the server. See the import.meta.main guard around startup below.
-export { app };
 
 // === Global Middleware === 
 
@@ -626,9 +623,8 @@ async function shutdown(signal: string) {
 
 // Boot only when this module is the entry point (`bun run src/index.ts`, which
 // is how both `pnpm dev` and the Docker CMD launch it). Guarding behind
-// import.meta.main lets tooling and tests `import { app }` to introspect the
-// route table without starting the DB schema check, background workers, or
-// signal handlers. Does NOT change production boot — there, import.meta.main is true.
+// Keep startup side effects behind Bun's entrypoint guard. Does NOT change
+// production boot — there, import.meta.main is true.
 if (import.meta.main) {
   ensureSchema()
     .then(async () => {
