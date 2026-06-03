@@ -1,2 +1,2 @@
 export { queueApp } from './routes';
-export { startDrainer, stopDrainer, isDrainerRunning } from './drainer';
+export { startDrainer, stopDrainer } from './drainer';
