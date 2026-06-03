@@ -20,13 +20,6 @@ export class InsufficientCreditsError extends BillingError {
   }
 }
 
-export class SubscriptionError extends BillingError {
-  constructor(message: string) {
-    super(message);
-    this.name = 'SubscriptionError';
-  }
-}
-
 export class WebhookError extends BillingError {
   constructor(message: string) {
     super(message, 400);
