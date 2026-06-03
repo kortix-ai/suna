@@ -303,32 +303,6 @@ export async function restartSandbox(sandboxId?: string): Promise<void> {
   );
 }
 
-/**
- * Get sandbox providers supported by the project-session flow.
- */
-export async function getProviders(): Promise<SandboxProviderName[]> {
-  return ['daytona'];
-}
-
-/**
- * Start a project-session sandbox and emit legacy progress updates.
- */
-export interface LocalSandboxProgress {
-  status: string;
-  progress: number;
-  message: string;
-}
-
-export async function initLocalSandbox(
-  _name?: string,
-  onProgress?: (progress: LocalSandboxProgress) => void,
-): Promise<SandboxInfo> {
-  onProgress?.({ status: 'starting', progress: 0, message: 'Starting project session...' });
-  const result = await ensureSandbox();
-  onProgress?.({ status: result.sandbox.status, progress: result.sandbox.status === 'active' ? 100 : 25, message: 'Project session started' });
-  return result.sandbox;
-}
-
 export async function checkInstanceHealth(url: string): Promise<string | null> {
   try {
     const controller = new AbortController();

@@ -15,9 +15,6 @@ import {
   getActiveSandbox,
   getSandboxUrl,
   listSandboxes,
-  getProviders,
-  initLocalSandbox,
-  type LocalSandboxProgress,
 } from './client';
 import type { Session } from './types';
 
@@ -27,7 +24,6 @@ export const platformKeys = {
   all: ['platform'] as const,
   sandbox: () => [...platformKeys.all, 'sandbox'] as const,
   instances: () => [...platformKeys.all, 'instances'] as const,
-  providers: () => [...platformKeys.all, 'providers'] as const,
   sessions: () => [...platformKeys.all, 'sessions'] as const,
   session: (id: string) => [...platformKeys.sessions(), id] as const,
   sessionMessages: (id: string) => [...platformKeys.session(id), 'messages'] as const,
@@ -71,13 +67,10 @@ export function useSandbox(enabled: boolean = true) {
       // First try to get existing active sandbox
       let sandbox = await getActiveSandbox();
 
-      // If no active sandbox, list everything the platform knows about — this
-      // also probes /platform/local-bridge/status, which discovers a running
-      // local Docker container and upserts it in the DB as 'active'. We reuse
-      // ANY sandbox the list returns (active / provisioning / stopped) so a
-      // cold app open never accidentally creates a new project-session sandbox
-      // just because the DB row momentarily says 'stopped'. The old platform
-      // init route had local Docker restart side effects on every app open.
+      // If no active sandbox, list everything the project-session API knows
+      // about. Reuse ANY sandbox the list returns (active / provisioning /
+      // stopped) so a cold app open never accidentally creates a new session
+      // just because the runtime row momentarily says 'stopped'.
       if (!sandbox) {
         log.log('📦 [useSandbox] No active sandbox, listing all sandboxes...');
         const allSandboxes = await listSandboxes();
@@ -380,25 +373,5 @@ export function useInstances(enabled: boolean = true) {
     queryFn: () => listSandboxes(),
     enabled,
     staleTime: 30 * 1000,
-  });
-}
-
-export function useProviders() {
-  return useQuery({
-    queryKey: platformKeys.providers(),
-    queryFn: getProviders,
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-export function useCreateLocalInstance() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (args: { name?: string; onProgress?: (p: LocalSandboxProgress) => void }) =>
-      initLocalSandbox(args.name, args.onProgress),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: platformKeys.instances() });
-      queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });
-    },
   });
 }

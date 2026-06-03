@@ -5,7 +5,6 @@ import { Icon } from '@/components/ui/icon';
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
-import { useInstanceProgress } from '@/stores/instance-progress';
 import { SandboxConfigHealthBanner } from './SandboxConfigHealthBanner';
 import {
   ChevronRight,
@@ -60,7 +59,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
   // appearance settings page and any other toggle in the app.
   const toggleTrackBg = getToggleTrackBg(isDark);
   const toggleActiveBg = getToggleActiveBg(isDark);
-  const creatingProgress = useInstanceProgress();
 
   const renderBackdrop = useMemo(
     () => (props: BottomSheetBackdropProps) => (
@@ -116,40 +114,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
               </View>
             </View>
           </View>
-
-          {/* Creating progress */}
-          {creatingProgress && (
-            <>
-              <View className="py-3.5">
-                <View className="flex-row items-center mb-2">
-                  <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: '#FBBF24' }} />
-                  <View className="flex-1">
-                    <Text className="font-roobert-medium text-[15px] text-foreground" numberOfLines={1}>
-                      Local Docker
-                    </Text>
-                    <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
-                      {creatingProgress.message}
-                    </Text>
-                  </View>
-                  <Text className="font-roobert text-xs tabular-nums text-muted-foreground">
-                    {Math.round(creatingProgress.percent)}%
-                  </Text>
-                </View>
-                <View
-                  className="h-1.5 rounded-full overflow-hidden"
-                  style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
-                >
-                  <View
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${Math.max(creatingProgress.percent, 2)}%`,
-                      backgroundColor: isDark ? '#F8F8F8' : '#121215',
-                    }}
-                  />
-                </View>
-              </View>
-            </>
-          )}
 
           {/* Manage instances */}
           <Pressable
