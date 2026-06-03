@@ -93,7 +93,7 @@ export function isBillingError(error: any): boolean {
 // UI Formatting
 // ============================================================================
 
-export interface BillingErrorUI {
+interface BillingErrorUI {
   alertTitle: string;
   alertSubtitle: string;
 }

@@ -1,11 +1,11 @@
 import { backendApi } from '@/lib/api-client';
 
-export interface ReferralCodeResponse {
+interface ReferralCodeResponse {
   referral_code: string;
   referral_url: string;
 }
 
-export interface ReferralStats {
+interface ReferralStats {
   referral_code: string;
   total_referrals: number;
   successful_referrals: number;
@@ -22,7 +22,7 @@ interface ReferralEmailResult {
   message?: string;
 }
 
-export interface ReferralEmailResponse {
+interface ReferralEmailResponse {
   success: boolean;
   message?: string;
   results?: ReferralEmailResult[];

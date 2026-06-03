@@ -131,7 +131,7 @@ export interface AccountState {
 // MUTATION REQUEST/RESPONSE TYPES
 // =============================================================================
 
-export interface CreateCheckoutSessionRequest {
+interface CreateCheckoutSessionRequest {
   tier_key: string;
   success_url: string;
   cancel_url: string;
@@ -144,7 +144,7 @@ export interface CreateCheckoutSessionRequest {
   location?: string;
 }
 
-export interface CreateCheckoutSessionResponse {
+interface CreateCheckoutSessionResponse {
   status:
     | 'upgraded'
     | 'downgrade_scheduled'
@@ -186,17 +186,17 @@ export interface CreatePortalSessionRequest {
   return_url: string;
 }
 
-export interface CreatePortalSessionResponse {
+interface CreatePortalSessionResponse {
   portal_url: string;
 }
 
-export interface PurchaseCreditsRequest {
+interface PurchaseCreditsRequest {
   amount: number;
   success_url: string;
   cancel_url: string;
 }
 
-export interface PurchaseCreditsResponse {
+interface PurchaseCreditsResponse {
   checkout_url: string;
 }
 
@@ -390,7 +390,7 @@ export interface AutoTopupConfig {
   amount: number;
 }
 
-export interface AutoTopupSetupStatus {
+interface AutoTopupSetupStatus {
   has_payment_method: boolean;
   has_default_payment_method: boolean;
 }

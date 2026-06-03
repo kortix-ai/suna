@@ -5,13 +5,13 @@ import { parseBillingError, RequestTooLargeError } from './api/errors';
 
 const getApiUrl = () => getEnv().BACKEND_URL || '';
 
-export interface ApiClientOptions {
+interface ApiClientOptions {
   showErrors?: boolean;
   errorContext?: ErrorContext;
   timeout?: number;
 }
 
-export interface ApiResponse<T = any> {
+interface ApiResponse<T = any> {
   data?: T;
   error?: ApiError;
   success: boolean;

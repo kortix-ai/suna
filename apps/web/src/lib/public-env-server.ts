@@ -2,7 +2,7 @@ import 'server-only'
 
 import { parseRuntimeEnv, type RuntimeEnv } from '@/lib/env-schema'
 
-export type PublicRuntimeEnv = RuntimeEnv
+type PublicRuntimeEnv = RuntimeEnv
 
 function read(name: string): string | undefined {
   return process.env[`KORTIX_PUBLIC_${name}`] ?? process.env[`NEXT_PUBLIC_${name}`]
