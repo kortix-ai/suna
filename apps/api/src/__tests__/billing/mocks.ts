@@ -14,7 +14,6 @@ export const mockRegistry = {
   processedStripeWebhookEventIds: new Set<string>(),
 
   getCreditAccount: null as ((id: string) => Promise<any>) | null,
-  getCreditBalance: null as ((id: string) => Promise<any>) | null,
   updateCreditAccount: null as ((id: string, data: any) => Promise<void>) | null,
   upsertCreditAccount: null as ((id: string, data: any) => Promise<void>) | null,
   getYearlyAccountsDueForRotation: null as (() => Promise<any[]>) | null,
@@ -109,11 +108,6 @@ export function registerGlobalMocks() {
   mock.module('../../billing/repositories/credit-accounts', () => ({
     getCreditAccount: async (id: string) =>
       mockRegistry.getCreditAccount ? mockRegistry.getCreditAccount(id) : createMockCreditAccount(),
-    getCreditBalance: async (id: string) => {
-      if (mockRegistry.getCreditBalance) return mockRegistry.getCreditBalance(id);
-      const a = createMockCreditAccount();
-      return { balance: a.balance, expiringCredits: a.expiringCredits, nonExpiringCredits: a.nonExpiringCredits, dailyCreditsBalance: a.dailyCreditsBalance, tier: a.tier };
-    },
     updateCreditAccount: async (id: string, data: any) =>
       mockRegistry.updateCreditAccount ? mockRegistry.updateCreditAccount(id, data) : undefined,
     upsertCreditAccount: async (id: string, data: any) =>

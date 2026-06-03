@@ -12,22 +12,6 @@ export async function getCreditAccount(accountId: string) {
   return row ?? null;
 }
 
-export async function getCreditBalance(accountId: string) {
-  const [row] = await db
-    .select({
-      balance: creditAccounts.balance,
-      expiringCredits: creditAccounts.expiringCredits,
-      nonExpiringCredits: creditAccounts.nonExpiringCredits,
-      dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
-      tier: creditAccounts.tier,
-    })
-    .from(creditAccounts)
-    .where(eq(creditAccounts.accountId, accountId))
-    .limit(1);
-
-  return row ?? null;
-}
-
 export async function getSubscriptionInfo(accountId: string) {
   const [row] = await db
     .select({

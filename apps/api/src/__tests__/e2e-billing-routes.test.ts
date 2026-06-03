@@ -57,7 +57,6 @@ mock.module('../billing/services/credits', () => ({
 // Credit accounts repository mock
 mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => null,
-  getCreditBalance: async () => null,
   updateCreditAccount: async () => {},
   upsertCreditAccount: async () => {},
   getSubscriptionInfo: async () => null,

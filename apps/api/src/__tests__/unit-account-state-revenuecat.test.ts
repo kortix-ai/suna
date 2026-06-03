@@ -7,7 +7,6 @@ let isAdmin = false;
 
 mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => null,
-  getCreditBalance: async () => null,
   updateCreditAccount: async () => undefined,
   upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => subscriptionInfo,
