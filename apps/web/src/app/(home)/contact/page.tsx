@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   ArrowRight,
   PlayCircle,
@@ -11,15 +11,13 @@ import {
   Clock,
   Mail,
 } from 'lucide-react';
-import Cal, { getCalApi } from '@calcom/embed-react';
 
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { DemoQualifierDialog } from '@/components/contact/demo-qualifier-dialog';
 
 const CONTACT_EMAIL = 'hey@kortix.ai';
 
-// Kortix team "demo" event (cal.com/team/kortix/demo). A dedicated namespace
-// keeps this embed's UI config isolated from the in-app onboarding embeds.
+// Public demo event (cal.com/team/kortix/demo) + a namespace unique to it.
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-enterprise-demo';
 
@@ -32,22 +30,7 @@ const VALUE_PROPS = [
 ];
 
 export default function ContactPage() {
-  const [calOpen, setCalOpen] = useState(false);
-
-  useEffect(() => {
-    (async function () {
-      const cal = await getCalApi({ namespace: CAL_NAMESPACE });
-      cal('ui', { hideEventTypeDetails: false, layout: 'month_view' });
-      // Auto-close the modal shortly after a booking lands so the visitor
-      // isn't stranded on Cal's "scheduled" screen.
-      cal('on', {
-        action: 'bookingSuccessful',
-        callback: () => window.setTimeout(() => setCalOpen(false), 1500),
-      });
-    })();
-  }, []);
-
-  const openCal = useCallback(() => setCalOpen(true), []);
+  const [open, setOpen] = useState(false);
 
   return (
     <div className="relative min-h-dvh overflow-hidden bg-background">
@@ -71,7 +54,7 @@ export default function ContactPage() {
         </p>
 
         <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
-          <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={openCal}>
+          <Button size="lg" className="h-12 rounded-full px-8 text-sm" onClick={() => setOpen(true)}>
             Book a demo<ArrowRight className="ml-1.5 size-3.5" />
           </Button>
           <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm">
@@ -101,23 +84,13 @@ export default function ContactPage() {
         </div>
       </section>
 
-      {/* Cal.com booking — opened on demand in a modal (inline embed was cramped). */}
-      <Dialog open={calOpen} onOpenChange={setCalOpen}>
-        <DialogContent
-          hideCloseButton
-          className="max-w-[min(980px,95vw)] gap-0 overflow-hidden rounded-2xl border-none bg-transparent p-0 shadow-none"
-        >
-          <DialogTitle className="sr-only">Book a demo with Kortix</DialogTitle>
-          <div className="h-[82vh] max-h-[780px] overflow-hidden rounded-2xl">
-            <Cal
-              namespace={CAL_NAMESPACE}
-              calLink={CAL_LINK}
-              style={{ width: '100%', height: '100%' }}
-              config={{ layout: 'month_view' }}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+      <DemoQualifierDialog
+        open={open}
+        onOpenChange={setOpen}
+        calLink={CAL_LINK}
+        calNamespace={CAL_NAMESPACE}
+        source="contact"
+      />
     </div>
   );
 }
