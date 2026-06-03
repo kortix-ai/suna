@@ -575,7 +575,7 @@ function validateConnectors(
         severity: 'error',
       });
     }
-    if (provider === 'http' && typeof entry.base_url !== 'string' && typeof entry.baseUrl !== 'string') {
+    if (provider === 'http' && typeof entry.base_url !== 'string') {
       issues.push({
         path: `${where}.base_url`,
         message: 'http connectors require `base_url`.',

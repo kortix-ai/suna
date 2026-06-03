@@ -289,7 +289,7 @@ function parseProviderFields(
   }
 
   // http
-  const baseUrl = str(row.base_url) ?? str(row.baseUrl);
+  const baseUrl = str(row.base_url);
   if (!baseUrl) return err(slug, 'provider="http" requires `base_url`');
   return { ok: true, value: { ...base, baseUrl, spec: str(row.spec) } };
 }
