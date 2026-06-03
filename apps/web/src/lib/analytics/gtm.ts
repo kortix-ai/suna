@@ -291,22 +291,6 @@ export function trackLogin(method: AuthMethod) {
 }
 
 /**
- * Track cta_upgrade event when user clicks upgrade CTA
- * Priority 3 event
- */
-export function trackCtaUpgrade() {
-  if (typeof window === 'undefined') return;
-  
-  initDataLayer();
-  
-  const ctaEvent = {
-    event: 'cta_upgrade',
-  };
-  
-  window.dataLayer?.push(ctaEvent);
-}
-
-/**
  * Track cta_signup event when user clicks signup CTA on homepage
  */
 export function trackCtaSignup() {

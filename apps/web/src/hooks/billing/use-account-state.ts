@@ -15,7 +15,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 
-import { dollarsToCredits } from '@kortix/shared';
 import {
   billingApi,
   AccountState,
@@ -276,72 +275,3 @@ export function useCreatePortalSession() {
 // previous duplicate here was a thin wrapper that the index re-exported but
 // nothing imported — removed to avoid two hooks with the same name backed by
 // different cache keys.
-
-// =============================================================================
-// SELECTORS - Helper functions to extract specific data from account state
-// =============================================================================
-
-export const accountStateSelectors = {
-  /** Check if user can run agents (has credits) */
-  canRun: (state: AccountState | undefined) => state?.credits?.can_run ?? false,
-  
-  /** Get total credits (converted from dollars to credits using 1$ = 100 credits) */
-  totalCredits: (state: AccountState | undefined) => dollarsToCredits(state?.credits?.total ?? 0),
-  
-  /** Get daily credits (converted from dollars to credits using 1$ = 100 credits) */
-  dailyCredits: (state: AccountState | undefined) => dollarsToCredits(state?.credits?.daily ?? 0),
-  
-  /** Get monthly credits (converted from dollars to credits using 1$ = 100 credits) */
-  monthlyCredits: (state: AccountState | undefined) => dollarsToCredits(state?.credits?.monthly ?? 0),
-  
-  /** Get extra/non-expiring credits (converted from dollars to credits using 1$ = 100 credits) */
-  extraCredits: (state: AccountState | undefined) => dollarsToCredits(state?.credits?.extra ?? 0),
-  
-  /** Get tier monthly credits limit (converted from dollars to credits using 1$ = 100 credits) */
-  tierMonthlyCredits: (state: AccountState | undefined) => dollarsToCredits(state?.tier?.monthly_credits ?? 0),
-  
-  /** Get tier key */
-  tierKey: (state: AccountState | undefined) => state?.subscription?.tier_key ?? 'none',
-  
-  /** Get tier display name */
-  tierDisplayName: (state: AccountState | undefined) => 
-    state?.subscription?.tier_display_name ?? 'No Plan',
-  
-  /** Get plan name for TierBadge (e.g., 'Plus', 'Pro', 'Ultra', 'Basic') */
-  planName: (state: AccountState | undefined) => {
-    if (!state?.subscription) return 'Basic';
-    const tierKey = state.subscription.tier_key || state.tier?.name;
-    if (!tierKey || tierKey === 'none' || tierKey === 'free') return 'Basic';
-    
-    if (tierKey === 'pro') return 'Pro';
-    return 'Basic';
-  },
-  
-  /** Check if subscription is cancelled */
-  isCancelled: (state: AccountState | undefined) => state?.subscription?.is_cancelled ?? false,
-  
-  
-  /** Get scheduled change info */
-  scheduledChange: (state: AccountState | undefined) => state?.subscription?.scheduled_change,
-  
-  /** Check if has scheduled change */
-  hasScheduledChange: (state: AccountState | undefined) => 
-    state?.subscription?.has_scheduled_change ?? false,
-  
-  /** Get commitment info */
-  commitment: (state: AccountState | undefined) => state?.subscription?.commitment,
-  
-  /** Check if can purchase credits */
-  canPurchaseCredits: (state: AccountState | undefined) => 
-    state?.subscription?.can_purchase_credits ?? false,
-    
-  /** Get daily credits info (with converted daily_amount) */
-  dailyCreditsInfo: (state: AccountState | undefined) => {
-    const dailyRefresh = state?.credits?.daily_refresh;
-    if (!dailyRefresh) return null;
-    return {
-      ...dailyRefresh,
-      daily_amount: dollarsToCredits(dailyRefresh.daily_amount),
-    };
-  },
-};
