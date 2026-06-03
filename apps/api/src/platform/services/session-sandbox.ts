@@ -140,6 +140,7 @@ export async function provisionSessionSandbox(opts: {
   //   2. `config.getDefaultProvider()` — head of ALLOWED_SANDBOX_PROVIDERS.
   const providerName = opts.provider || config.getDefaultProvider();
   const provider = getProvider(providerName);
+  const usesSnapshotImage = providerName !== 'local_docker';
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
   const slug = (opts.sandboxSlug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
@@ -158,18 +159,20 @@ export async function provisionSessionSandbox(opts: {
   // already exists. On the warm path this overlaps the ~200ms token round-trip
   // with the ~100-300ms cache-check, taking the smaller off the critical path.
   type FirstImage = EnsureSandboxImageResult & { gitProject: GitBackedProject };
-  let firstImagePromise: Promise<FirstImage> | null = (async () => {
-    const gitProject = await resolveGitProject();
-    const image = await ensureSandboxImage(gitProject, {
-      slug,
-      accountId,
-      source: 'session-start',
-    });
-    return { ...image, gitProject };
-  })();
+  let firstImagePromise: Promise<FirstImage> | null = usesSnapshotImage
+    ? (async () => {
+        const gitProject = await resolveGitProject();
+        const image = await ensureSandboxImage(gitProject, {
+          slug,
+          accountId,
+          source: 'session-start',
+        });
+        return { ...image, gitProject };
+      })()
+    : null;
   // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
   // when it awaits the promise.
-  firstImagePromise.catch(() => {});
+  firstImagePromise?.catch(() => {});
 
   // Sandbox-row insert + tokens + credit lookup all run in parallel. None of
   // them depend on the others — `sandboxId` is known up front, so even the
@@ -283,37 +286,45 @@ export async function provisionSessionSandbox(opts: {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
 
-      // Stateless image resolution: ask Daytona if it has the image; build if not.
-      // No DB lookup, no degraded fallback — the snapshot is either there or we
-      // build it inline. The build log captures the attempt for the dashboard;
-      // it is never read on this path. The first attempt consumes the promise we
-      // kicked off in parallel with the token round-trip; heal-retries re-resolve
-      // from scratch (the prior snapshot was just deleted).
-      let image: EnsureSandboxImageResult;
-      if (firstImagePromise) {
-        image = await firstImagePromise;
-        firstImagePromise = null;
+      if (usesSnapshotImage) {
+        // Stateless image resolution: ask Daytona if it has the image; build if not.
+        // No DB lookup, no degraded fallback — the snapshot is either there or we
+        // build it inline. The build log captures the attempt for the dashboard;
+        // it is never read on this path. The first attempt consumes the promise we
+        // kicked off in parallel with the token round-trip; heal-retries re-resolve
+        // from scratch (the prior snapshot was just deleted).
+        let image: EnsureSandboxImageResult;
+        if (firstImagePromise) {
+          image = await firstImagePromise;
+          firstImagePromise = null;
+        } else {
+          const gitProject = await resolveGitProject();
+          image = await ensureSandboxImage(gitProject, {
+            slug,
+            accountId,
+            source: 'session-start',
+          });
+        }
+        imageInfo = {
+          snapshotName: image.snapshotName,
+          slug: image.slug,
+          contentHash: image.contentHash,
+          isDefault: image.isDefault,
+        };
+        tl.mark(image.built ? 'image-built' : 'image-cached');
+        providerCreateInput.snapshot = image.snapshotName;
+        console.log(
+          `[session-sandbox] Booting ${sandbox.sandboxId} from ${image.snapshotName} ` +
+          `(template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}, ` +
+          `branch ${branch}, ${image.built ? 'fresh build' : 'cache hit'})`,
+        );
       } else {
-        const gitProject = await resolveGitProject();
-        image = await ensureSandboxImage(gitProject, {
-          slug,
-          accountId,
-          source: 'session-start',
-        });
+        tl.mark('image-skipped');
+        console.log(
+          `[session-sandbox] Booting ${sandbox.sandboxId} via ${providerName} ` +
+          `(template "${slug}", branch ${branch})`,
+        );
       }
-      imageInfo = {
-        snapshotName: image.snapshotName,
-        slug: image.slug,
-        contentHash: image.contentHash,
-        isDefault: image.isDefault,
-      };
-      tl.mark(image.built ? 'image-built' : 'image-cached');
-      providerCreateInput.snapshot = image.snapshotName;
-      console.log(
-        `[session-sandbox] Booting ${sandbox.sandboxId} from ${image.snapshotName} ` +
-        `(template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}, ` +
-        `branch ${branch}, ${image.built ? 'fresh build' : 'cache hit'})`,
-      );
 
       const firstStage = provider.provisioning.stages[0];
       const { result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
@@ -407,15 +418,25 @@ export async function provisionSessionSandbox(opts: {
             provisioningStage: firstStage?.id,
             provisionTimeline: timeline,
             daytonaSandboxId: result.externalId,
-            runtimeArtifact: {
-              artifactType: providerName === 'daytona' ? 'daytona_snapshot' : 'unknown',
-              providerArtifactRef: imageInfo!.snapshotName,
-              contentHash: imageInfo!.contentHash,
-              sandboxSlug: imageInfo!.slug,
-              isPlatformDefault: imageInfo!.isDefault,
-              branch,
-              provider: providerName,
-            },
+            runtimeArtifact: imageInfo
+              ? {
+                  artifactType: providerName === 'daytona' ? 'daytona_snapshot' : 'unknown',
+                  providerArtifactRef: imageInfo.snapshotName,
+                  contentHash: imageInfo.contentHash,
+                  sandboxSlug: imageInfo.slug,
+                  isPlatformDefault: imageInfo.isDefault,
+                  branch,
+                  provider: providerName,
+                }
+              : {
+                  artifactType: 'local_docker_image',
+                  providerArtifactRef: null,
+                  contentHash: null,
+                  sandboxSlug: slug,
+                  isPlatformDefault: slug === DEFAULT_SANDBOX_SLUG,
+                  branch,
+                  provider: providerName,
+                },
           },
           attempts,
         ),
@@ -451,7 +472,7 @@ export async function provisionSessionSandbox(opts: {
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
       // Spec is resolved from the project manifest with provider-default fallbacks.
-      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId, imageInfo?.slug).catch(
+      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId, imageInfo?.slug ?? slug).catch(
         (err) =>
           console.warn(
             `[session-sandbox] failed to open compute metering for ${sandbox.sandboxId}:`,

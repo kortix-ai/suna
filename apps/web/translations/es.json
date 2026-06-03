@@ -479,6 +479,7 @@
     },
     "appAccountsPage": {
       "line66JsxTextBackToProjects": "Volver a proyectos",
+      "line71JsxTextAccountsYouBelongTo": "Cuentas a las que perteneces.",
       "line75JsxTextNewAccount": "Nueva cuenta"
     },
     "appAdminComponentsAdminShell": {
@@ -694,6 +695,7 @@
       "teamAccountLabel": "Cuenta de equipo",
       "roleAdmin": "administrador",
       "roleMember": "miembro",
+      "joinAccountDescription": "Te unirás a esta cuenta de equipo como {roleLabel}.",
       "invitationKicker": "Invitación",
       "decline": "Rechazar",
       "accept": "Aceptar"
@@ -1090,6 +1092,7 @@
     },
     "appNotFound": {
       "line65JsxTextPageNotFound": "Página no encontrada",
+      "line70JsxTextThePageYouAposReLookingForDoesn": "La página que busca no existe o se ha movido.",
       "line100JsxTextReturnHome": "Volver al inicio"
     },
     "appOauthAuthorizePage": {
@@ -1507,6 +1510,12 @@
       "line339JsxAttrPlaceholderEngineersShippingThePlatform": "Ingenieros que lanzan la plataforma",
       "line360JsxTextCreateGroup": "Crear grupo"
     },
+    "componentsLayoutAccountSwitcher": {
+      "line137JsxAttrAriaLabelSwitchAccount": "Switch account",
+      "line190JsxAttrPlaceholderFindAccount": "Find account",
+      "line277JsxTextAllAccounts": "All accounts",
+      "line286JsxTextNewAccount": "New account"
+    },
     "componentsLayoutAppHeader": {
       "line72JsxAttrAriaLabelKortixHome": "Inicio de Kortix"
     },
@@ -1522,6 +1531,34 @@
     },
     "componentsMarkdownUnifiedMarkdown": {
       "line1115JsxTextNoContent": "Sin contenido"
+    },
+    "componentsProjectsProjectCreateModal": {
+      "line237JsxTextNewProject": "New project",
+      "line240JsxTextStartWithAPrivateManagedRepoExistingGithub": "Start with a private managed repo or import an existing GitHub repository.",
+      "line251JsxAttrTitleKortixManagedRepository": "Kortix-managed repository",
+      "line253JsxTextCreatesAPrivateManagedRepoSeedsTheStarter": "Creates a private managed repo, seeds the starter, and links it to this project.",
+      "line258JsxTextProjectName": "Project name",
+      "line273JsxTextGeneralKnowledgeWorkerSkills": "General knowledge worker skills",
+      "line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand": "Include preconfigured skills for research, audit, support, brand, and business operations.",
+      "line297JsxTextImportExistingGithubRepo": "Import existing GitHub repo",
+      "line320JsxTextCreateProject": "Create project",
+      "line330JsxTextImportGithubRepository": "Import GitHub repository",
+      "line333JsxTextPickAConnectedGithubAccountThenSearchIts": "Pick a connected GitHub account, then search its repositories.",
+      "line345JsxTextManagedRepo": "Managed repo",
+      "line352JsxTextLoadingGithubConnections": "Loading GitHub connections...",
+      "line362JsxAttrTitleConnectTheKortixGithubApp": "Connect the Kortix GitHub App",
+      "line383JsxTextKortixUsesTheGithubAppToListRepositories": "Kortix uses the GitHub App to list repositories and create branches for sessions.",
+      "line391JsxTextGitAccount": "Git account",
+      "line405JsxTextAddAccount": "Add account",
+      "line417JsxAttrPlaceholderSelectAGithubAccount": "Select a GitHub account",
+      "line451JsxTextManageGitConnections": "Manage Git connections",
+      "line484JsxAttrTitleNoRepositoriesAvailable": "No repositories available",
+      "line485JsxAttrDescriptionUpdateTheGithubAppInstallationToGrantKortix": "Update the GitHub App installation to grant Kortix access to repositories.",
+      "line511JsxTextProjectName": "Project name",
+      "line516JsxAttrPlaceholderUseRepositoryName": "Use repository name",
+      "line549JsxTextImportRepo": "Import repo",
+      "line623JsxAttrPlaceholderSearchRepositories": "Search repositories...",
+      "line631JsxTextNoRepositoriesFound": "No repositories found"
     },
     "componentsProjectsProjectProviderModal": {
       "line151JsxTextLlmProviders": "Proveedores de LLM",

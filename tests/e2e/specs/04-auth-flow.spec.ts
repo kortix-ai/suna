@@ -13,6 +13,11 @@ test.describe('04 — Authentication flow', () => {
   test('browser login flow reaches wizard', async ({ page }) => {
     // Clear any existing session
     await page.context().clearCookies();
+    await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    });
 
     await page.goto('/auth');
     await page.waitForTimeout(2_000);
@@ -21,8 +26,12 @@ test.describe('04 — Authentication flow', () => {
     // so we click the page body which triggers the overlay's click handler.
     const lockScreen = page.getByText('Click or press Enter to sign in');
     if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-      await page.waitForTimeout(1_500);
+      const emailInput = page.locator('input[name="email"]');
+      for (let attempt = 0; attempt < 3 && !(await emailInput.isVisible().catch(() => false)); attempt++) {
+        await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(750);
+      }
     }
 
     // May already be authenticated from a prior session, or show auth form.
@@ -35,7 +44,7 @@ test.describe('04 — Authentication flow', () => {
 
     // If login form is showing, fill and submit
     if (await signUpHeading.isVisible().catch(() => false)) {
-      await page.getByRole('button', { name: /^Sign in$/i }).first().click();
+      await page.getByRole('tab', { name: /^Sign in$/i }).click();
     }
     if (await signInHeading.isVisible().catch(() => false)) {
       const usePassword = page.getByRole('button', { name: /Use password instead/i });

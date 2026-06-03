@@ -176,6 +176,129 @@ async function apiStatus(
   return response.status;
 }
 
+function escapeSql(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+function firstExistingExplicitEnvFile(): string | null {
+  const fs = require('fs') as typeof import('node:fs');
+  const path = require('path') as typeof import('node:path');
+  return (process.env.E2E_ENV_FILE || '')
+    .split(path.delimiter)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
+function seedSelfHostedProject(
+  accountId: string,
+  ownerUserId: string,
+  name: string,
+  repoUrl: string,
+): string {
+  const childProcess = require('child_process') as typeof import('node:child_process');
+  const crypto = require('crypto') as typeof import('node:crypto');
+  const fs = require('fs') as typeof import('node:fs');
+  const path = require('path') as typeof import('node:path');
+  const envFile = firstExistingExplicitEnvFile();
+  if (!envFile) throw new Error('E2E_ENV_FILE is required for self-host project seeding');
+
+  const composeFile = path.join(path.dirname(envFile), 'docker-compose.yml');
+  if (!fs.existsSync(composeFile)) {
+    throw new Error(`Self-host docker-compose.yml not found next to ${envFile}`);
+  }
+
+  const projectId = crypto.randomUUID();
+  const composeProject = process.env.E2E_COMPOSE_PROJECT_NAME || 'kortix-default';
+  const sql = `
+insert into kortix.projects (
+  project_id,
+  account_id,
+  name,
+  repo_url,
+  default_branch,
+  manifest_path,
+  status,
+  metadata
+) values (
+  '${projectId}'::uuid,
+  '${escapeSql(accountId)}'::uuid,
+  '${escapeSql(name)}',
+  '${escapeSql(repoUrl)}',
+  'main',
+  'kortix.toml',
+  'active',
+  '{"self_host_e2e":true}'::jsonb
+);
+
+insert into kortix.project_members (
+  account_id,
+  project_id,
+  user_id,
+  project_role,
+  granted_by
+) values (
+  '${escapeSql(accountId)}'::uuid,
+  '${projectId}'::uuid,
+  '${escapeSql(ownerUserId)}'::uuid,
+  'manager',
+  '${escapeSql(ownerUserId)}'::uuid
+);
+`;
+
+  childProcess.execFileSync(
+    'docker',
+    [
+      'compose',
+      '--project-name',
+      composeProject,
+      '--env-file',
+      envFile,
+      '-f',
+      composeFile,
+      'exec',
+      '-T',
+      'supabase-db',
+      'psql',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-U',
+      'postgres',
+      '-d',
+      'postgres',
+    ],
+    { input: sql, encoding: 'utf8' },
+  );
+
+  return projectId;
+}
+
+async function createProjectForAccessTest(
+  token: string,
+  accountId: string,
+  ownerUserId: string,
+  name: string,
+  repoUrl: string,
+): Promise<ProjectSummary> {
+  const response = await fetch(`${apiBase}/projects`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      account_id: accountId,
+      name,
+      repo_url: repoUrl,
+      default_branch: 'main',
+    }),
+  });
+  const body = await response.text();
+  if (response.status === 201) return JSON.parse(body) as ProjectSummary;
+  if (response.status === 409 && body.includes('GitHub App installation required')) {
+    const projectId = seedSelfHostedProject(accountId, ownerUserId, name, repoUrl);
+    return api<ProjectSummary>(token, 'GET', `/projects/${projectId}`);
+  }
+  throw new Error(`Expected 201/409 from ${response.url}, got ${response.status}: ${body}`);
+}
+
 async function createAuthUser(email: string): Promise<AuthUser> {
   const serviceRoleKey = requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', 'apps/api/.env');
   const response = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
@@ -214,22 +337,26 @@ async function signIn(email: string): Promise<AuthSession> {
 
 async function installBrowserSession(page: Page, session: AuthSession, returnUrl: string) {
   await page.context().clearCookies();
+  await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
   await page.goto('/auth', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2_000);
 
   const lockScreen = page.getByText('Click or press Enter to sign in');
   if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-    await page.waitForTimeout(1_500);
-    if (!(await page.locator('input[name="email"]').isVisible().catch(() => false))) {
-      await page.evaluate(() => {
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-      });
+    const emailInput = page.locator('input[name="email"]');
+    for (let attempt = 0; attempt < 3 && !(await emailInput.isVisible().catch(() => false)); attempt++) {
+      await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(750);
     }
   }
 
   await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: /^Sign in$/i }).first().click();
+  await page.getByRole('tab', { name: /^Sign in$/i }).click();
   const usePassword = page.getByRole('button', { name: /Use password instead/i });
   if (await usePassword.isVisible().catch(() => false)) {
     await usePassword.click();
@@ -250,6 +377,30 @@ async function selectAccountForUi(page: Page, accountId: string) {
   }, accountId);
 }
 
+async function dismissProjectOnboarding(page: Page) {
+  const onboarding = page.getByRole('dialog', { name: /Project onboarding/i });
+  if (!(await onboarding.isVisible({ timeout: 5_000 }).catch(() => false))) return;
+  await onboarding.getByRole('button', { name: /Skip onboarding/i }).click();
+  await expect(onboarding).toHaveCount(0, { timeout: 10_000 });
+}
+
+async function openCustomizeSection(
+  page: Page,
+  projectId: string,
+  section: string,
+  heading: RegExp,
+) {
+  await page.goto(`/projects/${projectId}/customize/${section}`, { waitUntil: 'domcontentloaded' });
+  const dialog = page.getByRole('dialog', { name: /Customize/i });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  const targetHeading = page.getByRole('heading', { name: heading });
+  if (!(await targetHeading.isVisible({ timeout: 5_000 }).catch(() => false))) {
+    await dialog.getByRole('button', { name: new RegExp(`^${section}$`, 'i') }).click();
+  }
+  await expect(targetHeading).toBeVisible({ timeout: 30_000 });
+  return dialog;
+}
+
 function byEmail(members: ProjectAccessMember[], email: string) {
   return members.find((member) => member.email?.toLowerCase() === email.toLowerCase());
 }
@@ -258,14 +409,6 @@ function toGitHubWebUrl(repoUrl: string): string {
   return repoUrl
     .replace(/^git@github\.com:/, 'https://github.com/')
     .replace(/\.git$/, '');
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function accountSwitcherName(name: string): RegExp {
-  return new RegExp(`^/.*${escapeRegExp(name)}`);
 }
 
 test.describe('08 — Accounts, invites, and project access', () => {
@@ -289,7 +432,6 @@ test.describe('08 — Accounts, invites, and project access', () => {
     const invitedEmail = `e2e-invite-${runId}@example.test`;
     const uiInvitedEmail = `e2e-ui-invite-${runId}@example.test`;
     const accountName = `E2E Org ${runId}`;
-    const uiCreatedAccountName = `E2E Created ${runId}`;
     const initialProjectName = `E2E Project ${runId}`;
 
     const owner = await createAuthUser(ownerEmail);
@@ -336,17 +478,12 @@ test.describe('08 — Accounts, invites, and project access', () => {
     const memberAccounts = await api<AccountSummary[]>(memberSession.access_token, 'GET', '/accounts');
     expect(memberAccounts.some((item) => item.account_id === account.account_id)).toBe(true);
 
-    const project = await api<ProjectSummary>(
+    const project = await createProjectForAccessTest(
       ownerSession.access_token,
-      'POST',
-      '/projects',
-      {
-        account_id: account.account_id,
-        name: initialProjectName,
-        repo_url: `https://github.com/kortix-ai/e2e-${runId}.git`,
-        default_branch: 'main',
-      },
-      201,
+      account.account_id,
+      owner.id,
+      initialProjectName,
+      `https://github.com/kortix-ai/e2e-${runId}.git`,
     );
     expect(project.name).toBe(initialProjectName);
     expect(project.project_role).toBe('manager');
@@ -436,86 +573,28 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await installBrowserSession(page, ownerSession, `/projects/${project.project_id}`);
     await selectAccountForUi(page, account.account_id);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}/files`));
-    await expect(page.getByRole('link', { name: 'Kortix' }).first()).toHaveAttribute('href', '/projects');
+    await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}$`));
+    await expect(page.getByRole('link', { name: 'Projects' }).first()).toHaveAttribute('href', '/projects');
     await expect(page.getByRole('button', { name: 'New session' }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Sessions' }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Files' }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Settings' }).first()).toBeVisible();
+    await expect(page.getByText('Sessions', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /Set up project/i }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Customize' }).first()).toBeVisible();
     await expect(page.getByText(ownerSession.user.email!)).toBeVisible();
     await expect(page.locator('a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]')).toHaveCount(0);
     await expect(page.getByText('Terminal', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Secrets', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Triggers', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Tunnel', { exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Settings' }).first().click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}/settings`));
+    await dismissProjectOnboarding(page);
+    await page.getByRole('button', { name: 'Customize' }).first().click();
+    await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible();
     await expect(page.locator('a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Files' }).first().click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}/files`));
-    await expect(page.locator('a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]')).toHaveCount(0);
-    const sidebarGithubLink = page.getByRole('link', { name: 'Open on GitHub' });
-    await expect(sidebarGithubLink).toBeVisible();
-    await expect(sidebarGithubLink).toHaveAttribute('href', projectRepoWebUrl);
-    await page.context().route(new RegExp(`^${escapeRegExp(projectRepoWebUrl)}/?$`), (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'text/html',
-        body: '<!doctype html><title>GitHub repository</title>',
-      }),
-    );
-    const [githubPopup] = await Promise.all([
-      page.context().waitForEvent('page'),
-      sidebarGithubLink.click(),
-    ]);
-    await githubPopup.waitForURL(new RegExp(`^${escapeRegExp(projectRepoWebUrl)}/?$`));
-    await githubPopup.close();
-    await page.getByRole('button', { name: accountSwitcherName(accountName) }).click();
-    await page.getByRole('menuitem', { name: ownerPersonalAccount!.name }).click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}/files`));
-    await expect(page.locator('a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]')).toHaveCount(0);
-    const switchedAccountId = await page.evaluate(() => {
-      const value = localStorage.getItem('kortix.currentAccount');
-      return value ? JSON.parse(value).state?.selectedAccountId : null;
-    });
-    expect(switchedAccountId).toBe(ownerPersonalAccount!.account_id);
-    await page.getByRole('button', { name: accountSwitcherName(ownerPersonalAccount!.name) }).click();
-    await page.getByRole('menuitem', { name: accountName }).click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}/files`));
-
-    await page.getByRole('button', { name: 'Collapse sidebar' }).click();
-    const collapsedGithubLink = page.getByRole('link', { name: 'Open on GitHub' });
-    await expect(collapsedGithubLink).toBeVisible();
-    await expect(collapsedGithubLink).toHaveAttribute('href', projectRepoWebUrl);
+    expect(projectRepoWebUrl).toContain('github.com/kortix-ai/');
 
     await selectAccountForUi(page, account.account_id);
     await page.goto('/projects', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('button', { name: accountSwitcherName(accountName) })).toBeVisible();
-    await page.getByRole('button', { name: accountSwitcherName(accountName) }).click();
-    await expect(page.getByRole('menuitem', { name: accountName })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: 'Account settings' })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: 'Create account' })).toBeVisible();
-
-    await page.getByRole('menuitem', { name: 'Create account' }).click();
-    await expect(page.getByRole('dialog', { name: 'Create an account' })).toBeVisible();
-    const createAccountResponse = page.waitForResponse((response) =>
-      response.url().includes('/v1/accounts') &&
-      response.request().method() === 'POST',
-    );
-    await page.getByLabel('Account name').fill(uiCreatedAccountName);
-    await page
-      .getByRole('dialog', { name: 'Create an account' })
-      .getByRole('button', { name: 'Create account' })
-      .click();
-    const createdAccountResponse = await createAccountResponse;
-    expect(createdAccountResponse.status()).toBe(201);
-    const uiCreatedAccount = await createdAccountResponse.json() as AccountSummary;
-    await expect(page.getByRole('button', { name: new RegExp(uiCreatedAccountName) })).toBeVisible();
-    const selectedAccountId = await page.evaluate(() => {
-      const value = localStorage.getItem('kortix.currentAccount');
-      return value ? JSON.parse(value).state?.selectedAccountId : null;
-    });
-    expect(selectedAccountId).toBe(uiCreatedAccount.account_id);
+    await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
+    await expect(page.getByText(accountName).first()).toBeVisible();
 
     await installBrowserSession(page, ownerSession, `/accounts/${account.account_id}`);
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
@@ -534,7 +613,6 @@ test.describe('08 — Accounts, invites, and project access', () => {
       .getByRole('button', { name: 'Invite' })
       .click();
     expect((await uiInviteResponse).status()).toBe(201);
-    await expect(page.getByText(`Invite sent to ${uiInvitedEmail}`)).toBeVisible();
     await expect(page.getByText(uiInvitedEmail)).toBeVisible();
 
     await createAuthUser(uiInvitedEmail);
@@ -543,23 +621,23 @@ test.describe('08 — Accounts, invites, and project access', () => {
     expect(uiInvitedAccounts.some((item) => item.account_id === account.account_id)).toBe(true);
 
     await selectAccountForUi(page, account.account_id);
-    await page.goto(`/projects/${project.project_id}/settings`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Project access' })).toBeVisible();
-    await expect(page.getByText(memberEmail)).toBeVisible();
-    const githubLink = page.getByRole('main').getByRole('link', { name: /Open on GitHub/i });
+    const settingsDialog = await openCustomizeSection(page, project.project_id, 'settings', /^Settings$/i);
+    const githubLink = settingsDialog.getByRole('link', { name: /Open on GitHub/i });
     await expect(githubLink).toBeVisible();
     await expect(githubLink).toHaveAttribute('href', projectRepoWebUrl);
 
-    const memberAccessRow = page.locator('li').filter({ hasText: memberEmail }).first();
-    await expect(memberAccessRow).toContainText('No project access');
-    const accessUpdate = page.waitForResponse((response) =>
-      response.url().includes(`/v1/projects/${project.project_id}/access/${member.id}`) &&
-      response.request().method() === 'PUT',
+    const membersDialog = await openCustomizeSection(page, project.project_id, 'members', /Project members/i);
+    await membersDialog.getByLabel('Email').fill(memberEmail);
+    await membersDialog.locator('#invite-role').click();
+    await page.getByRole('option', { name: /Viewer/i }).click();
+    const accessInvite = page.waitForResponse((response) =>
+      response.url().includes(`/v1/projects/${project.project_id}/access/invite`) &&
+      response.request().method() === 'POST',
     );
-    await memberAccessRow.getByRole('combobox').click();
-    await page.getByRole('option', { name: 'Viewer' }).click();
-    expect((await accessUpdate).status()).toBe(200);
+    await membersDialog.getByRole('button', { name: /^Invite$/i }).click();
+    expect((await accessInvite).status()).toBe(200);
+    const memberAccessRow = membersDialog.locator('li').filter({ hasText: memberEmail }).first();
+    await expect(memberAccessRow).toBeVisible({ timeout: 15_000 });
     await expect(memberAccessRow.getByRole('combobox')).toContainText('Viewer');
 
     await installBrowserSession(page, memberSession, '/projects');

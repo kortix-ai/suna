@@ -159,11 +159,7 @@ async function createAuthUser(email: string): Promise<AuthUser> {
 }
 
 async function signIn(email: string): Promise<AuthSession> {
-  const anonKey = process.env.SUPABASE_ANON_KEY || requireEnvValue(
-    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-    'apps/web/.env',
-    'apps/api/.env',
-  );
+  const anonKey = requireEnvValue('SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env');
   return json<AuthSession>(
     await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
       method: 'POST',
@@ -179,22 +175,26 @@ async function signIn(email: string): Promise<AuthSession> {
 
 async function installBrowserSession(page: Page, session: AuthSession, returnUrl: string) {
   await page.context().clearCookies();
+  await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
   await page.goto('/auth', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2_000);
 
   const lockScreen = page.getByText('Click or press Enter to sign in');
   if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-    await page.waitForTimeout(1_500);
-    if (!(await page.locator('input[name="email"]').isVisible().catch(() => false))) {
-      await page.evaluate(() => {
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-      });
+    const emailInput = page.locator('input[name="email"]');
+    for (let attempt = 0; attempt < 3 && !(await emailInput.isVisible().catch(() => false)); attempt++) {
+      await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(750);
     }
   }
 
   await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: /^Sign in$/i }).first().click();
+  await page.getByRole('tab', { name: /^Sign in$/i }).click();
   const usePassword = page.getByRole('button', { name: /Use password instead/i });
   if (await usePassword.isVisible().catch(() => false)) {
     await usePassword.click();

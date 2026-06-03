@@ -98,8 +98,8 @@ async function createAuthUser(email: string): Promise<AuthUser> {
 
 async function signIn(email: string): Promise<AuthSession> {
   const anonKey =
-    optionalEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env') ||
-    requireEnvValue('SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env');
+    optionalEnvValue('SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env') ||
+    requireEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env');
   return json<AuthSession>(
     await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
       method: 'POST',
@@ -115,22 +115,26 @@ async function signIn(email: string): Promise<AuthSession> {
 
 async function installBrowserSession(page: Page, session: AuthSession, returnUrl: string) {
   await page.context().clearCookies();
+  await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
   await page.goto('/auth', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2_000);
 
   const lockScreen = page.getByText('Click or press Enter to sign in');
   if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-    await page.waitForTimeout(1_500);
-    if (!(await page.locator('input[name="email"]').isVisible().catch(() => false))) {
-      await page.evaluate(() => {
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-      });
+    const emailInput = page.locator('input[name="email"]');
+    for (let attempt = 0; attempt < 3 && !(await emailInput.isVisible().catch(() => false)); attempt++) {
+      await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(750);
     }
   }
 
   await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: /^Sign in$/i }).first().click();
+  await page.getByRole('tab', { name: /^Sign in$/i }).click();
   const usePassword = page.getByRole('button', { name: /Use password instead/i });
   if (await usePassword.isVisible().catch(() => false)) {
     await usePassword.click();
@@ -142,20 +146,58 @@ async function installBrowserSession(page: Page, session: AuthSession, returnUrl
   await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
 }
 
+function firstExistingExplicitEnvFile(): string | null {
+  const fs = require('fs') as typeof import('node:fs');
+  const path = require('path') as typeof import('node:path');
+  return (process.env.E2E_ENV_FILE || '')
+    .split(path.delimiter)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
 async function grantPlatformAdmin(userId: string) {
   const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
-  const databaseUrl = requireEnvValue('DATABASE_URL', 'apps/api/.env');
-  execFileSync('psql', [
-    databaseUrl,
-    '-v',
-    'ON_ERROR_STOP=1',
-    '-c',
-    `
+  const sql = `
       INSERT INTO kortix.platform_user_roles (account_id, role, granted_by)
       VALUES ('${userId}', 'super_admin', '${userId}')
       ON CONFLICT (account_id) DO UPDATE SET role = excluded.role;
-    `,
-  ]);
+    `;
+  const envFile = firstExistingExplicitEnvFile();
+  if (envFile) {
+    const fs = require('fs') as typeof import('node:fs');
+    const path = require('path') as typeof import('node:path');
+    const composeFile = path.join(path.dirname(envFile), 'docker-compose.yml');
+    if (fs.existsSync(composeFile)) {
+      execFileSync(
+        'docker',
+        [
+          'compose',
+          '--project-name',
+          process.env.E2E_COMPOSE_PROJECT_NAME || 'kortix-default',
+          '--env-file',
+          envFile,
+          '-f',
+          composeFile,
+          'exec',
+          '-T',
+          'supabase-db',
+          'psql',
+          '-v',
+          'ON_ERROR_STOP=1',
+          '-U',
+          'postgres',
+          '-d',
+          'postgres',
+        ],
+        { input: sql, encoding: 'utf8' },
+      );
+      return;
+    }
+  }
+
+  const databaseUrl = requireEnvValue('DATABASE_URL', 'apps/api/.env');
+  execFileSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql]);
 }
 
 async function ensureAdminSession(): Promise<AuthSession> {

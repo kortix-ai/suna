@@ -176,9 +176,9 @@ function SignalPanel({
   );
 }
 
-function StatusList({ values, label }: { values: Record<string, number>; label?: string }) {
+function StatusList({ values, label }: { values?: Record<string, number> | null; label?: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const entries = Object.entries(values);
+  const entries = Object.entries(values ?? {});
   return (
     <div className="space-y-2">
       {label && <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>}

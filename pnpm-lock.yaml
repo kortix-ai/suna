@@ -484,7 +484,7 @@ importers:
         version: 1.6.1(next@15.5.14)(react@18.3.1)
       '@vercel/edge-config':
         specifier: ^1.4.0
-        version: 1.4.3(@opentelemetry/api@1.9.0)(next@15.5.14)
+        version: 1.4.3(@opentelemetry/api@1.9.1)(next@15.5.14)
       '@vercel/speed-insights':
         specifier: ^1.2.0
         version: 1.3.1(next@15.5.14)(react@18.3.1)
@@ -553,7 +553,7 @@ importers:
         version: 11.15.0
       next:
         specifier: 15.5.14
-        version: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1)
+        version: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1)
       next-intl:
         specifier: ^4.5.3
         version: 4.9.2(next@15.5.14)(react@18.3.1)(typescript@5.9.3)
@@ -4688,7 +4688,7 @@ packages:
       next: '>=15.0'
       react: '>=18.0.0'
     dependencies:
-      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1)
+      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1)
       react: 18.3.1
       use-deep-compare: 1.3.0(react@18.3.1)
       whatwg-fetch: 3.6.20
@@ -4860,7 +4860,7 @@ packages:
       next: ^13.0.0 || ^14.0.0 || ^15.0.0
       react: ^18.2.0 || 19.0.0-rc-de68d2f4-20241204 || ^19.0.0
     dependencies:
-      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1)
+      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1)
       react: 18.3.1
       third-party-capital: 1.0.20
     dev: false
@@ -4952,13 +4952,13 @@ packages:
       '@opentelemetry/api': 1.9.1
     dev: false
 
-  /@opentelemetry/context-async-hooks@2.7.1(@opentelemetry/api@1.9.0):
+  /@opentelemetry/context-async-hooks@2.7.1(@opentelemetry/api@1.9.1):
     resolution: {integrity: sha512-OPFBYuXEn1E4ja3Y6eeA7O+ZnLBNcXTV5Cgsn1VaqBZ6hC5FnpZPLBNme1LJY8ZtF4aOujPKFoeWN4ik487KuQ==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
     dependencies:
-      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/api': 1.9.1
     dev: false
 
   /@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0):
@@ -4978,16 +4978,6 @@ packages:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/semantic-conventions': 1.40.0
-    dev: false
-
-  /@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.0):
-    resolution: {integrity: sha512-QAqIj32AtK6+pEVNG7EOVxHdE06RP+FM5qpiEJ4RtDcFIqKUZHYhl7/7UY5efhwmwNAg7j8QbJVBLxMerc0+gw==}
-    engines: {node: ^18.19.0 || >=20.6.0}
-    peerDependencies:
-      '@opentelemetry/api': '>=1.0.0 <1.10.0'
-    dependencies:
-      '@opentelemetry/api': 1.9.0
       '@opentelemetry/semantic-conventions': 1.40.0
     dev: false
 
@@ -5620,14 +5610,14 @@ packages:
       '@opentelemetry/semantic-conventions': 1.40.0
     dev: false
 
-  /@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0):
+  /@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.1):
     resolution: {integrity: sha512-DeT6KKolmC4e/dRQvMQ/RwlnzhaqeiFOXY5ngoOPJ07GgVVKxZOg9EcrNZb5aTzUn+iCrJldAgOfQm1O/QfPAQ==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
     dependencies:
-      '@opentelemetry/api': 1.9.0
-      '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.40.0
     dev: false
 
@@ -5711,15 +5701,15 @@ packages:
       '@opentelemetry/semantic-conventions': 1.40.0
     dev: false
 
-  /@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0):
+  /@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.1):
     resolution: {integrity: sha512-NAYIlsF8MPUsKqJMiDQJTMPOmlbawC1Iz/omMLygZ1C9am8fTKYjTaI+OZM+WTY3t3Glo0wnOg/6/pac6RGPPw==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
     dependencies:
-      '@opentelemetry/api': 1.9.0
-      '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.0)
-      '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.40.0
     dev: false
 
@@ -8529,7 +8519,7 @@ packages:
       '@sentry/react': 10.47.0(react@18.3.1)
       '@sentry/vercel-edge': 10.47.0
       '@sentry/webpack-plugin': 5.1.1(webpack@5.106.2)
-      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1)
+      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1)
       rollup: 4.60.1
       stacktrace-parser: 0.1.11
     transitivePeerDependencies:
@@ -8658,9 +8648,9 @@ packages:
       '@opentelemetry/semantic-conventions': ^1.39.0
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/context-async-hooks': 2.7.1(@opentelemetry/api@1.9.0)
-      '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.0)
-      '@opentelemetry/sdk-trace-base': 2.7.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/context-async-hooks': 2.7.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-base': 2.7.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.40.0
       '@sentry/core': 10.47.0
     dev: false
@@ -12758,7 +12748,7 @@ packages:
       vue-router:
         optional: true
     dependencies:
-      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1)
+      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1)
       react: 18.3.1
     dev: false
 
@@ -12766,7 +12756,7 @@ packages:
     resolution: {integrity: sha512-NRIBwfcS0bUoUbRWlNGetqjvLSwgYH/BqKqDN7vK1g32p7dN96k0712COgaz6VFizAm9b0g6IG6hR6+hc0KCPg==}
     dev: false
 
-  /@vercel/edge-config@1.4.3(@opentelemetry/api@1.9.0)(next@15.5.14):
+  /@vercel/edge-config@1.4.3(@opentelemetry/api@1.9.1)(next@15.5.14):
     resolution: {integrity: sha512-8vTDATodRrH49wMzKEjZ8/5H2qs1aPkD0uRK585f/Fx4YN2wfHfY/3td9OFrh+gdnCq07z8A5f0hoY6xhBcPkg==}
     engines: {node: '>=14.6'}
     peerDependencies:
@@ -12778,9 +12768,9 @@ packages:
       next:
         optional: true
     dependencies:
-      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/api': 1.9.1
       '@vercel/edge-config-fs': 0.1.0
-      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1)
+      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1)
     dev: false
 
   /@vercel/speed-insights@1.3.1(next@15.5.14)(react@18.3.1):
@@ -12806,7 +12796,7 @@ packages:
       vue-router:
         optional: true
     dependencies:
-      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1)
+      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1)
       react: 18.3.1
     dev: false
 
@@ -16772,7 +16762,7 @@ packages:
       image-size: 2.0.2
       lucide-react: 0.479.0(react@18.3.1)
       negotiator: 1.0.0
-      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1)
+      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1)
       npm-to-yarn: 3.0.1
       path-to-regexp: 8.4.2
       react: 18.3.1
@@ -16815,7 +16805,7 @@ packages:
       fumadocs-core: 15.8.5(@types/react@18.3.28)(lucide-react@0.479.0)(next@15.5.14)(react-dom@18.3.1)(react@18.3.1)
       js-yaml: 4.1.1
       lru-cache: 11.2.6
-      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1)
+      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1)
       picocolors: 1.1.1
       react: 18.3.1
       remark-mdx: 3.1.1
@@ -16859,7 +16849,7 @@ packages:
       class-variance-authority: 0.7.1
       fumadocs-core: 15.8.5(@types/react@18.3.28)(lucide-react@0.479.0)(next@15.5.14)(react-dom@18.3.1)(react@18.3.1)
       lodash.merge: 4.6.2
-      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1)
+      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1)
       next-themes: 0.4.6(react-dom@18.3.1)(react@18.3.1)
       postcss-selector-parser: 7.1.1
       react: 18.3.1
@@ -19938,7 +19928,7 @@ packages:
       '@swc/core': 1.15.11
       icu-minify: 4.12.0
       negotiator: 1.0.0
-      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1)
+      next: 15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1)
       next-intl-swc-plugin-extractor: 4.12.0
       po-parser: 2.1.1
       react: 18.3.1
@@ -19958,7 +19948,7 @@ packages:
       react-dom: 18.3.1(react@18.3.1)
     dev: false
 
-  /next@15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@18.3.1)(react@18.3.1):
+  /next@15.5.14(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1)(react@18.3.1):
     resolution: {integrity: sha512-M6S+4JyRjmKic2Ssm7jHUPkE6YUJ6lv4507jprsSZLulubz0ihO2E+S4zmQK3JZ2ov81JrugukKU4Tz0ivgqqQ==}
     engines: {node: ^18.18.0 || ^19.8.0 || >= 20.0.0}
     hasBin: true
@@ -19980,7 +19970,7 @@ packages:
         optional: true
     dependencies:
       '@next/env': 15.5.14
-      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/api': 1.9.1
       '@swc/helpers': 0.5.15
       caniuse-lite: 1.0.30001791
       postcss: 8.4.31

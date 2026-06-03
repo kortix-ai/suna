@@ -77,6 +77,7 @@ export async function ensureSchema(): Promise<void> {
   if (exitCode !== 0) {
     console.error('[schema] Push failed (exit', exitCode + ')');
     if (stderr.trim()) console.error('[schema] stderr:', stderr.trim());
+    await ensureKnownSchemaDrift();
     return; // Don't run post-push if push failed
   }
 
@@ -88,6 +89,36 @@ export async function ensureSchema(): Promise<void> {
 
   for (const file of postPushFiles) {
     await runSqlFile(join(migrationsDir, file));
+  }
+
+  await ensureKnownSchemaDrift();
+}
+
+async function ensureKnownSchemaDrift(): Promise<void> {
+  if (!config.DATABASE_URL) return;
+  const db = postgres(config.DATABASE_URL, { max: 1 });
+  try {
+    await db`
+      ALTER TABLE IF EXISTS kortix.sandbox_templates
+      ADD COLUMN IF NOT EXISTS built_from_commit TEXT
+    `;
+    if (
+      config.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker') &&
+      !config.ALLOWED_SANDBOX_PROVIDERS.includes('daytona')
+    ) {
+      await db`
+        UPDATE kortix.sandbox_templates
+        SET provider = 'local_docker'
+        WHERE project_id IS NULL
+          AND is_shared = TRUE
+          AND slug = 'default'
+          AND provider = 'daytona'
+      `;
+    }
+  } catch (err) {
+    console.error('[schema] ✗ known schema drift repair failed:', (err as Error).message ?? err);
+  } finally {
+    await db.end();
   }
 }
 

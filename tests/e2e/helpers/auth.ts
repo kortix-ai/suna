@@ -1,5 +1,5 @@
-export const ownerEmail = process.env.E2E_OWNER_EMAIL || 'test@kortix.ai';
-export const ownerPassword = process.env.E2E_OWNER_PASSWORD || 'testpass123';
+export const ownerEmail = process.env.E2E_OWNER_EMAIL || 'test-e2e@kortix.ai';
+export const ownerPassword = process.env.E2E_OWNER_PASSWORD || 'e2e-testpass-123';
 export const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 

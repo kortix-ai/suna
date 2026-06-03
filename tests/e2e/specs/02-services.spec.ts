@@ -4,18 +4,18 @@ const frontendUrl = process.env.E2E_BASE_URL || 'http://localhost:13737';
 const apiUrl = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 
-test.describe('02 — Services respond on correct ports', () => {
-  test('Frontend responds on :13737', async () => {
+test.describe('02 — Services respond on configured endpoints', () => {
+  test('Frontend responds', async () => {
     const res = await fetch(`${frontendUrl}/auth`);
     expect(res.status).toBe(200);
   });
 
-  test('API health check passes on :13738', async () => {
+  test('API health check passes', async () => {
     const res = await fetch(`${apiUrl}/health`);
     expect(res.status).toBe(200);
   });
 
-  test('Supabase Auth health passes on :13740', async () => {
+  test('Supabase Auth health passes', async () => {
     // Kong requires the anon key as apikey header
     const fs = require('fs');
     const path = require('path');
