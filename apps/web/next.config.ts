@@ -46,10 +46,8 @@ const nextConfig = (): NextConfig => ({
     optimizePackageImports: [
       'lucide-react',
       'framer-motion',
-      '@radix-ui/react-icons',
       'date-fns',
       '@tanstack/react-query',
-      'react-icons',
       'cmdk',
       'next-intl',
     ],
