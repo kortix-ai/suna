@@ -82,8 +82,11 @@ export async function syncLegacyStripeSubscription(
     if (customerId) candidateCustomerIds.add(customerId);
 
     if (customerEmail) {
+      const escapedEmail = customerEmail
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'");
       const customers = await stripe.customers.search({
-        query: `email:'${customerEmail.replace(/'/g, "\\'")}'`,
+        query: `email:'${escapedEmail}'`,
         limit: 10,
       });
 
