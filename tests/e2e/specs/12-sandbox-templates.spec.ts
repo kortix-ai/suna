@@ -15,7 +15,7 @@
  *      → 202 and no client console error.
  *
  * Designed for the local-dev stack (Next on :3000, API on :8008, Supabase on
- * :54321). Selected by `tests/playwright.local-dev.config.ts`.
+ * :54321).
  */
 
 import { expect, test, type Page } from '@playwright/test';
