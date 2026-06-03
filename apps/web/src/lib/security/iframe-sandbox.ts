@@ -36,9 +36,6 @@ export const PRESENTATION_WITH_MODALS_IFRAME_SANDBOX = joinSandboxTokens(
   PRESENTATION_WITH_MODALS_IFRAME_SANDBOX_TOKENS,
 );
 
-export const YOUTUBE_IFRAME_ALLOW =
-  'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
-
 export function getIframeSandbox(options?: { isolateHtmlPreview?: boolean }): string {
   if (options?.isolateHtmlPreview) {
     return ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX;
