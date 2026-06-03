@@ -5,8 +5,8 @@ import { test, expect } from 'bun:test';
 
 process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum';
 process.env.PLATINUM_API_KEY = 'pt_test_key';
-process.env.PLATINUM_SERVER_URL = 'https://api.platinum.dev';
-process.env.PLATINUM_TARGET = 'eu-west';
+process.env.PLATINUM_API_URL = 'https://api.platinum.dev';
+process.env.PLATINUM_TEMPLATE = 'tpl_test';
 process.env.KORTIX_URL ??= 'https://api.example.com';
 process.env.DATABASE_URL ??= 'postgres://x';
 

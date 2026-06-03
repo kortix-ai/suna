@@ -85,7 +85,6 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       form.append('default_ram_mb', String((input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024));
       form.append('default_disk_gb', String(input.spec.diskGb ?? DEFAULT_DISK_GB));
       form.append('entrypoint', (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '));
-      if (config.PLATINUM_TARGET) form.append('region', config.PLATINUM_TARGET);
 
       console.info(`[snapshots] ${input.snapshotName}: uploading build context to Platinum (slug="${input.slug}")`);
       await platinumUpload<PlatinumTemplate>('/v1/templates/from-build', form);

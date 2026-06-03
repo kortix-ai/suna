@@ -13,8 +13,8 @@ export function isPlatinumConfigured(): boolean {
 }
 
 function platinumBase(): string {
-  const url = config.PLATINUM_SERVER_URL;
-  if (!url) throw new Error('Missing PLATINUM_SERVER_URL');
+  const url = config.PLATINUM_API_URL;
+  if (!url) throw new Error('Missing PLATINUM_API_URL');
   return url.replace(/\/+$/, '');
 }
 

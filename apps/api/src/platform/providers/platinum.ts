@@ -51,14 +51,15 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
-    // Same per-project-snapshot rule as Daytona: every sandbox boots from a
-    // template resolved by the snapshot builder before we get here. No shared
-    // fallback image.
-    const template = opts.snapshot;
+    // Boot from the session's own per-project template if one was built
+    // (opts.snapshot), else fall back to the fixed PLATINUM_TEMPLATE (e.g.
+    // kortix-computer) — so Platinum works out of the box without a per-project
+    // build. At least one must be set.
+    const template = opts.snapshot ?? config.PLATINUM_TEMPLATE;
     if (!template) {
       throw new Error(
-        'Platinum create() called without opts.snapshot. Every sandbox must boot ' +
-        'from a per-project template built by apps/api/src/snapshots/builder.ts.',
+        'Platinum create() has no template: pass opts.snapshot or set PLATINUM_TEMPLATE ' +
+        '(a ready Platinum template id, e.g. kortix-computer).',
       );
     }
 
@@ -85,7 +86,6 @@ export class PlatinumProvider implements SandboxProvider {
         method: 'POST',
         body: JSON.stringify({
           template,
-          region: config.PLATINUM_TARGET || undefined,
           envVars,
           type: autoStop === 0 ? 'persistent' : 'ephemeral',
           auto_stop_minutes: autoStop,

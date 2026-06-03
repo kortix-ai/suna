@@ -194,14 +194,13 @@ const envSchema = z.object({
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
-  // pt_live_… key (or admin token); PLATINUM_SERVER_URL is the control-plane
-  // base (e.g. https://api.platinum.dev); PLATINUM_TARGET is the public region
-  // (e.g. "eu-west", see GET /v1/regions) and is optional (absent → template/
-  // scheduler default). Same per-project-snapshot rule as Daytona: no shared
-  // fallback image.
+  // pt_live_… key; PLATINUM_API_URL is the control-plane base
+  // (https://api.platinum.dev). PLATINUM_TEMPLATE is a ready Platinum template
+  // id to boot sessions from (e.g. kortix-computer) — used as the fallback when
+  // a session hasn't built its own per-project Platinum template.
   PLATINUM_API_KEY:            optStr,
-  PLATINUM_SERVER_URL:         optStr,
-  PLATINUM_TARGET:             optStr,
+  PLATINUM_API_URL:            optStr,
+  PLATINUM_TEMPLATE:           optStr,
 
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
@@ -321,8 +320,8 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
   }
   if (providers.includes('platinum')) {
-    if (!raw.PLATINUM_API_KEY)    issues.push({ var: 'PLATINUM_API_KEY',    message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
-    if (!raw.PLATINUM_SERVER_URL) issues.push({ var: 'PLATINUM_SERVER_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
+    if (!raw.PLATINUM_API_KEY) issues.push({ var: 'PLATINUM_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
+    if (!raw.PLATINUM_API_URL) issues.push({ var: 'PLATINUM_API_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
   }
   if (providers.includes('local_docker') && !raw.DOCKER_HOST) {
     issues.push({ var: 'DOCKER_HOST', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "local_docker"', level: 'error' });
@@ -517,8 +516,8 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
 
   PLATINUM_API_KEY: env.PLATINUM_API_KEY,
-  PLATINUM_SERVER_URL: env.PLATINUM_SERVER_URL,
-  PLATINUM_TARGET: env.PLATINUM_TARGET,
+  PLATINUM_API_URL: env.PLATINUM_API_URL,
+  PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
 
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
