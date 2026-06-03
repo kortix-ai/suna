@@ -364,7 +364,8 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `APP-1` `GET /projects/:id/apps` (`read`) · `POST` (`manage`) · `PATCH/DELETE /:slug` (`manage`) · `POST /:slug/deploy|stop` (`manage`) · `GET /:slug/logs` (`read`).
 
 ### Ops (platform admin)
-`OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403. Legacy `/v1/admin/*` → 404.
+`OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403.
+`ADM-1` `GET /admin/api/accounts` · `GET /admin/api/accounts/:id/users` · `GET /admin/api/accounts/:id/ledger` · `POST /admin/api/accounts/:id/credits[/:debit]` → `requireAdmin`.
 
 ---
 
