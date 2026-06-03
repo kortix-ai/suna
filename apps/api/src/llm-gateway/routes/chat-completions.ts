@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Hono } from 'hono';
 import type { LlmGatewayConfig, LlmGatewayHooks, UsageEvent } from '../types';
 import { callOpenRouter } from '../services/openrouter-client';
@@ -5,7 +6,7 @@ import { calculateCost } from '../services/pricing';
 import { extractUsageFromJson, extractUsageFromSseBuffer, type ExtractedUsage } from '../services/usage-extractor';
 
 function newRequestId(): string {
-  return `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  return `req_${Date.now().toString(36)}${randomBytes(6).toString('base64url')}`;
 }
 
 function bearer(header: string | undefined): string | null {
