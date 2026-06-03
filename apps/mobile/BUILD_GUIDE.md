@@ -12,14 +12,14 @@ eas login
 ```bash
 cd apps/mobile
 pnpm run android:setup
-pnpm run android:build    
-pnpm run android:dev      
+pnpm run android:build
+pnpm run android:dev
 ```
 
 ## IOS Development Setup
 ```bash
 cd apps/mobile
-npx expo run:ios  
+pnpm run ios
 ```
 
 ## Build & Submit
