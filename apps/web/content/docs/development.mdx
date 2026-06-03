@@ -44,13 +44,15 @@ for f in .env .env.dev; do dotenvx-armor pull -f "$f"; done
 ```
 </Step>
 <Step>
-### Install the commit guard + run
+### Enable the commit hooks + run
 ```sh
-dotenvx ext precommit --install   # blocks committing any unencrypted .env
+git config core.hooksPath .githooks   # auto-encrypts secrets on commit
 pnpm dev
 ```
 </Step>
 </Steps>
+
+The pre-commit hook **auto-encrypts** `apps/api/.env` / `.env.dev` (so a hand-typed plaintext value is sealed before it can be committed) and blocks the commit if any unencrypted `.env` slips through.
 
 ## Everyday
 

@@ -48,7 +48,7 @@ Need a different value just on your machine? Put it in the gitignored `apps/api/
 ## Guardrails already in place
 
 - `apps/api/.env.keys`, `apps/api/.env.local`, `apps/web/.env`, `supabase/.env` are gitignored.
-- A `.git/hooks/pre-commit` (dotenvx `ext precommit`) blocks committing any unencrypted, non-gitignored `.env`. Install it on a fresh clone with `dotenvx ext precommit --install`.
+- Version-controlled git hooks in `.githooks/` (enable per clone: `git config core.hooksPath .githooks`). The pre-commit hook **auto-encrypts** `apps/api/.env` / `.env.dev` and then blocks the commit if any unencrypted, non-gitignored `.env` remains; pre-push re-checks as a final gate.
 - `.gitleaks.toml` allowlists the (encrypted) `apps/api/.env*` so `secret-scan` passes while still catching real plaintext anywhere else.
 - GitHub secret-scanning **push protection** is enabled on the repo.
 
