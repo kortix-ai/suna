@@ -227,6 +227,41 @@ export function ensureOpencodeSession(projectId: string, sessionId: string) {
   );
 }
 
+export interface ProjectSessionSandbox {
+  sandbox_id: string;
+  session_id: string;
+  project_id: string;
+  account_id: string;
+  provider: string | null;
+  external_id: string | null;
+  base_url: string | null;
+  /** 'provisioning' | 'active' | 'error' | 'stopped' | 'archived' */
+  status: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Fetch a session's sandbox runtime row. CRITICAL (web parity): this GET has a
+ * SIDE EFFECT — when there's no usable sandbox it kicks (re)provisioning on the
+ * backend (kickProvisionOnOpen). The web's session page polls it every ~300ms,
+ * which is what actually drives the sandbox to 'active'. Returns null on 404
+ * ('not provisioned yet' — keep polling).
+ */
+export async function getProjectSessionSandbox(
+  projectId: string,
+  sessionId: string,
+): Promise<ProjectSessionSandbox | null> {
+  try {
+    return await apiFetch<ProjectSessionSandbox>(
+      `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/sandbox`,
+    );
+  } catch {
+    return null;
+  }
+}
+
 export type WakeStatus = 'running' | 'waking' | 'provisioning' | 'unknown';
 
 /**

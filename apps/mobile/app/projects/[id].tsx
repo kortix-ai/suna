@@ -85,8 +85,9 @@ import { InstanceOnboarding } from '@/components/setup/InstanceOnboarding';
 import { ProvisioningProgress } from '@/components/provisioning/ProvisioningProgress';
 import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
 import type { SandboxProviderName } from '@/lib/platform/client';
+import { getSandboxUrl } from '@/lib/platform/client';
 import { useProjectSessions, useCreateProjectSession, useProject } from '@/lib/projects/hooks';
-import { ensureOpencodeSession, wakeProjectSession } from '@/lib/projects/projects-client';
+import { ensureOpencodeSession, wakeProjectSession, getProjectSessionSandbox } from '@/lib/projects/projects-client';
 import type { ProjectSession, ProjectSessionStatus, EnsureOpencodeResult } from '@/lib/projects/projects-client';
 import { Avatar } from '@/components/ui/Avatar';
 import {
@@ -658,6 +659,70 @@ function SessionGroup({
   );
 }
 
+/**
+ * Probe a session sandbox's runtime health THROUGH the backend proxy — the same
+ * `${sandboxUrl}/kortix/health` the web's useSandboxConnection polls. Beyond
+ * reporting readiness, hitting the proxy keeps the sandbox routed/warm; the
+ * backend's ensure-opencode probe alone doesn't, so without this a freshly-woken
+ * sandbox can stay unreachable. Returns 'ready' once OpenCode reports up.
+ */
+async function probeSandboxHealth(
+  sandboxUrl: string,
+): Promise<'ready' | 'starting' | 'unreachable'> {
+  try {
+    const token = await getAuthToken();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    const res = await fetch(`${sandboxUrl.replace(/\/$/, '')}/kortix/health`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (res.status === 503) return 'starting'; // sandbox up, OpenCode still booting
+    if (!res.ok) return 'unreachable';
+    const data: any = await res.json().catch(() => null);
+    if (data?.runtimeReady === true) return 'ready';
+    if (data?.opencode === 'ok' || data?.opencode === true) return 'ready';
+    if (data?.status && !['starting', 'down', 'error'].includes(data.status)) return 'ready';
+    return 'starting';
+  } catch {
+    return 'unreachable';
+  }
+}
+
+/**
+ * Deliver the composer's first prompt into a session's OpenCode root, once it
+ * exists. Web parity: the project home stashes the prompt and sends it after the
+ * session connects rather than passing `initial_prompt` to createProjectSession
+ * (the boot-time KORTIX_INITIAL_PROMPT path can leave OpenCode perpetually
+ * not-ready). Fire-and-forget — SessionPage's sync surfaces the message/reply.
+ */
+async function sendOpencodePrompt(
+  sandboxUrl: string,
+  opencodeSessionId: string,
+  text: string,
+): Promise<void> {
+  try {
+    const token = await getAuthToken();
+    const res = await fetch(
+      `${sandboxUrl.replace(/\/$/, '')}/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ parts: [{ type: 'text', text }] }),
+      },
+    );
+    if (!res.ok) {
+      log.error('[connect] initial prompt failed:', res.status, await res.text().catch(() => ''));
+    }
+  } catch (err: any) {
+    log.error('[connect] initial prompt error:', err?.message || err);
+  }
+}
+
 // ─── Main screen ────────────────────────────────────────────────────────────
 
 export default function ProjectSessionScreen() {
@@ -1103,6 +1168,9 @@ export default function ProjectSessionScreen() {
     setDrawerOpen(false);
   }, [navigateToSession]);
 
+  // Composer prompts awaiting their session's OpenCode root, keyed by session id.
+  const pendingPromptsRef = useRef<Record<string, string>>({});
+
   // Switch the SandboxContext to a session's sandbox and render its chat. Needs
   // both the sandbox URL and the resolved OpenCode pin (opencode_session_id).
   const connectToProjectSession = useCallback((ps: ProjectSession) => {
@@ -1122,6 +1190,12 @@ export default function ProjectSessionScreen() {
     setConnectingProjectSessionId(null);
     setActiveProjectSessionId(ps.session_id);
     navigateToSession(ps.opencode_session_id);
+    // Deliver the composer's first prompt now that the OpenCode root exists.
+    const pending = pendingPromptsRef.current[ps.session_id];
+    if (pending) {
+      delete pendingPromptsRef.current[ps.session_id];
+      void sendOpencodePrompt(ps.sandbox_url, ps.opencode_session_id, pending);
+    }
     return true;
   }, [switchSandbox, navigateToSession]);
 
@@ -1130,94 +1204,104 @@ export default function ProjectSessionScreen() {
   // open the chat. The sandbox/runtime can still be warming, so retry on
   // not_ready/unreachable with backoff — mirrors useCanonicalOpenCodeSession.
   const ensuringRef = useRef<string | null>(null);
-  const ensureAndOpen = useCallback(async (ps: ProjectSession) => {
-    if (!projectId || ensuringRef.current === ps.session_id) return;
-    ensuringRef.current = ps.session_id;
-    // ensure-opencode returns reason 'not_ready'/'unreachable' (HTTP 200, no pin)
-    // while the sandbox's OpenCode runtime is still warming — a cold sandbox can
-    // take a few minutes. The web waits for the runtime (useOpenCodeRuntimeReady)
-    // before resolving the pin; mobile has no such signal, so we poll ensure
-    // patiently and only fail on a definitive 'failed' status or a long timeout.
+  // Bring a project session online and open it, mirroring the web's session boot
+  // (app/projects/[id]/sessions/[sessionId]/page.tsx + useSandboxConnection):
+  //   1. POLL GET /sessions/:id/sandbox — this GET DRIVES (re)provisioning on the
+  //      backend (kickProvisionOnOpen) and returns the authoritative sandbox
+  //      status. The web hammers it ~300ms; that polling is what advances the
+  //      sandbox to 'active'. The list endpoint we poll elsewhere does NOT.
+  //   2. once 'active': wake (idle auto-stop) + health-poll the proxy (warm/route),
+  //   3. ensure-opencode resolves opencode_session_id once the runtime is up,
+  //   4. switch + navigate + deliver the stashed prompt.
+  // A cold boot can take minutes, so we poll patiently and fail only on a
+  // definitive error/timeout.
+  const ensureAndOpen = useCallback(async (sessionId: string) => {
+    if (!projectId || ensuringRef.current === sessionId) return;
+    ensuringRef.current = sessionId;
     const startedAt = Date.now();
-    const MAX_WAIT_MS = 3 * 60_000;
+    const MAX_WAIT_MS = 4 * 60_000;
     let lastWokeAt = 0;
     try {
       let attempt = 0;
       while (Date.now() - startedAt < MAX_WAIT_MS) {
-        if (ensuringRef.current !== ps.session_id) return; // superseded by another open
-        // Wake an auto-stopped/idle sandbox (web parity). The provider stops idle
-        // sandboxes (~15min) but the DB row still reads 'running', so the
-        // container is dead and ensure-opencode would never resolve. Fire-and-
-        // forget; re-wake periodically in case it stops again mid-wait.
-        if (Date.now() - lastWokeAt > 25_000) {
-          lastWokeAt = Date.now();
-          wakeProjectSession(projectId, ps.session_id).catch(() => {});
-        }
-        let updated: EnsureOpencodeResult | null = null;
-        try {
-          updated = await ensureOpencodeSession(projectId, ps.session_id);
-        } catch (err: any) {
-          // 409 (sandbox row not ready yet) etc. — transient while booting.
-          log.log('🔄 [connect] ensure-opencode retry:', err?.message || err);
-        }
-        if (updated?.opencode_session_id) {
-          connectToProjectSession({
-            ...ps,
-            ...updated,
-            opencode_session_id: updated.opencode_session_id,
-            sandbox_url: updated.sandbox_url || ps.sandbox_url,
-          });
-          return;
-        }
-        if (updated?.status === 'failed') {
-          setConnectingProjectSessionId(null);
-          Alert.alert('Session failed to start', updated.error || 'The sandbox could not be provisioned.');
-          return;
-        }
-        if (updated?.ensure?.reason) {
-          log.log(`⏳ [connect] runtime warming (${updated.ensure.reason}), attempt ${attempt + 1}`);
-        }
+        if (ensuringRef.current !== sessionId) return; // superseded by another open
         attempt += 1;
-        await new Promise((r) => setTimeout(r, Math.min(1500 + attempt * 500, 4_000)));
+
+        // 1) Poll the sandbox endpoint — drives (re)provisioning on open + gives
+        //    the authoritative status. null = 404 'not provisioned yet'.
+        const sandbox = await getProjectSessionSandbox(projectId, sessionId);
+
+        if (sandbox?.status === 'error') {
+          setConnectingProjectSessionId(null);
+          Alert.alert('Session failed to start', 'The sandbox could not be provisioned.');
+          return;
+        }
+
+        if (sandbox?.status === 'active' && sandbox.external_id) {
+          const sandboxUrl = getSandboxUrl(sandbox.external_id);
+
+          // 2) Wake an idle-auto-stopped sandbox (row still reads active) +
+          //    keep the proxy warm/routed (web: useSandboxConnection).
+          if (Date.now() - lastWokeAt > 25_000) {
+            lastWokeAt = Date.now();
+            wakeProjectSession(projectId, sessionId).then(
+              (w) => log.log('🌅 [connect] wake →', w?.status),
+              () => {},
+            );
+          }
+          const health = await probeSandboxHealth(sandboxUrl);
+
+          // 3) Resolve the OpenCode pin.
+          let updated: EnsureOpencodeResult | null = null;
+          try {
+            updated = await ensureOpencodeSession(projectId, sessionId);
+          } catch (err: any) {
+            log.log('🔄 [connect] ensure-opencode error:', err?.message || err);
+          }
+          log.log(
+            `💓 [connect] attempt ${attempt}: sandbox=active health=${health} reason=${updated?.ensure?.reason ?? '-'} pin=${updated?.opencode_session_id ? 'ok' : '-'}`,
+          );
+
+          if (updated?.opencode_session_id) {
+            connectToProjectSession({ ...updated, sandbox_url: sandboxUrl });
+            return;
+          }
+          if (updated?.status === 'failed') {
+            setConnectingProjectSessionId(null);
+            Alert.alert('Session failed to start', updated.error || 'The sandbox could not be provisioned.');
+            return;
+          }
+        } else {
+          log.log(`💓 [connect] attempt ${attempt}: sandbox=${sandbox?.status ?? 'provisioning'}`);
+        }
+
+        await new Promise((r) => setTimeout(r, 1_500));
       }
       setConnectingProjectSessionId(null);
       Alert.alert('Could not start session', 'The session runtime did not become ready in time. Please try again.');
     } finally {
-      if (ensuringRef.current === ps.session_id) ensuringRef.current = null;
+      if (ensuringRef.current === sessionId) ensuringRef.current = null;
     }
   }, [projectId, connectToProjectSession]);
 
-  // Open a project session from the drawer. Already-resolved sessions connect
-  // straight away; otherwise enter the connecting state — the effect below waits
-  // for the sandbox, resolves the OpenCode pin, and opens the chat.
+  // Open a project session from the drawer. Always enter the connecting state —
+  // ensureAndOpen polls the sandbox endpoint (re-provisioning/waking as needed)
+  // before opening, so even a previously-idle session comes back cleanly.
   const handleOpenProjectSession = useCallback((ps: ProjectSession) => {
     haptics.tap();
     setActiveProjectSessionId(ps.session_id);
     setDrawerOpen(false);
-    if (!connectToProjectSession(ps)) {
-      navigateToSession(null);
-      setConnectingProjectSessionId(ps.session_id);
-    }
-  }, [connectToProjectSession, navigateToSession]);
+    navigateToSession(null);
+    setConnectingProjectSessionId(ps.session_id);
+  }, [navigateToSession]);
 
-  // Drive the connecting state. useProjectSessions polls every 3s while a
-  // session is provisioning; once the sandbox is running we resolve the
-  // OpenCode pin (ensure-opencode, with its own retry) and open the chat.
+  // Drive the connecting state: ensureAndOpen polls GET /sandbox (which provisions
+  // on open), resolves the OpenCode pin, and opens the chat. It guards against
+  // concurrent runs, so re-firing on re-render is harmless.
   useEffect(() => {
     if (!connectingProjectSessionId) return;
-    const ps = projectSessions.find((s) => s.session_id === connectingProjectSessionId);
-    if (!ps) return;
-    if (ps.status === 'failed') {
-      setConnectingProjectSessionId(null);
-      Alert.alert('Session failed to start', ps.error || 'The sandbox could not be provisioned.');
-      return;
-    }
-    if (ps.opencode_session_id && ps.sandbox_url) {
-      connectToProjectSession(ps);
-    } else if (ps.status === 'running' && ps.sandbox_url) {
-      void ensureAndOpen(ps);
-    }
-  }, [connectingProjectSessionId, projectSessions, connectToProjectSession, ensureAndOpen]);
+    void ensureAndOpen(connectingProjectSessionId);
+  }, [connectingProjectSessionId, ensureAndOpen]);
 
   const handleProjectPress = useCallback((project: KortixProject) => {
     const pageId = `page:project:${project.id}`;
@@ -1285,22 +1369,20 @@ export default function ProjectSessionScreen() {
       setIsDashboardSending(true);
 
       try {
-        // Repo-first model (web parity): create a project session carrying the
-        // initial prompt. The backend boots a per-session sandbox and delivers
-        // the prompt on launch (KORTIX_INITIAL_PROMPT). The new session shows up
-        // in the drawer as it provisions; opening it into the chat pane lands in
-        // Stage 4-5 (switch sandbox + render SessionPage on opencode_session_id).
-        const session = await createProjectSession.mutateAsync({
-          initial_prompt: finalText,
-          ...(options.agent ? { agent_name: options.agent } : {}),
-        });
+        // Create a BLANK project session (web parity). We deliberately do NOT
+        // pass initial_prompt: that sets KORTIX_INITIAL_PROMPT, which makes the
+        // sandbox run a boot-time agent step before marking OpenCode ready — and
+        // that path can leave the runtime perpetually not-ready. Instead we stash
+        // the prompt and deliver it once the session's OpenCode root exists (see
+        // connectToProjectSession), exactly like the web home composer.
+        const session = await createProjectSession.mutateAsync({});
+        pendingPromptsRef.current[session.session_id] = finalText;
         setActiveProjectSessionId(session.session_id);
-        // Enter the connecting state — the poll effect opens the chat once the
-        // session's sandbox finishes provisioning (or connects now if running).
-        if (!connectToProjectSession(session)) {
-          navigateToSession(null);
-          setConnectingProjectSessionId(session.session_id);
-        }
+        // Enter the connecting state — the effect drives provisioning (GET
+        // /sandbox), resolves the OpenCode pin, opens the chat, and delivers the
+        // stashed prompt.
+        navigateToSession(null);
+        setConnectingProjectSessionId(session.session_id);
       } catch (err: any) {
         log.error('❌ [Project] Dashboard send failed:', err?.message || err);
         Alert.alert('Error', err?.message || 'Failed to start session');
