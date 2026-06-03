@@ -1,12 +1,11 @@
-import { createHash, createHmac, timingSafeEqual, randomBytes } from 'crypto';
+import { createHash, createHmac, timingSafeEqual, randomInt } from 'crypto';
 
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
 function randomAlphanumeric(length: number): string {
-  const bytes = randomBytes(length);
   let result = '';
   for (let i = 0; i < length; i++) {
-    result += CHARS[bytes[i]! % CHARS.length];
+    result += CHARS[randomInt(CHARS.length)]!;
   }
   return result;
 }
