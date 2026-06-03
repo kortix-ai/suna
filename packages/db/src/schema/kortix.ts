@@ -636,6 +636,47 @@ export const chatThreads = kortixSchema.table(
   ],
 );
 
+// Live Slack turn-stream state, shared across API replicas. The agent's
+// `slack step` / `slack send` relays land on ANY instance behind the load
+// balancer, so the stream handle (which Slack message to update, the steps so
+// far, placeholder vs streaming) CANNOT live in one process's memory — a relay
+// hitting the non-owning replica would drop (and the final `send` would never
+// close the stream). One row per session; upserted per relay, deleted on
+// finalize, swept on expiry.
+export const chatTurnStreams = kortixSchema.table(
+  'chat_turn_streams',
+  {
+    sessionId: text('session_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    teamId: varchar('team_id', { length: 128 }).notNull(),
+    channel: varchar('channel', { length: 128 }).notNull(),
+    triggerTs: varchar('trigger_ts', { length: 64 }).notNull(),
+    messageTs: varchar('message_ts', { length: 64 }),
+    streaming: boolean('streaming').notNull().default(false),
+    placeholderActive: boolean('placeholder_active').notNull().default(false),
+    finalized: boolean('finalized').notNull().default(false),
+    steps: jsonb('steps').notNull().default([]),
+    originatingEvent: jsonb('originating_event').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_chat_turn_streams_expiry').on(table.expiresAt)],
+);
+
+// Cross-replica dedup of inbound Slack event deliveries. Slack can deliver the
+// same event_id more than once (retries); with >1 replica an in-memory set
+// dedups per-process only, so a redelivery to another replica re-fires the turn
+// (the "random reply in a dead thread" bug). Insert-on-conflict-do-nothing here
+// makes "have I handled this event_id?" a single shared decision.
+export const chatEventDedup = kortixSchema.table(
+  'chat_event_dedup',
+  {
+    eventId: text('event_id').primaryKey(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [index('idx_chat_event_dedup_expiry').on(table.expiresAt)],
+);
+
 // Per-session sandbox runtime row. Decoupled from `kortix.sandboxes` (the
 // legacy /instances table) on purpose: project sessions carry no billing
 // state, no sandbox_members roster, and no team membership semantics — their

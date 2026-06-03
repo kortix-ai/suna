@@ -41,6 +41,8 @@ export {
   chatChannelBindings,
   chatInstalls,
   chatThreads,
+  chatTurnStreams,
+  chatEventDedup,
   projectSessions,
   projectSessionGrants,
   projectSessionVisibilityEnum,
