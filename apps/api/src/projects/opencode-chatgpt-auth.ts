@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -33,7 +33,7 @@ function opencodeBin(): string {
 }
 
 function randomPort(): number {
-  return 38_000 + Math.floor(Math.random() * 20_000);
+  return randomInt(38_000, 58_000);
 }
 
 async function sleep(ms: number) {
