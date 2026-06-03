@@ -123,6 +123,14 @@ async function send(opts: {
   }
 }
 
+// Whether invite-email delivery is wired up. Lets callers that fire the email
+// without awaiting it (fire-and-forget) still report an accurate email_sent /
+// skip_reason synchronously: if the token is missing, send() would skip with
+// missing_mailtrap_token regardless. Mirrors the guard at the top of send().
+export function isInviteEmailConfigured(): boolean {
+  return !!config.MAILTRAP_API_TOKEN;
+}
+
 // Public, share-anywhere invite URL. The same link is embedded in the invite
 // email and returned by every invite API route, so a copied link behaves
 // exactly like one received via email. Single source of truth for both the
