@@ -317,7 +317,22 @@ function ProjectAccessCard({
   // made it easy to lock someone out by misclicking.
   const [revokeTarget, setRevokeTarget] = useState<ProjectAccessMember | null>(null);
 
-  const sortedMembers = useMemo(() => sortByRoleThenLabel(members, userLabel), [members]);
+  // Only list people who actually have access — implicit owners/admins, a
+  // direct grant, or a group-inherited role. Account members with no access at
+  // all aren't shown here (granting them happens via the invite box, which
+  // grants existing members instantly). This is what makes Revoke feel right:
+  // removing a grant drops the row instead of leaving a lingering "No access".
+  const accessMembers = useMemo(
+    () =>
+      members.filter(
+        (m) => m.has_implicit_access || m.effective_project_role != null,
+      ),
+    [members],
+  );
+  const sortedMembers = useMemo(
+    () => sortByRoleThenLabel(accessMembers, userLabel),
+    [accessMembers],
+  );
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
@@ -367,7 +382,7 @@ function ProjectAccessCard({
       flush
       title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line260JsxAttrTitleProjectAccess')}
       description={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line261JsxAttrDescriptionAccountOwnersAndAdminsAlwaysHaveManagerAccess')}
-      count={members.length}
+      count={accessMembers.length}
     >
       {isLoading && (
         <div className="divide-y divide-border/60">
@@ -472,21 +487,35 @@ function ProjectAccessCard({
                       )}
                     </div>
                   ) : (
-                    <Select
-                      value={value}
-                      onValueChange={(next) => setRole(member, next)}
-                      disabled={!canManage}
-                    >
-                      <SelectTrigger className="h-8 w-36">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line328JsxTextNoAccess')}</SelectItem>
-                        <ProjectRoleSelectItem role="viewer" />
-                        <ProjectRoleSelectItem role="editor" />
-                        <ProjectRoleSelectItem role="manager" />
-                      </SelectContent>
-                    </Select>
+                    <div className="flex items-center gap-1">
+                      <Select
+                        value={value}
+                        onValueChange={(next) => setRole(member, next)}
+                        disabled={!canManage}
+                      >
+                        <SelectTrigger className="h-8 w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <ProjectRoleSelectItem role="viewer" />
+                          <ProjectRoleSelectItem role="editor" />
+                          <ProjectRoleSelectItem role="manager" />
+                        </SelectContent>
+                      </Select>
+                      {canManage && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setRevokeTarget(member)}
+                          title="Remove this person's access to the project"
+                          className="gap-1.5"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Revoke
+                        </Button>
+                      )}
+                    </div>
                   )
                 }
               />
