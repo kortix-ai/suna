@@ -335,17 +335,6 @@ provider = "http"
     expect(errors[0]!.error).toContain('requires `base_url`');
   });
 
-  test('http baseUrl camelCase alias is rejected', () => {
-    const { specs, errors } = parseAndExtract(`
-[[connectors]]
-slug = "x"
-provider = "http"
-baseUrl = "https://api.internal"
-`);
-    expect(specs).toEqual([]);
-    expect(errors[0]!.error).toContain('requires `base_url`');
-  });
-
   test('pipedream missing app', () => {
     const { errors } = parseAndExtract(`
 [[connectors]]

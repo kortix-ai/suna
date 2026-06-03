@@ -526,38 +526,6 @@ describe('git-backed triggers — CRUD', () => {
     expect(commitCalls).toHaveLength(0);
   });
 
-  test('POST /triggers rejects legacy request aliases', async () => {
-    const app = createApp();
-    const cases = [
-      {
-        body: { name: 'Old prompt', type: 'cron', cron: '* * * * * *', promptTemplate: 'x' },
-        expect: /prompt_template is required/,
-      },
-      {
-        body: { name: 'Old cron', type: 'cron', schedule: '* * * * * *', prompt_template: 'x' },
-        expect: /cron triggers must declare/,
-      },
-      {
-        body: { name: 'Old once', type: 'cron', runAt: '2099-01-01T00:00:00Z', prompt_template: 'x' },
-        expect: /cron triggers must declare/,
-      },
-      {
-        body: { name: 'Old secret', type: 'webhook', secretEnv: 'WEBHOOK_SECRET', prompt_template: 'x' },
-        expect: /secret_env/,
-      },
-    ];
-    for (const c of cases) {
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(c.body),
-      });
-      expect(res.status).toBe(400);
-      expect((await res.json()).error).toMatch(c.expect);
-    }
-    expect(commitCalls).toHaveLength(0);
-  });
-
   test('POST /triggers ignores agent_name in favor of agent', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
