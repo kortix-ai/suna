@@ -58,8 +58,8 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - `suna/tests/` is the **one** black-box REST e2e suite (`ke2e` runner). It hits
   a **live deployed API** over HTTP (`dev-api.kortix.com` / local / prod) with
   **real services** — no mocking. Every test maps 1:1 to a flow ID in
-  `tests/spec/end-to-end.md`; a coverage gate enforces that mapping against the
-  authoritative route manifest (`tests/spec/routes.generated.json`, 328 routes).
+  `tests/spec/end-to-end.md`; a coverage gate checks that mapping against the
+  authoritative route manifest (`tests/spec/routes.generated.json`).
 - **WIP — NOT yet enforced.** ke2e is still being built out (most flows aren't
   written yet) and does **not** gate PRs, promotes, or deploys right now. The
   intended end-state is test-as-source-of-truth (touch an API contract → update

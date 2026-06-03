@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 328,
+  "count": 292,
   "routes": [
     {
       "method": "GET",
@@ -53,14 +53,6 @@
     {
       "method": "POST",
       "path": "/v1/access/check-email"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/access/request-access"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/access/signup-status"
     },
     {
       "method": "GET",
@@ -323,16 +315,32 @@
       "path": "/v1/accounts/tokens/:tokenId"
     },
     {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/credits"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/credits/debit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/ledger"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/users"
+    },
+    {
       "method": "POST",
       "path": "/v1/auth/logout"
     },
     {
       "method": "GET",
       "path": "/v1/billing/account-state"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/billing/account-state/minimal"
     },
     {
       "method": "POST",
@@ -364,35 +372,11 @@
     },
     {
       "method": "POST",
-      "path": "/v1/billing/cancel-scheduled-change"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/billing/cancel-subscription"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/billing/checkout-session/:sessionId"
-    },
-    {
-      "method": "POST",
       "path": "/v1/billing/claim-per-seat"
     },
     {
       "method": "POST",
-      "path": "/v1/billing/confirm-checkout-session"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/billing/confirm-inline-checkout"
-    },
-    {
-      "method": "POST",
       "path": "/v1/billing/create-checkout-session"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/billing/create-inline-checkout"
     },
     {
       "method": "POST",
@@ -403,44 +387,8 @@
       "path": "/v1/billing/create-portal-session"
     },
     {
-      "method": "GET",
-      "path": "/v1/billing/credit-breakdown"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/billing/credit-usage"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/billing/cron/yearly-rotation"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/billing/deduct"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/billing/deduct-usage"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/billing/proration-preview"
-    },
-    {
       "method": "POST",
       "path": "/v1/billing/purchase-credits"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/billing/reactivate-subscription"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/billing/schedule-downgrade"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/billing/sync-seat-quantity"
     },
     {
       "method": "POST",
@@ -448,27 +396,7 @@
     },
     {
       "method": "GET",
-      "path": "/v1/billing/tier-configurations"
-    },
-    {
-      "method": "GET",
       "path": "/v1/billing/transactions"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/billing/transactions/summary"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/billing/usage-history"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/billing/webhook/revenuecat"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/billing/webhook/stripe"
     },
     {
       "method": "POST",
@@ -551,6 +479,18 @@
       "path": "/v1/health"
     },
     {
+      "method": "POST",
+      "path": "/v1/llm/chat/completions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/models"
+    },
+    {
       "method": "GET",
       "path": "/v1/oauth/authorize"
     },
@@ -561,10 +501,6 @@
     {
       "method": "GET",
       "path": "/v1/oauth/authorize/consent/:requestId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/oauth/claimable-machines"
     },
     {
       "method": "POST",
@@ -600,10 +536,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/platform"
-    },
-    {
-      "method": "GET",
       "path": "/v1/platform/api-keys"
     },
     {
@@ -621,22 +553,6 @@
     {
       "method": "PATCH",
       "path": "/v1/platform/api-keys/:keyId/revoke"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/platform/sandbox/version"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/platform/sandbox/version/all"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/platform/sandbox/version/changelog"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/platform/sandbox/version/latest"
     },
     {
       "method": "POST",
@@ -859,10 +775,6 @@
       "path": "/v1/projects/:projectId/group-grants/:groupId"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/manifest/validate"
-    },
-    {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/onboarding"
     },
@@ -897,10 +809,6 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sandbox-templates/:templateId/build"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sandboxes"
     },
     {
       "method": "GET",
@@ -1107,20 +1015,8 @@
       "path": "/v1/router/chat/completions"
     },
     {
-      "method": "GET",
-      "path": "/v1/router/health"
-    },
-    {
       "method": "POST",
       "path": "/v1/router/image-search"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/router/llm/chat/completions"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/router/llm/models"
     },
     {
       "method": "POST",
@@ -1151,52 +1047,16 @@
       "path": "/v1/servers/:id"
     },
     {
-      "method": "GET",
-      "path": "/v1/servers/:id"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/servers/:id"
-    },
-    {
       "method": "PUT",
       "path": "/v1/servers/sync"
     },
     {
-      "method": "POST",
-      "path": "/v1/setup/bootstrap-owner"
-    },
-    {
       "method": "GET",
-      "path": "/v1/setup/health"
+      "path": "/v1/system/maintenance"
     },
     {
-      "method": "GET",
-      "path": "/v1/setup/install-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/sandbox-providers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-complete"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/status"
+      "method": "PUT",
+      "path": "/v1/system/maintenance"
     },
     {
       "method": "GET",
@@ -1309,10 +1169,6 @@
     {
       "method": "GET",
       "path": "/v1/webhooks/slack/oauth/callback"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/webhooks/telegram/:projectId"
     }
   ]
 }
