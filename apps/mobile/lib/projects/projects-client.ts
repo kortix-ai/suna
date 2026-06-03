@@ -278,6 +278,20 @@ export function wakeProjectSession(projectId: string, sessionId: string) {
   );
 }
 
+/**
+ * Tear down and re-provision a session's runtime (web parity:
+ * restartProjectSession). Used to recover a sandbox whose runtime failed to
+ * boot — e.g. a repo-materialization/git-clone failure surfaced via
+ * /kortix/health `boot_error`. The caller should re-drive the connect loop
+ * after this resolves.
+ */
+export function restartProjectSession(projectId: string, sessionId: string) {
+  return apiFetch<{ ok: boolean; session_id: string; status: string }>(
+    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/restart`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
 export function archiveProject(projectId: string) {
   return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',

@@ -38,7 +38,7 @@ import { useSyncStore } from '@/lib/opencode/sync-store';
 import { getAuthToken } from '@/api/config';
 import type { Session } from '@/lib/opencode/types';
 import { SessionPage } from '@/components/session/SessionPage';
-import { SessionConnecting } from '@/components/session/SessionConnecting';
+import { SessionConnecting, type SessionConnectError } from '@/components/session/SessionConnecting';
 import { SessionChatInput, type PromptOptions, type TrackedMention } from '@/components/session/SessionChatInput';
 import { BottomBar } from '@/components/session/BottomBar';
 import type { BottomBarRef } from '@/components/session/BottomBar';
@@ -87,7 +87,7 @@ import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
 import type { SandboxProviderName } from '@/lib/platform/client';
 import { getSandboxUrl } from '@/lib/platform/client';
 import { useProjectSessions, useCreateProjectSession, useProject } from '@/lib/projects/hooks';
-import { ensureOpencodeSession, wakeProjectSession, getProjectSessionSandbox } from '@/lib/projects/projects-client';
+import { ensureOpencodeSession, wakeProjectSession, getProjectSessionSandbox, restartProjectSession } from '@/lib/projects/projects-client';
 import type { ProjectSession, ProjectSessionStatus, EnsureOpencodeResult } from '@/lib/projects/projects-client';
 import { Avatar } from '@/components/ui/Avatar';
 import {
@@ -666,9 +666,18 @@ function SessionGroup({
  * backend's ensure-opencode probe alone doesn't, so without this a freshly-woken
  * sandbox can stay unreachable. Returns 'ready' once OpenCode reports up.
  */
-async function probeSandboxHealth(
-  sandboxUrl: string,
-): Promise<'ready' | 'starting' | 'unreachable'> {
+type SandboxHealth = {
+  status: 'ready' | 'starting' | 'unreachable';
+  /**
+   * Fatal runtime boot failure (e.g. repo materialization / git clone failed),
+   * verbatim from /kortix/health `boot_error`. Null while healthy or still
+   * booting — the sandbox only populates it on an actual failure, so it's a
+   * safe "stop waiting" signal (see sandbox routes/health.ts).
+   */
+  bootError?: string | null;
+};
+
+async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
   try {
     const token = await getAuthToken();
     const controller = new AbortController();
@@ -678,15 +687,17 @@ async function probeSandboxHealth(
       signal: controller.signal,
     });
     clearTimeout(timer);
-    if (res.status === 503) return 'starting'; // sandbox up, OpenCode still booting
-    if (!res.ok) return 'unreachable';
+    if (res.status === 503) return { status: 'starting' }; // sandbox up, OpenCode still booting
+    if (!res.ok) return { status: 'unreachable' };
     const data: any = await res.json().catch(() => null);
-    if (data?.runtimeReady === true) return 'ready';
-    if (data?.opencode === 'ok' || data?.opencode === true) return 'ready';
-    if (data?.status && !['starting', 'down', 'error'].includes(data.status)) return 'ready';
-    return 'starting';
+    const bootError =
+      typeof data?.boot_error === 'string' && data.boot_error ? data.boot_error : null;
+    if (data?.runtimeReady === true) return { status: 'ready' };
+    if (data?.opencode === 'ok' || data?.opencode === true) return { status: 'ready' };
+    if (data?.status && !['starting', 'down', 'error'].includes(data.status)) return { status: 'ready' };
+    return { status: 'starting', bootError };
   } catch {
-    return 'unreachable';
+    return { status: 'unreachable' };
   }
 }
 
@@ -1010,6 +1021,15 @@ export default function ProjectSessionScreen() {
   // A project session that's provisioning — the middle pane shows a connecting
   // state and the project-sessions poll opens it once its sandbox is ready.
   const [connectingProjectSessionId, setConnectingProjectSessionId] = useState<string | null>(null);
+  // Inline runtime-failure state for the connecting screen (web parity: the
+  // "OpenCode runtime is not ready" error). When set, the connecting branch
+  // shows the error + a Restart button instead of spinning forever.
+  const [connectError, setConnectError] = useState<SessionConnectError | null>(null);
+  const [restartingSession, setRestartingSession] = useState(false);
+  // Sessions whose connect loop ended in an error — guards the auto-connect
+  // effect from immediately re-driving (and re-looping) a known-failed session.
+  // Cleared on manual restart or when a different session is opened.
+  const erroredSessionRef = useRef<string | null>(null);
   const createProjectSession = useCreateProjectSession(projectId);
   const { data: project } = useProject(projectId);
   const projectName = project?.name || 'Your project';
@@ -1136,6 +1156,8 @@ export default function ProjectSessionScreen() {
       const session = await createProjectSession.mutateAsync({});
       setActiveProjectSessionId(session.session_id);
       navigateToSession(null);
+      setConnectError(null);
+      erroredSessionRef.current = null;
       setConnectingProjectSessionId(session.session_id);
     } catch (err: any) {
       log.error('❌ [Project] Failed to create session:', err?.message || err);
@@ -1188,6 +1210,8 @@ export default function ProjectSessionScreen() {
       updated_at: ps.updated_at,
     });
     setConnectingProjectSessionId(null);
+    setConnectError(null);
+    erroredSessionRef.current = null;
     setActiveProjectSessionId(ps.session_id);
     navigateToSession(ps.opencode_session_id);
     // Deliver the composer's first prompt now that the OpenCode root exists.
@@ -1204,6 +1228,13 @@ export default function ProjectSessionScreen() {
   // open the chat. The sandbox/runtime can still be warming, so retry on
   // not_ready/unreachable with backoff — mirrors useCanonicalOpenCodeSession.
   const ensuringRef = useRef<string | null>(null);
+  // End a connect loop in the inline failure state (web parity: InlineSessionError).
+  // Keeps connectingProjectSessionId set so the connecting branch renders the
+  // error, and records the session so the auto-connect effect won't re-drive it.
+  const failConnect = useCallback((sessionId: string, err: SessionConnectError) => {
+    erroredSessionRef.current = sessionId;
+    setConnectError(err);
+  }, []);
   // Bring a project session online and open it, mirroring the web's session boot
   // (app/projects/[id]/sessions/[sessionId]/page.tsx + useSandboxConnection):
   //   1. POLL GET /sessions/:id/sandbox — this GET DRIVES (re)provisioning on the
@@ -1232,8 +1263,10 @@ export default function ProjectSessionScreen() {
         const sandbox = await getProjectSessionSandbox(projectId, sessionId);
 
         if (sandbox?.status === 'error') {
-          setConnectingProjectSessionId(null);
-          Alert.alert('Session failed to start', 'The sandbox could not be provisioned.');
+          failConnect(sessionId, {
+            title: 'Session failed to start',
+            message: 'The sandbox could not be provisioned.',
+          });
           return;
         }
 
@@ -1251,6 +1284,19 @@ export default function ProjectSessionScreen() {
           }
           const health = await probeSandboxHealth(sandboxUrl);
 
+          // Fatal runtime boot failure (e.g. repo materialization / git clone
+          // failed): stop waiting and surface it with a Restart button — web
+          // parity with the "OpenCode runtime is not ready" screen. boot_error
+          // is null during a normal boot, so this never false-positives.
+          if (health.bootError) {
+            failConnect(sessionId, {
+              title: 'OpenCode runtime is not ready',
+              message: 'The sandbox booted, but the project runtime did not become usable.',
+              detail: health.bootError,
+            });
+            return;
+          }
+
           // 3) Resolve the OpenCode pin.
           let updated: EnsureOpencodeResult | null = null;
           try {
@@ -1259,7 +1305,7 @@ export default function ProjectSessionScreen() {
             log.log('🔄 [connect] ensure-opencode error:', err?.message || err);
           }
           log.log(
-            `💓 [connect] attempt ${attempt}: sandbox=active health=${health} reason=${updated?.ensure?.reason ?? '-'} pin=${updated?.opencode_session_id ? 'ok' : '-'}`,
+            `💓 [connect] attempt ${attempt}: sandbox=active health=${health.status} reason=${updated?.ensure?.reason ?? '-'} pin=${updated?.opencode_session_id ? 'ok' : '-'}`,
           );
 
           if (updated?.opencode_session_id) {
@@ -1267,8 +1313,10 @@ export default function ProjectSessionScreen() {
             return;
           }
           if (updated?.status === 'failed') {
-            setConnectingProjectSessionId(null);
-            Alert.alert('Session failed to start', updated.error || 'The sandbox could not be provisioned.');
+            failConnect(sessionId, {
+              title: 'Session failed to start',
+              message: updated.error || 'The sandbox could not be provisioned.',
+            });
             return;
           }
         } else {
@@ -1277,12 +1325,14 @@ export default function ProjectSessionScreen() {
 
         await new Promise((r) => setTimeout(r, 1_500));
       }
-      setConnectingProjectSessionId(null);
-      Alert.alert('Could not start session', 'The session runtime did not become ready in time. Please try again.');
+      failConnect(sessionId, {
+        title: 'Could not start session',
+        message: 'The session runtime did not become ready in time. Please try again.',
+      });
     } finally {
       if (ensuringRef.current === sessionId) ensuringRef.current = null;
     }
-  }, [projectId, connectToProjectSession]);
+  }, [projectId, connectToProjectSession, failConnect]);
 
   // Open a project session from the drawer. Always enter the connecting state —
   // ensureAndOpen polls the sandbox endpoint (re-provisioning/waking as needed)
@@ -1292,14 +1342,43 @@ export default function ProjectSessionScreen() {
     setActiveProjectSessionId(ps.session_id);
     setDrawerOpen(false);
     navigateToSession(null);
+    setConnectError(null);
+    erroredSessionRef.current = null;
     setConnectingProjectSessionId(ps.session_id);
   }, [navigateToSession]);
 
+  // Restart a session whose runtime failed to boot (web parity:
+  // restartProjectSession). Tears down + re-provisions the sandbox, clears the
+  // error/guard, and re-drives the connect loop.
+  const handleRestartSession = useCallback(async () => {
+    const sid = connectingProjectSessionId;
+    if (!sid || restartingSession) return;
+    haptics.tap();
+    setRestartingSession(true);
+    try {
+      await restartProjectSession(projectId, sid);
+      erroredSessionRef.current = null;
+      ensuringRef.current = null;
+      setConnectError(null);
+      void ensureAndOpen(sid);
+    } catch (err: any) {
+      setConnectError({
+        title: 'Restart failed',
+        message: err?.message || 'Could not restart the session runtime. Please try again.',
+      });
+    } finally {
+      setRestartingSession(false);
+    }
+  }, [connectingProjectSessionId, restartingSession, projectId, ensureAndOpen]);
+
   // Drive the connecting state: ensureAndOpen polls GET /sandbox (which provisions
   // on open), resolves the OpenCode pin, and opens the chat. It guards against
-  // concurrent runs, so re-firing on re-render is harmless.
+  // concurrent runs, so re-firing on re-render is harmless. A session that ended
+  // in an error is skipped so we don't immediately re-loop it — recovery is the
+  // explicit Restart button.
   useEffect(() => {
     if (!connectingProjectSessionId) return;
+    if (erroredSessionRef.current === connectingProjectSessionId) return;
     void ensureAndOpen(connectingProjectSessionId);
   }, [connectingProjectSessionId, ensureAndOpen]);
 
@@ -2117,7 +2196,12 @@ export default function ProjectSessionScreen() {
                 }}
                 className="bg-background"
               >
-                <SessionConnecting statusLabel={connectingStatusLabel} />
+                <SessionConnecting
+                  statusLabel={connectingStatusLabel}
+                  error={connectError}
+                  onRestart={handleRestartSession}
+                  restarting={restartingSession}
+                />
               </View>
             </View>
 
