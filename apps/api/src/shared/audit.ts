@@ -7,7 +7,7 @@ const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export interface AuditEventInput {
+interface AuditEventInput {
   accountId?: string | null;
   actorUserId?: string | null;
   action: string;
