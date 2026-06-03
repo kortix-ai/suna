@@ -21,7 +21,7 @@ import { createProjectSession } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { useCustomizeStore } from '@/stores/customize-store';
 
-export type ConfigureKind = 'agent' | 'skill' | 'command';
+type ConfigureKind = 'agent' | 'skill' | 'command';
 
 const NEW_PROMPTS: Record<ConfigureKind, string> = {
   agent:

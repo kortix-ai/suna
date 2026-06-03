@@ -44,7 +44,7 @@ export function clearOpencodeEnsureGuard(): void {
 
 const MAX_ENSURE_ATTEMPTS = 8;
 
-export interface CanonicalOpenCodeSession {
+interface CanonicalOpenCodeSession {
   /** The authoritative pinned root id (server-managed), or null while resolving. */
   rootSessionId: string | null;
   /** The sandbox's live OpenCode session list (read-only) for ?oc + UI. */

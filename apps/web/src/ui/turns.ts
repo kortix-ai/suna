@@ -265,7 +265,7 @@ export function getWorkingState(
 // ============================================================================
 
 /** Tool part references to hide from the step list when permission/question is pending. */
-export interface HiddenToolRef {
+interface HiddenToolRef {
   messageID: string;
   callID: string;
 }

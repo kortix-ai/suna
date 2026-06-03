@@ -24,7 +24,7 @@ export interface AccountGroup {
   updated_at: string;
 }
 
-export interface GroupMember {
+interface GroupMember {
   user_id: string;
   added_at: string;
   added_by: string | null;

@@ -22,7 +22,7 @@ export type { ModelKey };
 // Types
 // ============================================================================
 
-export interface UseOpenCodeLocalOptions {
+interface UseOpenCodeLocalOptions {
   agents?: Agent[];
   providers?: ProviderListResponse;
   config?: Config;
@@ -69,7 +69,7 @@ interface OpenCodeLocalModel {
   };
 }
 
-export interface OpenCodeLocal {
+interface OpenCodeLocal {
   agent: OpenCodeLocalAgent;
   model: OpenCodeLocalModel;
 }

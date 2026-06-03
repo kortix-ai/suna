@@ -165,7 +165,7 @@ function FileCard({ title, fileName, path }: { title?: string; fileName: string;
 
 // ── Props ──────────────────────────────────────────────────────────────────
 
-export interface ShowContentProps {
+interface ShowContentProps {
   type: string;
   title?: string;
   description?: string;
@@ -631,7 +631,7 @@ export interface ShowCarouselItem {
   aspect_ratio?: string;
 }
 
-export interface ShowCarouselProps {
+interface ShowCarouselProps {
   items: ShowCarouselItem[];
   /** Optional: component for rendering proxied localhost iframes */
   LocalhostPreview?: React.ComponentType<{ url: string; label?: string }>;
