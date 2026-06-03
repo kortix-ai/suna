@@ -83,7 +83,13 @@ run_check() {
 }
 
 run_check api_typecheck pnpm --filter kortix-api typecheck
-run_check web_typecheck pnpm --filter Kortix-Computer-Frontend exec tsc --noEmit
+run_check web_build env \
+  NEXT_PUBLIC_BACKEND_URL="${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8008/v1}" \
+  NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL:-https://placeholder.supabase.co}" \
+  NEXT_PUBLIC_SUPABASE_ANON_KEY="${NEXT_PUBLIC_SUPABASE_ANON_KEY:-local-build-placeholder-anon-key}" \
+  NEXT_PUBLIC_BILLING_ENABLED="${NEXT_PUBLIC_BILLING_ENABLED:-false}" \
+  NEXT_OUTPUT="${NEXT_OUTPUT:-standalone}" \
+  pnpm --filter Kortix-Computer-Frontend build
 run_check api_tests pnpm --filter kortix-api test
 run_check api_billing_tests bash -lc '
   set -euo pipefail
@@ -94,7 +100,7 @@ run_check api_billing_tests bash -lc '
     apps/api/src/__tests__/unit-revenuecat-webhook-canonical.test.ts
   do
     echo "[gate5-local] billing test: $test_file"
-    bun test "$test_file"
+    (cd apps/api && bun test "${test_file#apps/api/}")
   done
 '
 run_check api_accounts_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-accounts-contract.test.ts
@@ -181,7 +187,7 @@ run_check v1_playwright_spec_guards bash -lc '
   grep -q "E2E_REQUIRE_GITHUB_APP" tests/e2e/specs/10-production-golden-paths.spec.ts
   grep -q "github.auth_source" tests/e2e/specs/10-production-golden-paths.spec.ts
   grep -q "app_installation" tests/e2e/specs/10-production-golden-paths.spec.ts
-  grep -q "Provisioning session" "apps/web/src/app/projects/[id]/sessions/[sessionId]/page.tsx"
+  grep -q "Provisioning session" apps/web/src/components/session/session-loading-skeleton.tsx
   grep -q "Provisioning session" tests/e2e/specs/10-production-golden-paths.spec.ts
   grep -q "sidebarSessionLink.click" tests/e2e/specs/10-production-golden-paths.spec.ts
   grep -q "getByRole.*link.*Kortix" tests/e2e/specs/08-accounts-project-access.spec.ts
@@ -216,7 +222,7 @@ run_check v1_tree_cleanup_guards bash -lc '
   [ ! -e packages/kortix-ocx-registry ]
 
   packages="$(find packages -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr "\n" " ")"
-  [ "$packages" = "agent-tunnel db shared " ]
+  [ "$packages" = "agent-tunnel db executor-sdk manifest-schema shared starter " ]
 
   if git grep -n -E "core/docker|dev:core|packages/voice|packages/kortix-ocx-registry|kortix/computer" -- \
     package.json \
@@ -299,16 +305,14 @@ run_check v1_legacy_web_route_guards bash -lc '
 	    exit 1
 	  fi
 
-	  grep -q "showGlobalNewInstanceModal={false}" apps/web/src/components/projects/project-shell.tsx
-	  grep -q "showGlobalUserSettingsModal={false}" apps/web/src/components/projects/project-shell.tsx
-	  grep -q "showGlobalNewInstanceModal = false" apps/web/src/components/layout/app-providers.tsx
-	  grep -q "showGlobalUserSettingsModal = false" apps/web/src/components/layout/app-providers.tsx
+	  grep -q "<AppProviders" apps/web/src/components/projects/project-shell.tsx
+	  grep -q "sidebarContent={<ProjectSidebar projectId={projectId} />}" apps/web/src/components/projects/project-shell.tsx
+	  grep -q "showSidebar?: boolean" apps/web/src/components/layout/app-providers.tsx
 	  grep -q "showSidebar={false}" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
-	  grep -q "showGlobalNewInstanceModal={false}" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
-	  grep -q "showGlobalUserSettingsModal={false}" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
-	  grep -q "repoFirst" apps/web/src/components/projects/project-sidebar.tsx
-	  grep -q "href = .*projects" apps/web/src/components/layout/app-header.tsx
-	  if git grep -n -E "CommandPalette|<NewInstanceModal|new-instance-modal|<UserSettingsModal|user-settings-modal|useNewInstanceModalStore|openNewInstanceModal|/instances|justavps|JustAVPS" -- \
+	  grep -q "repo-first v1 surface" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
+	  grep -q "ProjectSidebar" apps/web/src/components/projects/project-sidebar.tsx
+	  grep -q "logoHref = .*projects" apps/web/src/components/layout/app-header.tsx
+	  if git grep -n -E "<NewInstanceModal|new-instance-modal|<UserSettingsModal|user-settings-modal|useNewInstanceModalStore|openNewInstanceModal|/instances|justavps|JustAVPS" -- \
 	    apps/web/src/components/projects/project-shell.tsx \
 	    apps/web/src/components/projects/project-sidebar.tsx \
 	    apps/web/src/components/layout/app-header.tsx

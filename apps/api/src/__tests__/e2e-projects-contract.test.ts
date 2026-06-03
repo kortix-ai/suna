@@ -209,7 +209,7 @@ function selectRows(table: unknown, _fields: Record<string, unknown> | undefined
       (!projectId || row.projectId === projectId) &&
       (!status || row.status === status) &&
       (!inArrayProjectIds || inArrayProjectIds.includes(row.projectId))
-    );
+    ).map((row) => ({ ...row, metadata: {} }));
   }
 
   return [];
@@ -413,6 +413,11 @@ mock.module('../projects/github', () => ({
   createRepo: async () => {
     throw new Error('create-repo route is covered separately');
   },
+  deleteRepo: async () => undefined,
+  addCollaborator: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
+  parseGitHubRepoUrl: () => ({ owner: 'kortix-org', repo: 'new-project' }),
   getFileSha: async () => null,
   getGitHubAppInstallation: async () => ({
     account: { login: 'kortix-org', type: 'Organization' },

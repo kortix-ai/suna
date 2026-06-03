@@ -78,6 +78,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 
 const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
+const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
 
 function providerCredentialSummary(provider: LlmProviderEntry): string {
   if (provider.id === 'openai') return 'OpenAI API key or ChatGPT subscription';

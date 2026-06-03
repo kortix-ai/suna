@@ -42,12 +42,14 @@ mock.module('@kortix/shared', () => ({
 
 mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => state.getCreditAccountResult,
+  getSubscriptionInfo: async () => state.getCreditAccountResult,
   upsertCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     state.upsertCreditAccountCalls.push({ accountId, data });
   },
   updateCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     state.updateCreditAccountCalls.push({ accountId, data });
   },
+  getYearlyAccountsDueForRotation: async () => [],
 }));
 
 mock.module('../billing/repositories/customers', () => ({

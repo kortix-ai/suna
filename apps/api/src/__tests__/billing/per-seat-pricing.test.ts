@@ -12,8 +12,8 @@ import {
 } from '../../billing/services/tiers';
 
 describe('Per-seat pricing math', () => {
-  test('$20/seat — typical budget split is display-only and adds up', () => {
-    expect(PER_SEAT_PRICE_USD).toBe(20);
+  test('$40/seat — typical budget split is display-only', () => {
+    expect(PER_SEAT_PRICE_USD).toBe(40);
     expect(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD + TYPICAL_LLM_BUDGET_PER_SEAT_USD).toBe(20);
   });
 

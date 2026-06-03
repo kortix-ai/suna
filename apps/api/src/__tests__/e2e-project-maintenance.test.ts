@@ -52,7 +52,16 @@ mock.module('../sandbox-proxy', () => ({
 }));
 
 mock.module('../snapshots/builder', () => ({
+  ensureSandboxImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
+  deleteSandboxImage: async () => ({ deleted: false, snapshotName: 'kortix-default-test', slug: 'default' }),
+  listSnapshotBuilds: async () => [],
+  listSandboxTemplates: async () => [],
+  resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
+  kickPreBuild: () => {},
+  kickProjectTemplatePrebuilds: () => {},
   reconcileStaleBuilds: async () => ({ reconciled: 0 }),
+  resolveCommitSha: async () => 'a'.repeat(40),
+  DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
 mock.module('../projects/git', () => ({

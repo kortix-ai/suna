@@ -29,8 +29,8 @@ export function llmPriceMarkup(): number {
 // (billing_model='legacy') but new accounts get billing_model='per_seat'
 // from the setup flow.
 //
-// Each account is billed $20/month × number of accepted account_members.
-// $20 grants $20 of fungible wallet credits — there's NO separate compute/
+// Each account is billed $40/month × number of accepted account_members.
+// $40 grants $40 of fungible wallet credits — there's NO separate compute/
 // LLM bucket in the wallet. Spend is debited from the unified balance; the
 // credit_ledger.type tag (`compute_debit` / `llm_debit`) drives the UI
 // usage breakdown.

@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import {
   Settings,
   Shield,
@@ -64,8 +65,11 @@ import {
 import { getClient } from '@/lib/opencode-sdk';
 import { useQueryClient } from '@tanstack/react-query';
 import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import { ProviderList } from '@/components/providers/provider-list';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
+import {
+  PROVIDER_LABELS,
+  ProviderLogo,
+} from '@/components/providers/provider-branding';
 import { ModelSelector } from '@/components/session/model-selector';
 import { flattenModels } from '@/components/session/session-chat-input';
 import {
@@ -221,7 +225,9 @@ function ProvidersSection({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: providers } = useOpenCodeProviders();
-  const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
+  const params = useParams<{ id?: string }>();
+  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const [providerModalOpen, setProviderModalOpen] = useState(false);
 
   const connectedProviders = useMemo(() => {
     if (!providers) return [];
@@ -229,28 +235,77 @@ function ProvidersSection({
     return (providers.all ?? []).filter((p) => connectedIds.has(p.id));
   }, [providers]);
 
+  const handleProviderModalOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      setProviderModalOpen(nextOpen);
+      if (!nextOpen) onDirty();
+    },
+    [onDirty],
+  );
+
   return (
     <div className="space-y-3 overflow-y-auto">
+      {projectId && (
+        <ProjectProviderModal
+          projectId={projectId}
+          open={providerModalOpen}
+          onOpenChange={handleProviderModalOpenChange}
+          defaultTab={connectedProviders.length > 0 ? 'connected' : 'catalog'}
+        />
+      )}
+
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground/40 uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line242JsxTextConnected')}{connectedProviders.length})
+        <span className="text-xs font-medium text-muted-foreground/40 uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line242JsxTextConnected')} ({connectedProviders.length})
         </span>
         <Button
           variant="outline"
           size="sm"
           className="h-7 px-2.5 text-xs gap-1.5 "
-          onClick={() => openProviderModal('providers')}
+          disabled={!projectId}
+          onClick={() => setProviderModalOpen(true)}
         >
           <Plus className="h-3 w-3" />
           Connect
         </Button>
       </div>
 
-      <ProviderList
-        connectedProviders={connectedProviders}
-        onConnect={() => openProviderModal('providers')}
-        onDisconnected={onDirty}
-        showConnectButton={connectedProviders.length === 0}
-      />
+      <div className="rounded-2xl border border-border/50 bg-card">
+        {connectedProviders.length > 0 ? (
+          <List>
+            {connectedProviders.map((provider) => {
+              const modelCount = Object.keys(provider.models ?? {}).length;
+              return (
+                <ListRow
+                  key={provider.id}
+                  className="px-3 py-2.5"
+                  leading={<ProviderLogo providerID={provider.id} name={provider.name} size="small" />}
+                  title={PROVIDER_LABELS[provider.id] || provider.name || provider.id}
+                  subtitle={
+                    <span className="text-xs text-muted-foreground/60">
+                      {modelCount > 0 ? `${modelCount} models available` : 'Connected'}
+                    </span>
+                  }
+                  trailing={<Badge size="sm" variant="success">Connected</Badge>}
+                />
+              );
+            })}
+          </List>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-3 px-4 py-8 text-center">
+            <p className="text-xs text-muted-foreground/60">No providers connected</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3 text-xs gap-1.5"
+              disabled={!projectId}
+              onClick={() => setProviderModalOpen(true)}
+            >
+              <Plus className="h-3 w-3" />
+              Connect provider
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

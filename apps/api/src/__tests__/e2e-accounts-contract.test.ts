@@ -110,6 +110,24 @@ function collectConditionValues(condition: unknown): Record<string, unknown> {
   return values;
 }
 
+function collectStringValues(node: unknown, out: string[] = []): string[] {
+  if (!node) return out;
+  if (typeof node === 'string') {
+    out.push(node);
+    return out;
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) collectStringValues(item, out);
+    return out;
+  }
+  if (typeof node === 'object') {
+    for (const value of Object.values(node as Record<string, unknown>)) {
+      collectStringValues(value, out);
+    }
+  }
+  return out;
+}
+
 function queryResult<T = any>(rows: T[]) {
   return {
     then: (resolve: (value: T[]) => unknown, reject?: (reason: unknown) => unknown) =>
@@ -359,6 +377,14 @@ mock.module('../shared/db', () => ({
               const row = membership(values.user_id as string, values.account_id as string);
               if (row) Object.assign(row, updates);
             }
+            if (table === accountInvitations) {
+              const row = inviteRows.find((invite) =>
+                invite.inviteId === values.invite_id &&
+                (!values.account_id || invite.accountId === values.account_id) &&
+                invite.acceptedAt === null
+              );
+              if (row) Object.assign(row, updates);
+            }
             return resolve([]);
           },
         }),
@@ -380,6 +406,11 @@ mock.module('../shared/db', () => ({
         return [];
       },
     }),
+    execute: async (query: unknown) => {
+      const strings = collectStringValues(query);
+      const user = authUsers.find((candidate) => strings.includes(candidate.email));
+      return user ? [{ id: user.id }] : [];
+    },
   },
 }));
 
@@ -625,6 +656,7 @@ describe('accounts API contract', () => {
     expect(await accepted.json()).toEqual({
       account_id: ACCOUNT_ID,
       account_role: 'member',
+      already_accepted: false,
       bootstrap_grants_applied: [],
     });
     expect(membership(INVITEE_ID, ACCOUNT_ID)?.accountRole).toBe('member');
@@ -636,6 +668,7 @@ describe('accounts API contract', () => {
       account_id: ACCOUNT_ID,
       account_role: 'member',
       already_accepted: true,
+      bootstrap_grants_applied: [],
     });
 
     inviteRows[0] = {

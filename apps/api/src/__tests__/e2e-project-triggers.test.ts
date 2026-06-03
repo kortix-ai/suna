@@ -156,6 +156,11 @@ mock.module('../projects/github', () => ({
   createRepo: async () => {
     throw new Error('not used');
   },
+  deleteRepo: async () => undefined,
+  addCollaborator: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
+  parseGitHubRepoUrl: () => ({ owner: 'kortix-org', repo: 'trigger-project' }),
   deleteFile: async (opts: { path: string; message: string }) => {
     repoFiles.delete(opts.path);
     deleteCalls.push({ path: opts.path, message: opts.message });

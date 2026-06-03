@@ -33,8 +33,21 @@ const BASE_STARTER_PATHS = [
   '.kortix/memory/overview.md',
   '.kortix/opencode/agents/kortix.md',
   '.kortix/opencode/agents/memory-reflector.md',
+  '.kortix/opencode/bun.lock',
   '.kortix/opencode/opencode.jsonc',
+  '.kortix/opencode/package.json',
   '.kortix/opencode/plugins/kortix-simple-memory.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/constants.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/buffer.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/formatters.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/manager.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/permissions.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/session-lifecycle.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/types.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/wildcard.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/types.ts',
+  '.kortix/opencode/pty/opencode-pty/src/shared/constants.ts',
+  '.kortix/opencode/pty/pty-tools.ts',
   '.kortix/opencode/skills/agent-browser/SKILL.md',
   '.kortix/opencode/skills/kortix-executor/SKILL.md',
   '.kortix/opencode/skills/kortix-memory/SKILL.md',
@@ -53,7 +66,13 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
   '.kortix/opencode/skills/kortix-system/SKILL.md',
   '.kortix/opencode/skills/slack/SKILL.md',
+  '.kortix/opencode/tools/image_search.ts',
+  '.kortix/opencode/tools/lib/get-env.ts',
+  '.kortix/opencode/tools/scrape_webpage.ts',
   '.kortix/opencode/tools/show.ts',
+  '.kortix/opencode/tools/web_search.ts',
+  'app/index.js',
+  'app/package.json',
   'kortix.toml',
   'README.md',
 ];
@@ -151,6 +170,8 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickProjectTemplatePrebuilds: () => {},
+  reconcileStaleBuilds: async () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
@@ -182,6 +203,14 @@ mock.module('../projects/github', () => ({
       default_branch: 'main',
       description: null,
     };
+  },
+  deleteRepo: async () => undefined,
+  addCollaborator: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
+  parseGitHubRepoUrl: (repoUrl: string) => {
+    const match = repoUrl.match(/github\.com[:/](?<owner>[^/]+)\/(?<repo>[^/.]+)(?:\.git)?$/);
+    return match?.groups ? { owner: match.groups.owner, repo: match.groups.repo } : null;
   },
   getFileSha: async (input: any) => {
     fileShaCalls.push(input);
@@ -272,6 +301,7 @@ async function selectRowsForTable(table: unknown) {
 }
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: () => ({
       from: (table: unknown) => ({

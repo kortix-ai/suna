@@ -42,6 +42,7 @@ export function SessionLoadingSkeleton() {
       {/* Center: quiet loader where messages will eventually render — only once
           the load is slow enough to warrant feedback (see LOADER_DELAY_MS). */}
       <div className="flex-1 min-h-0 flex items-center justify-center">
+        <span className="sr-only">Provisioning session</span>
         {showLoader && <KortixLoader size="small" />}
       </div>
 

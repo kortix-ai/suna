@@ -19,6 +19,7 @@ import {
   registerCreditsMock,
   resetMockRegistry,
 } from './mocks';
+import { PER_SEAT_PRICE_USD } from '../../billing/services/tiers';
 
 registerGlobalMocks();
 registerCreditsMock();
@@ -92,7 +93,7 @@ function perSeatSubscription(quantity: number, overrides: Record<string, any> = 
 }
 
 describe('per-seat webhook reconciliation', () => {
-  test('quantity 1 → 3: seat_count updates, one seat_grant of $40 emitted', async () => {
+  test('quantity 1 → 3: seat_count updates, one seat_grant for the seat delta emitted', async () => {
     const sub = perSeatSubscription(3);
     const event = createMockStripeEvent('customer.subscription.updated', sub);
 
@@ -105,11 +106,11 @@ describe('per-seat webhook reconciliation', () => {
     expect(persistedUpdate?.data.billingModel).toBe('per_seat');
     expect(persistedUpdate?.data.seatSubscriptionItemId).toBe('si_seat_123');
 
-    // Delta = 3 - 1 = 2 seats → grant $40 (PER_SEAT_PRICE_USD × 2)
+    // Delta = 3 - 1 = 2 seats → grant PER_SEAT_PRICE_USD × 2.
     expect(grantCreditsCalls.length).toBe(1);
     const [accountId, amount, type, , , idempotencyKey] = grantCreditsCalls[0];
     expect(accountId).toBe('acc_test_123');
-    expect(amount).toBe(40);
+    expect(amount).toBe(PER_SEAT_PRICE_USD * 2);
     expect(type).toBe('seat_grant');
     expect(idempotencyKey).toBeDefined();
     expect(String(idempotencyKey)).toContain('seats:3');
@@ -251,14 +252,14 @@ describe('per-seat webhook reconciliation', () => {
     const seatUpdate = updateCalls.find((c) => c.data.seatCount === 4);
     expect(seatUpdate).toBeDefined();
     expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][1]).toBe(60); // delta 4-1=3 seats × $20 = $60
+    expect(grantCreditsCalls[0][1]).toBe(PER_SEAT_PRICE_USD * 3);
   });
 
   test('grant amount math is correct for various deltas', async () => {
     const cases = [
-      { from: 1, to: 2, expectedGrant: 20 },
-      { from: 1, to: 5, expectedGrant: 80 },
-      { from: 1, to: 10, expectedGrant: 180 },
+      { from: 1, to: 2, expectedGrant: PER_SEAT_PRICE_USD },
+      { from: 1, to: 5, expectedGrant: PER_SEAT_PRICE_USD * 4 },
+      { from: 1, to: 10, expectedGrant: PER_SEAT_PRICE_USD * 9 },
     ];
     for (const { from, to, expectedGrant } of cases) {
       grantCreditsCalls = [];

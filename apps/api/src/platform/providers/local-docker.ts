@@ -100,14 +100,14 @@ function getSandboxInternalApiUrl(): string {
 }
 
 /**
- * Read key=value pairs from the core/docker/.env file.
- * API keys and credentials that OpenCode needs inside the container.
+ * Read key=value pairs from the API env file. These include the credentials
+ * that OpenCode needs inside the local sandbox container.
  */
 function readSandboxEnv(): string[] {
   const candidates = [
-    resolve(__dirname, '../../../../../core/docker/.env'),
-    resolve(process.cwd(), 'core/docker/.env'),
-    resolve(process.cwd(), '../../core/docker/.env'),
+    resolve(__dirname, '../../.env'),
+    resolve(process.cwd(), 'apps/api/.env'),
+    resolve(process.cwd(), '.env'),
   ];
   for (const envPath of candidates) {
     try {

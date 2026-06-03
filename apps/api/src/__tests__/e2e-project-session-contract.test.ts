@@ -180,6 +180,11 @@ mock.module('../projects/github', () => ({
   createRepo: async () => {
     throw new Error('not used');
   },
+  deleteRepo: async () => undefined,
+  addCollaborator: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
+  parseGitHubRepoUrl: () => ({ owner: 'kortix-org', repo: 'new-project' }),
   getFileSha: async () => null,
   getGitHubAppInstallation: async () => ({
     account: { login: 'kortix-org', type: 'Organization' },
@@ -236,6 +241,13 @@ mock.module('../repositories/account-tokens', () => ({
   createAccountToken: async () => ({ secretKey: PROJECT_RUNTIME_PAT }),
   listAccountTokens: async () => [],
   revokeAccountToken: async () => true,
+  validateAccountToken: async () => ({
+    isValid: true,
+    accountId: ACCOUNT_ID,
+    userId: USER_ID,
+    tokenId: '00000000-0000-4000-a000-000000000301',
+    projectId: PROJECT_ID,
+  }),
 }));
 
 // Pin the concurrent-session cap to 1 regardless of env mode so this test
@@ -259,6 +271,7 @@ mock.module('../shared/supabase', () => ({
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
+    execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => ({
@@ -807,7 +820,7 @@ describe('project session API contract', () => {
     // injects the single sandbox KORTIX_TOKEN at the provider boundary.
     expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
-    expect(env.KORTIX_REPO_URL).toBe(projectRow.repoUrl);
+    expect(env.KORTIX_REPO_URL).toBe(`https://kortix-e2e.example.test/v1/git/${PROJECT_ID}.git`);
     expect(env.KORTIX_BASE_REF).toBe('main');
     // LLM/tool-router URLs are no longer injected — the sandbox derives any
     // router endpoint it needs from KORTIX_API_URL.
