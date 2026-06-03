@@ -36,8 +36,8 @@ PY
 )"
 
   export KORTIX_LOCAL_DEV=1
-  # `local_docker` was removed when we consolidated on cloud — listing it here
-  # only made the API log "Unknown sandbox provider" twice on every boot.
+  # `pnpm dev` defaults to Daytona because cloud sandboxes need the public
+  # callback tunnel below. `pnpm start:local`/self-host flows keep local_docker.
   export ALLOWED_SANDBOX_PROVIDERS="daytona"
   # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Daytona)
   # sandboxes call BACK to it (LLM router, web search, RPC) and cannot reach
