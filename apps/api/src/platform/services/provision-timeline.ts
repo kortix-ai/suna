@@ -57,8 +57,4 @@ export class ProvisionTimeline {
   summary(): TimelineSummary {
     return { id: this.id, kind: this.kind, totalMs: this.totalMs, marks: [...this.marks] };
   }
-
-  log(_extra?: Record<string, unknown>): TimelineSummary {
-    return this.summary();
-  }
 }

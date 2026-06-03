@@ -379,7 +379,6 @@ export async function provisionSessionSandbox(opts: {
           })
           .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
         tl.mark('row-stopped-before-active');
-        tl.log({ provider: providerName, attempts, stoppedBeforeActive: true });
         return;
       }
 
@@ -449,7 +448,6 @@ export async function provisionSessionSandbox(opts: {
         .catch(() => {});
 
       tl.mark('row-active');
-      tl.log({ provider: providerName, attempts });
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
       // Spec is resolved from the project manifest with provider-default fallbacks.

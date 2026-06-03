@@ -2232,7 +2232,7 @@ export async function createProjectSession(input: {
       // create and remote branch push both continue in detached background work.
       await provisionPromise;
       tl.mark('kicked');
-      const sessionStartTimeline = tl.log();
+      const sessionStartTimeline = tl.summary();
       // Fire-and-forget: the timeline write is pure telemetry. Awaiting it
       // here used to add ~30-80ms of DB round-trip to every session start.
       void mergeSessionMetadata({ session_start_timeline: sessionStartTimeline }).catch(() => {});
