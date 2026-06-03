@@ -91,7 +91,7 @@ type CatalogSubview =
   | { kind: 'connect'; providerId: string }
   | { kind: 'custom' };
 
-export interface ProjectProviderModalProps {
+interface ProjectProviderModalProps {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;

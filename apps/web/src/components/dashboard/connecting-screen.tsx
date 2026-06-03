@@ -188,7 +188,7 @@ export function ConnectingScreen({
   );
 }
 
-export interface ConnectingScreenProps {
+interface ConnectingScreenProps {
   /** Force the connecting view regardless of store state (dashboard gate). */
   forceConnecting?: boolean;
   /** Pin the stage label (Auth / Routing / Reaching / Restoring). */

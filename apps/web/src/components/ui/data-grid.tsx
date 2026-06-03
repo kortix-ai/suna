@@ -31,7 +31,7 @@ const gridTheme = themeQuartz.withParams({
 });
 
 // ── Types ────────────────────────────────────────────────────────────────
-export interface DataGridProps {
+interface DataGridProps {
   /** Column definitions. If omitted, auto-generated from data keys. */
   columnDefs?: ColDef[];
   /** Row data array (objects keyed by header names). */

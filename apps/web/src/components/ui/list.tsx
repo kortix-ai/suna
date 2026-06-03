@@ -43,7 +43,7 @@ export function List({
   );
 }
 
-export interface ListRowProps {
+interface ListRowProps {
   leading?: React.ReactNode;
   title: React.ReactNode;
   /** Small badges shown inline, right after the title. */

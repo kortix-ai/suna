@@ -35,7 +35,7 @@ import {
 
 type Mode = 'image' | 'dockerfile';
 
-export interface SandboxTemplateFormProps {
+interface SandboxTemplateFormProps {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;

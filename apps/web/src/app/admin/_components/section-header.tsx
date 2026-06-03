@@ -32,7 +32,7 @@ export function SectionHeader({
   );
 }
 
-export interface StatPillProps {
+interface StatPillProps {
   label: string;
   value: ReactNode;
   hint?: ReactNode;

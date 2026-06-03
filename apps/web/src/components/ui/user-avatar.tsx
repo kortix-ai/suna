@@ -40,7 +40,7 @@ const SIZE_MAP = {
 
 type UserAvatarSize = keyof typeof SIZE_MAP;
 
-export interface UserAvatarProps {
+interface UserAvatarProps {
   email: string;
   name?: string | null;
   avatarUrl?: string | null;

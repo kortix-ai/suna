@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 
 import { Button } from '@/components/ui/button';
 
-export interface NotFoundAction {
+interface NotFoundAction {
   href: string;
   label: string;
   icon?: React.ReactNode;

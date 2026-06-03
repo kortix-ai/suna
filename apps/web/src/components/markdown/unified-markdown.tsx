@@ -766,7 +766,7 @@ export function CodeHighlight({
   );
 }
 
-export interface UnifiedMarkdownProps {
+interface UnifiedMarkdownProps {
   content: string;
   className?: string;
   isStreaming?: boolean; // Enable streaming animation for incomplete markdown

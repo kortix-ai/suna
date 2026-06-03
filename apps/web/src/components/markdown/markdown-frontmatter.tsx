@@ -14,7 +14,7 @@ import { UnifiedMarkdown } from './unified-markdown';
 
 type FrontmatterValue = string | Record<string, string>;
 
-export interface ParsedMarkdown {
+interface ParsedMarkdown {
   frontmatter: Record<string, FrontmatterValue> | null;
   body: string;
 }

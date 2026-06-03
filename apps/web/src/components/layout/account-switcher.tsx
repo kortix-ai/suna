@@ -54,7 +54,7 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { CreateAccountModal } from '@/components/accounts/create-account-modal';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 
-export type AccountSwitcherVariant = 'header' | 'sidebar';
+type AccountSwitcherVariant = 'header' | 'sidebar';
 
 export function AccountSwitcher({
   variant = 'header',

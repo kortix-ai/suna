@@ -45,7 +45,7 @@ import {
   useProjectSwitchStore,
 } from '@/stores/project-switch-store';
 
-export type ProjectSwitcherVariant = 'header' | 'sidebar';
+type ProjectSwitcherVariant = 'header' | 'sidebar';
 
 function formatRelative(input: string | null | undefined) {
   if (!input) return null;

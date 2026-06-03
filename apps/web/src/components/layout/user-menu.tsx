@@ -65,9 +65,9 @@ import { ReferralDialog } from '@/components/referrals/referral-dialog';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listAccounts } from '@/lib/projects-client';
 
-export type UserMenuVariant = 'header' | 'sidebar';
+type UserMenuVariant = 'header' | 'sidebar';
 
-export interface UserMenuUser {
+interface UserMenuUser {
   name: string;
   email: string;
   avatar: string;

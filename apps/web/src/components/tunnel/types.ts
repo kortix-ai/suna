@@ -7,7 +7,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-export interface CapabilityInfo {
+interface CapabilityInfo {
   key: string;
   label: string;
   description: string;

@@ -37,7 +37,7 @@ interface OptionCopy {
   desc: string;
 }
 
-export interface SharingCopy {
+interface SharingCopy {
   heading: string;
   project: OptionCopy;
   private: OptionCopy;

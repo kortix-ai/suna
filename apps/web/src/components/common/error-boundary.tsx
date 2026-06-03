@@ -10,7 +10,7 @@ import { ErrorDetails } from './error-details';
 // so it matches the layout's children type — the app pins @types/react@18 but
 // the App Router layout children resolve React 19's ReactNode. Mirrors the
 // pattern used by ReactQueryProvider.
-export type ErrorBoundaryFallback = (props: { error: Error; reset: () => void }) => React.ReactNode;
+type ErrorBoundaryFallback = (props: { error: Error; reset: () => void }) => React.ReactNode;
 
 function DefaultAppFallback({ error, reset }: { error: Error; reset: () => void }) {
   return (
