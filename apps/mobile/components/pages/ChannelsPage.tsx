@@ -14,7 +14,6 @@ import {
   ActivityIndicator,
   Switch,
   StyleSheet,
-  Keyboard,
   TouchableOpacity,
   ScrollView,
   Linking,
@@ -66,28 +65,14 @@ import { useOpenCodeAgents, useOpenCodeProviders, flattenModels, filterToLatestM
 
 const CHANNEL_TYPE_ICONS: Record<ChannelType, string> = {
   slack: 'logo-slack',
-  discord: 'logo-discord',
-  whatsapp: 'chatbubble-outline',
-  teams: 'people-outline',
-  voice: 'mic-outline',
-  email: 'mail-outline',
-  sms: 'chatbox-outline',
 };
 
 function getChannelIcon(type: ChannelType): string {
   return CHANNEL_TYPE_ICONS[type] || 'radio-outline';
 }
 
-const SUPPORTED_CHANNEL_TYPES: ChannelType[] = ['slack'];
-
 const ALL_CHANNEL_TYPES: { type: ChannelType; label: string }[] = [
   { type: 'slack', label: 'Slack' },
-  { type: 'discord', label: 'Discord' },
-  { type: 'whatsapp', label: 'WhatsApp' },
-  { type: 'teams', label: 'Teams' },
-  { type: 'voice', label: 'Voice' },
-  { type: 'email', label: 'Email' },
-  { type: 'sms', label: 'SMS' },
 ];
 
 // ─── Tab Page Wrapper ────────────────────────────────────────────────────────
@@ -301,17 +286,11 @@ function ChannelsContent() {
         renderBackdrop={renderBackdrop}
         sandboxUrl={sandboxUrl}
         sandboxUuid={sandboxUuid}
-        onCreate={async () => {
-          haptics.success();
-          addSheetRef.current?.dismiss();
-          refetch();
-        }}
         onCreated={() => {
           haptics.success();
           addSheetRef.current?.dismiss();
           refetch();
         }}
-        isCreating={false}
       />
     </View>
   );
@@ -636,11 +615,11 @@ function ChannelDetailSheet({
 
 // ─── Add Channel Sheet (with wizard routing) ─────────────────────────────────
 
-type WizardView = 'type-select' | 'slack-wizard' | 'generic-config';
+type WizardView = 'type-select' | 'slack-wizard';
 
 function AddChannelSheet({
   sheetRef, isDark, theme, renderBackdrop, sandboxUrl, sandboxUuid,
-  onCreate, onCreated, isCreating,
+  onCreated,
 }: {
   sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
@@ -648,43 +627,29 @@ function AddChannelSheet({
   renderBackdrop: (props: any) => React.ReactElement;
   sandboxUrl?: string;
   sandboxUuid?: string;
-  onCreate: (data: { name: string; channel_type: ChannelType }) => void;
   onCreated: () => void;
-  isCreating: boolean;
 }) {
   const sheetPadding = useSheetBottomPadding();
   const [view, setView] = useState<WizardView>('type-select');
   const [selectedType, setSelectedType] = useState<ChannelType | null>(null);
-  const [channelName, setChannelName] = useState('');
 
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
   const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
   const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
 
-  const reset = () => { setView('type-select'); setSelectedType(null); setChannelName(''); };
+  const reset = () => { setView('type-select'); setSelectedType(null); };
 
   const handleTypeSelect = (type: ChannelType) => {
     haptics.tap();
     setSelectedType(type);
-    if (type === 'slack') setView('slack-wizard');
-    else setView('generic-config');
-  };
-
-  const handleCreate = () => {
-    if (!selectedType || !channelName.trim()) return;
-    haptics.tap();
-    Keyboard.dismiss();
-    onCreate({ name: channelName.trim(), channel_type: selectedType });
-    reset();
+    setView('slack-wizard');
   };
 
   const title = view === 'slack-wizard' ? 'Connect Slack'
-    : view === 'generic-config' && selectedType ? `New ${getChannelTypeLabel(selectedType)} Channel`
     : 'Add Channel';
 
   const subtitle = view === 'slack-wizard' ? 'Set up a Slack bot for your instance'
-    : view === 'generic-config' ? 'Configure your new channel'
     : 'Choose a messaging platform';
 
   const isWizard = view === 'slack-wizard';
@@ -724,27 +689,20 @@ function AddChannelSheet({
         {view === 'type-select' && (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
             {ALL_CHANNEL_TYPES.map((ct) => {
-              const isSupported = SUPPORTED_CHANNEL_TYPES.includes(ct.type);
               return (
                 <Pressable
                   key={ct.type}
-                  onPress={() => isSupported && handleTypeSelect(ct.type)}
-                  disabled={!isSupported}
+                  onPress={() => handleTypeSelect(ct.type)}
                   style={{
                     width: '48%' as any, flexGrow: 1, padding: 14, borderRadius: 14,
                     backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
                     borderWidth: StyleSheet.hairlineWidth,
                     borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-                    alignItems: 'center', gap: 8, opacity: isSupported ? 1 : 0.5,
+                    alignItems: 'center', gap: 8,
                   }}
                 >
-                  <Ionicons name={getChannelIcon(ct.type) as any} size={24} color={isSupported ? fg : muted} />
-                  <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isSupported ? fg : muted }}>{ct.label}</Text>
-                  {!isSupported && (
-                    <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
-                      <Text style={{ fontSize: 10, fontFamily: 'Roobert', color: muted }}>Coming Soon</Text>
-                    </View>
-                  )}
+                  <Ionicons name={getChannelIcon(ct.type) as any} size={24} color={fg} />
+                  <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>{ct.label}</Text>
                 </Pressable>
               );
             })}
@@ -764,35 +722,6 @@ function AddChannelSheet({
             onBack={() => { setView('type-select'); setSelectedType(null); }}
             onCreated={onCreated}
           />
-        )}
-
-        {view === 'generic-config' && (
-          <>
-            <Pressable onPress={() => { haptics.tap(); setView('type-select'); setSelectedType(null); setChannelName(''); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 16 }}>
-              <Ionicons name="chevron-back" size={16} color={muted} />
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>Back</Text>
-            </Pressable>
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Channel Name</Text>
-            <BottomSheetTextInput
-              value={channelName}
-              onChangeText={setChannelName}
-              placeholder={`e.g. My ${selectedType ? getChannelTypeLabel(selectedType) : ''} Bot`}
-              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
-              autoFocus
-              style={{ backgroundColor: inputBg, borderWidth: 1, borderColor, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, fontFamily: 'Roobert', color: fg, marginBottom: 20 }}
-            />
-            <Pressable
-              onPress={handleCreate}
-              disabled={!channelName.trim() || isCreating}
-              style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 9999, backgroundColor: !channelName.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
-            >
-              {isCreating ? (
-                <ActivityIndicator size="small" color={theme.primaryForeground} />
-              ) : (
-                <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: !channelName.trim() ? muted : theme.primaryForeground }}>Create Channel</Text>
-              )}
-            </Pressable>
-          </>
         )}
       </BottomSheetScrollView>
     </BottomSheetModal>

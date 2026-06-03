@@ -9,7 +9,7 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type ChannelType = 'slack' | 'discord' | 'whatsapp' | 'teams' | 'voice' | 'email' | 'sms';
+export type ChannelType = 'slack';
 
 export interface ChannelConfig {
   id: string;
@@ -215,12 +215,6 @@ export function useToggleChannel() {
 export function getChannelTypeLabel(type: ChannelType): string {
   const labels: Record<ChannelType, string> = {
     slack: 'Slack',
-    discord: 'Discord',
-    whatsapp: 'WhatsApp',
-    teams: 'Teams',
-    voice: 'Voice',
-    email: 'Email',
-    sms: 'SMS',
   };
   return labels[type] || type;
 }
