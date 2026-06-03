@@ -43,7 +43,6 @@ import {
 } from '@/hooks/account/use-account-deletion';
 import { AccountState } from '@/lib/api/billing';
 import { useAuth } from '@/components/AuthProvider';
-import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { AutoTopupCard } from '@/components/billing/auto-topup-card';
 import { SeatManagementCard } from '@/components/billing/seat-management-card';
 import { ClaimPerSeatCard } from '@/components/billing/claim-per-seat-card';
@@ -51,7 +50,6 @@ import { AccountOverviewTab } from '@/components/billing/account-overview';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
     accountStateKeys,
-    accountStateSelectors,
     useCreatePortalSession,
     invalidateAccountState,
 } from '@/hooks/billing';
@@ -1130,7 +1128,6 @@ const CREDIT_PACKAGES: { credits: number; price: number }[] = [
 
 export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: boolean }) {
     const { session, isLoading: authLoading } = useAuth();
-    const highlight = useUserSettingsModalStore((s) => s.highlight);
     const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
     const [selectedPackage, setSelectedPackage] = useState<(typeof CREDIT_PACKAGES)[number] | null>(null);
     const [isPurchasing, setIsPurchasing] = useState(false);
@@ -1170,8 +1167,6 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
     });
     
     const createPortalSessionMutation = useCreatePortalSession();
-
-    const totalCredits = accountStateSelectors.totalCredits(accountState);
 
     // Refetch billing info whenever the billing tab becomes active (only once per activation)
     const prevIsActiveRef = useRef(false);
@@ -1299,15 +1294,6 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
             ) : (
                 /* ── Subscribed: plan + wallet + spend + top-up + manage ── */
                 <>
-                    {/* Insufficient credits alert (routed here from 402 errors) */}
-                    {highlight === 'credits' && totalCredits <= 0 && (
-                        <InfoBanner tone="warning" icon={AlertTriangle} title="You ran out of credits">
-                            {canPurchaseCredits
-                                ? 'Buy credits below or turn on auto top-up so it never happens again.'
-                                : 'Top up your wallet to keep your agents running.'}
-                        </InfoBanner>
-                    )}
-
                     {/* Plan / wallet / spend / limits */}
                     <AccountOverviewTab accountId={billingAccountId} />
 

@@ -5,8 +5,6 @@ import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
 import { SubscriptionStoreSync } from '@/stores/subscription-store';
-import { UserSettingsModal } from '@/components/settings/user-settings-modal';
-import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
 import { isBillingEnabled } from '@/lib/config';
 import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
@@ -62,26 +60,12 @@ function DeleteOperationEffectsWrapper({ children }: { children: React.ReactNode
   return <>{children}</>;
 }
 
-/** Store-driven UserSettingsModal — mounted once globally so the error handler
- *  can route billing errors to the Billing tab with a highlight. */
-function GlobalUserSettingsModal() {
-  const { isOpen, defaultTab, closeUserSettings } = useUserSettingsModalStore();
-  return (
-    <UserSettingsModal
-      open={isOpen}
-      onOpenChange={(o) => !o && closeUserSettings()}
-      defaultTab={defaultTab}
-    />
-  );
-}
-
 interface AppProvidersProps {
   children: React.ReactNode;
   showSidebar?: boolean;
   defaultSidebarOpen?: boolean;
   sidebarContent?: React.ReactNode;
   sidebarSiblings?: React.ReactNode;
-  showGlobalUserSettingsModal?: boolean;
 }
 
 export function AppProviders({
@@ -90,7 +74,6 @@ export function AppProviders({
   defaultSidebarOpen,
   sidebarContent,
   sidebarSiblings,
-  showGlobalUserSettingsModal = false,
 }: AppProvidersProps) {
   // One-time sweep on app load: reclaim localStorage left over from older builds
   // that never evicted their per-sandbox caches. Ongoing growth is bounded by
@@ -103,7 +86,6 @@ export function AppProviders({
     <DeleteOperationEffectsWrapper>
       <SubscriptionStoreSync>
         {children}
-        {showGlobalUserSettingsModal && <GlobalUserSettingsModal />}
         {isBillingEnabled() && <GlobalUpgradeDialog />}
       </SubscriptionStoreSync>
     </DeleteOperationEffectsWrapper>
