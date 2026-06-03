@@ -62,7 +62,6 @@ import {
   useOpenCodeProviders,
 } from '@/hooks/opencode/use-opencode-sessions';
 import { toast } from '@/lib/toast';
-import { featureFlags } from '@/lib/feature-flags';
 import { useServerStore } from '@/stores/server-store';
 import { authenticatedFetch } from '@/lib/auth-token';
 
@@ -565,16 +564,9 @@ export function CommandPalette() {
   }, [allPaletteItems, hasQuery, query]);
 
   // ── Submenu: agents ──
-  // Project-only agents (orchestrator/project-maintainer/worker/project-manager)
-  // are hidden from the palette when the project paradigm is off —
-  // their bodies reference project tools that aren't registered in default
-  // mode.
   const visibleAgents = useMemo(() => {
     if (!agents) return [];
-    const projectOnlyAgents = new Set(['project-manager']);
-    return agents.filter(
-      (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name))
-    );
+    return agents.filter((a) => !a.hidden);
   }, [agents]);
 
   const filteredAgents = useMemo(() => {

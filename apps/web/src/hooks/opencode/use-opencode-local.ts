@@ -15,7 +15,6 @@ import { useMemo, useCallback, useRef, useEffect } from 'react';
 import { useModelStore, type ModelKey } from './use-model-store';
 import type { FlatModel } from '@/components/session/session-chat-input';
 import type { Agent, ProviderListResponse, Config } from '@opencode-ai/sdk/v2/client';
-import { featureFlags } from '@/lib/feature-flags';
 
 export type { ModelKey };
 
@@ -199,16 +198,8 @@ export function useOpenCodeLocal({
   );
 
   // ---- Agent state — persisted per-session in localStorage so switching tabs preserves selection ----
-  // Project-only agents (orchestrator/project-maintainer/worker) are hidden
-  // when the project paradigm is off; their bodies reference project
-  // tools that aren't registered in default mode.
   const visibleAgents = useMemo<Agent[]>(
-    () => {
-      const projectOnlyAgents = new Set(['project-manager']);
-      return (Array.isArray(rawAgents) ? rawAgents : []).filter(
-        (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name)),
-      );
-    },
+    () => (Array.isArray(rawAgents) ? rawAgents : []).filter((a) => !a.hidden),
     [rawAgents],
   );
 

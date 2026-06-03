@@ -156,10 +156,6 @@ export interface MenuItemDef {
   /** If true, item is only shown when a project is active (new project shell).
    *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
   requiresProject?: boolean;
-  /** If true, item is only shown when the project / project-paradigm
-   *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
-   *  project-paradigm surfaces (Board today; Milestones, Team later). */
-  requiresProjectsFlag?: boolean;
 }
 
 // ============================================================================
