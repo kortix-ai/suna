@@ -90,16 +90,11 @@ async function enumerateOpencodeSessions(ctx: MigrationContext): Promise<{ sessi
   const endpoint = await resolveLegacyVmEndpoint(ctx.legacy);
   const { uploadUrl, path } = await createOpencodeArchiveUploadUrl(ctx.legacy.sandboxId);
 
-  // The VM tars the opencode store and streams it STRAIGHT to storage via a
-  // signed PUT (curl -T). No more piping the whole (100s-of-MB) tarball back as
-  // base64 through the toolbox exec stdout — that buffered the entire store in
-  // memory and dropped/empty'd at size. We only get back a short status line.
   const script = [
     'set -uo pipefail',
     RESOLVE_WS_OC_SH,
     '{ [ -z "$OC" ] || [ ! -f "$OC/opencode.db" ]; } && { echo OC_MISSING; exit 0; }',
     'TMP="$(mktemp)"',
-    // wal/shm may be absent — 2>/dev/null swallows that; opencode.db is always archived.
     'tar czf "$TMP" -C "$OC" opencode.db opencode.db-wal opencode.db-shm 2>/dev/null || true',
     `code=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT -H 'Content-Type: application/gzip' -H 'x-upsert: true' -T "$TMP" ${sq(uploadUrl)})`,
     'bytes=$(stat -c %s "$TMP" 2>/dev/null || echo 0)',
@@ -114,8 +109,6 @@ async function enumerateOpencodeSessions(ctx: MigrationContext): Promise<{ sessi
   }
   ctx.log('extract: uploaded opencode archive to storage', { summary: out.trim().split('\n').pop(), path });
 
-  // Pull the archive back API-side to enumerate sessions — the API<->storage
-  // path handles any size, so the fragile exec transport is fully out of the way.
   const tarball = await downloadOpencodeArchive(ctx.legacy.sandboxId);
   if (!tarball) {
     ctx.log('extract: archive not found in storage after upload — enumerated 0 sessions');
@@ -148,9 +141,6 @@ export class MigrationStepNotImplemented extends Error {
 }
 
 export async function extractStep(ctx: MigrationContext): Promise<void> {
-  // The opencode store is uploaded straight to storage from the VM inside
-  // enumerateOpencodeSessions (signed PUT), so there's no archive to re-upload
-  // here — we just record the session list + the object path.
   if (!Array.isArray(ctx.progress.opencode_sessions)) {
     const { sessions, archivePath } = await enumerateOpencodeSessions(ctx);
     await ctx.checkpoint({ opencode_sessions: sessions, opencode_archive_path: archivePath });
@@ -269,6 +259,7 @@ export async function pushStep(ctx: MigrationContext): Promise<void> {
   const script = [
     'set -euo pipefail',
     RESOLVE_WS_OC_SH,
+    'mkdir -p "$WS"',
     'cd "$WS"',
     'export HOME="$(mktemp -d)"',
     `git config --global --add safe.directory ${sq('*')}`,
@@ -279,18 +270,9 @@ export async function pushStep(ctx: MigrationContext): Promise<void> {
     `rm -rf "$__ST" ${sq(STARTER_REMOTE_B64)}`,
     `printf '%s\\n' ${excludeLine} > .gitignore`,
     'rm -rf .git',
-    // Strip EMBEDDED git repos (a nested .git anywhere in the tree — a cloned
-    // sub-project). Left in place, `git add -A` records them as submodule
-    // gitlinks and their file contents are silently dropped from the migrated
-    // repo. Removing the inner .git flattens them into ordinary files so the
-    // user's work is actually preserved.
     'find . -type d -name .git -prune -exec rm -rf {} + 2>/dev/null || true',
     'git init -q',
     `printf '%s\\n' ${excludeLine} > .git/info/exclude`,
-    // GitHub HARD-rejects any file >100MB, which aborts the whole push (exit 1)
-    // and dead-letters the migration. Exclude such files (leave them on disk,
-    // just don't track them) so the push succeeds; log each so the drop is never
-    // silent. Skip dirs already excluded above to avoid noise/wasted walking.
     "find . -type f -size +100M -not -path './.git/*' -not -path './.persistent-system/*' -not -path './node_modules/*' -not -path './.cache/*' -printf '%P\\n' 2>/dev/null | while IFS= read -r f; do printf '%s\\n' \"$f\" >> .git/info/exclude; echo \"push: excluding >100MB file (GitHub limit): $f\"; done || true",
     `git checkout -qB ${sq(defaultBranch)}`,
     'git add -A',

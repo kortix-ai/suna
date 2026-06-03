@@ -36,8 +36,16 @@ export const RESOLVE_WS_OC_SH = [
   // volume on the host (justavps-data), not the host's own /workspace. Target
   // that volume first, then fall back to host/Daytona-style paths.
   'WS=/var/lib/docker/volumes/justavps-data/_data',
-  '[ -d "$WS/.local/share/opencode" ] || WS="$(ls -d /var/lib/docker/volumes/*/_data 2>/dev/null | head -1)"',
+  '[ -d "$WS/.local/share/opencode" ] || WS="$(ls -d /var/lib/docker/volumes/*/_data 2>/dev/null | head -1 || true)"',
+  // Single-host image variant: no nested-docker volume — opencode runs directly
+  // and the workspace is the user home that holds the store (/home/<user>).
+  // Prefer that over /workspace (which doesn\'t exist on these machines, so the
+  // push\'s `cd "$WS"` died with exit 2 before this fallback existed).
+  '[ -d "$WS" ] || { __oc="$(ls -d /home/*/.local/share/opencode 2>/dev/null | head -1 || true)"; [ -n "$__oc" ] && WS="$(dirname "$(dirname "$(dirname "$__oc")")")"; }',
   '[ -d "$WS" ] || WS="${KORTIX_WORKSPACE:-/workspace}"',
+  // Last resort: any /home/<user>. Guarantees $WS is *something* real so an empty
+  // machine still migrates (the push mkdir -p\'s + lays down the Kortix starter).
+  '[ -d "$WS" ] || WS="$(ls -d /home/*/ 2>/dev/null | head -1 || true)"',
   'if [ -n "${OPENCODE_STORAGE_BASE:-}" ] && [ -d "$OPENCODE_STORAGE_BASE" ]; then OC="$OPENCODE_STORAGE_BASE";',
   'elif [ -d "$WS/.local/share/opencode" ]; then OC="$WS/.local/share/opencode";',
   // Newer image: canonical store is /persistent/opencode, which is the volume's
@@ -47,7 +55,7 @@ export const RESOLVE_WS_OC_SH = [
   'elif [ -n "${KORTIX_PERSISTENT_ROOT:-}" ] && [ -d "$KORTIX_PERSISTENT_ROOT/opencode" ]; then OC="$KORTIX_PERSISTENT_ROOT/opencode";',
   'elif [ -d /persistent/opencode ]; then OC=/persistent/opencode;',
   'elif [ -n "${HOME:-}" ] && [ -d "$HOME/.local/share/opencode" ]; then OC="$HOME/.local/share/opencode";',
-  'else OC="$(ls -d /var/lib/docker/volumes/*/_data/.persistent-system/opencode /var/lib/docker/volumes/*/_data/.local/share/opencode /home/*/.local/share/opencode 2>/dev/null | head -1)"; fi',
+  'else OC="$(ls -d /var/lib/docker/volumes/*/_data/.persistent-system/opencode /var/lib/docker/volumes/*/_data/.local/share/opencode /home/*/.local/share/opencode 2>/dev/null | head -1 || true)"; fi',
 ].join('\n');
 
 export interface LegacyExecResult {
