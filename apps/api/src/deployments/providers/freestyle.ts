@@ -1,17 +1,41 @@
 /**
- * Freestyle (https://docs.freestyle.sh/v2/serverless/deployments) adapter
- * for the DeploymentProvider interface.
- *
- * Anything Freestyle-specific lives in this file.
+ * Freestyle (https://docs.freestyle.sh/v2/serverless/deployments) deployment adapter.
  */
 import { config } from '../../config';
-import type {
-  AppBuild,
-  AppSource,
-  DeploymentProvider,
-  DeploymentRequest,
-  DeploymentResult,
-} from './types';
+
+type FreestyleAppSource =
+  | {
+      type: 'git';
+      repo: string;
+      branch?: string;
+      rootPath?: string;
+    }
+  | {
+      type: 'tar';
+      url: string;
+    };
+
+interface FreestyleAppBuild {
+  command?: string;
+  outDir?: string;
+}
+
+export interface FreestyleDeploymentRequest {
+  accountId: string;
+  projectId: string;
+  appSlug: string;
+  source: FreestyleAppSource;
+  domains: string[];
+  build?: FreestyleAppBuild;
+  env?: Record<string, string>;
+}
+
+interface FreestyleDeploymentResult {
+  providerId: string;
+  liveUrl: string | null;
+  status: 'active' | 'failed';
+  error?: string;
+}
 
 // ─── Dynamic Freestyle config ────────────────────────────────────────────────
 // The Kortix API runs in a separate container from the sandbox. API keys set
@@ -109,7 +133,7 @@ async function callFreestyle(
 
 // ─── Adapter implementation ─────────────────────────────────────────────────
 
-function buildSourceFromAppSource(source: AppSource) {
+function buildSourceFromAppSource(source: FreestyleAppSource) {
   if (source.type === 'git') {
     return {
       kind: 'git' as const,
@@ -124,14 +148,14 @@ function buildSourceFromAppSource(source: AppSource) {
   };
 }
 
-function buildConfigFromAppRequest(req: DeploymentRequest) {
+function buildConfigFromAppRequest(req: FreestyleDeploymentRequest) {
   // Build defaulting:
   //   - explicit [apps.build] with fields → forward command/outDir to Freestyle
   //   - explicit [apps.build] but empty   → `true` (let Freestyle auto-detect framework)
   //   - no [apps.build] at all, git src   → `true` (most templates need a build to expose an entrypoint —
   //     the fly.toml-style ergonomic the user asked for)
   //   - no [apps.build] at all, tar src   → omit (tarball already contains the built artifact)
-  let build: AppBuild | boolean | undefined;
+  let build: FreestyleAppBuild | boolean | undefined;
   if (req.build && (req.build.command || req.build.outDir)) {
     build = req.build;
   } else if (req.build !== undefined) {
@@ -149,10 +173,10 @@ function buildConfigFromAppRequest(req: DeploymentRequest) {
   };
 }
 
-export const freestyleProvider: DeploymentProvider = {
+export const freestyleProvider = {
   name: 'freestyle',
 
-  async deploy(req: DeploymentRequest): Promise<DeploymentResult> {
+  async deploy(req: FreestyleDeploymentRequest): Promise<FreestyleDeploymentResult> {
     if (!(await getFreestyleApiKey())) {
       return {
         providerId: '',

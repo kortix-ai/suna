@@ -13,8 +13,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { deployments, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { freestyleProvider } from '../deployments/providers/freestyle';
-import type { DeploymentRequest } from '../deployments/providers/types';
+import { freestyleProvider, type FreestyleDeploymentRequest } from '../deployments/providers/freestyle';
 import {
   loadProjectApps,
   manifestHashForApp,
@@ -135,7 +134,7 @@ export async function getLatestDeployment(
 }
 
 /**
- * Translate an AppSpec into the provider's DeploymentRequest shape. If
+ * Translate an AppSpec into the Freestyle deployment request shape. If
  * the spec's git source has no explicit `repo`, we fall back to the
  * project's own repo URL so the most common case (deploy this project's
  * repo) works with zero TOML boilerplate.
@@ -143,9 +142,9 @@ export async function getLatestDeployment(
 function buildDeploymentRequest(input: {
   project: ProjectRow;
   spec: AppSpec;
-}): DeploymentRequest {
+}): FreestyleDeploymentRequest {
   const { project, spec } = input;
-  let source: DeploymentRequest['source'];
+  let source: FreestyleDeploymentRequest['source'];
   if (spec.source.type === 'git') {
     source = {
       type: 'git',
