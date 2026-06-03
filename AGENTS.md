@@ -24,6 +24,14 @@ Bring it up with `pnpm dev` from `suna/` (it loads `apps/api/.env` +
 what's already running before starting a duplicate: `curl -s
 localhost:8008/v1/health`, `lsof -iTCP:3000 -sTCP:LISTEN`.
 
+> **`apps/api/.env` is dotenvx-encrypted** (committed ciphertext; values show as
+> `encrypted:…`). `pnpm dev`/`pnpm dev:api` decrypt it via `dotenvx run` using
+> the key in `apps/api/.env.keys` or Dotenv Armor (`dotenvx-armor login`). To
+> read a value: `pnpm dlx @dotenvx/dotenvx get KEY -f apps/api/.env`; to
+> add/rotate: `… set KEY value -f apps/api/.env` then commit. Never write
+> plaintext to `apps/api/.env` — runtime overrides go in the gitignored
+> `apps/api/.env.local`.
+
 ### Authenticating to the live API (for scripts/tests)
 Mint a real JWT against local Supabase, then call the API with it:
 1. `SUPABASE_SERVICE_ROLE_KEY` lives in `apps/api/.env`; the anon key

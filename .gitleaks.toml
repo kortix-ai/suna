@@ -1,0 +1,19 @@
+# gitleaks config — consumed by .github/workflows/secret-scan.yml (gitleaks 8.x
+# auto-detects .gitleaks.toml at the repo root).
+#
+# We keep ALL the default gitleaks rules (the array of provider patterns), and
+# only add a narrow allowlist so the dotenvx-ENCRYPTED apps/api/.env does not
+# trip the generic high-entropy rule. Its values are AES ciphertext
+# (`encrypted:…`) and a public key — neither is a usable secret.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "dotenvx-encrypted apps/api profiles (AES ciphertext + non-secret DOTENV_PUBLIC_KEY)"
+# Scope the exception to the encrypted profile files only — a plaintext secret
+# committed anywhere else still fails the scan.
+paths = [
+  '''apps/api/\.env$''',
+  '''apps/api/\.env\.dev$''',
+  '''apps/api/\.env\.prod$''',
+]

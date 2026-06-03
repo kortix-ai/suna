@@ -62,7 +62,7 @@ write_env() {
 echo "Generating .env files from $ENV_FILE ..."
 echo ""
 
-write_env "apps/api/.env" \
+write_env "apps/api/.env.local" \
   "# Core" \
   "PORT=8008" \
   "$(kv ENV_MODE local)" \

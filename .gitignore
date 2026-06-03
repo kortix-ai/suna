@@ -21,6 +21,19 @@ build/
 .env.docker
 *.env.docker
 
+# dotenvx private decryption keys — NEVER commit (use Dotenv Armor to sync them).
+.env.keys
+*.env.keys
+
+# Exception: the apps/api dotenvx profiles are ENCRYPTED (values are AES
+# ciphertext + a public key) so they are safe to commit and are the team's
+# source of truth — one file per profile (.env=local, .env.dev, .env.prod),
+# each with its own keypair in .env.keys. The plaintext runtime override
+# apps/api/.env.local stays ignored via the rules above.
+!apps/api/.env
+!apps/api/.env.dev
+!apps/api/.env.prod
+
 # Secrets & keys (defense-in-depth with secret-scanning push protection + gitleaks)
 # The committed root .npmrc is config-only (no secrets); ignore token-bearing variants
 # like .npmrc.release. *.key does not match Android's debug.keystore.

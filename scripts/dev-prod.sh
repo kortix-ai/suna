@@ -18,26 +18,20 @@ echo "  API env:  $API_ENV"
 echo "  Web env:  $WEB_ENV"
 echo ""
 
-# Copy prod env files into place (don't overwrite originals)
-cp "$API_ENV" "$ROOT/apps/api/.env"
-cp "$WEB_ENV" "$ROOT/apps/web/.env.local"
-
 cleanup() {
-  # Restore original env files if they were backed up
-  [ -f "$ROOT/apps/api/.env.bak" ] && mv "$ROOT/apps/api/.env.bak" "$ROOT/apps/api/.env"
+  # Restore the original web env-local override if it was backed up.
   [ -f "$ROOT/apps/web/.env.local.bak" ] && mv "$ROOT/apps/web/.env.local.bak" "$ROOT/apps/web/.env.local"
 }
 
-# Back up existing env files first
-[ -f "$ROOT/apps/api/.env" ] && cp "$ROOT/apps/api/.env" "$ROOT/apps/api/.env.bak" 2>/dev/null || true
+# Web isn't dotenvx-managed: copy its prod env into the gitignored override.
 [ -f "$ROOT/apps/web/.env.local" ] && cp "$ROOT/apps/web/.env.local" "$ROOT/apps/web/.env.local.bak" 2>/dev/null || true
-
-cp "$API_ENV" "$ROOT/apps/api/.env"
 cp "$WEB_ENV" "$ROOT/apps/web/.env.local"
 
 trap cleanup EXIT
 
-# Run both in parallel
+# API: the prod profile (apps/api/.env.prod) is dotenvx-ENCRYPTED, so decrypt it
+# in memory with `dotenvx run` (needs the _PROD key from apps/api/.env.keys or
+# Dotenv Armor). Web reads its plaintext .env.local.
 npx concurrently -n api,web -c cyan,magenta \
-  "cd $ROOT/apps/api && bun run --watch src/index.ts" \
+  "cd $ROOT/apps/api && $ROOT/node_modules/.bin/dotenvx run -f .env.prod -- bun run --watch src/index.ts" \
   "cd $ROOT/apps/web && pnpm dev"
