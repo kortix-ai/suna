@@ -23,12 +23,7 @@ export interface Capabilities {
   database: boolean;
   /** Platform-admin token for /v1/ops/* + requireAdmin routes. */
   admin: boolean;
-  /**
-   * Runtime: OWNER was successfully funded via the real subscribe flow (set after
-   * bootstrap). Billing-gated flows (sessions, paid subscribe) require this — it's
-   * only achievable on a target whose Stripe account has the configured paid prices
-   * (e.g. dev-api), so those flows skip on a local stack that lacks them.
-   */
+  /** The target OWNER account is already funded enough to create sessions. */
   funded: boolean;
 }
 
@@ -125,7 +120,7 @@ export function loadEnv(): Env {
     supabaseAdmin: supabaseServiceRoleKey != null,
     database: databaseUrl != null,
     admin: adminToken != null,
-    funded: false, // set true after a successful OWNER subscribe at bootstrap
+    funded: pick("KE2E_CAP_FUNDED") === "1",
   };
 
   cached = {

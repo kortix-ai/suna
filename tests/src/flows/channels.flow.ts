@@ -1,6 +1,6 @@
 /**
- * Channels — Slack/Telegram integration + their public, signature-gated
- * webhooks. Maps to spec §CHN (CHN-1..16).
+ * Channels — Slack integration + public, signature-gated webhooks. Maps to
+ * spec §CHN.
  *
  * Behavior confirmed against apps/api/src/channels + apps/api/src/projects/index.ts:
  * - slack/connect|installation|mode are user-authed project routes (read/manage
@@ -13,9 +13,9 @@
  *   503 BEFORE signature check; if configured, an unsigned body → 401.
  * - url_verification challenge only echoes AFTER signature passes, so unsigned
  *   we never reach it.
- * - BYO per-project webhook (/webhooks/slack/:projectId) and Telegram
- *   (/webhooks/telegram/:projectId) return 404 when the project has no install
- *   configured; a configured-but-bad-signature would be 401.
+ * - BYO per-project webhook (/webhooks/slack/:projectId) returns 404 when the
+ *   project has no install configured; a configured-but-bad-signature would be
+ *   401.
  */
 import { flow } from "../core/flow";
 
@@ -259,33 +259,6 @@ flow(
         .as(ctx.P.ANON)
         .get("/v1/webhooks/slack/oauth/callback?code=abc&state=garbage.sig");
       r.status([400, 503]);
-    });
-  },
-);
-
-// CHN-8 — Telegram inbound (POST /v1/webhooks/telegram/:projectId). Public.
-// No webhook secret for project → 404; secret mismatch → 401.
-flow(
-  "CHN-8",
-  {
-    domain: "channels",
-    routes: ["POST /v1/webhooks/telegram/:projectId"],
-  },
-  async (ctx) => {
-    const p = await ctx.fixtures.sharedProject();
-    await ctx.step("project with no Telegram secret → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .post("/v1/webhooks/telegram/:projectId", { update_id: 1, message: { message_id: 1, chat: { id: 1, type: "private" } } }, {
-          params: { projectId: p.id },
-        });
-      r.status(404);
-    });
-    await ctx.step("unknown project → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .post("/v1/webhooks/telegram/:projectId", { update_id: 1 }, { params: { projectId: UNKNOWN } });
-      r.status(404);
     });
   },
 );

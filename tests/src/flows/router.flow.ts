@@ -9,7 +9,7 @@
  *   - /web-search/*, /image-search/*  → apiKeyAuth
  *   - /chat/*, /messages, /models, /models/*  → apiKeyAuth
  *   - /llm/*  (session-llm) → its own session-LLM-token bearer (not a JWT)
- * `GET /router/health` is the only public route (covered by SYS-4).
+ * Router routes are guarded by API key/session auth boundaries.
  *
  * We do not hold a kortix_ API key principal here, so we assert the negative
  * (401) boundary exhaustively rather than faking a successful managed call.
@@ -104,41 +104,6 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .get("/v1/router/models/:model", { params: { model: "anthropic/claude-3.5-sonnet" } });
-      r.status(401);
-    });
-  },
-);
-
-flow(
-  "RTR-3",
-  {
-    domain: "router",
-    routes: ["POST /v1/router/llm/chat/completions", "GET /v1/router/llm/models"],
-  },
-  async (ctx) => {
-    // session-llm is gated by a dedicated session-LLM bearer token (verifySessionLlmToken),
-    // not a JWT and not the kortix_ API key. A user JWT is not a valid session-LLM token →
-    // 401 ("Invalid LLM token"). ANON (no Authorization) → 401 too.
-    await ctx.step("llm/chat/completions: OWNER JWT is not a session-LLM token → 401", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/router/llm/chat/completions", {
-        model: "anthropic/claude-3.5-sonnet",
-        messages: [{ role: "user", content: "hi" }],
-      });
-      r.status(401);
-    });
-    await ctx.step("llm/chat/completions: ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/router/llm/chat/completions", {
-        model: "anthropic/claude-3.5-sonnet",
-        messages: [{ role: "user", content: "hi" }],
-      });
-      r.status(401);
-    });
-    await ctx.step("llm/models: OWNER JWT → 401", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/router/llm/models");
-      r.status(401);
-    });
-    await ctx.step("llm/models: ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/router/llm/models");
       r.status(401);
     });
   },

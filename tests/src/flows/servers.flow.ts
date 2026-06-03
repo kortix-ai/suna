@@ -8,8 +8,6 @@
  * /v1/p/<sandbox>/<port> proxy url) are rejected with 400 / filtered from lists.
  *   - GET    /servers       → 200 [rows]
  *   - POST   /servers       → 201 row | 400 (missing fields / managed)
- *   - GET    /servers/:id   → 200 row | 404
- *   - PUT    /servers/:id   → 200 row | 404
  *   - DELETE /servers/:id   → 200 { ok } | 404
  *   - PUT    /servers/sync  → 200 [rows]
  */
@@ -30,7 +28,7 @@ flow("SRV-1", { domain: "servers", tags: ["smoke"], routes: ["GET /v1/servers"] 
   });
 });
 
-// ─── SRV-2: full CRUD lifecycle ───────────────────────────────────────────────
+// ─── SRV-2: create/delete lifecycle ──────────────────────────────────────────
 
 flow(
   "SRV-2",
@@ -39,8 +37,6 @@ flow(
     serial: true,
     routes: [
       "POST /v1/servers",
-      "GET /v1/servers/:id",
-      "PUT /v1/servers/:id",
       "DELETE /v1/servers/:id",
     ],
   },
@@ -54,23 +50,9 @@ flow(
       });
       r.status(201).body().has("$.id", id);
     });
-    await ctx.step("read it back → 200 row", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/servers/:id", { params: { id } });
-      r.status(200).body().has("$.id", id);
-    });
-    await ctx.step("update label → 200 row", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put("/v1/servers/:id", { label: ctx.fixtures.name("srv-renamed") }, { params: { id } });
-      r.status(200).body().has("$.id", id);
-    });
     await ctx.step("delete it → 200 ok", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del("/v1/servers/:id", { params: { id } });
       r.status(200).body().has("$.ok", true);
-    });
-    await ctx.step("read after delete → 404", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/servers/:id", { params: { id } });
-      r.status(404);
     });
   },
 );
@@ -81,7 +63,7 @@ flow(
   "SRV-3",
   {
     domain: "servers",
-    routes: ["POST /v1/servers", "GET /v1/servers/:id", "PUT /v1/servers/:id", "DELETE /v1/servers/:id"],
+    routes: ["POST /v1/servers", "DELETE /v1/servers/:id"],
   },
   async (ctx) => {
     await ctx.step("create missing required fields → 400", async () => {
@@ -95,16 +77,6 @@ flow(
         url: "https://managed.ke2e.kortix.test",
       });
       r.status(400);
-    });
-    await ctx.step("get unknown id → 404", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/servers/:id", { params: { id: `ke2e-${uuid()}` } });
-      r.status(404);
-    });
-    await ctx.step("update unknown id → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put("/v1/servers/:id", { label: "nope" }, { params: { id: `ke2e-${uuid()}` } });
-      r.status(404);
     });
     await ctx.step("delete unknown id → 404", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del("/v1/servers/:id", { params: { id: `ke2e-${uuid()}` } });

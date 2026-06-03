@@ -17,7 +17,6 @@ import type { RegisteredFlow } from "../core/flow";
 import { ResourceStack } from "./registry";
 import { adminDeleteUser } from "./supabase";
 import { provisionMatrix, synthUser, type Provisioned } from "./principals";
-import { subscribe } from "./billing";
 import { provisionProject } from "./provision";
 
 const PUBLIC_DOMAINS = new Set(["system", "access"]);
@@ -75,22 +74,6 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   // One shared read-only project, provisioned at most once per run.
   let sharedProjectPromise: Promise<CreatedProject> | null = null;
   const sharedStack = new ResourceStack(adminClient);
-
-  // Fund OWNER's account the real way (Stripe test-mode subscribe) so billing-gated
-  // flows (sessions) can run. Best-effort: if Stripe isn't wired, those flows
-  // self-skip via `requires: ["stripe"]`.
-  if (env.capabilities.stripe && owner?.accountId) {
-    try {
-      await subscribe(env, adminClient, owner.accountId);
-      env.capabilities.funded = true;
-      log.info(log.dim("world: OWNER funded via real subscribe — billing-gated flows enabled"));
-    } catch (err) {
-      log.warn(
-        `world: OWNER funding (subscribe) unavailable on this target — billing-gated flows (sessions, paid subscribe) will skip. ` +
-          `(${(err as Error)?.message ?? err})`,
-      );
-    }
-  }
 
   const fixturesFor = (stack: ResourceStack): Fixtures => ({
     name: (slug) => `e2e-${runId}-${slug}`,

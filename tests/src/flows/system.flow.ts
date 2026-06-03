@@ -15,13 +15,6 @@ flow("SYS-1", { domain: "system", tags: ["smoke", "health"], routes: ["GET /heal
   });
 });
 
-flow("SYS-4", { domain: "system", tags: ["smoke", "health"], routes: ["GET /v1/router/health"] }, async (ctx) => {
-  await ctx.step("GET /v1/router/health", async () => {
-    const r = await ctx.client.get("/v1/router/health");
-    r.status(200).body().has("$.status", "ok").has("$.service", "kortix-router");
-  });
-});
-
 flow("SYS-5", { domain: "system", tags: ["smoke"], routes: ["GET /v1/accounts/me"] }, async (ctx) => {
   await ctx.step("404 shape on unknown route", async () => {
     const r = await ctx.client.get("/v1/this-route-does-not-exist");
@@ -30,13 +23,6 @@ flow("SYS-5", { domain: "system", tags: ["smoke"], routes: ["GET /v1/accounts/me
   await ctx.step("protected route without auth → 401", async () => {
     const r = await ctx.client.get("/v1/accounts/me");
     r.status(401);
-  });
-});
-
-flow("ACC-1", { domain: "access", tags: ["smoke"], routes: ["GET /v1/access/signup-status"] }, async (ctx) => {
-  await ctx.step("GET /v1/access/signup-status", async () => {
-    const r = await ctx.client.get("/v1/access/signup-status");
-    r.status(200).body().exists("$.signupsEnabled");
   });
 });
 

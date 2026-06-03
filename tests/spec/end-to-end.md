@@ -42,7 +42,6 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 
 `SYS-1` `GET /health` · `GET /v1/health` → 200 `{status:"ok",service:"kortix-api"}`.
 `SYS-3` `GET /v1/user-roles` (`supabaseAuth`) → `{isAdmin, role}` (platform role).
-`SYS-4` `GET /v1/router/health` → router health (no auth).
 `SYS-5` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
 
 ---
@@ -84,9 +83,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 ## 3. Access gating / signup (public)
 
-`ACC-1` `GET /access/signup-status` → 200 `{open|waitlist}`.
 `ACC-2` `POST /access/check-email {email}` → 200 allowed/blocked.
-`ACC-3` `POST /access/request-access {email,…}` → 200 waitlisted.
 `ACC-4` (self-hosted only, `isLocal()`) `GET /setup/install-status` + `GET /setup/sandbox-providers` → public; `POST /setup/bootstrap-owner` → first owner; `GET /setup/status|health|setup-status`; `GET/POST /setup/setup-wizard-step`, `POST /setup/setup-complete`. Cloud → routes 404.
 
 ---
@@ -267,7 +264,7 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime `last_fired_at` in `
 
 ---
 
-## 13. Channels (Slack / Telegram)
+## 13. Channels (Slack)
 
 Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 
@@ -278,8 +275,7 @@ Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 `CHN-5` Slack inbound (BYO mode) — `POST /webhooks/slack/:id` (per-project signing secret).
 `CHN-6` Slack dispatch — `app_mention`/IM/threaded `message` → existing thread session → deliver to sandbox `/kortix/prompt` (`delivered|transient|stale`); else `createProjectSession` (actor=owner, agent `default`) + record `chat_threads`.
 `CHN-7` Slack OAuth — `GET /webhooks/slack/oauth/callback` (signed `state`, 10-min TTL) → exchange code → `saveSlackInstall`.
-`CHN-8` Telegram inbound — `POST /webhooks/telegram/:id`: verify `x-telegram-bot-api-secret-token` (missing→404, mismatch→401) → `message`/`edited_message` → spawn session (actor=owner).
-`CHN-9` bad sig on any channel webhook → 401. Not configured → **503 (Slack OAuth mode + OAuth callback)** but **404 (Slack BYO + Telegram)**.
+`CHN-9` bad sig on any channel webhook → 401. Not configured → **503 (Slack OAuth mode + OAuth callback)** but **404 (Slack BYO)**.
 
 ---
 
@@ -329,14 +325,13 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 
 ## 16. Billing (gated by `KORTIX_BILLING_INTERNAL_ENABLED`; off → 404 `billing_disabled`)
 
-`BILL-1` `GET /billing/account-state` (always available; off → unlimited mock) · `GET …/account-state/minimal`.
+`BILL-1` `GET /billing/account-state` (always available; off → unlimited mock).
 `BILL-2` `POST /billing/setup/initialize {server_type,location}` → free Stripe sub.
-`BILL-3` `POST /billing/create-checkout-session` · `create-inline-checkout` · `confirm-inline-checkout` · `create-portal-session`.
-`BILL-4` `POST /billing/cancel-subscription` · `reactivate-subscription` · `schedule-downgrade` · `cancel-scheduled-change` · `sync-subscription`; `GET /billing/proration-preview`.
-`BILL-5` `POST /billing/purchase-credits`; `GET /billing/transactions[/summary]`, `credit-usage`, `tier-configurations`, `credit-breakdown`, `usage-history`; `GET /billing/checkout-session/:sessionId` · `POST /billing/confirm-checkout-session`.
-`BILL-6` auto-topup: `GET …/auto-topup/settings|setup-status` · `POST …/auto-topup/configure`. Cron: `POST /billing/cron/yearly-rotation`.
-`BILL-7` `POST /billing/deduct {prompt_tokens,completion_tokens,model}` · `POST /billing/deduct-usage {amount,description}` (agent runtime).
-`BILL-8` `POST /billing/webhooks/stripe` (also `/webhook/stripe`) — Stripe sig: missing sig → 400, misconfigured secret → 500. `POST /billing/webhooks/revenuecat` — **Bearer-token auth, bad → 401** (not an in-body sig). Both public, no auth middleware.
+`BILL-3b` `POST /billing/create-checkout-session` · `create-per-seat-checkout` · `create-portal-session`.
+`BILL-4` `POST /billing/sync-subscription`.
+`BILL-5` `POST /billing/purchase-credits`; `GET /billing/transactions`.
+`BILL-6` auto-topup: `GET …/auto-topup/settings|setup-status` · `POST …/auto-topup/configure`.
+`BILL-8` `POST /billing/webhooks/stripe` — Stripe sig: missing sig → 400, misconfigured secret → 500. `POST /billing/webhooks/revenuecat` — **Bearer-token auth, bad → 401** (not an in-body sig). Both public, no auth middleware.
 `BILL-9` write ops require `billing.write` — `BILLING` ok, `MEMBER`/`AUDITOR` → 403.
 
 ---
@@ -345,7 +340,6 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 
 `RTR-1` `POST /router/web-search {query}` · `POST /router/image-search` → `APIKEY` → 200; `ANON`/JWT → 401.
 `RTR-2` `POST /router/chat/completions {model,messages,stream}` (OpenAI-compat) · `GET /router/models` · `GET /router/models/:model` · `POST /router/messages` (Anthropic-style).
-`RTR-3` session-LLM: `POST /router/llm/chat/completions` (session-LLM token in Authorization) · `GET /router/llm/models`.
 `RTR-4` billed proxy passthrough `ALL /router/:service[/*]` for `tavily|serper|firecrawl|replicate|context7|anthropic|openai|xai|gemini|groq` — Kortix token → managed keys; user key + `X-Kortix-Token` → passthrough; disallowed service/route → 4xx.
 
 ---
@@ -353,14 +347,13 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 ## 18. Platform / OAuth2 provider / Tunnel / Servers / Deployments
 
 ### Platform API keys
-`PLT-1` `GET /platform/` → `{ok:true,message:"platform"}` (public). `GET /platform/sandbox/version[/latest|/all|/changelog]` (public).
 `PLT-2` `GET/POST /platform/api-keys` · `PATCH /platform/api-keys/:keyId/revoke` · `DELETE /platform/api-keys/:keyId` · `POST …/:keyId/regenerate` (`supabaseAuth`).
 
 ### OAuth2 provider (Kortix as IdP for CLI/MCP/tunnel)
 `OAU-1` `GET /oauth/authorize` (public) → redirect to consent.
 `OAU-2` `GET /oauth/authorize/consent/:requestId` (auth) → consent data; `POST /oauth/authorize/consent` → submit.
 `OAU-3` `POST /oauth/token` (public, **form-encoded**) — requires `grant_type` ∈ {`authorization_code`,`refresh_token`} (others → `unsupported_grant_type`) + `client_id`+`client_secret` (missing → 400, bad → 401 `invalid_client`).
-`OAU-4` `GET /oauth/userinfo` · `GET /oauth/claimable-machines` (`oauthTokenAuth`; `oauthTokenAuth` is local to `oauth/index.ts`, not a shared middleware). claimable-machines queries legacy `sandboxes` (`provider:justavps`) → empty on Daytona-only deploys.
+`OAU-4` `GET /oauth/userinfo` (`oauthTokenAuth`; `oauthTokenAuth` is local to `oauth/index.ts`, not a shared middleware).
 
 ### Tunnel (reverse tunnel to local machines)
 `TUN-1` connections `GET/POST /tunnel/connections`, `GET/PATCH /:tid`, `POST /:tid/rotate-token`, `DELETE /:tid`.
@@ -370,7 +363,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `TUN-5` WS `GET /tunnel/ws?tunnelId=` — auth via first message; rate-limited.
 
 ### Servers (MCP registry)
-`SRV-1` `PUT /servers/sync` · `GET/POST /servers` · `GET/PUT/DELETE /servers/:id` (`combinedAuth`).
+`SRV-1` `PUT /servers/sync` · `GET/POST /servers` · `DELETE /servers/:id` (`combinedAuth`).
 
 ### Deployments (gated `KORTIX_DEPLOYMENTS_ENABLED`)
 `DEP-1` `POST /deployments` · `GET /deployments[/:id]` · `POST /:id/stop|redeploy` · `DELETE /:id` · `GET /:id/logs` (`combinedAuth`).
@@ -392,7 +385,7 @@ Run these against representative endpoints from each domain.
 `SEC-C` `NONMEMBER` on `GET/PATCH/DELETE /accounts/:id`, `/projects/:id` → 403/404.
 `SEC-D` project-scoped PAT: allowed only on its bound project + `/accounts/me`; **every other surface → 403** (cross-project, `/accounts/*`, project-list, router/billing/channels/etc.).
 `SEC-E` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`.
-`SEC-F` webhook sig bypass — Stripe/RevenueCat/Slack/Telegram/project-webhook with missing/wrong sig → 400/401.
+`SEC-F` webhook sig bypass — Stripe/RevenueCat/Slack/project-webhook with missing/wrong sig → 400/401.
 `SEC-G` preview proxy without token/cookie → 401; cross-sandbox token reuse → 403.
 `SEC-H` audit — every state-changing `/v1/*` writes an audit row (`auditStateChangingRequest`); assert `GET /accounts/:id/audit` reflects a prior mutation.
 `SEC-I` rate limits — session create (429), invite-accept, preview proxy, tunnel WS each return their limiter response under load.
@@ -505,7 +498,6 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `GH-13` `GET /projects/github/repositories` → PROJECT_CREATE; no App install → 409 install_url.
 `GH-14` `POST /projects/create-repo` → PROJECT_CREATE; missing name → 400; no install → 409/503.
 `GH-15` `POST /projects/link-repository` → PROJECT_CREATE; missing repo → 400; no install → 400/409/502; bad token → 400.
-`PLT-3` `GET /platform/sandbox/version` · `…/latest` · `…/all` · `…/changelog` → 200 (public).
 `PLT-4` `GET /platform/api-keys` → 401 ANON; 400 missing/non-UUID sandbox_id; 404 unknown sandbox.
 `PLT-5` `POST /platform/api-keys` → 401 ANON; 400 missing/non-UUID sandbox_id; 404 unknown sandbox.
 `PLT-6` `DELETE /platform/api-keys/:keyId` → 401 ANON; 404 unknown keyId.
@@ -527,8 +519,8 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `CHN-12` `POST /webhooks/slack/interactivity` → public, OAuth-gated → 503/401.
 `Q-5` `GET /queue/sessions/:sid` (unknown) → 200 empty; ANON → 401.
 `Q-6` enqueue → move-up/down + DELETE /messages/:mid → DELETE /sessions/:sid → 200.
-`SRV-2` `POST /servers` 201 · `GET/PUT/DELETE /servers/:id` CRUD → read-after-delete 404.
-`SRV-3` `POST /servers` missing fields → 400 · managed id → 400 · unknown id → 404.
+`SRV-2` `POST /servers` 201 · `DELETE /servers/:id` cleanup.
+`SRV-3` `POST /servers` missing fields → 400 · managed id → 400 · unknown delete id → 404.
 `SRV-4` `PUT /servers/sync` → 200 rows; non-array → 400; ANON → 401.
 `AUD-1` `GET /accounts/:id/audit` → 200; NONMEMBER → 403.
 `AUD-2` `GET /accounts/:id/audit/export` → 200 (CSV/JSONL); bad format → 400; NONMEMBER → 403.
@@ -545,7 +537,6 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 
 `CR-11` `GET/POST /projects/:id/change-requests` → NONMEMBER → 403/404.
 `CR-12` `GET /projects/:id/change-requests` → ANON → 401.
-`PROJ-9` `POST /projects/:id/manifest/validate {raw}` → 200 {valid,issues}; missing raw → 400.
 `PROJ-10` `POST /projects/:id/cli-token` → 201 project PAT; `GET` → 200; `DELETE /:tokenId` → 200; unknown → 404.
 `PROJ-11` `PATCH /projects/:id/onboarding {completed}` → 200; NONMEMBER → 403/404.
 `PROJ-12` `GET /projects/:id/version-diff?from&into` → 200; missing → 400; same ref → is_same_ref.
@@ -558,16 +549,14 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `APP-3` `POST /:slug/deploy|stop` · `GET /:slug/logs` → unknown/no-deploy → 404.
 `APP-4` `PATCH /projects/:id/apps-config {enabled}` → 200; non-bool → 400 (not behind apps gate).
 `SNAP-3` `POST /projects/:id/snapshots/fix-with-agent` → no failed build → 409; else 201.
-`SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200.
+`SBX-3` `GET /projects/:id/sandbox-health` · `/sandbox-templates` → 200.
 `SBX-4` `POST /sandbox-templates` → 201; bad → 400; reserved/dup → 409; `PATCH/DELETE/build /:templateId`; unknown → 404.
 `SBX-5` `GET/PATCH /projects/:id/warm-pool` → 200 (clamped 0-25).
 `PACC-5` `POST /projects/:id/access/invite` → 201 pending; `GET/POST resend/DELETE pending-invites[/:id]` → manage; missing email → 400; unknown → 404.
 `PACC-6` `GET/POST /projects/:id/group-grants` · `PATCH/DELETE /:groupId` → manage; missing group_id → 400; unknown → 404.
-`BILL-10` per-seat: `POST /billing/sync-seat-quantity` · `claim-per-seat` → no-op/skipped on non-legacy.
+`BILL-10` per-seat: `POST /billing/claim-per-seat` → no-op/skipped on non-legacy.
 `AUTH-1` `POST /v1/auth/logout` → OWNER 200/204; ANON 200/401.
-`BILL-11` `GET /billing/checkout-session/:sessionId` · `POST /billing/confirm-checkout-session` → unknown/missing → 4xx.
 `BILL-3b` `POST /billing/create-checkout-session` · `create-per-seat-checkout` · `create-portal-session` → Stripe URL or 400/500.
-`BILL-4b` `POST /billing/cancel-subscription` · `sync-seat-quantity` → NONMEMBER → 403.
 `DEL-2b` `/billing/account/*` deletion mirror — request → cancel lifecycle.
 `SESS-11` session sub-routes (commit-push/ensure-opencode/restart/wake) → unknown/non-uuid session → 4xx (happy paths need a funded session, run on dev-api).
 `SEC-5` `PUT/DELETE /projects/:id/secrets/:name/personal` → per-user secret override set/clear.

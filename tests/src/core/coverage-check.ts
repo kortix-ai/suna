@@ -17,7 +17,6 @@ export async function runCoverage(): Promise<boolean> {
   const manifestRoutes = await readManifestRoutes();
   const flows = allFlows();
   const errors: string[] = [];
-  const unknownRoutes: string[] = [];
   const coveredRoutes = new Set<string>();
 
   for (const flow of flows) {
@@ -28,7 +27,7 @@ export async function runCoverage(): Promise<boolean> {
     for (const route of flow.meta.routes ?? []) {
       const normalized = normalizeRoute(route);
       if (!manifestRoutes.has(normalized)) {
-        unknownRoutes.push(`flow ${flow.id} references unknown route ${route}`);
+        errors.push(`flow ${flow.id} references unknown route ${route}`);
       } else {
         coveredRoutes.add(normalized);
       }
@@ -39,10 +38,6 @@ export async function runCoverage(): Promise<boolean> {
   log.info(`ke2e coverage: ${flows.length} flows, ${coveredRoutes.size}/${manifestRoutes.size} routes referenced`);
   if (uncovered.length) {
     log.info(log.dim(`WIP: ${uncovered.length} manifest routes do not have static flow coverage yet`));
-  }
-  if (unknownRoutes.length) {
-    log.info(log.dim(`WIP: ${unknownRoutes.length} flow route references are not in this branch's route manifest yet`));
-    for (const route of unknownRoutes) log.info(log.dim(route));
   }
 
   if (errors.length) {

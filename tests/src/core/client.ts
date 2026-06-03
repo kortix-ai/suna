@@ -47,7 +47,6 @@ const SENSITIVE_HEADERS = new Set([
   "x-hub-signature",
   "x-hub-signature-256",
   "stripe-signature",
-  "x-telegram-bot-api-secret-token",
 ]);
 
 const SENSITIVE_BODY_KEYS = /(token|secret|password|api[_-]?key|push_token|private[_-]?key|access_token|refresh_token|client_secret)/i;
