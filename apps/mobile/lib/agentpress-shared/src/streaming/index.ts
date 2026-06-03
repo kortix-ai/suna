@@ -65,7 +65,7 @@ export interface UseAgentStreamCoreCallbacks {
   onToolOutputStream?: (data: { tool_call_id: string; tool_name: string; output: string; is_final: boolean }) => void;
 }
 
-export interface UseAgentStreamCoreResult {
+interface UseAgentStreamCoreResult {
   status: string;
   textContent: TextChunk[];
   reasoningContent: string;
@@ -80,7 +80,7 @@ export interface UseAgentStreamCoreResult {
   setError: (error: string) => void;
 }
 
-export interface ContentThrottleConfig {
+interface ContentThrottleConfig {
   type: 'immediate' | 'raf' | 'timeout';
   throttleMs?: number;
 }

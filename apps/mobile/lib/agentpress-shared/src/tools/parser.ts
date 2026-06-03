@@ -1,6 +1,6 @@
 import type { UnifiedMessage } from '../types/messages';
 
-export interface ParsedToolData {
+interface ParsedToolData {
   toolName: string;
   functionName: string;
   arguments: Record<string, any>;
@@ -9,7 +9,7 @@ export interface ParsedToolData {
   toolCallId?: string;
 }
 
-export interface ParsedXmlToolCall {
+interface ParsedXmlToolCall {
   functionName: string;
   parameters: Record<string, any>;
   rawXml: string;

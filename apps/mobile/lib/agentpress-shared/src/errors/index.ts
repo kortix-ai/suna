@@ -1,4 +1,4 @@
-export type TierErrorType =
+type TierErrorType =
   | 'THREAD_LIMIT_EXCEEDED'
   | 'AGENT_RUN_LIMIT_EXCEEDED'
   | 'PROJECT_LIMIT_EXCEEDED'
@@ -9,7 +9,7 @@ export type TierErrorType =
   | 'INSUFFICIENT_CREDITS'
   | 'BILLING_ERROR';
 
-export interface TierLimitErrorState {
+interface TierLimitErrorState {
   type: TierErrorType;
   message: string;
   currentCount?: number;
@@ -19,7 +19,7 @@ export interface TierLimitErrorState {
   runningCount?: number;
 }
 
-export interface TierLimitErrorUI {
+interface TierLimitErrorUI {
   alertTitle: string;
   alertSubtitle: string;
 }

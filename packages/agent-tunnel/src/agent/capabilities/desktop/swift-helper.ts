@@ -648,7 +648,7 @@ async function ensureHelper(): Promise<string> {
   return HELPER_PATH;
 }
 
-export interface HelperRequest {
+interface HelperRequest {
   action: string;
   x?: number;
   y?: number;
@@ -671,7 +671,7 @@ export interface HelperRequest {
   value?: string;
 }
 
-export interface HelperResponse {
+interface HelperResponse {
   ok: boolean;
   x?: number;
   y?: number;
