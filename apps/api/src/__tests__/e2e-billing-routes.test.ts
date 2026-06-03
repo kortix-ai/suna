@@ -216,6 +216,18 @@ describe('Billing: removed credit read routes', () => {
   });
 });
 
+describe('Billing: removed duplicate account-state routes', () => {
+  test('legacy minimal account-state endpoint is not mounted', async () => {
+    const app = createBillingTestApp();
+    const minimal = await app.request('/v1/billing/account-state/minimal', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer test_token' },
+    });
+
+    expect(minimal.status).toBe(404);
+  });
+});
+
 describe('Billing: removed deduction routes', () => {
   test('legacy direct deduction endpoints are not mounted', async () => {
     const app = createBillingTestApp();

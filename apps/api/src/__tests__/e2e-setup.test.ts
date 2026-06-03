@@ -50,26 +50,6 @@ describe('Billing no-DB guard', () => {
     }
   }, 10_000);
 
-  it('minimal account-state route uses hasDatabase guard', async () => {
-    const { hasDatabase } = await import('../shared/db');
-    const { accountStateRouter } = await import('../billing/routes/account-state');
-    const app = new Hono();
-    app.use('*', async (c, next) => {
-      (c as any).set('userId', '00000000-0000-0000-0000-000000000000');
-      await next();
-    });
-    app.route('/account-state', accountStateRouter);
-
-    const res = await app.request('/account-state/minimal');
-    expect(res.status).toBe(200);
-    const data = await res.json();
-
-    if (!hasDatabase) {
-      expect(data.credits.total).toBe(0);
-    } else {
-      expect(data.credits).toBeDefined();
-    }
-  }, 10_000);
 });
 
 describe('Database guard checks', () => {
