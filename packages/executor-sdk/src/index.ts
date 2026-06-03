@@ -146,7 +146,8 @@ function flattenCatalog(connectors: ExecutorConnector[]): ExecutorToolMatch[] {
 }
 
 function normalizeApiUrl(input: string): string {
-  const trimmed = input.trim().replace(/\/+$/, '');
+  let trimmed = input.trim();
+  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
   return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
 }
 

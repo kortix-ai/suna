@@ -400,8 +400,6 @@ function computeStatusFromPart(part: Part | undefined): string | undefined {
       case 'task_list':
       case 'task-list':
         return 'Listing tasks...';
-      case 'task_update':
-      case 'task-update':
       case 'task_done':
       case 'task-done':
         return 'Updating task...';
