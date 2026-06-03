@@ -96,7 +96,7 @@ export interface AccountState {
   };
 }
 
-export interface CancelScheduledChangeResponse {
+interface CancelScheduledChangeResponse {
   success: boolean;
   message: string;
 }

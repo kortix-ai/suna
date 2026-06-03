@@ -118,7 +118,7 @@ async function kortixFetch<T>(sandboxUrl: string, path: string, init?: RequestIn
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 
-export const kortixKeys = {
+const kortixKeys = {
   projects: (url: string) => ['kortix', 'projects', url] as const,
   project: (url: string, id: string) => ['kortix', 'projects', url, id] as const,
   projectSessions: (url: string, id: string) =>

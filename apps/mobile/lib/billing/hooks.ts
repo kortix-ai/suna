@@ -14,11 +14,6 @@ import {
   type AccountState,
 } from './api';
 
-// Re-export types for convenience
-export type {
-  AccountState,
-};
-
 // =============================================================================
 // QUERY KEYS - Single key for all billing state
 // =============================================================================

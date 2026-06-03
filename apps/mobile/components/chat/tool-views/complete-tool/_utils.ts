@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface CompleteToolData {
+interface CompleteToolData {
   text: string | null;
   attachments: string[];
   follow_up_prompts: string[];

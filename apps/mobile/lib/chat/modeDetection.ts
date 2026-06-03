@@ -6,7 +6,7 @@ import { log } from '@/lib/logger';
  * Uses keyword matching and scoring to determine the most relevant mode.
  */
 
-export type ModeId = 'image' | 'slides' | 'data' | 'docs' | 'people' | 'research';
+type ModeId = 'image' | 'slides' | 'data' | 'docs' | 'people' | 'research';
 
 /**
  * Keyword patterns for each mode

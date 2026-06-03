@@ -23,7 +23,7 @@ export interface ApifyApproval {
   message?: string;
 }
 
-export interface ApifyApprovalResponse {
+interface ApifyApprovalResponse {
   success: boolean;
   data: ApifyApproval;
 }

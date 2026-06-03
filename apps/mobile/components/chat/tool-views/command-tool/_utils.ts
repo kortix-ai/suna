@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface CommandData {
+interface CommandData {
   command: string | null;
   output: string | null;
   exitCode: number | null;

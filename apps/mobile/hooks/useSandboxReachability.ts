@@ -16,7 +16,7 @@ import { checkInstanceHealth } from '@/lib/platform/client';
 const POLL_INTERVAL_MS = 10_000;
 const INITIAL_GRACE_MS = 3_000;
 
-export interface SandboxReachability {
+interface SandboxReachability {
   /** True once we've completed at least one probe. */
   checked: boolean;
   /** Last known reachability. `true` = /kortix/health returned 200. */
