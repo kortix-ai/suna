@@ -302,8 +302,8 @@ export const supabaseMFAService = {
       const current = aalResponse.data?.currentLevel;
       const nextLevel = aalResponse.data?.nextLevel;
 
-      let actionRequired: string = 'none';
-      let message: string = '';
+      let actionRequired: string;
+      let message: string;
 
       if (current === 'aal1' && nextLevel === 'aal1') {
         actionRequired = 'none';
