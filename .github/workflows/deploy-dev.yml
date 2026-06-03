@@ -102,7 +102,9 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --tags --force origin >/dev/null 2>&1 || true
-          LATEST="$(git tag -l 'v*' --sort=-v:refname | head -n1 | sed 's/^v//')"
+          # Strict vX.Y.Z only — excludes alias/stray tags like `v1` that would
+          # otherwise sort highest and jump the dev version.
+          LATEST="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 | sed 's/^v//')"
           # Fallback to the VERSION file before the first tagged release.
           [ -n "$LATEST" ] || LATEST="$(tr -d '[:space:]' < VERSION)"
           IFS='.' read -r MA MI PA <<< "$LATEST"
