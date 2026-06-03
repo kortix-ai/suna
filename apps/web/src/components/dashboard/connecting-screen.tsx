@@ -55,7 +55,6 @@ export function ConnectingScreen({
   provider,
   backHref,
   minimal = false,
-  hideWorkspacePicker = false,
 }: ConnectingScreenProps = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const status = useSandboxConnectionStore((s) => s.status);
@@ -90,7 +89,7 @@ export function ConnectingScreen({
 
   if (error) {
     return (
-      <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
+      <FullScreenShell>
         <ErrorView
           label={labelOverride || serverLabel}
           message={error.message}
@@ -104,7 +103,7 @@ export function ConnectingScreen({
 
   if (stopped) {
     return (
-      <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
+      <FullScreenShell>
         <StoppedView
           label={stopped.name || labelOverride || serverLabel}
           onBack={handleSwitch}
@@ -115,7 +114,7 @@ export function ConnectingScreen({
 
   if (provisioning) {
     return (
-      <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
+      <FullScreenShell>
         <ProvisioningView
           label={labelOverride || serverLabel}
           progress={provisioning.progress}
@@ -165,7 +164,7 @@ export function ConnectingScreen({
   if (!forceConnecting && status === 'unreachable') {
     return (
       <>
-        <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
+        <FullScreenShell>
           <UnreachableView
             reconnectAttempts={reconnectAttempts}
             provider={effectiveProvider}
@@ -229,10 +228,6 @@ export interface ConnectingScreenProps {
    * Normal connecting waits render only the top progress line.
    */
   minimal?: boolean;
-  /**
-   * Compatibility flag for pages that previously hid loader chrome.
-   */
-  hideWorkspacePicker?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -253,8 +248,6 @@ function FullScreenShell({
   children,
 }: {
   children: React.ReactNode;
-  /** Kept for call-site compatibility; loader chrome no longer renders it. */
-  showWorkspacePicker?: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background">

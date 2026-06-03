@@ -56,7 +56,7 @@ export default function TokenDetailPage() {
   );
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return <ConnectingScreen forceConnecting overrideStage="auth" />;
   }
 
   return (

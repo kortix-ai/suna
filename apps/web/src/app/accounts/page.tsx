@@ -50,7 +50,6 @@ export default function AccountsPage() {
       <ConnectingScreen
         forceConnecting
         overrideStage="auth"
-        hideWorkspacePicker
       />
     );
   }

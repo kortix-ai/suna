@@ -105,7 +105,7 @@ export default function GroupDetailPage() {
   }).allowed;
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return <ConnectingScreen forceConnecting overrideStage="auth" />;
   }
 
   const account = accountQuery.data;
