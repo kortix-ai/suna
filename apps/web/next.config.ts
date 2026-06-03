@@ -14,7 +14,7 @@ import { withBetterStack } from '@logtail/next';
 // showing a bare release number. Falls back to 'dev' locally.
 function resolveKortixVersion(): string {
   if (process.env.NEXT_PUBLIC_KORTIX_VERSION) return process.env.NEXT_PUBLIC_KORTIX_VERSION;
-  let base = 'dev';
+  let base: string;
   try {
     base = fs.readFileSync(path.join(__dirname, '../../VERSION'), 'utf8').trim();
   } catch {
